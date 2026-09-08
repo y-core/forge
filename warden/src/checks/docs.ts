@@ -76,6 +76,12 @@ export interface DocsCheckConfig {
   sizeFail?: number;
   /** Maximum frontmatter `description` length. Defaults to 200. */
   descriptionMax?: number;
+  /** Extra frontmatter keys a directory's documents must carry, each with the values it may take.
+   *
+   *  **Opt-in per repository, because the alternative breaks every other one.** This same check
+   *  validates the fleet canon and each consumer's own `docs/`, and a globally required key fails
+   *  all of them on the day it is added. Empty by default, which is exactly today's behaviour. */
+  requiredFrontmatter?: readonly FrontmatterRule[];
   /** Directories held to Quick Reference agreement and nothing else.
    *
    *  For a tree that is governed prose but not this repository's own — the canon, in the repository
@@ -291,8 +297,35 @@ function validatePaths(file: string, lines: readonly string[], root: string): Fi
   return findings;
 }
 
-/** Frontmatter presence and shape. @public */
-export function validateFrontmatter(file: string, source: string, descriptionMax: number): Finding[] {
+/** A backticked list read as a sentence — `a`, `b` and `c`. */
+function listOf(values: readonly string[]): string {
+  const quoted = values.map((value) => `\`${value}\``);
+  const last = quoted.pop() ?? "";
+  return quoted.length === 0 ? last : `${quoted.join(", ")} and ${last}`;
+}
+
+/** An extra frontmatter key a directory's documents must carry, and what it may say. @public */
+export interface FrontmatterRule {
+  /** Directory relative to `root`, or one `.md` document. */
+  dir: string;
+  /** The key that must be present. */
+  key: string;
+  /** The values it may take, and nothing else. */
+  values: readonly string[];
+}
+
+/** Frontmatter presence and shape.
+ *
+ *  `required` is empty for every caller that does not ask for more, and the allowed-key set is then
+ *  exactly `title` and `description` — which is what this always enforced. It has to stay that way:
+ *  the same function validates the canon, and every consumer's own `docs/`, none of which can carry
+ *  a key one repository decided to require. @public */
+export function validateFrontmatter(
+  file: string,
+  source: string,
+  descriptionMax: number,
+  required: readonly Omit<FrontmatterRule, "dir">[] = [],
+): Finding[] {
   if (!source.startsWith("---\n")) return [fail("missing YAML frontmatter", { file })];
   const end = source.indexOf("\n---", 4);
   if (end === -1) return [fail("unterminated YAML frontmatter", { file })];
@@ -300,10 +333,25 @@ export function validateFrontmatter(file: string, source: string, descriptionMax
   const block = source.slice(4, end);
   const findings: Finding[] = [];
 
+  const allowed = new Set(["title", "description", ...required.map((rule) => rule.key)]);
   for (const match of block.matchAll(/^([A-Za-z][A-Za-z0-9_-]*):/gm)) {
     const [, key = ""] = match;
-    if (key !== "title" && key !== "description") {
-      findings.push(fail(`unexpected frontmatter key \`${key}\` — \`title\` and \`description\` only`, { file }));
+    if (!allowed.has(key)) {
+      findings.push(fail(`unexpected frontmatter key \`${key}\` — ${listOf([...allowed])} only`, { file }));
+    }
+  }
+
+  // Required and closed in one pass: a key that may be absent is a key half the corpus will lack,
+  // and a value nothing checks is a typo that reads as a decision.
+  for (const rule of required) {
+    const value = block
+      .match(new RegExp(`^${rule.key}:\\s*(.+)$`, "m"))?.[1]
+      ?.trim()
+      .replace(/^["']|["']$/g, "");
+    if (value === undefined || value === "") {
+      findings.push(fail(`frontmatter is missing \`${rule.key}\` — one of ${listOf(rule.values)}`, { file }));
+    } else if (!rule.values.includes(value)) {
+      findings.push(fail(`frontmatter \`${rule.key}: ${value}\` is not one of ${listOf(rule.values)}`, { file }));
     }
   }
 
@@ -402,6 +450,13 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     file.startsWith(`${decisionsDir}/`) || extraDirs.some(({ dir, numbered }) => numbered === true && (file === dir || file.startsWith(`${dir}/`)));
 
   const isStrict = (file: string): boolean => isGoverning(file) || file === rootReadme;
+
+  // Which extra frontmatter keys this file owes, by the directory it sits in. A file under no rule
+  // owes none and may carry none — the allowed-key set is closed either way.
+  const frontmatterRules = (file: string): Omit<FrontmatterRule, "dir">[] =>
+    (config.requiredFrontmatter ?? [])
+      .filter((rule) => file === rule.dir || file.startsWith(`${rule.dir}/`))
+      .map(({ key, values }) => ({ key, values }));
 
   const sources = new Map<string, string>();
   const sectionsByDoc = new Map<string, Set<string>>();
@@ -555,7 +610,7 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
     if (!isNumbered(file)) continue;
 
-    findings.push(...validateFrontmatter(file, source, descriptionMax));
+    findings.push(...validateFrontmatter(file, source, descriptionMax, frontmatterRules(file)));
     findings.push(...validatePaths(file, stripped, root));
     findings.push(...validateRotProse(file, stripped));
 

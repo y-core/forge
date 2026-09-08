@@ -1,6 +1,7 @@
 ---
 title: Structured Logging
 description: "The logging namespace: channels and their composable wrappers, the request logger, KV persistence, the log viewer, and the no-PII rule."
+audience: consumer
 ---
 
 # Structured Logging

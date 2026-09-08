@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { chunkId, headingSlug, parseId, sourceId } from "./ident";
+import { CORPORA } from "../types";
+import { chunkId, headingSlug, parseCorpus, parseId, sourceId } from "./ident";
 
 describe("chunkId() and sourceId()", () => {
   it("names the corpus and nothing else, whichever corpus it is", () => {
@@ -24,11 +25,32 @@ describe("parseId()", () => {
     expect(parseId("project:src/ui/README.md#~exports")?.section).toBe("~exports");
   });
 
+  it("round-trips a dependency chunk id, whose path carries the library's own prefix", () => {
+    expect(parseId("dependency:forge/UI_CLASS_COMPOSITION.md#1a")).toEqual({
+      corpus: "dependency",
+      path: "forge/UI_CLASS_COMPOSITION.md",
+      section: "1a",
+    });
+  });
+
   it("refuses a corpus it does not know, a tree segment, and a spelling with no colon", () => {
     expect(parseId("fleet:X.md#1")).toBeUndefined();
     expect(parseId("canon/libs:X.md#1")).toBeUndefined();
     expect(parseId("canon-libs-X.md")).toBeUndefined();
     expect(parseId("project:#1")).toBeUndefined();
+  });
+});
+
+describe("parseCorpus()", () => {
+  it("answers for every corpus the type declares, so one added to the list cannot be missed here", () => {
+    for (const corpus of CORPORA) expect(parseCorpus(corpus)).toBe(corpus);
+  });
+
+  // A misspelling that reaches SQL matches no row, and an empty result is an answer this corpus
+  // gives deliberately — so the reader would be told nothing governs their question.
+  it("refuses a misspelling rather than letting it reach SQL", () => {
+    expect(parseCorpus("cannon")).toBeUndefined();
+    expect(parseCorpus("")).toBeUndefined();
   });
 });
 

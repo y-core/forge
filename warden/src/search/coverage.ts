@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-import { ALIASES } from "./aliases";
+import { type AliasTable, ALIASES } from "./aliases";
 import { terms as queryTerms } from "./query";
 
 /** A bridge term stands in for a word the reader did not type, so it earns a fraction of that
@@ -54,7 +54,7 @@ function matching(db: Database, expression: string): number[] {
  *
  *  A term the corpus has never seen is scored at maximum rarity and can be earned by nobody, so it
  *  drags every candidate down — which is the correct verdict, not a defect. @public */
-export function coverage(db: Database, query: string, rowids: readonly number[]): Map<number, number> {
+export function coverage(db: Database, query: string, rowids: readonly number[], aliases: AliasTable = ALIASES): Map<number, number> {
   const scores = new Map(rowids.map((rowid) => [rowid, 0]));
   const typed = queryTerms(query);
   if (typed.length === 0 || rowids.length === 0) return scores;
@@ -72,9 +72,9 @@ export function coverage(db: Database, query: string, rowids: readonly number[])
     whole += weight;
 
     const own = new Set(carriers.filter((rowid) => pool.has(rowid)));
-    const aliases = ALIASES.get(term.toLowerCase()) ?? [];
+    const bridges = aliases.get(term.toLowerCase()) ?? [];
     const bridged =
-      aliases.length === 0 ? new Set<number>() : new Set(matching(db, aliases.map(quote).join(" OR ")).filter((rowid) => pool.has(rowid)));
+      bridges.length === 0 ? new Set<number>() : new Set(matching(db, bridges.map(quote).join(" OR ")).filter((rowid) => pool.has(rowid)));
 
     for (const rowid of rowids) {
       const earned = own.has(rowid) ? weight : bridged.has(rowid) ? weight * BRIDGE_CREDIT : 0;

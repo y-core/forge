@@ -1,6 +1,7 @@
 ---
 title: Build Tooling
 description: "The dependency-free CLI framework, the published verification gate and its check contract, and the automated release workflow."
+audience: internal
 ---
 
 # Build Tooling

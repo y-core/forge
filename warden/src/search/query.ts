@@ -1,4 +1,4 @@
-import { aliasTerms } from "./aliases";
+import { type AliasTable, aliasTerms } from "./aliases";
 
 // The tokenizer keeps `-_/.§` inside a term, so a query term may legitimately carry them. Anything
 // else is punctuation FTS5 would read as syntax, and is dropped rather than escaped.
@@ -73,11 +73,11 @@ function quote(term: string): string {
  *  `^` is not used and no term is required — an AND query over a corpus this small returns nothing
  *  far more often than it returns the right thing, and BM25 already ranks a chunk carrying every
  *  term above one carrying a single term. @public */
-export function matchExpression(query: string): string {
+export function matchExpression(query: string, aliases?: AliasTable): string {
   const typed = terms(query);
   if (typed.length === 0) return "";
   const own = typed.map((term) => `${quote(term)}`);
-  const bridges = aliasTerms(typed).map((term) => quote(term));
+  const bridges = aliasTerms(typed, aliases).map((term) => quote(term));
   const clause = own.join(" OR ");
   // A bridge is worth a fraction of a typed term: it recovers a paraphrase without ever outranking
   // the words the reader actually chose.

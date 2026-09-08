@@ -1,6 +1,7 @@
 ---
 title: Namespace Design
 description: "Barrel export rules, the authoritative subpath catalog, leaf-versus-integration classification, and the criteria for adding a namespace."
+audience: internal
 ---
 
 # Namespace Design

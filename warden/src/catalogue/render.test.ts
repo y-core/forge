@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
-import type { SourceDoc } from "../types";
+import type { Corpus, SourceDoc } from "../types";
 import { renderCatalogue } from "./render";
 
 function doc(title: string, description: string): string {
@@ -17,11 +17,12 @@ const sources: SourceDoc[] = [
   ["canon", "libs", "CODE_RULES.md", "Six rules every source file obeys."],
   ["canon", "shared", "AGENT_GUIDE.md", "How a governing document is written."],
   ["project", undefined, "docs/NAMESPACES.md", "This repository's subpath catalog."],
+  ["dependency", undefined, "forge/UI_CLASS_COMPOSITION.md", "How the library composes class strings."],
 ].map(([corpus, tree, path, description]) => {
   const file = join(root, String(path).replace("/", "-"));
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, doc(String(path), String(description)), "utf-8");
-  return { corpus: corpus as "canon" | "project", ...(tree === undefined ? {} : { tree: tree as "libs" }), path: String(path), file, weight: 1.3 };
+  return { corpus: corpus as Corpus, ...(tree === undefined ? {} : { tree: tree as "libs" }), path: String(path), file, weight: 1.3 };
 });
 
 const db = openDatabase(":memory:");
@@ -58,5 +59,24 @@ describe("renderCatalogue()", () => {
 
   it("is byte-identical on a second render, which is what a drift check depends on", () => {
     expect(renderCatalogue(db)).toBe(rendered);
+  });
+});
+
+describe("renderCatalogue() — the corpus a row is filed under", () => {
+  // A `row.corpus === "project" ? … : …` filed every corpus that was not `project` under the fleet
+  // canon's heading — in the resource an agent reads before it asks anything.
+  it("gives the installed library a heading of its own, and says the rules are the library's", () => {
+    const served = renderCatalogue(db, { local: true });
+
+    expect(served).toContain("## The installed library — advisory, and about the library rather than this repository");
+    expect(served).toContain("- `forge/UI_CLASS_COMPOSITION.md` — forge/UI_CLASS_COMPOSITION.md: How the library composes class strings.");
+  });
+
+  // The committed `warden/CATALOGUE.md` is forge's own inventory of the fleet canon, and is safe
+  // only because this defaults to canon alone. A dependency row reaching it would fail every
+  // consumer's catalogue-drift check for a file none of them wrote.
+  it("keeps the committed file canon-only, whatever else the index holds", () => {
+    expect(rendered).not.toContain("forge/UI_CLASS_COMPOSITION.md");
+    expect(rendered).not.toContain("docs/NAMESPACES.md");
   });
 });

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { openIndex } from "../index/open";
+import { CORPORA } from "../types";
 import { readResource, RESOURCES, TEMPLATES } from "./resources";
 
 const DOC =
@@ -18,9 +19,17 @@ for (const path of [join(root, "docs/A.md"), join(canonRoot, "libs/CODE_RULES.md
 const knowledge = openIndex(root, "libs", { path: ":memory:", canonRoot, canonVersion: "1.0.0" });
 
 describe("RESOURCES and TEMPLATES", () => {
-  it("declares the catalogue fixed and both corpora parameterised", () => {
+  it("declares the catalogue fixed and every corpus parameterised", () => {
     expect(RESOURCES.map((resource) => resource.uri)).toEqual(["knowledge://catalogue"]);
-    expect(TEMPLATES.map((template) => template.uriTemplate)).toEqual(["knowledge://canon/{path}", "knowledge://project/{path}"]);
+    expect(TEMPLATES.map((template) => template.uriTemplate)).toEqual([
+      "knowledge://canon/{path}",
+      "knowledge://project/{path}",
+      "knowledge://dependency/{path}",
+    ]);
+  });
+
+  it("offers one template per corpus, so a corpus cannot be served and left unaddressable", () => {
+    expect(TEMPLATES).toHaveLength(CORPORA.length);
   });
 });
 

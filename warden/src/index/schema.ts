@@ -5,7 +5,7 @@
 export const SCHEMA_VERSION = "4";
 
 /** Bumped whenever chunking, glossing or weighting changes what the same documents would produce. @public */
-export const INDEXER_VERSION = "7";
+export const INDEXER_VERSION = "9";
 
 /** `tokenchars` is the highest-leverage knob here: without `-_/.§` the tokenizer splits
  *  `Result<T,E>`, `ui/core`, `forge-ui-focus-ring`, `@y-core/forge/ui/show` and `§5c` into pieces,

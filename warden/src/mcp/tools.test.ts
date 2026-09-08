@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { openIndex } from "../index/open";
+import { CORPORA } from "../types";
 import { callTool, TOOLS } from "./tools";
 
 const DOC =
@@ -22,6 +23,14 @@ describe("TOOLS", () => {
     for (const tool of TOOLS) expect((tool.inputSchema as { required: string[] }).required.length).toBeGreaterThan(0);
   });
 
+  it("offers every corpus in the search schema, since an agent will not use a filter it is not told about", () => {
+    const schema = TOOLS.find((tool) => tool.name === "knowledge_search")?.inputSchema as
+      | { properties: { corpus: { enum: string[] } } }
+      | undefined;
+
+    expect(schema?.properties.corpus.enum).toEqual([...CORPORA]);
+  });
+
   it("names each tool distinctly", () => {
     expect(new Set(TOOLS.map((tool) => tool.name)).size).toBe(TOOLS.length);
   });
@@ -33,6 +42,15 @@ describe("callTool()", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain("canon:CODE_RULES.md#1");
+  });
+
+  // An unknown corpus reaches SQL as a literal no row carries, and this tool's contract is that an
+  // empty result means nothing here governs the question — so a typo would be reported as law.
+  it("refuses a corpus it does not know rather than answering nothing", () => {
+    const result = callTool(knowledge, "knowledge_search", { query: "comment budget", corpus: "cannon" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('knowledge_search: `corpus` must be one of canon, project, dependency, not "cannon"');
   });
 
   it("names an uncovered question as a property of the corpus, not as a failed lookup", () => {

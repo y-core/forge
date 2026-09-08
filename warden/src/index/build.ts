@@ -13,6 +13,9 @@ export interface BuildReport {
   chunks: number;
   relations: number;
   unresolved: number;
+  /** Citations naming more than one indexed document, each with the ids it named. Reported rather
+   *  than stored: a `to_id` of null says the edge did not resolve and cannot say why. */
+  ambiguous: readonly { from: string; raw: string; ids: readonly string[] }[];
 }
 
 interface Loaded {
@@ -123,5 +126,8 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
     chunks: loaded.reduce((total, entry) => total + entry.chunks.length, 0),
     relations: relations.length,
     unresolved: relations.filter((relation) => relation.to === undefined).length,
+    ambiguous: relations
+      .filter((relation) => relation.ambiguous !== undefined)
+      .map((relation) => ({ from: relation.from, raw: relation.raw, ids: relation.ambiguous ?? [] })),
   };
 }

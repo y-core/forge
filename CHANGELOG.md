@@ -17,7 +17,57 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **A third corpus, `dependency`: the library's own consumer-facing documents, served inside a
+  consuming repository.** Forge's `docs/` was reachable only inside forge, so a consuming app asked
+  the library nothing and read `node_modules` instead. Fourteen of the twenty-one now enter a
+  consumer's index under `dependency:forge/<DOC>.md`, labelled `installed @y-core/forge (advisory)`
+  and addressable as `knowledge://dependency/{path}`. **Off by default** — a repository opts in with
+  `dependency: true` on its warden gate rows, or `warden <verb> --dependency`.
+- **A required `audience: consumer | internal` frontmatter key on forge's `docs/`.** It is what
+  decides whether a document is served into a consumer at all, and it is declared rather than
+  derived: `knowledge_impact`'s subpath governance was measured as the discriminator and refused —
+  four of the consumer-facing documents mint no `governs` edge, `NAMESPACES.md` mints three (one
+  from a sentence saying a subpath does *not* exist), because `governs` measures what a document
+  talks about and not who should read it. `validateFrontmatter` takes a `requiredFrontmatter` rule
+  so a new document fails closed; the default stays exactly `title` and `description`, which is what
+  the canon and every consumer's own `docs/` are still held to.
+- **`warden probe`.** A read-only command that builds the corpus into a scratch index and prints one
+  diffable block: per-corpus counts, every golden query's rank, coverage and verdict, the canon
+  documents no query reaches, each negative query's peak pool coverage, the document frequency of
+  every negative-set term, the dead alias bridges, and the classified duplicate pairs. The `df` list
+  is the load-bearing part — a refused question can only start being answered after one of its terms
+  leaves `df 0`, which is the single channel by which enlarging the corpus breaks the floor.
+- **`resolveCitation`**, which says whether a cited `DOC.md` named nothing or named several.
+  `resolveDoc` answered `undefined` for both and the two are different defects: a typo, against a
+  citation that needs a path. The gate now warns on the second in its own words.
+- **`docs/` in `package.json`'s `files[]`, with a test asserting all twenty-one are packed.** The
+  documents reach a consumer today only because the dependency is a raw codeload tarball that
+  ignores `files[]` — the substrate of this feature, and nothing defended it.
+
+### Changed
+
+- **The alias table is scoped by tree.** `SHARED`, `LIBS` and `APPS`, merged by `aliasesFor(kind)`
+  and threaded through `coverage()`, `matchExpression()` and `SearchOptions` rather than read at
+  module scope. An application consumer was warned about eighteen bridges aimed at a library's
+  vocabulary, and could only silence them by committing a trimmed copy of forge's table. Three were
+  mis-targeted rather than library-only and were retargeted — `no-PII` to `PII` (the canon spells the
+  first only in an unindexed frontmatter line), `script-src` to `csp`, and `origin-guard` to
+  `origin`. Forge, starter and cornellaw now each report zero dead bridges.
+- **The gate is scoped to the corpora a repository owns.** `missingGloss`, `emptyDocuments` and the
+  unresolved-citation warning select `canon` and `project` explicitly, independent of how a path is
+  spelled: a gate may only fail a repository for a file that repository can edit, and a dependency
+  document is named by a path that does not exist in the consumer's tree. `checkWarden` now reports
+  per-corpus document counts, which is the only cheap defence against a silently empty corpus.
+- **`citationTarget` resolves through the same tiers as everything else.** It used a bare `find`, and
+  `discover` puts the canon first, so every filename spelled in two corpora resolved to the canon's
+  copy whoever cited it.
+- **`--corpus` is validated at all three entry points** — the CLI flag, `knowledge_search`'s
+  argument, and `SearchOptions`' type. It reached SQL unvalidated, so `--corpus=cannon` returned
+  nothing and the reader was told no rule governed their question.
+- **The served catalogue files each corpus under its own heading.** A `corpus === "project" ? … : …`
+  put every corpus that was not `project` under the fleet canon's, in the first thing an agent reads.
 
 ---
 

@@ -1,6 +1,7 @@
 ---
 title: Error Handling
 description: "The published Result signatures, the http fragment renderers, and the router error boundary's header guarantees across its three paths."
+audience: consumer
 ---
 
 # Error Handling

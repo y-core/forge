@@ -83,4 +83,11 @@ describe("unresolved()", () => {
   it("keeps a citation that resolved to nothing, with the spelling the document wrote", () => {
     expect(unresolved(db)).toEqual([{ kind: "cites", id: "project:docs/TESTING.md#1", raw: "ABSENT.md §1" }]);
   });
+
+  // The gate may only fail a repository for a file that repository can edit, and an edge out of an
+  // installed dependency's document is not one.
+  it("narrows to the corpora a caller names, and to nothing when it names one the corpus lacks", () => {
+    expect(unresolved(db, ["canon", "project"])).toHaveLength(1);
+    expect(unresolved(db, ["dependency"])).toEqual([]);
+  });
 });

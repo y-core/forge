@@ -1,6 +1,7 @@
 ---
 title: Asset Pipeline
 description: "The asset pipeline and its config, change detection, the runtime manifest namespace, and the generated assets module the build exists to write."
+audience: internal
 ---
 
 # Asset Pipeline

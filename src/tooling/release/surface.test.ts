@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { collectSurface, diffSurface, removedSurfaceSince } from "./surface";
 import { ReleaseError } from "./types";
@@ -167,5 +168,34 @@ describe("removedSurfaceSince()", () => {
       throw new ReleaseError("git-error", "git could not resolve v99.99.99-nope");
     };
     expect(() => removedSurfaceSince(root, "v99.99.99-nope", atRef)).toThrow("git could not resolve v99.99.99-nope");
+  });
+});
+
+// The published tarball is the substrate of a feature, not merely a convenience: warden serves a
+// consuming repository the consumer-facing half of these documents out of the installed package,
+// filtered by each document's `audience` frontmatter key. Forge's docs reach a consumer today only
+// because the dependency is a raw codeload tarball, which ignores `files[]` — an accident nothing
+// defended, and one `distribution-loop` phase 2 would remove by publishing a real package.
+//
+// All twenty-one ship, internal ones included. A `files[]` subset would be a second hand-kept list
+// in a place nothing reconciles, drifting silently against `audience:`; an internal document that
+// is present but never indexed is inert, while one that is missing leaves dangling cross-citations
+// inside the shipped package.
+describe("the published tarball", () => {
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+
+  it("carries every governing document under `docs/`", () => {
+    const expected = readdirSync(join(repoRoot, "docs"))
+      .filter((name) => name.endsWith(".md"))
+      .map((name) => `docs/${name}`)
+      .sort();
+    // `Bun.spawnSync`, not `node:child_process`: a sibling release test mocks `execFileSync`
+    // process-globally, and a module mock cannot be undone for one file.
+    const run = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: repoRoot });
+    const output = run.stdout.toString();
+    const packed = [...output.matchAll(/^packed \S+ (docs\/\S+\.md)$/gm)].map((match) => match[1]).sort();
+
+    expect(expected.length).toBeGreaterThan(0);
+    expect(packed).toEqual(expected);
   });
 });

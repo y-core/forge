@@ -51,6 +51,32 @@ describe("checkWarden()", () => {
     expect(result.summary).toContain("3 documents");
   });
 
+  // A misconfigured corpus root discovers nothing, and nothing is indistinguishable from a feature
+  // switched off: every check still passes and the documents it was added to reach are just absent.
+  it("counts the documents per corpus, which is what a silently empty corpus shows up in", () => {
+    expect(run(repo("warden-gate-counts-", { catalogue: CATALOGUE })).summary).toContain("3 documents (2 canon, 1 project)");
+  });
+
+  // A gate may only fail a repository for a file that repository can edit. A dependency document
+  // lives under `node_modules`, is named by a path that does not exist in the consumer's tree, and
+  // is read-only in every practical sense — so a finding against one is a build nobody can fix.
+  it("indexes the installed library without holding it to this repository's own checks", () => {
+    const library = repo("warden-gate-library-");
+    writeFileSync(
+      join(library, "docs/CONSUMER.md"),
+      '---\ntitle: Consumer\ndescription: "One."\naudience: consumer\n---\n\n## 1. Ungl\u00f6ssed\n\nSee `ABSENT.md` \u00a71.\n',
+      "utf-8",
+    );
+    writeFileSync(join(library, "package.json"), '{ "name": "@y-core/forge" }', "utf-8");
+
+    const root = repo("warden-gate-scoped-", { catalogue: CATALOGUE });
+    const result = checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon"), dependencyRoot: library });
+
+    expect(result.summary).toContain("4 documents (2 canon, 1 project, 1 dependency)");
+    expect(result.findings.filter((finding) => finding.level !== "warn")).toEqual([]);
+    expect(result.findings.map((finding) => finding.file)).not.toContain("forge/CONSUMER.md");
+  });
+
   it("reports on a document with two `## 1.` headings instead of dying inside the build", () => {
     const duplicated =
       '---\ntitle: Rules\ndescription: "Six rules."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nBody.\n\n## 1. One Again\n\nBody.\n';

@@ -1,6 +1,7 @@
 ---
 title: Theme Generation Contracts
 description: "The dial model a generated colour scheme is produced from, the emission contract, and the contrast-audit data the gate and the customiser both consume."
+audience: consumer
 ---
 
 # Theme Generation Contracts

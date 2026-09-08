@@ -108,13 +108,13 @@ export async function serve(transport: Transport, knowledge: Knowledge): Promise
 }
 
 /** Opens the index and serves it over stdio. @public */
-export async function serveStdio(options: { root?: string; kind?: string } = {}): Promise<void> {
+export async function serveStdio(options: { root?: string; kind?: string; dependency?: boolean } = {}): Promise<void> {
   console.log = console.error;
   console.info = console.error;
 
   const root = resolveRepoRoot(options.root);
   const kind: Tree = resolveKind(root, options.kind);
-  const knowledge = openIndex(root, kind, { canonVersion: canonVersion() });
+  const knowledge = openIndex(root, kind, { canonVersion: canonVersion(), dependency: options.dependency === true });
 
   const transport: Transport = {
     read: () => stdinLines(),

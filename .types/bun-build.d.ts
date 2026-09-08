@@ -6,6 +6,9 @@ declare const Bun: {
   file(path: string): BunFile;
   // The read side of the MCP stdio transport.
   readonly stdin: { stream(): AsyncIterable<Uint8Array> };
+  // Bun's own subprocess, for a test that must reach a real one: `node:child_process` is mocked
+  // process-globally by a sibling release test, and a mock cannot be un-imported.
+  spawnSync(cmd: readonly string[], options?: { cwd?: string }): { stdout: { toString(): string }; exitCode: number };
 };
 
 interface BunFile {

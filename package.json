@@ -282,6 +282,7 @@
   },
   "files": [
     "README.md",
+    "docs/",
     "src/app/",
     "src/assets/",
     "src/config/",

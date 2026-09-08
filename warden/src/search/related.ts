@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
 
+import type { Corpus } from "../types";
+
 /** One edge out of, or into, a chunk or document. @public */
 export interface Related {
   /** `defers`, `cites`, `governs`, or the same with `-by` for an inbound edge. A `governs` edge
@@ -79,9 +81,13 @@ export function related(db: Database, id: string, kinds?: readonly string[], dep
 }
 
 /** Every relation whose target resolved to nothing — the gate warns on these. @public */
-export function unresolved(db: Database): Related[] {
+export function unresolved(db: Database, corpora?: readonly Corpus[]): Related[] {
+  // The corpus is read off the id's own prefix rather than joined back to `source`: an edge's
+  // `from_id` is a chunk id in one corpus and a source id in another, and both spell the corpus
+  // first. A caller naming none sees every edge, which is what a raw listing means.
+  const scope = corpora === undefined ? "" : ` AND (${corpora.map(() => "from_id LIKE ? ESCAPE '\\'").join(" OR ")})`;
   return db
-    .query<Row>("SELECT kind, from_id, to_id, raw FROM relation WHERE to_id IS NULL ORDER BY from_id, raw")
-    .all()
+    .query<Row>(`SELECT kind, from_id, to_id, raw FROM relation WHERE to_id IS NULL${scope} ORDER BY from_id, raw`)
+    .all(...(corpora ?? []).map((corpus) => `${corpus}:%`))
     .map((row) => ({ kind: row.kind, id: row.from_id, raw: row.raw }));
 }

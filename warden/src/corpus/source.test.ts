@@ -24,6 +24,13 @@ describe("weightOf()", () => {
     expect(weightOf("project", "src/ui/README.md")).toBe(0.9);
     expect(weightOf("project", "README.md")).toBe(0.9);
   });
+
+  // Measured, not asserted. At 1.1 the library's routing document took top-1 from
+  // `canon:APP_ARCHITECTURE.md §5a` and cost three golden queries across the two consumer
+  // repositories; 0.95 is the highest weight at which none of them moves.
+  it("sits a dependency document below this repository's own docs and above a README", () => {
+    expect(weightOf("dependency", "forge/UI_CLASS_COMPOSITION.md")).toBe(0.95);
+  });
 });
 
 describe("canonSources()", () => {

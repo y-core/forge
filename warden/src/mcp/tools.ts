@@ -1,3 +1,4 @@
+import { parseCorpus } from "../corpus/ident";
 import { changed } from "../impact/git";
 import { impact } from "../impact/impact";
 import { renderImpact } from "../impact/render";
@@ -5,6 +6,7 @@ import type { Knowledge } from "../index/open";
 import { outline, readSection } from "../search/read";
 import { related } from "../search/related";
 import { corpusLabel, search } from "../search/search";
+import { CORPORA } from "../types";
 
 /** A tool's declared shape, as MCP's `tools/list` returns it. @public */
 export interface ToolSpec {
@@ -21,12 +23,16 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: "knowledge_search",
     description:
-      "Rank the governing corpus against a question. Returns chunk ids of the form `canon:CODE_RULES.md#5c` — pass one to knowledge_read. Each hit carries a coverage figure from 0 to 1: how much of your question that section actually addresses. A question the corpus does not cover returns nothing at all rather than a near miss, so an empty result is an answer — it means no rule here governs what you asked. Search before inferring any architectural rule.",
+      "Rank the governing corpus against a question. Returns chunk ids of the form `canon:CODE_RULES.md#5c` — pass one to knowledge_read. Each hit carries a coverage figure from 0 to 1: how much of your question that section actually addresses. A question the corpus does not cover returns nothing at all rather than a near miss, so an empty result is an answer — it means no rule here governs what you asked. Hits are drawn from three corpora: the fleet canon, this repository's own documents, and the installed library's consumer-facing documents — the last governs the library rather than this repository, so read it as advice on using the library and never as a rule about where this repository's own code goes. Search before inferring any architectural rule.",
     inputSchema: {
       type: "object",
       properties: {
         query: { ...STRING, description: "The question, in the words you would ask a colleague" },
-        corpus: { ...STRING, enum: ["canon", "project"], description: "`canon` for the fleet's law, `project` for this repository's own" },
+        corpus: {
+          ...STRING,
+          enum: [...CORPORA],
+          description: "`canon` for the fleet's law, `project` for this repository's own, `dependency` for the installed library's",
+        },
         path: { ...STRING, description: "One directory or one document, matched whole — `docs` or `docs/NAMESPACES.md`, never a pattern" },
         limit: { type: "number", description: "Maximum hits (default 10)" },
       },
@@ -108,8 +114,15 @@ export function callTool(knowledge: Knowledge, name: string, args: Record<string
     case "knowledge_search": {
       const query = typeof args.query === "string" ? args.query : "";
       if (query.trim() === "") return failure("knowledge_search needs a `query`");
+      // A misspelled corpus reaches SQL as a literal matching no row, and this tool's own contract
+      // is that an empty result means nothing here governs the question. Refused rather than served.
+      const corpus = typeof args.corpus === "string" ? parseCorpus(args.corpus) : undefined;
+      if (typeof args.corpus === "string" && corpus === undefined) {
+        return failure(`knowledge_search: \`corpus\` must be one of ${CORPORA.join(", ")}, not "${args.corpus}"`);
+      }
       const hits = search(knowledge.db, query, {
-        ...(typeof args.corpus === "string" ? { corpus: args.corpus } : {}),
+        ...(corpus === undefined ? {} : { corpus }),
+        aliases: knowledge.aliases,
         ...(typeof args.path === "string" ? { path: args.path } : {}),
         limit: typeof args.limit === "number" ? args.limit : 10,
       });

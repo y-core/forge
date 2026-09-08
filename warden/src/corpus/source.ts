@@ -4,6 +4,7 @@ import { posix, relative, resolve, sep } from "node:path";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import { CANON_ROOT } from "../paths";
 import type { Corpus, SourceDoc, Tree } from "../types";
+import { DEPENDENCY_WEIGHT, librarySources } from "./dependency";
 
 const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
 
@@ -28,6 +29,7 @@ const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
  *  output rather than from this paragraph. @public */
 export function weightOf(corpus: Corpus, path: string): number {
   if (corpus === "canon") return 1.3;
+  if (corpus === "dependency") return DEPENDENCY_WEIGHT;
   if (path === "src/ui/design/floor.md") return 1.3;
   if (path.startsWith("docs/")) return 1.2;
   if (path.startsWith("src/ui/design/")) return 1.0;
@@ -60,11 +62,15 @@ export function localSources(root: string, docsDir = "docs"): SourceDoc[] {
     .map((path) => ({ corpus: "project" as const, path, file: resolve(root, path), weight: weightOf("project", path) }));
 }
 
-/** Every document one index covers, canon first, each path posix-spelled so an id is host-independent. @public */
-export function discover(root: string, kind: Tree, options: { canonRoot?: string; docsDir?: string } = {}): SourceDoc[] {
+/** Every document one index covers, canon first, each path posix-spelled so an id is host-independent.
+ *
+ *  `dependencyRoot` defaults to undefined and nothing supplies it by default: the installed
+ *  library's documents are served only where a repository has asked for them. @public */
+export function discover(root: string, kind: Tree, options: { canonRoot?: string; docsDir?: string; dependencyRoot?: string } = {}): SourceDoc[] {
   const canon = canonSources(kind, options.canonRoot ?? CANON_ROOT);
   const local = localSources(root, options.docsDir ?? "docs");
-  return [...canon, ...local].map((doc) => ({ ...doc, path: doc.path.split(sep).join(posix.sep) }));
+  const library = options.dependencyRoot === undefined ? [] : librarySources(options.dependencyRoot);
+  return [...canon, ...local, ...library].map((doc) => ({ ...doc, path: doc.path.split(sep).join(posix.sep) }));
 }
 
 /** A repository-relative, posix-spelled path. @public */

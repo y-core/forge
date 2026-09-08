@@ -1,11 +1,12 @@
 import { type CheckResult, checkResult, type Finding, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { fnv1a } from "../corpus/hash";
 import { discover } from "../corpus/source";
 import { load } from "../index/build";
 import type { Tree } from "../types";
 
 /** What the duplication check needs to know about the project. @public */
-export interface DuplicateCheckConfig {
+export interface DuplicateCheckConfig extends DependencyOptions {
   /** Repository root. */
   root: string;
   /** The canon tree this repository is subject to. */
@@ -58,6 +59,33 @@ interface Pair {
   score: number;
 }
 
+/** One reported pair, with the class it sorts under. @public */
+export interface DuplicatePair {
+  a: string;
+  b: string;
+  score: number;
+  /** 0 a `docs/` section against the canon, 1 a README against a document, 2 anything else. */
+  klass: number;
+}
+
+/** Every pair at or above the threshold, classified and ordered exactly as the check reports them.
+ *
+ *  The measurement surface `warden probe` reads: a summary line carries the count and the highest
+ *  score, and neither says which classes moved when the corpus grows. @public */
+export function duplicatePairs(config: DuplicateCheckConfig): DuplicatePair[] {
+  const dependencyRoot = dependencyRootOf(config, config.root);
+  const sources = discover(config.root, config.kind, {
+    ...(config.docsDir === undefined ? {} : { docsDir: config.docsDir }),
+    ...(config.canonRoot === undefined ? {} : { canonRoot: config.canonRoot }),
+    ...(dependencyRoot === undefined ? {} : { dependencyRoot }),
+  });
+  const docsDir = config.docsDir ?? "docs";
+  const { pairs } = score(shingle(sources), config.threshold ?? THRESHOLD);
+  return pairs
+    .map((pair) => ({ a: pair.a.id, b: pair.b.id, score: pair.score, klass: klass(pair, docsDir) }))
+    .sort((left, right) => left.klass - right.klass || right.score - left.score || (left.a < right.a ? -1 : 1));
+}
+
 /** Reports two sections that say the same thing, which the single-home rule forbids.
  *
  *  Works off a corpus parse rather than the index: `search_body` lives only in the FTS table and in
@@ -66,9 +94,11 @@ interface Pair {
  *  not a build to stop. @public */
 export function checkDuplicates(config: DuplicateCheckConfig): CheckResult {
   const threshold = config.threshold ?? THRESHOLD;
+  const dependencyRoot = dependencyRootOf(config, config.root);
   const sources = discover(config.root, config.kind, {
     ...(config.docsDir === undefined ? {} : { docsDir: config.docsDir }),
     ...(config.canonRoot === undefined ? {} : { canonRoot: config.canonRoot }),
+    ...(dependencyRoot === undefined ? {} : { dependencyRoot }),
   });
 
   if (sources.length === 0) {
@@ -148,11 +178,19 @@ function score(sections: readonly Section[], threshold: number): { pairs: Pair[]
 
 /** Which class a pair belongs to, lowest first. The two the single-home rule is actually about lead:
  *  a `docs/` section against the canon rule it should be citing, then a README against the document
- *  it should be pointing at. */
+ *  it should be pointing at.
+ *
+ *  **A dependency-against-project pair is its own class, and it is last.** It is not a single-home
+ *  violation at all — the library states a rule about itself and the consumer restates the part
+ *  that binds their own code, which is what a consumer's document is for. Without a class of its
+ *  own it would sort as `2` alongside the real findings and, at a corpus this size, push them past
+ *  the reporting cap. */
 function klass(pair: Pair, docsDir: string): number {
-  const canon = [pair.a, pair.b].filter((section) => section.corpus === "canon").length;
+  const corpora = [pair.a.corpus, pair.b.corpus];
+  const canon = corpora.filter((corpus) => corpus === "canon").length;
   const docs = [pair.a, pair.b].filter((section) => section.path.startsWith(`${docsDir}/`)).length;
   if (canon === 1 && docs === 1) return 0;
   const readmes = [pair.a, pair.b].filter((section) => section.path.endsWith("README.md")).length;
-  return readmes === 1 ? 1 : 2;
+  if (readmes === 1) return 1;
+  return corpora.includes("dependency") ? 3 : 2;
 }

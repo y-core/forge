@@ -25,6 +25,13 @@ const CANON_TITLE = "The fleet canon";
 
 const LOCAL_TITLE = "This repository — its own documents";
 
+const DEPENDENCY_TITLE = "The installed library — advisory, and about the library rather than this repository";
+
+/** The heading each corpus groups under in the served catalogue. Keyed rather than conditional: a
+ *  `row.corpus === "project" ? … : …` put every corpus that was not `project` under the fleet
+ *  canon's heading, which is the first thing an agent reads. */
+const GROUPS: Record<string, string> = { project: LOCAL_TITLE, dependency: DEPENDENCY_TITLE };
+
 /** What a rendered catalogue covers. @public */
 export interface CatalogueScope {
   /** Also list this repository's own documents, under a heading of their own. */
@@ -53,7 +60,7 @@ export function renderCatalogue(db: Database, scope: CatalogueScope = {}): strin
   const sections: string[] = [header(local ? "all" : "canon")];
   let group: string | null = null;
   for (const row of rows) {
-    const title = row.corpus === "project" ? LOCAL_TITLE : local ? CANON_TITLE : (TREE_TITLES[row.tree ?? ""] ?? row.tree ?? "Canon");
+    const title = GROUPS[row.corpus] ?? (local ? CANON_TITLE : (TREE_TITLES[row.tree ?? ""] ?? row.tree ?? "Canon"));
     if (title !== group) {
       group = title;
       sections.push(`\n## ${title}\n`);

@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 
 import { COLUMN_WEIGHTS } from "../index/schema";
+import type { Corpus } from "../types";
+import type { AliasTable } from "./aliases";
 import { coverage } from "./coverage";
 import { matchExpression } from "./query";
 
@@ -19,6 +21,17 @@ export interface Hit {
   coverage: number;
 }
 
+/** Exhaustive by construction: a corpus added to the type without a label here fails to compile,
+ *  where the two-arm conditional this replaced would have rendered it as "this repository". */
+const CORPUS_LABELS: Record<Corpus, string> = {
+  canon: "fleet canon",
+  project: "this repository",
+  // Advisory, and said so: these rules govern the library, not the repository asking. The label is
+  // not what keeps a ruling about the library's own tree out of a consumer's answers — the
+  // `audience` frontmatter key is, by never indexing one.
+  dependency: "installed @y-core/forge (advisory)",
+};
+
 /** Which corpus a section belongs to, in words rather than as an id prefix.
  *
  *  **A repository specialises the canon under the same filename and the same section numbers**, so
@@ -27,19 +40,24 @@ export interface Hit {
  *  hit spells it out, because a reader who takes the general rule for the local one — or the reverse
  *  — has been misled by the output, not by the corpus. @public */
 export function corpusLabel(corpus: string): string {
-  return corpus === "canon" ? "fleet canon" : "this repository";
+  return CORPUS_LABELS[corpus as Corpus] ?? corpus;
 }
 
 /** What a search may be narrowed by. @public */
 export interface SearchOptions {
-  /** `canon` or `project`; omit for both. */
-  corpus?: string;
+  /** One corpus; omit for all of them. Typed rather than a string, so an internal caller cannot
+   *  reach SQL with a spelling no row carries and get an empty result read as an answer. */
+  corpus?: Corpus;
   /** A whole path or a directory of them, matched on the segment boundary and never as a pattern. */
   path?: string;
   /** Maximum hits. Defaults to 10. */
   limit?: number;
   /** Minimum coverage a hit must carry. Defaults to `FLOOR`; 0 disables the floor entirely. */
   floor?: number;
+  /** The bridge table this repository is served. Defaults to every bridge in the file — correct for
+   *  a caller with no tree in hand, and wrong for one that has it, since a bridge aimed at a
+   *  vocabulary this corpus lacks is noise on every query that triggers it. */
+  aliases?: AliasTable;
 }
 
 interface Row {
@@ -109,7 +127,7 @@ function rank(hit: { score: number; coverage: number }): number {
  *  returns exactly `limit` hits whatever their quality, and a reader told to search before
  *  inferring a rule reads the best of a bad set and infers from that instead. @public */
 export function search(db: Database, query: string, options: SearchOptions = {}): Hit[] {
-  const match = matchExpression(query);
+  const match = matchExpression(query, options.aliases);
   if (match === "") return [];
 
   const limit = options.limit ?? 10;
@@ -144,6 +162,7 @@ export function search(db: Database, query: string, options: SearchOptions = {})
     db,
     query,
     rows.map((row) => row.rowid),
+    options.aliases,
   );
 
   return rows

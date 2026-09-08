@@ -73,7 +73,7 @@ describe("handle()", () => {
       "knowledge_impact",
     ]);
     expect(resources?.resources).toHaveLength(1);
-    expect(templates?.resourceTemplates).toHaveLength(2);
+    expect(templates?.resourceTemplates).toHaveLength(3);
   });
 
   it("refuses a resource URI it does not serve, by name", () => {

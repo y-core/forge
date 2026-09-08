@@ -1,7 +1,9 @@
 import type { Database } from "bun:sqlite";
 
+import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { packageNameOf } from "../paths";
+import { type AliasTable, aliasesFor } from "../search/aliases";
 import type { SourceDoc, Tree } from "../types";
 import { build, type BuildReport } from "./build";
 import { indexPath, openDatabase } from "./db";
@@ -13,6 +15,8 @@ export interface Knowledge {
   /** The repository the index was built from — what a caller needs to reach the tree behind it. */
   root: string;
   sources: SourceDoc[];
+  /** The bridge table this repository's tree earns, resolved once rather than per query. */
+  aliases: AliasTable;
   /** Empty when the index is current; otherwise the line a caller renders above its results. */
   advisory: string;
   /** Re-reads the corpus and refreshes the index if it has moved on. */
@@ -21,7 +25,7 @@ export interface Knowledge {
 }
 
 /** Options every entry point here shares. @public */
-export interface OpenOptions {
+export interface OpenOptions extends DependencyOptions {
   path?: string;
   canonVersion?: string;
   canonRoot?: string;
@@ -29,9 +33,11 @@ export interface OpenOptions {
 }
 
 function sourcesOf(root: string, kind: Tree, options: OpenOptions): SourceDoc[] {
+  const dependencyRoot = dependencyRootOf(options, root);
   return discover(root, kind, {
     ...(options.canonRoot === undefined ? {} : { canonRoot: options.canonRoot }),
     ...(options.docsDir === undefined ? {} : { docsDir: options.docsDir }),
+    ...(dependencyRoot === undefined ? {} : { dependencyRoot }),
   });
 }
 
@@ -51,6 +57,7 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
     db,
     root,
     sources: [],
+    aliases: aliasesFor(kind),
     advisory: "",
     refresh: () => {
       const sources = sourcesOf(root, kind, options);

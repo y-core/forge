@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { checkDuplicates } from "./duplicates";
+import { checkDuplicates, duplicatePairs } from "./duplicates";
 
 function doc(gloss: string, body: string): string {
   return `---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: ${gloss}\n\n## 1. One\n\n${body}\n`;
@@ -111,5 +111,30 @@ describe("checkDuplicates()", () => {
 
     expect(result.findings[0]?.message).toContain("`canon:CODE_RULES.md#1` and `project:docs/CODE_RULES.md#1`");
     expect(result.findings[0]?.file).toBe("CODE_RULES.md");
+  });
+});
+
+describe("duplicatePairs()", () => {
+  it("carries the class the check sorts by, which a summary line cannot say", () => {
+    const other = RULE.replace("deleted", "removed");
+    const pairs = duplicatePairs(
+      config(
+        repo("warden-dup-pairs-", [
+          ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", RULE)],
+          ["docs/CODE_RULES.md", doc("the comment budget", other)],
+          ["README.md", doc("the comment budget", RULE)],
+        ]),
+      ),
+    );
+
+    expect(pairs.map((pair) => [pair.klass, pair.a, pair.b])).toEqual([
+      [0, "canon:CODE_RULES.md#1", "project:docs/CODE_RULES.md#1"],
+      [1, "canon:CODE_RULES.md#1", "project:README.md#1"],
+      [1, "project:README.md#1", "project:docs/CODE_RULES.md#1"],
+    ]);
+  });
+
+  it("reports nothing where the check reports nothing", () => {
+    expect(duplicatePairs(config(repo("warden-dup-pairs-none-", [["warden/canon/libs/CODE_RULES.md", doc("the budget", RULE)]])))).toEqual([]);
   });
 });

@@ -125,9 +125,10 @@ are built out of.
 | `DocsCheckConfig` | type | What `checkDocs` needs: the root, the package name, the exports map, and the extra directories to hold. |
 | `DocKind` | type | Which canon tree a directory's documents are read as — `shared`, `libs` or `apps`. |
 | `ExtraDir` | type | One directory outside `docs/` to hold, with the kind its citations resolve against, and whether its documents are numbered governing prose. |
+| `FrontmatterRule` | type | One extra frontmatter key a directory's documents must carry, and the values it may take. |
 | `parseSections` | function | A document's numbered sections, with the line each opens on. |
 | `stripFences` | function | The prose of a document with every fenced block removed, so a rule never fires on a code sample. |
-| `validateFrontmatter` | function | Holds a document's frontmatter to the exact `title` and `description` pair. |
+| `validateFrontmatter` | function | Holds a document's frontmatter to `title`, `description` and whichever extra keys the caller requires. |
 | `validateNoRot` | function | Reports historical phrasing — a governing document carries no history. |
 | `findSubpathCitations` | function | Every published subpath a markdown source cites. |
 | `SubpathCitation` | type | One cited subpath, and the line it was cited on. |
@@ -174,7 +175,7 @@ against.
 | --- | --- | --- |
 | `search` | function | BM25 over the index, scaled by the document's weight and held to a coverage floor. |
 | `Hit` | type | One ranked hit: its chunk id, its corpus and path, its heading trail, its score and its coverage. |
-| `SearchOptions` | type | What a search may be narrowed by — corpus, path, limit and floor. |
+| `SearchOptions` | type | What a search may be narrowed by — corpus, path, limit, floor and the bridge table. |
 | `corpusLabel` | function | Which corpus a section belongs to, in words rather than as an id prefix. |
 | `coverage` | function | The share of a query's information each candidate chunk carries. |
 | `documentFrequency` | function | How many chunks contain each term of a query. |
@@ -185,19 +186,24 @@ against.
 | `Section` | type | One section read whole: its id, corpus, path, title, heading trail and body. |
 | `OutlineEntry` | type | One outline line: the section, its title, its summary and its nesting level. |
 | `related` | function | What a section defers to, what it cites, and what cites it. |
-| `unresolved` | function | The citations that resolved to no indexed document. |
+| `unresolved` | function | The citations that resolved to no indexed document, optionally scoped to the corpora a repository owns. |
 | `Related` | type | One edge, resolved or raw. |
 | `aliasTerms` | function | A query's terms with the corpus's own synonyms folded in. |
-| `ALIASES` | const | The synonym table retrieval expands a query against. |
+| `ALIASES` | const | Every bridge in the file, whatever tree it belongs to — the default for a caller naming none. |
+| `AliasTable` | type | A bridge table: each term a reader might type, mapped to the terms the corpus files it under. |
+| `aliasesFor` | function | The bridges a repository of one tree is served — the shared table plus its own. |
+| `SHARED` | const | The bridges every repository earns, whatever tree it is subject to. |
+| `LIBS` | const | The bridges whose targets are the library's own vocabulary. |
+| `APPS` | const | The bridges an application's corpus earns and a library's does not. |
 | `matchExpression` | function | An FTS match expression for a natural-language question. |
 | `terms` | function | A query reduced to its searchable terms. |
 | `openIndex` | function | Opens the index, rebuilding it when it is stale, and carries an advisory when it could not. |
 | `rebuild` | function | Rebuilds the index from disk and reports what it wrote. |
-| `Knowledge` | type | An open index: the database, the advisory, and the handle that closes it. |
-| `OpenOptions` | type | Where the index lives, which canon root to read, and the canon version to stamp. |
+| `Knowledge` | type | An open index: the database, its bridge table, the advisory, and the handle that closes it. |
+| `OpenOptions` | type | Where the index lives, which canon root to read, the canon version to stamp, and whether the installed library is served. |
 | `build` | function | Writes documents, chunks and relations into an open database. |
 | `load` | function | Reads and chunks one document from disk. |
-| `BuildReport` | type | What a build wrote: documents, chunks, relations, and how many citations resolved to nothing. |
+| `BuildReport` | type | What a build wrote: documents, chunks, relations, how many citations resolved to nothing, and which named more than one document. |
 | `openDatabase` | function | Opens a database at a path, creating the schema when it is absent. |
 | `indexPath` | function | Where the working index lives for a repository. |
 | `gateIndexPath` | function | Where the gate's own index lives, kept apart from the working one. |

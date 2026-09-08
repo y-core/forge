@@ -1,6 +1,7 @@
 ---
 title: Source of Truth Register
 description: "Which file owns each fact in forge, so every other document cites it and restates none of it."
+audience: internal
 ---
 
 # Source of Truth Register

@@ -1,6 +1,7 @@
 ---
 title: Code Review Standards
 description: "How to review forge code: the blocking invariants, a detection command per rule, severity calibration, and the known false positives."
+audience: internal
 ---
 
 # Code Review Standards

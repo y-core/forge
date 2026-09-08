@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Chunk, SourceDoc } from "../types";
-import { citationTarget, headerOf, relationsOf, resolveDoc } from "./relate";
+import { citationTarget, headerOf, relationsOf, resolveCitation, resolveDoc } from "./relate";
 
 const SOURCES: SourceDoc[] = [
   { corpus: "canon", tree: "libs", path: "CODE_RULES.md", file: "/c/CODE_RULES.md", weight: 1.3 },
@@ -64,6 +64,30 @@ describe("resolveDoc()", () => {
   });
 });
 
+describe("resolveCitation()", () => {
+  // `resolveDoc` answered `undefined` for both, and the two are different defects: one is a typo or
+  // a renamed document, the other is a citation that needs a path.
+  it("tells a spelling that names nothing apart from one that names several", () => {
+    expect(resolveCitation("ABSENT.md", SOURCES)).toEqual({ kind: "none" });
+    expect(resolveCitation("TESTING.md", SOURCES)).toEqual({ kind: "ambiguous", ids: ["canon:TESTING.md", "project:docs/TESTING.md"] });
+  });
+
+  it("resolves through the citing document's own tree first", () => {
+    expect(resolveCitation("TESTING.md", SOURCES, DOC)).toEqual({ kind: "resolved", id: "project:docs/TESTING.md" });
+  });
+
+  // A bare filename in a consumer's own document never means the installed library's copy: they
+  // wrote it about their own repository.
+  it("puts the installed library last, behind the canon and this repository's own", () => {
+    const library: SourceDoc = { corpus: "dependency", path: "forge/TESTING.md", file: "/n/forge/TESTING.md", weight: 1.1 };
+    const citing: SourceDoc = { corpus: "dependency", path: "forge/OTHER.md", file: "/n/forge/OTHER.md", weight: 1.1 };
+
+    expect(resolveCitation("TESTING.md", [...SOURCES, library], DOC)).toEqual({ kind: "resolved", id: "project:docs/TESTING.md" });
+    // From inside the library, its own corpus wins on the first tier rather than on the last one.
+    expect(resolveCitation("TESTING.md", [...SOURCES, library], citing)).toEqual({ kind: "resolved", id: "dependency:forge/TESTING.md" });
+  });
+});
+
 describe("headerOf()", () => {
   it("takes everything before the first level-2 heading", () => {
     expect(headerOf("---\ntitle: X\n---\n\n> Defers to: A.md\n\n## 1. One\n\nBody.")).toContain("Defers to");
@@ -112,6 +136,13 @@ describe("relationsOf()", () => {
 describe("citationTarget()", () => {
   it("builds the chunk id a `DOC.md §N` citation names", () => {
     expect(citationTarget("CODE_RULES.md", "5c", SOURCES)).toBe("canon:CODE_RULES.md#5c");
+  });
+
+  // A bare `find` returned the first match in discovery order, and `discover` puts the canon first
+  // — so every filename spelled in two corpora resolved to the canon's copy, whoever cited it.
+  it("settles a colliding filename by the citing document, not by discovery order", () => {
+    expect(citationTarget("TESTING.md", "3b", SOURCES, DOC)).toBe("project:docs/TESTING.md#3b");
+    expect(citationTarget("TESTING.md", "3b", SOURCES)).toBeUndefined();
   });
 });
 

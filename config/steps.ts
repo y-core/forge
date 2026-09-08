@@ -153,6 +153,13 @@ export const STEPS: readonly Step[] = [
       // All three trees, `apps` included: forge houses the canon, so a stale gloss here ships to
       // every consumer of it, and no consumer has the files to catch it.
       agreementDirs: ["warden/canon", "src/ui/design"],
+      // What decides whether a document is served into a consuming repository at all. Declared in
+      // frontmatter rather than derived, because the alternatives do not work: `governs` measures
+      // what a document talks about and not who should read it, and `NAMESPACES.md` mints three
+      // subpath edges — one from a sentence saying a subpath does *not* exist — while
+      // `UI_CLASS_COMPOSITION.md` and `STATE_ATTRIBUTES.md` mint none. Required here so a new
+      // document fails closed rather than defaulting into a consumer's index.
+      requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
       documentedNonExports: ["./auth", "./handler", "./all", "./crypto"],
       // Written by the compiler and by build configuration, never by a consumer, so a documented row
       // for any of them would advertise an import the reader must not write.

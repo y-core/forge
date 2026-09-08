@@ -1,6 +1,7 @@
 ---
 title: UI Design Guidance
 description: "Why the src/ui/design corpus exists, its two-tier rule model, the stable rule-id scheme, its anti-drift gate contract, and the doc boundary it holds."
+audience: consumer
 ---
 
 # UI Design Guidance

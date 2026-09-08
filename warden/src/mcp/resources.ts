@@ -1,4 +1,5 @@
 import { renderCatalogue } from "../catalogue/render";
+import { parseCorpus } from "../corpus/ident";
 import type { Knowledge } from "../index/open";
 import { readDocument } from "../search/read";
 
@@ -32,7 +33,7 @@ export const RESOURCES: readonly ResourceSpec[] = [
   },
 ];
 
-/** The two templates — one per corpus. @public */
+/** One template per corpus. @public */
 export const TEMPLATES: readonly ResourceTemplate[] = [
   {
     uriTemplate: "knowledge://canon/{path}",
@@ -44,6 +45,12 @@ export const TEMPLATES: readonly ResourceTemplate[] = [
     uriTemplate: "knowledge://project/{path}",
     name: "Repository document",
     description: "One of this repository's own governing documents, whole.",
+    mimeType: "text/markdown",
+  },
+  {
+    uriTemplate: "knowledge://dependency/{path}",
+    name: "Library document",
+    description: "One consumer-facing document of the installed library, whole. Advisory: it governs the library, not this repository.",
     mimeType: "text/markdown",
   },
 ];
@@ -59,12 +66,13 @@ export function readResource(knowledge: Knowledge, uri: string): ResourceContent
     return { contents: [{ uri, mimeType: "text/markdown", text: renderCatalogue(knowledge.db, { local: true }) }] };
   }
 
-  const canon = uri.match(/^knowledge:\/\/canon\/(.+)$/);
-  const project = uri.match(/^knowledge:\/\/project\/(.+)$/);
-  const path = canon?.[1] ?? project?.[1];
-  if (path === undefined) return undefined;
+  // The corpus comes out of the URI rather than being inferred from which pattern failed: with a
+  // third template, "not canon" stopped meaning "project".
+  const matched = uri.match(/^knowledge:\/\/([a-z]+)\/(.+)$/);
+  const corpus = parseCorpus(matched?.[1] ?? "");
+  const path = matched?.[2];
+  if (corpus === undefined || path === undefined) return undefined;
 
-  const corpus = canon === null ? "project" : "canon";
   const sections = readDocument(knowledge.db, path).filter((section) => section.corpus === corpus);
   if (sections.length === 0) return undefined;
 

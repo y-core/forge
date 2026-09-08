@@ -1,6 +1,7 @@
 ---
 title: Library Architecture
 description: "Structural principles: the dependency facade, the runtime-only no-build-step constraint, demand composition, and the Web-APIs-only rule."
+audience: internal
 ---
 
 # Library Architecture

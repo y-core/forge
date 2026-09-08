@@ -1,6 +1,7 @@
 ---
 title: Security Hardening
 description: "The security namespace: CSP nonce headers, CORS, origin-guard tiering, rate limiting, request identity, and the Cloudflare-header trust boundary."
+audience: consumer
 ---
 
 # Security Hardening

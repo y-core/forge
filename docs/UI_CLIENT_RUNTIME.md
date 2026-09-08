@@ -1,6 +1,7 @@
 ---
 title: UI Client Runtime
 description: "The browser-only UI tier: mount controllers, signals, lazy loading, the htmx side-effect import, and the hard SSR boundary."
+audience: consumer
 ---
 
 # UI Client Runtime

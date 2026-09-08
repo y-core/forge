@@ -1,6 +1,7 @@
 ---
 title: Storage Bindings
 description: "The D1, KV, and R2 namespaces: typed clients, codecs, object serving, the resolve/validate binding pattern, and dev degradation."
+audience: consumer
 ---
 
 # Storage Bindings

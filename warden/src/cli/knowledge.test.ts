@@ -13,7 +13,7 @@ function tree(): CommandBase {
 }
 
 describe("the knowledge commands", () => {
-  it("mounts the six knowledge verbs, the catalogue and the server", () => {
+  it("mounts the seven knowledge verbs, the catalogue and the server", () => {
     expect(tree().commands.map((command) => command.name)).toEqual([
       "index",
       "search",
@@ -21,6 +21,7 @@ describe("the knowledge commands", () => {
       "outline",
       "related",
       "impact",
+      "probe",
       "catalogue",
       "serve",
     ]);

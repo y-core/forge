@@ -107,6 +107,7 @@ declare module "node:fs" {
     isFile(): boolean;
   }
   export function statSync(path: string): Stats;
+  export function realpathSync(path: string): string;
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function mkdtempSync(prefix: string): string;
   export function copyFileSync(src: string, dest: string): void;

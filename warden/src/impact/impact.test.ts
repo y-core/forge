@@ -124,6 +124,23 @@ describe("impact()", () => {
     db.close();
   });
 
+  // A dependency document lives under `node_modules` and can never be "changed" by a diff in this
+  // repository — `repoRelative` maps a changed path against this root and never matches one. That is
+  // correct; the test exists so a refactor cannot start emitting `../../node_modules/…` ids.
+  it("never names an installed library's document, whatever a diff touched", () => {
+    const { root, db, sources } = fixture(files);
+    const library = join(mkdtempSync(join(tmpdir(), "warden-impact-library-")), "UI.md");
+    mkdirSync(dirname(library), { recursive: true });
+    writeFileSync(library, OWNER, "utf-8");
+    const withLibrary = [...sources, { corpus: "dependency" as const, path: "forge/UI.md", file: library, weight: 0.95 }];
+
+    const report = impact(db, root, withLibrary, "HEAD", [{ path: "forge/UI.md", ranges: [{ start: 1, end: 40 }] }]);
+
+    expect(report.touched).toEqual([]);
+    expect(report.unindexed).toEqual(["forge/UI.md"]);
+    db.close();
+  });
+
   it("finds no section when the changed lines fall outside every one — a frontmatter edit", () => {
     const { root, db, sources } = fixture(files);
     const report = impact(db, root, sources, "HEAD", [{ path: "docs/OWNER.md", ranges: [{ start: 2, end: 2 }] }]);

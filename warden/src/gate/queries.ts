@@ -1,10 +1,11 @@
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { build } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { freshness } from "../index/freshness";
 import { packageNameOf } from "../paths";
-import { ALIASES } from "../search/aliases";
+import { type AliasTable, aliasesFor } from "../search/aliases";
 import { documentFrequency } from "../search/coverage";
 import { search } from "../search/search";
 import type { Tree } from "../types";
@@ -12,7 +13,7 @@ import { canonVersion } from "../version";
 import { type Dimension, GOLDEN, type GoldenQuery, NEGATIVE } from "./golden";
 
 /** What the golden-query check needs to know about the project. @public */
-export interface GoldenCheckConfig {
+export interface GoldenCheckConfig extends DependencyOptions {
   /** Repository root. */
   root: string;
   /** The canon tree this repository is subject to. */
@@ -29,8 +30,8 @@ export interface GoldenCheckConfig {
   indexPath?: string;
   /** Whether every canon document must be top-1 for at least one query. Defaults to `true`. */
   coverage?: boolean;
-  /** Replaces the shipped alias table — the bridges held to reaching something. */
-  aliases?: ReadonlyMap<string, readonly string[]>;
+  /** Replaces the tree's own alias table — the bridges held to reaching something. */
+  aliases?: AliasTable;
 }
 
 const TOP_N = 5;
@@ -73,9 +74,11 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
   const queries = config.queries ?? GOLDEN;
   if (queries.length === 0) return scannedNothing("the golden set is empty — retrieval is unmeasured", "warden:queries", "read");
 
+  const dependencyRoot = dependencyRootOf(config, config.root);
   const sources = discover(config.root, config.kind, {
     ...(config.docsDir === undefined ? {} : { docsDir: config.docsDir }),
     ...(config.canonRoot === undefined ? {} : { canonRoot: config.canonRoot }),
+    ...(dependencyRoot === undefined ? {} : { dependencyRoot }),
   });
   const db = openDatabase(config.indexPath ?? gateIndexPath(config.root));
   try {
@@ -83,6 +86,10 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     // a second unconditional build is 150 ms of repeated work. Run alone, the index is absent or
     // stale — never fresh — so this still builds what it measures.
     if (!freshness(db, sources, canonVersion()).fresh) build(db, sources, canonVersion(), packageNameOf(config.root));
+    // Resolved once, above every query: the table decides both the MATCH expression and the
+    // coverage denominator, so a run that scored with one table and warned about another would be
+    // measuring something nothing serves.
+    const aliases = config.aliases ?? aliasesFor(config.kind);
     const findings: Finding[] = [];
     const topOne = new Set<string>();
     const measured = new Map<Dimension, Rollup>();
@@ -90,7 +97,7 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     let loudest = 0;
 
     for (const golden of queries) {
-      const hits = search(db, golden.query, { limit: Math.max(TOP_N, golden.within ?? 3) });
+      const hits = search(db, golden.query, { aliases, limit: Math.max(TOP_N, golden.within ?? 3) });
       const first = hits[0];
       if (first !== undefined) topOne.add(first.id.split("#")[0] ?? first.id);
 
@@ -131,8 +138,8 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     // The peak of the whole pool, never `hits[0]`: BM25 sets the order and coverage sets admission,
     // so the hit a floor has to refuse is routinely not the one BM25 ranked first.
     for (const query of config.negative ?? NEGATIVE) {
-      const offered = search(db, query, { limit: TOP_N });
-      for (const hit of search(db, query, { limit: POOL, floor: 0 })) loudest = Math.max(loudest, hit.coverage);
+      const offered = search(db, query, { aliases, limit: TOP_N });
+      for (const hit of search(db, query, { aliases, limit: POOL, floor: 0 })) loudest = Math.max(loudest, hit.coverage);
       if (offered.length > 0) {
         findings.push(
           fail(
@@ -165,7 +172,6 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     // nothing — dead weight that could sit there for years, since a bridge failing is indistinguishable
     // from a bridge nobody needed. Warned rather than failed: the table is the fleet's, and a
     // consumer's corpus legitimately lacks some of its vocabulary.
-    const aliases = config.aliases ?? ALIASES;
     let live = 0;
     let bridges = 0;
     for (const [term, targets] of aliases) {

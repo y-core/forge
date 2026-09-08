@@ -28,8 +28,13 @@ export interface Divergence {
   detail: string;
 }
 
-/** Which corpus a document belongs to: the fleet's, or this repository's own. @public */
-export type Corpus = "canon" | "project";
+/** Which corpus a document belongs to: the fleet's, this repository's own, or an installed
+ *  dependency's — the library's consumer-facing documents, served where the library is not. @public */
+export type Corpus = "canon" | "project" | "dependency";
+
+/** Every corpus, in the order a tie between them is settled. One list, so a new corpus cannot be
+ *  added to the type and silently missed by a validator. @public */
+export const CORPORA: readonly Corpus[] = ["canon", "project", "dependency"];
 
 /** Which canon tree a document belongs to. Project documents carry none. @public */
 export type Tree = "shared" | "libs" | "apps";
@@ -79,4 +84,7 @@ export interface Relation {
   kind: "defers" | "cites" | "governs";
   to?: string;
   raw: string;
+  /** The ids a citation named more than one of. In memory only — never a column, because it is
+   *  evidence about the citation's spelling rather than a fact about the corpus. */
+  ambiguous?: readonly string[];
 }

@@ -1,6 +1,7 @@
 ---
 title: HTMX Integration
 description: "The trust posture governing server-side HTMX attribute emission: which values must be developer-supplied, and why none of them are sanitized."
+audience: consumer
 ---
 
 # HTMX Integration

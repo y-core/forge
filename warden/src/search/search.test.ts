@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
-import { search } from "./search";
+import { corpusLabel, search } from "./search";
 
 function doc(title: string, body: string): string {
   return `---\ntitle: ${title}\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: what it decides\n\n## 1. One\n\n${body}\n`;
@@ -33,6 +33,20 @@ build(
   CORPUS.map(([source]) => source),
   "1.0.0",
 );
+
+describe("corpusLabel()", () => {
+  it("names every corpus in words, and marks the library's own documents advisory", () => {
+    expect(corpusLabel("canon")).toBe("fleet canon");
+    expect(corpusLabel("project")).toBe("this repository");
+    expect(corpusLabel("dependency")).toBe("installed @y-core/forge (advisory)");
+  });
+
+  // The two-arm conditional this replaced rendered every corpus that was not `canon` as "this
+  // repository", so a third one would have been labelled as the reader's own law.
+  it("echoes a corpus it has no label for rather than passing it off as this repository's", () => {
+    expect(corpusLabel("fleet")).toBe("fleet");
+  });
+});
 
 describe("search()", () => {
   it("returns nothing for a query with no term rather than everything", () => {

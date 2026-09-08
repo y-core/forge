@@ -44,7 +44,7 @@ describe("build()", () => {
 
     const report = build(db, sources, "1.0.0");
 
-    expect(report).toEqual({ documents: 2, chunks: 2, relations: 1, unresolved: 0 });
+    expect(report).toEqual({ documents: 2, chunks: 2, relations: 1, unresolved: 0, ambiguous: [] });
     db.close();
   });
 

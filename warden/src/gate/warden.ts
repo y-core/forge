@@ -5,16 +5,17 @@ import { resolve } from "node:path";
 import { canonical } from "../../../src/tooling/gate/checks/design-system";
 import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
 import { renderCatalogue } from "../catalogue/render";
+import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
-import { build, load } from "../index/build";
+import { type BuildReport, build, load } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { packageNameOf } from "../paths";
 import { unresolved } from "../search/related";
-import type { SourceDoc, Tree } from "../types";
+import { type Corpus, CORPORA, type SourceDoc, type Tree } from "../types";
 import { canonVersion } from "../version";
 
 /** What the knowledge check needs to know about the project. @public */
-export interface WardenCheckConfig {
+export interface WardenCheckConfig extends DependencyOptions {
   /** Repository root. */
   root: string;
   /** The canon tree this repository is subject to. */
@@ -36,9 +37,11 @@ export interface WardenCheckConfig {
 export function checkWarden(config: WardenCheckConfig): CheckResult {
   const { root, kind } = config;
   const cataloguePath = config.catalogue ?? "warden/CATALOGUE.md";
+  const dependencyRoot = dependencyRootOf(config, root);
   const sources = discover(root, kind, {
     ...(config.docsDir === undefined ? {} : { docsDir: config.docsDir }),
     ...(config.canonRoot === undefined ? {} : { canonRoot: config.canonRoot }),
+    ...(dependencyRoot === undefined ? {} : { dependencyRoot }),
   });
 
   if (sources.length === 0) {
@@ -68,16 +71,31 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
       ...emptyDocuments(db),
       ...missingGloss(db, config.docsDir ?? "docs"),
       ...unresolvedRelations(db),
+      ...ambiguousCitations(report),
       ...catalogueDrift(db, root, cataloguePath),
     ];
     const warnings = findings.filter((finding) => finding.level === "warn").length;
     return checkResult(
       findings,
-      `${report.documents} documents, ${report.chunks} chunks, ${report.relations} relations, ${warnings} warning${warnings === 1 ? "" : "s"}.`,
+      `${report.documents} documents (${perCorpus(db)}), ${report.chunks} chunks, ${report.relations} relations, ${warnings} warning${warnings === 1 ? "" : "s"}.`,
     );
   } finally {
     db.close();
   }
+}
+
+/** The document count per corpus, in the fixed order, omitting a corpus this repository has none of.
+ *
+ *  **The only cheap defence against a silently empty corpus.** A misconfigured dependency root
+ *  discovers nothing, and nothing is indistinguishable from a feature switched off: every check
+ *  still passes, every query still answers, and the documents the corpus was added to reach are
+ *  simply absent. A total alone cannot say that; a per-corpus count can. */
+function perCorpus(db: Database): string {
+  const rows = db.query<{ corpus: string; n: number }>("SELECT corpus, count(*) AS n FROM source GROUP BY corpus").all();
+  const counted = new Map(rows.map((row) => [row.corpus, row.n]));
+  return CORPORA.filter((corpus) => counted.has(corpus))
+    .map((corpus) => `${counted.get(corpus) ?? 0} ${corpus}`)
+    .join(", ");
 }
 
 /** The first chunk id two sections claim, when a failed build has one to name. Re-reads the corpus
@@ -97,11 +115,23 @@ function duplicateChunkId(sources: readonly SourceDoc[]): { id: string; file: st
   return undefined;
 }
 
+/** The corpora a repository owns the files of, and may therefore be failed over.
+ *
+ *  **A gate may only fail a repository for a file that repository can edit.** A dependency document
+ *  lives inside `node_modules`, is read-only in every practical sense, and is named by a path that
+ *  does not exist in the consumer's tree — so a finding against one is a build the reader cannot
+ *  fix and a location they cannot open. Every check below is scoped by corpus rather than by how a
+ *  path happens to be spelled, so a change to that spelling cannot quietly widen them. */
+const OWNED: readonly Corpus[] = ["canon", "project"];
+
 /** A document that produced no chunk is a document nothing can retrieve. */
 function emptyDocuments(db: Database): Finding[] {
   return db
-    .query<{ path: string }>("SELECT path FROM source WHERE id NOT IN (SELECT source_id FROM chunk) ORDER BY path")
-    .all()
+    .query<{ path: string }>(
+      `SELECT path FROM source WHERE corpus IN (${OWNED.map(() => "?").join(", ")})
+         AND id NOT IN (SELECT source_id FROM chunk) ORDER BY path`,
+    )
+    .all(...OWNED)
     .map((row) => fail("produced no chunk — nothing in this document is retrievable", { file: row.path }));
 }
 
@@ -109,13 +139,17 @@ function emptyDocuments(db: Database): Finding[] {
  *  lost the corpus's own one-line summary, which is the highest-weighted retrieval column there is.
  *
  *  Governing documents only. A README numbers its headings too, but the Quick Reference convention
- *  is a rule about governing documents, and holding a README to it would be inventing one. */
+ *  is a rule about governing documents, and holding a README to it would be inventing one.
+ *
+ *  The `docsDir` prefix now narrows `project` alone. Spelled as a path test over every corpus, it
+ *  would fail a consumer's gate over a document in the installed library — citing a path that does
+ *  not exist in their tree, for prose they cannot edit. */
 function missingGloss(db: Database, docsDir: string): Finding[] {
   return db
     .query<{ id: string; path: string }>(
       `SELECT chunk.id, source.path FROM chunk JOIN source ON source.id = chunk.source_id
        WHERE chunk.gloss = '' AND chunk.section NOT LIKE '~%'
-         AND (source.corpus = 'canon' OR source.path LIKE ?) ORDER BY chunk.id`,
+         AND (source.corpus = 'canon' OR (source.corpus = 'project' AND source.path LIKE ? ESCAPE '\\')) ORDER BY chunk.id`,
     )
     .all(`${docsDir}/%`)
     .map((row) =>
@@ -126,7 +160,7 @@ function missingGloss(db: Database, docsDir: string): Finding[] {
 /** A citation whose target resolved to nothing. A warning, not a failure: the docs check already
  *  fails an unresolvable `§N`, and this sees citations that check does not scan. */
 function unresolvedRelations(db: Database): Finding[] {
-  const rows = unresolved(db);
+  const rows = unresolved(db, OWNED);
   if (rows.length === 0) return [];
   const sample = rows.slice(0, 5).map((row) => `${row.id ?? ""} → ${row.raw}`);
   return [
@@ -135,6 +169,22 @@ function unresolvedRelations(db: Database): Finding[] {
       { file: "warden" },
     ),
   ];
+}
+
+/** A citation that named more than one indexed document.
+ *
+ *  Distinguished from an unresolved one because the two are different defects and the fix differs:
+ *  one is a typo or a renamed document, the other is a citation that needs a path. Both used to
+ *  arrive as a null target, counted together and reported as naming nothing. The wording mirrors
+ *  `validate-docs`, which fails the same shape where it can see it. */
+function ambiguousCitations(report: BuildReport): Finding[] {
+  return report.ambiguous
+    .filter((entry) => OWNED.some((corpus) => entry.from.startsWith(`${corpus}:`)))
+    .map((entry) =>
+      warn(`\`${entry.raw}\` is ambiguous — ${entry.ids.join(" and ")} both match; cite the path`, {
+        file: entry.from.split("#")[0] ?? entry.from,
+      }),
+    );
 }
 
 /** The committed catalogue against the one the corpus produces now. Compared through `canonical`,

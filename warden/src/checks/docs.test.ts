@@ -262,6 +262,38 @@ describe("checkDocs() — frontmatter keys", () => {
   });
 });
 
+describe("checkDocs() — a required frontmatter key", () => {
+  const AUDIENCE = [{ dir: ".decisions", key: "audience", values: ["consumer", "internal"] }];
+  const withRule = (root: string) =>
+    checkDocs({ root, packageName: "@y-core/forge", exports: {}, requiredFrontmatter: AUDIENCE }).findings.map((finding) => finding.message);
+
+  const repo = (frontmatter: string) =>
+    fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body.").replace("title: Testing\n", `title: Testing\n${frontmatter}`),
+      "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
+    });
+
+  it("accepts a declared value and admits the key into the allowed set", () => {
+    expect(withRule(repo("audience: consumer\n"))).toEqual([]);
+  });
+
+  // A new document must fail closed rather than default into a consumer's index.
+  it("fails a document that declares nothing", () => {
+    expect(withRule(repo(""))).toEqual(["frontmatter is missing `audience` — one of `consumer` and `internal`"]);
+  });
+
+  it("fails a value it does not declare, so a typo cannot read as a decision", () => {
+    expect(withRule(repo("audience: consumers\n"))).toEqual(["frontmatter `audience: consumers` is not one of `consumer` and `internal`"]);
+  });
+
+  // The same check validates the fleet canon and every consumer's own `docs/`, none of which can
+  // carry a key one repository decided to require.
+  it("leaves a repository that configures no rule exactly as it was", () => {
+    expect(messages(repo(""))).toEqual([]);
+    expect(messages(repo("audience: consumer\n"))).toEqual(["unexpected frontmatter key `audience` — `title` and `description` only"]);
+  });
+});
+
 describe("checkDocs() — historical phrasing", () => {
   const phrases = ["previously", "no longer", "used to", "formerly", "renamed from", "fixed by", "has since", "Previously"];
 

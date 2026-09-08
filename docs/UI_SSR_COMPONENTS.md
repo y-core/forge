@@ -1,6 +1,7 @@
 ---
 title: UI SSR Components
 description: "The ui/core server-rendered component surface, its attribute pass-through contract, the ui/controls bound variants, and the server-side half of the signal-binding seam."
+audience: consumer
 ---
 
 # UI SSR Components

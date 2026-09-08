@@ -1,6 +1,7 @@
 ---
 title: State and Presentational Attributes
 description: "The data-* vocabulary a forge element emits: the state hooks both tiers share, the presentational enums, the island payload, and the closed-world sweep that holds them to one declaration."
+audience: consumer
 ---
 
 # State and Presentational Attributes

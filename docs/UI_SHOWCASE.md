@@ -1,6 +1,7 @@
 ---
 title: UI Showcase Surface
 description: "What the ui/show showcase is for, how an app registers it, and the coverage contract that keeps it demonstrating every published component."
+audience: internal
 ---
 
 # UI Showcase Surface

@@ -1,6 +1,6 @@
 import { findSubpathCitations } from "../checks/docs-parse";
-import type { Chunk, Relation, SourceDoc } from "../types";
-import { chunkId, sourceId } from "./ident";
+import { type Chunk, CORPORA, type Relation, type SourceDoc } from "../types";
+import { sourceId } from "./ident";
 
 const DEFERS = /^>\s*Defers to:/;
 const CITATION = /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*)/g;
@@ -8,23 +8,60 @@ const CITATION = /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*
 // prose writes one and resolves to the document otherwise.
 const DEFERRED_DOC = /\b((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?(?:\s+§([0-9][A-Za-z0-9]*))?/g;
 
-/** Resolves a cited `[tree/]DOC.md` spelling to a source id, or `undefined` when it names none or
- *  more than one — an ambiguous citation is left unresolved rather than guessed at.
+/** What a cited `[tree/]DOC.md` spelling named. @public */
+export type Resolution = { kind: "resolved"; id: string } | { kind: "ambiguous"; ids: readonly string[] } | { kind: "none" };
+
+/** Resolves a cited `[tree/]DOC.md` spelling, saying which of the three things happened.
  *
- *  `from` breaks the tie, and it does so in two steps rather than one. A repository names documents
- *  the canon also names, so `TESTING.md` matches twice almost everywhere; the first step, the citing
- *  document's own tree, settles a citation between siblings. **The second step is what makes a
- *  cross-tree citation resolve at all**: a `shared` rule citing `libs/ERROR_HANDLING.md` has no
- *  same-tree candidate, and without preferring its own corpus next it lands back among both matches
- *  and is dropped — silently, since an unresolved edge only warns. Corpus is the meaningful
- *  boundary here: canon prose means canon prose, whichever tree carries it. @public */
-export function resolveDoc(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): string | undefined {
+ *  **`resolveDoc` returned `undefined` for both "names nothing" and "names three things", and the
+ *  two are different defects.** One is a typo or a renamed document; the other is a citation that
+ *  needs a path. Both were dropped in silence, since an unresolved edge only warns and the warning
+ *  says the same thing about either.
+ *
+ *  `from` breaks the tie through an ordered list of tiers. A repository names documents the canon
+ *  also names, so `TESTING.md` matches twice almost everywhere; the citing document's own tree
+ *  settles a citation between siblings. **The corpus tiers are what make a cross-tree citation
+ *  resolve at all**: a `shared` rule citing `libs/ERROR_HANDLING.md` has no same-tree candidate, and
+ *  without preferring its own corpus next it lands back among every match. Canon prose means canon
+ *  prose, whichever tree carries it.
+ *
+ *  **`dependency` is last, deliberately.** A bare `TESTING.md` in a consumer's own document never
+ *  means the installed library's copy — the reader wrote it about their own repository, and the
+ *  library's is the one spelling they would have had to reach for on purpose. @public */
+export function resolveCitation(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): Resolution {
   const matches = sources.filter((doc) => doc.path === cited || doc.path.endsWith(`/${cited}`) || `${doc.tree}/${doc.path}` === cited);
-  const sameTree = from === undefined ? [] : matches.filter((doc) => doc.corpus === from.corpus && doc.tree === from.tree);
-  const sameCorpus = from === undefined ? [] : matches.filter((doc) => doc.corpus === from.corpus);
-  const candidates = sameTree.length === 1 ? sameTree : sameCorpus.length === 1 ? sameCorpus : matches;
-  const only = candidates[0];
-  return candidates.length === 1 && only !== undefined ? sourceId(only.corpus, only.path) : undefined;
+  const only = matches[0];
+  if (only === undefined) return { kind: "none" };
+  if (matches.length === 1) return { kind: "resolved", id: sourceId(only.corpus, only.path) };
+
+  // The list is built from the citing document, so a spelling with no citing document has no list
+  // and stays ambiguous — there is nothing to prefer it towards.
+  const tiers: ((doc: SourceDoc) => boolean)[] = [];
+  if (from !== undefined) {
+    tiers.push((doc) => doc.corpus === from.corpus && doc.tree === from.tree);
+    tiers.push((doc) => doc.corpus === from.corpus);
+    // Only where the citing document's own corpus offers no candidate at all. Once it offers
+    // several, another corpus is a different document rather than a narrower reading of the same
+    // one — and a canon rule quietly resolved to a repository's own file is worse than a warning.
+    if (!matches.some((doc) => doc.corpus === from.corpus)) {
+      for (const corpus of CORPORA) tiers.push((doc) => doc.corpus === corpus);
+    }
+  }
+
+  for (const tier of tiers) {
+    const candidates = matches.filter(tier);
+    const candidate = candidates[0];
+    if (candidates.length === 1 && candidate !== undefined) return { kind: "resolved", id: sourceId(candidate.corpus, candidate.path) };
+  }
+  return { kind: "ambiguous", ids: matches.map((doc) => sourceId(doc.corpus, doc.path)).sort() };
+}
+
+/** The source id a cited spelling names, or `undefined` when it names none or more than one.
+ *
+ *  The thin wrapper every caller that has nothing to do with an ambiguity still wants. @public */
+export function resolveDoc(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): string | undefined {
+  const resolution = resolveCitation(cited, sources, from);
+  return resolution.kind === "resolved" ? resolution.id : undefined;
 }
 
 /** Every edge one document's chunks declare: the `> Defers to:` header, every `§N` citation, and —
@@ -65,9 +102,14 @@ export function relationsOf(
       const raw = `${match[1] ?? ""} §${match[2] ?? ""}`;
       if (seen.has(raw)) continue;
       seen.add(raw);
-      const target = resolveDoc(match[1] ?? "", sources, doc);
-      const to = target === undefined ? undefined : `${target}#${match[2] ?? ""}`;
-      relations.push({ from: chunk.id, kind: "cites", raw, ...(to === undefined ? {} : { to }) });
+      const resolution = resolveCitation(match[1] ?? "", sources, doc);
+      relations.push({
+        from: chunk.id,
+        kind: "cites",
+        raw,
+        ...(resolution.kind === "resolved" ? { to: `${resolution.id}#${match[2] ?? ""}` } : {}),
+        ...(resolution.kind === "ambiguous" ? { ambiguous: resolution.ids } : {}),
+      });
     }
   }
 
@@ -100,8 +142,12 @@ export function headerOf(source: string): string {
   return (first === -1 ? lines : lines.slice(0, first)).join("\n");
 }
 
-/** The chunk id a `[tree/]DOC.md §N` citation names, for a corpus that resolves it. @public */
-export function citationTarget(cited: string, section: string, sources: readonly SourceDoc[]): string | undefined {
-  const doc = sources.find((entry) => entry.path === cited || entry.path.endsWith(`/${cited}`));
-  return doc === undefined ? undefined : chunkId(doc.corpus, doc.path, section);
+/** The chunk id a `[tree/]DOC.md §N` citation names, for a corpus that resolves it.
+ *
+ *  **Delegated rather than its own `find`.** A bare `find` returns the first match in discovery
+ *  order, and `discover` puts the canon first — so every filename spelled in two corpora resolved
+ *  to the canon's copy whatever the citing document was, and said nothing about it. @public */
+export function citationTarget(cited: string, section: string, sources: readonly SourceDoc[], from?: SourceDoc): string | undefined {
+  const id = resolveDoc(cited, sources, from);
+  return id === undefined ? undefined : `${id}#${section}`;
 }

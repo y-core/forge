@@ -1,6 +1,7 @@
 ---
 title: UI Class Composition
 description: "The cn and cva class utilities, the conflict table and its derivation, the @utility recipe layer, and the contract a colour scheme file is declared against."
+audience: consumer
 ---
 
 # UI Class Composition
