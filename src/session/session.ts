@@ -4,16 +4,17 @@ import type { Session, SessionStorage } from "@remix-run/session";
 
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
+import { trackSessionId } from "./tracked";
 
 /** Typed accessor for the session variable set by `sessionMiddleware`. @public */
 export const sessionCtx = contextVar<Session>("session");
 
-/** Reads the session cookie on the way in and persists it on the way out when dirty or destroyed. @public */
+/** Reads the session cookie on the way in and persists it on the way out when dirty, destroyed, or its id was read. @public */
 export function sessionMiddleware(storage: SessionStorage, cookie: Cookie): Middleware {
   return async (context, next) => {
     const cookieHeader = context.request.headers.get("cookie") ?? null;
     const cookieValue = await cookie.parse(cookieHeader);
-    const session = await storage.read(cookieValue);
+    const session = trackSessionId(await storage.read(cookieValue));
     sessionCtx.set(context, session);
 
     const res = await next();

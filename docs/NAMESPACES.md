@@ -30,13 +30,14 @@ audience: internal
 - §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
 - §4c Foundational Primitive Namespaces: `result`, `crypto`, `context` and `validation` sit below the split
 - §5 Growth Rules: where a new concern belongs
-- §5a security — Transport-Layer Hardening Only: what goes to a future `auth`
+- §5a security — Transport-Layer Hardening Only: what goes to `auth` instead
 - §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, and the deliberate `ui/controls` shadowing
 - §5c app — Bootstrap and Pipeline Builders: the third-builder trigger and what counts toward it
 - §5d http — All HTTP Output Concerns: the canonical output home
 - §5e Exported Factory and Type Naming Convention: `create*`, `resolve*`, and type suffixes
 - §5f ui/client — Where a Browser Controller Belongs: controllers, signals, and lazy-loaded resources
 - §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is Worker-reachable
+- §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
 - §6 When to Add a New Namespace: criteria and checklist
 - §7 Binding a Subpath to Its Governance: a row lists a subpath, a prose rule binds it
 
@@ -102,6 +103,9 @@ the shape and send a reader to a resolution error.
 | --- | --- | --- |
 | `@y-core/forge/app` | `src/app/mod.ts` | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
 | `@y-core/forge/assets` | `src/assets/mod.ts` | `createManifest`, `createSpriteRegistry` — runtime lookups only; the build-time surface is `./tooling/assets` |
+| `@y-core/forge/auth` | `src/auth/mod.ts` | `resolveAuthServices`, `AUTH_SUPPORTED_ALGORITHMS`, `normalizeEmail`, `AuthStoreError`; types `AuthAlgorithm`, `AuthKeyRing`, `AuthOptions`, `AuthSecretResolver`, `AuthServices`, `AuthUser` — the identity domain, which produces no `Response` and touches no `Session` (§5h) |
+| `@y-core/forge/auth/client` | `src/auth/client/mod.ts` | No value exports — a side-effect barrel registering the passkey ceremony scope; the controller lives beside it in `src/auth/client/`, and the contract it reads is `auth`'s `PASSKEY_*` data (§5h) |
+| `@y-core/forge/auth/web` | `src/auth/web/mod.ts` | `authRoutes`, `accountRoutes`, `adminRoutes`, `authPaths` and `AUTH_ROUTE_GROUPS`; the guards `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` and `createAuthGuards`, with `authCtx`, `resolveAuthIdentity` — which reads, and clears the session's auth keys when the store refuses the id — and the session writers `establishAuthSession` / `markAuthStepUp` / `clearAuthSession`; the form schemas and `renderAuthPage` — the mountable web layer over the `auth` domain, one-way (§5h) |
 | `@y-core/forge/tooling/assets` | `src/tooling/assets/mod.ts` | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`; `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`; and `createAssetsCommands`, the `forge assets` subtree. The pipeline and the CLI face that drives it are one namespace |
 | `@y-core/forge/tooling/cli` | `src/tooling/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError`; plus the shared foundation the tool namespaces read config through — `resolveAppRoot`, `loadConfigModule`, the JSONC parser and editor, and the barrel parser |
 | `@y-core/forge/tooling/gate` | `src/tooling/gate/mod.ts` | the verification gate — the gate command factory, the step builders and presets, and every check. It also owns the changelog and semver parsers, which is what lets `tooling/release` depend on it and never the reverse. The gate's formatters are `@internal` ([`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §2f) |
@@ -113,7 +117,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/tooling/term` | `src/tooling/term/mod.ts` | `stringWidth`, `truncate`, `wrapLines`, `padAlign`, `terminalWidth`, `renderGrid`, `definitionList`, `BORDERS`, `resolveColorLevel`, `createColorize`, `PLAIN` — terminal rendering, and a sink: it imports `node:process` and nothing else in this repository, so every other `tooling/*` namespace may import it and it may import none of them |
 | `@y-core/forge/config` | `src/config/mod.ts` | `Config`, `createConfig`, `env`, `resolveConfig` |
 | `@y-core/forge/context` | `src/context/mod.ts` | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`, `bindingSchema`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
-| `@y-core/forge/form` | `src/form/mod.ts` | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `isHoneypotFilled`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
+| `@y-core/forge/form` | `src/form/mod.ts` | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
 | `@y-core/forge/jsx` | `src/jsx/mod.ts` | `createElement`, `cloneElement`, `Fragment`, `isValidElement`, `renderToString`, `renderPage` — imports `http` |
 | `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | automatic-runtime transform target |
 | `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | automatic-runtime dev transform target |
@@ -131,6 +135,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend`, `UnsatisfiableRangeError` |
 | `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TESTING.md`](./TESTING.md) §7 |
+| `@y-core/forge/testing/workerd` | `src/testing/workerd.ts` | `startDevServer`, `DevServer`, `DevServerOptions` — a `wrangler dev` fixture server for a suite the node process runs. A file target, not a barrel, and deliberately off `./testing`: it reads `node:child_process`/`node:fs`/`node:net` ([`TESTING.md`](./TESTING.md) §7f) |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/build` | `src/ui/assets/build/mod.ts` | `forgeUiSpriteSources`, `svgToSymbol`, `sanitizeSVG`, `extractViewBoxes`, `parseColor`, `toHex`, `readThemeTokens`, `resolveToken`, `buildCursors` — build-time only; it computes the artifacts `ui/assets` owns and drives no external builder ([`ASSET_PIPELINE.md`](./ASSET_PIPELINE.md) §2c) |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
@@ -154,7 +159,7 @@ the shape and send a reader to a resolution error.
 
 | Directory | Purpose | Consumers |
 | --- | --- | --- |
-| `src/crypto/` | HMAC / timing-safe / base64url utilities, UUIDv7 generation | `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+| `src/crypto/` | HMAC / timing-safe / base64url and base32 utilities, HKDF, AES-GCM, HOTP/TOTP, CBOR / COSE / DER decoding, UUIDv7 generation | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
 
 **`crypto` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist
 in `config/steps.ts`. The allowlist is what lets a barrel exist without an
@@ -165,7 +170,7 @@ export subpath — **a barrel is valid only if it is exported or explicitly seal
 **Sealed means the path, not the symbol.** Almost everything here is `@internal` plumbing, but a
 capability may be implemented in `crypto` and surfaced publicly through the barrel of the
 namespace that owns its concern. `uuidv7` / `createUuidv7` are the standing case: implemented
-here so `storage/kv` or a future `auth` can consume them without a layering violation, exported
+here so `storage/kv` and `auth` consume them without a layering violation, exported
 to consumers only via `@y-core/forge/storage/db`
 (see [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §1e).
 The sealed guarantee is unchanged — there is still no importable `crypto` path.
@@ -259,9 +264,19 @@ does not have, and edges nobody can import.
 `tooling/cli`, `tooling/term`, `tooling/lint`, `tooling/gate`, `tooling/release`, `tooling/cf`,
 `tooling/assets` — owns its own subpath and is its own namespace. `resolveNamespaces` matches by
 longest directory prefix, so a `tooling` namespace rooted at `src/tooling/` would swallow every one
-of them. The container earns its name a second way: **membership is the build-time exemption**
-([`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1e), so a Worker-reachable
-module under `src/tooling/` is a visible contradiction rather than an argument to re-litigate.
+of them. The container earns its name a second way: **every module under it qualifies for the
+build-time exemption** ([`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1e),
+so a Worker-reachable module under `src/tooling/` is a visible contradiction rather than an argument
+to re-litigate.
+
+**The exemption is reachability, and a path is only evidence of it.**
+[`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1e says so in those words:
+membership in `src/tooling/` does not _confer_ the exemption, it makes the reachability answer
+obvious enough to check per file. Two places come apart from the path — `src/ui/assets/build/`, a
+`buildTimeDirs` entry for that reason, and `src/testing/workerd.ts`, the mixed-namespace case the
+same section settles: **the exemption reaches a mixed namespace's build-time modules alone, and the
+burden sits on the caller.** So that module is published under its own subpath and left off
+`src/testing/mod.ts`, which stops a Worker-side `"types": []` program reaching it ([`TESTING.md`](./TESTING.md) §7f).
 
 **`validate-build-time-boundary` is what makes that a fact rather than a convention.** It fails any
 source outside `src/tooling/` or `src/ui/assets/build/` that imports one of their modules at value —
@@ -311,7 +326,7 @@ without that import counting as a layering violation.**
 | Namespace | Public? | Imported as | Consumers |
 | --- | --- | --- | --- |
 | `result` | public | concrete file `../result/result` | anyone |
-| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, lint-exempt) | `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, lint-exempt) | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
 | `context` | public | concrete file `../context/{accessor,app-context,env-validation}` | `app`, `form`, `logging`, `logging/show`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server`, `ui/show` |
 | `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/show`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
 
@@ -345,8 +360,8 @@ guard without an exemption, while `crypto` carries the linter exemption instead
 `security` is strictly transport-layer: CSP, CORS, origin verification, rate limiting, request
 identity. **It does not handle authentication, sessions, or permissions.**
 
-Authentication (JWT, OAuth, session login) and permissions/RBAC belong in a new `auth`
-namespace — identity is application-layer.
+Authentication (JWT, OAuth, session login) and permissions/RBAC belong in `auth` (§5h) —
+identity is application-layer.
 
 This is forge's map of the concerns [`BOUNDARIES.md`](../warden/canon/libs/BOUNDARIES.md) §2b routes
 _out_ of a transport-security namespace:
@@ -355,9 +370,9 @@ _out_ of a transport-security namespace:
 | --- | --- |
 | CSRF token minting and verification | `form` — it reads the body |
 | Session management and cookie storage | `session` |
-| Authentication — JWT, OAuth, magic links, login | a future `auth` |
-| Permissions and RBAC | a future `auth` |
-| API-key lifecycle — issue, rotate, revoke, verify | a future `auth` |
+| Authentication — JWT, OAuth, magic links, login | `auth` (§5h) |
+| Permissions and RBAC | `auth` (§5h) |
+| API-key lifecycle — issue, rotate, revoke, verify | `auth` (§5h) |
 | Timing-safe comparison and other primitives | sealed-internal `crypto` (§3b) |
 | Input sanitization and schema validation | `form` and `validation` |
 
@@ -425,6 +440,12 @@ the namespace that first needs it.
 
 `ok` / `err` are the one documented exception ([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1a).
 
+**`startDevServer` is the second, and it is a verb exception** —
+[`NAMESPACE_DESIGN.md`](../warden/canon/libs/NAMESPACE_DESIGN.md) §4a puts one in the owning `docs/`
+doc, and this is that entry. What `@y-core/forge/testing/workerd` returns is a live `wrangler dev`
+process the caller **must** `stop()`, and `create*` names a value that needs nothing further — a
+reader who believed it would leak a process group. [`TESTING.md`](./TESTING.md) §7f owns the rest.
+
 Exported option and shape types take a suffix chosen by what the type _is_:
 
 | Suffix | Meaning | Examples |
@@ -462,11 +483,76 @@ rule is `tooling/lint`, a release step is `tooling/release`, a Cloudflare API ca
 `tooling/cf`, and driving an external builder is `tooling/assets`
 ([`ASSET_PIPELINE.md`](./ASSET_PIPELINE.md) §2c).
 
-**None of it is ever Worker-reachable.** Membership in `src/tooling/` _is_ the build-time exemption
-from the Web-APIs-only rule, which is what §4a settles and `validate-build-time-boundary` enforces
-per file — so a tool placed here may use Node APIs, and a module that a Worker path imports may not
-be placed here. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a
-request handler runs is the one way to get this wrong, and the step fails it.
+**None of it is ever Worker-reachable.** That is what earns every module here the build-time
+exemption from the Web-APIs-only rule — the exemption is the unreachability and the path is the
+evidence (§4a), which `validate-build-time-boundary` checks per file. So a tool placed here may use
+Node APIs, and a module a Worker path imports may not. Reaching for a `tooling` namespace to escape
+the Web-APIs rule for something a request handler runs is the one way to get this wrong, and the
+step fails it. **The converse does not hold:** `@y-core/forge/testing/workerd` reads
+`node:child_process` and is never Worker-reachable, and still belongs to `testing` — a test fixture
+is none of the four artifacts above.
+
+### 5h. auth — Identity, and Only the Domain of It
+
+**`auth` owns identity: who a user is, which credentials prove it, and what a session may then
+do.** Authentication (passwordless email verification, magic links, WebAuthn passkeys, TOTP),
+permissions and RBAC, and the API-key lifecycle all belong here — §5a routes each of them out of
+`security`, which is transport-layer and stops at the request.
+
+**The namespace produces no `Response`, renders no markup and touches no `Session`.** What it
+exports is the domain: token codecs, store contracts and their adapters, factor services, and the
+WebAuthn ceremony parsers. A route that mounts a sign-in page, a view that renders one, and a
+middleware that guards one are the web layer's, published under its own subpath. That split is the
+same one `logging` and `logging/show` already carry, and it is what keeps `auth` testable with no
+authenticated world to build first
+([`BOUNDARIES.md`](../warden/canon/libs/BOUNDARIES.md) §2c).
+
+**`@y-core/forge/auth/web` is that web layer, and it owns everything a request touches.** The route
+groups `authRoutes` / `accountRoutes` / `adminRoutes` and the paths `authPaths` derives from them;
+the guards that admit or refuse a visitor; the loaders that read the domain for one page and the
+actions that write it; the SSR views; the session reads and writes that carry an identity between
+requests; and `renderAuthPage`, the seam a consumer replaces markup through. **Anything that builds
+a `Response`, reads or writes a `Session`, parses a form body or emits markup belongs here** — and
+nowhere else in the capability.
+
+**The edge is one-way: `auth/web` imports `auth`, and `auth` never names `auth/web`.** A domain rule
+that wants to redirect, or a store that wants to 404, is reaching across the split: the rule returns
+a reason, and the web layer alone decides what `Response` that reason becomes. The mechanism is
+`validateNoMutualValuePairs` in `src/tooling/gate/checks/namespace-graph.ts`, which fails any two
+namespaces that name each other at value — so the first domain module to import the web layer fails
+the graph rather than waiting for a reviewer to notice. That is also why `authReturnPath`, the helper
+that reduces a `?next=` value with `safeRedirectPath`, sits in `auth/web`: in `auth` it would have
+created an `auth → http` edge the domain does not have.
+
+**`auth-federation`'s `auth/oidc` and `auth/provider` inherit the rule unchanged.** Each is a domain
+namespace publishing its own subpath: it may name `auth`, `auth` may name none of them, and the
+routes and callback pages that mount either are `auth/web`'s.
+
+**`schema.sql` ships as a file, not a subpath.** `files[]` publishes `src/auth/`, so a consumer
+applies it with `wrangler d1 execute --file` against a filesystem path inside the installed
+package. There is no `exports` key for it, and so no catalog row and no prose-binding cost — the
+same way `src/ui/assets/core/*.svg` already ship. It is documented by path in
+[`src/auth/README.md`](../src/auth/README.md).
+
+**A credential a runtime cannot verify is never advertised.** `AUTH_SUPPORTED_ALGORITHMS` is
+`[-7, -257]`, and COSE `-8` is opt-in behind a capability probe that throws when the runtime cannot
+import an Ed25519 key. Offering an algorithm and then failing to verify it locks a user out of the
+account they just enrolled, so the default is the set every supported runtime can check.
+
+**An adapter is named by the contract it fulfils; the backing is the argument's type.** The
+shipped store adapters are `createUserStore(db: D1Client)`, `createChallengeStore(kv)` and their
+siblings — never `createD1UserStore` or `createKvChallengeStore` — and they live under
+`src/auth/stores/` by contract name. `createD1Client` in `storage/db` is product-named because
+it wraps D1's own API; an auth store wraps a forge contract, and the product beneath it is a
+detail of the argument that a later adapter may change. A second adapter for the same contract
+takes the name of what distinguishes it (`createDurableChallengeStore`), never the product.
+
+**The browser half lives with the namespace whose server half stamps its contract.** The passkey
+controller is `src/auth/client/passkey.ts`, published through `./auth/client`, and reads the
+`PASSKEY_*` contract from `auth` — pure data with no imports, so the domain namespace stays
+Worker-safe and the browser bundle takes only the constants. `ui/client` keeps the runtime it
+lends (`registerScope`, `ownerWindow`), and `ssrBoundaryStep` names both client directories.
+Nothing auth-specific goes in `ui/contracts` or `ui/client`.
 
 ---
 
@@ -501,9 +587,9 @@ it cannot fall out of date with either — the same reason `AGENT_GUIDE.md` §5c
 the documents it governs at all: a list disagrees with the directory it describes, and then a reader
 has two answers and no way to pick.
 
-`validate-docs` reports an unbound subpath as a **warning**, not a failure. The backlog it found on
-the day it was written is a backlog, and a check that fails a build over one gets exempted wholesale
-instead of worked down. It is promoted to a failure once the list is empty.
+`validate-docs` **fails** on an unbound subpath. It warned while that backlog was being worked
+down — a check that fails a build over a backlog gets exempted wholesale instead — and was promoted
+the moment the list reached empty. A new subpath is bound before it ships, or it does not ship.
 
 **This rule lives here rather than in the canon, and that placement is deliberate.** It is about a
 repository with an `exports` map, so `canon/libs/` is where it would be portable to — but it has

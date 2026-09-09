@@ -167,7 +167,10 @@ drift apart while every test kept passing.
 
 **The direction is forced, not chosen.** `ui/contracts/theme` is a LEAF namespace, and LEAF
 constrains _outgoing_ edges only — so it may be imported and may not import out, which leaves it as
-the only one of the three that can hold the shared function.
+the only one of the three that can hold the shared function. That is also what
+`@y-core/forge/ui/contracts/theme` publishes and all it may publish: the theme's type contract and
+the colour arithmetic over it, never a component, a route or anything that would give the subpath an
+outgoing edge.
 
 **Two gamut policies exist, and only one of them is a policy of its own.** Reducing chroma at
 constant lightness and hue, as CSS Color 4 specifies, is what any emitted coordinate needs, so it

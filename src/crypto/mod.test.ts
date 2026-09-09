@@ -2,8 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 import {
   base64urlDecode,
+  base64urlDecodeOrNull,
   base64urlEncode,
   bytesToHex,
+  concatBytes,
   hexToBytes,
   hmacSign,
   hmacVerify,
@@ -62,6 +64,47 @@ describe("base64urlEncode / base64urlDecode", () => {
   it("accepts ArrayBuffer input", () => {
     const buf = new Uint8Array([10, 20, 30]).buffer;
     expect(base64urlDecode(base64urlEncode(buf))).toEqual(new Uint8Array([10, 20, 30]));
+  });
+});
+
+describe("base64urlDecodeOrNull", () => {
+  it("decodes what base64urlDecode decodes", () => {
+    const bytes = new Uint8Array([0, 1, 2, 127, 128, 255]);
+    expect(base64urlDecodeOrNull(base64urlEncode(bytes))).toEqual(bytes);
+  });
+
+  it("answers null for a string base64urlDecode throws on", () => {
+    expect(() => base64urlDecode("a*b")).toThrow();
+    expect(base64urlDecodeOrNull("a*b")).toBeNull();
+  });
+
+  it("answers an empty array for an empty string", () => {
+    expect(base64urlDecodeOrNull("")).toEqual(new Uint8Array(0));
+  });
+});
+
+describe("concatBytes", () => {
+  it("joins parts in the order given", () => {
+    expect(concatBytes(new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5]))).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+  });
+
+  it("skips empty parts without disturbing the offsets", () => {
+    expect(concatBytes(new Uint8Array(0), new Uint8Array([7]), new Uint8Array(0), new Uint8Array([8, 9]))).toEqual(new Uint8Array([7, 8, 9]));
+  });
+
+  it("answers an empty array for no parts at all", () => {
+    expect(concatBytes()).toEqual(new Uint8Array(0));
+  });
+
+  it("copies rather than aliasing, so a later write to a part does not reach the result", () => {
+    const part = new Uint8Array([1, 2]);
+    const joined = concatBytes(part);
+    part[0] = 99;
+    expect(joined).toEqual(new Uint8Array([1, 2]));
+  });
+
+  it("reads a subarray by its own window, not its backing buffer", () => {
+    expect(concatBytes(new Uint8Array([1, 2, 3, 4]).subarray(1, 3))).toEqual(new Uint8Array([2, 3]));
   });
 });
 

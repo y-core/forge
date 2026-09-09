@@ -14,8 +14,8 @@ import {
   utf8Encode,
 } from "../crypto/mod";
 import { err, ok } from "../result/result";
-import { CSRF_FIELD_DEFAULT } from "./constants";
-import { csrfFieldCtx } from "./field-context";
+import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "./constants";
+import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
 import type {
   CsrfKeyRing,
@@ -164,7 +164,7 @@ export type { CsrfSecretResolver };
 
 /** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
 export function csrfProtection(options: CsrfProtectionOptions): Middleware {
-  const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = "X-CSRF-Token" } = options;
+  const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
 
   const ringCache = new WeakMap<object, CsrfKeyRing>();
@@ -182,6 +182,19 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
     return ring;
   };
 
+  // `null` where `subject: false` opted out, so "no resolver" and "the resolver returned nothing" stay distinguishable.
+  const resolveSubject = options.subject === false ? null : options.subject;
+
+  // Per-instance, so one wiring error logs once per app rather than once per hostile request.
+  let unboundWarned = false;
+  const warnUnbound = () => {
+    if (unboundWarned) return;
+    unboundWarned = true;
+    console.warn(
+      "[csrf] the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE csrfProtection — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
+    );
+  };
+
   return async (context, next) => {
     const method = context.method.toUpperCase();
     const ring = await resolveRing(context);
@@ -189,16 +202,23 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
     if (!activeKey) {
       throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
     }
-    const subject = options.subject === false ? undefined : options.subject(context);
+    const subject = resolveSubject ? resolveSubject(context) : undefined;
+    if (resolveSubject && subject === undefined) warnUnbound();
     const tokenOptions: CsrfTokenOptions = { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) };
 
     csrfMinterCtx.set(context, (path: string) => createCsrfToken(activeKey, path, tokenOptions));
-    // Published above every early return: a mutation is exactly the request whose downstream builder must know which field was consumed.
+    // Published above every early return: a mutation must know which field was consumed, and a page render must know which header to send the token on.
     csrfFieldCtx.set(context, tokenField);
+    csrfHeaderCtx.set(context, headerName);
 
     if (method === "GET" || method === "HEAD") {
       csrfTokenCtx.set(context, await createCsrfToken(activeKey, context.url.pathname, tokenOptions));
       return next();
+    }
+
+    // A resolver that returned nothing is a wiring error, not a policy: refuse rather than verify an unbound token.
+    if (resolveSubject && subject === undefined) {
+      return new Response("Forbidden", { status: 403 });
     }
 
     const headerToken = context.request.headers.get(headerName);

@@ -15,6 +15,37 @@ const compile = async (candidate: string): Promise<string> => {
   return css;
 };
 
+// `X:is(a, b)` written back out as `Xa, Xb`, so the assertions below stay exact matches against the
+// selector each recipe means rather than against the grouping it happens to be spelled with.
+function expandIs(css: string): string {
+  const open = css.indexOf(":is(");
+  if (open === -1) return css;
+  // The closing paren is found by counting, not by a lazy regex: every argument list here contains
+  // `:has(…)`, whose own paren would end the match at the wrong place.
+  let depth = 0;
+  let close = open + 3;
+  const parts: string[] = [];
+  let held = "";
+  for (; close < css.length; close += 1) {
+    const character = css[close];
+    if (character === "(") depth += 1;
+    if (character === ")") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+    if (character === "," && depth === 1) {
+      parts.push(held.trim());
+      held = "";
+      continue;
+    }
+    if (!(depth === 1 && held === "" && character === "(")) held += character;
+  }
+  parts.push(held.trim());
+  const prefix = css.slice(0, open).split(/[\s,]/).pop() ?? "";
+  const head = css.slice(0, open - prefix.length);
+  return `${head}${parts.map((part) => `${prefix}${part}`).join(", ")}${expandIs(css.slice(close + 1))}`;
+}
+
 // `Switch`, `Toggle` and both group roots put the state prop on a hidden inner control and the
 // recipe on the wrapping label, so a recipe matching only its own element is inert on them.
 describe("the state recipes reach a wrapped control through :has()", () => {
@@ -24,7 +55,7 @@ describe("the state recipes reach a wrapped control through :has()", () => {
     ["state-disabled", [":disabled"]],
   ] as const) {
     it(`${utility} matches its own element and a descendant carrying the state`, async () => {
-      const css = await compile(utility);
+      const css = expandIs(await compile(utility));
       for (const attribute of attributes) {
         expect(css).toContain(`.${utility}${attribute}`);
         expect(css).toContain(`.${utility}:has(${attribute})`);

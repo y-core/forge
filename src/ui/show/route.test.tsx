@@ -401,7 +401,7 @@ describe("renderTurnstileVerdict", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(await res.text()).toBe(
-      `<div data-slot="alert" data-tone="warning" data-appearance="soft" class="${ALERT_BASE} [--tone:var(--color-warning)] [--tone-fg:var(--color-warning-foreground)] [--tone-text:var(--color-warning-text)] [--tone-soft:var(--color-status-warning-subtle)] [--tone-soft-fg:var(--color-status-warning-subtle-foreground)] [--tone-soft-border:var(--color-status-warning-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="alert-title" class="${TITLE_CLASS}">No secret key is configured</div><div data-slot="alert-description" class="${DESCRIPTION_CLASS}">The form reached the action and its honeypot ran, but \`registerShowcase\` was given no \`turnstileSecret\`, so nothing was sent to siteverify.</div></div>`,
+      `<div data-slot="alert" data-tone="warning" data-appearance="soft" class="${ALERT_BASE} [--tone:var(--color-warning)] [--tone-fg:var(--color-warning-foreground)] [--tone-text:var(--color-warning-text)] [--tone-soft:var(--color-status-warning-subtle)] [--tone-soft-fg:var(--color-status-warning-subtle-foreground)] [--tone-soft-border:var(--color-status-warning-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="alert-title" class="${TITLE_CLASS}">No secret key is configured</div><div data-slot="alert-description" class="${DESCRIPTION_CLASS}">The form reached the action, but \`registerShowcase\` was given no \`turnstileSecret\`, so nothing was sent to siteverify.</div></div>`,
     );
   });
 
@@ -416,13 +416,6 @@ describe("renderTurnstileVerdict", () => {
 
   const refusal = (title: string, description: string) =>
     `<div data-slot="alert" data-tone="destructive" data-appearance="soft" class="${ALERT_BASE} [--tone:var(--color-destructive)] [--tone-fg:var(--color-destructive-foreground)] [--tone-text:var(--color-destructive-text)] [--tone-soft:var(--color-status-danger-subtle)] [--tone-soft-fg:var(--color-status-danger-subtle-foreground)] [--tone-soft-border:var(--color-status-danger-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="alert-title" class="${TITLE_CLASS}">${title}</div><div data-slot="alert-description" class="${DESCRIPTION_CLASS}">${description}</div></div>`;
-
-  it("renders 422 and the decoy copy for a rejection carrying no reason", async () => {
-    const res = await renderTurnstileVerdict({ kind: "rejected", guard: "honeypot" });
-    expect(res.status).toBe(422);
-    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(await res.text()).toBe(refusal("Refused by the honeypot guard", "The decoy field was filled."));
-  });
 
   it("renders 422 and the reason's own copy for a failure the panel has wording for", async () => {
     const res = await renderTurnstileVerdict({ kind: "rejected", guard: "turnstile", reason: "missing-token" });

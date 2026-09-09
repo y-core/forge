@@ -151,18 +151,17 @@ than the one after it, and each rejects a class of request the next would otherw
 parse:
 
 1. **Read the body with a size limit.** An unbounded read is a denial-of-service surface.
-2. **Honeypot check.** Rejects the cheapest class of bot before any crypto runs.
-3. **CSRF verification** — applied as route-level middleware, so it rejects before the handler
+2. **CSRF verification** — applied as route-level middleware, so it rejects before the handler
    is entered at all.
-4. **CAPTCHA or challenge verification**, where configured.
-5. **Schema parse** of the whole body, producing typed output or an issue list.
-6. **Pass the typed output to the service.**
+3. **CAPTCHA or challenge verification**, where configured.
+4. **Schema parse** of the whole body, producing typed output or an issue list.
+5. **Pass the typed output to the service.**
 
-Steps 1–4 reject invalid requests before schema validation runs; steps 5–6 produce the typed
+Steps 1–3 reject invalid requests before schema validation runs; steps 4–5 produce the typed
 domain object services consume.
 
-**A declarative handler builder should supply steps 1, 2, 4, 5 and 6 from configuration**, so a
-route names its schema and its guard fields and nothing else. Step 3 stays middleware, because
+**A declarative handler builder should supply steps 1, 3, 4 and 5 from configuration**, so a
+route names its schema and its guard fields and nothing else. Step 2 stays middleware, because
 a transport guard belongs in the chain where a reader auditing the route map can see it.
 
 ### 3c. Trust Boundaries on Inbound Headers

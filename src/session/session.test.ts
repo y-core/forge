@@ -157,6 +157,97 @@ describe("sessionMiddleware with memory storage", () => {
   });
 });
 
+describe("sessionMiddleware id observation", () => {
+  it("emits a Set-Cookie when a handler reads only session.id", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
+
+    const res = await app.request("/");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).not.toBeNull();
+  });
+
+  it("round-trips the observed id identically on the next request", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
+
+    const first = await app.request("/");
+    const firstId = await first.text();
+    const cookieValue = first.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
+
+    const second = await app.request("/", { headers: { cookie: `__session=${cookieValue}` } });
+    expect(await second.text()).toBe(firstId);
+  });
+
+  it("round-trips the observed id identically with cookie storage", async () => {
+    const storage = createCookieSessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
+
+    const first = await app.request("/");
+    const firstId = await first.text();
+    const cookieValue = first.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
+
+    const second = await app.request("/", { headers: { cookie: `__session=${cookieValue}` } });
+    expect(await second.text()).toBe(firstId);
+  });
+
+  it("emits nothing when a handler reads the session but never its id", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "GET", "/", (c) => new Response(String(sessionCtx.get(c).get("role") ?? "none")));
+
+    const res = await app.request("/");
+    expect(await res.text()).toBe("none");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("keeps set/get/flash/destroy working through the wrapper", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "POST", "/set", (c) => {
+      const session = sessionCtx.get(c);
+      session.set("role", "admin");
+      session.flash("notice", "Saved!");
+      return new Response(session.id);
+    });
+    mapHandler(app, "GET", "/read", (c) => {
+      const session = sessionCtx.get(c);
+      return new Response(`${String(session.get("role"))}:${String(session.get("notice"))}`);
+    });
+    mapHandler(app, "POST", "/logout", (c) => {
+      sessionCtx.get(c).destroy();
+      return new Response("bye");
+    });
+
+    const setRes = await app.request("/set", { method: "POST" });
+    const cookieValue = setRes.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
+    expect(await setRes.text()).not.toBe("");
+
+    const readRes = await app.request("/read", { headers: { cookie: `__session=${cookieValue}` } });
+    expect(await readRes.text()).toBe("admin:Saved!");
+
+    const logoutRes = await app.request("/logout", { method: "POST", headers: { cookie: `__session=${cookieValue}` } });
+    expect(logoutRes.headers.get("set-cookie")).not.toBeNull();
+  });
+
+  it("still satisfies instanceof Session", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "GET", "/", (c) => new Response(String(sessionCtx.get(c) instanceof Session)));
+
+    expect(await (await app.request("/")).text()).toBe("true");
+  });
+});
+
 describe("session primitives (facade re-exports)", () => {
   it("createSessionId returns unique non-empty string ids", () => {
     const a = createSessionId();

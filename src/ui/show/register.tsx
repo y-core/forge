@@ -7,13 +7,11 @@ import { get, post } from "@remix-run/fetch-router/routes";
 import { defineAction } from "../../app/action";
 import type { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
+import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
-import { HONEYPOT_FIELD_DEFAULT } from "../../form/constants";
-import { renderPage } from "../../jsx/render-to-string";
-import type { FC } from "../../jsx/types";
 import { v } from "../../validation/validation";
 import type { ForgeIcon } from "../core/icon";
-import { ShowcaseContent, type ShowcasePage } from "./components";
+import { ShowcaseContent, SHOWCASE_PAGES, type ShowcasePage } from "./components";
 import { CustomiseContent, type CustomiseData, loadCustomise } from "./customise";
 import type { ShowcaseData } from "./route";
 import {
@@ -51,7 +49,7 @@ export type ShowcaseIcon = ForgeIcon<
   | "upload"
 >;
 
-/** The playground form's only declared field; the pipeline drops the decoy and the token itself. */
+/** The playground form's only declared field; the pipeline drops the token itself. */
 const TURNSTILE_VERIFY_SCHEMA = v.strictObject({ email: v.optional(v.string()) });
 
 /** Builds the showcase route subtree under `base` (defaults to `"/showcase/ui"`). @public */
@@ -84,40 +82,32 @@ export function showcaseRoutes(base = "/showcase/ui") {
 export type ShowcaseUiRoutes = ReturnType<typeof showcaseRoutes>["ui"];
 
 /** Options for `registerShowcase`. @public */
-export interface ShowcaseOptions<Bindings extends object, Config, Ctx> {
+export interface ShowcaseOptions<Bindings extends object, Config> {
   /** Icon component used across preview, dependent, and content sections. */
   icon: ShowcaseIcon;
-  /** Async context factory called per request; its value is forwarded as `layout`'s `ctx` prop. */
-  context: (c: AppContext<Bindings>, config: Config) => Promise<Ctx>;
-  /** Layout component that wraps the showcase page content as `children`. */
-  layout: FC<{ ctx: Ctx }>;
   /** Siteverify secret for the Turnstile page's verification panel; without it nothing is sent to Cloudflare. */
   turnstileSecret?: (c: AppContext<Bindings>, config: Config) => string | Promise<string>;
 }
 
 /** Registers every showcase route, including the seven API endpoints, on `app`. @public */
-export function registerShowcase<Bindings extends object, Config, Ctx>(
+export function registerShowcase<Bindings extends object, Config>(
   app: Forge<Bindings>,
   uiRoutes: ShowcaseUiRoutes,
-  opts: ShowcaseOptions<Bindings, Config, Ctx>,
+  opts: ShowcaseOptions<Bindings, Config>,
 ): void {
   const basePath = uiRoutes.index.href();
   const apiPath = `${basePath}/api`;
   const paths = showcasePaths(basePath, apiPath);
 
-  const LayoutComponent = opts.layout;
-
   const contentPage = (page: ShowcasePage) =>
     definePage<Bindings, Config, ShowcaseData>({
       loader: (c) => loadShowcase(c, { basePath, apiPath }),
-      view: async (c, config, state) => {
-        const ctx = await opts.context(c, config);
-        return renderPage(
-          <LayoutComponent ctx={ctx}>
-            <ShowcaseContent data={state.data} icon={opts.icon} page={page} />
-          </LayoutComponent>,
-        );
-      },
+      view: (c, _config, state) =>
+        renderShell(c, <ShowcaseContent data={state.data} icon={opts.icon} page={page} />, {
+          mount: "showcase",
+          page,
+          meta: { title: SHOWCASE_PAGES[page].label, robots: "noindex" },
+        }),
     });
 
   const preview = definePage({ loader: loadPreview, view: (_c, _cfg, state) => renderPreview(state.data, opts.icon) });
@@ -137,30 +127,22 @@ export function registerShowcase<Bindings extends object, Config, Ctx>(
   const secretKey = opts.turnstileSecret;
   const turnstileVerify = defineAction<typeof TURNSTILE_VERIFY_SCHEMA, Bindings, Config>({
     schema: TURNSTILE_VERIFY_SCHEMA,
-    honeypot: HONEYPOT_FIELD_DEFAULT,
     ...(secretKey === undefined ? {} : { turnstile: { secretKey, verify: (c: AppContext<Bindings>) => ({ expectedHostname: c.url.hostname }) } }),
     // The one place a showcase departs from a real route: an app answers every guard the same way,
     // so a bot cannot read off which one spoke. Naming it is the whole point of this page.
-    onBotDetected: (rejection) =>
-      renderTurnstileVerdict(
-        rejection.guard === "turnstile"
-          ? { kind: "rejected", guard: "turnstile", reason: rejection.reason }
-          : { kind: "rejected", guard: "honeypot" },
-      ),
+    onBotDetected: (rejection) => renderTurnstileVerdict({ kind: "rejected", guard: "turnstile", reason: rejection.reason }),
     handle: () => renderTurnstileVerdict(secretKey === undefined ? { kind: "unconfigured" } : { kind: "verified" }),
   });
 
   const themePath = uiRoutes.theme.href();
   const theme = definePage<Bindings, Config, CustomiseData>({
     loader: (c) => loadCustomise(c, { path: themePath }),
-    view: async (c, config, state) => {
-      const ctx = await opts.context(c, config);
-      return renderPage(
-        <LayoutComponent ctx={ctx}>
-          <CustomiseContent data={state.data} icon={opts.icon} />
-        </LayoutComponent>,
-      );
-    },
+    view: (c, _config, state) =>
+      renderShell(c, <CustomiseContent data={state.data} icon={opts.icon} />, {
+        mount: "showcase",
+        page: "theme",
+        meta: { title: "Theme", robots: "noindex" },
+      }),
   });
 
   const actions = {

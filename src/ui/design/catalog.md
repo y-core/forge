@@ -108,7 +108,6 @@ comes from. Every import names a subpath; the `ui` namespace publishes no bare b
 | Take an exact number with bounds and steps | `NumberField` | `@y-core/forge/ui/core` |
 | Take a one-time code from an email or authenticator app | `OtpInput` | `@y-core/forge/ui/core` |
 | Take a file from the user | `FileInput` | `@y-core/forge/ui/core` |
-| Catch a naive bot on a mutation form | `Honeypot` | `@y-core/forge/ui/core` |
 | Challenge a submission that reaches a real cost | `Turnstile` | `@y-core/forge/ui/core` |
 
 ### 1f. Data Display and Navigation

@@ -7,6 +7,7 @@ import type { Logger } from "../logging/types";
 import type { v } from "../validation/validation";
 import type { Forge } from "./forge-app";
 import type { SubmissionPipelineDefinition } from "./pipeline";
+import type { PageShell } from "./shell";
 
 /** Options for `createApp`; the wiring hooks run in the order they are numbered. @public */
 export interface AppOptions<Bindings = Record<string, unknown>> {
@@ -15,6 +16,8 @@ export interface AppOptions<Bindings = Record<string, unknown>> {
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   /** Custom logger injected into the app error handler. */
   logger?: Logger;
+  /** The document shell every mounted page renders into; absent, forge renders a bare one. */
+  shell?: PageShell<Bindings>;
   /** Wiring step 1 — register global middleware. */
   middleware?: (app: Forge<Bindings & object>) => void;
   /** Wiring step 2 — register routes. */
@@ -102,7 +105,7 @@ export interface ActionTurnstileOptions<Bindings = Record<string, unknown>, Conf
 }
 
 /** Why a `defineAction` route refused a submission before it reached the schema. @public */
-export type BotRejection = { guard: "honeypot" } | { guard: "turnstile"; reason: TurnstileFailure };
+export type BotRejection = { guard: "turnstile"; reason: TurnstileFailure };
 
 /** Declarative definition of a mutation route for `defineAction`. @public */
 export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> {
@@ -112,8 +115,6 @@ export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<s
   /** Replaces the default validation-errors fragment. */
   onValidationError?: (issues: readonly v.BaseIssue<unknown>[], c: AppContext<Bindings>) => Response | Promise<Response>;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
-  /** The field carrying this route's honeypot decoy, which the pipeline checks and then drops. */
-  honeypot?: string;
   /** Turnstile verification for this route; the pipeline consumes and drops the token field. */
   turnstile?: ActionTurnstileOptions<Bindings, ConfigData>;
   /** Replaces the refusal a tripped guard renders. */

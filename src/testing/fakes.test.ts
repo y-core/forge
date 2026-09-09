@@ -73,7 +73,7 @@ describe("fakeKV", () => {
   });
 
   it("surfaces expiration on listed keys when set", async () => {
-    const kv = fakeKV();
+    const kv = fakeKV(undefined, { now: () => 0 });
     await kv.put("k1", "v", { expiration: 1234 });
     const listed = await kv.list();
     expect(listed.keys[0]).toEqual({ name: "k1", metadata: undefined, expiration: 1234 });
@@ -109,10 +109,53 @@ describe("fakeKV", () => {
   });
 
   it("prefers an explicit expiration over expirationTtl", async () => {
-    const kv = fakeKV();
+    const kv = fakeKV(undefined, { now: () => 0 });
     await kv.put("k1", "v", { expiration: 1234, expirationTtl: 60 });
     const listed = await kv.list();
     expect(listed.keys[0]).toEqual({ name: "k1", metadata: undefined, expiration: 1234 });
+  });
+
+  it("serves a value written with a TTL until the injected clock passes its expiry", async () => {
+    let now = 1_000_000;
+    const kv = fakeKV(undefined, { now: () => now });
+    await kv.put("k1", "v", { expirationTtl: 60, metadata: { m: 1 } });
+
+    now += 59_000;
+    expect(await kv.get("k1", { type: "text" })).toBe("v");
+
+    now += 1_000;
+    expect(await kv.get("k1", { type: "text" })).toBeNull();
+  });
+
+  it("reports an expired key as absent through getWithMetadata and list alike", async () => {
+    let now = 1_000_000;
+    const kv = fakeKV(undefined, { now: () => now });
+    await kv.put("k1", "v", { expirationTtl: 60, metadata: { m: 1 } });
+    await kv.put("k2", "w");
+
+    now += 60_000;
+    expect(await kv.getWithMetadata("k1", { type: "text" })).toEqual({ value: null, metadata: null });
+    expect((await kv.list()).keys.map((k) => k.name)).toEqual(["k2"]);
+  });
+
+  it("expires a write given an absolute expiration, in unix seconds", async () => {
+    let now = 1_000_000;
+    const kv = fakeKV(undefined, { now: () => now });
+    await kv.put("k1", "v", { expiration: 1_100 });
+
+    expect(await kv.get("k1", { type: "text" })).toBe("v");
+    now = 1_100_000;
+    expect(await kv.get("k1", { type: "text" })).toBeNull();
+  });
+
+  it("keeps a value written without a TTL however far the clock advances", async () => {
+    let now = 1_000_000;
+    const kv = fakeKV({ seeded: "s" }, { now: () => now });
+    await kv.put("k1", "v");
+
+    now += 86_400_000;
+    expect(await kv.get("k1", { type: "text" })).toBe("v");
+    expect(await kv.get("seeded", { type: "text" })).toBe("s");
   });
 });
 
@@ -290,6 +333,13 @@ describe("fakeD1", () => {
     const db = fakeD1();
     const res = await db.prepare("INSERT INTO t VALUES (?)").bind(1).run();
     expect(res).toEqual({ results: [], success: true, meta: { rows_written: 0, changes: 0, last_row_id: 0, duration: 0 } });
+  });
+
+  it("reports the rows a supplied responder says a write touched", async () => {
+    const db = fakeD1(() => [], { rowsWritten: (statement, params) => (statement.startsWith("UPDATE") && params[0] === 1 ? 1 : 0) });
+    const matched = await db.prepare("UPDATE t SET a = ? WHERE id = ?").bind(1, 2).run();
+    const missed = await db.prepare("UPDATE t SET a = ? WHERE id = ?").bind(0, 2).run();
+    expect([matched.meta.rows_written, matched.meta.changes, missed.meta.rows_written]).toEqual([1, 1, 0]);
   });
 
   it("records bound calls with sql and params", async () => {

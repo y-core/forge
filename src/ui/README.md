@@ -207,8 +207,7 @@ Render trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) 
 
 | Export | Renders | Notes |
 | --- | --- | --- |
-| `Form` | `<form>` | HTMX attributes pass through; no client submission logic. Renders **no honeypot** — compose `Honeypot` yourself. |
-| `Honeypot` | off-screen `<input>` | Decoy field paired with `isHoneypotFilled` (`@y-core/forge/form`). `field` defaults to `HONEYPOT_FIELD_DEFAULT`. Mutation forms only. |
+| `Form` | `<form>` | HTMX attributes pass through; no client submission logic. `csrfToken` renders the hidden field **and** merges the token into `hx-headers`; `csrfHeader` names the header it goes under, defaulting to `CSRF_HEADER_DEFAULT` — pass your own when `csrfProtection` renamed it, since an `hx-delete` sends no body to fall back on. |
 | `FormField` | `<fieldset>` | Accessible field with `name` / `invalid` / `disabled` and `orientation` (`"vertical"` default, or `"horizontal"`); `responsive` takes the horizontal arrangement only once the enclosing `.Group` container is wide enough. `.Legend`'s `as` is `"legend"` (default) or `"label"` — which type scale it wears, stamped `data-as`; not the ratified `appearance` emphasis axis. Compounds: `.Label`, `.Description`, `.Error`, `.Set`, `.Legend`, `.Group`, `.Content`, `.Title`, `.Separator`. |
 | `Field` | layout row | Lightweight label + control row — no form semantics. `orientation` is `"vertical"` (default) or `"horizontal"`. |
 | `Input`, `Textarea`, `Select` | `<input>` / `<textarea>` / `<select>` | Accept an optional `field` descriptor to wire `id` / `name` / `aria-*`, plus `size` / `invalid` / `busy`. `Select` requires an `icon` prop (a `ForgeIcon<"chevron-down">`), compounds `.Option`, `.OptGroup`, and lands the caller's `class` on the wrapper its chevron is positioned against rather than on the `<select>`. `Input` also takes `format` — see below. |
@@ -1148,8 +1147,11 @@ reports live WCAG ratios for every audited pair, and emits a paste-ready scheme 
 
 ### Routes
 
-`showcaseRoutes(base)` returns seven pages and eight HTMX endpoints; `registerShowcase` mounts every one,
-wrapped in your `layout`. The catalog is cut by **consumer prerequisite**: the page a demo lands on is what you must
+`showcaseRoutes(base)` returns seven pages and eight HTMX endpoints; `registerShowcase` mounts every one, each page
+rendered into the shell your app registered with `createApp({ shell })`
+([`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §6) under the slot
+`{ mount: "showcase", page, meta }`, whose meta titles the page from its own label and states
+`robots: "noindex"` — the showcase is a reference, not a landing page. The catalog is cut by **consumer prerequisite**: the page a demo lands on is what you must
 wire up for it to work.
 
 | Route | Path (default base) | What it is | Prerequisite |
@@ -1190,7 +1192,7 @@ return renderPage(
 | --- | --- | --- |
 | `showcaseRoutes(base?)` | function | Builds the showcase route subtree under `base` (default `"/showcase/ui"`). |
 | `registerShowcase(app, routes, options)` | function | Registers every showcase page and API endpoint on a `Forge` app. |
-| `ShowcaseUiRoutes`, `ShowcaseOptions`, `ShowcaseIcon` | types | The `ui` subtree `showcaseRoutes` returns; `registerShowcase`'s `{ icon, context, layout, turnstileSecret? }`; and the `ForgeIcon` union every section needs. |
+| `ShowcaseUiRoutes`, `ShowcaseOptions`, `ShowcaseIcon` | types | The `ui` subtree `showcaseRoutes` returns; `registerShowcase`'s `{ icon, turnstileSecret? }`; and the `ForgeIcon` union every section needs. |
 | `ShowcaseContent` | component | One showcase page body, selected by `page`. |
 | `showcasePaths(basePath, apiPath?)` | function | Every showcase URL path derived from a base path — the single source of truth the page and its endpoints share. |
 | `loadShowcase` | loader | Builds `ShowcaseData` (`{ paths, turnstile }`) for the page, reading the Turnstile playground's options off the query string. |

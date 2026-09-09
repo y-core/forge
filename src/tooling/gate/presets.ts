@@ -12,6 +12,7 @@ import {
   modernCssStep,
   testStep,
   typecheckStep,
+  workerdStep,
 } from "./builders";
 import type { ClassOrderCheckConfig } from "./checks/class-order";
 import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
@@ -55,6 +56,8 @@ export interface CloudflareWorkerStepOptions {
   root?: string;
   /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
   browser?: boolean;
+  /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
+  workerd?: boolean;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
   design?: CloudflareWorkerDesignOptions;
 }
@@ -123,6 +126,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
   if (options.browser) steps.push(browserStep({ tier: "full" }));
+  if (options.workerd) steps.push(workerdStep({ tier: "full" }));
 
   return steps;
 }

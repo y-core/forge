@@ -3,7 +3,7 @@
 // deployed app reads its forms.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
-import { type DevServer, startDevServer } from "./dev-server";
+import { type DevServer, startDevServer } from "@y-core/forge/testing/workerd";
 
 const CONFIG = new URL("../fixtures/workers-form/wrangler.jsonc", import.meta.url).pathname;
 const VALID = { name: "Jane", email: "jane@example.com", message: "Hello." };
@@ -11,7 +11,7 @@ const VALID = { name: "Jane", email: "jane@example.com", message: "Hello." };
 let server: DevServer;
 
 beforeAll(async () => {
-  server = await startDevServer(CONFIG);
+  server = await startDevServer({ config: CONFIG, readyPath: "/api/contact" });
 }, 200_000);
 
 afterAll(() => {

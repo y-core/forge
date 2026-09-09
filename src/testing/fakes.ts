@@ -17,18 +17,38 @@ interface StoredEntry {
 }
 
 /** Resolves the absolute unix-seconds expiry a real KV binding would record for a write. */
-function resolveExpiration(options?: KVPutOptions): number | undefined {
+function resolveExpiration(now: number, options?: KVPutOptions): number | undefined {
   if (options?.expiration !== undefined) return options.expiration;
-  if (options?.expirationTtl !== undefined) return Math.floor(Date.now() / 1000) + options.expirationTtl;
+  if (options?.expirationTtl !== undefined) return now + options.expirationTtl;
   return undefined;
 }
 
-/** In-memory `KVNamespace` fake backed by a per-instance `Map` of raw bytes; TTLs are recorded but never enforced. @public */
-export function fakeKV(seed?: Record<string, string>): KVNamespace {
+/** Options for `fakeKV`. @public */
+export interface FakeKVOptions {
+  /** Millisecond clock the expiry of every write is resolved and judged against; defaults to `Date.now`. */
+  now?: () => number;
+}
+
+/** In-memory `KVNamespace` fake backed by a per-instance `Map` of raw bytes, honouring `expirationTtl` and `expiration` against an injectable clock. @public */
+export function fakeKV(seed?: Record<string, string>, { now }: FakeKVOptions = {}): KVNamespace {
   const data = new Map<string, StoredEntry>(Object.entries(seed ?? {}).map(([k, v]) => [k, { bytes: TEXT_ENCODER.encode(v) }]));
+  const clock = now ?? Date.now;
+  const seconds = (): number => Math.floor(clock() / 1000);
+
+  // An expired key is gone from a real KV, not merely unreadable — dropping it here keeps `list`
+  // and every read agreeing on that without a second expiry check per operation.
+  function live(key: string): StoredEntry | undefined {
+    const entry = data.get(key);
+    if (!entry) return undefined;
+    if (entry.expiration !== undefined && entry.expiration <= seconds()) {
+      data.delete(key);
+      return undefined;
+    }
+    return entry;
+  }
 
   function read(key: string, type: "text" | "arrayBuffer"): string | ArrayBuffer | null {
-    const entry = data.get(key);
+    const entry = live(key);
     if (!entry) return null;
     return type === "text" ? TEXT_DECODER.decode(entry.bytes) : (entry.bytes.slice().buffer as ArrayBuffer);
   }
@@ -40,7 +60,7 @@ export function fakeKV(seed?: Record<string, string>): KVNamespace {
     get: async (key: string, options: { type: "text" | "arrayBuffer" }) => read(key, options.type),
     getWithMetadata: async (key: string, options: { type: "text" | "arrayBuffer" }) => ({
       value: read(key, options.type),
-      metadata: data.get(key)?.metadata ?? null,
+      metadata: live(key)?.metadata ?? null,
     }),
     put: async (key: string, value: string | ArrayBuffer | ArrayBufferView | ReadableStream, options?: KVPutOptions): Promise<void> => {
       if (options?.expirationTtl !== undefined && options.expirationTtl < KV_EXPIRATION_TTL_MIN) {
@@ -49,7 +69,7 @@ export function fakeKV(seed?: Record<string, string>): KVNamespace {
       // Decoding to a string here would replace every invalid UTF-8 sequence with U+FFFD
       // and silently corrupt binary values.
       const bytes = await toBytes(value);
-      const expiration = resolveExpiration(options);
+      const expiration = resolveExpiration(seconds(), options);
       data.set(key, {
         bytes,
         ...(options?.metadata !== undefined ? { metadata: options.metadata } : {}),
@@ -57,7 +77,7 @@ export function fakeKV(seed?: Record<string, string>): KVNamespace {
       });
     },
     list: async <M = unknown>(options?: KVListOptions): Promise<KVListResult<M>> => {
-      let names = [...data.keys()].sort();
+      let names = [...data.keys()].sort().filter((n) => live(n) !== undefined);
       if (options?.prefix) names = names.filter((n) => n.startsWith(options.prefix as string));
       const start = options?.cursor !== undefined ? Number.parseInt(options.cursor, 10) : 0;
       const limit = options?.limit ?? names.length;
@@ -291,6 +311,8 @@ interface FakeD1Statement extends D1PreparedStatement {
 export interface FakeD1Options {
   /** Consulted before every executed statement; returning an `Error` makes that operation reject. */
   failOn?: (sql: string, params: unknown[]) => Error | null;
+  /** Rows a `run()` or a batched statement reports written; defaults to zero, which is what a guarded statement answers when it declines. */
+  rowsWritten?: (sql: string, params: unknown[]) => number;
 }
 
 /** Programmable `D1DatabaseLike` stub whose `query` responder supplies results and whose `calls` array records every bound statement. @public */
@@ -332,7 +354,8 @@ export function fakeD1(
       },
       run: async (): Promise<D1Result<unknown>> => {
         failIfInjected(sql, params);
-        return { results: [], success: true, meta: { rows_written: 0, changes: 0, last_row_id: 0, duration: 0 } };
+        const written = options?.rowsWritten?.(sql, params) ?? 0;
+        return { results: [], success: true, meta: { rows_written: written, changes: written, last_row_id: 0, duration: 0 } };
       },
     };
   }
@@ -344,7 +367,8 @@ export function fakeD1(
       statements.map((s) => {
         const fs = s as FakeD1Statement;
         failIfInjected(fs.sql, fs.params);
-        return { results: query(fs.sql, fs.params) as T[], success: true, meta: { duration: 0 } };
+        const written = options?.rowsWritten?.(fs.sql, fs.params) ?? 0;
+        return { results: query(fs.sql, fs.params) as T[], success: true, meta: { duration: 0, rows_written: written, changes: written } };
       }),
     exec: async (sql: string): Promise<{ count: number; duration: number }> => {
       failIfInjected(sql, []);

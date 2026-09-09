@@ -77,6 +77,10 @@ describe("createKVStore — prefix round-trip", () => {
     expect(stub._store.has("sess||abc")).toBe(true);
   });
 
+  it("refuses an empty prefix, which would silently write bare keys into a shared keyspace", () => {
+    expect(() => createKVStore(makeKVStub(), { prefix: "" })).toThrow("createKVStore: `prefix` must not be an empty string");
+  });
+
   it("strips prefix from list results", async () => {
     const stub = makeKVStub();
     const store = createKVStore(stub, { prefix: "sess" });

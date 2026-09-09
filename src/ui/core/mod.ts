@@ -26,7 +26,6 @@ export { Field } from "./field-stack";
 export { FileInput } from "./file-input";
 export { Filter, type FilterAppearance } from "./filter";
 export { Form } from "./form";
-export { Honeypot } from "./honeypot";
 export { createIcon, type ForgeIcon, Icon, type IconProps } from "./icon";
 export { Indicator, type IndicatorPlacement } from "./indicator";
 export { Input } from "./input";

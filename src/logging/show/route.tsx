@@ -1,11 +1,11 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 
+import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
 import { isHxRequest } from "../../html/htmx/hx-request";
 import { fragmentResponse } from "../../http/response";
-import { renderPage, renderToString } from "../../jsx/render-to-string";
-import type { FC } from "../../jsx/types";
+import { renderToString } from "../../jsx/render-to-string";
 import type { ForgeIcon } from "../../ui/core/icon";
 import { v } from "../../validation/mod";
 import type { LogChannel, LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
@@ -28,23 +28,18 @@ export type LogViewerAccess<Bindings = Record<string, unknown>> =
   | "allow-unauthenticated";
 
 /** Options for the log viewer loader. @public */
-export type LogViewerOptions<Bindings = Record<string, unknown>, Config = unknown, Ctx = unknown> = {
+export type LogViewerOptions<Bindings = Record<string, unknown>> = {
   channel: (c: AppContext<Bindings>) => LogChannel;
   /** Required access decision; runs before the channel is touched. */
   access: LogViewerAccess<Bindings>;
   icon: ForgeIcon<"chevron-down">;
-  /** Async context factory called per request; its resolved value is the `ctx` prop of `layout`. */
-  context: (c: AppContext<Bindings>, config: Config) => Promise<Ctx>;
-  /** Layout component wrapping the viewer page, receiving `ctx` from `context` and the content as `children`. */
-  layout: FC<{ ctx: Ctx }>;
   basePath?: string;
 };
 
 /** Evaluates `access`, then renders the log page or the HTMX fragment the request asks for. @public */
-export async function loadLogViewer<Bindings = Record<string, unknown>, Config = unknown, Ctx = unknown>(
+export async function loadLogViewer<Bindings = Record<string, unknown>>(
   c: AppContext<Bindings>,
-  config: Config,
-  options: LogViewerOptions<Bindings, Config, Ctx>,
+  options: LogViewerOptions<Bindings>,
 ): Promise<Response> {
   if (options.access !== "allow-unauthenticated" && !(await options.access(c))) {
     return new Response("Forbidden", { status: 403 });
@@ -90,21 +85,11 @@ export async function loadLogViewer<Bindings = Record<string, unknown>, Config =
   if (isHxRequest(c)) {
     return cursor === undefined ? renderLogFragment(data) : renderLogAppendFragment(data);
   }
-  return renderLogViewerPage(data, options, await options.context(c, config));
-}
-
-/** Renders the full viewer page — `LogViewerContent` as the children of the consumer's `layout`. @internal */
-async function renderLogViewerPage<Bindings, Config, Ctx>(
-  data: LogViewerLoaderData,
-  options: LogViewerOptions<Bindings, Config, Ctx>,
-  ctx: Ctx,
-): Promise<Response> {
-  const LayoutComponent = options.layout;
-  return renderPage(
-    <LayoutComponent ctx={ctx}>
-      <LogViewerContent data={data} icon={options.icon} />
-    </LayoutComponent>,
-  );
+  return renderShell(c, <LogViewerContent data={data} icon={options.icon} />, {
+    mount: "logs",
+    page: "logs",
+    meta: { title: "Logs", robots: "noindex" },
+  });
 }
 
 /** Renders the `<tbody>` HTMX partial from loader data. @internal */

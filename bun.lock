@@ -29,11 +29,13 @@
         "esbuild": ">=0.20.0",
         "sharp": "latest",
         "tailwindcss": ">=4.0.0",
+        "wrangler": ">=4.0.0",
       },
       "optionalPeers": [
         "esbuild",
         "sharp",
         "tailwindcss",
+        "wrangler",
       ],
     },
   },

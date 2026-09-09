@@ -146,16 +146,19 @@ describe("parseImports() — the scanner must not go blind (the drift gate itsel
 });
 
 describe("isTestSource() — test exclusion (the leaf classification)", () => {
-  it("marks the four test suffixes and nothing that merely reads like one", () => {
+  it("marks the five test suffixes and nothing that merely reads like one", () => {
     const cases = [
       "src/alpha/a.test.ts",
       "src/alpha/a.test.tsx",
       "src/alpha/a.browser.ts",
       "src/alpha/a.browser.tsx",
+      "src/alpha/test-support.ts",
       "src/alpha/a.ts",
       "src/alpha/a.tsx",
       "src/alpha/testing.ts",
       "src/alpha/browser.ts",
+      "src/alpha/foo-test-support.ts",
+      "src/alpha/test-support.tsx",
     ];
 
     expect(cases.map((path) => [path, isTestSource(path)])).toEqual([
@@ -163,10 +166,13 @@ describe("isTestSource() — test exclusion (the leaf classification)", () => {
       ["src/alpha/a.test.tsx", true],
       ["src/alpha/a.browser.ts", true],
       ["src/alpha/a.browser.tsx", true],
+      ["src/alpha/test-support.ts", true],
       ["src/alpha/a.ts", false],
       ["src/alpha/a.tsx", false],
       ["src/alpha/testing.ts", false],
       ["src/alpha/browser.ts", false],
+      ["src/alpha/foo-test-support.ts", false],
+      ["src/alpha/test-support.tsx", false],
     ]);
   });
 });

@@ -58,7 +58,7 @@ export const SHARED: AliasTable = new Map([
   ["permission", ["guard", "middleware"]],
   ["csrf", ["token", "form", "guard"]],
   ["captcha", ["turnstile"]],
-  ["bot", ["honeypot", "turnstile"]],
+  ["bot", ["turnstile"]],
   ["cors", ["origin", "transport"]],
   ["header", ["headers", "security", "csp"]],
   // `script-src` is a directive inside a policy, and only the library's own security documents

@@ -1,7 +1,6 @@
 import type { AppContext } from "../context/types";
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
-import { csrfFieldCtx } from "../form/field-context";
-import { isHoneypotFilled } from "../form/honeypot";
+import { csrfFieldCtx } from "../form/csrf-context";
 import { parseFormData } from "../form/parse-form-data";
 import { formToObject } from "../form/to-object";
 import { verifyTurnstile } from "../form/turnstile";
@@ -18,7 +17,7 @@ import type { ActionDefinition } from "./types";
 const logger = createLogger("pipeline");
 
 /** The pipeline's own option names — the one list both the type and `definePage`'s guard read. @internal */
-export const PIPELINE_ONLY_KEYS = ["honeypot", "turnstile", "onBotDetected", "onValidationError", "maxBytes"] as const;
+export const PIPELINE_ONLY_KEYS = ["turnstile", "onBotDetected", "onValidationError", "maxBytes"] as const;
 
 /** The half of a mutation route's definition the shared submission pipeline consumes. @internal */
 export type SubmissionPipelineDefinition<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> = Pick<
@@ -49,12 +48,12 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
 ): SubmissionPipeline<S, Bindings, ConfigData> {
   const parseOptions: ParseFormDataOptions = def.maxBytes !== undefined ? { maxBytes: def.maxBytes } : {};
   const turnstileField = def.turnstile ? (def.turnstile.tokenField ?? TURNSTILE_FIELD_DEFAULT) : undefined;
-  const declaredDrops = [def.honeypot, turnstileField].filter((name): name is string => name !== undefined);
+  const declaredDrops = turnstileField === undefined ? [] : [turnstileField];
   // `abortEarly` holds a refusal to one issue, so neither issue count nor response length is
   // something a submission can steer.
   const parseConfig: v.Config<v.InferIssue<S>> = { abortEarly: true };
   // A tripped guard must answer in the shape of a validation refusal, naming a field the schema
-  // declares and never the decoy, so a bot cannot read the guard off the response.
+  // declares, so a bot cannot read the guard off the response.
   const declaredField = firstDeclaredField(def.schema);
   const guardRefusalMessage = describeValidationField(declaredField === undefined ? [] : [declaredField]);
 
@@ -67,12 +66,6 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
         return err(fragmentResponse(renderError("The submitted form is too large. Please reduce its size and try again."), 413));
       }
       return err(fragmentResponse(renderError("Unable to process the form data. Please try again."), 400));
-    }
-
-    // The decoy is checked first so a bot that filled it never spends a siteverify call.
-    if (def.honeypot !== undefined && isHoneypotFilled(formData, def.honeypot)) {
-      logger.warn("Submission refused by a bot guard", { guard: "honeypot" });
-      return err(def.onBotDetected ? await def.onBotDetected({ guard: "honeypot" }, c) : refuseSubmission([guardRefusalMessage]));
     }
 
     if (def.turnstile !== undefined && turnstileField !== undefined) {

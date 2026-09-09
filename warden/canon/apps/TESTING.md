@@ -268,7 +268,6 @@ incomplete and must not be merged.
 | Origin check | Same-origin → proceeds | Cross-origin → 403 |
 | Expected client hints | Present → proceeds | Absent → 403 |
 | Rate limiting | Under limit → 200 | Over limit → 429 |
-| Honeypot | Empty → proceeds | Filled → 400 |
 | Input validation | Valid input → renders values | Invalid input → renders field errors |
 | Content type | Expected type → proceeds | Wrong or missing → 415 |
 | Body size | Under cap → proceeds | Over cap → 413 |

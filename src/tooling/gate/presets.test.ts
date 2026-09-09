@@ -86,6 +86,26 @@ describe("cloudflareWorkerSteps() — the browser row", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the workerd row", () => {
+  it("puts test:workerd last, on the full tier and behind the installed runtime", () => {
+    const steps = cloudflareWorkerSteps({ workerd: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
+    const workerd = steps.at(-1);
+
+    expect(workerd?.label).toBe("test:workerd");
+    expect(workerd?.tier).toBe("full");
+    expect(workerd?.requires?.tool).toBe("workerd");
+  });
+
+  it("orders the workerd row after the browser row when both opt-ins are taken", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ browser: true, workerd: true })).slice(-2)).toEqual(["test:browser", "test:workerd"]);
+  });
+
+  it("omits the row for an app with no workerd suite", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("test:workerd");
+    expect(labelsOf(cloudflareWorkerSteps({ workerd: false }))).not.toContain("test:workerd");
+  });
+});
+
 describe("cloudflareWorkerSteps() — the design rows", () => {
   it("emits three rows before test when no cssDir is given", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ design: { stylesheet: "src/assets/tailwind.css" } }));

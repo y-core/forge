@@ -24,7 +24,6 @@ import { Field } from "../core/field-stack";
 import { FileInput } from "../core/file-input";
 import { Filter } from "../core/filter";
 import { Form } from "../core/form";
-import { Honeypot } from "../core/honeypot";
 import type { ForgeIcon } from "../core/icon";
 import { Indicator } from "../core/indicator";
 import { Input } from "../core/input";
@@ -121,7 +120,6 @@ export const SECTIONS: { id: string; label: string; group: ShowcaseGroup; page: 
   { id: "field", label: "Field", group: "Forms & Controls", page: "index" },
   { id: "form", label: "Form", group: "Forms & Controls", page: "index" },
   { id: "form-field", label: "FormField", group: "Forms & Controls", page: "index" },
-  { id: "honeypot", label: "Honeypot", group: "Forms & Controls", page: "index" },
   { id: "icon", label: "Icon", group: "Primitives", page: "index" },
   { id: "input", label: "Input", group: "Forms & Controls", page: "index" },
   { id: "label", label: "Label", group: "Forms & Controls", page: "index" },
@@ -1572,7 +1570,6 @@ const SwitchSection: FC = () => (
 const FormSection: FC = () => (
   <CatalogSection id='form' title='Form'>
     <Form action='#' method='post' csrfToken='demo-token' class='w-full max-w-xs space-y-3'>
-      <Honeypot field='company' />
       <Field label='Project name'>
         <Input type='text' name='project' placeholder='Untitled' />
       </Field>
@@ -1590,22 +1587,6 @@ const FormSection: FC = () => (
         <Input type='text' name='note' placeholder='The hidden field is `_token`' />
       </Field>
       <Button type='submit'>Save</Button>
-    </Form>
-  </CatalogSection>
-);
-
-const HoneypotSection: FC = () => (
-  <CatalogSection id='honeypot' title='Honeypot'>
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot />
-      <Input type='email' name='newsletter-email' placeholder='you@example.com' />
-      <Button type='submit'>Subscribe</Button>
-    </Form>
-    {/* The decoy's name is the whole of its disguise, so it is the caller's to pick. */}
-    <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-      <Honeypot field='company-website' />
-      <Input type='email' name='waitlist-email' placeholder='you@example.com' />
-      <Button type='submit'>Join the waitlist</Button>
     </Form>
   </CatalogSection>
 );
@@ -2087,7 +2068,6 @@ const IndexBody: FC<PageBodyProps> = ({ paths, icon }) => (
     <FieldStackSection />
     <FormSection />
     <FormFieldSection icon={icon} />
-    <HoneypotSection />
     <IconSection icon={icon} />
     <InputSection />
     <LabelSection />

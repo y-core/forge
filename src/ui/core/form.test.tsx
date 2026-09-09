@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import { CSRF_FIELD_DEFAULT } from "../../form/constants";
 import { render } from "../../testing/render";
 import { Form } from "./form";
-import { Honeypot } from "./honeypot";
 
 describe("Form component", () => {
   it("renders a form element with method=post by default", async () => {
@@ -64,6 +63,39 @@ describe("Form component", () => {
   // sends: the request 403s with nothing in the markup or the console naming the cause.
   it("throws rather than dropping the CSRF token into an hx-headers value it cannot merge into", async () => {
     expect(() => Form({ csrfToken: "abc123", "hx-headers": "js:window.headers", children: null })).toThrow(/cannot merge its csrfToken/);
+  });
+
+  // The defect this covers: the name was a literal, so an app that renamed the header got markup
+  // sending the one `csrfProtection` no longer reads — and an `hx-delete` row carries no body to
+  // fall back on, so Remove 403-ed with nothing on the page to explain it.
+  it("writes the app's own header name into hx-headers when it renamed one", async () => {
+    expect(
+      await render(
+        <Form csrfToken='abc123' csrfHeader='X-App-Csrf'>
+          <input name='x' />
+        </Form>,
+      ),
+    ).toBe(
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-App-Csrf&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><input name="x"></form>',
+    );
+  });
+
+  it("merges the renamed header into an existing hx-headers object rather than the default", async () => {
+    expect(
+      await render(
+        <Form csrfToken='abc123' csrfHeader='X-App-Csrf' hx-headers='{"X-Custom":"val"}'>
+          <input name='x' />
+        </Form>,
+      ),
+    ).toBe(
+      '<form data-slot="form" method="post" hx-headers="{&quot;X-Custom&quot;:&quot;val&quot;,&quot;X-App-Csrf&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><input name="x"></form>',
+    );
+  });
+
+  it("names the app's own header in the unmergeable-value error, since that is the one to add", () => {
+    expect(() => Form({ csrfToken: "abc123", csrfHeader: "X-App-Csrf", "hx-headers": "js:window.headers", children: null })).toThrow(
+      'Add "X-App-Csrf" to that value yourself',
+    );
   });
 
   it("still passes a non-JSON hx-headers string through when there is no token to lose", async () => {
@@ -182,20 +214,5 @@ describe("Form — class composition", () => {
 
   it("resolves a conflict within the caller's own class, proving the prop passes through cn", async () => {
     expect(await render(<Form class='p-4 p-8' />)).toBe('<form data-slot="form" method="post" class="p-8"></form>');
-  });
-});
-
-describe("Form — composed with Honeypot", () => {
-  it("places the honeypot exactly where the caller puts it", async () => {
-    expect(
-      await render(
-        <Form csrfToken='abc123'>
-          <Honeypot />
-          <input name='x' />
-        </Form>,
-      ),
-    ).toBe(
-      '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}"><input data-slot="form-csrf" type="hidden" name="_csrf" value="abc123"><div aria-hidden="true" class="pointer-events-none absolute -left-[9999px] opacity-0"><input type="text" name="__hp_c7" tabindex="-1" autocomplete="new-password"></div><input name="x"></form>',
-    );
   });
 });

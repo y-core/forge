@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 
-import { HONEYPOT_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
+import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import type { TurnstileFailure } from "../../form/types";
 import { formSubmit, SWAP } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
@@ -9,7 +9,6 @@ import { Alert } from "../core/alert";
 import { Button } from "../core/button";
 import { FormField } from "../core/field-layout";
 import { Form } from "../core/form";
-import { Honeypot } from "../core/honeypot";
 import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Select } from "../core/select";
@@ -228,7 +227,6 @@ const PlaygroundWidget: FC<{ data: TurnstileDemoOptions; paths: ShowcasePaths }>
     method='post'
     class='w-full max-w-sm space-y-3'
     {...formSubmit({ post: paths.turnstileVerify, target: `#${SHOW_TURNSTILE_VERDICT_ID}`, swap: SWAP.innerHtml })}>
-    <Honeypot />
     <FormField name='email'>
       <FormField.Label name='email'>Email</FormField.Label>
       <Input type='email' name='email' placeholder='you@example.com' field={{ name: "email" }} />
@@ -279,19 +277,16 @@ const VariantsSection: FC = () => (
     description='The three widget sizes, each deferred to first focus, and the challenge held back to submit.'>
     <CatalogRow>
       <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-        <Honeypot />
         <Input type='email' name='turnstile-email' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='normal' load='focus' />
         <Button type='submit'>Submit</Button>
       </Form>
       <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-        <Honeypot />
         <Input type='email' name='turnstile-email-compact' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='compact' load='focus' />
         <Button type='submit'>Submit</Button>
       </Form>
       <Form action='#' method='post' class='w-full max-w-xs space-y-3'>
-        <Honeypot />
         <Input type='email' name='turnstile-email-flexible' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='flexible' load='focus' />
         <Button type='submit'>Submit</Button>
@@ -302,7 +297,6 @@ const VariantsSection: FC = () => (
         `challenge='submit'` is a widget up from page load, holding its own space, with only the
         challenge waiting for the press. */}
       <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
-        <Honeypot />
         <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} challenge='submit' appearance='interaction-only' />
         <Button type='submit'>Submit</Button>
@@ -344,7 +338,6 @@ const ResilienceSection: FC = () => (
     description='Both messages are server-rendered and hidden; the controller reveals whichever one applies. Block challenges.cloudflare.com and reload to see the first.'>
     <div class='grid gap-4 md:grid-cols-2'>
       <Form action='#' method='post' class='space-y-3'>
-        <Honeypot />
         <Input type='email' name='turnstile-email-resilient' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} load='focus' unsupported='This browser is too old to run our bot check.'>
           Our bot check could not load. Turn off your blocker for this site and reload.
@@ -364,7 +357,7 @@ const ResilienceSection: FC = () => (
 );
 
 /** How the verify round trip ended: the pipeline's own verdict, not the widget's. @public */
-export type TurnstileVerdict = { kind: "verified" } | { kind: "rejected"; guard: string; reason?: TurnstileFailure } | { kind: "unconfigured" };
+export type TurnstileVerdict = { kind: "verified" } | { kind: "rejected"; guard: string; reason: TurnstileFailure } | { kind: "unconfigured" };
 
 // Partial, and keyed by every failure this page can actually reach: the one it cannot — a customer-data
 // mismatch, which needs an `expectedCData` the showcase never sets — spells a `data-*` name in source
@@ -386,8 +379,7 @@ export const TurnstileVerdictFragment: FC<{ verdict: TurnstileVerdict }> = ({ ve
       <Alert tone='warning'>
         <Alert.Title>No secret key is configured</Alert.Title>
         <Alert.Description>
-          The form reached the action and its honeypot ran, but `registerShowcase` was given no `turnstileSecret`, so nothing was sent to
-          siteverify.
+          The form reached the action, but `registerShowcase` was given no `turnstileSecret`, so nothing was sent to siteverify.
         </Alert.Description>
       </Alert>
     );
@@ -405,9 +397,7 @@ export const TurnstileVerdictFragment: FC<{ verdict: TurnstileVerdict }> = ({ ve
   return (
     <Alert tone='destructive'>
       <Alert.Title>Refused by the {verdict.guard} guard</Alert.Title>
-      <Alert.Description>
-        {verdict.reason === undefined ? "The decoy field was filled." : (VERDICT_COPY[verdict.reason] ?? "Verification failed.")}
-      </Alert.Description>
+      <Alert.Description>{VERDICT_COPY[verdict.reason] ?? "Verification failed."}</Alert.Description>
     </Alert>
   );
 };
@@ -416,9 +406,9 @@ const VerifySection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
   <CatalogPanel
     id='turnstile-verify'
     title='The server half'
-    description='The playground form above posts here. The route is an ordinary defineAction with honeypot and turnstile declared, and its onBotDetected reports the reason instead of hiding it.'>
+    description='The playground form above posts here. The route is an ordinary defineAction with turnstile declared, and its onBotDetected reports the reason instead of hiding it.'>
     <pre class='overflow-x-auto rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground'>
-      <code>{`defineAction({\n  schema,\n  honeypot: "${HONEYPOT_FIELD_DEFAULT}",\n  turnstile: {\n    secretKey: (_c, config) => config.services.turnstile.secretKey,\n    verify: (c) => ({ expectedHostname: c.url.hostname }),\n  },\n  onBotDetected: (rejection) => refuse(rejection),\n  handle,\n})`}</code>
+      <code>{`defineAction({\n  schema,\n  turnstile: {\n    secretKey: (_c, config) => config.services.turnstile.secretKey,\n    verify: (c) => ({ expectedHostname: c.url.hostname }),\n  },\n  onBotDetected: (rejection) => refuse(rejection),\n  handle,\n})`}</code>
     </pre>
     <p class='mt-3 text-sm text-muted-foreground'>
       A real route answers every refusal the same way, so a bot cannot read the guard off the response. This one names it, because the point of the

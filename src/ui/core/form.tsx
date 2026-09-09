@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import { CSRF_FIELD_DEFAULT } from "../../form/constants";
+import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "../../form/constants";
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -11,6 +11,8 @@ type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx
   children?: JSXNode | undefined;
   csrfToken?: string | undefined;
   csrfField?: string | undefined;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. Defaults to `CSRF_HEADER_DEFAULT`. */
+  csrfHeader?: string | undefined;
 };
 
 // Every entry is kept, whatever its JSON type: htmx serialises a number or a boolean into the header
@@ -28,7 +30,7 @@ function parseHxHeaders(value: string): Record<string, unknown> | null {
   }
 }
 
-function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string): string | undefined {
+function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfHeader: string, csrfToken?: string): string | undefined {
   if (!csrfToken) {
     if (typeof hxHeaders === "string") {
       return hxHeaders;
@@ -45,23 +47,24 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfToken?: string
     if (!parsed) {
       throw new Error(
         `<Form> cannot merge its csrfToken into an hx-headers value that is not a JSON object (${hxHeaders}). ` +
-          `Add "X-CSRF-Token" to that value yourself, or drop csrfToken and render the hidden field by hand.`,
+          `Add "${csrfHeader}" to that value yourself, or drop csrfToken and render the hidden field by hand.`,
       );
     }
-    return JSON.stringify({ ...parsed, "X-CSRF-Token": csrfToken });
+    return JSON.stringify({ ...parsed, [csrfHeader]: csrfToken });
   }
 
   if (hxHeaders && typeof hxHeaders === "object") {
-    return JSON.stringify({ ...hxHeaders, "X-CSRF-Token": csrfToken });
+    return JSON.stringify({ ...hxHeaders, [csrfHeader]: csrfToken });
   }
 
-  return JSON.stringify({ "X-CSRF-Token": csrfToken });
+  return JSON.stringify({ [csrfHeader]: csrfToken });
 }
 
 /** A `<form>` that wires CSRF for you and passes htmx attributes straight through. @public */
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   csrfToken,
   csrfField = CSRF_FIELD_DEFAULT,
+  csrfHeader = CSRF_HEADER_DEFAULT,
   method = "post",
   children,
   class: cls,
@@ -70,7 +73,7 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
   ...props
 }) => {
   const formProps = props as Record<string, unknown>;
-  const resolvedHxHeaders = resolveHxHeaders(hxHeadersProp, csrfToken);
+  const resolvedHxHeaders = resolveHxHeaders(hxHeadersProp, csrfHeader, csrfToken);
   const merged = cn(cls);
   const classAttribute = merged ? { class: merged } : {};
 

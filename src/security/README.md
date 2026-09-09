@@ -431,7 +431,7 @@ app.use("/api/*", originProtection({ allowedOrigins: (c) => c.var.config.allowed
 | --- | --- |
 | CSRF token mint/verify | `@y-core/forge/form` |
 | Session management | `@y-core/forge/session` |
-| Authentication / RBAC | Future `@y-core/forge/auth` |
+| Authentication / RBAC | `@y-core/forge/auth` |
 | Constant-time comparison | Internal `src/crypto/` (`@internal`) |
 | HTMX request detection (`isHxRequest`) | `@y-core/forge/html/htmx` (a UX hint, not a security boundary) |
 

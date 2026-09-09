@@ -10,7 +10,7 @@ audience: consumer
 > `trustCfHeaders` trust boundary. CSP, CORS, origin verification, rate limiting, request
 > identity. Authentication, sessions, and RBAC are out of scope (§7).
 >
-> Defers to: [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) for CSRF, honeypot, Turnstile, and
+> Defers to: [`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) for CSRF, Turnstile, and
 > the form body cap; [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) for middleware
 > placement; [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §2d and §5b for fragment-option escaping
 > and the baseline-hardened 500; [`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §3b, §3c, §4a

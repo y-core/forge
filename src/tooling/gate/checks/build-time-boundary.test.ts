@@ -160,7 +160,7 @@ describe("checkBuildTimeBoundary", () => {
       project({
         "src/tooling/gate/mod.ts": 'export { safeJoin } from "../assets/paths";\n',
         "src/tooling/assets/paths.ts": "export const safeJoin = 1;\n",
-        "src/ui/assets/build/color.ts": 'import { safeJoin } from "../../../tooling/assets/paths";\nexport const c = safeJoin;\n',
+        "src/ui/assets/build/color.ts": 'import { safeJoin } from "../../assets/paths";\nexport const c = safeJoin;\n',
       }),
     );
 

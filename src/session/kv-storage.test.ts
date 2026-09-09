@@ -80,6 +80,12 @@ describe("createKVSessionStorage — save/read round-trip", () => {
     expect(data.size).toBe(0);
   });
 
+  it("refuses an empty prefix, which would key every session under a bare `:id`", () => {
+    expect(() => createKVSessionStorage(fakeSessionKV().kv, { prefix: "" })).toThrow(
+      "createKVSessionStorage: `prefix` must not be an empty string",
+    );
+  });
+
   it("applies the configured prefix and sliding TTL on every save", async () => {
     const { kv, data } = fakeSessionKV();
     const storage = createKVSessionStorage(kv, { prefix: "sess", ttlSeconds: 3600 });

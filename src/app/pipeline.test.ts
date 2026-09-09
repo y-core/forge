@@ -176,11 +176,17 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
     expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("missing-token"))).toBe(true);
   });
 
-  it("logs a tripped honeypot on the same line, naming the guard that refused", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, honeypot: "company", handle: () => new Response("success") }));
+  it("names the guard that refused on the same line", async () => {
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
+        handle: () => new Response("success"),
+      }),
+    );
 
-    const logs = await captureLogs(() => post(app, "name=Jane&company=bot"));
-    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("honeypot"))).toBe(true);
+    const logs = await captureLogs(() => post(app, "name=Jane"));
+    expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("turnstile"))).toBe(true);
   });
 
   it("still reaches handle through resolvers that do not throw", async () => {
@@ -254,13 +260,13 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
     const app = makeApp(
       defineAction({
         schema: NameSchema,
-        honeypot: "company",
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
         onBotDetected: () => Promise.reject(new Error("ban list unavailable")),
       }),
     );
 
-    const res = await post(app, "name=Jane&company=spam");
+    const res = await post(app, "name=Jane");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ACTION_500_FRAGMENT);
   });

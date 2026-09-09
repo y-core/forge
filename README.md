@@ -40,6 +40,9 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | --- | --- | --- |
 | `@y-core/forge/app` | App bootstrap & lifecycle | [src/app/README.md](src/app/README.md) |
 | `@y-core/forge/assets` | Manifest & sprite registry (runtime) | [src/assets/README.md](src/assets/README.md) |
+| `@y-core/forge/auth` | Identity — credentials, factors & stores (domain only) | [src/auth/README.md](src/auth/README.md) |
+| `@y-core/forge/auth/client` | Browser island for the passkey ceremony scope (side-effect) | [src/auth/README.md](src/auth/README.md) |
+| `@y-core/forge/auth/web` | Auth routes, paths, guards, form schemas & the page render seam | [src/auth/README.md](src/auth/README.md) |
 | `@y-core/forge/tooling/assets` | Asset config, build pipeline & `forge assets` | [src/tooling/assets/README.md](src/tooling/assets/README.md) |
 | `@y-core/forge/tooling/cli` | CLI command framework | [src/tooling/cli/README.md](src/tooling/cli/README.md) |
 | `@y-core/forge/tooling/gate` | Verification gate — steps, presets & checks (Node/Bun only) | [src/tooling/gate/README.md](src/tooling/gate/README.md) |
@@ -73,6 +76,7 @@ Each namespace has its own `README.md` with full API documentation — click a n
 | `@y-core/forge/storage/kv` | Workers KV typed store | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md](src/storage/README.md) |
 | `@y-core/forge/testing` | Test fixtures & fakes | [src/testing/README.md](src/testing/README.md) |
+| `@y-core/forge/testing/workerd` | `wrangler dev` fixture server (node-only, off the barrel) | [src/testing/README.md](src/testing/README.md) |
 | `@y-core/forge/ui/contracts` | Shared SSR/browser DOM contract as pure data | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/contracts/theme` | Colour-scheme generation and the audited contrast pairs | [src/ui/README.md](src/ui/README.md) |
 | `@y-core/forge/ui/core` | Server-side JSX component library | [src/ui/README.md](src/ui/README.md) |

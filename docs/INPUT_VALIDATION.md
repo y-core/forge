@@ -1,13 +1,13 @@
 ---
 title: Input Validation
-description: "The valibot facade, form parsing and its byte cap, CSRF protection, honeypot and Turnstile bot defence, and the validate-at-boundary rule."
+description: "The valibot facade, form parsing and its byte cap, CSRF protection, Turnstile bot defence, and the validate-at-boundary rule."
 audience: consumer
 ---
 
 # Input Validation
 
 > Owns the validation and form-parsing pipeline: the valibot facade, `defineAction`'s schema
-> contract, body parsing and its byte cap, CSRF, honeypot, and Turnstile.
+> contract, body parsing and its byte cap, CSRF, and Turnstile.
 >
 > Defers to: [`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c for `ValidationResult` and §2c for
 > rendering its message list; [`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) for the
@@ -33,10 +33,9 @@ audience: consumer
 - §3b importCsrfKey and importCsrfKeyRing: secret import and rotation
 - §3c mintCsrf — Token Minting for Form Injection: path scoping
 - §3d createCsrfToken and verifyCsrfToken: the lower-level API
-- §4 Bot Protection: honeypot and Turnstile
-- §4a isHoneypotFilled — Hidden Field Bot Detection: the decoy's name, its home in the pipeline, and where it is rendered
-- §4b verifyTurnstile — Cloudflare Turnstile CAPTCHA: options, `expectedHostname`, and failing closed
-- §4c Guard Refusal Shape and Its Residual Oracle: why a guard answers as a validation failure, and the residual that leaves
+- §4 Bot Protection: Turnstile
+- §4a verifyTurnstile — Cloudflare Turnstile CAPTCHA: options, `expectedHostname`, and failing closed
+- §4b Guard Refusal Shape and Its Residual Oracle: why a guard answers as a validation failure, and the residual that leaves
 - §5 Config Schemas: startup validation of credentials
 - §5a CsrfConfigSchema: hex secret validation
 - §5b TurnstileConfigSchema: site and secret key validation
@@ -130,10 +129,10 @@ required-ness a presence check; a **repeated key arrives as an array**, so a sca
 it and a route that accepts many declares `v.array`; and a **`File` passes through unchanged**.
 
 **A guard that consumes a field is what removes it.** A form carries entries the request itself
-does not assert — a CSRF token, a honeypot decoy, a CAPTCHA token — and a strict schema has no
-reason to declare any of them, so each is dropped before validation. **Nothing is dropped on a
-guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them (§4a,
-§4b); the CSRF field is dropped because `csrfProtection` recorded which field it took the token
+does not assert — a CSRF token, a CAPTCHA token — and a strict schema has no
+reason to declare either of them, so each is dropped before validation. **Nothing is dropped on a
+guess.** The Turnstile field is dropped because this pipeline checked it (§4a); the CSRF field is
+dropped because `csrfProtection` recorded which field it took the token
 from (§3a). A route that renames one of those fields therefore declares the name once, to the
 guard that reads it, and never a second time to the schema. What happens on a request where no
 guard ran is the derive-only rule, owned by
@@ -186,8 +185,8 @@ catch what a pipe action throws, so a `v.transform` or `v.check` that throws on 
 reaches that same path instead of escaping the handler.
 
 **A tripped bot guard answers with the refusal the schema itself would have produced** — the same
-status, one `<li>` naming a field the schema declares, never the decoy, whose name only the guard
-knows. Because `abortEarly` holds a real refusal to a single issue too, a bot cannot tell a guard
+status, one `<li>` naming a field the schema declares, never the token field the guard consumed.
+Because `abortEarly` holds a real refusal to a single issue too, a bot cannot tell a guard
 from a mistyped field by comparing the two answers. `onBotDetected` replaces that default for an
 app that would rather ban, log, or stall.
 
@@ -204,8 +203,7 @@ route's form contains; that is why CSRF, origin, and rate-limit guards sit in th
 array and refuse before any route builder runs. (`csrfProtection` falls back to reading a field out
 of the body, which is a lookup of the one field the guard itself owns and named, not a reading of
 the route's own fields.) A **body-content** guard decides from a field that is part of the form's
-design — a
-decoy the view placed, a CAPTCHA token the widget wrote — so it belongs where the body is read,
+design — a CAPTCHA token the widget wrote — so it belongs where the body is read,
 and where the field it consumes is dropped in the same step. Neither kind crosses: no middleware
 runs inside `defineAction`, and no body-content guard is expressible as middleware.
 
@@ -266,10 +264,16 @@ fixation / cross-user replay against the same path. Binding to the session subje
 token to one identity: a token minted under session A fails under session B with reason
 `subject-mismatch` → `403`.
 
-**Register `sessionMiddleware` before the guard** so the session exists when the resolver runs.
-`form` and `session` are independent leaf namespaces, so this composition lives in the consuming
-app — forge does not auto-wire it. A resolver returning `undefined` mints and verifies a
-path-only token for that request.
+**Register `sessionMiddleware` before the guard**, always. The resolver runs before `next()`, so a
+guard registered ahead of the session middleware resolves against a context that has no session on
+it yet — the ordering is load-bearing, not a preference. `form` and `session` are independent leaf
+namespaces, so this composition lives in the consuming app — forge does not auto-wire it.
+
+**A resolver returning `undefined` is a refusal.** The mutation answers `403` and the middleware
+logs one `[csrf]` warning naming the likely cause (session middleware absent, or registered after
+the guard). It does not degrade to a path-only token: silently dropping the binding is exactly the
+fixation risk above, and a wiring error must not buy an attacker the opt-out. `subject: false` is
+the only way to be unbound.
 
 **Path-only opt-out — `subject: false`.** For routes with no session identity to bind to, pass
 the literal `false`. It is the explicit, greppable opt-out that makes "this route accepts
@@ -316,44 +320,9 @@ non-standard token transport. Prefer the middleware for all standard form submis
 
 ---
 
-## 4. Bot Protection — Honeypot and Turnstile
+## 4. Bot Protection — Turnstile
 
-### 4a. `isHoneypotFilled` — Hidden Field Bot Detection
-
-Checks whether a hidden field that legitimate users never fill has been populated by a bot.
-`HONEYPOT_FIELD_DEFAULT` is the fallback field name (`src/form/constants.ts`); pass a second
-argument to override it.
-
-**A `defineAction` route does not call it — it names `honeypot`,** and the pipeline runs the check
-and drops the field in one step, before the schema (§1d). Bots that fill hidden fields are
-therefore rejected cheaply, without the schema running. `isHoneypotFilled` stays public for a
-hand-rolled handler outside that pipeline.
-
-**The `honeypot` option has no default and no shorthand, and that is the security property, not an
-ergonomic gap.** A decoy works only while its name is unguessable and plausible; forge is open
-source, so any name or prefix forge could supply is a name every bot already knows to skip, in
-every deployment at once. **Declare the name once as the app's own constant and reference it from
-both the view and the action** — `<Honeypot field={CONTACT_DECOY} />` beside
-`defineAction({ honeypot: CONTACT_DECOY, … })`. Forgetting the action half is then a missing
-argument at the call site rather than a silent loss of protection in production.
-
-**Render the decoy with the `Honeypot` component from `ui/core`, on every form view that submits a
-mutation.** `Form` renders none of its own, deliberately: a form that renders one unconditionally
-puts the decoy into the query string of every `method="get"` submission — into the address bar,
-bookmarks, shared links, history, and the outbound `Referer` — where it also protects nothing,
-since only mutation handlers consult a honeypot at all. Explicit composition puts the decoy
-exactly where it defends something. The rendered markup carries no attribute naming it as a
-honeypot, for the same reason the field name is unpublished.
-
-**The chosen name must be meaningless, and that is a correctness rule rather than taste.** A decoy
-called `surname`, `company` or `website` matches the browser's own autofill heuristics, which ignore
-`autocomplete="off"` for name and address fields — so the browser fills the decoy for any user with
-a saved profile and the submission is refused with nothing on screen to explain it. The rendered
-input carries `autocomplete="new-password"` for the same reason: it is the one token every browser
-honours as _never autofill this_. A plausible-sounding name is not the property the decoy needs;
-unguessable and never-autofilled is.
-
-### 4b. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
+### 4a. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
 
 `verifyTurnstile(formData, secretKey, options)` calls the siteverify API and returns a
 `TurnstileResult`. It reads the token field itself; **the token field and connecting IP live
@@ -390,11 +359,11 @@ reason so an app can tell an outage from an attack.
 **`secretKey` is server-side only and must never appear in a client bundle**; `siteKey` is the
 client-side half.
 
-### 4c. Guard Refusal Shape and Its Residual Oracle
+### 4b. Guard Refusal Shape and Its Residual Oracle
 
 **A tripped guard answers in the shape of a validation refusal**, naming a field the schema
-declares and never the decoy, so a bot reading only the response cannot tell a honeypot or
-Turnstile rejection from a failed field (§1b bounds the same response to one issue).
+declares and never the token field the guard consumed, so a bot reading only the response cannot
+tell a Turnstile rejection from a failed field (§1b bounds the same response to one issue).
 
 **The named field is the schema's _first declared_ field, and that is an accepted residual, not a
 bug.** A caller who knows its own body would have validated can still infer that the refusal came

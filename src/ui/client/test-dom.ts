@@ -238,6 +238,43 @@ export class FakeDocument {
   }
 }
 
+/** A stand-in for `navigator.credentials`: records each call, and answers from `answer`.
+ *
+ * Nothing else in `ui/client` reads `navigator`, so this is modelled here rather than assumed —
+ * a `DOMException` name in `answer` is thrown as that error, which is how a ceremony's refusal
+ * paths are reached without a real authenticator. */
+export class FakeCredentials {
+  readonly calls: Array<{ method: "create" | "get"; options: unknown }> = [];
+  /** The credential each call resolves with; a string is thrown as a `DOMException` of that name. */
+  answer: unknown = null;
+
+  create(options: unknown): Promise<unknown> {
+    return this.respond("create", options);
+  }
+
+  get(options: unknown): Promise<unknown> {
+    return this.respond("get", options);
+  }
+
+  private respond(method: "create" | "get", options: unknown): Promise<unknown> {
+    this.calls.push({ method, options });
+    if (typeof this.answer === "string") {
+      const error = new Error(this.answer);
+      error.name = this.answer;
+      return Promise.reject(error);
+    }
+    return Promise.resolve(this.answer);
+  }
+}
+
+/** One recorded `fetch`, with the body already parsed back from JSON where it was JSON. */
+export interface FakeRequest {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
 /** A window whose timers a test drives by hand, so no test ever waits on a real clock. */
 export class FakeWindow {
   private seq = 0;
@@ -247,6 +284,44 @@ export class FakeWindow {
 
   constructor(document: FakeDocument) {
     this.document = document;
+  }
+
+  /** Whether the realm exposes WebAuthn; a browser without it has no `PublicKeyCredential` at all. */
+  PublicKeyCredential: unknown = function PublicKeyCredential() {};
+
+  readonly credentials = new FakeCredentials();
+
+  readonly navigator = { credentials: this.credentials };
+
+  /** Every request `fetch` was given, in order. */
+  readonly requests: FakeRequest[] = [];
+
+  /** What `fetch` answers, by URL — `null` rejects, as a network failure does; an absent URL is 404. */
+  readonly replies = new Map<string, { status?: number; body?: unknown } | null>();
+
+  /** Where `location.assign` was sent, in order. */
+  readonly navigations: string[] = [];
+
+  readonly location = {
+    assign: (path: string): void => {
+      this.navigations.push(path);
+    },
+  };
+
+  fetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+    const raw = init.body;
+    let body: unknown = raw;
+    try {
+      if (typeof raw === "string") body = JSON.parse(raw);
+    } catch {
+      body = raw;
+    }
+    this.requests.push({ url, method: init.method ?? "GET", headers: init.headers ?? {}, body });
+
+    const reply = this.replies.get(url);
+    if (reply === null) return Promise.reject(new Error("network error"));
+    if (reply === undefined) return Promise.resolve(new Response("", { status: 404 }));
+    return Promise.resolve(new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 }));
   }
 
   setTimeout(fn: () => void, _ms?: number): number {

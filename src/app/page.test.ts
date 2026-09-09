@@ -25,6 +25,8 @@ function post(app: Requestable, body: string, path = "/test"): Promise<Response>
   return app.request(path, { method: "POST", headers: FORM_HEADERS, body });
 }
 
+const TURNSTILE_OPTIONS = { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) };
+
 const NameSchema = strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
 function refusal(...fields: readonly string[]): string {
@@ -120,17 +122,17 @@ describe("definePage", () => {
   });
 
   it("refuses a pipeline option stated without a schema", () => {
-    expect(() => definePage({ honeypot: "__hp", view: () => new Response("ok") } as never)).toThrow(
-      "definePage: `honeypot` requires `schema` — a submission-pipeline option without a schema is ignored.",
+    expect(() => definePage({ turnstile: TURNSTILE_OPTIONS, view: () => new Response("ok") } as never)).toThrow(
+      "definePage: `turnstile` requires `schema` — a submission-pipeline option without a schema is ignored.",
     );
-    expect(() => definePage({ honeypot: "__hp", maxBytes: 1024, view: () => new Response("ok") } as never)).toThrow(
-      "definePage: `honeypot`, `maxBytes` require `schema` — submission-pipeline options without a schema are ignored.",
+    expect(() => definePage({ turnstile: TURNSTILE_OPTIONS, maxBytes: 1024, view: () => new Response("ok") } as never)).toThrow(
+      "definePage: `turnstile`, `maxBytes` require `schema` — submission-pipeline options without a schema are ignored.",
     );
   });
 
   it("refuses a pipeline option stated without a schema at the type level", () => {
-    // @ts-expect-error -- `honeypot` is only assignable on the arm that also states `schema`
-    expect(() => definePage({ honeypot: "__hp", view: () => new Response("ok") })).toThrow();
+    // @ts-expect-error -- `turnstile` is only assignable on the arm that also states `schema`
+    expect(() => definePage({ turnstile: TURNSTILE_OPTIONS, view: () => new Response("ok") })).toThrow();
   });
 
   it("sets custom headers", async () => {
@@ -538,8 +540,6 @@ describe("definePage — a refusal carries the page's own headers", () => {
 });
 
 describe("definePage — the submission sequence's options are the page's own", () => {
-  const DECOY = "contact_reason_2";
-
   const MessageSchema = strictObject({ message: v.pipe(v.string(), v.minLength(1, "Tell us what you'd like & we'll reply.")) });
 
   function renderForm(errors: readonly string[]): Response {
@@ -584,7 +584,9 @@ describe("definePage — the submission sequence's options are the page's own", 
     expect(methodAtRefusal).toBe("POST");
   });
 
-  function decoyPage(calls: string[], onBotDetected?: (rejection: BotRejection) => Response) {
+  it("hands the page's onBotDetected the rejection instead of rendering the refusal", async () => {
+    const calls: string[] = [];
+    let rejection: BotRejection | undefined;
     const app = new Forge();
     mapHandler(
       app,
@@ -592,8 +594,11 @@ describe("definePage — the submission sequence's options are the page's own", 
       "/test",
       definePage({
         schema: NameSchema,
-        honeypot: DECOY,
-        ...(onBotDetected ? { onBotDetected } : {}),
+        turnstile: TURNSTILE_OPTIONS,
+        onBotDetected: (received) => {
+          rejection = received;
+          return new Response("go away", { status: 403 });
+        },
         action: (_c, _config, data) => {
           calls.push("action");
           return Object.keys(data).join(",");
@@ -601,39 +606,11 @@ describe("definePage — the submission sequence's options are the page's own", 
         view: (_c, _config, state) => new Response(String(state.actionData)),
       }),
     );
-    return app;
-  }
 
-  it("refuses a filled decoy the page declared as its honeypot, naming the schema's field and not the decoy", async () => {
-    const calls: string[] = [];
-    const res = await post(decoyPage(calls), `name=Jane&${DECOY}=spam`);
-
-    expect(res.status).toBe(422);
-    expect(await res.text()).toBe(refusal("name"));
-    expect(calls).toEqual([]);
-  });
-
-  it("drops the empty decoy, so a strictObject that never declares it still passes", async () => {
-    const calls: string[] = [];
-    const res = await post(decoyPage(calls), `name=Jane&${DECOY}=`);
-
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("name");
-    expect(calls).toEqual(["action"]);
-  });
-
-  it("hands the page's onBotDetected the rejection instead of rendering the refusal", async () => {
-    const calls: string[] = [];
-    let rejection: BotRejection | undefined;
-    const app = decoyPage(calls, (received) => {
-      rejection = received;
-      return new Response("go away", { status: 403 });
-    });
-
-    const res = await post(app, `name=Jane&${DECOY}=spam`);
+    const res = await post(app, "name=Jane");
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("go away");
-    expect(rejection).toEqual({ guard: "honeypot" });
+    expect(rejection).toEqual({ guard: "turnstile", reason: "missing-token" });
     expect(calls).toEqual([]);
   });
 

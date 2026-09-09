@@ -129,7 +129,17 @@
     {
       // The rule's subject is a rendered-markup assertion, which only a test file makes; scoped to
       // the tree `validate-exact-assertions` walked, so the migration widens no corpus.
-      "files": ["src/ui/**/*.test.ts", "src/ui/**/*.test.tsx", "src/ui/**/*.browser.ts", "src/ui/**/*.browser.tsx"],
+      // `auth/web` is the second tree that renders markup, and its view specs are the bulk of the
+      // layer's assertion surface — unscanned, most of it would go unchecked.
+      "files": [
+        "src/ui/**/*.test.ts",
+        "src/ui/**/*.test.tsx",
+        "src/ui/**/*.browser.ts",
+        "src/ui/**/*.browser.tsx",
+        "src/auth/web/**/*.test.ts",
+        "src/auth/web/**/*.test.tsx",
+        "src/auth/client/**/*.browser.ts"
+      ],
       "rules": { "forge/exact-markup-assertion": "error" }
     },
     {

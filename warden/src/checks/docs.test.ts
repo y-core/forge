@@ -738,7 +738,7 @@ describe("checkDocs() — binding a subpath to its governance", () => {
     expect(result.findings.map((f) => f.message)).toEqual([]);
   });
 
-  it("warns on a subpath a table lists and no prose binds", () => {
+  it("fails on a subpath a table lists and no prose binds", () => {
     const root = fixtureRoot({
       "CLAUDE.md": catalogIndex,
       "docs/NAMESPACES.md": catalogDoc("Namespaces", "| `@y-core/forge/router` | the router namespace |"),
@@ -753,7 +753,7 @@ describe("checkDocs() — binding a subpath to its governance", () => {
     });
 
     expect(result.findings.map((f) => `${f.level}: ${f.message}`)).toEqual([
-      "warn: `./router` is listed but bound by no prose rule — add one, or exempt it with a reason",
+      "fail: `./router` is listed but bound by no prose rule — add one, or exempt it with a reason",
     ]);
   });
 

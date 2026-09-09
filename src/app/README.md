@@ -22,6 +22,8 @@ This namespace is an **integration namespace** — it composes `form`, `http`, `
 - **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (read → bot guards → schema → handle, with automatic `413`/`400`/`422`/`500` error fragments).
 - **Static-asset catch-all** — `applyAssets` serves the `ASSETS` binding with a typed `notFoundView` fallback.
 - **Config injection** — a `Config` store passed to `createApp` is resolved once per request and exposed on the context (`ConfigKey`, `c.config`).
+- **One registered page shell** — `createApp({ shell })` names the document every mounted page renders into, resolved per request; forge's own mounts take no chrome options of their own.
+- **Typed page meta** — every mount hands the shell a `PageMeta` (`title`, `description`, `canonical`, `robots`, `og`, `twitter`, JSON-LD, and an open escape hatch), rendered by `metaTags` and merged over a site base with `mergeMeta`.
 - **Startup binding validation** — `validateEnv` (one-shot, throws) and `validateBindings` (middleware form) check Worker bindings against a valibot schema.
 - **Health endpoint** — `healthCheck` runs named predicates concurrently and returns `{ ok, checks }` as JSON (`200`/`503`).
 - **Test harness** — `app.request(path, init?, env?)` builds a `Request`, dispatches the full chain, and awaits any `waitUntil` work.
@@ -92,6 +94,7 @@ Creates a `Forge` instance with a structured error boundary.
 | `isDebug` | `(c: AppContext<Bindings>) => boolean` | When it returns `true`, the default `500` page includes the error message; otherwise a generic message is shown. Throwing inside `isDebug` is caught and treated as `false`. |
 | `onError` | `(error: Error, c: AppContext<Bindings>) => Response \| Promise<Response>` | Custom app-level error handler. Replaces the default `500` page. If it throws, forge falls back to the default page. |
 | `logger` | `Logger` | Custom logger injected into the error handler. Defaults to `createLogger("app")`. |
+| `shell` | `PageShell<Bindings>` | The document every mounted page renders into, resolved per request. Omitted, forge renders a bare document. |
 | `middleware` | `(app: Forge<Bindings>) => void` | Wiring step 1 — register global middleware (typically one `applyMiddlewareChain` call). |
 | `routes` | `(app: Forge<Bindings>) => void` | Wiring step 2 — register routes (`app.map` calls). |
 | `finalize` | `(app: Forge<Bindings>) => void` | Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all. |
@@ -132,6 +135,7 @@ Manual wiring (`createApp()` + `app.use` + `app.map` + `applyAssets`) remains fu
 | `fetch` | `(request: Request, env: Bindings, executionCtx?: ExecutionContext) => Promise<Response>` | The Workers module `fetch` handler. `HEAD` requests are served as a derived `GET` with the body cancelled and stripped. `executionCtx` defaults to a mock context for non-Workers environments. |
 | `use` | `(path: string \| readonly string[], ...handlers: Middleware[]) => void` | Registers path-scoped global middleware. `"*"` matches every request; `"/admin/*"` matches `/admin` and anything beneath it; an array registers each handler **once**, matching any of the paths. |
 | `map` | `(routes, controller) => void` | Declarative route registration — the canonical way to add routes. |
+| `setShell` | `(shell: PageShell<Bindings>) => void` | Registers the document shell after construction — the single writer of that slot, so a later call replaces an earlier one. |
 | `request` | `(path: string, init?: RequestInit, env?: Bindings) => Promise<Response>` | Test helper: builds a `Request` from `path`, dispatches the full chain, and awaits any `waitUntil` promises before returning. |
 
 Because `fetch` is the module handler, the whole app ships as:
@@ -156,7 +160,7 @@ Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) int
 | `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. Applied last, so it overrides `cache` too. |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
 
-**The submission sequence's options are declared here too.** `honeypot`, `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a `schema`**, and `definePage` throws at registration naming any that were stated without one; why the shared surface is inherited rather than restated, and why a pipeline option without a schema is refused at all, is `ROUTING_AND_MIDDLEWARE.md` §2d's.
+**The submission sequence's options are declared here too.** `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a `schema`**, and `definePage` throws at registration naming any that were stated without one; why the shared surface is inherited rather than restated, and why a pipeline option without a schema is refused at all, is `ROUTING_AND_MIDDLEWARE.md` §2d's.
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -178,7 +182,7 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 
 **The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of `schema`, so a route cannot accept a body nothing checked ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1d).
 
-**The body-content guards live here; transport guards do not.** The honeypot and Turnstile checks each read a named field out of this form, so they belong where the body is read and where the field they consume can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no `middleware` field).
+**The body-content guards live here; transport guards do not.** The Turnstile check reads a named field out of this form, so it belongs where the body is read and where the field it consumes can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no `middleware` field).
 
 `defineAction<S, Bindings, ConfigData>` takes three type arguments and infers `S` from `def.schema`. TypeScript has no partial type-argument inference, so a call site naming `Bindings` names the schema too (`defineAction<typeof ContactSchema, Bindings, AppConfig>`); `createHandlerFactory` removes the need for any of them.
 
@@ -188,14 +192,13 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 | `handle` | `(data: v.InferOutput<S>, c, config) => Response \| Promise<Response>` | Runs after the schema passes. Receives the schema's **output** (so a transform reaches it as the type it actually is), the context, and the resolved `config`. |
 | `onValidationError` | `(issues: readonly v.BaseIssue<unknown>[], c) => Response \| Promise<Response>` | Optional. Replaces the default validation fragment. It receives the **issues**, not formatted strings: an issue embeds the rejected value, and under a strict object the caller's own key, so how much of a caller's text travels back in a refusal is the app's decision. |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `500` fragment for anything that throws inside the validate-and-handle region — `handle`, the schema, or `onValidationError`. |
-| `honeypot` | `string` | Optional. The field carrying this route's decoy — the same value the view gave `<Honeypot field={…} />`, best held as one app-owned constant referenced by both. Naming it here is what checks the decoy **and** drops it, so the schema never declares a field no human fills. No default and no shorthand: a name forge could supply is a name every bot already knows to skip. |
 | `turnstile` | `ActionTurnstileOptions` | Optional. `{ secretKey, tokenField?, verify }`. The pipeline verifies the token and drops the token field, so the schema is never asked to declare it. `tokenField` is fixed at definition time (the field is dropped whether or not verification reaches the network); `secretKey` and `verify` resolve per request. |
-| `onBotDetected` | `(rejection: BotRejection, c) => Response \| Promise<Response>` | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all. |
+| `onBotDetected` | `(rejection: BotRejection, c) => Response \| Promise<Response>` | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all. |
 | `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |
 
 **What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload schema can see one.
 
-**Nothing is dropped on a guess.** The honeypot and Turnstile fields are dropped because this pipeline checked them; the CSRF field is dropped because `csrfProtection` published the field it took the token from. There is no option for naming a field to drop — the derived-not-declared rule, what a route with no CSRF middleware therefore does with a submitted `_csrf`, and the two alternatives that were rejected are `ROUTING_AND_MIDDLEWARE.md` §2b's.
+**Nothing is dropped on a guess.** The Turnstile field is dropped because this pipeline checked it; the CSRF field is dropped because `csrfProtection` published the field it took the token from. There is no option for naming a field to drop — the derived-not-declared rule, what a route with no CSRF middleware therefore does with a submitted `_csrf`, and the two alternatives that were rejected are `ROUTING_AND_MIDDLEWARE.md` §2b's.
 
 **Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic — all from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
 
@@ -214,7 +217,6 @@ const ContactSchema = strictObject({
 
 export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
   schema: ContactSchema,
-  honeypot: CONTACT_DECOY,
   handle: async (data, c, config) => {
     await sendEmail(config.email, data);
     return fragmentResponse(renderSuccess("Thanks — we'll be in touch."));
@@ -229,7 +231,7 @@ The automatic error responses (all are HTMX-swappable fragments):
 | `413` | Form body exceeds the size cap (`parseFormData` throws with `status: 413`). |
 | `400` | Body is unparseable as form data. |
 | `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1b). |
-| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4c). |
+| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4b). |
 | `500` | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
 
 ### `createHandlerFactory<Bindings, ConfigData>()`
@@ -336,6 +338,26 @@ const env = validateEnv(rawEnv, EnvSchema);
 app.use("*", validateBindings(EnvSchema));
 ```
 
+### `metaTags(meta, options?)`, `mergeMeta(base, page)`, `PageMeta`, `MetaTag`, `RobotsDirective`
+
+| Export | Kind | Description |
+| --- | --- | --- |
+| `metaTags(meta, options?)` | function | Renders a `PageMeta` as `<head>` children. `options.nonce` is required for `jsonLd` to render at all — the element it emits needs the request's nonce ([`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2d). |
+| `mergeMeta(base, page)` | function | Merges a page's descriptor over the site-wide one — shallow at the top, one level deep for `og`/`twitter`, `extra` concatenated base-first. |
+| `PageMeta` | type | `{ title, description?, canonical?, robots?, og?, twitter?, jsonLd?, extra? }`. `canonical` and `og.image` must be absolute; forge derives neither. |
+| `MetaTag` | type | The `extra` escape hatch: `{ name, content }`, `{ property, content }`, or `{ tagName: "link", rel, href }`. Appended verbatim, never deduplicated. |
+| `RobotsDirective`, `OgType`, `MetaOptions` | types | The robots tokens (given singly or as an array, joined with `", "`), the `og:type` values, and what `metaTags` reads off the request. |
+
+### `renderShell(c, content, slot, init?)`, `pageShell(document?)`, `PageShell`, `ShellSlot`, `ShellDocument`
+
+| Export | Kind | Description |
+| --- | --- | --- |
+| `renderShell(c, content, slot, init?)` | function | Renders `content` as a full document through the app's registered shell, or the bare one. `init` is `{ status?, headers? }`. The only place `<html>` is written — your own pages can render through the same shell by calling it. |
+| `pageShell(document?)` | function | Builds a `PageShell` for a deployment whose whole chrome is a stylesheet and a script. |
+| `PageShell<Bindings>` | type | `(c, content, slot) => JSXNode \| Promise<JSXNode>` — the document a mounted page renders into. |
+| `ShellSlot` | type | `{ mount, page, meta }` — which mount and page a shell is wrapping, and the `PageMeta` that mount resolved for it. |
+| `ShellDocument` | type | `{ stylesheet?, script?, lang? }` — what `pageShell` renders. |
+
 ### `ConfigKey`
 
 A typed context key (`createContextKey<unknown>()`) under which the resolved app config is stored for the current request. forge's router injects it; `definePage` and `defineAction` read it for you and pass the typed config to your `view`/`handle`. Read it directly only when writing a custom `RequestHandler`:
@@ -405,6 +427,63 @@ view: (_c, _cfg, state) => renderPage(<Home data={state.data} />),
 
 `renderPage` converts the JSX tree to an `HtmlResponse` directly — there is no global render-middleware step.
 
+### The page shell
+
+**A page forge mounts — the auth pages, the showcase, the log viewer — renders into one shell the app registers**, resolved per request. A mountable takes no `layout`, `context` or `document` option of its own; the ruling and the reasoning are [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §6.
+
+`PageShell` is `(c, content, slot) => JSXNode | Promise<JSXNode>`, where `slot` is `{ mount, page, meta }` — `mount` names the mountable (`"auth"`, `"showcase"`, `"logs"`, or your own) and is an open string, so a shell that branches on it needs a default arm. `meta` is the page's `PageMeta`, whose `title` is always set.
+
+```tsx
+createApp({ shell: async (c, content, slot) => <Layout ctx={await renderContext(c, c.config)}>{content}</Layout> });
+```
+
+The app's per-request context and layout stay inside that closure, which is why no `Ctx` type parameter reaches forge.
+
+For a deployment whose whole chrome is a stylesheet, `pageShell` builds the shell instead:
+
+```ts
+import { pageShell } from "@y-core/forge/app";
+
+createApp({ shell: pageShell({ stylesheet: "/assets/app.css", script: "/assets/app.js" }) });
+```
+
+**With no shell registered**, a mounted page renders a bare document — doctype, a `<head>` built from the slot's `meta`, content in `<body>`. It is readable and unstyled: forge ships no stylesheet URL it could guess.
+
+**A fragment never reaches the shell.** An htmx partial or an API fragment is swapped into a document that already exists, so it is rendered bare.
+
+**Your own pages can render through the same shell**, with a slot they name themselves:
+
+```tsx
+view: (c, _cfg, state) => renderShell(c, <Home data={state.data} />, { mount: "app", page: "home", meta: { title: "Home" } }),
+```
+
+### Page meta
+
+A page says what it says about itself in a `PageMeta`, and the shell renders it with `metaTags`. The ruling — why a typed shape rather than a merged array of tag descriptors, and the three things it deliberately does not do — is [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §6d.
+
+```tsx
+import { mergeMeta, metaTags } from "@y-core/forge/app";
+import { getNonce } from "@y-core/forge/security";
+
+const SITE_META = { title: "Acme", description: "…", og: { type: "website", image: "https://cdn.acme.com/og.png" } } as const;
+
+createApp({
+  shell: (c, content, slot) => (
+    <html lang='en'>
+      <head>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        {metaTags(mergeMeta(SITE_META, slot.meta), { nonce: getNonce(c) })}
+        <link rel='stylesheet' href={assets.path("css/main.css")} />
+      </head>
+      <body>{content}</body>
+    </html>
+  ),
+});
+```
+
+**Every page forge mounts states `robots: "noindex"`** — an auth page, the log viewer and the showcase each have no business in an index. Merging the site's base under the page's meta, as above, keeps that.
+
 ---
 
 ## Advanced
@@ -449,7 +528,7 @@ expect(res.status).toBe(200);
 - **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a generic message. Never wire `isDebug` to a value an attacker controls.
 - **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
 - **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1b.
-- **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4c.
+- **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4b.
 - **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at startup or on the first request, never silently downstream.
 - **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to `notFoundView`, so the asset catch-all cannot be used as a write surface.
 
@@ -487,7 +566,7 @@ Related docs:
 | `ConfigKey` | const | Context key holding the resolved per-request app config. |
 | `ActionDefinition` | type | The `defineAction` config shape. |
 | `ActionTurnstileOptions` | type | `{ secretKey, tokenField?, verify }` for `turnstile` on either builder. |
-| `BotRejection` | type | Why a guard refused — `{ guard: "honeypot" }` or `{ guard: "turnstile"; reason }`. |
+| `BotRejection` | type | Why a guard refused — `{ guard: "turnstile"; reason }`. |
 | `AppOptions` | type | The `createApp` options shape. |
 | `AssetOptions` | type | The `applyAssets`/`serveAssets` options (`notFoundView`). |
 | `AssetsFetcher` | type | Shape of the `ASSETS` binding (`fetch(req)`). |

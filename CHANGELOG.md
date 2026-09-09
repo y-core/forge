@@ -17,7 +17,275 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **Every forge mountable now renders into one document shell the app registers, and takes no chrome
+  options of its own.** `createApp({ shell })` — or `app.setShell(shell)` — names a
+  `PageShell`: `(c, content, slot) => JSXNode | Promise<JSXNode>`, resolved per request from the
+  request context, exactly as `Config` already is. **Removed:** `ShowcaseOptions.context` and
+  `.layout` (and its `Ctx` type parameter); `LogViewerOptions.context` and `.layout` (and its
+  `Config`/`Ctx` parameters, plus `loadLogViewer`'s `config` argument — the call is now
+  `loadLogViewer(c, options)`); `AuthWebOptions.layout` and `.document`; the `AuthDocument`,
+  `AuthLayoutProps` types, `AuthPageOptions.layout`/`.document`, and forge's internal `AuthShell`.
+  **A consumer registers its existing layout once** — `createApp({ shell: async (c, content, slot)
+  => <Layout ctx={await renderContext(c, config)}>{content}</Layout> })` — and deletes the second
+  layout an auth mount previously needed, because the shell holds the app's per-request context in
+  its own closure rather than threading a `Ctx` type through forge's option types. For a deployment
+  whose whole chrome is a stylesheet, `pageShell({ stylesheet, script, lang })` builds the shell
+  instead of a component, which is what `AuthWebOptions.document` bought. `AuthPageOptions` keeps a
+  `title` that overrides forge's own copy for one page. **With no shell registered** a mounted page
+  renders a bare document — doctype, `<head>`, the slot's title, content in `<body>` — so forgetting
+  to register one is an unstyled page rather than a broken one. `renderShell(c, content, slot,
+  init?)` is public, so an app's own pages can render through the same shell with a slot they name;
+  `slot.mount` is an open string, so a shell that branches on it needs a default arm. A fragment
+  never reaches the shell. **The slot carries a typed `PageMeta` rather than a title** — `{ title,
+  description?, canonical?, robots?, og?, twitter?, jsonLd?, extra? }` — rendered by `metaTags(meta,
+  { nonce })` and merged over a site-wide base by `mergeMeta(base, page)`, so a shell states its
+  chrome once and each page states only what differs. A typed shape rather than an array of tag
+  descriptors merged by key, because forge has two levels and not a route hierarchy: `og.image` is
+  one field, so a second one overrides rather than joining. `extra` is the open escape hatch, in
+  React Router's own `{ name, content }` / `{ property, content }` / `{ tagName: "link", rel, href }`
+  vocabulary, appended verbatim and never deduplicated. `jsonLd` is a field rather than an `extra`
+  entry because the inline script needs the request nonce under `script-src 'self'`; passed none, it
+  renders no script. `canonical` and `og.image` must be absolute — forge derives neither, since a
+  Worker behind a proxy sees a `c.url` that is not the public one. **Every page forge mounts now
+  states `robots: "noindex"`**: an auth page, the log viewer and the showcase each have no business
+  in an index, and `renderAuthPage` takes a `meta` override merged over forge's own. The seam and
+  the ruling behind it are `ROUTING_AND_MIDDLEWARE.md` §6.
+
+- **The form honeypot is gone from forge: `isHoneypotFilled`, `HONEYPOT_FIELD_DEFAULT`, `Honeypot`,
+  the `honeypot` option on `defineAction` and `definePage`, and the `{ guard: "honeypot" }` arm of
+  `BotRejection` are all removed.** A hidden-field decoy stops the bots it was designed for and no
+  others: a headless browser executes the page, sees an off-screen input with `tabindex="-1"`, and
+  leaves it alone, so the guard cost every form a field and bought nothing. Turnstile is the guard
+  that does the job, and it stays in full — `turnstile`, `onBotDetected` and `csrfProtection` are
+  unchanged. **A consumer moves the same route to `turnstile` on the same option object**, with the
+  same `onBotDetected` callback: `BotRejection` keeps its discriminated shape, now the single
+  member `{ guard: "turnstile"; reason: TurnstileFailure }`, so a handler that switches on
+  `rejection.guard` keeps compiling and a handler that read `reason` only under the turnstile arm
+  can now read it unconditionally. Views drop `<Honeypot />`; nothing replaces it in the markup.
+  Per `LIBRARY_ARCHITECTURE.md` §7 there is no deprecation shim.
+
+- **Every auth form now accepts a browser submission, which none of them did.** Each auth view
+  rendered `<Honeypot />`, putting an empty `__hp_c7` in the body, and `readAuthSubmission` dropped
+  only the CSRF field before parsing against a `strictObject` — so the decoy raised a
+  `strict_object` issue and the page re-rendered at `422` with the generic refusal. `curl` never
+  reproduced it, because a hand-built body carried no decoy. Removing the decoy fixes this by
+  construction: there is no extra field left for a strict schema to reject. Sign-in, sign-up,
+  verify, email-change and passkey rename all submit exactly the fields their schema declares plus
+  `_csrf`, and one new test asserts that set per view, so a field injected into a view can no
+  longer go unnoticed.
+
+  **One behaviour change beyond the removal:** the verify-resend action's only body-content guard
+  was the decoy check, and its parse-failure arm redirected on a malformed body. Resend now
+  redirects without reading the body at all. Rate limiting is what protects that endpoint until
+  Turnstile is wired into the auth forms.
+
+### Added
+
+- **`resolveAuthView` — an auth page's data and node, for a page you own.** `@y-core/forge/auth/web`
+  could serve a whole auth page and nothing smaller: a consumer could replace the markup or wrap it
+  in a `layout`, but could not put a sign-in form on a marketing page, could not reach any auth
+  markup from a route they own — which forge *requires* for the email-change confirmation
+  (`AUTH_FLOWS.md` §5) — and could not put two auth views on one page. Every loader fused resolving
+  the props to returning a `Response`. `resolveAuthView(c, options, request)` stops one step short,
+  answering `Result<AuthViewResolved<Name>, Response>`: the page's `name`, its resolved `props`, the
+  `node` built from them against your `views` override, and the `status` this render carries — or,
+  in the failure channel, the exact refusal forge's own route would have given. It is a `Result` and
+  not a node because eight of the thirteen pages can answer a redirect, a 404 or a 503 instead of
+  props, and a function typed to return a node has nowhere to put a 503. Alongside it ship
+  `AUTH_VIEW_GUARDS` — per page name, the guards its data assumes have run — and `AUTH_VIEWS`,
+  forge's own markup keyed by name, which deletes the `view` argument from every internal render
+  call and makes "this page rendered by another page's view" unsayable. All eleven views now accept
+  `AuthViewChrome`: `class`, composed onto the root after the view's own so a host's width wins, and
+  `level`, the heading tag read off the view's place in the host document. Both default to exactly
+  what forge renders on its own routes. The recipe is `AUTH_MOUNTING.md` §6.
+
+- **`@y-core/forge/testing/workerd` — the `wrangler dev` fixture server, published.** A suite that
+  must run code inside the real Workers runtime needed a helper forge kept in its own `tests/`,
+  outside the published surface, so every consumer forked it — and a fork misses the fix that kills
+  the whole process group, which leaves orphaned `workerd` pairs at PID 1 holding a core each after
+  every run. `startDevServer(options)` starts `wrangler dev` over a fixture and resolves once it
+  answers, returning `{ origin, siteOrigin, logs, stop }`. `stop()` `SIGKILL`s the **process group**
+  — wrangler's workerd and esbuild children included — and removes the temp env file; the same sweep
+  is bound to `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`, so an interrupted run cleans up too.
+  `DevServerOptions` takes `entry`, `config`, `vars`, `readyPath` and `capture`, all optional.
+  `siteOrigin` is `https://127.0.0.1:{port}` and is always injected as `SITE_ORIGIN`, because the
+  dev server stamps `https` onto origin-bearing headers before the Worker sees them. **This one
+  subpath is node-only and deliberately off the `./testing` barrel** — it reads
+  `node:child_process`/`node:fs`/`node:net`, which a Worker-typed test program cannot resolve — and
+  `wrangler` is a new **optional peer dependency**, resolved out of the consumer's own tree.
+  `TESTING.md` §7f and §1f.
+
+### Added
+
+- **`@y-core/forge/auth` — the identity namespace the charter has named all along.**
+  `NAMESPACES.md` §5a, the CLAUDE.md growth table and `BOUNDARIES.md` §2b each route
+  authentication, permissions and API-key lifecycle out of `security`; §5h is now the prose rule
+  that says where they land. The domain half publishes `resolveAuthServices`
+  (per-`env` key-ring resolution with a cached Ed25519 capability probe that **throws** rather than
+  advertising an algorithm the runtime cannot verify), `AUTH_SUPPORTED_ALGORITHMS` (`[-7, -257]`,
+  a deliberate deviation from SimpleWebAuthn's `[-8, -7, -257]`), `normalizeEmail`, and the one
+  `AuthStoreError` class, plus the token codec every emailed credential rides on —
+  `encodeAuthToken` / `decodeAuthToken` over AES-256-GCM with a per-purpose HKDF subkey, because an
+  email-change confirmation carries the new address in a URL and a signed-but-readable token hands
+  that address to browser history, `Referer`, link scanners and proxy logs. `authNonceKey` is
+  `HMAC(nonceSubkey, token)` rather than a bare hash, so an observer with read access to the nonce
+  store gets no consumed-or-not oracle for a token they merely saw. It also ships the eight store
+  contracts — `UserStore` and `AdminUserStore` split so a sign-in service cannot hold the
+  capability to delete a user — with SQL adapters for the six durable ones, KV adapters for the two
+  ephemeral ones, and `src/auth/schema.sql`, applied with
+  `wrangler d1 execute --file` against the installed package rather than imported. On top of the
+  stores sit the factor contract and registry — `email-otp` / `passkey` / `totp-app`, closed, with
+  TOTP-app step-up-only because an authenticator app proves possession and does not identify — the
+  email-OTP factor, the passkey ceremony-options builders, and the client-data and
+  authenticator-data verifiers. Over the stores sit the three flows — signup, sign-in with step-up
+  and email change, each handing its delivery to the `AuthDeferral` a consumer supplies so the
+  response says nothing by its timing — and `createAdminUserService`, whose every refusal is decided
+  in the store's own statement rather than in a count-then-write. The namespace produces no
+  `Response` and touches no `Session`.
+
+  Four properties are worth naming because they are the ones that go wrong quietly. Email-OTP
+  **issues are spaced by a cooldown rather than counted**, because any per-identity ceiling is a
+  budget an unauthenticated attacker spends on the victim's behalf — three posts naming an address
+  bought a day with no email-OTP — while a cooldown bounds the mail that ceiling existed to bound.
+  **A guess is spent by the statement that admits it**, so parallel guesses spend the budget instead
+  of each comparing against a count none of them has written yet; that is also why the email code's
+  state is a durable table and not KV. An **implicit factor is
+  enrolled for everyone the moment it is offered**, so offering email-OTP as the second factor
+  demands it under both `always` and `when-enrolled` rather than dead-ending on one and being
+  skipped on the other; a `second-factor` policy with nothing that could step up throws at
+  construction. And a ceremony's **`origin` is compared as an exact string** while its **`rpIdHash`
+  is compared as a hash**, which is what refuses `https://example.com.evil.test` and a credential
+  minted for another relying party.
+- **`@y-core/forge/auth/web` — the mountable web layer over that domain.** Three route builders —
+  `authRoutes`, `accountRoutes` and `adminRoutes` — each omitted by not calling it: sign-in, sign-up
+  and verification; the signed-in passkey, authenticator-app and email-change pages; and user
+  management with a first-admin bootstrap. `authPaths` derives every href from the route map, so no
+  path literal appears in a loader, an action or a view. `AUTH_ROUTE_GROUPS` is the one table both
+  `register*` and `createAuthGuards` read — a nested group exists only where its guards or its
+  response medium differ from its parent's, which is what turns "these two answer JSON" and "this
+  pair is deliberately not admin-gated" into structure rather than a comment. The four guards
+  (`requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment`) treat an owed
+  enrolment or step-up as a **page to visit rather than a 4xx**, since needing a second factor is a
+  successful outcome of a correct sign-in; a guard that cannot read the factor store answers 503,
+  because a redirect on an unknown demand loops. The override story is a hybrid — forge owns the
+  response, the consumer owns the markup: `views` replaces one page at a time against the exact
+  props forge's own view takes, and every `load*` and `create*Actions` is exported, so `register*`
+  is a convenience rather than a gate. The one-way `auth/web → auth` edge is enforced by
+  `validateNoMutualValuePairs` in the namespace-graph check, and `auth-federation`'s subpaths will
+  inherit it (`NAMESPACES.md` §5h).
+
+  **One derivation of roles, and `AuthSigninFlow.complete` no longer takes a context.** Both
+  enrolment guards resolved the factor policy with no `AuthFactorContext`, so a `for-roles` policy
+  degraded to `when-enrolled` and an admin who had never enrolled a second factor reached the console
+  on one — the exact case the policy exists to prevent. `authFactorContext(subject)` and
+  `AUTH_ADMIN_ROLE` are now the single derivation, used by the guards, the verify page and the
+  sign-in flow alike. `complete(email, presented, at)` **drops its fourth parameter** — breaking only
+  for a consumer implementing `AuthSigninFlow` themselves — because the caller cannot know the
+  subject's roles before the call that identifies them, so the flow reads them off the row it loaded.
+  `AuthFactorRegistry.resolve(userId, context?)` keeps its context for roles beyond `isAdmin`.
+
+  **`createAuthGuards` takes an `origin` allowlist and stops dropping guard-less groups.** With
+  `origin` configured it mounts origin protection on every group carrying a mutating leaf, so
+  `POST /auth/signin`, `/auth/signup`, `/auth/verify`, `/auth/verify/resend`, `/auth/signout` and both
+  `/auth/passkey/authenticate/*` — identity-less, and previously given nothing by this layer — are
+  now checked, while the safe-method exemption keeps their pages reachable. Without an allowlist
+  nothing is mounted, since forge cannot pick your origins. Rate limiting and
+  `csrfProtection({ subject })` remain the consumer's, stated with the exact paths in the README.
+
+  Passkey account management carries a **token per row, not per page**: a CSRF token is bound to one
+  path, so a single page-level token authorised only the row it was minted for and every other
+  Remove button was a 403. `PasskeyListView` now takes `PasskeyRow` — a credential and the token
+  authorising the writes on it — and `passkeyRename` and `passkeyRemove` share one pathname under
+  two methods, so that one token covers both. `PasskeyEditView` gives the rename its own page, which
+  `PATCH /passkeys/:id` had no markup to be reached from at all. Three inputs are now bounded at
+  their edges: `challengeBytes` **throws** below `AUTH_PASSKEY_CHALLENGE_MIN_BYTES` (16) in both
+  ceremony builders rather than minting a 32-bit WebAuthn challenge, a blank passkey label parses to
+  `null` instead of writing an empty string into a column the domain models as `string | null`, and
+  the nickname the enrolment ceremony posts is finally **stored** — it rides in the passkey factor's
+  own opaque payload rather than widening `completeEnrolment` for a field email-OTP and TOTP would
+  then carry for nothing.
+
+  Six more inputs are bounded or named at their edges. `createTotpAppFactor` **throws** for a
+  `secretBytes` under 16, at construction rather than on the first enrolment that mints the 32-bit
+  shared secret; its provisioning URI is percent-encoded rather than form-encoded, so an issuer with
+  a space reaches the authenticator as `Forge%20Demo` and not `Forge+Demo`; and re-enrolling over a
+  confirmed factor answers the new `already-enrolled` reason rather than `consumed`, which meant
+  "code already spent" in every log that carried it. `markAuthStepUp` clamps its mark to no later
+  than now and `requireEnrolment` counts a future one for nothing, so an injected or skewed clock
+  cannot mint a step-up that satisfies every window until the wall clock catches up. `requireAuth`
+  records a return-to only for a `GET` or `HEAD` and answers 303 otherwise, since a mutation's URL
+  has no `GET` handler to send the visitor back to. And **a guard now refuses in its group's
+  medium**: `AuthGuardOptions` and `AuthEnrolmentGuardOptions` take a `medium`, `createAuthGuards`
+  hands each group its own, and an expired session posting to the JSON enrolment ceremony gets
+  `401 {"error": …}` instead of an HTML sign-in redirect the browser controller parsed as a ceremony
+  response. A ceremony's `ttlSeconds` is bounded too: both builders now **throw** outside
+  `AUTH_PASSKEY_TTL_MIN_SECONDS`–`AUTH_PASSKEY_TTL_MAX_SECONDS` (60–600), breaking only for a
+  deployment already configuring a lifetime the challenge store would refuse or one that leaves a
+  replayable challenge live longer than an emailed code. And `verifyPasskeyAuthentication` answers
+  `sign-count-reused` from both places the counter refuses — the pre-check and the conditional write
+  losing its race — where the concurrent case previously reported as `unrecognised`, the reason an
+  unknown credential gets. `verifyPasskeyRegistration` now holds the browser's own `credential.id`
+  against the attested credential id and answers the new `credential-id-mismatch` reason when the two
+  disagree, which WebAuthn L3 §7.1 says they never should; `PasskeyRegistrationCredential` carries
+  `id` again to make that check possible.
+- **`@y-core/forge/auth/client` — the browser half of the passkey ceremony.** A side-effect import
+  with no value exports, registering one eager `passkey` scope. It reads the `PASSKEY_*` contract
+  off the scope root, checks WebAuthn support **at mount** rather than at the press — an
+  unsupported browser gets the fallback line and a disabled trigger — then runs the ceremony against
+  the two endpoints with **two path-bound CSRF tokens**, one per endpoint, because `csrfProtection`
+  binds a token to one path. The redirect it navigates to is reduced by `safeRedirectPath`
+  client-side: an attribute is not a trust boundary a controller may skip.
+- **`docs/AUTH_MOUNTING.md` and `docs/AUTH_FLOWS.md`** — mounting the capability: the order the
+  middleware goes up in, the route table with each group's guards, and every seam you supply; then
+  every flow end to end, and §7's plain list of what this release does not do. `src/auth/README.md` now carries a `> Import path:` anchor per subpath, so
+  `validate-readme-exports` holds all three barrels against their tables.
+- **`jsonResponse` and `safeRedirectPath` on `@y-core/forge/http`.** `jsonResponse` completes the
+  response-builder set §5d already owns, throwing on a caller-supplied `content-type` like its two
+  HTML siblings. `safeRedirectPath` reduces an untrusted return-to candidate — a `?next=` value, a
+  hidden field — to a same-origin path or a fallback; it takes no origin, so an absolute URL is
+  refused even for your own host.
+- **Crypto primitives for credential work, all `@internal` behind the sealed `src/crypto/` path.**
+  RFC 4648 base32 that refuses a non-alphabet character rather than skipping it; RFC 5869 HKDF
+  split into extract and expand, so one root secret yields a pseudorandom key many per-purpose
+  subkeys expand from; AES-256-GCM seal/open, where opening a forged or mis-keyed ciphertext
+  returns `null`; RFC 4226 HOTP and the RFC 6238 TOTP construction over it, taking the clock
+  reading as an argument; and the WebAuthn parsing substrate — a CTAP2-subset CBOR decoder that
+  reports where the first item ended, COSE key decoding for ES256/EdDSA/RS256, and DER-to-`r‖s`
+  unwrapping.
+
+### Changed
+
+- **An empty `prefix` is refused where a KV store is built.** `createKVStore`
+  (`@y-core/forge/storage`) and `createKVSessionStorage` (`@y-core/forge/session`) now throw on
+  `prefix: ""`, as do `createChallengeStore` and `createNonceStore`, each naming the factory the
+  operator actually called. `""` is not an unprefixed store: it fails the truthiness test the key
+  builder makes, so the separator goes with it and every record is written under its bare logical
+  key — two stores on one binding then share a keyspace, and `list()` over one enumerates the other.
+  Omitting `prefix` still means "no prefix" and is unchanged; `KVListOptions.prefix` is untouched,
+  where `""` correctly means "everything".
+
+### Security
+
+- **An auth page no longer reads an identity the guards did not establish.** `resolveAuthViewer`
+  read `authCtx` first and fell back to the session when it was unset, so a loader or action mounted
+  without `createAuthGuards` resolved a visitor the guards had never judged. Combined with
+  `loadAdminUsers`, which calls `services.admin.list` having read no identity at all, an auth view
+  reached from an unguarded route served the full user table to an anonymous visitor. Three changes
+  close it. The viewer is now read from `authCtx` and nowhere else, so an unguarded mount resolves
+  nobody and gets the sign-in redirect. `resolveAuthView` re-checks the two guards that are
+  observable at resolve time — `require-auth` against `authCtx`, `require-admin` against the
+  `isAdmin` it carries, answering the same 403 `requireAdmin` does — rather than trusting the
+  caller. And a guarded page resolved without a `guarded` claim throws, which 500s and leaks
+  nothing, rather than rendering.
+
+  **A deployment that mounts `createAuthGuards` is unaffected**: every guarded route sets `authCtx`
+  on every request, so the identity, the pages and their rendered bytes are unchanged. A deployment
+  running the loaders or actions **without** the guard chain starts refusing — which is the fix, not
+  a regression. The two enrolment guards are not observable without a factor-registry round trip per
+  render, so for those `guarded` remains a typed claim; `AUTH_MOUNTING.md` §6 states it as a claim
+  rather than a formality.
 
 ---
 

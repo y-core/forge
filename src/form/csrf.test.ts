@@ -4,6 +4,7 @@ import { Forge } from "../app/forge-app";
 import type { AppContext } from "../context/types";
 import { mapHandler } from "../testing/route";
 import { createCsrfToken, csrfMinterCtx, csrfProtection, csrfTokenCtx, importCsrfKey, importCsrfKeyRing, mintCsrf, verifyCsrfToken } from "./csrf";
+import { csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
 import type { CsrfKeyRing } from "./types";
 
@@ -190,6 +191,31 @@ describe("csrfProtection middleware", () => {
     expect(res.status).toBe(200);
   });
 
+  // A passkey ceremony has no form and no hidden field to fall back to, so the header name has to
+  // reach the builder that sends the token; disagreeing with the guard is a 403 with no explanation.
+  it("publishes the header name it checks on a GET, custom or default", async () => {
+    const named = new Forge();
+    named.use("*", csrfProtection({ secret: () => key, headerName: "X-My-Token", subject: false }));
+    mapHandler(named, "GET", "/test", (c) => new Response(csrfHeaderCtx.get(c)));
+    expect(await (await named.request("/test")).text()).toBe("X-My-Token");
+
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key, subject: false }));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfHeaderCtx.get(c)));
+    expect(await (await app.request("/test")).text()).toBe("X-CSRF-Token");
+  });
+
+  it("publishes the header name on a mutation too", async () => {
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key, headerName: "X-My-Token", subject: false }));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.get(c)));
+    mapHandler(app, "POST", "/test", (c) => new Response(csrfHeaderCtx.get(c)));
+
+    const token = await (await app.request("/test")).text();
+    const res = await app.request("/test", { method: "POST", headers: { "X-My-Token": token } });
+    expect(await res.text()).toBe("X-My-Token");
+  });
+
   it("GET sets csrf minter on context", async () => {
     let capturedMint: ((path: string) => Promise<string>) | undefined;
     const app = new Forge();
@@ -272,6 +298,40 @@ describe("csrfProtection middleware", () => {
 
     const res200 = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token, "x-session": "session-a" } });
     expect(res200.status).toBe(200);
+  });
+
+  it("subject resolver returning undefined — a mutation is refused rather than verified unbound", async () => {
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key, subject: (c) => c.request.headers.get("x-session") ?? undefined }));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
+
+    const token = await (await app.request("/test")).text();
+    const res = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("warns once per middleware instance when the subject resolver returns undefined", async () => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(String(args[0]));
+    };
+    try {
+      const app = new Forge();
+      app.use("*", csrfProtection({ secret: () => key, subject: () => undefined }));
+      mapHandler(app, "GET", "/test", () => new Response("ok"));
+      mapHandler(app, "POST", "/test", () => new Response("ok"));
+
+      await app.request("/test");
+      await app.request("/test");
+      await app.request("/test", { method: "POST" });
+    } finally {
+      console.warn = original;
+    }
+
+    expect(warnings.filter((w) => w.startsWith("[csrf]"))).toHaveLength(1);
   });
 
   it("subject: false — path-only token verifies regardless of session (no subject binding)", async () => {

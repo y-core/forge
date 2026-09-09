@@ -14,6 +14,7 @@ import { requestLog } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
 import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
+import { type PageShell, shellCtx } from "./shell";
 import type { GlobalMiddlewareEntry, RequestState } from "./types";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only
@@ -54,6 +55,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   private _isDebug?: (c: AppContext<Bindings>) => boolean;
   /** Config store attached by `registerConfig`. @internal */
   configStore?: Config<unknown>;
+  private _shell?: PageShell<Bindings>;
 
   constructor(logger?: Logger) {
     this._logger = logger ?? createLogger("app");
@@ -67,6 +69,11 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
   setIsDebug(fn: (c: AppContext<Bindings>) => boolean): void {
     this._isDebug = fn;
+  }
+
+  /** Registers the document shell every mounted page renders into — the single writer of that slot. */
+  setShell(shell: PageShell<Bindings>): void {
+    this._shell = shell;
   }
 
   /** Register path-scoped middleware. `"*"` matches all paths; `"/api/*"` matches the prefix; an array matches any of them. */
@@ -96,6 +103,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       context.set(EnvKey, state.env, { property: "env" });
       context.set(ExecutionContextKey, state.executionCtx, { property: "executionCtx" });
       context.set(ConfigKey, state.config, { property: "config" });
+      if (this._shell) shellCtx.set(context, this._shell);
       return next();
     };
 

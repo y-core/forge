@@ -12,6 +12,9 @@ export function createApp<Bindings extends object = Record<string, unknown>>(opt
     // oxlint-disable-next-line typescript/no-explicit-any -- Config<T> is generic; stored as unknown internally
     app.configStore = options.config as any;
   }
+  if (options?.shell) {
+    app.setShell(options.shell);
+  }
   if (options?.onError) {
     app.setOnError(options.onError);
   }

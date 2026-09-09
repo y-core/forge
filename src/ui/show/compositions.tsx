@@ -9,7 +9,6 @@ import { Card } from "../core/card";
 import { FormField } from "../core/field-layout";
 import { Field } from "../core/field-stack";
 import { Form } from "../core/form";
-import { Honeypot } from "../core/honeypot";
 import type { ForgeIcon } from "../core/icon";
 import { Select } from "../core/select";
 import { Skeleton } from "../core/skeleton";
@@ -125,7 +124,6 @@ export const SettingsSurface: FC<{ icon: CompositionIcon }> = ({ icon }) => (
       </Card.Header>
       <Card.Content>
         <Form action='#' method='post' csrfToken='demo-token' class='space-y-6'>
-          <Honeypot field='company' />
           <FormField.Group>
             <FormField name='rows-per-page'>
               <FormField.Label name='rows-per-page'>Rows per page</FormField.Label>

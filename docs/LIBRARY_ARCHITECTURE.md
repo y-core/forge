@@ -30,6 +30,9 @@ audience: internal
 - §5 Demand Composition in Practice: assembly at the consumer
 - §6 Cloudflare Workers Runtime Model: the module-scope constraints
 - §7 Pre-1.0 API Evolution: no shim, no compatibility path, and how a breaking change ships instead
+- §8 Type Declarations Live in `types.ts`: one per directory, and what the exported surface owes a reader
+- §8a A Type Is Imported on Its Own Line: why an inline `type` specifier is not the same statement
+- §8b What Enforces It: the two plugin rules, and why neither ships with the toolchain
 
 ---
 
@@ -169,3 +172,66 @@ them what changed.
 **This expires at 1.0.0, and not before.** After that the same rule reads differently — a breaking
 change becomes a `major:` and the question of a migration path is open on its own merits. Until
 then, the absence of shims is what keeps the surface small enough to reach 1.0 at all.
+
+---
+
+## 8. Type Declarations Live in `types.ts`
+
+**Every exported interface and type alias is declared in the `types.ts` of its own directory.** The
+declaration is the shape; the file beside it is one of the places the shape is used. Putting the
+shape in the file that happens to use it first makes it findable only from that reference, so a
+reader who has the name and not the reference has nowhere to start.
+
+**One `types.ts` per directory, not per namespace.** `src/auth/passkey/types.ts` and
+`src/auth/web/types.ts` are two files, because `passkey` and `web` are two subjects; a single
+`src/auth/types.ts` holding both would be a list rather than a place. A directory with no exported
+type needs no `types.ts`.
+
+**A file-local type stays where it is used.** The rule is about the exported surface — what another
+file can name. A helper type nothing outside the file can reach is the file's own business, and
+moving it would widen the directory's internal surface for nothing. The exception is a local type a
+moved declaration is written in terms of: it follows the declaration, because that is now where it
+is used.
+
+**`types.ts` declares and never runs.** The co-location check reserves the name — a `types.ts` needs
+no co-located test, and the same check fails one that grows a callable export
+([`TESTING.md`](./TESTING.md) §2).
+
+### 8a. A Type Is Imported on Its Own Line
+
+**A type is imported with `import type`, as its own statement.** Not as an inline `type` specifier
+inside a value import:
+
+```ts
+// no — what this file needs at runtime is not legible from the import block
+import { parseEnv, type EnvMapping } from "./parse-env";
+
+// yes
+import { parseEnv } from "./parse-env";
+import type { EnvMapping } from "./types";
+```
+
+The point is the import block read on its own: a value import is a module this file pulls into the
+bundle, and a type import is erased. Mixing the two into one statement means every reader asking
+what a file costs at runtime has to read the specifiers rather than the statements.
+
+### 8b. What Enforces It
+
+**Two oxlint rules, in forge's own plugin.** `forge/type-import-external` reports an
+exported interface or type alias declared anywhere but a `types.ts`;
+`forge/type-import-separation` reports a `type` specifier riding inside a value import. Both are
+scoped to `src/` in `.oxlintrc.json`, with the declaration rule off for `types.ts` itself and for
+specs — a fixture type is local by definition.
+
+**A file that is itself a published subpath is its own `types.ts`.** `src/testing/workerd.ts` is
+`@y-core/forge/testing/workerd`, deliberately off the `./testing` barrel
+([`TESTING.md`](./TESTING.md) §7f); moving `DevServer` and `DevServerOptions` into
+`src/testing/types.ts` would put them on that barrel, which is the one place they must not be. The
+exemption is one `overrides` entry naming the file, not a general escape — every other file in the
+namespace obeys the rule.
+
+Neither half is available off the shelf. `oxfmt` is a formatter and judges no structure at all;
+oxlint's builtin `typescript/consistent-type-imports` only reports a type reached through a value
+import, which `verbatimModuleSyntax` already makes a compile error, and it accepts the inline
+specifier this rule exists to forbid. The lint plugin is where a rule of forge's own belongs
+([`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §1).

@@ -319,6 +319,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `import … from "../crypto/mod"` in forge source | The other sanctioned exemption |
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`](../warden/canon/libs/TESTING.md) §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
+| `node:child_process` / `node:fs` / `node:net` in `src/testing/workerd.ts` | The one node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel — [`NAMESPACES.md`](./NAMESPACES.md) §4a, [`TESTING.md`](./TESTING.md) §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`](../warden/canon/libs/CODE_RULES.md) §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`](../warden/canon/libs/CODE_RULES.md) §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §4a |

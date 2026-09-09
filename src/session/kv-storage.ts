@@ -23,6 +23,11 @@ const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 /** `SessionStorage` backed by Workers KV, keyed by the opaque session id under a sliding TTL. @public */
 export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSessionStorageOptions): SessionStorage {
+  if (options?.prefix === "") {
+    throw new Error(
+      "createKVSessionStorage: `prefix` must not be an empty string — it leaves every session keyed by a bare `:${id}` in a shared keyspace.",
+    );
+  }
   const prefix = options?.prefix ?? "session";
   const ttlSeconds = options?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
   const keyFor = (id: string) => `${prefix}:${id}`;

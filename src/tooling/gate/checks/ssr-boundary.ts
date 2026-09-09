@@ -9,8 +9,8 @@ import { collectFiles } from "./source-scan";
 export interface SsrBoundaryCheckConfig {
   /** Repository root; every reported path is relative to it. */
   root: string;
-  /** The browser-only directory, relative to `root` — nothing outside it may import from within it. */
-  clientDir: string;
+  /** The browser-only directories, relative to `root` — nothing outside them may import from within one. */
+  clientDirs: readonly string[];
   /** Directories walked for source files, relative to `root`. */
   sources: readonly string[];
   /** Basenames permitted to cross the boundary; the registration entry points. */
@@ -22,24 +22,24 @@ const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 // A spec is not shipped, and a `.browser.ts` spec's whole job is to drive the client runtime.
 const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !/\.(test|browser)\.tsx?$/.test(name);
 
-/** Whether `file` is itself inside the client directory, and so may import freely within it. */
-function isClientOwned(file: string, clientDir: string): boolean {
-  return file === clientDir || file.startsWith(`${clientDir}/`);
+/** Whether `file` is itself inside a client directory, and so may import freely within any. */
+function isClientOwned(file: string, clientDirs: readonly string[]): boolean {
+  return clientDirs.some((dir) => file === dir || file.startsWith(`${dir}/`));
 }
 
 /** Why `file` may not import from the client directory, or `null` when it may. @public */
-export function boundaryViolation(file: string, config: Pick<SsrBoundaryCheckConfig, "clientDir" | "entryPoints">): string | null {
+export function boundaryViolation(file: string, config: Pick<SsrBoundaryCheckConfig, "clientDirs" | "entryPoints">): string | null {
   const base = file.slice(file.lastIndexOf("/") + 1);
-  if (isClientOwned(file, config.clientDir)) return null;
+  if (isClientOwned(file, config.clientDirs)) return null;
   // A `.tsx` file renders markup, so it runs in the Worker by definition — no entry-point exemption
   // reaches it, which is what stops a component quietly gaining a browser import.
   if (file.endsWith(".tsx")) return "a `.tsx` file renders on the server, so it may never import the browser runtime";
   if (config.entryPoints.includes(base)) return null;
-  return `only ${config.entryPoints.map((name) => `\`${name}\``).join(" / ")} may import the browser runtime from outside \`${config.clientDir}\``;
+  return `only ${config.entryPoints.map((name) => `\`${name}\``).join(" / ")} may import the browser runtime from outside ${config.clientDirs.map((dir) => `\`${dir}\``).join(" / ")}`;
 }
 
 /** Judges one file's imports against the boundary. @public */
-export function validateSsrBoundary(file: string, source: string, config: Pick<SsrBoundaryCheckConfig, "clientDir" | "entryPoints">): Finding[] {
+export function validateSsrBoundary(file: string, source: string, config: Pick<SsrBoundaryCheckConfig, "clientDirs" | "entryPoints">): Finding[] {
   const reason = boundaryViolation(file, config);
   if (reason === null) return [];
 
@@ -47,7 +47,7 @@ export function validateSsrBoundary(file: string, source: string, config: Pick<S
     // Type-only imports are erased at emit, so they cannot drag browser code into a Worker bundle.
     if (ref.kind === "type") return [];
     const target = resolveSpecifier(file, ref.specifier);
-    if (target === null || !isClientOwned(target, config.clientDir)) return [];
+    if (target === null || !isClientOwned(target, config.clientDirs)) return [];
     return [`line ${ref.line}: \`${ref.specifier}\``];
   });
 
@@ -62,5 +62,5 @@ export function checkSsrBoundary(config: SsrBoundaryCheckConfig): CheckResult {
 
   const findings = files.flatMap((file) => validateSsrBoundary(file, readFileSync(resolve(config.root, file), "utf-8"), config));
 
-  return checkResult(findings, `${files.length} files respect the ${config.clientDir} boundary`);
+  return checkResult(findings, `${files.length} files respect the ${config.clientDirs.join(", ")} boundary`);
 }

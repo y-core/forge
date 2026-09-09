@@ -4,7 +4,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
-import type { FC } from "../../jsx/types";
+import type { PageShell } from "../../app/shell";
 import { PAGE_ORDER, SHOWCASE_PAGES } from "./components";
 import { registerShowcase, showcaseRoutes } from "./register";
 
@@ -14,9 +14,12 @@ StubIcon.sprite = "/icons.svg";
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const icon = StubIcon as any;
 
-const Layout: FC<{ ctx: { title: string } }> = ({ ctx, children }) => (
+/** The app's own shell, recording the slot it was handed so every page render is held to it. */
+const appShell: PageShell = (_c, content, slot) => (
   <html lang='en'>
-    <body data-ctx={ctx.title}>{children}</body>
+    <body data-mount={slot.mount} data-page={slot.page} data-title={slot.meta.title} data-robots={slot.meta.robots}>
+      {content}
+    </body>
   </html>
 );
 
@@ -56,29 +59,30 @@ describe("showcaseRoutes", () => {
 describe("registerShowcase", () => {
   function makeApp() {
     const app = new Forge();
+    app.setShell(appShell);
     const routes = showcaseRoutes("/showcase/ui");
-    registerShowcase(app, routes.ui, { icon, context: async () => ({ title: "chrome" }), layout: Layout });
+    registerShowcase(app, routes.ui, { icon });
     return app;
   }
 
-  it("wires every catalog page in the consumer layout, each headed by its own prerequisite", async () => {
+  it("wires every catalog page through the app's shell, each headed by its own prerequisite", async () => {
     const app = makeApp();
     for (const key of PAGE_ORDER) {
       const { slug, label, needs } = SHOWCASE_PAGES[key];
       const res = await app.request(slug === "" ? "/showcase/ui" : `/showcase/ui/${slug}`);
       expect(res.status).toBe(200);
       const body = await res.text();
-      expect(body).toContain('data-ctx="chrome"');
+      expect(body).toContain(`data-mount="showcase" data-page="${key}" data-title="${label}" data-robots="noindex"`);
       expect(body).toContain(`UI Component Showcase — ${label}`);
       expect(body).toContain(needs.replace(/"/g, "&quot;"));
     }
   });
 
-  it("wires the theme customiser in the same layout, defaulting every dial", async () => {
+  it("wires the theme customiser through the same shell, defaulting every dial", async () => {
     const res = await makeApp().request("/showcase/ui/theme");
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain('data-ctx="chrome"');
+    expect(body).toContain('data-mount="showcase" data-page="theme" data-title="Theme" data-robots="noindex"');
     expect(body).toContain("Theme customiser");
     expect(body).toContain("#646464");
   });
@@ -105,18 +109,11 @@ describe("registerShowcase", () => {
     expect(await res.text()).toContain("No secret key is configured");
   });
 
-  it("names the honeypot when the decoy is filled, before any token is looked at", async () => {
-    const body = new FormData();
-    body.append("__hp_c7", "bot");
-    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", { method: "POST", body });
-    expect(res.status).toBe(422);
-    expect(await res.text()).toContain("Refused by the honeypot guard");
-  });
-
   it("names the turnstile guard and its reason once a secret is configured", async () => {
     const app = new Forge();
+    app.setShell(appShell);
     const routes = showcaseRoutes("/showcase/ui");
-    registerShowcase(app, routes.ui, { icon, context: async () => ({ title: "chrome" }), layout: Layout, turnstileSecret: () => "secret" });
+    registerShowcase(app, routes.ui, { icon, turnstileSecret: () => "secret" });
     const res = await app.request("/showcase/ui/api/turnstile-verify", { method: "POST", body: new FormData() });
     expect(res.status).toBe(422);
     expect(await res.text()).toContain("No token reached the server");
@@ -136,7 +133,10 @@ describe("registerShowcase", () => {
     for (const [path, marker] of cases) {
       const res = await app.request(path);
       expect(res.status).toBe(200);
-      expect(await res.text()).toContain(marker);
+      const body = await res.text();
+      expect(body).toContain(marker);
+      // A fragment is swapped into a document that already exists, so the shell must never wrap one.
+      expect(body).not.toContain("<html");
     }
   });
 });

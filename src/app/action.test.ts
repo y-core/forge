@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
-import { CSRF_FIELD_DEFAULT, HONEYPOT_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
+import { CSRF_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
 import { mapHandler } from "../testing/route";
 import { strictObject } from "../validation/strict-object";
@@ -556,12 +556,6 @@ describe("defineAction behind csrfProtection — body size cap", () => {
 });
 
 describe("defineAction — bot guards", () => {
-  const DECOY = "company";
-
-  function honeypotApp(field: string) {
-    return makeApp(defineAction({ schema: NameSchema, honeypot: field, handle: (data) => new Response(Object.keys(data).join(",")) }));
-  }
-
   function turnstileApp(tokenField?: string) {
     return makeApp(
       defineAction({
@@ -576,58 +570,14 @@ describe("defineAction — bot guards", () => {
     );
   }
 
-  it("refuses a submission whose renamed honeypot is filled, without the route writing the check", async () => {
-    const res = await post(honeypotApp(DECOY), `name=Jane&${DECOY}=spam`);
-    expect(res.status).toBe(422);
-    expect(await res.text()).toBe(refusal("name"));
-  });
+  it("hands onBotDetected the turnstile rejection instead of rendering the refusal", async () => {
+    fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
-  it("lets a legitimate submission through when the renamed honeypot is empty, and drops the field", async () => {
-    const res = await post(honeypotApp(DECOY), `name=Jane&${DECOY}=`);
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("name");
-  });
-
-  it("validates a form carrying forge's own honeypot against a strictObject that does not declare it", async () => {
-    const res = await post(honeypotApp(HONEYPOT_FIELD_DEFAULT), `name=Jane&${HONEYPOT_FIELD_DEFAULT}=`);
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("name");
-  });
-
-  it("refuses forge's own honeypot when it is filled", async () => {
-    const res = await post(honeypotApp(HONEYPOT_FIELD_DEFAULT), `name=Jane&${HONEYPOT_FIELD_DEFAULT}=spam`);
-    expect(res.status).toBe(422);
-    expect(await res.text()).toBe(refusal("name"));
-  });
-
-  it("treats an absent honeypot field as unfilled, so a form rendered without the decoy still passes", async () => {
-    const res = await post(honeypotApp(DECOY), "name=Jane");
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("name");
-  });
-
-  it("strips no field merely for matching a forge-shaped pattern when no guard consumes it", async () => {
-    const app = makeApp(
-      defineAction({
-        schema: NameSchema,
-        handle: () => new Response("success"),
-        onValidationError: (issues) => new Response(issues.map((issue) => issue.type).join("|"), { status: 400 }),
-      }),
-    );
-
-    for (const guessable of [HONEYPOT_FIELD_DEFAULT, "__forge_marker", "__forge", "honeypot"]) {
-      const res = await post(app, `name=Jane&${guessable}=`);
-      expect(res.status).toBe(400);
-      expect(await res.text()).toBe("strict_object");
-    }
-  });
-
-  it("hands onBotDetected the honeypot rejection instead of rendering the refusal", async () => {
     let rejection: unknown;
     const app = makeApp(
       defineAction({
         schema: NameSchema,
-        honeypot: DECOY,
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: (received) => {
           rejection = received;
           return new Response("banned", { status: 403 });
@@ -636,18 +586,20 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${DECOY}=spam`);
+    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("banned");
-    expect(rejection).toEqual({ guard: "honeypot" });
+    expect(rejection).toEqual({ guard: "turnstile", reason: "verification-failed" });
   });
 
-  it("does not reach onBotDetected when the honeypot is empty", async () => {
+  it("does not reach onBotDetected when Turnstile passes", async () => {
+    fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
+
     let called = false;
     const app = makeApp(
       defineAction({
         schema: NameSchema,
-        honeypot: DECOY,
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: () => {
           called = true;
           return new Response("banned", { status: 403 });
@@ -656,7 +608,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${DECOY}=`);
+    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(200);
     expect(called).toBe(false);
   });
@@ -804,44 +756,6 @@ describe("defineAction — bot guards", () => {
     expect(res.status).toBe(403);
     expect(rejection).toEqual({ guard: "turnstile", reason: "hostname-mismatch" });
   });
-
-  it("drops both guards' fields on a route that runs both", async () => {
-    fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
-
-    const app = makeApp(
-      defineAction({
-        schema: NameSchema,
-        honeypot: DECOY,
-        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
-        handle: (data) => new Response(Object.keys(data).join(",")),
-      }),
-    );
-
-    const res = await post(app, `name=Jane&${DECOY}=&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("name");
-  });
-
-  it("checks the honeypot before spending a siteverify call", async () => {
-    let verified = false;
-    fakeSiteverify(async () => {
-      verified = true;
-      return new Response(JSON.stringify({ success: true, hostname: "localhost" }));
-    });
-
-    const app = makeApp(
-      defineAction({
-        schema: NameSchema,
-        honeypot: DECOY,
-        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
-        handle: () => new Response("success"),
-      }),
-    );
-
-    const res = await post(app, `name=Jane&${DECOY}=spam&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
-    expect(res.status).toBe(422);
-    expect(verified).toBe(false);
-  });
 });
 
 describe("defineAction — injected field derivation", () => {
@@ -931,7 +845,7 @@ describe("defineAction — injected field derivation", () => {
 });
 
 describe("defineAction — the one refusal", () => {
-  const DECOY = "company";
+  const UNDECLARED = "company";
   const EmailSchema = strictObject({ email: v.pipe(v.string(), v.email()) });
   const UnionSchema = v.union([strictObject({ name: v.string() }), strictObject({ email: v.string() })]);
   const LONG_KEY = "k".repeat(30_000);
@@ -1053,20 +967,6 @@ describe("defineAction — the one refusal", () => {
     expect(await res.text()).toBe(refusal("a&amp;b&#39;c&quot;d&lt;e&gt;f"));
   });
 
-  it("answers a filled honeypot and a mistyped field with byte-identical refusals", async () => {
-    const guarded = makeApp(defineAction({ schema: NameSchema, honeypot: DECOY, handle: () => new Response("success") }));
-    const plain = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
-
-    const bot = await post(guarded, `name=Jane&${DECOY}=spam`);
-    const human = await post(plain, "name=");
-    const botBody = await bot.text();
-
-    expect(bot.status).toBe(422);
-    expect(human.status).toBe(422);
-    expect(botBody).toBe(await human.text());
-    expect(botBody).toBe(refusal("name"));
-  });
-
   it("answers a failed Turnstile check with the same bytes as a schema refusal", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
@@ -1088,10 +988,18 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("falls back to the same generic wording for a schema with no entries to name", async () => {
-    const app = makeApp(defineAction({ schema: UnionSchema, honeypot: DECOY, handle: () => new Response("success") }));
+    fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
-    const bot = await post(app, `name=Jane&${DECOY}=spam`);
-    const human = await post(app, "zzz=1");
+    const app = makeApp(
+      defineAction({
+        schema: UnionSchema,
+        turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
+        handle: () => new Response("success"),
+      }),
+    );
+
+    const bot = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
+    const human = await post(makeApp(defineAction({ schema: UnionSchema, handle: () => new Response("success") })), "zzz=1");
     const botBody = await bot.text();
 
     expect(bot.status).toBe(422);
@@ -1100,34 +1008,32 @@ describe("defineAction — the one refusal", () => {
     expect(botBody).toBe(refusal("the submitted form"));
   });
 
-  it("never names the decoy in any refusal it renders", async () => {
+  it("never names the guard in any refusal it renders", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
     const app = makeApp(
       defineAction({
         schema: NameSchema,
-        honeypot: DECOY,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
     );
 
     const bodies = [
-      await (await post(app, `name=Jane&${DECOY}=spam&${TURNSTILE_FIELD_DEFAULT}=t`)).text(),
-      await (await post(app, `name=Jane&${DECOY}=&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
-      await (await post(app, `name=&${DECOY}=&${TURNSTILE_FIELD_DEFAULT}=t`)).text(),
+      await (await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
+      await (await post(app, `name=&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
     ];
 
     for (const body of bodies) {
-      expect(body.includes(DECOY)).toBe(false);
+      expect(body.includes(TURNSTILE_FIELD_DEFAULT)).toBe(false);
       expect(body).toBe(refusal("name"));
     }
   });
 
-  it("never names the decoy when the decoy is itself the only undeclared field left", async () => {
+  it("names an undeclared field when the schema itself is what refused", async () => {
     const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
 
-    const res = await post(app, `name=Jane&${DECOY}=spam`);
-    expect(await res.text()).toBe(refusal(DECOY));
+    const res = await post(app, `name=Jane&${UNDECLARED}=spam`);
+    expect(await res.text()).toBe(refusal(UNDECLARED));
   });
 });

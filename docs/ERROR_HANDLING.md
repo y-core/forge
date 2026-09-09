@@ -39,6 +39,7 @@ audience: consumer
 - §5c Infrastructure Errors: log with context, then fail closed
 - §5d defineAction and definePage Error Recovery: the intentional divergence
 - §5e Startup Invariants: resolvers throw, operations return Result
+- §5f Configuration Knobs: asserted where accepted, by authLimit
 
 ---
 
@@ -270,3 +271,25 @@ value straight back from the handler.
 **The bound `store.serveObject` is not the exception, and returns `Result<Response>`** — a rejected
 key and a backend fault are failures, not rendered ones, and the store's other five operations
 already say so ([`STORAGE_BINDINGS.md`](./STORAGE_BINDINGS.md) §3b).
+
+### 5f. Configuration Knobs — Asserted Where They Are Accepted
+
+A configuration knob is asserted by **the function that accepts it, synchronously, before that
+function returns** — so a misconfiguration throws in the same stack frame as the mistake, and a
+function typed `Promise<Result<…>>` never carries a second failure channel beside its per-request
+one (§5a). A misconfiguration is a deployment defect, and belongs with the invariants of §5e.
+
+**The three message shapes, which are §5e's normalised shape for this surface:**
+
+    ${operation}: ${knob} is ${value}, below the ${min}-${unit} floor — ${why}.
+    ${operation}: ${knob} is ${value}, above the ${max}-${unit} ceiling — ${why}.
+    ${operation}: ${knob} is ${value}, which is not a whole number.
+
+`unit` is omitted where the number has none, giving `below the 1 floor`. `why` states the reason
+the bound exists, not the bound again — `the shortest expiration the nonce store accepts, below
+which a code outlives its own replay guard`, never `the minimum is 60000`.
+
+**`operation` is the function the consumer called** — `createEmailOtpFactor`, not `auth/passkey`.
+Helpers wrapping `authLimit` take the label as a parameter and never supply their own
+(`passkeyTtlSeconds(operation, requested)`), because the wrapper's name is not one a consumer has
+ever typed.

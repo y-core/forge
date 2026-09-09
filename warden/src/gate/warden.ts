@@ -9,7 +9,7 @@ import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { type BuildReport, build, load } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
-import { packageNameOf } from "../paths";
+import { CANON_ROOT, packageNameOf } from "../paths";
 import { unresolved } from "../search/related";
 import { type Corpus, CORPORA, type SourceDoc, type Tree } from "../types";
 import { canonVersion } from "../version";
@@ -71,7 +71,7 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
     const findings: Finding[] = [
       ...emptyDocuments(db),
       ...missingGloss(db, config.docsDir ?? "docs"),
-      ...unresolvedRelations(db),
+      ...unresolvedRelations(db, config.canonRoot ?? CANON_ROOT),
       ...ambiguousCitations(report),
       ...(config.catalogue === undefined ? [] : catalogueDrift(db, root, config.catalogue)),
     ];
@@ -158,10 +158,21 @@ function missingGloss(db: Database, docsDir: string): Finding[] {
     );
 }
 
+/** A citation into a canon tree this repository is not subject to — `apps/` in a library. The link
+ *  is correct and resolves on disk; the tree is excluded from the index on purpose (`canonSources`),
+ *  so nothing is wrong and nothing is for the reader to fix. */
+function outOfIndex(raw: string, canonRoot: string): boolean {
+  const cited = raw.split(" §")[0] ?? "";
+  return cited.includes("/") && existsSync(resolve(canonRoot, cited));
+}
+
 /** A citation whose target resolved to nothing. A warning, not a failure: the docs check already
- *  fails an unresolvable `§N`, and this sees citations that check does not scan. */
-function unresolvedRelations(db: Database): Finding[] {
-  const rows = unresolved(db, OWNED);
+ *  fails an unresolvable `§N`, and this sees citations that check does not scan.
+ *
+ *  A citation into a non-indexed canon tree is not one of these. Counting the two together said a
+ *  correct link was broken, and the only fix it left was to delete the link. */
+function unresolvedRelations(db: Database, canonRoot: string): Finding[] {
+  const rows = unresolved(db, OWNED).filter((row) => !outOfIndex(row.raw, canonRoot));
   if (rows.length === 0) return [];
   const sample = rows.slice(0, 5).map((row) => `${row.id ?? ""} → ${row.raw}`);
   return [

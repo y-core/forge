@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fail } from "../finding";
 import { boundaryViolation, checkSsrBoundary, validateSsrBoundary } from "./ssr-boundary";
 
-const CONFIG = { clientDir: "src/ui/client", entryPoints: ["client.ts"] } as const;
+const CONFIG = { clientDirs: ["src/ui/client", "src/auth/client"], entryPoints: ["client.ts"] } as const;
 
 const violations = (file: string, source: string) => validateSsrBoundary(file, source, CONFIG);
 
@@ -82,7 +82,7 @@ describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
     return root;
   }
 
-  const config = (root: string) => ({ root, sources: ["src/ui"], clientDir: "src/ui/client", entryPoints: ["client.ts"] });
+  const config = (root: string) => ({ root, sources: ["src/ui"], clientDirs: ["src/ui/client"], entryPoints: ["client.ts"] });
 
   it("passes a tree whose imports respect the boundary, and counts what it walked", () => {
     const result = checkSsrBoundary(config(fixtureRoot({ "src/ui/core/button.ts": "export const b = 1;\n" })));

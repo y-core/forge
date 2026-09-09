@@ -7,6 +7,11 @@ const KV_PREFIX_SEPARATOR = "||";
 
 /** Creates a typed KV store wrapping a KVNamespace with codec, prefix, and Result-wrapped ops. @public */
 export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOptions<T>): KVStore<T> {
+  if (options?.prefix === "") {
+    throw new Error(
+      "createKVStore: `prefix` must not be an empty string — omit it for an unprefixed store, which is what an empty string silently becomes.",
+    );
+  }
   const prefix = options?.prefix;
   const codec: KvCodec<T> = (options?.codec ?? jsonCodec()) as KvCodec<T>;
   const defaultTtl = options?.defaultTtl;

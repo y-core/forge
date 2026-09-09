@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { HONEYPOT_FIELD_DEFAULT } from "../../form/constants";
 import { render } from "../../testing/render";
 import { ShowcaseContent } from "./components";
 import { sectionBodies } from "./coverage";
@@ -239,9 +238,6 @@ describe("the Turnstile playground", () => {
     expect(body.match(new RegExp(`<div[^>]*\\sid="${SHOW_TURNSTILE_VERDICT_ID}"[^>]*>`))?.[0]).toBe(
       `<div id="${SHOW_TURNSTILE_VERDICT_ID}" class="mt-6">`,
     );
-    expect((submit?.[2] ?? "").match(/<input[^>]*>/)?.[0]).toBe(
-      `<input type="text" name="${HONEYPOT_FIELD_DEFAULT}" tabindex="-1" autocomplete="new-password">`,
-    );
   });
 
   it("offers no sitekey the page did not publish as a test key", async () => {
@@ -303,17 +299,12 @@ describe("TurnstileVerdictFragment", () => {
     ]);
   });
 
-  it("names the decoy for a honeypot refusal, which carries no reason", async () => {
-    const html = await render(<TurnstileVerdictFragment verdict={{ kind: "rejected", guard: "honeypot" }} />);
-    expect(alertParts(html)).toEqual(["destructive", "Refused by the honeypot guard", "The decoy field was filled."]);
-  });
-
   it("says so when the showcase was given no secret, rather than claiming a verification", async () => {
     const html = await render(<TurnstileVerdictFragment verdict={{ kind: "unconfigured" }} />);
     expect(alertParts(html)).toEqual([
       "warning",
       "No secret key is configured",
-      "The form reached the action and its honeypot ran, but `registerShowcase` was given no `turnstileSecret`, so nothing was sent to siteverify.",
+      "The form reached the action, but `registerShowcase` was given no `turnstileSecret`, so nothing was sent to siteverify.",
     ]);
   });
 

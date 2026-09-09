@@ -112,6 +112,29 @@ describe("relationsOf()", () => {
     ]);
   });
 
+  it("ignores a document the Owns paragraph mentions but the deferral does not name", () => {
+    const header = "> Owns the prose in `TESTING.md` and `CODE_RULES.md`.\n>\n> Defers to: `ABSENT.md` for form.";
+
+    expect(relationsOf(DOC, [], header, SOURCES)).toEqual([{ from: "project:docs/TESTING.md", kind: "defers", raw: "ABSENT.md" }]);
+  });
+
+  it("reads a deferral that wraps across lines to the end of its clause", () => {
+    const header = [
+      "> Owns nothing.",
+      ">",
+      "> Defers to: [`CODE_RULES.md`](./CODE_RULES.md) §5c for the",
+      "> budget, and `libs/TESTING.md`",
+      "> for the gate.",
+      ">",
+      "> Not a deferral: `ABSENT.md`.",
+    ].join("\n");
+
+    expect(relationsOf(DOC, [], header, SOURCES)).toEqual([
+      { from: "project:docs/TESTING.md", kind: "defers", raw: "CODE_RULES.md §5c", to: "canon:CODE_RULES.md#5c" },
+      { from: "project:docs/TESTING.md", kind: "defers", raw: "libs/TESTING.md", to: "canon:TESTING.md" },
+    ]);
+  });
+
   it("reads a §N citation in a chunk into an edge on that section", () => {
     const chunks = [chunk("project:docs/TESTING.md#1", "See `CODE_RULES.md` §5c for the rule.")];
 

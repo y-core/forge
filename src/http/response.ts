@@ -12,6 +12,14 @@ export function htmlResponse(body: string | SafeHtml, status = 200, headers?: Re
   return createHtmlResponse(body, { status, headers: { ...headers, "content-type": "text/html; charset=utf-8" } });
 }
 
+/** Constructs a JSON `Response`; throws on a caller-supplied `content-type`. @public */
+export function jsonResponse(body: unknown, status = 200, headers?: Record<string, string>): Response {
+  if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+    throw new Error("jsonResponse: content-type is fixed for JSON responses — remove it from headers");
+  }
+  return new Response(JSON.stringify(body), { status, headers: { ...headers, "content-type": "application/json; charset=utf-8" } });
+}
+
 /** Constructs an HTML fragment `Response` with no DOCTYPE; throws on a caller-supplied `content-type`. @public */
 export function fragmentResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {
   if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {

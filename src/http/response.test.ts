@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { createRedirectResponse, fragmentResponse, htmlResponse, redirect } from "./response";
+import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, redirect } from "./response";
 
 describe("htmlResponse", () => {
   it("defaults to status 200", () => {
@@ -90,5 +90,47 @@ describe("htmlResponse — content-type is fixed", () => {
 describe("createRedirectResponse", () => {
   it("is the same function as the redirect alias", () => {
     expect(createRedirectResponse).toBe(redirect);
+  });
+});
+
+describe("jsonResponse", () => {
+  it("defaults to status 200 and the JSON content type", () => {
+    const res = jsonResponse({ ok: true });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/json; charset=utf-8");
+  });
+
+  it("serialises the body with JSON.stringify", async () => {
+    expect(await jsonResponse({ id: 7, name: "aurora" }).text()).toBe('{"id":7,"name":"aurora"}');
+  });
+
+  it("serialises a bare array, string and null", async () => {
+    expect(await jsonResponse([1, 2]).text()).toBe("[1,2]");
+    expect(await jsonResponse("hello").text()).toBe('"hello"');
+    expect(await jsonResponse(null).text()).toBe("null");
+  });
+
+  it("honours an explicit status", () => {
+    expect(jsonResponse({ error: "nope" }, 422).status).toBe(422);
+  });
+
+  it("merges caller headers alongside the fixed content type", () => {
+    const res = jsonResponse({}, 200, { "cache-control": "no-store" });
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("content-type")).toBe("application/json; charset=utf-8");
+  });
+});
+
+describe("jsonResponse — content-type is fixed", () => {
+  it("throws on a lowercase caller-supplied content-type", () => {
+    expect(() => jsonResponse({}, 200, { "content-type": "text/html" })).toThrow(
+      "jsonResponse: content-type is fixed for JSON responses — remove it from headers",
+    );
+  });
+
+  it("throws on any casing of a caller-supplied content-type", () => {
+    expect(() => jsonResponse({}, 200, { "Content-Type": "text/html" })).toThrow(
+      "jsonResponse: content-type is fixed for JSON responses — remove it from headers",
+    );
   });
 });

@@ -1,0 +1,6 @@
+{
+  "name": "auth-d1-fixture",
+  "main": "worker.ts",
+  "compatibility_date": "2026-01-01",
+  "d1_databases": [{ "binding": "DB", "database_name": "auth-fixture", "database_id": "auth-fixture-local" }],
+}

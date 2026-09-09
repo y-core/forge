@@ -39,7 +39,9 @@ const MASK = "\u0001";
 /** Extensions a specifier may carry that must be stripped before namespace attribution. */
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js"];
 
-const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx"];
+// `/test-support.ts` and not `test-support.ts`: the leading slash is what keeps a production module
+// named `foo-test-support.ts` out of the sweep.
+const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", "/test-support.ts"];
 
 /** Characters an import/export clause may contain between the keyword and its `from`. */
 const CLAUSE = "[A-Za-z0-9_$,{}\\s*]*?";

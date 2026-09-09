@@ -16,7 +16,7 @@ import { sessionMiddleware, sessionCtx, createSignedCookie, createCookieSessionS
 ## Features
 
 - **Cookie-backed sessions** with a single middleware that reads on the way in and persists on the way out.
-- **Cache-friendly persistence** — `sessionMiddleware` emits a `Set-Cookie` **only** when the session is modified or destroyed. Unchanged requests stay cacheable.
+- **Cache-friendly persistence** — `sessionMiddleware` emits a `Set-Cookie` **only** when the session is modified, destroyed, or its `id` was read. A request that touches nothing — a crawler, an asset path — stays cacheable.
 - **Typed session accessor** — `sessionCtx.get(context)` returns the current `Session` with no stringly-keyed context lookups.
 - **Hardened signed cookies** — `createSignedCookie` always sets `httpOnly` and `secure`, HMAC-signs the value, and rejects weak secrets at construction time.
 - **General-purpose cookies** — `createCookie`/`Cookie` for non-sensitive values (theme, locale) with parse/serialize support.
@@ -119,7 +119,7 @@ const settings = session.get("settings"); // read back on any later request
 | Revocation | Delete the KV key | Impossible until cookie expiry |
 | Extra infrastructure | One KV namespace | None |
 
-Prefer KV storage for anything beyond a couple of tiny values. `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` is also exported standalone for use with `sessionMiddleware` directly — it is the durable sibling of `createMemorySessionStorage` and follows the same storage contract (`read` never throws; `save` returns the id when dirty, `""` when destroyed, `null` when unchanged).
+Prefer KV storage for anything beyond a couple of tiny values. `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` — where `prefix` defaults to `session` and an empty string is refused, because it would key every session under a bare `:id` — is also exported standalone for use with `sessionMiddleware` directly — it is the durable sibling of `createMemorySessionStorage` and follows the same storage contract (`read` never throws; `save` returns the id when dirty, `""` when destroyed, `null` when unchanged).
 
 > `secure: false` exists **only** for plain-http test servers (browsers drop `Secure` cookies over http). The cookie remains signed + `httpOnly` + `SameSite=Lax` in every configuration.
 
@@ -136,9 +136,11 @@ Forge-specific. Returns a middleware that reads the session cookie on the way in
 | `storage` | `SessionStorage` | The storage backend that reads/saves session data. |
 | `cookie` | `Cookie` | The cookie used to parse the incoming session and serialize the outgoing one. Use `createSignedCookie` in production. |
 
-The middleware skips persistence entirely when the session was **neither modified nor destroyed**, so a `Set-Cookie` header is written only when needed. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
+The middleware skips persistence entirely when the session was **neither modified, nor destroyed, nor had its `id` read**, so a `Set-Cookie` header is written only when needed. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
 
-> **Sliding expiry:** because unchanged sessions are not re-saved, callers that rely on a sliding session window must touch the session each request (e.g. `session.set(...)`) to mark it dirty and force a refreshed `Set-Cookie`.
+> **An observed id is persisted.** Reading `session.id` marks the session dirty, because an id that escaped the request must be honoured on the next one. Without it, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id that no cookie carried forward, and every anonymous mutation would answer 403.
+
+> **Sliding expiry:** callers that rely on a sliding session window must touch the session each request to mark it dirty and force a refreshed `Set-Cookie`. Reading `session.id` now suffices; `session.set(...)` still works.
 
 ```ts
 app.use("*", sessionMiddleware(storage, sessionCookie));
@@ -204,6 +206,7 @@ Re-export from `@remix-run/session`. The per-user data container returned by `se
 | `has` | `has(key): boolean` | Whether a value is stored for the key. |
 | `flash` | `flash(key, value): void` | Store a value available only on the **next** request, then cleared. |
 | `destroy` | `destroy(): void` | Mark the session destroyed; blocks further mutation and queues cookie removal. |
+| `regenerateId` | `regenerateId(keepData?: boolean): void` | Issue a fresh session id, marking the session dirty so a new `Set-Cookie` is written. Call it after any privilege escalation — see “Session fixation” below. `auth`'s `establishAuthSession` and `clearAuthSession` both call it, so a custom `SessionStorage` that omits it breaks sign-in. |
 | `data` | `SessionData` | Raw `[values, flash]` tuple for storage. Use `get` for normal reads. |
 | `id` | `string` | The session identifier. |
 | `dirty` | `boolean` | Whether the session was modified. |

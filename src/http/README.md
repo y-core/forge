@@ -15,8 +15,10 @@ concern is a separate, independently useful function — compose only what a rou
 import {
   htmlResponse,
   fragmentResponse,
+  jsonResponse,
   redirect,
   createRedirectResponse,
+  safeRedirectPath,
   renderSuccess,
   renderError,
   renderValidationErrors,
@@ -38,7 +40,8 @@ import {
 
 - **Response builders** — `htmlResponse` constructs a full-page `Response` (guaranteed
   `<!DOCTYPE html>` + `content-type: text/html`); `fragmentResponse` constructs a DOCTYPE-less HTMX
-  partial; `redirect` / `createRedirectResponse` build redirect responses.
+  partial; `jsonResponse` constructs a JSON `Response`; `redirect` / `createRedirectResponse` build
+  redirect responses.
 - **HTMX status fragments** — `renderSuccess`, `renderError`, and `renderValidationErrors` produce
   ready-styled banner markup as `SafeHtml`, with every dynamic message HTML-escaped.
 - **Safe HTML by construction** — the `html` tagged template auto-escapes every interpolated value;
@@ -51,6 +54,8 @@ import {
   correct header **value** string from structured input.
 - **Path joining** — `joinPath` composes URL path segments, collapsing duplicate slashes and trimming
   a trailing slash.
+- **Return-to guard** — `safeRedirectPath` reduces an untrusted `?next=` value to a same-origin path,
+  or to the caller's fallback.
 
 ---
 
@@ -133,6 +138,16 @@ function fragmentResponse(body: string | SafeHtml, status?: number, headers?: Re
 `htmlResponse` above, minus the DOCTYPE: fragments are swapped into an existing document by HTMX, so
 adding one would nest a second document inside the first. Same parameters, same fixed `content-type`,
 same throw on passing one. Use `htmlResponse` for full documents.
+
+### JSON responses — `jsonResponse`
+
+```ts
+function jsonResponse(body: unknown, status?: number, headers?: Record<string, string>): Response;
+```
+
+Serialises `body` with `JSON.stringify` and fixes `content-type: application/json; charset=utf-8`.
+Like the two HTML builders, passing a `content-type` in `headers` throws rather than being ignored,
+in any casing — a response whose declared type disagrees with its bytes is a bug worth failing on.
 
 ### Redirects — `redirect`, `createRedirectResponse`
 
@@ -295,6 +310,29 @@ into an instance.
 > For application cookies prefer `createCookie` from `@y-core/forge/session`, which handles
 > parsing/serialization and signing. Reach for the low-level `SetCookie` builder only when
 > constructing raw header values by hand.
+
+### Return-to guard — `safeRedirectPath`
+
+```ts
+function safeRedirectPath(candidate: string | null | undefined, fallback: string): string;
+```
+
+Takes an untrusted return-to candidate — a `?next=` query value, a hidden form field, a stored
+redirect target — and returns either a same-origin path or `fallback`. A candidate qualifies only if
+it starts with a single `/` after C0/C1 controls and spaces are stripped, and resolves without
+changing origin; the returned path is the resolved, normalised `pathname + search + hash`.
+
+| Candidate | Result |
+| --- | --- |
+| `/dashboard?tab=1#top` | `/dashboard?tab=1#top` |
+| `//evil.example` | the fallback |
+| `/\evil.example` | the fallback — a browser resolves `/\` as `//` |
+| `https://evil.example/x` | the fallback |
+| `javascript:alert(1)` | the fallback |
+| `#top`, `?`, `""` | the fallback |
+
+The function knows no origin, so an absolute URL is refused even when it names your own host. Pass
+the path, not the URL.
 
 ### Path joining — `joinPath`
 

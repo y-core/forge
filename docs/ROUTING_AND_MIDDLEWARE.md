@@ -42,6 +42,11 @@ audience: consumer
 - §5b Action — the Mutation Terminal Step: both builders' shapes and the validate-before-side-effect rule
 - §5c View — definePage Render Function: no I/O in a view
 - §5d The AppContext Surface: what a handler reads from `c`
+- §6 The Page Shell: one registered document shell, and why a mountable takes no chrome options
+- §6a Registering a Shell: `createApp({ shell })`, `pageShell`, and the bare floor
+- §6b A Mountable Takes No Chrome Options: the ruling, and the generics it removes
+- §6c Fragments Never Reach the Shell: the rule `renderShell` makes structural
+- §6d The Meta Descriptor: a typed shape rather than a merged tag array, and what renders it
 
 ---
 
@@ -113,8 +118,8 @@ passed reaches `action`, which receives the schema's output as its **third** arg
 configured `cache` and `headers`, and `action`, `loader` and `view` all go unrun. A `schema`
 declared without an `action` guards nothing, because there is no mutation step to place behind it.
 
-**The sequence's options come with it.** `honeypot`, `turnstile`, `onBotDetected`,
-`onValidationError` and `maxBytes` are declared on the page exactly as on an action (§2d), so a
+**The sequence's options come with it.** `turnstile`, `onBotDetected`, `onValidationError` and
+`maxBytes` are declared on the page exactly as on an action (§2d), so a
 self-posting page answers a refused body by re-rendering its own view with its field errors —
 `onValidationError` replaces the default `422` fragment and receives the issues themselves.
 
@@ -208,8 +213,7 @@ public surface; a consumer composes it only by declaring a `schema` on one of th
 and there is no subpath that yields it directly.
 
 **The sequence is shared, and so are its options.** There is **one body-validation surface**:
-`PageDefinition` inherits `honeypot`, `turnstile`, `onBotDetected`, `onValidationError` and
-`maxBytes` from the same projection of `ActionDefinition` the pipeline itself consumes, so the
+`PageDefinition` inherits `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` from the same projection of `ActionDefinition` the pipeline itself consumes, so the
 options and their documentation have one home and neither builder can drift from the other. A route
 therefore picks its builder by what it answers with — a fragment (`handle`) or a page (`action` →
 `loader` → `view`) — never by which guards it needs.
@@ -220,7 +224,7 @@ at all. Everything else is inherited rather than restated, because a second hand
 how the two builders diverged the first time.
 
 **A pipeline option without a `schema` is refused, at the type level and at registration.** Without
-a schema there is no pipeline to configure, so `honeypot`, `turnstile` and the rest were accepted
+a schema there is no pipeline to configure, so `turnstile` and the rest were accepted
 and silently ignored — a page could declare a bot guard that never ran. `PageDefinition` is a union
 of a `{ schema: S }` arm carrying the pipeline options and a `{ schema?: never }` arm forbidding
 each of them, the forbidding arm being a **mapped type over the same projection**, so a member added
@@ -383,3 +387,109 @@ background work is `c.executionCtx.waitUntil(p)`. Resolved config is `c.config`,
 ([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §2, §3) — and read form bodies with `parseFormData(c)`
 ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md) §2c). **Context slots are read through typed
 `contextVar` accessors (§4), never raw keys.**
+
+---
+
+## 6. The Page Shell
+
+**Every page forge mounts renders into one shell the app registers, resolved per request.** The
+type is `PageShell` — `(c, content, slot) => JSXNode | Promise<JSXNode>` — and `src/app/shell.tsx`
+is authoritative for it, alongside `ShellSlot`, `ShellDocument` and `pageShell`.
+
+This is the same inversion `Config` already has. `definePage` does not take config as an option: it
+reads `ConfigKey` off the request context, which `Forge` provisions from a store attached at
+registration (§5d). A document shell is the same kind of fact — one app-wide decision, needed per
+request, irrelevant to the contract of the page that needs it — so it is registered the same way and
+read the same way.
+
+### 6a. Registering a Shell
+
+`createApp({ shell })` registers it, or `app.setShell(shell)` after construction; **`setShell` is
+the single writer of that slot**, and a later call replaces an earlier one. The shell is provisioned
+onto the request context beside `ConfigKey`, so no route, controller or mount has to pass it
+anywhere.
+
+A shell is a closure, which is what keeps forge's surface free of it: **the app's own per-request
+context and layout stay inside it**, and forge sees only `JSXNode` in and `JSXNode` out.
+
+```ts
+createApp({ shell: async (c, content, slot) => <Layout ctx={await renderContext(c, config)}>{content}</Layout> });
+```
+
+**`pageShell({ stylesheet, script, lang })` is the form for a deployment whose whole chrome is a
+stylesheet**, so reaching for the shell does not mean writing a layout component. Titles come from
+`slot.title` either way.
+
+**An app that registers no shell renders a bare document** — doctype, `<head>`, the slot's title,
+content in `<body>`. That is the floor rather than a placeholder: handing a mount's content straight
+to `renderPage` puts a doctype in front of a `<div>`, leaving the page no `<head>` and so no title
+and no stylesheet.
+
+### 6b. A Mountable Takes No Chrome Options
+
+**A mountable that renders a full document takes no chrome options — no `layout`, no `context`, no
+`document`.** It calls `renderShell(c, content, slot)` and names itself in the slot. `registerShowcase`,
+`loadLogViewer` and `auth/web` each did own such options, in three shapes; the shell is the one seam
+that replaced all three, and the next mountable is held to it rather than inventing a fourth.
+
+**That is also why none of them carries a `Ctx` type parameter.** A `context`/`layout` option pair
+has to thread the consumer's config and context types through every signature that might reach a
+render. A closure holds both, so the generics are the consumer's problem where they belong and
+forge's option types stay one-parameter.
+
+**`slot.mount` is an open string.** A closed union of mount names would make every mountable forge
+adds later a breaking change for every shell a consumer has already written — so a shell that
+branches on `mount` needs a default arm.
+
+The old options were removed outright, with no shim and no dual path
+([`LIBRARY_ARCHITECTURE.md`](./LIBRARY_ARCHITECTURE.md) §7).
+
+### 6c. Fragments Never Reach the Shell
+
+**A fragment response is swapped into a document that already exists, so it is never wrapped.**
+`renderShell` is the only path that writes `<html>`, which makes the rule structural rather than
+three independent implementations of it: an htmx partial (`isPartial`, `isHxRequest`), a showcase
+API endpoint, and a refusal like the log viewer's `403` all answer without calling it.
+
+
+### 6d. The Meta Descriptor
+
+**A slot carries a `PageMeta`, not a title** — `{ mount, page, meta }`, where `meta.title` is
+required and everything else is optional. One field rather than a title beside a descriptor that
+also holds one, because two spellings of the same fact can disagree.
+
+**It is a typed shape, not an array of tag descriptors merged by key.** React Router merges meta
+down a route hierarchy of arbitrary depth, which is what makes tag identity the only thing a merge
+can key on. Forge has two levels — the site-wide base living in the shell's closure, and one page —
+so a field does the same job and answers what a key-identity merge leaves open: whether a second
+`og:image` overrides the first or joins it. `og.image` is one field, so it overrides.
+
+**The decisive case is forge's own mounts.** `auth/web` states `{ title, robots: "noindex" }` from
+inside the library. Under a tag array it would emit `{ name: "robots", content: "noindex" }` and
+forge would own a dedupe function so its tag could not collide with a consumer's base — logic to
+write, test and document, for a fact a field states.
+
+**Every page forge mounts is `noindex`.** A sign-in page, an account page, an admin page and a log
+viewer each say who a deployment's users are; the showcase is a reference. None is a page a search
+result should land on, and the descriptor is what let forge say so.
+
+**`metaTags(meta, { nonce })` is what turns a descriptor into markup**, and `pageShell` calls it —
+so the bare floor and a consumer's shell render the same tags in the same order from the same
+input. Without a single renderer the type is a data bag and every shell re-implements the escaping.
+
+**`mergeMeta(base, page)` merges a page over the site's base**, shallow at the top and one level
+deep for `og` and `twitter`. A plain spread drops a base `og` whole the first time a page states one
+field of it. `extra` is concatenated base-first.
+
+Three things the descriptor deliberately does not do:
+
+- **`extra` is appended verbatim and never deduplicated** against the typed tags. It is the escape
+  hatch for a tag `PageMeta` has no field for, in the same `{ name, content }` / `{ property,
+  content }` / `{ tagName: "link", rel, href }` vocabulary React Router uses — not a second one.
+- **`canonical` and `og.image` must be absolute, and forge derives neither.** A Worker behind a
+  proxy sees a `c.url` that is not the public URL, so a derived canonical would be wrong in exactly
+  the deployments where it matters. The shell's closure knows the site's origin; forge does not.
+- **`jsonLd` is a field rather than an `extra` entry**, because the `application/ld+json` element it
+  renders needs this request's nonce ([`SECURITY_HARDENING.md`](./SECURITY_HARDENING.md) §2d) —
+  which `metaTags` is handed in `options`, and which an `extra` entry has no way to receive. Given
+  none, it renders nothing rather than an element the policy would refuse.

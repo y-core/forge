@@ -113,8 +113,15 @@ corpora, so the prefix is what says which one a hit came from.
 
 ## Published Surface
 
-Four subpaths of `@y-core/forge` are warden's. Each is a barrel, and the table under it is held
-against that barrel by the `validate-readme-exports` gate step.
+Four subpaths of `@y-core/forge` are warden's, and each is a barrel whose table below is held
+against it by the `validate-readme-exports` gate step.
+
+**The root subpath is the whole of warden, and nothing consumes it but forge's own command.**
+`import { createWardenCommands } from "@y-core/forge/warden"` reaches every module — the corpus
+parser, the sync, the index and the CLI alike — which is what `warden/src/bin.ts` needs and more
+than any consumer should take. A consuming repository imports the four narrow subpaths instead: a
+gate that pulls the root barrel for `docsStep` drags the MCP server and the SQLite index in behind
+it.
 
 ## `@y-core/forge/warden/checks`
 

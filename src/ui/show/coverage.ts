@@ -355,18 +355,6 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
     ],
   },
   {
-    name: "Honeypot",
-    barrel: "core",
-    section: "honeypot",
-    where: "HoneypotSection",
-    // A honeypot is closed by design: it has no slot and no addressable hook, so its own
-    // `aria-hidden`/`tabindex` pair is the only thing that proves one was rendered at all.
-    axes: [
-      { axis: "trap", value: "off-screen", marker: { kind: "pattern", source: '<input[^>]*tabindex="-1"' } },
-      { axis: "field", value: "custom", marker: { kind: "attr", name: "name", value: "company-website" } },
-    ],
-  },
-  {
     name: "Icon",
     barrel: "core",
     section: "icon",

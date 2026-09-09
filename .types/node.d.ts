@@ -6,6 +6,7 @@
 // one method beyond it that forge calls.
 declare interface Buffer extends Uint8Array {
   equals(other: Uint8Array): boolean;
+  toString(encoding?: string): string;
 }
 
 // A stdin/stdout stream, declared only as far as the prompt in `cli/sync` needs it: whether a
@@ -34,6 +35,8 @@ declare module "node:process" {
     readonly stderr: NodeStdioStream;
     cwd(): string;
     exit(code?: number): never;
+    kill(pid: number, signal: string): void;
+    once(event: string, listener: () => void): void;
   }
   const process: Process;
   export default process;
@@ -48,6 +51,8 @@ declare const process: {
   readonly stdin: NodeStdioStream;
   readonly stdout: NodeStdioStream;
   readonly stderr: NodeStdioStream;
+  kill(pid: number, signal: string): void;
+  once(event: string, listener: () => void): void;
 };
 
 // The promise-returning readline, used for the one confirmation `forge sync --rotate` asks.
@@ -153,6 +158,35 @@ declare module "node:child_process" {
     stdout?: string;
   }
   export function spawnSync(command: string, args?: string[], options?: SpawnSyncOptions): SpawnSyncReturns;
+  interface SpawnOptions {
+    stdio?: string | (string | number)[];
+    detached?: boolean;
+    env?: Record<string, string | undefined>;
+  }
+  interface Readable {
+    on(event: "data", listener: (chunk: Buffer) => void): Readable;
+  }
+  interface ChildProcess {
+    readonly pid?: number;
+    readonly killed: boolean;
+    readonly stdout: Readable | null;
+    readonly stderr: Readable | null;
+    unref(): void;
+  }
+  export function spawn(command: string, args?: string[], options?: SpawnOptions): ChildProcess;
+}
+
+declare module "node:net" {
+  interface AddressInfo {
+    port: number;
+  }
+  interface Server {
+    once(event: "error", listener: (error: Error) => void): Server;
+    listen(port: number, host: string, listener: () => void): Server;
+    address(): AddressInfo | string | null;
+    close(listener?: () => void): Server;
+  }
+  export function createServer(): Server;
 }
 
 declare module "node:crypto" {

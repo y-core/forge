@@ -4,8 +4,8 @@ import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
+import type { PageShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
-import type { FC } from "../../jsx/types";
 import { mapHandler } from "../../testing/route";
 import { createIcon } from "../../ui/core/icon";
 import type { LogChannel, LogQuery, LogRow } from "../types";
@@ -15,21 +15,17 @@ import { loadLogViewer } from "./route";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
-interface Ctx {
-  theme: string;
+/** The app's own shell, as a consumer registers it — the viewer renders into this and adds none. */
+function appShell(theme = "dark"): PageShell {
+  return (_c, content) => (
+    <html lang='en' class={theme}>
+      <head>
+        <title>Request Log</title>
+      </head>
+      <body class='bg-background'>{content}</body>
+    </html>
+  );
 }
-interface Config {
-  dark: boolean;
-}
-
-const Layout: FC<{ ctx: Ctx }> = ({ ctx, children }) => (
-  <html lang='en' class={ctx.theme}>
-    <head>
-      <title>Request Log</title>
-    </head>
-    <body class='bg-background'>{children}</body>
-  </html>
-);
 
 const ROW: LogRow = {
   key: "logs||2026-05-31T10:00:00.000Z||aaa",
@@ -48,23 +44,16 @@ interface AppOptions {
   access?: LogViewerAccess;
   channel?: LogChannel;
   channelFactory?: () => LogChannel;
-  context?: (c: AppContext, config: Config) => Promise<Ctx>;
-  config?: Config;
+  shell?: PageShell;
 }
 
 function makeApp(options: AppOptions = {}) {
-  const { basePath, access = "allow-unauthenticated", channel = emptyChannel, channelFactory, context, config = { dark: true } } = options;
+  const { basePath, access = "allow-unauthenticated", channel = emptyChannel, channelFactory, shell = appShell() } = options;
   const app = new Forge();
+  app.setShell(shell);
   const handler = definePage({
     loader: (c) =>
-      loadLogViewer(c as AppContext, config, {
-        channel: channelFactory ?? (() => channel),
-        access,
-        icon,
-        context: context ?? ((_c, cfg: Config) => Promise.resolve({ theme: cfg.dark ? "dark" : "" })),
-        layout: Layout,
-        ...(basePath !== undefined ? { basePath } : {}),
-      }),
+      loadLogViewer(c as AppContext, { channel: channelFactory ?? (() => channel), access, icon, ...(basePath !== undefined ? { basePath } : {}) }),
     view: () => new Response("view-should-not-run", { status: 500 }),
   });
   mapHandler(app, "GET", "/logs", handler);
@@ -86,24 +75,24 @@ describe("loadLogViewer — access control", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
-  it("never touches the channel, nor builds the render context, when access is denied", async () => {
+  it("never touches the channel, nor asks the app's shell, when access is denied", async () => {
     let channelResolved = false;
-    let contextResolved = false;
+    let shellAsked = false;
     const app = makeApp({
       access: async () => false,
       channelFactory: () => {
         channelResolved = true;
         return emptyChannel;
       },
-      context: () => {
-        contextResolved = true;
-        return Promise.resolve({ theme: "" });
+      shell: (_c, content) => {
+        shellAsked = true;
+        return <html lang='en'>{content}</html>;
       },
     });
 
     const res = await app.request("/logs");
 
-    expect({ status: res.status, channelResolved, contextResolved }).toEqual({ status: 403, channelResolved: false, contextResolved: false });
+    expect({ status: res.status, channelResolved, shellAsked }).toEqual({ status: 403, channelResolved: false, shellAsked: false });
   });
 
   it("denies the HTMX fragment path as well (the guard runs in the shared loader)", async () => {
@@ -147,28 +136,30 @@ describe("loadLogViewer — access control", () => {
 });
 
 describe("loadLogViewer — full page (non-HTMX GET)", () => {
-  it("renders the viewer inside the consumer's layout, building no shell of its own", async () => {
+  it("renders the viewer inside the app's registered shell, building none of its own", async () => {
     const res = await makeApp().request("/logs");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(await res.text()).toBe(PAGE_HTML);
   });
 
-  it("hands `context` the request context and the config argument, in that order", async () => {
+  it("hands the shell this request and a slot naming the viewer", async () => {
     let seenPath: string | undefined;
-    let seenConfig: Config | undefined;
+    let seenSlot: unknown;
     const app = makeApp({
-      config: { dark: false },
-      context: (c, cfg) => {
+      shell: (c, content, slot) => {
         seenPath = c.url.pathname;
-        seenConfig = cfg;
-        return Promise.resolve({ theme: cfg.dark ? "dark" : "light" });
+        seenSlot = slot;
+        return appShell("light")(c, content, slot);
       },
     });
 
     const body = await (await app.request("/logs")).text();
 
-    expect({ seenPath, seenConfig }).toEqual({ seenPath: "/logs", seenConfig: { dark: false } });
+    expect({ seenPath, seenSlot }).toEqual({
+      seenPath: "/logs",
+      seenSlot: { mount: "logs", page: "logs", meta: { title: "Logs", robots: "noindex" } },
+    });
     expect(body).toBe(PAGE_HTML.replace('<html lang="en" class="dark">', '<html lang="en" class="light">'));
   });
 
@@ -197,18 +188,18 @@ describe("loadLogViewer — HTMX filter submit (no cursor)", () => {
     expect(await res.text()).toBe(EMPTY_TBODY_HTML);
   });
 
-  it("never builds the render context for a fragment — the layout is not in play", async () => {
-    let contextResolved = false;
+  it("never asks the app's shell for a fragment — it is swapped into a document that already exists", async () => {
+    let shellAsked = false;
     const app = makeApp({
-      context: () => {
-        contextResolved = true;
-        return Promise.resolve({ theme: "" });
+      shell: (_c, content) => {
+        shellAsked = true;
+        return <html lang='en'>{content}</html>;
       },
     });
 
     await app.request("/logs", { headers: { "HX-Request": "true" } });
 
-    expect(contextResolved).toBe(false);
+    expect(shellAsked).toBe(false);
   });
 
   it("does not treat HX-Request: false as an HTMX request", async () => {

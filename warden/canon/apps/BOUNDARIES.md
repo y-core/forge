@@ -158,15 +158,14 @@ The canonical sequence for a mutating handler. **The order is the rule** — eac
 than the next, and each rejects a class of request the next would otherwise have to parse:
 
 1. **Read the body with a size limit.** An unbounded read is a denial-of-service surface.
-2. **Honeypot check.** The cheapest class of bot, rejected before any crypto runs.
-3. **CSRF verification** — already applied as route middleware (§2b), so it rejected before the
+2. **CSRF verification** — already applied as route middleware (§2b), so it rejected before the
    handler was entered.
-4. **Challenge or CAPTCHA verification**, where configured.
-5. **Schema parse** of the whole body, producing typed output or an issue list.
-6. **Pass the typed output to the service.**
+3. **Challenge or CAPTCHA verification**, where configured.
+4. **Schema parse** of the whole body, producing typed output or an issue list.
+5. **Pass the typed output to the service.**
 
-**A declarative handler builder should supply steps 1, 2, 4, 5 and 6 from configuration**, so a
-route names its schema and its guard fields and nothing else. Step 3 stays middleware, because a
+**A declarative handler builder should supply steps 1, 3, 4 and 5 from configuration**, so a
+route names its schema and its guard fields and nothing else. Step 2 stays middleware, because a
 transport guard belongs where a reader auditing the route map can see it.
 
 ### 3c. Trust Boundaries on Inbound Headers

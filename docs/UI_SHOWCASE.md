@@ -41,7 +41,11 @@ audience: internal
 
 **The showcase is published, not an example directory.** It is a subpath of the package, so a
 consumer mounts forge's own demonstration of every component into their app and gets it back with
-their layout, their icons and their theme around it.
+their layout, their icons and their theme around it. The Worker half is
+`@y-core/forge/ui/show` — the registration entry point and nothing else, because a route helper is
+the only thing an app needs to mount it — and the browser half is the side-effect import
+`@y-core/forge/ui/show/client`, which registers every scope the demos bind and therefore exports no
+symbol an app may call.
 
 Two consequences are real costs, and both are accepted deliberately:
 
@@ -120,8 +124,8 @@ any visitor have a widget of their own choosing rendered under this origin's nam
 Cloudflare's published dummy keys, so no submission on the page is really challenged.
 
 **The verification panel names the guard that refused, which a real route must never do.** An
-application answers honeypot and Turnstile refusals identically, so a bot cannot read the guard off
-the response ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md)); naming it is the whole point of a
+application answers a Turnstile refusal in the shape of a schema refusal, so a bot cannot read the
+guard off the response ([`INPUT_VALIDATION.md`](./INPUT_VALIDATION.md)); naming it is the whole point of a
 demonstrator, and the page says so where it does it. The siteverify secret is an optional
 registration argument — without it the panel says it was not configured rather than claiming a
 verification that never happened.

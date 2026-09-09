@@ -34,11 +34,11 @@ Where a command is given, run the command. Scope it to the files you changed.
 - §2d Colour: items 44–47
 - §2e Media: items 48–51
 - §2f Depth: items 52–53
-- §2g Forms: items 54–58
-- §2h States and Swaps: items 59–64
-- §2i Interaction and Announcement: items 65–69
-- §2j Tells: items 70–73
-- §2k Platform: items 74–80, the seven platform rules checked on every surface
+- §2g Forms: items 54–57
+- §2h States and Swaps: items 58–63
+- §2i Interaction and Announcement: items 64–68
+- §2j Tells: items 69–72
+- §2k Platform: items 73–79, the seven platform rules checked on every surface
 - §3 Reporting: the output is the counts, and what an unanswerable item counts as
 
 ---
@@ -222,71 +222,69 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
     a `FormField.Label` and a `FormField.Error`. Expect equal. `forge-ui-catalog-field-wrapper`
 55. **Grep** `rg 'id="field|for="'` for hand-written field ids. Expect 0; ids come from `fieldId`,
     `fieldDescriptionId` and `fieldErrorId`. `forge-ui-form-id-helpers`
-56. **Count** mutation `Form`s, then count `Honeypot` first children. Expect equal, and expect 0
-    `Honeypot` on any `method="get"` form. `forge-ui-form-honeypot-placement`
-57. **Count** fields that can be invalid, then count those carrying `data-invalid`, `aria-invalid`
+56. **Count** fields that can be invalid, then count those carrying `data-invalid`, `aria-invalid`
     and an `Icon` together. Expect equal. `forge-ui-form-invalid-triple`
-58. **Count** control names imported from both `@y-core/forge/ui/core` and
+57. **Count** control names imported from both `@y-core/forge/ui/core` and
     `@y-core/forge/ui/controls` in one module without an alias. Expect 0. `forge-ui-form-one-barrel`
 
 ### 2h. States and Swaps
 
-59. **Count** the states you designed for the surface: empty, loading, error, success. Expect 4, or
+58. **Count** the states you designed for the surface: empty, loading, error, success. Expect 4, or
     a named reason a state cannot occur. `forge-ui-state-four`
-60. **Count** loading indicators per loading region. Expect exactly 1. `forge-ui-state-one-indicator`
-61. **Count** `Spinner`s standing in a region whose result shape is already known. Expect 0.
+59. **Count** loading indicators per loading region. Expect exactly 1. `forge-ui-state-one-indicator`
+60. **Count** `Spinner`s standing in a region whose result shape is already known. Expect 0.
     `forge-ui-state-skeleton-shape`
-62. **Count** error states with no retry control beside the message. Expect 0, less any error that
+61. **Count** error states with no retry control beside the message. Expect 0, less any error that
     retrying cannot fix. `forge-ui-state-error-retry`
-63. **Count** htmx swap targets with no placeholder in the initial page render. Expect 0.
+62. **Count** htmx swap targets with no placeholder in the initial page render. Expect 0.
     `forge-ui-htmx-reserve-space`
-64. **Count** swap targets that contain the control which triggered the request. Expect 0 — that
+63. **Count** swap targets that contain the control which triggered the request. Expect 0 — that
     swap drops focus to `<body>`. `forge-ui-htmx-restore-focus`
 
 ### 2i. Interaction and Announcement
 
-65. **Count** live regions on the page. Expect exactly 1, the flash container.
+64. **Count** live regions on the page. Expect exactly 1, the flash container.
     `forge-ui-a11y-one-live-region`
-66. **Count** `data-*` state attributes you emit, then count their ARIA counterparts. Expect equal.
+65. **Count** `data-*` state attributes you emit, then count their ARIA counterparts. Expect equal.
     `forge-ui-a11y-aria-beside-data`
-67. **Grep** `rg 'focus:' | rg -v 'focus-visible:|focus-within:'`. Expect 0 hits.
+66. **Grep** `rg 'focus:' | rg -v 'focus-visible:|focus-within:'`. Expect 0 hits.
     `forge-ui-interaction-focus-visible`
-68. **Count** motion moments per interaction. Expect 1. `forge-ui-interaction-one-moment`
-69. **Count** animated properties that are not `transform` or `opacity`. Expect 0, less a disclosure
+67. **Count** motion moments per interaction. Expect 1. `forge-ui-interaction-one-moment`
+68. **Count** animated properties that are not `transform` or `opacity`. Expect 0, less a disclosure
     whose height change is the point. `forge-ui-interaction-no-motion-on-layout`
 
 ### 2j. Tells
 
-70. **Grep** `rg 'bg-clip-text'`. Expect 0 hits. `forge-ui-tell-gradient-text`
-71. **Grep** `rg 'backdrop-blur'`. Expect 0 hits on a surface in the page flow.
+69. **Grep** `rg 'bg-clip-text'`. Expect 0 hits. `forge-ui-tell-gradient-text`
+70. **Grep** `rg 'backdrop-blur'`. Expect 0 hits on a surface in the page flow.
     `forge-ui-tell-glass-surface`
-72. **Count** rows of exactly three equal cards, then count the items in the data behind them. Expect
+71. **Count** rows of exactly three equal cards, then count the items in the data behind them. Expect
     the two to match. `forge-ui-tell-three-card-row`
-73. **Count** headings carrying an eyebrow line above them. Expect 0, or 1 that names a category the
+72. **Count** headings carrying an eyebrow line above them. Expect 0, or 1 that names a category the
     heading cannot. `forge-ui-tell-eyebrow-kicker`
 
 ### 2k. Platform
 
 Seven of the forty rules in [`reference/16-platform.md`](./reference/16-platform.md) — the ones an
 agent writes from muscle memory, and that one grep answers with a number. The rest of that file is
-read when the task reaches it; these are checked on every surface. **Items 74–77 are stated flat and
-no brief rebuts them**; 78–80 are Defaults like the rest of this block.
+read when the task reaches it; these are checked on every surface. **Items 73–76 are stated flat and
+no brief rebuts them**; 77–79 are Defaults like the rest of this block.
 
-74. **Grep** `rg -o '\b(ml|mr|pl|pr)-[0-9.]+|border-[lr]\b|rounded-[lr]\b|text-(left|right)\b'`.
+73. **Grep** `rg -o '\b(ml|mr|pl|pr)-[0-9.]+|border-[lr]\b|rounded-[lr]\b|text-(left|right)\b'`.
     Expect 0 hits; the logical spelling is `ms-`/`me-`, `ps-`/`pe-`, `border-s`/`border-e`,
     `rounded-s`/`rounded-e`, `text-start`/`text-end`. `forge-ui-platform-logical-spacing`
-75. **Grep** `rg 'padding-bottom:\s*[0-9.]+%'`. Expect 0 hits; an `aspect-*` utility is the box.
+74. **Grep** `rg 'padding-bottom:\s*[0-9.]+%'`. Expect 0 hits; an `aspect-*` utility is the box.
     `forge-ui-platform-aspect-ratio`
-76. **Grep** `rg -- '-translate-x-1/2|translate\(-50%'` and, for each hit, name the container that
+75. **Grep** `rg -- '-translate-x-1/2|translate\(-50%'` and, for each hit, name the container that
     could have carried the centring instead. Expect 0 bare. `forge-ui-platform-centering`
-77. **Grep** `rg '::-webkit-scrollbar'`. Expect 0 hits; `ScrollArea.Viewport`'s `scrollbar-width`
+76. **Grep** `rg '::-webkit-scrollbar'`. Expect 0 hits; `ScrollArea.Viewport`'s `scrollbar-width`
     and `scrollbar-color` pair is the form. `forge-ui-platform-scrollbar`
-78. **Count** selectors declared a second time under `prefers-color-scheme`:
+77. **Count** selectors declared a second time under `prefers-color-scheme`:
     `rg -c 'prefers-color-scheme'`. Expect 0; one `light-dark()` value holds both modes.
     `forge-ui-platform-light-dark`
-79. **Grep** `rg 'role="(alert)?dialog"|aria-modal'` and, for each hit, name the element it sits on.
+78. **Grep** `rg 'role="(alert)?dialog"|aria-modal'` and, for each hit, name the element it sits on.
     Expect every hit on a `<dialog>`, and 0 on a `div`. `forge-ui-platform-native-dialog`
-80. **Count** headings at `text-2xl` or larger, then count those carrying `text-balance`. Expect
+79. **Count** headings at `text-2xl` or larger, then count those carrying `text-balance`. Expect
     equal, less any heading that cannot wrap. `forge-ui-platform-text-balance`
 
 ---

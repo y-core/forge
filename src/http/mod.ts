@@ -14,4 +14,5 @@ export { Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Ra
 export type { HtmlTemplateTag, SafeHtml } from "./html";
 export { html, isSafeHtml, rawHtml } from "./html";
 export { joinPath } from "./path";
-export { createRedirectResponse, fragmentResponse, htmlResponse, redirect } from "./response";
+export { safeRedirectPath } from "./redirect-path";
+export { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, redirect } from "./response";

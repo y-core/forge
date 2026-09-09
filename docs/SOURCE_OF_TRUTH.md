@@ -75,7 +75,7 @@ row. Those live in governance, where they belong.
 | Per-namespace export lists | `src/{ns}/mod.ts` |
 | The generated assets module's exports — the manifest, the per-group `viewBox` consts, the bound icon components, and the glyph-name unions | `src/tooling/assets/pipeline.ts` |
 | Declared cross-namespace dependency graph | `config/namespaces.ts` |
-| CSRF and honeypot field names | `src/form/constants.ts` |
+| CSRF and Turnstile field names | `src/form/constants.ts` |
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
 | Bash allowlist patterns, including the exit-check literal | `.claude/settings.local.json` `permissions.allow` |
 

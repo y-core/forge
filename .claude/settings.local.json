@@ -57,7 +57,8 @@
   },
   "model": "opus[1m]",
   "enabledMcpjsonServers": [
-    "ledger"
+    "ledger",
+    "warden"
   ],
   "effortLevel": "medium",
   "showClearContextOnPlanAccept": true,

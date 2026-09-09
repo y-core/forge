@@ -1,4 +1,4 @@
-import { base64urlDecode, base64urlEncode, hmacSign, importHmacKeyFromHex, timingSafeEqualBytes } from "../../crypto/mod";
+import { base64urlDecodeOrNull, base64urlEncode, hmacSign, importHmacKeyFromHex, timingSafeEqualBytes } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import type { SignedUrlOptions, SignedUrlVerdict } from "./types";
 
@@ -53,12 +53,8 @@ export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string):
   const payload = signingPayload(objectKey, exp);
   const expected = await hmacSign(signingKey, payload);
 
-  let actual: Uint8Array;
-  try {
-    actual = base64urlDecode(sig);
-  } catch {
-    return err("invalid-signature");
-  }
+  const actual = base64urlDecodeOrNull(sig);
+  if (!actual) return err("invalid-signature");
 
   const match = timingSafeEqualBytes(expected, actual);
   if (!match) return err("invalid-signature");

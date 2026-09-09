@@ -262,7 +262,10 @@ the loader rather than returning data for a view to render. In order:
 4. For any other `HX-Request`, returns the `<tbody>` HTMX partial, filtered via `?level=` and
    `?q=`. An unrecognised `?level=` is dropped and the view renders unfiltered — the filter only
    narrows rows `access` has already permitted, so the fallback cannot widen exposure.
-5. Otherwise returns the full HTML-document viewer page.
+5. Otherwise returns the viewer as a full document, rendered through the shell the app registered
+   under the slot `{ mount: "logs", page: "logs", meta: { title: "Logs", robots: "noindex" } }`
+   ([`ROUTING_AND_MIDDLEWARE.md`](./ROUTING_AND_MIDDLEWARE.md) §6). The viewer takes no chrome
+   options of its own, so a theme lives in one place for every mount.
 
 **Auth by construction:** the record-rendering components are `@internal`, so records can never
 be rendered without first passing `access`. If the channel has no `read` method,

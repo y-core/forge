@@ -1,3 +1,13 @@
+export { AEAD_NONCE_BYTES, AEAD_TAG_BYTES, aeadNonce, aeadOpen, aeadSeal, importAeadKey } from "./aead";
+export { base32Decode, base32Encode } from "./base32";
+export type { CborDecoded, CborValue } from "./cbor";
+export { cborDecodeFirst } from "./cbor";
+export type { CoseAlgorithm, CosePublicKey } from "./cose";
+export { decodeCoseKey, decodeCosePublicKey } from "./cose";
+export { ECDSA_P256_COORDINATE_BYTES, unwrapEcdsaSignature } from "./der";
+export { hkdfExpand, hkdfExtract } from "./hkdf";
+export type { HotpHash, HotpOptions, TotpOptions } from "./hotp";
+export { hotpCode, totpCode, totpCounter } from "./hotp";
 export type { UuidByteInput, Uuidv7Options } from "./uuid";
 export { createUuidv7, createUuidv7Bytes, uuidFromBytes, uuidToBytes, uuidv7, uuidv7Bytes } from "./uuid";
 
@@ -35,6 +45,19 @@ export function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
 /** Returns `n` cryptographically random bytes. @internal */
 export function randomBytes(n: number): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(new Uint8Array(n));
+}
+
+/** Joins byte arrays into one new array, in the order given. @internal */
+export function concatBytes(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
+  let total = 0;
+  for (const part of parts) total += part.byteLength;
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.byteLength;
+  }
+  return joined;
 }
 
 /** Computes SHA-256 of a string or byte array, returns raw bytes. @internal */
@@ -86,6 +109,15 @@ export function base64urlDecode(str: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+/** Decodes a base64url string, answering `null` rather than throwing when it is not base64url. @internal */
+export function base64urlDecodeOrNull(str: string): Uint8Array<ArrayBuffer> | null {
+  try {
+    return base64urlDecode(str);
+  } catch {
+    return null;
+  }
 }
 
 /** Constant-time JS fallback for runtimes without `crypto.subtle.timingSafeEqual`. @internal */

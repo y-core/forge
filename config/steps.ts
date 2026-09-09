@@ -108,11 +108,13 @@ export const STEPS: readonly Step[] = [
   ),
   // `namespaces.ts` declares `ui/core → ui/client` once for the whole namespace,
   // which alone would license every component in it to import browser code that throws in a Worker.
+  // `auth/client` is the second browser-only directory: the passkey controller lives with the
+  // namespace whose server half stamps its contract, not in general `ui`.
   ssrBoundaryStep(
     {
       root: ROOT,
-      clientDir: "src/ui/client",
-      sources: ["src/ui"],
+      clientDirs: ["src/ui/client", "src/auth/client"],
+      sources: ["src/ui", "src/auth"],
       // The registration entry points, and nothing else: each exists to pull the client runtime in.
       entryPoints: ["client.ts"],
     },
@@ -164,7 +166,7 @@ export const STEPS: readonly Step[] = [
       // `UI_CLASS_COMPOSITION.md` and `STATE_ATTRIBUTES.md` mint none. Required here so a new
       // document fails closed rather than defaulting into a consumer's index.
       requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
-      documentedNonExports: ["./auth", "./handler", "./all", "./crypto"],
+      documentedNonExports: ["./handler", "./all", "./crypto"],
       // Written by the compiler and by build configuration, never by a consumer, so a documented row
       // for any of them would advertise an import the reader must not write.
       tableExemptSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"],
@@ -174,7 +176,9 @@ export const STEPS: readonly Step[] = [
         { doc: "README.md", exempt: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"] },
         { doc: "docs/NAMESPACES.md", exempt: ["./warden", "./warden/checks", "./warden/knowledge", "./warden/mcp", "./warden/steps"] },
       ],
-      listedOnlySubpaths: [],
+      // Written by the compiler, never by a consumer, so no prose rule about what belongs in one
+      // could be acted on — listed in the catalog, bound by nothing.
+      listedOnlySubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime"],
     },
     { tier: "standard" },
   ),
@@ -183,9 +187,9 @@ export const STEPS: readonly Step[] = [
   readmeExportsStep(
     {
       root: ROOT,
-      // Four are side-effect imports whose section documents registered scopes rather than symbols,
+      // Five are side-effect imports whose section documents registered scopes rather than symbols,
       // and `./ui/client/htmx` re-exports the vendored library itself, which has no forge surface.
-      exempt: ["./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"],
+      exempt: ["./auth/client", "./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"],
     },
     { tier: "standard" },
   ),

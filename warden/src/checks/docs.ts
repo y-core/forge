@@ -652,11 +652,11 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     }
   }
 
-  // A row lists a subpath; a prose rule binds it. Warn, because the backlog this found on the day
-  // it was written is a backlog, and a check that fails a build over one gets exempted wholesale.
+  // A row lists a subpath; a prose rule binds it. A failure now the backlog is empty — the warning
+  // was for working the list down, and holding it there would let the next subpath ship unbound.
   for (const subpath of [...exportSubpaths].sort()) {
     if (proseBound.has(subpath) || listedOnly.has(subpath) || documentedNonExports.has(subpath)) continue;
-    findings.push(warn(`\`${subpath}\` is listed but bound by no prose rule — add one, or exempt it with a reason`));
+    findings.push(fail(`\`${subpath}\` is listed but bound by no prose rule — add one, or exempt it with a reason`));
   }
 
   const warnings = findings.filter((finding) => finding.level === "warn").length;

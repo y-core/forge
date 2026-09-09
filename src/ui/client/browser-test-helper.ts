@@ -70,11 +70,19 @@ export interface MountOptions {
    * content or inline `<style>` rather than by a utility class, which resolves to nothing.
    */
   css?: string[];
+  /**
+   * The origin the fixture is served from, defaulting to {@link ORIGIN}.
+   *
+   * Only a spec needing a *secure* context has cause to change it: `http://forge.test/` is not one,
+   * so Chromium exposes no `PublicKeyCredential` and no `navigator.credentials` there at all. Pass
+   * `SECURE_ORIGIN` for a spec that drives WebAuthn.
+   */
+  origin?: string;
 }
 
 /** Loads `html` into the page, applies the requested stylesheets, then publishes the requested modules on `window`. */
 export async function mount(page: Page, html: string, options: MountOptions = {}): Promise<void> {
-  await givePageAnOrigin(page);
+  await givePageAnOrigin(page, options.origin ?? ORIGIN);
   await page.setContent(html);
   for (const href of options.css ?? []) {
     await page.addStyleTag({ path: new URL(href, `file://${SRC_ROOT}`).pathname });
@@ -134,12 +142,15 @@ export function escapeClass(cls: string): string {
 /** A URL no request ever leaves the browser for — the route below answers it. */
 const ORIGIN = "http://forge.test/";
 
+/** The same host over https, which is what makes the page a secure context. @internal */
+export const SECURE_ORIGIN = "https://forge.test/";
+
 /** Puts the page on a real origin before any markup lands: `setContent` alone leaves the document on
  * `about:blank`, whose opaque origin makes any `localStorage` read throw `SecurityError`. */
-async function givePageAnOrigin(page: Page): Promise<void> {
-  if (page.url().startsWith(ORIGIN)) return;
-  await page.route(`${ORIGIN}**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><html><body></body></html>" }));
-  await page.goto(ORIGIN);
+async function givePageAnOrigin(page: Page, origin: string): Promise<void> {
+  if (page.url().startsWith(origin)) return;
+  await page.route(`${origin}**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><html><body></body></html>" }));
+  await page.goto(origin);
 }
 
 const TAILWIND_ENTRY = resolve(SRC_ROOT, "ui/assets/css/tailwind.css");

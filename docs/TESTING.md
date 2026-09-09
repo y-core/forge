@@ -23,7 +23,7 @@ audience: consumer
 - §1c The Browser Set: real Chromium behind its own verb
 - §1d Waiting on an htmx Swap: settled, not merely swapped
 - §1e Media Options Playwright Does Not Implement: why a spec takes `test` from the harness
-- §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb
+- §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, and the published helper that starts it
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -44,6 +44,7 @@ audience: consumer
 - §7c render() — SSR Render-to-String: the assertion entry point
 - §7d buildRequest() — Request Builder: options and body helpers
 - §7e mapHandler() and TestAction: single-route registrar
+- §7f The One Subpath That Is Not on the Barrel: why `@y-core/forge/testing/workerd` is imported by name
 
 ---
 
@@ -206,7 +207,22 @@ Forge is a Workers library, so that blind spot is the one worth paying a runtime
 **Each spec starts `wrangler dev` over a fixture in `tests/fixtures/`, under node.** Not
 `createTestHarness`: it starts under bun but never answers a request, and the wrangler CLI refuses
 bun outright. Spawning the CLI as a child keeps `bun test` the only test runner in this repository
-(`CLAUDE.md`'s toolchain table), while the code under test still executes in workerd.
+(`CLAUDE.md`'s toolchain table), while the code under test still executes in workerd. **This
+paragraph is the single home of that rationale** — the helper's source states neither half of it.
+
+**The helper itself is published, and forge's specs import it the way a consumer does.**
+`startDevServer` lives in `src/testing/workerd.ts` and is reached as
+`@y-core/forge/testing/workerd`; there is no copy under `tests/`. A spec here imports the published
+specifier rather than a relative path, so what forge exercises is the module a consumer loads —
+including its wrangler resolution, which walks the _consumer's_ `node_modules` and would be wrong if
+it were computed from this file's own location. §7f owns why the subpath is off the `./testing`
+barrel.
+
+**`stop()` kills the process group, not the CLI.** wrangler spawns workerd and esbuild as its own
+children, so a signal to the CLI alone leaves a `workerd` pair reparented to PID 1, ignoring
+`SIGTERM` and holding a core each. The helper spawns `detached`, kills `-pid` with `SIGKILL`, and
+binds the same sweep to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP` — the interrupted run
+never reaches `afterAll`, and that is the path an orphan actually escapes through.
 
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same
 ground the browser set is held back on (§1c). `hasWorkerd` probes `wrangler`, which is what resolves
@@ -414,7 +430,8 @@ reached only through its own step (§1d).
 
 The `testing` namespace ships the fixtures every consumer suite would otherwise hand-roll.
 **Import them from the barrel** — consumer test code sits outside the source tree, so the
-concrete-file rule in [`TESTING.md`](../warden/canon/libs/TESTING.md) §2c does not apply.
+concrete-file rule in [`TESTING.md`](../warden/canon/libs/TESTING.md) §2c does not apply. §7f is the
+one stated exception, and it is a second published subpath rather than a file reached past a barrel.
 `src/testing/README.md` documents each fixture with its signature and options.
 
 ### 7a. Declared Integration Edge — testing Imports app and jsx
@@ -430,9 +447,11 @@ Three `Map`-backed fakes implement the real `storage/*` structural contracts, so
 drift breaks tests at compile time ([`TESTING.md`](../warden/canon/libs/TESTING.md) §4a). **Never mock
 these bindings.**
 
-`fakeKV` implements the full KV contract, including cursor-paginated `list`. **TTLs are accepted
-but not enforced — a test must never depend on wall-clock expiry**, because a fake that expired on
-a real clock would make a suite fail by being slow.
+`fakeKV` implements the full KV contract, including cursor-paginated `list`. **An expiry is enforced
+against the clock the caller injects** — `fakeKV(seed, { now })` — and an expired key is absent from
+`get`, `getWithMetadata` and `list` alike, as it is in a real binding. **A test must still never
+depend on wall-clock expiry**: the default clock is `Date.now`, so a suite that waited for a real TTL
+to elapse would fail by being slow. Advance an injected clock instead.
 
 **The fakes refuse what the platform refuses.** A fake that is green where the real binding throws
 is worse than no fake: it certifies code that fails on deploy. So `fakeKV.put` throws below the
@@ -443,8 +462,8 @@ clamping an overrun — which is exactly what R2 does, and the distinction is th
 against a declared `T | null`. **Do not "fix" a fake back to permissiveness** when a test fails
 against one of these; the test is telling you what production would do.
 
-Not enforcing TTL _expiry_ is a different thing from enforcing the TTL _floor_: the first would need
-a clock, the second is a constant.
+The TTL _floor_ is a different thing from the TTL _expiry_: the floor is a constant and refuses the
+write, the expiry needs a clock and hides the value.
 
 `fakeD1` both controls results and records the queries issued: a caller-supplied responder drives
 the returned rows, and every prepared-and-bound statement is recorded, so one fake serves the
@@ -476,3 +495,29 @@ registration shape production cannot express.
 
 **Use `mapHandler` for a namespace's own unit tests; use a full `route()` / `createController`
 map (§5a) when the test must exercise the production registration path itself.**
+
+### 7f. The One Subpath That Is Not on the Barrel — `@y-core/forge/testing/workerd`
+
+`@y-core/forge/testing/workerd` publishes `startDevServer`, `DevServer` and `DevServerOptions`, and
+it is **the stated exception to §7's opening line.** Import it by its own subpath; it is not
+re-exported from `src/testing/mod.ts` and will not be.
+
+**The reason is what the module reads.** It runs `wrangler dev` as a child process, so it imports
+`node:child_process`, `node:fs`, `node:net`, `node:os`, `node:path` and `node:url`. A Worker-side
+test program compiles under `"types": []` against the Workers and DOM lib set, and none of those
+modules exists there — putting the symbol on the barrel would make every `import … from
+"@y-core/forge/testing"` in a Worker-typed suite pull a module its own program cannot type. Off the
+barrel, the only way to reach it is to ask for it by name, which is a decision the importing file
+makes visibly. `checkExports` supports this directly: a non-`mod.ts` export target is excluded from
+its parent barrel's `@public` coverage walk, so "published but off the barrel" is a shape the gate
+holds rather than one it tolerates.
+
+**`wrangler` is an optional peer dependency**, declared because the module resolves the CLI out of
+the importing package's own tree — `import.meta.resolve("wrangler/package.json")`, never a path
+relative to forge's checkout. A consumer that imports this subpath installs `wrangler`; one that
+does not, never loads the module and never needs it.
+
+**Everything the process leaves behind is removed by `stop()`** — the process group (§1f) and the
+temp directory holding the `--env-file` it was started with. The env file is written per start into
+a fresh `mkdtemp` directory rather than under a per-port name, because the OS reuses a port and two
+runs would then share a file; one recursive remove is the whole cleanup.

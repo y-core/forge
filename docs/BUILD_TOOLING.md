@@ -117,6 +117,14 @@ the git and `package.json` helpers in `internal/` (§2c), the gate's formatters 
 the _caller_, not difficulty or stability: a helper is unpublished because nobody outside would
 reach for it.
 
+**Two subpaths are prebuilt JavaScript, and each publishes exactly the one thing a foreign loader
+needs.** `@y-core/forge/tooling/gate/chromium` is what a consumer's `playwright.config.ts` imports
+and `@y-core/forge/tooling/lint/plugin` is what a consumer's `.oxlintrc.json` names, because both
+are loaded by node rather than by the Worker runtime and node will not strip types from a file under
+`node_modules`. Neither may grow a symbol the source barrel does not already own: they are generated
+copies held against it by `validate-chromium-bundle` and `validate-lint-plugin`, so anything added
+to one by hand is drift the gate fails on. [`NAMESPACES.md`](./NAMESPACES.md) §3c owns the rule.
+
 ### 2a. createReleaseCommand — Automated Release Workflow
 
 **`createReleaseCommand(config, deps?)` takes a config object, not a program.** `cwd` is
@@ -435,6 +443,18 @@ back to `FORGE_APP_ROOT`, with an empty value treated as absent so an exported-b
 cannot resolve every path against `/`. This is the _stated_ branch, not a third one — reading
 through the symlink is the walk this section rules out, and it would answer for a `file:`
 dependency of a dependency exactly as confidently as for the app.
+
+**Tailwind's `@source` scanner is the opposite case, and does follow the symlink.** This section rules
+out _forge_ walking through a symlink to derive a root; it says nothing about a third-party scanner
+reading content. An `@source` line pointing into a `file:`-installed dependency resolves and its
+classes are generated — verified against an isolated `source(none)` stylesheet, which emitted 19 KB of
+auth utilities that were otherwise absent.
+
+**Do not A/B a `@source` line against your built stylesheet to decide whether it is needed.** Adding
+the auth directive to a forge app changes the output by nothing today, because every class forge's auth
+views use is already produced by the `ui/core` and `ui/chrome` scan set. That overlap is a coincidence
+of the current markup, not a contract — a diff of zero here means the sets happen to intersect, not
+that the line is redundant.
 
 ### 2i. Checks Are Functions, Not Scripts
 

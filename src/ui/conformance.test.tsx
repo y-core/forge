@@ -70,7 +70,6 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
   Filter: { slot: "filter" },
   Form: { slot: "form" },
   FormField: { props: { name: "ff" }, slot: "field", stateAttr: "data-orientation" },
-  Honeypot: { slot: "", noForward: "closed by design — a honeypot must not be addressable" },
   Icon: { props: { symbol: "x" }, slot: "icon", noForward: "closed prop list — see IconProps" },
   Indicator: { slot: "indicator" },
   Input: { slot: "input" },

@@ -21,7 +21,7 @@ input still submits. The rules below are about the parts that do not announce th
 - §3a Before / after: a dangling IDREF from three hand-written ids, against one derived `name`
 - §4 `ui/core` bases versus `ui/controls` bound variants: which barrel a control comes from, and why never both
 - §5 Error UX: where the message renders, when validation runs, and the invalid triple
-- §6 Form-level composition: honeypot and challenge placement, one primary, and which set to mark
+- §6 Form-level composition: challenge placement, one primary, and which set to mark
 
 ---
 
@@ -256,13 +256,7 @@ const AppIcon = createIcon("/assets/icons.svg");
 
 ## 6. Form-level composition
 
-`Form` renders a `<form>`, wires CSRF from a `csrfToken` prop, and passes htmx attributes through. It
-renders **no** honeypot — that is composed.
-
-**Default: `Honeypot` is the first child of a mutation `Form`, and appears on no `method="get"`
-form.** <!-- rule:forge-ui-form-honeypot-placement -->
-On a GET form the browser serialises the decoy into the query string — into the address bar, history
-and the outbound referrer — and only mutation handlers consult it. Override never.
+`Form` renders a `<form>`, wires CSRF from a `csrfToken` prop, and passes htmx attributes through.
 
 **Default: `Turnstile` sits inside the `<form>`, immediately above the submit control.**
 <!-- rule:forge-ui-form-turnstile-placement -->
@@ -283,10 +277,9 @@ Cancel and secondary paths take `secondary` or `ghost`. Override under a brief f
 action, where the two are visually one control.
 
 ```tsx
-import { Button, Form, Honeypot, Turnstile } from "@y-core/forge/ui/core";
+import { Button, Form, Turnstile } from "@y-core/forge/ui/core";
 
 <Form method='post' csrfToken={csrfToken} hx-post='/contact' hx-target='#contact-result'>
-  <Honeypot />
   {/* fields */}
   <Turnstile siteKey={turnstileSiteKey} />
   <Button type='submit'>Send message</Button>

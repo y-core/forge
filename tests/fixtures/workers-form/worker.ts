@@ -47,7 +47,6 @@ app.map(
       guarded: defineAction<typeof ContactSchema, Env>({
         schema: ContactSchema,
         maxBytes: MAX_BYTES,
-        honeypot: "company",
         turnstile: { secretKey: () => "1x0000000000000000000000000000000AA", verify: () => ({ expectedHostname: "example.com" }) },
         handle: (data) => new Response(`<p>Thanks, ${data.name}.</p>`, { headers: { "content-type": "text/html" } }),
       }),

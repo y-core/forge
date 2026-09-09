@@ -120,9 +120,7 @@
 }
 
 @utility state-disabled {
-  &:disabled,
-  &[aria-disabled="true"],
-  &:has(:disabled),
+  &:is(:disabled, [aria-disabled="true"], :has(:disabled)),
   fieldset:disabled & {
     @apply pointer-events-none opacity-50;
   }
@@ -137,10 +135,7 @@
 }
 
 @utility state-busy {
-  &[aria-busy="true"],
-  &[data-busy],
-  &:has([aria-busy="true"]),
-  &:has([data-busy]) {
+  &:is([aria-busy="true"], [data-busy], :has([aria-busy="true"]), :has([data-busy])) {
     @apply pointer-events-none cursor-progress;
   }
 }

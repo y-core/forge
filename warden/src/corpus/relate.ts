@@ -64,6 +64,18 @@ export function resolveDoc(cited: string, sources: readonly SourceDoc[], from?: 
   return resolution.kind === "resolved" ? resolution.id : undefined;
 }
 
+// The clause, not the header. A deferral wraps across lines and ends at the blank quote line, so the
+// scan has to be a slice rather than the one matching line — but scanning the whole header made
+// every document the *Owns* paragraph mentions in passing into an edge nobody declared.
+function deferralOf(header: string): string | undefined {
+  const lines = header.split("\n");
+  const start = lines.findIndex((line) => DEFERS.test(line));
+  if (start === -1) return undefined;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^>\s*$/.test(line));
+  return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))].join("\n");
+}
+
 /** Every edge one document's chunks declare: the `> Defers to:` header, every `§N` citation, and —
  *  given a `packageName` — every subpath a section's prose governs.
  *
@@ -79,12 +91,13 @@ export function relationsOf(
   const relations: Relation[] = [];
   const docId = sourceId(doc.corpus, doc.path);
 
-  if (DEFERS.test(header.split("\n").find((line) => DEFERS.test(line)) ?? "")) {
+  const deferral = deferralOf(header);
+  if (deferral !== undefined) {
     // A markdown link names the document twice — once as its text, once as its href — and only the
     // href is followed by the `§N`. Keying on the resolved target merges the pair where the raw
     // spellings differ (`X.md` and `tree/X.md` are one edge), and the section-bearing one wins.
     const targets = new Map<string, { raw: string; to?: string }>();
-    for (const match of header.matchAll(DEFERRED_DOC)) {
+    for (const match of deferral.matchAll(DEFERRED_DOC)) {
       const cited = match[1] ?? "";
       const section = match[2];
       const target = resolveDoc(cited, sources, doc);

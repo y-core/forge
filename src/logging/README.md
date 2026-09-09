@@ -30,7 +30,7 @@ log.info("server started", { port: 8787 });
 - **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil` so the response is not blocked. `flush()` never rejects, so a failed write is reported through `onChannelError` instead — by default one `console.error` line, visible in `wrangler tail` without configuration.
 - **Request logging middleware** — one record per request with method, path, status, and duration, with the level derived from the response status code.
 - **KV persistence** — time-ordered keys, per-entry metadata for zero-cost listing, TTL retention, and a probabilistic soft-cap purge.
-- **SSR log viewer** — a single auth-gated `loadLogViewer` loader from `@y-core/forge/logging/show` that returns a fully rendered `Response` (viewer content inside your `layout`, HTMX `<tbody>` partial, append fragment, or record-detail row) for browsing persisted logs; built from `ui/core` primitives and semantic tokens, so it themes with the rest of your app. The JSX components are internal so records cannot render without passing the access check.
+- **SSR log viewer** — a single auth-gated `loadLogViewer` loader from `@y-core/forge/logging/show` that returns a fully rendered `Response` (viewer content inside the shell your app registered, HTMX `<tbody>` partial, append fragment, or record-detail row) for browsing persisted logs; built from `ui/core` primitives and semantic tokens, so it themes with the rest of your app. The JSX components are internal so records cannot render without passing the access check.
 
 ## Usage
 
@@ -381,7 +381,7 @@ and the fragment renderers are **internal**: records can only be rendered by goi
 `loadLogViewer`, which enforces the access check first — so an unguarded viewer is impossible by
 construction.
 
-### `loadLogViewer(context, config, options)`
+### `loadLogViewer(context, options)`
 
 A route loader returning `Promise<Response>` for **every** path. It renders inside the loader,
 so there is no view branch in app code. In order:
@@ -402,8 +402,9 @@ so there is no view branch in app code. In order:
 4. For any other HTMX request — a filter submit — returns the whole `<tbody>` partial, filtered
    via `?level=` and `?q=`. An unrecognised `?level=` is dropped and the view renders unfiltered;
    the filter only narrows rows `access` already permits, so falling back cannot widen exposure.
-5. Otherwise resolves `context(c, config)` and returns the viewer content rendered inside your
-   `layout`.
+5. Otherwise returns the viewer content rendered inside the shell the app registered, under the
+   slot `{ mount: "logs", page: "logs", meta: { title: "Logs", robots: "noindex" } }` — a log
+   viewer names request paths and error messages, so it states `noindex` for itself.
 
 If the channel has no `read` method, the table renders empty rather than erroring. A `read` that
 **rejects** is caught and rendered in place as a `destructive` `Alert` with a retry, with the table's
@@ -421,23 +422,25 @@ level — forgetting a guard is a compile error.
 | `channel` | `(c) => LogChannel` | Per-request factory for the channel to read from. |
 | `access` | `((c) => boolean \| Promise<boolean>) \| "allow-unauthenticated"` | **Required.** Access decision, run before the channel is touched; `false` → `403 Forbidden`. A throwing predicate propagates to the error boundary (fail closed). |
 | `icon` | `ForgeIcon<"chevron-down">` | **Required.** App-bound icon rendered in the filter bar's level select. The app injects its own icon so `logging/show` need not own an icon set. |
-| `context` | `(c, config) => Promise<Ctx>` | **Required.** Per-request factory whose resolved value is forwarded to `layout` as `ctx`. Same shape as `ShowcaseOptions.context`. |
-| `layout` | `FC<{ ctx: Ctx }>` | **Required.** Your app's page shell. The viewer builds no document of its own — see below. |
 | `basePath` | `string` | URL prefix the viewer is mounted at, used for HTMX targets. Defaults to `/admin/logs`. |
 
-#### Why `layout` is required
+#### Why the viewer builds no document
 
 The document is where the theme lives: `<html>` carries the dark class, the head carries the script
 that sets it before first paint, and `<body>` carries `bg-background`. A viewer that built its own
 bare `<html>`/`<head>`/`<body>` would put dark mode out of reach whatever classes its components
-carried. Handing the shell to the consumer — the same move `registerShowcase` makes — is what lets
-the viewer render inside your chrome, with your nav and your theme toggle.
+carried. So the viewer takes no chrome options at all and renders into the shell the app registered
+with `createApp({ shell })` — the same one every other forge mount renders into
+([`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §6), which is what puts the
+viewer inside your chrome, with your nav and your theme toggle. With no shell registered it renders
+a bare, unstyled document.
 
 #### Making the table fill the viewport
 
 The viewer's `<main>` is `flex-1 min-h-0` and carries `data-fill-viewport`, so it fills the height
 the layout leaves it and scrolls the table inside that box rather than growing the document. To get
-that, make `children` a direct child of a flex column that goes _definite_ for a filling page:
+that, make the shell's content a direct child of a flex column that goes _definite_ for a filling
+page:
 
 ```html
 <body class="flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden"></body>
@@ -457,17 +460,14 @@ import { definePage } from "@y-core/forge/app";
 import { kvLogChannel } from "@y-core/forge/logging";
 import { loadLogViewer } from "@y-core/forge/logging/show";
 import { sessionCtx } from "@y-core/forge/session";
-import { Layout, renderContext } from "./ui/layout";
 import { chevronDownIcon } from "./ui/icons";
 
 export const logsPage = definePage<AppEnv, AppConfig>({
-  loader: (c, config) =>
-    loadLogViewer(c, config, {
+  loader: (c) =>
+    loadLogViewer(c, {
       channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),
       access: (cc) => isAdmin(sessionCtx.getOptional(cc)), // required — 403 when false
       icon: chevronDownIcon, // required — app-bound ForgeIcon<"chevron-down">
-      context: renderContext, // required — resolves the value handed to `layout`
-      layout: Layout, // required — your shell; the viewer builds no document
       basePath: "/admin/logs",
     }),
   // Unreachable: the loader always returns a Response, which short-circuits rendering.

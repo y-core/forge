@@ -80,7 +80,7 @@ Module-level **immutable** constants are fine:
 
 ```ts
 export const CSRF_FIELD_DEFAULT = "_csrf";
-export const HONEYPOT_FIELD_DEFAULT = "__surname";
+export const CSRF_HEADER_DEFAULT = "X-CSRF-Token";
 ```
 
 One file owns each such value, and it is named in the source-of-truth register

@@ -296,7 +296,7 @@ Wraps a raw `KVNamespace` with a typed `KVStore<T>`.
 | Option | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `codec` | `KvCodec<T>` | `jsonCodec()` | Encode/decode pair for stored values |
-| `prefix` | `string` | _(none)_ | Key namespace applied on write, stripped on read |
+| `prefix` | `string` | _(none)_ | Key namespace applied on write, stripped on read. Omit it for an unprefixed store; an empty string is refused, since it silently becomes one |
 | `defaultTtl` | `number` | _(none)_ | Fallback `expirationTtl` (seconds) when a write omits one |
 | `logger` | `Logger` | scoped default | Logs decode errors and cache misses |
 

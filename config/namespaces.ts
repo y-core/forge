@@ -25,12 +25,29 @@ export const LEAF: readonly string[] = [
 
 /** Every declared cross-namespace edge: source → target → whether it survives type erasure. */
 export const EDGES: Record<string, Record<string, EdgeKind>> = {
-  app: { config: "value", form: "value", http: "value", logging: "value", security: "value" },
+  // `jsx` is the shell's: `app` owns where a document shell is registered and resolved, and a shell
+  // renders JSX. Nothing in `jsx` names `app`, so the edge closes no cycle.
+  app: { config: "value", form: "value", http: "value", jsx: "value", logging: "value", security: "value" },
+  auth: { "storage/db": "value", "storage/kv": "value" },
+  // `auth` here is the passkey contract — pure data both tiers read — and nothing else.
+  "auth/client": { auth: "value", http: "value", "ui/client": "value" },
+  // One-way by construction: `auth` never names `auth/web`, and `validateNoMutualValuePairs` is what
+  // holds it that way.
+  "auth/web": {
+    app: "value",
+    auth: "value",
+    form: "value",
+    "html/htmx": "value",
+    http: "value",
+    jsx: "value",
+    session: "value",
+    "ui/core": "value",
+  },
   jsx: { http: "value" },
   // Type-only on purpose: `storage/kv → logging` is the runtime edge, so a value import here would
   // close a real cycle.
   logging: { "storage/kv": "type" },
-  "logging/show": { "html/htmx": "value", http: "value", jsx: "value", logging: "value", "ui/contracts": "type", "ui/core": "value" },
+  "logging/show": { app: "value", "html/htmx": "value", http: "value", jsx: "value", logging: "value", "ui/contracts": "type", "ui/core": "value" },
   security: { logging: "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },

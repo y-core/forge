@@ -35,7 +35,7 @@ a finding is only a finding if it can name the rule id it violates.
 | Typography | Type steps that differ by too little to read as different; measure on every block of body copy | `03-typography.md`, plus `forge-ui-measure-cap` |
 | Color | Token use only; count of text colors on the surface; every background paired with its `*-foreground` | `04-color.md`, plus `forge-ui-color-token-only`, `forge-ui-text-color-budget`, `forge-ui-foreground-pairing` |
 | Depth | Whether each elevation encodes something; whether one radius holds | `05-depth.md`, plus `forge-ui-one-radius` |
-| Forms | `FormField` wiring, label presence, error placement, `Honeypot` on mutation forms | `06-forms.md`, plus `forge-ui-accessible-name` |
+| Forms | `FormField` wiring, label presence, error placement | `06-forms.md`, plus `forge-ui-accessible-name` |
 | States | Does an empty state exist; an error state; a loading state whose shape matches what is awaited | `07-states.md`, plus `forge-ui-empty-state` |
 | Navigation | Whether the current location is expressed by more than color; whether `Tabs` and `Navbar` state survives a reload | `08-navigation.md`, plus `forge-ui-not-color-alone` |
 | Interaction | Whether every state change is caused by the user; motion budget against the dial | `09-interaction.md` and `12-density.md`, plus `forge-ui-reduced-motion` |
