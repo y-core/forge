@@ -58,6 +58,19 @@ describe("AdminUserEditView heading", () => {
     );
     expect(textOf(html, "span", 'data-ref="admin-user-role"')).toBe("Admin");
   });
+
+  it("says where the address stands, dated where it was verified and named where it never was", async () => {
+    expect(textOf(await account({ user: user({ emailVerifiedAt: CREATED_AT }) }), "span", 'data-ref="admin-user-verified"')).toBe(
+      'Address verified <time datetime="2025-01-01T00:00:00.000Z" class="tabular-nums">2025-01-01</time>',
+    );
+    expect(textOf(await account({ user: user({ emailVerifiedAt: null }) }), "span", 'data-ref="admin-user-verified"')).toBe(
+      "Address never verified",
+    );
+  });
+
+  it("offers the factors panel for this account, fetched on a press", async () => {
+    expect(attrOf(await account(), 'data-ref="factors-trigger"', "hx-get")).toBe("/admin/users/u1/factors");
+  });
 });
 
 describe("AdminUserEditView controls when nothing is guarded", () => {

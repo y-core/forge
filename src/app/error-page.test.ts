@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { requestIdCtx } from "../security/request-id";
 import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
@@ -92,6 +93,30 @@ describe("createErrorPage — page structure", () => {
     const fallback = broken(new Error("x"), createTestContext(new Request("http://test/")));
     expect(fallback.status).toBe(500);
     expect(await fallback.text()).not.toContain("<link");
+  });
+});
+
+describe("createErrorPage — the request id", () => {
+  const reference = (body: string): string => fragment(body, '<p class="mt-4 text-sm">', "</p>");
+
+  it("renders no reference when the requestId middleware never ran", async () => {
+    const page = createErrorPage();
+    const res = page(new Error("x"), createTestContext(new Request("http://test/")));
+    expect(reference(await res.text())).toBe("");
+  });
+
+  it("quotes the id the middleware assigned", async () => {
+    const page = createErrorPage();
+    const c = createTestContext(new Request("http://test/"));
+    requestIdCtx.set(c, "req-42");
+    expect(reference(await page(new Error("x"), c).text())).toBe('<p class="mt-4 text-sm">Reference: req-42</p>');
+  });
+
+  it("escapes the id it renders", async () => {
+    const page = createErrorPage();
+    const c = createTestContext(new Request("http://test/"));
+    requestIdCtx.set(c, "<script>alert(1)</script>");
+    expect(reference(await page(new Error("x"), c).text())).toBe('<p class="mt-4 text-sm">Reference: &lt;script&gt;alert(1)&lt;/script&gt;</p>');
   });
 });
 

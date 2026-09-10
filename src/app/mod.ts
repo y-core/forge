@@ -20,7 +20,6 @@ export type {
   ActionDefinition,
   ActionTurnstileOptions,
   AppOptions,
-  AssetOptions,
   AssetsFetcher,
   BotRejection,
   CacheDirective,

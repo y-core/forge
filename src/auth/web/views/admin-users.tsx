@@ -54,6 +54,7 @@ export const AdminUsersView: FC<AdminUsersViewProps> = ({ users, query, nextCurs
               <Table.Head>Email address</Table.Head>
               <Table.Head>Role</Table.Head>
               <Table.Head>Status</Table.Head>
+              <Table.Head>Email verified</Table.Head>
               <Table.Head>Created</Table.Head>
               <Table.Head>
                 <span class='sr-only'>Manage</span>
@@ -73,6 +74,16 @@ export const AdminUsersView: FC<AdminUsersViewProps> = ({ users, query, nextCurs
                   <Badge tone={user.deactivatedAt === null ? "success" : "warning"} data-ref='admin-user-status'>
                     {user.deactivatedAt === null ? "Active" : "Deactivated"}
                   </Badge>
+                </Table.Cell>
+                {/* Only the unverified address earns colour: it is the exception being scanned for. */}
+                <Table.Cell>
+                  {user.emailVerifiedAt === null ? (
+                    <Badge tone='warning' data-ref='admin-user-verified'>
+                      Unverified
+                    </Badge>
+                  ) : (
+                    <AuthTimestamp at={user.emailVerifiedAt} data-ref='admin-user-verified' />
+                  )}
                 </Table.Cell>
                 <Table.Cell>
                   <AuthTimestamp at={user.createdAt} />

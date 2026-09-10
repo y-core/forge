@@ -29,10 +29,12 @@ export interface AppOptions<Bindings = Record<string, unknown>> {
   middleware?: (app: Forge<Bindings & object>) => void;
   /** Wiring step 2 — register routes. */
   routes?: (app: Forge<Bindings & object>) => void;
+  /** Renders an unmatched URL — the router's no-match path and the asset catch-all's misses alike. */
+  notFound?: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
   /** Wiring step 3 — late registrations that must precede the asset catch-all. */
   finalize?: (app: Forge<Bindings & object>) => void;
   /** Wiring step 4 — registers the static-asset catch-all last. */
-  assets?: AssetOptions<Bindings>;
+  assets?: boolean;
 }
 
 /** A route's `Cache-Control` policy. @public */
@@ -136,11 +138,6 @@ export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<s
 /** The fetch surface of Cloudflare's static-asset binding. @public */
 export interface AssetsFetcher {
   fetch(req: Request): Promise<Response>;
-}
-
-/** Configures the static-asset catch-all registered last. @public */
-export interface AssetOptions<Bindings = Record<string, unknown>> {
-  notFoundView: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
 }
 
 /** The aggregate verdict of a health endpoint's registered checks. @public */

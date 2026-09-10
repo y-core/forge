@@ -20,7 +20,7 @@ This namespace is an **integration namespace** — it composes `form`, `http`, `
 - **Path-scoped middleware** — `app.use("*", ...)` / `app.use("/api/*", ...)` register guards that wrap matched routes.
 - **Declarative route registration** — `app.map(routes, controller)` binds a route map to its controller.
 - **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (read → bot guards → schema → handle, with automatic `413`/`400`/`422`/`500` error fragments).
-- **Static-asset catch-all** — `applyAssets` serves the `ASSETS` binding with a typed `notFoundView` fallback.
+- **Static-asset catch-all** — `applyAssets` serves the `ASSETS` binding, falling back to the app's own `notFound` hook.
 - **Config injection** — a `Config` store passed to `createApp` is resolved once per request and exposed on the context (`ConfigKey`, `c.config`).
 - **One registered page shell** — `createApp({ shell })` names the document every mounted page renders into, resolved per request; forge's own mounts take no chrome options of their own.
 - **Typed page meta** — every mount hands the shell a `PageMeta` (`title`, `description`, `canonical`, `robots`, `og`, `twitter`, JSON-LD, and an open escape hatch), rendered by `metaTags` and merged over a site base with `mergeMeta`.
@@ -73,7 +73,7 @@ const controller = createController(routes, {
 });
 
 app.map(routes, controller);
-applyAssets(app, { notFoundView }); // static-asset catch-all over the ASSETS binding
+applyAssets(app); // static-asset catch-all over the ASSETS binding
 
 export default app;
 ```
@@ -98,7 +98,8 @@ Creates a `Forge` instance with a structured error boundary.
 | `middleware` | `(app: Forge<Bindings>) => void` | Wiring step 1 — register global middleware (typically one `applyMiddlewareChain` call). |
 | `routes` | `(app: Forge<Bindings>) => void` | Wiring step 2 — register routes (`app.map` calls). |
 | `finalize` | `(app: Forge<Bindings>) => void` | Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all. |
-| `assets` | `AssetOptions<Bindings>` | Wiring step 4 — registers the static-asset catch-all **last**, so real routes always win. |
+| `notFound` | `(c: AppContext<Bindings>, config: unknown) => Response \| Promise<Response>` | Renders every unmatched URL — the router's no-match path and the asset catch-all's misses alike. Omitted, forge answers a hardened plain-text `404 Not Found` that never echoes the request path. |
+| `assets` | `boolean` | Wiring step 4 — registers the static-asset catch-all **last**, so real routes always win. |
 
 All options are optional; `createApp()` with no arguments is valid. The generic `Bindings` parameter types `c.env` throughout the app.
 
@@ -120,7 +121,8 @@ export default createApp<Bindings>({
     }),
   routes: registerRoutes,
   finalize: registerDevRoutes, // optional — e.g. /admin/logs in dev builds only
-  assets: { notFoundView: notFoundController },
+  notFound: notFoundController,
+  assets: true,
 });
 ```
 
@@ -271,25 +273,25 @@ health: healthCheck<Bindings>({
 }),
 ```
 
-### `applyAssets(app, options, path?)` / `serveAssets(app, options)`
+### `applyAssets(app, path?)` / `serveAssets(app)`
 
-`applyAssets` registers a catch-all route that serves static files from the `ASSETS` binding, falling back to a typed `notFoundView`. The `Bindings` type must include an optional `ASSETS` fetcher (`HasAssets`).
+`applyAssets` registers a catch-all route that serves static files from the `ASSETS` binding, falling back to the app's own `notFound` hook. The `Bindings` type must include an optional `ASSETS` fetcher (`HasAssets`).
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `app` | `Forge<Bindings>` | The app to register the catch-all on. |
-| `options.notFoundView` | `(c, config) => Response \| Promise<Response>` | Rendered when the asset is missing, the binding is absent, or the method is not `GET`/`HEAD`. Receives the resolved app config. |
+| `app` | `Forge<Bindings>` | The app to register the catch-all on; its `notFound` hook answers every miss. |
 | `path` | `string` (default `"*"`) | Pattern for the catch-all route. |
 
 ```ts
-import { applyAssets } from "@y-core/forge/app";
+import { applyAssets, createApp } from "@y-core/forge/app";
 
-applyAssets(app, {
-  notFoundView: (c, config) => renderPage(<NotFound site={config.site} />),
-});
+const app = createApp<Bindings>({ notFound: (c, config) => renderPage(<NotFound site={config.site} />) });
+applyAssets(app);
 ```
 
-`serveAssets` is the underlying `RequestHandler` if you need to register it on a non-catch-all route yourself. It returns `notFoundView` on a `404` from the binding, on a missing `ASSETS` binding, or on a non-`GET`/`HEAD` method. Register `applyAssets` **last**, after `app.map`, so real routes take precedence over the catch-all.
+**There is one not-found answer, whether or not `assets` is configured.** The asset catch-all shadows the router's own no-match path, so without a single owner the same unmatched URL would get two different responses.
+
+`serveAssets` is the underlying `RequestHandler` if you need to register it on a non-catch-all route yourself. It renders the app's not-found answer on a `404` from the binding, on a missing `ASSETS` binding, or on a non-`GET`/`HEAD` method. Register `applyAssets` **last**, after `app.map`, so real routes take precedence over the catch-all.
 
 ### `createErrorPage(options?)`
 
@@ -301,6 +303,8 @@ Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` 
 | `title` | `string` | `"Something went wrong"` | Page `<title>` and heading. |
 | `stylesheetHref` | `string \| ((c) => string)` | — | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
 | `homeHref` | `string` | — | Optional "Back to safety" link. |
+
+**A `Reference: <id>` line appears when the `requestId` middleware ran** — the same id as the `x-request-id` header, for a user to quote in a support ticket. Neither this page nor the default boundary page generates an id, so without that middleware the line is simply absent.
 
 ```ts
 import { createApp, createErrorPage } from "@y-core/forge/app";
@@ -407,7 +411,7 @@ export const controller = createController(routes, {
 ```ts
 app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] })); // globals first
 app.map(routes, controller); // routes
-applyAssets(app, { notFoundView }); // catch-all last
+applyAssets(app); // catch-all last
 export default app;
 ```
 
@@ -498,7 +502,7 @@ The dispatching router is built once, on the first `fetch`, with a fixed middlew
 
 ### Config resolution
 
-When `createApp({ config })` is given a store, `fetch` calls `resolveConfig(store, env)` once per request and exposes the result via `ConfigKey` / `c.config`. `definePage` and `defineAction` read it and pass the typed value to your `view`/`handle`. `applyAssets`/`serveAssets` resolve the same store to pass `config` into `notFoundView`. No config means `c.config` is `undefined` and handlers receive `undefined` for their config argument.
+When `createApp({ config })` is given a store, `fetch` calls `resolveConfig(store, env)` once per request and exposes the result via `ConfigKey` / `c.config`. `definePage` and `defineAction` read it and pass the typed value to your `view`/`handle`. `applyAssets`/`serveAssets` resolve the same store to pass `config` into the app's `notFound` hook. No config means `c.config` is `undefined` and handlers receive `undefined` for their config argument.
 
 ### Testing with `app.request`
 
@@ -530,7 +534,7 @@ expect(res.status).toBe(200);
 - **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1b.
 - **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4b.
 - **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at startup or on the first request, never silently downstream.
-- **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to `notFoundView`, so the asset catch-all cannot be used as a write surface.
+- **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to the app's not-found answer, so the asset catch-all cannot be used as a write surface.
 
 ---
 
@@ -568,7 +572,6 @@ Related docs:
 | `ActionTurnstileOptions` | type | `{ secretKey, tokenField?, verify }` for `turnstile` on either builder. |
 | `BotRejection` | type | Why a guard refused — `{ guard: "turnstile"; reason }`. |
 | `AppOptions` | type | The `createApp` options shape. |
-| `AssetOptions` | type | The `applyAssets`/`serveAssets` options (`notFoundView`). |
 | `AssetsFetcher` | type | Shape of the `ASSETS` binding (`fetch(req)`). |
 | `CacheDirective` | type | `{ maxAge; scope? }` for `definePage({ cache })`. |
 | `HealthCheckResult` | type | `{ ok; checks }` health response body. |

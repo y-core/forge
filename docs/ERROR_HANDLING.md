@@ -32,10 +32,11 @@ audience: consumer
 - §3a htmlResponse: full-page render with a fixed content-type
 - §3b html Tagged Template: `SafeHtml` from a raw string fragment
 - §3c escapeHtml: manual escaping outside the auto-escaping render paths
+- §3d Who Answers in What: guards in plain text, handlers in fragments or pages
 - §4 Fail-Closed Posture: missing security dependency means 503
 - §5 Error Taxonomy: expected, unexpected, and infrastructure failures
 - §5a Expected Errors: return a Result or a fragment, never throw
-- §5b Unexpected Errors and the Router Error Boundary: in-chain vs out-of-chain headers
+- §5b Unexpected Errors and the Router Error Boundary: in-chain vs out-of-chain headers, and cancellation
 - §5c Infrastructure Errors: log with context, then fail closed
 - §5d defineAction and definePage Error Recovery: the intentional divergence
 - §5e Startup Invariants: resolvers throw, operations return Result
@@ -161,6 +162,30 @@ runtime and the `html` tag auto-escape, so `escapeHtml` is only needed outside t
 Test assertions against rendered HTML must match the encoded form —
 [`TESTING.md`](./TESTING.md) §3a owns the encoding map.
 
+### 3d. Who Answers in What — Guards in Plain Text, Handlers in Markup
+
+**A guard refuses in plain text; a handler refuses in a fragment or a page.** Every transport guard
+answers with a bare string body — `Forbidden` (403) from `crossOriginProtection`, `originProtection`
+and `originGuard`, `Too many requests. Please try again later.` (429) and `Service unavailable`
+(503) from `rateLimit`, `Unsupported Media Type` (415) from the content-type guard. The handler
+tiers answer in markup: a fragment renderer (§2) for `defineAction`, a full page for `definePage`
+and the boundary (§5b).
+
+**Why: a guard has no page context.** It runs before any handler, so it knows neither the shell nor
+the route's render mode, and it must be equally correct in front of an API route and an HTML one.
+Rendering a document there would be a guess.
+
+**The consequence to design for: an HTMX target will swap the raw text.** A `403 Forbidden` from a
+guard lands in the swap target as the literal word, not as a styled banner. Where that matters,
+give the guard its own answer — `rateLimit` takes `onLimit` — rather than expecting forge to guess
+a fragment.
+
+**`auth/web`'s guards are the documented exception, and mostly are not refusals at all.** They route
+through `refuse()`, which redirects an HTML request to the remedy page and answers a JSON one with a
+JSON body. Only two produce plain text: `requireAdmin`'s `Forbidden`, and the unknown-demand
+`Service Unavailable` (503), which cannot redirect because every remedy page asks the same
+unavailable store and the redirect would loop.
+
 ---
 
 ## 4. Fail-Closed Posture
@@ -186,7 +211,7 @@ Programming mistakes that cannot be recovered at the call site. **The app needs 
 `try/catch`** — the router installs an error boundary as a global middleware, at two depths: one
 innermost, one wrapped around the path-scoped guard stack.
 
-Three paths, with different header guarantees:
+Three paths, with different header guarantees, plus a fourth that is not an error at all:
 
 - **In-chain errors** (thrown by a route handler or route-level middleware) — the innermost
   `errorBoundary` catches the throw; the response flows back out through the path-scoped guards
@@ -211,9 +236,27 @@ rule below: pending always beats a header the handler baked into its own `Respon
   | `X-Content-Type-Options` | `nosniff` |
   | `Content-Security-Policy` | `default-src 'none'` |
   | `Referrer-Policy` | `no-referrer` |
+  | `X-Request-Id` | this request's id — **only when `requestId` middleware already ran** |
 
   On the in-chain path `applyPendingHeaders` set-overwrites these with the consumer's policy.
   No error path ships an unprotected response.
+
+**Both error pages quote the request id when there is one to quote.** The default page and
+`createErrorPage` render a short `Reference: <id>` line from `requestIdCtx`, escaped — the opaque
+internal identifier canon §3b permits, and what a user can paste into a support ticket. **Neither
+generates one:** without the `requestId` middleware there is no id, and the line is omitted. On the
+out-of-chain path no middleware ran, so a throw before `requestId` carries neither the line nor the
+header.
+
+- **Cancellation** (the client disconnected before the handler finished) — **not an error.**
+  `@remix-run/fetch-router` races every handler against `request.signal` and rejects with the
+  signal's reason, which reaches the boundary like any throw. The boundary checks
+  `request.signal.aborted` first and answers a bodyless **499**: no `onError` override is called, no
+  error page is rendered, and nothing is logged — not by the boundary, and not by `requestLogger`,
+  whose own error record is suppressed on the same condition. There is no client left to receive a
+  page, and a disconnect is not a defect to page anyone about. `definePage` and `defineAction`
+  rethrow on the same condition, so neither an `onError` page nor the generic fragment is built for
+  a gone client — **this is the one case `defineAction` rethrows** (§5d).
 
 The boundary logs via `createLogger("app")` and includes the escaped `err.message` only in
 debug builds (the `isDebug` predicate passed to `createApp`). **The client never receives a
@@ -227,6 +270,13 @@ catch-log-`503` rule, and what a log line may and may not carry. What is local: 
 `createLogger` rather than `console`, so a Worker's structured output carries the request context
 the canon calls for.
 
+**`Network connection lost` is one of these**, not a special case. Cloudflare lists it among the
+runtime errors a `fetch` or a binding call can throw
+([Workers runtime errors](https://developers.cloudflare.com/workers/observability/errors/)); forge's
+answer is the same catch-log-`503`. **Retry is the consumer's decision, so no retry loop belongs
+inside a storage client** — the client cannot know whether the call was idempotent or how long the
+caller is willing to wait (`src/storage/README.md`).
+
 ### 5d. `defineAction` and `definePage` Error Recovery
 
 `defineAction` centralises action error handling: an oversized body surfaces **413**, an
@@ -239,9 +289,21 @@ via `createLogger("action")` (unless `onError` is supplied).
 
 **The divergence is intentional.** A full-page `definePage` GET is part of a navigable
 document, so an unhandled failure must bubble to the full-page boundary. A `defineAction` HTMX
-call swaps a fragment into an existing page, so it stays self-contained. **Both log on the way
-out** — the difference is only in what the client receives, never in whether the error is
-recorded.
+call swaps a fragment into an existing page, so it stays self-contained. The difference is only in
+what the client receives, never in whether the error is recorded.
+
+**One error, one record, written by the layer that terminates it.** A `definePage` with no
+`onError` logs nothing and re-throws — the boundary is the terminating layer and reports it there.
+A builder that recovers the error itself logs it, because the boundary never will: `definePage`
+with an `onError` at error level, `defineAction` at **warn** when its `onError` recovers and at
+error when it renders the generic 500. Every one of those records carries `serializeError(error)`,
+so the shape is the same wherever it was written. `requestLogger`'s per-request summary is a
+separate record by design — it carries the `method`, `path` and `duration` the error record does
+not.
+
+**A throwing `onError` is attributed to the hook, not folded into the original.** All three hooks —
+`createApp`'s, `definePage`'s and `defineAction`'s — log their own failure with the original error
+alongside it, then fall through as if no hook had been supplied.
 
 **Use these hooks for per-route recovery instead of ad-hoc `try/catch`.**
 

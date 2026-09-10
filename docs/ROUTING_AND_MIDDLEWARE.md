@@ -23,6 +23,7 @@ audience: consumer
 - §1b Controller — Mapping Route Names to Actions: where route middleware lives
 - §1c Registering Routes with app.map: ordering against global middleware
 - §1d No `head` Verb Export: why a HEAD route could never match
+- §1e The Unmatched URL: one `notFound` hook, whether or not `assets` is configured
 - §2 Page and Action Route Patterns: the three handler factories
 - §2a Full-Page Routes with definePage: loader, view, the render state, and the optional schema
 - §2b Action-Only Routes with defineAction: the handle terminal step and the derive-only drop rule
@@ -93,6 +94,21 @@ does not work.
 **A `HEAD` branch inside a middleware or a unit is still correct**, because such a unit may be
 composed onto a bare `createRouter` where no rewrite happens; those branches encode HTTP method
 semantics, not an assumption about `Forge.fetch`.
+
+### 1e. The Unmatched URL
+
+**One hook answers every unmatched URL: `createApp({ notFound })`.** It is registered as the
+router's `defaultHandler` and is also what the asset catch-all renders on a miss — a `404` from the
+`ASSETS` binding, an absent binding, or a non-`GET`/`HEAD` method. Configuring `assets` therefore
+changes which code path reaches the hook, never which answer a client gets.
+
+**Omitted, forge answers a hardened plain-text `404 Not Found`** carrying `nosniff`,
+`default-src 'none'` and `no-referrer`. It **never echoes the request path**, which fetch-router's
+own default does. The hook receives the resolved app config as its second argument.
+
+Because `defaultHandler` runs inside `dispatchMatches`, a no-match flows back out through the
+pending-header flush and both error-boundary depths exactly as a matched route does
+([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §5b).
 
 ---
 

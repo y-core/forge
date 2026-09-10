@@ -118,6 +118,7 @@ describe("accountRoutes", () => {
         "/account/totp",
         "/account/email-change",
         "/account/email-change",
+        "/account/factors",
       ].sort(),
     );
   });
@@ -130,6 +131,7 @@ describe("adminRoutes", () => {
         "/admin/users",
         "/admin/users/:id",
         "/admin/users/:id/edit",
+        "/admin/users/:id/factors",
         "/admin/users/:id",
         "/admin/users/:id",
         "/admin/elevate",
@@ -146,6 +148,7 @@ describe("adminRoutes", () => {
         list: () => new Response("users"),
         show: () => new Response("user"),
         edit: () => new Response("edit"),
+        factors: () => new Response("factors"),
         update: () => new Response("updated"),
         remove: () => new Response("removed"),
       },

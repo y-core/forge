@@ -232,6 +232,67 @@ describe("Forge.fetch", () => {
   });
 });
 
+describe("Forge — client aborts", () => {
+  it("answers a throw on an aborted request with a bodyless 499 and no log record", async () => {
+    const records: Partial<LogRecord>[] = [];
+    const app = new Forge(capturingLogger(records));
+    mapHandler(app, "GET", "/slow", () => {
+      throw new Error("handler exploded");
+    });
+
+    const res = await app.fetch(new Request("http://test/slow", { signal: AbortSignal.abort() }), {});
+    expect(res.status).toBe(499);
+    expect(res.body).toBe(null);
+    expect(records).toEqual([]);
+  });
+
+  it("never calls the onError override for an aborted request", async () => {
+    const app = new Forge();
+    let called = false;
+    app.setOnError(() => {
+      called = true;
+      return new Response("handled", { status: 503 });
+    });
+    mapHandler(app, "GET", "/slow", () => {
+      throw new Error("handler exploded");
+    });
+
+    const res = await app.fetch(new Request("http://test/slow", { signal: AbortSignal.abort() }), {});
+    expect(res.status).toBe(499);
+    expect(called).toBe(false);
+  });
+
+  it("treats an out-of-chain throw on an aborted request as cancellation too", async () => {
+    const records: Partial<LogRecord>[] = [];
+    const app = new Forge(capturingLogger(records));
+    // Config resolution runs before routing, so its throw never reaches the router's boundary.
+    app.configStore = {
+      get: () => {
+        throw new Error("config exploded");
+      },
+    } as unknown as NonNullable<typeof app.configStore>;
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const res = await app.fetch(new Request("http://test/", { signal: AbortSignal.abort() }), {});
+    expect(res.status).toBe(499);
+    expect(res.body).toBe(null);
+    expect(records).toEqual([]);
+  });
+
+  it("still reports a throw on a request that was never aborted", async () => {
+    const records: Partial<LogRecord>[] = [];
+    const app = new Forge(capturingLogger(records));
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+
+    const res = await app.fetch(new Request("http://test/boom", { signal: new AbortController().signal }), {});
+    expect(res.status).toBe(500);
+    expect(records.length).toBe(1);
+    expect(records[0]!.level).toBe("error");
+  });
+});
+
 describe("Forge.setOnError", () => {
   it("hands the override the error and a context carrying env", async () => {
     const app = new Forge<{ STAGE: string }>();
@@ -394,5 +455,22 @@ describe("Forge.request", () => {
 
     await app.request("/");
     expect(done).toEqual(["deferred"]);
+  });
+});
+
+describe("Forge — an abort mid-request", () => {
+  it("answers 499 with no record when the client disconnects while a handler is still running", async () => {
+    const records: Partial<LogRecord>[] = [];
+    const app = new Forge(capturingLogger(records));
+    const controller = new AbortController();
+    mapHandler(app, "GET", "/slow", () => new Promise<Response>(() => {}));
+
+    const pending = app.fetch(new Request("http://test/slow", { signal: controller.signal }), {});
+    controller.abort();
+    const res = await pending;
+
+    expect(res.status).toBe(499);
+    expect(res.body).toBe(null);
+    expect(records).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import type { MatchData, Middleware } from "@remix-run/fetch-router";
+import type { MatchData, Middleware, RequestHandler } from "@remix-run/fetch-router";
 import { createRouter, RequestContext } from "@remix-run/fetch-router";
 import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/match";
@@ -14,12 +14,20 @@ import { requestLog } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
 import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
+import { requestIdCtx } from "../security/request-id";
 import { shellCtx } from "./shell";
 import type { PageShell } from "./types";
 import type { GlobalMiddlewareEntry, RequestState } from "./types";
 
-// oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only
-const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
+const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+
+// Baseline hardening: a response built where the consumer's security middleware cannot reach it —
+// an out-of-chain throw, or a no-match — carries these and nothing else.
+const BASELINE_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'none'",
+  "referrer-policy": "no-referrer",
+} as const;
 
 /** Rewrites a `use()` path convention into a route-pattern source. */
 function toPatternSource(path: string): string {
@@ -53,6 +61,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   private readonly _requestState = new WeakMap<Request, RequestState<Bindings>>();
   private _router?: ReturnType<typeof createRouter>;
   private _onError?: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
+  private _notFound?: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
   private _isDebug?: (c: AppContext<Bindings>) => boolean;
   /** Config store attached by `registerConfig`. @internal */
   configStore?: Config<unknown>;
@@ -66,6 +75,18 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
   setOnError(fn: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>): void {
     this._onError = fn;
+  }
+
+  /** Registers the answer to an unmatched URL, replacing the hardened plain-text `404`. */
+  setNotFound(fn: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>): void {
+    this._notFound = fn;
+  }
+
+  /** Renders the app's not-found answer, or forge's default when none is registered. @internal */
+  notFound(c: AppContext<Bindings>, config: unknown): Response | Promise<Response> {
+    if (this._notFound) return this._notFound(c, config);
+    // Never echoes the path: fetch-router's own default reflects it back into the body.
+    return new Response("Not Found", { status: 404, headers: { ...BASELINE_HEADERS, "content-type": "text/plain; charset=utf-8" } });
   }
 
   setIsDebug(fn: (c: AppContext<Bindings>) => boolean): void {
@@ -129,7 +150,18 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
     // Twice deliberately: the inner boundary keeps an error response flowing back out through guards
     // that queue `set-cookie` after `next()`; the outer one catches a guard's own throw.
-    return createRouter({ matcher: this._matcher, middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary] });
+    // Inside `dispatchMatches`, so a no-match flows back out through `applyHeaders` and both
+    // boundary depths exactly as a matched route does.
+    const defaultHandler: RequestHandler = (context) => {
+      const c = getAppContext<Bindings>(context);
+      return this.notFound(c, c.config);
+    };
+
+    return createRouter({
+      matcher: this._matcher,
+      defaultHandler,
+      middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary],
+    });
   }
 
   /** Handles a Workers `fetch` event. */
@@ -161,11 +193,15 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   }
 
   private async _handleError(err: Error, context: AppContext<Bindings>): Promise<Response> {
+    // A disconnected client is cancellation, not a failure: nothing to report and nobody to render
+    // for. Checked before the override so a consumer's page is not built for a gone request.
+    if (context.request.signal.aborted) return new Response(null, { status: 499 });
     if (this._onError) {
       try {
         return await this._onError(err, context);
-      } catch {
-        // fall through to default error page
+      } catch (overrideErr) {
+        // Attributed to the hook, not folded into the original: the records below still report that.
+        this._logger.error("onError override threw", { error: serializeError(overrideErr), original: serializeError(err) });
       }
     }
     const reqLog = requestLog.getOptional(context);
@@ -190,16 +226,12 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       /* ignore */
     }
     const detail = isDebug ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
-    // Baseline hardening: an error thrown outside the middleware chain never reaches the consumer's
-    // security middleware, so these headers are the only ones such a response would carry.
-    return new Response(`<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}</body></html>`, {
+    // Only ever echoed, never generated here: an id exists only where `requestId` middleware ran.
+    const reference = requestIdCtx.getOptional(context);
+    const quote = reference ? `<p>Reference: ${escapeHtml(reference)}</p>` : "";
+    return new Response(`<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}${quote}</body></html>`, {
       status: 500,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "x-content-type-options": "nosniff",
-        "content-security-policy": "default-src 'none'",
-        "referrer-policy": "no-referrer",
-      },
+      headers: { ...BASELINE_HEADERS, "content-type": "text/html; charset=utf-8", ...(reference ? { "x-request-id": reference } : {}) },
     });
   }
 

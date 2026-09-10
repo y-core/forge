@@ -3,6 +3,7 @@ import type { RequestHandler } from "@remix-run/fetch-router";
 import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
 import { createLogger } from "../logging/logger";
+import { serializeError } from "../logging/serialize-error";
 import { toError } from "../result/result";
 import type { v } from "../validation/validation";
 import { createSubmissionPipeline, PIPELINE_ONLY_KEYS } from "./pipeline";
@@ -93,9 +94,18 @@ export function definePage<
       return applyResponseHeaders(viewRes, cacheHeader, def.headers);
     } catch (err) {
       const error = toError(err);
-      logger.error("Page handler threw", { error: error.message });
-      if (def.onError) return def.onError(error, c);
-      throw err;
+      // A gone client gets no page and no record — the boundary answers 499 (`ERROR_HANDLING.md` §5b).
+      if (c.request.signal.aborted) throw error;
+      if (def.onError) {
+        // The boundary never sees a recovered error, so this is the one record for it.
+        logger.error("Page handler threw", { error: serializeError(error) });
+        try {
+          return await def.onError(error, c);
+        } catch (hookErr) {
+          logger.error("definePage onError threw", { error: serializeError(hookErr), original: serializeError(error) });
+        }
+      }
+      throw error;
     }
   };
 }

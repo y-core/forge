@@ -55,6 +55,7 @@ export function accountRoutes<base extends string>(basePath: base) {
     totp: get("/totp"),
     totpEnrol: post("/totp"),
     totpRemove: del("/totp"),
+    factors: get("/factors"),
     emailChange: get("/email-change"),
     emailChangeSubmit: post("/email-change"),
   });
@@ -63,7 +64,14 @@ export function accountRoutes<base extends string>(basePath: base) {
 /** Builds the admin user-management routes and the deliberately not admin-gated elevation routes under `basePath`. @public */
 export function adminRoutes<base extends string>(basePath: base) {
   return route(basePath, {
-    users: { list: get("/users"), show: get("/users/:id"), edit: get("/users/:id/edit"), update: patch("/users/:id"), remove: del("/users/:id") },
+    users: {
+      list: get("/users"),
+      show: get("/users/:id"),
+      edit: get("/users/:id/edit"),
+      factors: get("/users/:id/factors"),
+      update: patch("/users/:id"),
+      remove: del("/users/:id"),
+    },
     elevate: { show: get("/elevate"), submit: post("/elevate") },
   });
 }

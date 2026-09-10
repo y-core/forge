@@ -23,13 +23,15 @@ const CardHeader: FC<CardProps> = ({ class: cls, children, "data-slot": inherite
 );
 
 const CardTitle: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("card-title", inherited)} class={cn("leading-none font-semibold text-card-foreground", cls)} {...rest}>
+  <div data-slot={slotToken("card-title", inherited)} class={cn("col-start-1 leading-none font-semibold text-card-foreground", cls)} {...rest}>
     {children}
   </div>
 );
 
+// `col-start-1` and nothing else keeps the description under the title: the header's second track
+// belongs to `Card.Action`, and an auto-placed description lands in it whenever no action is there.
 const CardDescription: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("card-description", inherited)} class={cn("text-sm text-muted-foreground", cls)} {...rest}>
+  <div data-slot={slotToken("card-description", inherited)} class={cn("col-start-1 text-sm text-muted-foreground", cls)} {...rest}>
     {children}
   </div>
 );

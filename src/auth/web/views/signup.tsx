@@ -39,7 +39,7 @@ export const SignupView: FC<SignupViewProps> = ({
 }) => {
   const Heading = `h${level ?? 1}` as "h1";
   return (
-    <Card class={cn("mx-auto w-full max-w-sm", cls)}>
+    <Card class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Create an account</Heading>
@@ -73,7 +73,7 @@ export const SignupView: FC<SignupViewProps> = ({
               </FormField.Error>
             )}
           </FormField>
-          <Button type='submit'>Send the confirmation email</Button>
+          <Button type='submit'>Sign up</Button>
         </Form>
       </Card.Content>
       <Card.Footer>

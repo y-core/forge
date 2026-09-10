@@ -30,6 +30,7 @@ import type { authRoutes } from "./routes";
 import type { AdminElevateViewProps } from "./views/types";
 import type { AdminUserEditViewProps } from "./views/types";
 import type { AdminUsersViewProps } from "./views/types";
+import type { AuthFactorsViewProps } from "./views/types";
 import type { EmailChangeViewProps } from "./views/types";
 import type { PasskeyEditViewProps } from "./views/types";
 import type { PasskeyEnrolViewProps } from "./views/types";
@@ -217,9 +218,11 @@ export interface AuthViewProps {
   readonly accountPasskeyEdit: PasskeyEditViewProps;
   readonly accountTotp: TotpEnrolViewProps;
   readonly accountEmailChange: EmailChangeViewProps;
+  readonly accountFactors: AuthFactorsViewProps;
   readonly adminUsers: AdminUsersViewProps;
   readonly adminUser: AdminUserEditViewProps;
   readonly adminUserEdit: AdminUserEditViewProps;
+  readonly adminUserFactors: AuthFactorsViewProps;
   readonly adminElevate: AdminElevateViewProps;
 }
 

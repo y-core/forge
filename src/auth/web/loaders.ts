@@ -84,6 +84,24 @@ export function loadEmailChange<Bindings>(
   return authPage(c, options, { name: "accountEmailChange", state, guarded: AUTH_VIEW_GUARDS.accountEmailChange });
 }
 
+/** The visitor's own sign-in methods, as the panel an htmx press swaps in. @public */
+export function loadAccountFactors<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "accountFactors", state, guarded: AUTH_VIEW_GUARDS.accountFactors });
+}
+
+/** One named account's sign-in methods, as an administrator reads them — the same panel, minus the management links. @public */
+export function loadAdminUserFactors<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "adminUserFactors", state, guarded: AUTH_VIEW_GUARDS.adminUserFactors });
+}
+
 /** The administrative user listing, with its search form and its forward cursor. @public */
 export function loadAdminUsers<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, state: AuthPageState = {}): Promise<Response> {
   return authPage(c, options, { name: "adminUsers", state, guarded: AUTH_VIEW_GUARDS.adminUsers });

@@ -21,13 +21,16 @@ export function createApp<Bindings extends object = Record<string, unknown>>(opt
   if (options?.isDebug) {
     app.setIsDebug(options.isDebug);
   }
+  if (options?.notFound) {
+    app.setNotFound(options.notFound);
+  }
 
   // Assets must be strictly last: a catch-all registered earlier shadows every route added after it.
   options?.middleware?.(app);
   options?.routes?.(app);
   options?.finalize?.(app);
   if (options?.assets) {
-    applyAssets(app as Forge<Bindings & HasAssets>, options.assets);
+    applyAssets(app as Forge<Bindings & HasAssets>);
   }
 
   return app;

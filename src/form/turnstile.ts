@@ -21,16 +21,15 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
   // Clamped to >=1ms: a 0 would abort before the fetch dispatched and surface as a spurious "timeout".
   const timeoutMs = Math.max(1, options?.timeoutMs ?? 5_000);
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
 
   let res: Response;
   try {
-    res = await fetch(VERIFY_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch {
+    res = await fetch(VERIFY_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+  } catch (thrown) {
+    // A caller's cancellation is not a verification outcome, so it rejects rather than joining the
+    // failure union — the boundary reads it as the client having gone (`ERROR_HANDLING.md` §5b).
+    if (options.signal?.aborted) throw thrown;
     return err(controller.signal.aborted ? "timeout" : "network-error");
   } finally {
     clearTimeout(timeoutId);

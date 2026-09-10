@@ -1037,3 +1037,102 @@ describe("defineAction — the one refusal", () => {
     expect(await res.text()).toBe(refusal(UNDECLARED));
   });
 });
+
+describe("defineAction — error reporting", () => {
+  const parse = (lines: string[]): Record<string, unknown>[] => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  it("logs the generic 500 at error level, in the serialized shape", async () => {
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("handle exploded");
+        },
+      }),
+    );
+
+    const records = parse(await captureLogs(() => post(app, VALID_FORM.toString())));
+    expect(records.length).toBe(1);
+    const record = records[0]!;
+    expect(record.prefix).toBe("action");
+    expect(record.level).toBe("error");
+    expect(record.message).toBe("Action threw");
+    const error = record.error as { name: string; message: string; stack?: string };
+    expect(error.name).toBe("Error");
+    expect(error.message).toBe("handle exploded");
+    expect(typeof error.stack).toBe("string");
+  });
+
+  it("logs at warn when onError recovers, since the client got a normal response", async () => {
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("handle exploded");
+        },
+        onError: () => new Response("recovered", { status: 200 }),
+      }),
+    );
+
+    const records = parse(await captureLogs(() => post(app, VALID_FORM.toString())));
+    expect(records.length).toBe(1);
+    expect(records[0]!.level).toBe("warn");
+    expect(records[0]!.message).toBe("Action threw");
+  });
+
+  it("attributes a throwing onError to the hook and still answers the generic fragment", async () => {
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("handle exploded");
+        },
+        onError: () => {
+          throw new Error("hook exploded");
+        },
+      }),
+    );
+
+    let res: Response | undefined;
+    const records = parse(
+      await captureLogs(async () => {
+        res = await post(app, VALID_FORM.toString());
+      }),
+    );
+
+    expect(res!.status).toBe(500);
+    expect(await res!.text()).toBe(
+      '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
+    );
+    expect(records.length).toBe(1);
+    const record = records[0]!;
+    expect(record.message).toBe("defineAction onError threw");
+    expect(record.level).toBe("error");
+    expect((record.error as { message: string }).message).toBe("hook exploded");
+    expect((record.original as { message: string }).message).toBe("handle exploded");
+  });
+});
+
+describe("defineAction — a client that disconnects", () => {
+  it("renders no fragment and logs nothing, leaving the boundary its 499", async () => {
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        handle: () => {
+          throw new Error("handle exploded");
+        },
+      }),
+    );
+
+    let res: Response | undefined;
+    const logs = await captureLogs(async () => {
+      res = await app.fetch(
+        new Request("http://localhost/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString(), signal: AbortSignal.abort() }),
+        {},
+      );
+    });
+
+    expect(res!.status).toBe(499);
+    expect(logs).toEqual([]);
+  });
+});

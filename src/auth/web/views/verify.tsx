@@ -67,7 +67,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
   const Heading = `h${level ?? 1}` as "h1";
   const digits = codeDigits ?? AUTH_OTP_DIGITS;
   return (
-    <Card class={cn("mx-auto w-full max-w-sm", cls)}>
+    <Card class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Confirm it&#39;s you</Heading>

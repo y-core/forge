@@ -765,12 +765,13 @@ describe("definePage — a throwing schema", () => {
     expect(calls).toEqual([]);
   });
 
-  it("logs the throw as the page's own and never as an action's", async () => {
+  it("leaves the record to the boundary and never logs it as an action's", async () => {
     const calls: string[] = [];
     const app = throwingPage(calls);
     const logs = await captureLogs(() => post(app, "name=Jane"));
 
-    expect(logs.some((line) => line.includes("Page handler threw"))).toBe(true);
+    expect(logs.some((line) => line.includes("Unhandled error"))).toBe(true);
+    expect(logs.some((line) => line.includes("Page handler threw"))).toBe(false);
     expect(logs.some((line) => line.includes("Action threw"))).toBe(false);
   });
 
@@ -787,5 +788,90 @@ describe("definePage — a throwing schema", () => {
     expect(action.status).toBe(500);
     expect(await page.text()).toBe(APP_BOUNDARY_500);
     expect(await action.text()).toBe(ACTION_500_FRAGMENT);
+  });
+});
+
+describe("definePage — error reporting", () => {
+  const parse = (lines: string[]): Record<string, unknown>[] => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  it("leaves the record to the boundary when no onError is supplied", async () => {
+    const app = makeApp(
+      definePage({
+        view: () => {
+          throw new Error("view exploded");
+        },
+      }),
+    );
+
+    const records = parse(await captureLogs(() => app.request("/test")));
+    expect(records.map((r) => r.prefix)).toEqual(["app"]);
+    expect(records[0]!.message).toBe("Unhandled error");
+  });
+
+  it("logs exactly once, in the serialized shape, when onError recovers", async () => {
+    const app = makeApp(
+      definePage({
+        view: () => {
+          throw new Error("view exploded");
+        },
+        onError: () => new Response("page error", { status: 500 }),
+      }),
+    );
+
+    const records = parse(await captureLogs(() => app.request("/test")));
+    expect(records.length).toBe(1);
+    const record = records[0]!;
+    expect(record.prefix).toBe("page");
+    expect(record.level).toBe("error");
+    expect(record.message).toBe("Page handler threw");
+    const error = record.error as { name: string; message: string; stack?: string };
+    expect(error.name).toBe("Error");
+    expect(error.message).toBe("view exploded");
+    expect(typeof error.stack).toBe("string");
+  });
+
+  it("attributes a throwing onError to the hook and lets the boundary render the original", async () => {
+    const app = makeApp(
+      definePage({
+        view: () => {
+          throw new Error("view exploded");
+        },
+        onError: () => {
+          throw new Error("hook exploded");
+        },
+      }),
+    );
+
+    const res = await app.request("/test");
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe(APP_BOUNDARY_500);
+
+    const records = parse(await captureLogs(() => app.request("/test")));
+    const attribution = records.find((r) => r.message === "definePage onError threw")!;
+    expect(attribution.level).toBe("error");
+    expect((attribution.error as { message: string }).message).toBe("hook exploded");
+    expect((attribution.original as { message: string }).message).toBe("view exploded");
+    expect(records.some((r) => r.message === "Unhandled error")).toBe(true);
+  });
+});
+
+describe("definePage — a client that disconnects", () => {
+  it("renders no onError page and logs nothing, leaving the boundary its 499", async () => {
+    const app = makeApp(
+      definePage({
+        view: () => {
+          throw new Error("view exploded");
+        },
+        onError: () => new Response("page error", { status: 500 }),
+      }),
+    );
+
+    let res: Response | undefined;
+    const logs = await captureLogs(async () => {
+      res = await app.fetch(new Request("http://localhost/test", { signal: AbortSignal.abort() }), {});
+    });
+
+    expect(res!.status).toBe(499);
+    expect(logs).toEqual([]);
   });
 });

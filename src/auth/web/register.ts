@@ -17,9 +17,11 @@ import {
   createVerifyActions,
 } from "./actions";
 import {
+  loadAccountFactors,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,
+  loadAdminUserFactors,
   loadAdminUsers,
   loadEmailChange,
   loadEnrolTotp,
@@ -82,6 +84,7 @@ export function registerAccount<Bindings extends object>(
       passkeyEdit: authPage(loadPasskeyEdit, options),
       totp: authPage(loadTotpEnrol, options),
       emailChange: authPage(loadEmailChange, options),
+      factors: authPage(loadAccountFactors, options),
       ...createPasskeyManageActions(options),
       ...createTotpManageActions(options),
       ...createEmailChangeActions(options),
@@ -100,6 +103,7 @@ export function registerAdmin<Bindings extends object>(
       list: authPage(loadAdminUsers, options),
       show: authPage(loadAdminUser, options),
       edit: authPage(loadAdminUserEdit, options),
+      factors: authPage(loadAdminUserFactors, options),
       ...createAdminUserActions(options),
     },
   });

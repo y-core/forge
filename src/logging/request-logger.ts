@@ -35,7 +35,10 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
       res = await next();
       log[levelForStatus(res.status)](`${method} ${path}`, { method, path, status: res.status, duration: Date.now() - start });
     } catch (err) {
-      log.error(`${method} ${path}`, { method, path, duration: Date.now() - start, error: serializeError(err) });
+      // A client that disconnected mid-request is cancellation, not an error worth a record.
+      if (!c.request.signal.aborted) {
+        log.error(`${method} ${path}`, { method, path, duration: Date.now() - start, error: serializeError(err) });
+      }
       throw err;
     } finally {
       // A throw from this `finally` would replace the propagating error or the response, so flush can never reject here.

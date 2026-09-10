@@ -928,6 +928,7 @@ wrong layer.
 | `loadSignin`, `loadSignup`, `loadVerify`, `loadPasskeyEnrol` | function | The four entry-flow page loaders. |
 | `loadEnrolTotp` | function | The authenticator-app page an owed enrolment lands on, outside the account group the enrolment guard closes. |
 | `loadPasskeyList`, `loadPasskey`, `loadPasskeyEdit`, `loadTotpEnrol`, `loadEmailChange` | function | The five self-service page loaders. |
+| `loadAccountFactors`, `loadAdminUserFactors` | function | The sign-in methods panel, for the holder's own account and for the one an administrator named. |
 | `loadAdminUsers`, `loadAdminUser`, `loadAdminUserEdit`, `loadAdminElevate` | function | The four administrative page loaders. |
 | `createSigninActions`, `createSignupActions`, `createVerifyActions`, `createSignoutActions` | function | The entry-flow submissions, resend and sign-out included. |
 | `createPasskeySigninActions`, `createPasskeyEnrolActions`, `createPasskeyManageActions` | function | The two JSON ceremony pairs, and the rename and remove writes. |
@@ -942,6 +943,7 @@ wrong layer.
 | `SigninView`, `SignupView`, `VerifyView`, `PasskeyEnrolView` | component | The four entry-flow pages. |
 | `PasskeyListView`, `PasskeyEditView`, `TotpEnrolView`, `EmailChangeView` | component | The four self-service pages. |
 | `AdminUsersView`, `AdminUserEditView`, `AdminElevateView` | component | The user list, the edit page, and the elevation bootstrap. |
+| `AuthFactorsView`, `AuthFactorsTrigger` | component | One account's sign-in methods, and the button that fetches the panel in its own place. |
 | `AuthWebOptions`, `AuthWebPaths`, `AuthRequestServices`, `AuthPasskeyCeremonyOptions`, `AuthIconName`, `AuthPageState` | types | What every loader and action needs, the three href maps, this request's services, the ceremony parameters, the sprite names, and one render's refusal copy. |
 | `AuthPathMap`, `AuthEntryPaths`, `AuthAccountPaths`, `AuthAdminPaths` | types | What `authPaths` returns, and the three maps it is read through. |
 | `AuthRouteGroup`, `AuthGuardName`, `AuthMedium` | types | One entry of the group table, the six guard names, and the body a group answers with. |
@@ -952,7 +954,7 @@ wrong layer.
 | `AuthViewResolved`, `AuthViewRequest` | types | What `resolveAuthView` answers with, and what it is asked for — the name, the optional state, and the `guarded` claim. |
 | `AuthViewChrome` | type | The `class` and `level` every view accepts so a host page can place it. |
 | `AuthPasskeyContract` | type | Everything the browser controller reads off a ceremony's scope root. |
-| `SigninViewProps`, `SignupViewProps`, `VerifyViewProps`, `PasskeyEnrolViewProps`, `PasskeyListViewProps`, `PasskeyRow`, `PasskeyEditViewProps`, `TotpEnrolViewProps`, `TotpEnrolState`, `EmailChangeViewProps`, `AdminUsersViewProps`, `AdminUserEditViewProps`, `AdminElevateViewProps` | types | The props of each shipped view — the contract an override is held to. |
+| `SigninViewProps`, `SignupViewProps`, `VerifyViewProps`, `PasskeyEnrolViewProps`, `PasskeyListViewProps`, `PasskeyRow`, `PasskeyEditViewProps`, `TotpEnrolViewProps`, `TotpEnrolState`, `EmailChangeViewProps`, `AdminUsersViewProps`, `AdminUserEditViewProps`, `AdminElevateViewProps`, `AuthFactorsViewProps`, `AuthFactorsTriggerProps`, `AuthFactorRow`, `AuthFactorState` | types | The props of each shipped view — the contract an override is held to. |
 
 ---
 

@@ -56,7 +56,12 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
 
     if (def.turnstile !== undefined && turnstileField !== undefined) {
       const secretKey = await def.turnstile.secretKey(c, config);
-      const verification = await verifyTurnstile(formData, secretKey, { ...def.turnstile.verify(c, config), tokenField: turnstileField });
+      // Signal first, so a route that resolves its own still wins.
+      const verification = await verifyTurnstile(formData, secretKey, {
+        signal: c.request.signal,
+        ...def.turnstile.verify(c, config),
+        tokenField: turnstileField,
+      });
       if (!verification.ok) {
         // Logged on every trip, not only on an outage: the refusal a tripped guard renders is
         // deliberately a validation refusal naming the first declared field, so without this line a

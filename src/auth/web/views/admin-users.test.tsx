@@ -59,6 +59,11 @@ describe("AdminUsersView listing", () => {
     expect(textOf(await users({ users: [user({ deactivatedAt: CREATED_AT })] }), "span", 'data-ref="admin-user-status"')).toBe("Deactivated");
   });
 
+  it("dates a verified address and badges an unverified one, which is the exception being scanned for", async () => {
+    expect(textOf(await users({ users: [user({ emailVerifiedAt: CREATED_AT })] }), "time", 'data-ref="admin-user-verified"')).toBe("2025-01-01");
+    expect(textOf(await users({ users: [user({ emailVerifiedAt: null })] }), "span", 'data-ref="admin-user-verified"')).toBe("Unverified");
+  });
+
   it("dates each account from its stored millisecond, machine-readable beside the text", async () => {
     expect(textOf(await users(), "time", 'datetime="2025-01-01T00:00:00.000Z"')).toBe("2025-01-01");
   });

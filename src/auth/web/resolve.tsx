@@ -21,6 +21,8 @@ import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types
 import type { AuthViewName, AuthViewProps } from "./types";
 import type { AuthGuardName } from "./types";
 import type { AuthVerifyDemand, AuthViewRequest, AuthViewResolved } from "./types";
+import type { AuthAccountPaths } from "./types";
+import type { AuthFactorRow, AuthFactorsViewProps } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
 import type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 
@@ -417,6 +419,70 @@ async function resolveEmailChange<Bindings>(
   });
 }
 
+/** Every offered factor and where `userId` stands on it, read off the registry so the panel describes this deployment. */
+async function resolveFactorRows(services: AuthRequestServices, userId: string): Promise<AuthFactorRow[] | null> {
+  const rows: AuthFactorRow[] = [];
+  for (const service of services.factors.offered) {
+    // An implicit factor keeps no enrolment row, so there is nothing to read and nothing owed.
+    if (service.enrolment === "implicit") {
+      rows.push({ kind: service.kind, state: "always", at: null });
+      continue;
+    }
+    const enrolled = await service.listEnrolments(userId);
+    if (!enrolled.ok) return null;
+    const confirmed = enrolled.data.find((factor) => factor.confirmedAt !== null);
+    if (confirmed?.confirmedAt != null) {
+      rows.push({ kind: service.kind, state: "enrolled", at: confirmed.confirmedAt });
+      continue;
+    }
+    const started = enrolled.data[0];
+    rows.push(
+      started === undefined ? { kind: service.kind, state: "none", at: null } : { kind: service.kind, state: "pending", at: started.createdAt },
+    );
+  }
+  return rows;
+}
+
+/** The factors panel for one account, whoever the route let through — `manage` is what tells the two apart. */
+async function factorsPanel<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  userId: string,
+  manage: AuthAccountPaths | undefined,
+): Promise<Result<AuthFactorsViewProps, Response>> {
+  const services = await options.resolveServices(c);
+  const rows = await resolveFactorRows(services, userId);
+  if (rows === null) return err(unavailable());
+  const listed = await services.credentials.listByUser(userId);
+  if (!listed.ok) return err(unavailable());
+
+  return ok({ factors: rows, passkeys: listed.data, ...(manage === undefined ? {} : { manage }), icon: options.icon });
+}
+
+async function resolveAccountFactors<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+): Promise<Result<AuthViewProps["accountFactors"], Response>> {
+  const identity = resolveAuthViewer(c);
+  if (identity === null) return err(redirect(options.paths.auth.signin()));
+  return factorsPanel(c, options, identity.userId, options.paths.account);
+}
+
+// No `manage` here, deliberately: those pages act on whoever is signed in, so offering an
+// administrator a "Manage" link against someone else's account would point at their own factors.
+async function resolveAdminUserFactors<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+): Promise<Result<AuthViewProps["adminUserFactors"], Response>> {
+  const services = await options.resolveServices(c);
+  const id = c.params.id;
+  if (id === undefined) return err(notFound());
+  const found = await services.admin.view(id);
+  if (!found.ok) return err(unavailable());
+  if (found.data === null) return err(notFound());
+  return factorsPanel(c, options, found.data.id, undefined);
+}
+
 async function resolveAdminUsers<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -508,9 +574,11 @@ export const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewRes
   accountPasskeyEdit: resolvePasskeyEdit,
   accountTotp: resolveTotpEnrol,
   accountEmailChange: resolveEmailChange,
+  accountFactors: resolveAccountFactors,
   adminUsers: resolveAdminUsers,
   adminUser: adminUserPage,
   adminUserEdit: adminUserPage,
+  adminUserFactors: resolveAdminUserFactors,
   adminElevate: resolveAdminElevate,
 };
 
@@ -528,9 +596,11 @@ export const AUTH_VIEW_GUARDS = {
   accountPasskeyEdit: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountTotp: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountEmailChange: ["require-auth", "require-enrolment", "require-fresh-step-up"],
+  accountFactors: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   adminUsers: ["require-auth", "require-enrolment", "require-admin"],
   adminUser: ["require-auth", "require-enrolment", "require-admin"],
   adminUserEdit: ["require-auth", "require-enrolment", "require-admin"],
+  adminUserFactors: ["require-auth", "require-enrolment", "require-admin"],
   adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up"],
 } as const satisfies { readonly [Name in AuthViewName]: readonly AuthGuardName[] };
 

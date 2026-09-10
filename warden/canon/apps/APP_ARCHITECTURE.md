@@ -50,10 +50,10 @@ factory rather than as a built app.** Every difference between deployments is an
 
 ```ts
 export function createWorker(security: SecurityHeadersOptions) {
-  const app = createApp<AppEnv>({ config: configStore, isDebug: (c) => configStore.get(c.env).site.debug });
+  const app = createApp<AppEnv>({ config: configStore, isDebug: (c) => configStore.get(c.env).site.debug, notFound: notFoundController });
   registerMiddleware(app, security);
   app.map(routes, controller);
-  applyAssets(app, { notFoundView: notFoundController });
+  applyAssets(app);
   return app;
 }
 export default createWorker(securityHeaders); // the production app

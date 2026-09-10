@@ -397,6 +397,7 @@ is, and what an unverifiable CAPTCHA does are
 | `options.tokenField` | `string` | `TURNSTILE_FIELD_DEFAULT` | Form field holding the Turnstile response token — the field Cloudflare's widget writes. |
 | `options.remoteIp` | `string` | — | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header). |
 | `options.timeoutMs` | `number` | `5000` | Request timeout; clamped to a 1 ms minimum. A timed-out request returns `timeout`. |
+| `options.signal` | `AbortSignal` | — | Caller cancellation, combined with the timeout. An abort on **this** signal **rejects** rather than resolving to a `Result` — cancellation is not a verification outcome, so it has no member in `TurnstileFailure`. |
 
 ```ts
 const result = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY, {
@@ -414,6 +415,8 @@ if (!result.ok) {
 
 `verifyTurnstile` returns `{ ok: false, error: "hostname-mismatch" }` immediately when
 `expectedHostname` is omitted — the network call is never made.
+
+**Both builders thread `c.request.signal` in by default**, so a client that disconnects mid-submission stops the siteverify call rather than paying for it. A `verify(c, config)` that returns its own `signal` wins over the default.
 
 ### Constants & config
 
@@ -439,7 +442,7 @@ if (!result.ok) {
 | `CsrfTokenOptions` | `{ kid?, subject? }` for `createCsrfToken`. |
 | `CsrfVerifyOptions` | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`. |
 | `CsrfResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below. |
-| `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, tokenField?, remoteIp?, timeoutMs? }`. |
+| `TurnstileVerifyOptions` | `{ expectedHostname, expectedAction?, expectedCData?, tokenField?, remoteIp?, timeoutMs?, signal? }`. |
 | `TurnstileResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. |
 
 ---

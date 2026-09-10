@@ -655,6 +655,18 @@ Which features may degrade and which must fail closed is
 [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §5a/§5b's — a
 security-critical binding keeps `required` at its default.
 
+### Cancellation is not threadable here
+
+**No storage binding forge wraps accepts an `AbortSignal`, so no client here takes one.** R2's `get`
+accepts `{ onlyIf, range }` and nothing else, and KV's and D1's methods accept no options at all.
+There is no signal to pass and none to honour, so a cancelled request does not stop storage I/O
+already in flight — the platform decides when that work ends.
+
+What this leaves is the failure answer, not a retry: a binding fault is caught, logged, and failed
+closed as a `503` ([`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5c). That includes
+Cloudflare's `Network connection lost`. **No storage client retries**, because how many attempts a
+given call is worth is the consumer's decision, not this layer's.
+
 ---
 
 ## See also

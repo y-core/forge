@@ -16,9 +16,11 @@ import type { AuthFactorService } from "../factors/types";
 import type { AuthChallenge, ChallengeStore } from "../types";
 import { authCtx } from "./identity";
 import {
+  loadAccountFactors,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,
+  loadAdminUserFactors,
   loadAdminUsers,
   loadEmailChange,
   loadPasskey,
@@ -246,6 +248,22 @@ const CASES: readonly Case[] = [
     identity: admin,
   },
   {
+    label: "accountFactors",
+    name: "accountFactors",
+    load: loadAccountFactors,
+    options: optionsWith({ factors: totpRegistry, credentials: fakeAuthCredentialStore(credentials) }),
+    identity: member,
+  },
+  {
+    label: "adminUserFactors",
+    name: "adminUserFactors",
+    load: loadAdminUserFactors,
+    options: optionsWith({ admin: fakeAdminUserService(roster), factors: totpRegistry, credentials: fakeAuthCredentialStore(credentials) }),
+    pattern: "/page/:id",
+    path: "/page/u2",
+    identity: admin,
+  },
+  {
     label: "adminElevate",
     name: "adminElevate",
     load: loadAdminElevate,
@@ -275,9 +293,11 @@ const VIEW_GROUP: Readonly<Record<AuthViewName, readonly string[]>> = {
   accountPasskeyEdit: ["account"],
   accountTotp: ["account"],
   accountEmailChange: ["account"],
+  accountFactors: ["account"],
   adminUsers: ["admin", "users"],
   adminUser: ["admin", "users"],
   adminUserEdit: ["admin", "users"],
+  adminUserFactors: ["admin", "users"],
   adminElevate: ["admin", "elevate"],
 };
 
@@ -502,7 +522,7 @@ describe("AuthViewChrome", () => {
 
   it("leaves the root and the heading exactly as they are when the host passes neither", async () => {
     const html = await chromed({});
-    expect(tagOf(html, 'data-slot="card"')).toBe(`<div data-slot="card" class="${CARD} mx-auto w-full max-w-sm">`);
+    expect(tagOf(html, 'data-slot="card"')).toBe(`<div data-slot="card" class="${CARD} mx-auto w-full max-w-md">`);
     expect(elementOf(html, "h1", 'class="text-xl"')).toBe('<h1 class="text-xl">Sign in</h1>');
   });
 

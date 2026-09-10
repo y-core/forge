@@ -52,6 +52,35 @@ export type AdminUsersViewProps = AuthViewChrome & {
   readonly icon: ForgeIcon<"chevron-right">;
 };
 
+/** Where one factor stands on an account. `always` is an implicit factor, which offering _is_ enrolling. @public */
+export type AuthFactorState = "always" | "enrolled" | "pending" | "none";
+
+/** One offered factor as a page reports it — never the stored secret, whoever is reading. @public */
+export interface AuthFactorRow {
+  readonly kind: AuthFactorKind;
+  readonly state: AuthFactorState;
+  /** When the enrolment was confirmed, or started for a `pending` one; `null` where there is no enrolment row. */
+  readonly at: number | null;
+}
+
+/** What the button that fetches the factors panel needs. @public */
+export type AuthFactorsTriggerProps = {
+  /** The fragment route this presses to — the account holder's own, or the administrative one for a named account. */
+  readonly loadPath: string;
+  /** Overrides the button's own wording, for a host that names the panel differently. */
+  readonly label?: string | undefined;
+  readonly class?: string | undefined;
+};
+
+/** What the factors panel renders — the same shape for the account holder and for an administrator. @public */
+export type AuthFactorsViewProps = AuthViewChrome & {
+  readonly factors: readonly AuthFactorRow[];
+  readonly passkeys: readonly AuthCredential[];
+  /** The holder's own management pages, absent when an administrator is reading someone else's account. */
+  readonly manage?: AuthAccountPaths | undefined;
+  readonly icon: ForgeIcon<"key">;
+};
+
 /** What the email-change page renders. @public */
 export type EmailChangeViewProps = AuthViewChrome & {
   /** The address in force now, so the visitor can see what they are replacing. */

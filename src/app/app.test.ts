@@ -13,11 +13,13 @@ import { mapHandler } from "../testing/route";
 import { v } from "../validation/mod";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
+import { definePage } from "./page";
 
 const UNEXPECTED = "An unexpected error occurred.";
 
 /** The baseline 500 document `Forge` renders for an error that never reached the middleware chain. */
-const boundary = (detail: string): string => `<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>${detail}</p></body></html>`;
+const boundary = (detail: string, reference?: string): string =>
+  `<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>${detail}</p>${reference ? `<p>Reference: ${reference}</p>` : ""}</body></html>`;
 
 describe("createApp", () => {
   it("error boundary returns 500 HTML for unhandled errors", async () => {
@@ -70,6 +72,45 @@ describe("createApp", () => {
       expect(error.message).toBe("secret db error");
       expect(error.name).toBe("Error");
       expect(typeof error.stack).toBe("string");
+    });
+
+    it("records an unhandled page error exactly once", async () => {
+      const app = createApp();
+      mapHandler(
+        app,
+        "GET",
+        "/boom",
+        definePage({
+          view: () => {
+            throw new Error("view exploded");
+          },
+        }),
+      );
+
+      await app.request("/boom");
+      const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(records.length).toBe(1);
+      expect(records[0]!.prefix).toBe("app");
+      expect(records[0]!.message).toBe("Unhandled error");
+    });
+
+    it("records a throwing onError override against the hook, keeping the original's report", async () => {
+      const app = createApp({
+        onError: () => {
+          throw new Error("override boom");
+        },
+      });
+      mapHandler(app, "GET", "/boom", () => {
+        throw new Error("original");
+      });
+
+      await app.request("/boom");
+      const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>);
+      const attribution = records.find((r) => r.message === "onError override threw")!;
+      expect(attribution.level).toBe("error");
+      expect((attribution.error as SerializedError).message).toBe("override boom");
+      expect((attribution.original as SerializedError).message).toBe("original");
+      expect(records.some((r) => r.message === "Unhandled error")).toBe(true);
     });
   });
 
@@ -265,8 +306,9 @@ describe("a throwing app.use guard stays inside the chain", () => {
 
     const res = await app.request("/");
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe(boundary(UNEXPECTED));
-    expect(res.headers.get("x-request-id")).not.toBeNull();
+    const id = res.headers.get("x-request-id")!;
+    expect(id).not.toBeNull();
+    expect(await res.text()).toBe(boundary(UNEXPECTED, id));
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
   });
@@ -483,7 +525,8 @@ describe("createApp — ordered wiring", () => {
   it("registers the asset catch-all last so real routes win", async () => {
     const app = createApp({
       routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")),
-      assets: { notFoundView: () => new Response("not found", { status: 404 }) },
+      assets: true,
+      notFound: () => new Response("not found", { status: 404 }),
     });
 
     const route = await app.request("/page");
@@ -497,7 +540,8 @@ describe("createApp — ordered wiring", () => {
   it("finalize routes are registered before the asset catch-all", async () => {
     const app = createApp({
       finalize: (a) => mapHandler(a, "GET", "/dev/logs", () => new Response("dev route")),
-      assets: { notFoundView: () => new Response("not found", { status: 404 }) },
+      assets: true,
+      notFound: () => new Response("not found", { status: 404 }),
     });
 
     const res = await app.request("/dev/logs");
@@ -529,6 +573,107 @@ describe("createApp — ordered wiring", () => {
     mapHandler(app, "GET", "/", () => new Response("plain"));
     const res = await app.request("/");
     expect(await res.text()).toBe("plain");
+  });
+});
+
+describe("the request id on an error page", () => {
+  it("renders nothing and sets no header when the requestId middleware never ran", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("kaboom");
+    });
+
+    const res = await app.request("/boom");
+    expect(await res.text()).toBe(boundary(UNEXPECTED));
+    expect(res.headers.get("x-request-id")).toBeNull();
+  });
+
+  it("quotes the id the middleware assigned, and echoes it in the header", async () => {
+    const app = createApp({ middleware: (a) => a.use("*", requestId()) });
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("kaboom");
+    });
+
+    const res = await app.request("/boom");
+    const id = res.headers.get("x-request-id")!;
+    expect(id).not.toBeNull();
+    expect(await res.text()).toBe(boundary(UNEXPECTED, id));
+  });
+
+  it("escapes an id a trusted CF-Ray header supplied", async () => {
+    const app = createApp({ middleware: (a) => a.use("*", requestId({ trustCfHeaders: true })) });
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("kaboom");
+    });
+
+    const res = await app.request("/boom", { headers: { "CF-Ray": "<script>alert(1)</script>" } });
+    expect(await res.text()).toBe(boundary(UNEXPECTED, "&lt;script&gt;alert(1)&lt;/script&gt;"));
+  });
+
+  it("carries no id on the out-of-chain path, where no middleware ran", async () => {
+    const app = createApp({
+      config: createConfig({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() })),
+      middleware: (a) => a.use("*", requestId()),
+    });
+    mapHandler(app, "GET", "/", () => new Response("unreachable"));
+
+    const res = await app.request("/", {}, {});
+    expect(res.status).toBe(500);
+    expect(res.headers.get("x-request-id")).toBeNull();
+    expect(await res.text()).toBe(boundary(UNEXPECTED));
+  });
+});
+
+describe("createApp — the unmatched URL", () => {
+  it("answers a hardened plain-text 404 that never echoes the path", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/no/such/secret-path");
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("Not Found");
+    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  it("gives the same answer with and without the asset catch-all configured", async () => {
+    const notFound = () => new Response("<h1>Nothing here</h1>", { status: 404, headers: { "content-type": "text/html" } });
+    const routed = createApp({ notFound, routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")) });
+    const withAssets = createApp<{ ASSETS?: { fetch: (req: Request) => Promise<Response> } }>({
+      notFound,
+      routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")),
+      assets: true,
+    });
+
+    const bare = await routed.request("/missing");
+    const asset = await withAssets.request("/missing", {}, { ASSETS: { fetch: async () => new Response("Not Found", { status: 404 }) } });
+
+    expect(bare.status).toBe(404);
+    expect(asset.status).toBe(404);
+    expect(await bare.text()).toBe("<h1>Nothing here</h1>");
+    expect(await asset.text()).toBe("<h1>Nothing here</h1>");
+  });
+
+  it("hands the hook the resolved app config", async () => {
+    type AppBindings = { DB_URL: string };
+    const app = createApp<AppBindings>({
+      config: createConfig({ dbUrl: { __env: "DB_URL" } }, v.object({ dbUrl: v.string() })),
+      notFound: (_c, config) => new Response((config as { dbUrl: string }).dbUrl, { status: 404 }),
+    });
+
+    const res = await app.request("/missing", {}, { DB_URL: "postgres://localhost/test" } as AppBindings);
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("postgres://localhost/test");
+  });
+
+  it("flows the no-match answer back out through the pending-header flush", async () => {
+    const app = createApp({ middleware: (a) => a.use("*", requestId()) });
+
+    const res = await app.request("/missing");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("x-request-id")).not.toBeNull();
   });
 });
 

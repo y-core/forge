@@ -45,7 +45,7 @@ const SigninEmailForm: FC<{
         </FormField.Error>
       )}
     </FormField>
-    <Button type='submit'>Email me a code</Button>
+    <Button type='submit'>Sign in</Button>
   </Form>
 );
 
@@ -84,7 +84,7 @@ export const SigninView: FC<SigninViewProps> = ({
   const passkeyIsPrimary = primaryFactor === "passkey";
   const Heading = `h${level ?? 1}` as "h1";
   return (
-    <Card class={cn("mx-auto w-full max-w-sm", cls)}>
+    <Card class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Sign in</Heading>

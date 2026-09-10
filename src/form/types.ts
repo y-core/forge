@@ -58,6 +58,8 @@ export interface TurnstileVerifyOptions {
   tokenField?: string;
   remoteIp?: string;
   timeoutMs?: number;
+  /** Cancellation from the caller — an abort on it rejects rather than resolving to a `Result`. */
+  signal?: AbortSignal;
 }
 
 /** Result of a CSRF token verification. @public */

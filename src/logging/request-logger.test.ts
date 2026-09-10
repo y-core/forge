@@ -276,6 +276,20 @@ describe("requestLogger — per-request summary record", () => {
     expect(typeof error.stack).toBe("string");
     expect("status" in (rec.data ?? {})).toBe(false);
   });
+
+  it("emits no record when the throw is a client abort", async () => {
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel] }));
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+
+    const res = await app.fetch(new Request("http://localhost/boom", { signal: AbortSignal.abort() }), {});
+
+    expect(res.status).toBe(499);
+    expect(records).toStrictEqual([]);
+  });
 });
 
 describe("requestLogger — flush windows under an asynchronous channel", () => {

@@ -29,9 +29,11 @@ export {
   resolveAuthSigninPending,
 } from "./identity";
 export {
+  loadAccountFactors,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,
+  loadAdminUserFactors,
   loadAdminUsers,
   loadEmailChange,
   loadEnrolTotp,
@@ -76,6 +78,8 @@ export type { SignupViewProps } from "./views/types";
 export { SignupView } from "./views/signup";
 export type { VerifyViewProps } from "./views/types";
 export { VerifyView } from "./views/verify";
+export type { AuthFactorRow, AuthFactorState, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./views/types";
+export { AuthFactorsTrigger, AuthFactorsView } from "./views/factors";
 export type { AdminElevateViewProps } from "./views/types";
 export { AdminElevateView } from "./views/admin-elevate";
 export type { AdminUserEditViewProps } from "./views/types";

@@ -12,6 +12,7 @@ import { Separator } from "../../../ui/core/separator";
 import { cn } from "../../../ui/core/utils/cn";
 import { isLastAdminRefusal } from "../../admin/service";
 import type { AdminUserOutcome } from "../../types";
+import { AuthFactorsTrigger } from "./factors";
 import { AuthTimestamp } from "./timestamp";
 import type { AdminUserEditViewProps } from "./types";
 
@@ -70,6 +71,16 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
           <span data-ref='admin-user-created'>
             Created <AuthTimestamp at={user.createdAt} />
           </span>
+          {" · "}
+          <span data-ref='admin-user-verified'>
+            {user.emailVerifiedAt === null ? (
+              "Address never verified"
+            ) : (
+              <>
+                Address verified <AuthTimestamp at={user.emailVerifiedAt} />
+              </>
+            )}
+          </span>
         </Card.Description>
         <Card.Action>
           <Badge tone={user.isAdmin ? "info" : "neutral"} data-ref='admin-user-role'>
@@ -85,6 +96,8 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
             <Alert.Description>{refused}</Alert.Description>
           </Alert>
         )}
+        <AuthFactorsTrigger loadPath={paths.users.factors({ id: user.id })} label='Show sign-in methods' />
+        <Separator />
         <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: updatePath })} class='flex flex-col gap-2'>
           <input type='hidden' name='role' value={user.isAdmin ? "member" : "admin"} />
           <input type='hidden' name='status' value={active ? "active" : "deactivated"} />

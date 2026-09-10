@@ -2,6 +2,7 @@ import type { AppContext } from "../context/types";
 import { renderError } from "../http/fragment";
 import { html } from "../http/html";
 import { htmlResponse } from "../http/response";
+import { requestIdCtx } from "../security/request-id";
 import type { ErrorPageOptions } from "./types";
 
 /** Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`. @public */
@@ -26,6 +27,9 @@ export function createErrorPage<Bindings = Record<string, unknown>>(
       // A failing asset resolver must not break the error page itself.
     }
 
+    // Generated nowhere on this path: without the `requestId` middleware there is no id to quote.
+    const reference = requestIdCtx.getOptional(c);
+
     const doc = html`<html lang="en">
       <head>
         <meta charset="UTF-8" />
@@ -36,7 +40,8 @@ export function createErrorPage<Bindings = Record<string, unknown>>(
       <body>
         <main class="error-page mx-auto max-w-xl p-8">
           <h1 class="mb-4 text-xl font-semibold">${title}</h1>
-          ${renderError(message)} ${options.homeHref ? html`<p class="mt-4"><a href="${options.homeHref}">Back to safety</a></p>` : ""}
+          ${renderError(message)} ${reference ? html`<p class="mt-4 text-sm">Reference: ${reference}</p>` : ""}
+          ${options.homeHref ? html`<p class="mt-4"><a href="${options.homeHref}">Back to safety</a></p>` : ""}
         </main>
       </body>
     </html>`;

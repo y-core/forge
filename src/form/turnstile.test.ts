@@ -193,3 +193,55 @@ describe("verifyTurnstile", () => {
     });
   });
 });
+
+describe("verifyTurnstile — caller cancellation", () => {
+  it("combines the caller's signal with its own timeout", async () => {
+    let seen: AbortSignal | undefined;
+    withCapturedRequest(({ signal }) => {
+      seen = signal;
+      return new Response(JSON.stringify({ success: true, hostname: HOSTNAME }));
+    });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    const controller = new AbortController();
+
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, signal: controller.signal })).toEqual({ ok: true });
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it("rejects rather than resolving to a Result when the caller's signal aborts", async () => {
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = async (_url: URL | RequestInfo, init?: RequestInit) => {
+      await new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+      });
+      return new Response("unreachable");
+    };
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    const controller = new AbortController();
+    queueMicrotask(() => controller.abort());
+
+    await expect(verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, signal: controller.signal })).rejects.toThrow();
+  });
+
+  it("still resolves to timeout when it is the timeout that fired", async () => {
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = async (_url: URL | RequestInfo, init?: RequestInit) => {
+      await new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+      });
+      return new Response("unreachable");
+    };
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    const controller = new AbortController();
+
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, timeoutMs: 1, signal: controller.signal })).toEqual({
+      ok: false,
+      error: "timeout",
+    });
+  });
+});
