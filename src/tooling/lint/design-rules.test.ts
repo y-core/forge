@@ -4,7 +4,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { isValidRuleId } from "../gate/checks/design-parse";
-import { corpusIdOf, lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER, type RuleId } from "./design-rules";
+import { corpusIdOf, lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "./design-rules";
+import type { RuleId } from "./types";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -67,9 +68,11 @@ describe("lintKeyOf() / corpusIdOf()", () => {
 });
 
 describe("the register's dependency-free property", () => {
-  it("imports nothing, so forge's oxlint plugin can read it", () => {
+  // A type-only import is erased before node ever loads the file, so it is not a dependency; what
+  // the plugin cannot afford is a value import, which would have to resolve at load time.
+  it("imports no value, so forge's oxlint plugin can read it", () => {
     const own = readFileSync(resolve(ROOT, "src/tooling/lint/design-rules.ts"), "utf-8");
 
-    expect(own.match(/^\s*import\b/m)).toBeNull();
+    expect(own.match(/^\s*import\b(?!\s+type\b)/m)).toBeNull();
   });
 });

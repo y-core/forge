@@ -1,9 +1,11 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { MENU_ITEM_CLASS, MENU_SCOPE, type MenuItemAttrsOptions, menuItemAttrs } from "../contracts/menu-contract";
+import { MENU_ITEM_CLASS, MENU_SCOPE, menuItemAttrs } from "../contracts/menu-contract";
 import { invokerAttrs, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
-import { type Align, type Side, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
+import type { MenuItemAttrsOptions } from "../contracts/types";
+import type { Align, Side } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { RULE } from "./utils/recipes";

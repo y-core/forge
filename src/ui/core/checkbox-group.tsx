@@ -1,9 +1,10 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
+import type { Orientation } from "../contracts/types";
+import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Size } from "../contracts/vocabulary";
 import { FIELD_ITEM_SIZE, FieldDescription, FieldError, fieldDescribedBy, fieldItemId, fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";

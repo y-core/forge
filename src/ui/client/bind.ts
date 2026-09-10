@@ -1,6 +1,6 @@
 import { asElement, closestAcross, contains, eventTarget, ownerDocument, ownerWindow, queryAcross } from "./dom";
 import { effect } from "./signal";
-import type { SignalRecord } from "./signal-record";
+import type { SignalRecord } from "./types";
 
 /** The controls a `[data-field]` can resolve to; a group item carries `data-value` instead of `value`. */
 interface ControlElement extends HTMLElement {

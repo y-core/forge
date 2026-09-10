@@ -7,26 +7,12 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Input } from "../../../ui/core/input";
 import { cn } from "../../../ui/core/utils/cn";
-import type { AuthCredential } from "../../types";
 import { AuthTimestamp } from "./timestamp";
-import type { AuthViewChrome } from "./types";
+import type { PasskeyEditViewProps } from "./types";
 
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
-
-/** What the passkey rename page renders. @public */
-export type PasskeyEditViewProps = AuthViewChrome & {
-  readonly credential: AuthCredential;
-  readonly renamePath: string;
-  readonly cancelPath: string;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  readonly fieldError?: string | undefined;
-  readonly icon: ForgeIcon<"alert">;
-};
 
 // Design Read: a signed-in visitor renaming one passkey; the one action is saving the new name;
 // failure is a name the schema refuses — the message beside the field, what they typed still in it.

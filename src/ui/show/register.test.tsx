@@ -4,7 +4,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
-import type { PageShell } from "../../app/shell";
+import type { PageShell } from "../../app/types";
 import { PAGE_ORDER, SHOWCASE_PAGES } from "./components";
 import { registerShowcase, showcaseRoutes } from "./register";
 

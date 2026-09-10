@@ -2,18 +2,19 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import type { FC } from "../../jsx/types";
-import type { DockItem } from "../chrome/dock";
 import { Dock } from "../chrome/dock";
 import { Navbar } from "../chrome/navbar";
-import type { NavDefinition } from "../chrome/navbar-items";
-import type { ToolbarDefinition, ToolbarItem } from "../chrome/toolbar";
 import { Toolbar } from "../chrome/toolbar";
+import type { DockItem } from "../chrome/types";
+import type { NavDefinition } from "../chrome/types";
+import type { ToolbarDefinition, ToolbarItem } from "../chrome/types";
 import { Badge } from "../core/badge";
 import { Button } from "../core/button";
 import { Switch } from "../core/switch";
 import { Resumable } from "../server/resumable";
-import { CatalogNote, CatalogSection, type ShowIcon } from "./components";
+import { CatalogNote, CatalogSection } from "./components";
 import { SHOW_SCOPES } from "./scope-contract";
+import type { ShowIcon } from "./types";
 
 const TOOLBAR_SCOPE_ID = SHOW_SCOPES.toolbar;
 const PANEL_REF = "toolbar-panel";

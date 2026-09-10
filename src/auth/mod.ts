@@ -13,15 +13,15 @@ export {
   AUTH_OTP_TTL_MS,
   AUTH_SUPPORTED_ALGORITHMS,
 } from "./config";
-export type { AdminUserService, AdminUserServiceOptions } from "./admin/service";
+export type { AdminUserService, AdminUserServiceOptions } from "./admin/types";
 export { createAdminUserService, isLastAdminRefusal } from "./admin/service";
-export type { AttestedCredential, AuthData, AuthDataExpectation, AuthDataFlags, AuthDataReason } from "./passkey/auth-data";
+export type { AttestedCredential, AuthData, AuthDataExpectation, AuthDataFlags, AuthDataReason } from "./passkey/types";
 export { verifyAuthData } from "./passkey/auth-data";
-export type { ClientData, ClientDataExpectation, ClientDataReason, PasskeyCeremony } from "./passkey/client-data";
+export type { ClientData, ClientDataExpectation, ClientDataReason, PasskeyCeremony } from "./passkey/types";
 export { verifyClientData } from "./passkey/client-data";
-export type { EmailOtpOptions } from "./factors/email-otp";
+export type { EmailOtpOptions } from "./factors/types";
 export { createEmailOtpFactor } from "./factors/email-otp";
-export type { AuthStoreErrorCode } from "./errors";
+export type { AuthStoreErrorCode } from "./types";
 export { AuthStoreError } from "./errors";
 export { createAdminUserStore } from "./stores/admin-users";
 export { createCredentialStore } from "./stores/credentials";
@@ -40,24 +40,24 @@ export type {
   AuthFactorVerified,
   AuthFactorsOptions,
   EnrollableFactorService,
-  ImplicitFactorService,
-} from "./factors/registry";
+} from "./factors/types";
+export type { ImplicitFactorService } from "./factors/types";
 export { authFactorContext, createFactorRegistry } from "./factors/registry";
-export type { PasskeyFactorOptions, PasskeyFactorRole, PasskeyFactorSubject } from "./factors/passkey";
+export type { PasskeyFactorOptions, PasskeyFactorRole, PasskeyFactorSubject } from "./factors/types";
 export { createPasskeyFactor } from "./factors/passkey";
-export type { TotpAppEnrolment, TotpAppFactorOptions } from "./factors/totp-app";
+export type { TotpAppEnrolment, TotpAppFactorOptions } from "./factors/types";
 export { createTotpAppFactor } from "./factors/totp-app";
-export type { AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./flows/decoy";
-export type { AuthEmailChangeFlow, AuthEmailChangeOptions, AuthEmailChangeReason, AuthEmailChangeRequest } from "./flows/email-change";
+export type { AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./flows/types";
+export type { AuthEmailChangeFlow, AuthEmailChangeOptions, AuthEmailChangeReason, AuthEmailChangeRequest } from "./flows/types";
 export { createEmailChangeFlow } from "./flows/email-change";
-export type { AuthSignin, AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./flows/signin";
+export type { AuthSignin, AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./flows/types";
 export { createSigninFlow, redactSigninReason } from "./flows/signin";
-export type { AuthSignupFlow, AuthSignupOptions } from "./flows/signup";
+export type { AuthSignupFlow, AuthSignupOptions } from "./flows/types";
 export { createSignupFlow } from "./flows/signup";
 export { authKeyId, importAuthKeyRing, resolveAuthServices } from "./keys/ring";
-export type { ChallengeStoreOptions } from "./stores/challenges";
+export type { ChallengeStoreOptions } from "./stores/types";
 export { createChallengeStore } from "./stores/challenges";
-export type { NonceStoreOptions } from "./stores/nonces";
+export type { NonceStoreOptions } from "./stores/types";
 export { createNonceStore } from "./stores/nonces";
 export { createOtpStateStore } from "./stores/otp-state";
 export type {
@@ -67,8 +67,8 @@ export type {
   PasskeyRequestOptions,
   PublicKeyCredentialDescriptor,
   PublicKeyCredentialParameter,
-  UserVerification,
-} from "./passkey/options";
+} from "./passkey/types";
+export type { UserVerification } from "./passkey/types";
 export { createPasskeyRegistrationOptions, createPasskeyRequestOptions } from "./passkey/options";
 export type {
   PasskeyAssertionCredential,
@@ -76,18 +76,18 @@ export type {
   PasskeyAuthentication,
   PasskeyAuthenticationInput,
   PasskeyAuthenticationReason,
-  PasskeyAuthenticationVerifyOptions,
-} from "./passkey/authenticate";
+} from "./passkey/types";
+export type { PasskeyAuthenticationVerifyOptions } from "./passkey/types";
 export { verifyPasskeyAuthentication } from "./passkey/authenticate";
 export type {
   PasskeyRegistrationCredential,
   PasskeyRegistrationInput,
   PasskeyRegistrationReason,
   PasskeyRegistrationResponse,
-  PasskeyRegistrationVerifyOptions,
-} from "./passkey/register";
+} from "./passkey/types";
+export type { PasskeyRegistrationVerifyOptions } from "./passkey/types";
 export { verifyPasskeyRegistration } from "./passkey/register";
-export type { PasskeyFailureReason, PasskeyMode, PasskeyOutcomeDetail } from "./passkey-contract";
+export type { PasskeyFailureReason, PasskeyMode, PasskeyOutcomeDetail } from "./types";
 export {
   PASSKEY,
   PASSKEY_CSRF_HEADER_ATTR,
@@ -103,7 +103,7 @@ export {
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "./passkey-contract";
 export { AUTH_TOKEN_VERSION, authNonceKey, decodeAuthToken, encodeAuthToken } from "./keys/token";
-export type { AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./keys/token";
+export type { AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./keys/types";
 export type {
   AdminUserOutcome,
   AdminUserStore,

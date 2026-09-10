@@ -1,31 +1,13 @@
-import { type RequestMethod, Route, type RouteMap } from "@remix-run/fetch-router/routes";
-import type { CreateHrefArgs } from "@remix-run/route-pattern/href";
+import { Route } from "@remix-run/fetch-router/routes";
+import type { RouteMap } from "@remix-run/fetch-router/routes";
 
 import type { AuthFactorKind } from "../types";
-import type { accountRoutes, adminRoutes, authRoutes } from "./routes";
+import type { AuthEntryPaths, AuthPathMap } from "./types";
 
 // A bare flag and never the outcome: it records that the visitor pressed the control, which they
 // already know, so it is safe on a URL a shoulder or a log can read.
 /** The query flag the resend action redirects with, so the verify page can say a code was asked for. @internal */
 export const AUTH_RESENT_PARAM = "resent";
-
-/** A route map mirrored as href builders — one per leaf, nested maps preserved. @public */
-export type AuthPathMap<routes extends RouteMap> = {
-  readonly [name in keyof routes]: routes[name] extends Route<RequestMethod | "ANY", infer pattern extends string>
-    ? (...args: CreateHrefArgs<pattern>) => string
-    : routes[name] extends RouteMap
-      ? AuthPathMap<routes[name]>
-      : never;
-};
-
-/** The href readers `authRoutes` produces, named so a loader can take them as one prop. @public */
-export type AuthEntryPaths<base extends string = string> = AuthPathMap<ReturnType<typeof authRoutes<base>>>;
-
-/** The href readers `accountRoutes` produces, named so a view can take them as one prop. @public */
-export type AuthAccountPaths<base extends string = string> = AuthPathMap<ReturnType<typeof accountRoutes<base>>>;
-
-/** The href readers `adminRoutes` produces, named so a view can take them as one prop. @public */
-export type AuthAdminPaths<base extends string = string> = AuthPathMap<ReturnType<typeof adminRoutes<base>>>;
 
 /** Binds one route's `href` so the mount point stays the route map's and never the caller's. */
 function bindHref(leaf: Route): (...args: Parameters<Route["href"]>) => string {

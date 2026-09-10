@@ -1,10 +1,11 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
-import type { NavDefinition } from "./navbar-items";
+import type { NavDefinition } from "./types";
 
 declare global {
   interface Window {

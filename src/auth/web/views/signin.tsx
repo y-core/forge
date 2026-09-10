@@ -7,35 +7,15 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { Separator } from "../../../ui/core/separator";
+import type { ForgeIcon } from "../../../ui/core/types";
 import { cn } from "../../../ui/core/utils/cn";
 import { PASSKEY } from "../../passkey-contract";
-import type { AuthFactorKind } from "../../types";
-import { type AuthPasskeyContract, AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
-import type { AuthViewChrome } from "./types";
-
-/** What the sign-in page renders. @public */
-export type SigninViewProps = AuthViewChrome & {
-  /** The factor that starts a sign-in. Never `totp-app`, which proves possession but identifies nobody. */
-  readonly primaryFactor: AuthFactorKind;
-  /** The ceremony contract, present exactly when a passkey can sign this deployment in. */
-  readonly passkey?: AuthPasskeyContract | undefined;
-  readonly submitPath: string;
-  readonly signupPath: string;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  /** The address the visitor already typed, so a refusal does not empty the field. */
-  readonly email?: string | undefined;
-  /** A refusal about the address itself, in this view's own words — `describeValidationIssue` names a field and nothing more. */
-  readonly fieldError?: string | undefined;
-  /** A refusal about the attempt as a whole: a rate limit, a refused ceremony. */
-  readonly error?: string | undefined;
-  readonly icon: ForgeIcon<"alert" | "key" | "mail">;
-};
+import { AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
+import type { AuthPasskeyContract } from "./types";
+import type { SigninViewProps } from "./types";
 
 /** The emailed-code path: one address field, submitted to the server. @internal */
 const SigninEmailForm: FC<{

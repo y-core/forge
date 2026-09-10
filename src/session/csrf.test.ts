@@ -7,8 +7,8 @@ import { Forge } from "../app/forge-app";
 import { csrfProtection, csrfTokenCtx, importCsrfKey } from "../form/csrf";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
-import type { SessionKVBinding } from "./kv-storage";
 import { sessionCtx, sessionMiddleware } from "./session";
+import type { SessionKVBinding } from "./types";
 
 const HEX_SECRET = "c".repeat(64);
 const SESSION_SECRET = "s".repeat(48);

@@ -1,39 +1,8 @@
-import { type CosePublicKey, base64urlEncode, decodeCosePublicKey, sha256, timingSafeEqualBytes } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
-
-/** Why authenticator data was refused. Each condition is its own reason. @public */
-export type AuthDataReason = "invalid-backup-state" | "malformed" | "rp-id-mismatch" | "unsupported-key" | "user-not-present" | "user-not-verified";
-
-/** The flags byte, spelled out. @public */
-export interface AuthDataFlags {
-  readonly userPresent: boolean;
-  readonly userVerified: boolean;
-  readonly backupEligible: boolean;
-  readonly backedUp: boolean;
-  readonly attestedCredentialData: boolean;
-}
-
-/** The attested credential a registration ceremony carries. @public */
-export interface AttestedCredential {
-  readonly credentialId: string;
-  readonly publicKey: CosePublicKey;
-  readonly publicKeyBytes: Uint8Array<ArrayBuffer>;
-}
-
-/** Authenticator data, parsed. @public */
-export interface AuthData {
-  readonly rpIdHash: Uint8Array<ArrayBuffer>;
-  readonly flags: AuthDataFlags;
-  readonly signCount: number;
-  readonly attested?: AttestedCredential;
-}
-
-/** What the presented authenticator data is held against. @public */
-export interface AuthDataExpectation {
-  readonly rpId: string;
-  readonly requireUserVerification: boolean;
-  readonly requireAttestedCredential: boolean;
-}
+import { base64urlEncode, decodeCosePublicKey, sha256, timingSafeEqualBytes } from "../../crypto/mod";
+import type { CosePublicKey } from "../../crypto/mod";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
+import type { AuthData, AuthDataExpectation, AuthDataFlags, AuthDataReason } from "./types";
 
 const RP_ID_HASH_BYTES = 32;
 const FLAGS_OFFSET = RP_ID_HASH_BYTES;

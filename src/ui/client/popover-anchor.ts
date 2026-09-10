@@ -1,15 +1,6 @@
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { ownerDocument, ownerWindow } from "./dom";
-
-/** Options for {@link openPopoverAt}. */
-export interface OpenPopoverAtOptions {
-  /** Keep this many pixels between the popup and each viewport edge. @default 0 */
-  margin?: number;
-  /** Open away from the point on an axis where the popup would not fit, instead of clamping it back on screen. @default false */
-  flip?: boolean;
-  /** Hold the show back until the pointer button currently held down is released. @default false */
-  afterPointerUp?: boolean;
-}
+import type { OpenPopoverAtOptions } from "./types";
 
 /** Confines `value` to `low..high`, where an inverted range resolves to `high`. @internal */
 export function clamp(value: number, low: number, high: number): number {

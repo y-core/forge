@@ -1,4 +1,5 @@
-import type { RedirectSpec, ZoneAction, ZoneRule, ZoneSurface } from "./types";
+import type { RedirectSpec, ZoneRule, ZoneSurface } from "./types";
+import type { AllowRuleOptions } from "./types";
 
 /** Path prefixes the platform reserves, unioned into every allow-list whether a caller asks for them or not. @public */
 export const RESERVED_PREFIXES: readonly string[] = ["/cdn-cgi/", "/.well-known/"];
@@ -44,13 +45,6 @@ export function buildAllowExpression(surface: ZoneSurface): string {
   const expression = clauses.join(" or ");
   assertWithinLimit(expression, "buildAllowExpression");
   return expression;
-}
-
-/** What {@link buildAllowRule} needs beyond the surface itself. @public */
-export interface AllowRuleOptions {
-  /** The terminating action taken on traffic the surface does not account for. */
-  action: ZoneAction;
-  description?: string;
 }
 
 /** Builds the WAF custom rule that actions everything the surface does *not* account for. @public */

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import type { GuardResult, Result, ValidationResult } from "./result";
 import { err, ok, result, toError } from "./result";
+import type { Result } from "./types";
+import type { GuardResult, ValidationResult } from "./types";
 
 describe("result — sync success", () => {
   it("returns { ok: true, data } for a primitive", () => {

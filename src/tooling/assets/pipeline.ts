@@ -9,14 +9,9 @@ import { buildIcons } from "./icons";
 import { buildJS } from "./js";
 import { buildRasters } from "./rasters";
 import { buildSite } from "./site";
-import type { SpriteGroupResult } from "./sprites";
 import { buildSprites } from "./sprites";
+import type { AssetsTypesOutcome, BuildOptions, SpriteGroupResult } from "./types";
 import type { ResolvedConfig } from "./types";
-
-export interface BuildOptions {
-  minify?: boolean;
-  assetsPath?: string;
-}
 
 /** Runs every configured build step and writes the generated assets module; `minify` also enables content-hashed filenames. @public */
 export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Promise<void> {
@@ -144,6 +139,7 @@ ${groupBlocks}
   } else {
     content = `${header}
 import { createManifest } from "@y-core/forge/assets";
+import type { AssetsTypesOutcome, BuildOptions } from "./types";
 
 const DATA: Record<string, string> = {
 ${dataEntries}
@@ -221,9 +217,6 @@ function keepsExistingBuild(outputPath: string, typesContent: string): boolean {
   if (readEmittedManifest(existing).typesOnly) return false;
   return structuralSignature(existing) === structuralSignature(typesContent);
 }
-
-/** What `generateAssetsTypes` did to the module on disk. @public */
-export type AssetsTypesOutcome = "written" | "kept-build-artifact";
 
 /** Writes the generated assets module from `assets.config.ts` alone, with placeholder values, unless an existing build artifact still fits the config. @public */
 export async function generateAssetsTypes(config: ResolvedConfig, opts?: { assetsPath?: string }): Promise<AssetsTypesOutcome> {

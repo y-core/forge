@@ -1,25 +1,23 @@
-import { type AppContext, type RequestHandler, getAppContext } from "../../context/types";
+import { getAppContext } from "../../context/types";
+import type { AppContext, RequestHandler } from "../../context/types";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
 import type { ReadonlyFormData } from "../../form/types";
 import { jsonResponse, redirect } from "../../http/response";
-import { type Result, err, ok } from "../../result/result";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import { sessionCtx } from "../../session/session";
 import { describeValidationIssue, v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
-import { type AuthSigninNotice, redactSigninReason } from "../flows/signin";
-import { type PasskeyAssertionCredential, verifyPasskeyAuthentication } from "../passkey/authenticate";
-import { type PasskeyCeremonyOptions, createPasskeyRequestOptions } from "../passkey/options";
+import { redactSigninReason } from "../flows/signin";
+import type { AuthSigninNotice } from "../flows/types";
+import { verifyPasskeyAuthentication } from "../passkey/authenticate";
+import { createPasskeyRequestOptions } from "../passkey/options";
+import type { PasskeyAssertionCredential } from "../passkey/types";
+import type { PasskeyCeremonyOptions } from "../passkey/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
-import {
-  type AuthIdentity,
-  clearAuthSession,
-  establishAuthSession,
-  markAuthSigninPending,
-  markAuthStepUp,
-  resolveAuthSigninPending,
-} from "./identity";
+import { clearAuthSession, establishAuthSession, markAuthSigninPending, markAuthStepUp, resolveAuthSigninPending } from "./identity";
 import {
   loadAdminElevate,
   loadAdminUserEdit,
@@ -32,7 +30,7 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import { type AuthPageState, type AuthRequestServices, type AuthWebOptions, authNow, authReturnPath, authSettledPath } from "./options";
+import { authNow, authReturnPath, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
 import { authVerifyDetour, resolveAuthVerifyDemand, resolveAuthViewer } from "./resolve";
 import {
@@ -45,6 +43,8 @@ import {
   authTotpEnrolSchema,
   authVerifySchema,
 } from "./schemas";
+import type { AuthIdentity } from "./types";
+import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
 
 const NO_SESSION =
   "auth/web action: no session on this request — mount `sessionMiddleware` before the auth routes, or a sign-in writes an identity nothing can read back.";

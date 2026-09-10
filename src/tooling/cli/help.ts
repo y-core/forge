@@ -1,17 +1,10 @@
-import type { Colorize } from "../term/color";
 import { PLAIN } from "../term/color";
-import { type DefinitionEntry, definitionList } from "../term/grid";
+import { definitionList } from "../term/grid";
 import { DEFAULT_WIDTH } from "../term/terminal";
+import type { DefinitionEntry } from "../term/types";
 import { collectFlags } from "./parse";
 import type { CommandBase, FlagDef } from "./types";
-
-/** How wide to render, and what to render it in. @public */
-export interface HelpOptions {
-  /** Columns the block must fit in. Defaults to 80, so a test can pin it and stay exact-match. */
-  width?: number;
-  /** Styler for the headings. Defaults to `PLAIN`. */
-  style?: Colorize;
-}
+import type { HelpOptions } from "./types";
 
 function commandPath(command: CommandBase): string {
   const parts: string[] = [];

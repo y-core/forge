@@ -2,21 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { oklchToSrgb, toHex } from "../../assets/build/color";
-import {
-  ACCENT_RAMP,
-  buildScale,
-  CHROMA_MAX,
-  contrastRatio,
-  GRAY_RAMP,
-  hexToOklch,
-  type Mode,
-  oklchToHex,
-  relativeLuminance,
-  type Scale,
-  type ScaleFamily,
-} from "./color";
-import { ACCENT_CONTRAST, CONTRAST_PAIRS, CRITERION, type ScalePair, scalePairs, sideStep } from "./contrast-pairs";
+import { ACCENT_RAMP, buildScale, CHROMA_MAX, contrastRatio, GRAY_RAMP, hexToOklch, oklchToHex, relativeLuminance } from "./color";
+import { ACCENT_CONTRAST, CONTRAST_PAIRS, CRITERION, scalePairs, sideStep } from "./contrast-pairs";
 import { buildTheme, DIALS, liveRatios, SCHEME_PRESETS } from "./theme-contract";
+import type { Mode, Scale, ScaleFamily } from "./types";
+import type { ScalePair } from "./types";
 
 /** A dial's shipped default — where `theme-neutral.css`'s accent position actually lives. */
 function fallback(field: string): number {

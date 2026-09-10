@@ -10,7 +10,8 @@ import { err, ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
-import { type AuthFactorPolicy, type AuthFactorService, createFactorRegistry } from "../factors/registry";
+import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorPolicy, AuthFactorService } from "../factors/types";
 import type { AuthChallenge, ChallengeStore } from "../types";
 import { AUTH_SESSION_KEY, authCtx } from "./identity";
 import {
@@ -27,7 +28,6 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./options";
 import {
   attrOf,
   attrsOf,
@@ -45,6 +45,7 @@ import {
   textOf,
   valuesOf,
 } from "./test-support";
+import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
 
 const sessionCookie = createCookie("__session", { path: "/" });
 

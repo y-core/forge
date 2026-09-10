@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import type { CapabilityInput, ColorLevel } from "./capability";
 import { resolveColorLevel } from "./capability";
+import type { CapabilityInput, ColorLevel } from "./types";
 
 // One row per precedence rule. Table-driven and pure: not one of these mutates `process.env`, so
 // the order below is asserted rather than hoped for.

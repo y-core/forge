@@ -1,61 +1,14 @@
-import { type CosePublicKey, base64urlDecodeOrNull, concatBytes, decodeCosePublicKey, sha256 } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
+import { base64urlDecodeOrNull, concatBytes, decodeCosePublicKey, sha256 } from "../../crypto/mod";
+import type { CosePublicKey } from "../../crypto/mod";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import type { AuthStoreError } from "../errors";
-import type { AuthCredential, AuthStoreResult, AuthUser, ChallengeStore, CredentialStore, UserStore } from "../types";
-import { type AuthDataReason, verifyAuthData } from "./auth-data";
-import { type ClientDataReason, verifyClientData } from "./client-data";
+import type { AuthCredential, AuthStoreResult, AuthUser } from "../types";
+import { verifyAuthData } from "./auth-data";
+import { verifyClientData } from "./client-data";
 import { passkeyChallengeKey } from "./options";
 import { verifyPasskeySignature } from "./signature";
-
-/** Why an authentication ceremony was refused. An unknown credential and a bad signature share one reason. @public */
-export type PasskeyAuthenticationReason =
-  | AuthDataReason
-  | ClientDataReason
-  | "account-deactivated"
-  | "account-unverified"
-  | "challenge-not-found"
-  | "session-mismatch"
-  | "sign-count-reused"
-  | "unrecognised";
-
-/** The assertion response of a finished ceremony, base64url as the browser's JSON carries it. @public */
-export interface PasskeyAssertionResponse {
-  readonly clientDataJSON: string;
-  readonly authenticatorData: string;
-  readonly signature: string;
-  readonly userHandle?: string;
-}
-
-/** The credential a finished authentication ceremony posts back. @public */
-export interface PasskeyAssertionCredential {
-  readonly id: string;
-  readonly response: PasskeyAssertionResponse;
-}
-
-/** One authentication ceremony, as it is presented for verification. @public */
-export interface PasskeyAuthenticationInput {
-  readonly sessionId: string;
-  readonly credential: PasskeyAssertionCredential;
-}
-
-/** What an authentication ceremony is held against, and where its outcome is recorded. @public */
-export interface PasskeyAuthenticationVerifyOptions {
-  readonly rpId: string;
-  readonly origin: string;
-  readonly challenges: ChallengeStore;
-  readonly credentials: CredentialStore;
-  readonly users: UserStore;
-  readonly requireUserVerification?: boolean;
-}
-
-/** What a passed authentication ceremony establishes, with the counter and flags it presented. @public */
-export interface PasskeyAuthentication {
-  readonly user: AuthUser;
-  readonly credential: AuthCredential;
-  readonly signCount: number;
-  readonly backedUp: boolean;
-  readonly userVerified: boolean;
-}
+import type { PasskeyAuthentication, PasskeyAuthenticationInput, PasskeyAuthenticationReason, PasskeyAuthenticationVerifyOptions } from "./types";
 
 function storedKey(credential: AuthCredential): CosePublicKey | null {
   try {

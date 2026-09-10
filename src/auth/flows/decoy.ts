@@ -1,18 +1,7 @@
 import { base64urlEncode, randomBytes } from "../../crypto/mod";
 import { decodeAuthToken, encodeAuthToken } from "../keys/token";
-import type { AuthFactorKind, AuthKeyRing, UserStore } from "../types";
-
-/** Where a flow hands work that must outlive the response — `executionCtx.waitUntil` in a Worker. @public */
-export type AuthDeferral = (work: Promise<AuthIssueOutcome>) => void;
-
-/** What one deferred issue did. Server-internal: the caller of `request` is told the same thing either way. @public */
-export type AuthIssueOutcome = "challenged" | "decoyed" | "unavailable";
-
-/** What a flow tells a visitor it has done, which is the same sentence for an address it knows and one it does not. @public */
-export interface AuthFlowChallenge {
-  readonly kind: AuthFactorKind;
-  readonly expiresAt: number;
-}
+import type { AuthKeyRing, UserStore } from "../types";
+import type { AuthIssueOutcome } from "./types";
 
 const DECOY_PAYLOAD_BYTES = 24;
 /** A canonical id no UUIDv7 generator produces, so the decoy read costs an index lookup and finds nothing. */

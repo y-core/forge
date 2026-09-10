@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { checkResult } from "./finding";
-import { GATE_MODES, isCheckStep, type Step, selectSteps } from "./steps";
+import { GATE_MODES, isCheckStep, selectSteps } from "./steps";
+import type { Step } from "./types";
 
 const FIXTURE: readonly Step[] = [
   { label: "alpha", tail: 10, cmd: ["a"] },

@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { DARK_CLASS, THEME_STORAGE_KEY } from "../chrome/theme";
@@ -7,7 +8,7 @@ import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, controlsReadout } from "../co
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY } from "../contracts/overlay-contract";
 import { TURNSTILE, TURNSTILE_SCRIPT_SRC } from "../contracts/turnstile-contract";
 import { createIcon } from "../core/icon";
-import { PAGE_ORDER, ShowcaseContent, type ShowcasePage } from "./components";
+import { PAGE_ORDER, ShowcaseContent } from "./components";
 import {
   LAZY_DEMO_LOADED,
   LAZY_DEMO_PENDING,
@@ -23,6 +24,7 @@ import {
 } from "./lazy-contract";
 import { renderValidate, showcasePaths } from "./route";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
+import type { ShowcasePage } from "./types";
 
 declare global {
   interface Window {

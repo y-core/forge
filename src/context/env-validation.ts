@@ -3,6 +3,7 @@ import type { Middleware } from "@remix-run/fetch-router";
 import { safeCheck, v } from "../validation/mod";
 import { parseEnv } from "../validation/parse-env";
 import { getAppContext } from "./types";
+import type { BindingSpec } from "./types";
 
 /** Validates an env object against a valibot schema; throws a descriptive error on failure. @public */
 export function validateEnv<T>(env: unknown, schema: v.BaseSchema<unknown, T, v.BaseIssue<unknown>>): T {
@@ -20,18 +21,6 @@ export function validateBindings(schema: v.BaseSchema<unknown, unknown, v.BaseIs
     }
     return next();
   };
-}
-
-/** One binding's declared shape. @public */
-export interface BindingSpec {
-  /** The key the binding is reached under on `env`. */
-  name: string;
-  /** Method names the binding must carry; the check is a shape check, not a presence check. */
-  methods: readonly string[];
-  /** How the binding is named in the failure message — `${name} must be ${label}`. */
-  label: string;
-  /** An absent binding passes; a present one of the wrong shape still fails. */
-  optional?: boolean | undefined;
 }
 
 /** The one entry both forms build, so a required and an optional binding cannot diverge. */

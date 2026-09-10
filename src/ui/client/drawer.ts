@@ -1,4 +1,5 @@
 import { activeElement, contains, ownerDocument, ownerWindow } from "./dom";
+import type { NavDrawerOptions } from "./types";
 
 /** Below Tailwind's `md` breakpoint (`48rem`), the width the drawer's markup is written for. */
 const DEFAULT_QUERY =
@@ -13,21 +14,6 @@ const FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
 
 const mountedDrawers = new WeakMap<Element, () => void>();
-
-/** Options for {@link mountNavDrawer}. @public */
-export interface NavDrawerOptions {
-  /** The disclosure to drive — a `<details>`. Takes precedence over {@link NavDrawerOptions.selector}. */
-  element?: Element | null;
-  /** Selector for the disclosure, resolved in {@link NavDrawerOptions.within}'s document.
-   *  Ignored when an element is given. */
-  selector?: string;
-  /** Any node in the document to search. Omit for the top-level page. */
-  within?: Node;
-  /** Media query that, for as long as it matches, makes the open disclosure a modal drawer. */
-  query?: string;
-  /** Selector for the sliding panel inside the disclosure. */
-  panelSelector?: string;
-}
 
 /** Gives an open off-canvas disclosure its modal behaviour — Escape, scroll lock, focus trap — while `query` matches, and returns a disposer. @public */
 export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {

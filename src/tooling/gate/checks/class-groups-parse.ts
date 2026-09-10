@@ -1,4 +1,5 @@
-import type { CssNode, DesignSystem } from "./design-system";
+import type { CssNode, DesignSystem } from "./types";
+import type { ClassGroupTable, RootRow } from "./types";
 
 const box = (property: string, suffix: string): [string, string[]][] => [
   [
@@ -104,25 +105,6 @@ export function reach(group: string): ReadonlySet<string> {
     }
   }
   return out;
-}
-
-/** One functional root's resolution: its named default, the value set that takes the other group, and its arbitrary-value groups. @public */
-export interface RootRow {
-  /** Group for a named value the design system did not enumerate; absent when the root takes no named value. */
-  named?: string;
-  /** The enumerated minority values, and the group they take. */
-  exceptions?: { values: readonly string[]; group: string };
-  /** Group for an arbitrary value whose kind is not listed in `kinds`. */
-  arbitrary?: string;
-  /** Arbitrary-value kinds that resolve to something other than `arbitrary`. */
-  kinds?: Readonly<Record<string, string>>;
-}
-
-/** The derived table: every static utility, every functional root, and the override edges between groups. @public */
-export interface ClassGroupTable {
-  statics: ReadonlyMap<string, string>;
-  roots: ReadonlyMap<string, RootRow>;
-  overrides: ReadonlyMap<string, readonly string[]>;
 }
 
 const ARBITRARY_PROBES: readonly (readonly [string, string])[] = [

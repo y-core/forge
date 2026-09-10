@@ -3,15 +3,16 @@
 
 import { dependentSelect, inlineValidation, liveSearch, paginatedTableLink } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
-import { APPEARANCES, type Appearance, type Size, type Tone, TONES } from "../contracts/vocabulary";
+import type { Appearance, Size, Tone } from "../contracts/types";
+import { APPEARANCES, TONES } from "../contracts/vocabulary";
 import { Button } from "../core/button";
 import { FormField } from "../core/field-layout";
-import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Select } from "../core/select";
+import type { ForgeIcon } from "../core/types";
 import { FlashOob } from "../server/flash";
 import { CatalogNote, CatalogPanel } from "./components";
-import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./route";
+import type { DependentData, PaginateData, PreviewData, SearchData, ShowcasePaths, ToastData, ValidateData } from "./types";
 
 /** @public */ export const SHOW_SEARCH_ID = "show-search-results";
 /** @public */ export const SHOW_VALIDATE_ID = "show-validate-field";

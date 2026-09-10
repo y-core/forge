@@ -3,7 +3,8 @@ import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { UserStore } from "../types";
-import { readMaybe, readUser, storeError, type UserRow, uuidKey } from "./rows";
+import { readMaybe, readUser, storeError, uuidKey } from "./rows";
+import type { UserRow } from "./types";
 
 /** Creates the `UserStore` over a SQL database — reads and writes, with no capability to delete a user. @public */
 export function createUserStore(db: D1Client): UserStore {

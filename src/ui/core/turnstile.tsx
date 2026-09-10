@@ -1,24 +1,10 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+import type { FC } from "../../jsx/types";
 import { TURNSTILE, TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
+import type { TurnstileProps } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-
-export type TurnstileProps = Omit<JSX.IntrinsicElements["div"], "children" | "tabindex"> & {
-  siteKey: string;
-  size?: "compact" | "flexible" | "normal" | undefined;
-  load?: "eager" | "focus" | undefined;
-  challenge?: "render" | "submit" | undefined;
-  appearance?: "always" | "execute" | "interaction-only" | undefined;
-  action?: string | undefined;
-  cData?: string | undefined;
-  responseFieldName?: string | undefined;
-  language?: string | undefined;
-  tabindex?: number | undefined;
-  unsupported?: JSXNode | undefined;
-  children?: JSXNode | undefined;
-};
 
 const DEFAULT_FALLBACK = "The security challenge couldn't load. Please disable any ad or script blockers for this site and reload the page.";
 

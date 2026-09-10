@@ -2,12 +2,7 @@ import { MENU_GROUP_SELECTOR, MENU_ITEM_SELECTOR, MENU_RADIO_SELECTOR } from "..
 import { applyStateAttrs } from "../contracts/state-attrs";
 import { mountRovingFocus } from "./composite";
 import { activeElement, asElement, closestAcross, contains, elementById, isRtl, ownerDocument } from "./dom";
-
-/** Options for {@link mountMenu}. */
-export interface MenuOptions {
-  /** Wrap from the last item to the first. @default true */
-  loop?: boolean;
-}
+import type { MenuOptions } from "./types";
 
 /** The row that opens a nested panel, and the panel itself. Token-list matching (`~=`) because an
  * `asChild` composition can leave more than one slot name on the same element. */

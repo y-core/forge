@@ -1,5 +1,6 @@
 export { escapeHtml, safeUrl } from "./escape";
-export { type FragmentOptions, renderError, renderSuccess, renderValidationErrors } from "./fragment";
+export { renderError, renderSuccess, renderValidationErrors } from "./fragment";
+export type { FragmentOptions } from "./types";
 export type {
   AcceptInit,
   CacheControlInit,

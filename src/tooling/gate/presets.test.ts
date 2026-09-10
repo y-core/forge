@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
-import { isCheckStep, type Step } from "./steps";
+import { isCheckStep } from "./steps";
+import type { Step } from "./types";
 
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);

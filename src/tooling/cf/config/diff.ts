@@ -1,8 +1,7 @@
-import type { JsonPath, Primitive } from "../../cli/jsonc";
+import type { JsonPath, Primitive } from "../../cli/types";
+import type { ConfigDiff } from "./types";
 
 export type { JsonPath, Primitive };
-
-export type ConfigDiff = { kind: "set"; path: JsonPath; value: Primitive } | { kind: "unsupported"; path: JsonPath; reason: string };
 
 function isPrimitive(v: unknown): v is Primitive {
   return v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";

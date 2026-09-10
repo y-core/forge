@@ -1,21 +1,17 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
 import { uuidv7 } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import { AuthStoreError } from "../errors";
-import {
-  type AuthFactorChallenge,
-  type AuthFactorPolicy,
-  type AuthFactorReason,
-  type AuthFactorVerified,
-  type EnrollableFactorService,
-  type ImplicitFactorService,
-  createFactorRegistry,
-} from "../factors/registry";
+import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorChallenge, AuthFactorPolicy, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "../factors/types";
+import type { ImplicitFactorService } from "../factors/types";
 import { importAuthKeyRing } from "../keys/ring";
 import type { AuthFactor, AuthKeyRing, AuthUser, FactorStore, UserStore } from "../types";
-import type { AuthIssueOutcome } from "./decoy";
-import { type AuthSigninOptions, type AuthSigninReason, createSigninFlow, redactSigninReason } from "./signin";
+import { createSigninFlow, redactSigninReason } from "./signin";
+import type { AuthIssueOutcome } from "./types";
+import type { AuthSigninOptions, AuthSigninReason } from "./types";
 
 const USER_ID = uuidv7();
 const EMAIL = "Person@Example.COM";

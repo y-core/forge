@@ -1,19 +1,7 @@
+import type { CapabilityInput, ColorLevel } from "./types";
 // Precedence order adapted from @visulima/is-ansi-color-supported (MIT, Copyright (c) visulima),
 // itself after chalk/supports-color (MIT, Copyright (c) Sindre Sorhus)
 // https://github.com/visulima/visulima — packages/terminal/is-ansi-color-supported/src/is-color-supported.server.ts
-
-/** How much colour a stream can carry: none, 16, 256, or 24-bit. @public */
-export type ColorLevel = 0 | 1 | 2 | 3;
-
-/** Everything the resolver is allowed to look at. @public */
-export interface CapabilityInput {
-  /** The environment, passed in rather than read — see `resolveColorLevel`. */
-  env: Readonly<Record<string, string | undefined>>;
-  /** Whether the stream being resolved for is attached to a terminal. */
-  isTTY?: boolean;
-  /** Command line, for the `--color` family of flags. */
-  argv?: readonly string[];
-}
 
 const NO_COLOR_FLAG = /^-{1,2}(?:no-color|no-colors|color=false|color=never)$/;
 const COLOR_256_FLAG = /^-{1,2}color=256$/;

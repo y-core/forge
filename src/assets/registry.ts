@@ -1,9 +1,5 @@
-import type { Manifest } from "./manifest";
-
-/** Resolves a sprite group name to its public sprite sheet URL. @public */
-export interface SpriteRegistry {
-  get(name: string): string;
-}
+import type { Manifest } from "./types";
+import type { SpriteRegistry } from "./types";
 
 /** Creates a sprite registry over `sprites`, throwing on an unknown group name. @public */
 export function createSpriteRegistry(sprites: Record<string, string>, manifest: Manifest): SpriteRegistry {

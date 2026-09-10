@@ -1,33 +1,8 @@
 import { uuidToBytes } from "../crypto/mod";
 import type { D1DatabaseLike } from "../storage/db/types";
-import { type FakeD1Options, fakeD1 } from "./fakes";
-
-/** One enrolled factor on a `fakeAuthD1` user. @public */
-export interface FakeAuthFactor {
-  readonly kind: string;
-  /** Canonical UUID; defaults to one derived from the row's position. */
-  readonly id?: string;
-  readonly secret?: Uint8Array | null;
-  readonly lastCounter?: number | null;
-  /** `null` leaves the enrolment unconfirmed — what a factor begun but never completed looks like. */
-  readonly confirmedAt?: number | null;
-}
-
-/** One account `fakeAuthD1` answers the auth stores with. @public */
-export interface FakeAuthUser {
-  /** Canonical UUID — the store binds it as the 16 `BLOB` bytes, which this does for you. */
-  readonly id: string;
-  readonly email: string;
-  /** Defaults to `email` lowercased, which is what the flows write. */
-  readonly emailKey?: string;
-  readonly emailVerifiedAt?: number | null;
-  readonly webauthnId?: Uint8Array | null;
-  readonly isAdmin?: boolean;
-  readonly deactivatedAt?: number | null;
-  readonly createdAt?: number;
-  readonly updatedAt?: number;
-  readonly factors?: readonly FakeAuthFactor[];
-}
+import { fakeD1 } from "./fakes";
+import type { FakeD1Options } from "./types";
+import type { FakeAuthUser } from "./types";
 
 const EPOCH = 1;
 

@@ -3,28 +3,9 @@
 import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { closestAcross, eventTarget, ownerDocument } from "./dom";
-import { createSignal, type Signal, withOwner } from "./signal";
-
-/** Context handed to a scope's `setup` and action handlers. @public */
-export interface ResumeContext {
-  /** The `[data-scope]` element enclosing the interaction. */
-  root: HTMLElement;
-  /** The element that fired the event (carries the `data-on-<event>` action). */
-  el: HTMLElement;
-  /** State rebuilt from `data-island-state` into reactive signals. */
-  state: Record<string, Signal<unknown>>;
-}
-
-/** A registered scope: one-time setup plus a map of named action handlers. @public */
-export interface ScopeDefinition<A extends string = string> {
-  /** Resume at `resume()` time instead of waiting for the first interaction. */
-  eager?: boolean;
-  /** Binds DOM-mutating effects once on first resume, optionally returning a disposer. */
-  // oxlint-disable-next-line typescript/no-invalid-void-type -- void in union is intentional — allows implicit-return setups
-  setup?: (ctx: Omit<ResumeContext, "el">) => void | (() => void);
-  /** Action handlers keyed by the `data-on-<event>` value. */
-  on?: Record<A, (ctx: ResumeContext, event: Event) => void>;
-}
+import { createSignal, withOwner } from "./signal";
+import type { Signal } from "./types";
+import type { ScopeDefinition } from "./types";
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();

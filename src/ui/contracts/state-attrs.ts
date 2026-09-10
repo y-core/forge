@@ -1,3 +1,4 @@
+import type { StateAttrsProps } from "./types";
 /** Every state attribute forge emits; booleans are emitted by presence with an empty value. @public */
 export const STATE_ATTRS = {
   /** Present while a pressable trigger or toggle item is pressed. */
@@ -19,34 +20,6 @@ export const STATE_ATTRS = {
   /** How a popup is aligned along that side. Valued. */
   align: "data-align",
 } as const;
-
-/** One of the declared state-attribute names. @public */
-export type StateAttrName = (typeof STATE_ATTRS)[keyof typeof STATE_ATTRS];
-
-/** Layout axis. @public */
-export type Orientation = "horizontal" | "vertical";
-
-/** A physical side — what a popup, drawer, or rail is anchored to when the reader's direction must not mirror it. @public */
-export type PhysicalSide = "top" | "right" | "bottom" | "left";
-
-/** Side a popup is positioned on, in either physical or logical spelling. @public */
-export type Side = PhysicalSide | "block-start" | "block-end" | "inline-start" | "inline-end";
-
-/** Alignment of a popup along its side. @public */
-export type Align = "start" | "center" | "end";
-
-/** The states a forge component can declare; an omitted key differs from `false`. @public */
-export interface StateAttrsProps {
-  pressed?: boolean | undefined;
-  checked?: boolean | undefined;
-  selected?: boolean | undefined;
-  disabled?: boolean | undefined;
-  invalid?: boolean | undefined;
-  busy?: boolean | undefined;
-  orientation?: Orientation | undefined;
-  side?: Side | undefined;
-  align?: Align | undefined;
-}
 
 // Literal keys, never `STATE_ATTRS.pressed`: a runtime reference would retain the whole table in
 // every bundle that spreads one of these hooks.

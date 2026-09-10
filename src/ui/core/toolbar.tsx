@@ -1,9 +1,11 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
-import { type ButtonProps, buttonVariants } from "./button";
+import type { Orientation } from "../contracts/types";
+import { buttonVariants } from "./button";
+import type { ButtonProps } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { RULE } from "./utils/recipes";

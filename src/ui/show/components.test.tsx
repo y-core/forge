@@ -5,11 +5,12 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { TONES } from "../contracts/vocabulary";
-import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent, type ShowcasePage } from "./components";
+import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./components";
 import { sectionBodies } from "./coverage";
 import { showcasePaths } from "./route";
 import { TOAST_CYCLE_DURATION, TOAST_CYCLE_SCOPE } from "./toast-contract";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
+import type { ShowcasePage } from "./types";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;

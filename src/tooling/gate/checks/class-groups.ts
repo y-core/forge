@@ -1,26 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { type CheckResult, checkResult, fail } from "../finding";
-import { type ClassGroupTable, deriveClassGroups, renderClassGroups } from "./class-groups-parse";
+import { checkResult, fail } from "../finding";
+import type { CheckResult } from "../types";
+import { deriveClassGroups, renderClassGroups } from "./class-groups-parse";
 import { canonical, fileURLToPathish, loadDesignSystem } from "./design-system";
+import type { ClassGroupTable } from "./types";
+import type { ClassGroupsCheckConfig } from "./types";
 
 // One definition, because `gen:class-groups` and `validate-class-groups` derive the same table: a
 // list that differed between them would write a file the drift check then rejects.
 /** The `forge-ui.css` `@utility` recipes that paint nothing in the base state. @public */
 export const FORGE_STATE_RECIPES: readonly string[] = ["focus-ring", "focus-ring-outset", "state-busy", "state-disabled", "state-invalid"];
-
-/** What the class-groups check needs to know about the project. @public */
-export interface ClassGroupsCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** The stylesheet the design system is compiled from, relative to `root`. */
-  stylesheet: string;
-  /** The generated module the derived table is committed to, relative to `root`. */
-  table: string;
-  /** `@utility` recipes whose payload is conditional, keyed into a slot no Tailwind utility reaches. */
-  stateRecipes?: readonly string[];
-}
 
 /** Compiles the stylesheet and derives the conflict table it implies. @public */
 export async function deriveTable(config: ClassGroupsCheckConfig): Promise<ClassGroupTable> {

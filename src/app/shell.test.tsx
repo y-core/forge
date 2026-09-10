@@ -7,7 +7,8 @@ import { RequestContext } from "@remix-run/fetch-router";
 
 import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
-import { type PageShell, pageShell, renderShell, shellCtx } from "./shell";
+import { pageShell, renderShell, shellCtx } from "./shell";
+import type { PageShell } from "./types";
 
 const SLOT = { mount: "auth", page: "signin", meta: { title: "Sign in" } };
 

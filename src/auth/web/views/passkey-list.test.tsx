@@ -4,12 +4,14 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthCredential } from "../../types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
 import { attrOf, attrsOf, elementOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../test-support";
-import { PasskeyListView, type PasskeyListViewProps, type PasskeyRow } from "./passkey-list";
+import { PasskeyListView } from "./passkey-list";
+import type { PasskeyListViewProps, PasskeyRow } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
 

@@ -1,21 +1,12 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
+import type { Orientation } from "../contracts/types";
+import type { FieldDescribedByOptions, FieldDescriptor } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
-
-/** Plain object describing a form field — pass explicitly to controls instead of relying on context. @public */
-export interface FieldDescriptor {
-  name: string;
-  /** Distinguishes fields that share a `name` on one page. */
-  scope?: string | undefined;
-  /** A description element renders for this field. */
-  description?: boolean | undefined;
-  invalid?: boolean | undefined;
-  disabled?: boolean | undefined;
-}
 
 interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
   name: string;
@@ -102,16 +93,6 @@ export function fieldItemId(name: string, value: string, scope?: string): string
 
 /** The box a checkable group's item draws, per size — the same square in both groups. @internal */
 export const FIELD_ITEM_SIZE = { sm: "size-3.5", md: "size-4", lg: "size-5" } as const;
-
-/** What {@link fieldDescribedBy} needs beyond the field's name. */
-export interface FieldDescribedByOptions {
-  scope?: string | undefined;
-  /** A description element renders for this field. */
-  description?: boolean | undefined;
-  invalid?: boolean | undefined;
-  /** An `aria-describedby` the caller already has, kept ahead of the derived ids. */
-  existing?: string | undefined;
-}
 
 /** The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public */
 export function fieldDescribedBy(name: string, options: FieldDescribedByOptions = {}): string | undefined {

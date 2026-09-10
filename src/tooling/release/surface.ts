@@ -4,9 +4,7 @@ import { resolve } from "node:path";
 import { parseConsumerExportNames } from "../gate/checks/barrel-parse";
 import { readFileAtRef } from "./git";
 import { ReleaseError } from "./types";
-
-/** Reads a barrel's source at a repo-relative path, or `null` when it is absent. */
-export type BarrelReader = (relPath: string) => string | null;
+import type { BarrelReader } from "./types";
 
 function targetOf(entry: unknown): string | undefined {
   if (typeof entry === "string") return entry;

@@ -2,10 +2,9 @@
 // https://github.com/visulima/visulima — packages/terminal/tabular/src/utils/pad-and-align-content.ts
 
 import { hasAnsi, RESET, SGR_PATTERN } from "./ansi";
-import { stringWidth, truncate, type WidthOptions } from "./width";
-
-/** Where the shorter side's padding goes when a cell is wider than its content. @public */
-export type Align = "left" | "center" | "right";
+import type { WidthOptions } from "./types";
+import type { Align } from "./types";
+import { stringWidth, truncate } from "./width";
 
 /** Pads `input` out to `width` columns as `stringWidth` measures it, putting the slack where `align` says. @public */
 export function padAlign(input: string, width: number, align: Align = "left", options?: WidthOptions): string {

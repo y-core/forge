@@ -2,29 +2,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { utilityOf } from "../../../ui/core/utils/cn";
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { loadDesignSystem } from "./design-system";
 import { balancedSpan, blankSourceComments, lineAt, resolveSources } from "./source-scan";
-
-/** What the class-token check needs to know about the project. @public */
-export interface ClassTokensCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** Files and directories to scan, relative to `root`; a `!`-prefixed entry excludes a subtree. */
-  sources: readonly string[];
-  /** The stylesheet the design system is compiled from, relative to `root`. */
-  stylesheet: string;
-}
+import type { ClassTokensCheckConfig, SourceLiteral } from "./types";
 
 // Specs are excluded: they assert on *rendered* markup, so a class string in one is a fragment of an
 // HTML literal (`gap-4"></ol>`) or an invented fixture name — neither is a token anything renders.
 const SCANNED = (name: string): boolean => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name);
-
-/** One string literal, with the line it opens on. */
-export interface SourceLiteral {
-  line: number;
-  text: string;
-}
 
 // Every literal, not only the ones in a class position: a class string can live in a module-level
 // `const` (`src/ui/core/link.tsx`), which no class-position scan reaches.

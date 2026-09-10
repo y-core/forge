@@ -3,6 +3,7 @@ import type { D1DatabaseLike, D1PreparedStatement, D1Result } from "../storage/d
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";
 import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import type { R2BucketLike, R2ListLike, R2ObjectBodyLike, R2ObjectLike, R2PutLike } from "../storage/r2/types";
+import type { FakeD1Options, FakeKVOptions } from "./types";
 
 /** The floor a real KV binding enforces on `expirationTtl` (STORAGE_BINDINGS §2c). */
 const KV_EXPIRATION_TTL_MIN = 60;
@@ -21,12 +22,6 @@ function resolveExpiration(now: number, options?: KVPutOptions): number | undefi
   if (options?.expiration !== undefined) return options.expiration;
   if (options?.expirationTtl !== undefined) return now + options.expirationTtl;
   return undefined;
-}
-
-/** Options for `fakeKV`. @public */
-export interface FakeKVOptions {
-  /** Millisecond clock the expiry of every write is resolved and judged against; defaults to `Date.now`. */
-  now?: () => number;
 }
 
 /** In-memory `KVNamespace` fake backed by a per-instance `Map` of raw bytes, honouring `expirationTtl` and `expiration` against an injectable clock. @public */
@@ -305,14 +300,6 @@ export function fakeR2(seed?: Record<string, string>): R2BucketLike {
 interface FakeD1Statement extends D1PreparedStatement {
   readonly sql: string;
   readonly params: unknown[];
-}
-
-/** Options for `fakeD1`. @public */
-export interface FakeD1Options {
-  /** Consulted before every executed statement; returning an `Error` makes that operation reject. */
-  failOn?: (sql: string, params: unknown[]) => Error | null;
-  /** Rows a `run()` or a batched statement reports written; defaults to zero, which is what a guarded statement answers when it declines. */
-  rowsWritten?: (sql: string, params: unknown[]) => number;
 }
 
 /** Programmable `D1DatabaseLike` stub whose `query` responder supplies results and whose `calls` array records every bound statement. @public */

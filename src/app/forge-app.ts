@@ -14,7 +14,8 @@ import { requestLog } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
 import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
-import { type PageShell, shellCtx } from "./shell";
+import { shellCtx } from "./shell";
+import type { PageShell } from "./types";
 import type { GlobalMiddlewareEntry, RequestState } from "./types";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only

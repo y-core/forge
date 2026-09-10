@@ -1,4 +1,6 @@
-import { type FragmentEntry, mountFragmentObserver } from "./fragment-observer";
+import { mountFragmentObserver } from "./fragment-observer";
+import type { FragmentEntry } from "./types";
+import type { ScrollSpyOptions } from "./types";
 
 /** The marker. `"location"` and never `"page"`: the page has not changed — the reader moved within
  *  it — and `"page"` would announce a navigation that never happened. */
@@ -11,17 +13,6 @@ const CURRENT_VALUE = "location";
 const DEFAULT_ROOT_MARGIN = "0px 0px -70% 0px";
 
 const mountedSpies = new WeakMap<Element, () => void>();
-
-/** Options for {@link mountScrollSpy}. @public */
-export interface ScrollSpyOptions {
-  /** The nav subtree holding the fragment links. */
-  root: Element;
-  /** Selector for the links to spy on. */
-  linkSelector?: string;
-  /** `rootMargin` for the observer — the default biases toward the section at the top of the
-   *  viewport rather than the one merely visible. */
-  rootMargin?: string;
-}
 
 /** Marks the link for the section currently in view with `aria-current="location"` and returns a disposer; idempotent per root. @public */
 export function mountScrollSpy(options: ScrollSpyOptions): () => void {

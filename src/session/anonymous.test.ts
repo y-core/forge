@@ -3,8 +3,8 @@ import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
-import type { SessionKVBinding } from "./kv-storage";
 import { sessionCtx } from "./session";
+import type { SessionKVBinding } from "./types";
 
 const SECRET = "s".repeat(32);
 

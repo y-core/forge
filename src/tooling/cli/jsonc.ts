@@ -1,9 +1,6 @@
-import type { Result } from "../../result/result";
 import { err, ok } from "../../result/result";
-
-/** A path into a JSON document: object keys and array indices, outermost first. @public */
-export type JsonPath = (string | number)[];
-export type Primitive = string | number | boolean | null;
+import type { Result } from "../../result/types";
+import type { JsonPath, JsoncMember, JsoncNode, JsoncParseError } from "./types";
 
 /** Render a path the way a user would point at it: `kv_namespaces[0].id`. */
 export function formatPath(path: JsonPath): string {
@@ -17,27 +14,6 @@ export function formatPath(path: JsonPath): string {
  * exists only to answer "where in the original text does this live?", which is what
  * makes it possible to write an id back without reformatting the file around it.
  */
-
-export type JsoncNode =
-  | { kind: "object"; start: number; end: number; members: JsoncMember[] }
-  | { kind: "array"; start: number; end: number; elements: JsoncNode[] }
-  | { kind: "string" | "number" | "boolean" | "null"; start: number; end: number };
-
-export interface JsoncMember {
-  key: string;
-  /** Offset of the key's opening quote. */
-  keyStart: number;
-  /** Offset just past the key's closing quote. */
-  keyEnd: number;
-  value: JsoncNode;
-  /** Offset just past the value — before any trailing comma or comment. */
-  end: number;
-}
-
-export interface JsoncParseError {
-  message: string;
-  offset: number;
-}
 
 const isWs = (c: string | undefined) => c === " " || c === "\t" || c === "\n" || c === "\r";
 

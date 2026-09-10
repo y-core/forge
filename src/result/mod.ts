@@ -1,2 +1,3 @@
-export type { GuardResult, Result, ValidationResult } from "./result";
+export type { Result } from "./types";
+export type { GuardResult, ValidationResult } from "./types";
 export { err, ok, result, toError } from "./result";

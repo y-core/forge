@@ -14,10 +14,11 @@ import * as core from "../core/mod";
 // oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as server from "../server/mod";
 import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./components";
-import { type CoverageReport, coverageKeys, coverageReport, DEMO_COVERAGE, explainGap, explainStale } from "./coverage";
+import { coverageKeys, coverageReport, DEMO_COVERAGE, explainGap, explainStale } from "./coverage";
 import { COVERAGE_MISSING } from "./coverage-missing";
 import { showcasePaths } from "./route";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
+import type { CoverageReport } from "./types";
 
 // A real sprite binding, not a null stub: a component returning `null` renders no `<use href>`, so
 // no glyph marker in the manifest could ever match, and every icon-dependent axis was unmeasurable

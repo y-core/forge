@@ -4,30 +4,25 @@
 import type { AppContext } from "../../context/types";
 import { mintCsrf } from "../../form/csrf";
 import { redirect } from "../../http/response";
-import type { JSXNode } from "../../jsx/types";
-import { type Result, err, ok } from "../../result/result";
-import type { OtpLength } from "../../ui/core/otp-input";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
+import type { OtpLength } from "../../ui/core/types";
 import { v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
-import type { TotpAppEnrolment } from "../factors/totp-app";
+import type { TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
-import { type AuthIdentity, authCtx } from "./identity";
-import {
-  type AuthPageState,
-  type AuthRequestServices,
-  type AuthWebOptions,
-  authNow,
-  authCsrfHeader,
-  authPasskeyContract,
-  authReturnPath,
-  authSettledPath,
-} from "./options";
+import { authCtx } from "./identity";
+import { authNow, authCsrfHeader, authPasskeyContract, authReturnPath, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
-import { AUTH_VIEWS, type AuthViewName, type AuthViewProps } from "./render";
-import type { AuthGuardName } from "./routes";
+import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
-import type { PasskeyListViewProps } from "./views/passkey-list";
-import type { TotpEnrolState, TotpEnrolViewProps } from "./views/totp-enrol";
+import type { AuthIdentity } from "./types";
+import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthViewName, AuthViewProps } from "./types";
+import type { AuthGuardName } from "./types";
+import type { AuthVerifyDemand, AuthViewRequest, AuthViewResolved } from "./types";
+import type { PasskeyListViewProps } from "./views/types";
+import type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 
 /** How many accounts one administrative page lists before the forward cursor takes over. */
 const ADMIN_PAGE_SIZE = 25;
@@ -73,22 +68,6 @@ async function resolveFallbackFactors(services: AuthRequestServices, userId: str
     if (enrolled.ok && enrolled.data.some((factor) => factor.confirmedAt !== null)) kinds.push(service.kind);
   }
   return kinds;
-}
-
-/** Which factor the verify page is asking for, and whose account it is asking about. @internal */
-export interface AuthVerifyDemand {
-  readonly factor: AuthFactorKind;
-  /** How many digits the presented factor's code has, or `null` when it is answered by a ceremony. */
-  readonly digits: number | null;
-  /** The signed-in identity owing a step-up, or `null` when this is the second half of a sign-in. */
-  readonly identity: AuthIdentity | null;
-  // What an established identity actually owes, which is not always a step-up. Rendering the code
-  // field for anything else builds a form the submit cannot accept: `signin.stepUp` refuses the
-  // primary factor by design, so a page that fell back to it asks for a code nothing will verify.
-  /** What the resolution demanded of an established identity; `null` when there is no identity to demand of. */
-  readonly owed: "step-up" | "enrolment" | "none" | "unknown" | null;
-  /** The kinds an owed enrolment may be completed with, empty unless `owed` is `enrolment`. */
-  readonly kinds: readonly AuthFactorKind[];
 }
 
 // The page serves two ceremonies that look alike: the second half of a sign-in, and a step-up owed
@@ -554,25 +533,6 @@ export const AUTH_VIEW_GUARDS = {
   adminUserEdit: ["require-auth", "require-enrolment", "require-admin"],
   adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up"],
 } as const satisfies { readonly [Name in AuthViewName]: readonly AuthGuardName[] };
-
-/** One auth view resolved against this request. @public */
-export interface AuthViewResolved<Name extends AuthViewName> {
-  readonly name: Name;
-  /** The resolved props — the escape hatch, for a host composing its own markup. */
-  readonly props: AuthViewProps[Name];
-  /** `props` applied to `views[name] ?? forge's own view`. The ergonomic path. */
-  readonly node: JSXNode;
-  /** The status this render carries; `undefined` means 200. */
-  readonly status: number | undefined;
-}
-
-/** What to resolve, and the caller's claim about the guards its route runs. @public */
-export interface AuthViewRequest<Name extends AuthViewName> {
-  readonly name: Name;
-  readonly state?: AuthPageState | undefined;
-  /** The guards this route runs. Required for a guarded page; spell it `AUTH_VIEW_GUARDS.adminUsers`. */
-  readonly guarded?: (typeof AUTH_VIEW_GUARDS)[Name];
-}
 
 // Two of the four guards are observable here and are re-checked rather than trusted; the enrolment
 // pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.

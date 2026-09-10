@@ -13,9 +13,6 @@ export const PASSKEY = {
   nickname: "passkey-nickname",
 } as const;
 
-/** Which ceremony the scope root runs: enrolling a new credential, or signing in with one. @public */
-export type PasskeyMode = "registration" | "authentication";
-
 /** Which ceremony the scope root runs. @public */
 export const PASSKEY_MODE_ATTR = "data-passkey-mode";
 
@@ -43,11 +40,5 @@ export const PASSKEY_REDIRECT_ATTR = "data-passkey-redirect";
 /** Where a redirect target that is not a same-origin path is sent instead. @public */
 export const PASSKEY_REDIRECT_FALLBACK = "/";
 
-/** Why a ceremony ended without a signed-in visitor. @public */
-export type PasskeyFailureReason = "unsupported" | "declined" | "already-enrolled" | "options-failed" | "ceremony-failed" | "verification-failed";
-
 /** Event dispatched on the scope root when a ceremony ends, whichever way it ended. @public */
 export const PASSKEY_OUTCOME_EVENT = "passkey:outcome";
-
-/** `detail` of `PASSKEY_OUTCOME_EVENT`; `reason` is absent exactly when the ceremony succeeded. @public */
-export type PasskeyOutcomeDetail = { mode: PasskeyMode; reason?: PasskeyFailureReason };

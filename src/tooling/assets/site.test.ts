@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildSite } from "./site";
-import { SITE_OUTPUTS, type SiteBuildConfig } from "./types";
+import { SITE_OUTPUTS } from "./types";
+import type { SiteBuildConfig } from "./types";
 
 let outDir: string;
 

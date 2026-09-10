@@ -1,26 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
-import type { ExportsMap } from "./exports";
-import { buildGraph, type DeclaredGraph, diffGraph, findEnumerations, isTestSource, type SourceFile } from "./namespace-graph-parse";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import { buildGraph, diffGraph, findEnumerations, isTestSource } from "./namespace-graph-parse";
 import { collectFiles } from "./source-scan";
-
-/** What the namespace-graph check needs to know about the project. @public */
-export interface NamespaceGraphCheckConfig {
-  /** Application root. */
-  root: string;
-  /** The `exports` map, verbatim from `package.json` — the namespace set is *derived* from it. */
-  exports: ExportsMap;
-  /** The declared graph: primitives, leaf namespaces, and every edge with its kind. */
-  graph: DeclaredGraph;
-  /** Source root walked for imports, relative to `root`. Defaults to `"src"`. */
-  sourceDir?: string;
-  /** Unpublished barrels that are still namespaces for layering purposes. */
-  sealedInternal?: readonly string[];
-  /** Governing document guarded against a returning enumeration, relative to `root`; omit to skip check 3. */
-  enumerationDoc?: string;
-}
+import type { ExportsMap } from "./types";
+import type { DeclaredGraph, SourceFile } from "./types";
+import type { NamespaceGraphCheckConfig } from "./types";
 
 /** The directory of every `mod.ts` the exports map names, plus the sealed-internal barrels. @public */
 export function resolveNamespaces(map: ExportsMap, sealedInternal: readonly string[] = [], sourceDir = "src"): string[] {

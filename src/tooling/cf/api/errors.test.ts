@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import type { DeploymentTarget } from "../target";
+import type { DeploymentTarget } from "../types";
 import { classifyCfError, describeCfFailure } from "./errors";
 import type { CfApiClientError, CfApiClientErrorKind, CfApiError } from "./types";
 import { CfApiClientError as CfError } from "./types";

@@ -3,7 +3,8 @@ import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { AdminUserStore, AuthUserPage } from "../types";
 import { normalizeEmail } from "./email";
-import { adminRefusal, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, type UserRow, uuidKey } from "./rows";
+import { adminRefusal, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
+import type { UserRow } from "./types";
 
 /** Wraps a search term in `LIKE` wildcards, escaping the two the caller's own text may carry. */
 function likeTerm(query: string): string {

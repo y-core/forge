@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import type { MarkdownRules } from "./markdown-parse";
 import { parseMarkdown, renderMarkdown, splitTableRow, validateMarkdown } from "./markdown-parse";
+import type { MarkdownRules } from "./types";
 
 const ALIASED: MarkdownRules = { fence: { style: "backtick", requireLanguage: true, aliases: { typescript: "ts", sh: "bash" } } };
 

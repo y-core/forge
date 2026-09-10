@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import { mapHandler } from "../../testing/route";
-import type { FlashMessage } from "./flash";
 import { createFlash } from "./flash-cookie";
+import type { FlashMessage } from "./types";
 
 const SECRET = "a".repeat(32);
 

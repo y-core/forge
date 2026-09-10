@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { createIcon, type ForgeIcon, Icon } from "./icon";
+import { createIcon, Icon } from "./icon";
+import type { ForgeIcon } from "./types";
 
 describe("Icon component", () => {
   it("renders an svg with a use href combining the sprite and symbol", async () => {

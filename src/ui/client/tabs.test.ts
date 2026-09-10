@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { TAB_SELECTOR, TABS_MOUNTED_ATTR } from "../contracts/tabs-contract";
 import { mountTabs } from "./tabs";
-import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
+import { FakeEvent, fakeTree } from "./test-dom";
+import type { FakeElement } from "./test-dom";
 
 const TAB_ROLE = /\[role='([^']+)'\]/.exec(TAB_SELECTOR)?.[1] ?? TAB_SELECTOR;
 

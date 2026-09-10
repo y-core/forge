@@ -3,14 +3,12 @@
 import type { FC, JSX } from "../../jsx/types";
 import { ALERT_SCOPE } from "../contracts/alert-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
+import type { Tone } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Appearance, Tone } from "../contracts/vocabulary";
+import type { PanelAppearance } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { toneVariants } from "./utils/tone";
-
-/** The appearances a callout takes — a panel is filled or tinted, never outlined or bare. @public */
-export type PanelAppearance = Extract<Appearance, "solid" | "soft">;
 
 type AlertProps = JSX.IntrinsicElements["div"] & {
   tone?: Tone | undefined;

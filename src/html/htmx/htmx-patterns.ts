@@ -1,5 +1,5 @@
-import type { HxAttrs } from "./htmx-attrs";
 import { hxAttrs } from "./htmx-attrs";
+import type { HxAttrs } from "./types";
 
 /** Named `hx-swap` strategy constants (`innerHTML`, `outerHTML`, `beforeend`, …). @public */
 export const SWAP = {

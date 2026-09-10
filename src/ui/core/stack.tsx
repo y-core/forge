@@ -1,11 +1,9 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import type { StackPlacement } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cva } from "./utils/cva";
-
-/** The edge the layers behind the first child fan out towards. @public */
-export type StackPlacement = "top" | "bottom" | "start" | "end";
 
 interface StackProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   placement?: StackPlacement | undefined;

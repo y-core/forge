@@ -1,12 +1,5 @@
 import { balancedSpan, blankSourceComments, lineAt } from "./source-scan";
-
-/** A `<!-- rule:… -->` marker: the id as written, and where it was written. */
-export interface RuleMarker {
-  /** 1-indexed line the marker sits on. */
-  line: number;
-  /** The id exactly as written, including a malformed one. */
-  id: string;
-}
+import type { BarrelImport, ClassLiteral, CustomPropertyCitation, RuleMarker, SkippedClassPosition } from "./types";
 
 const RULE_ID_GRAMMAR = /^forge-ui-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -41,17 +34,6 @@ export function findRuleCitations(source: string): RuleMarker[] {
   return found;
 }
 
-/** An `import { … } from "@y-core/forge/<subpath>"` the corpus writes. */
-export interface BarrelImport {
-  /** 1-indexed line the `import` keyword sits on. */
-  line: number;
-  /** The exports-map key form of the barrel — e.g. `./ui/core`. */
-  subpath: string;
-  /** The names the statement asks the barrel for, `type` markers stripped and `as` aliases resolved
-   *  back to the exported name. */
-  symbols: string[];
-}
-
 /** Every named-import statement in `source` that pulls from `packageName`. */
 export function findBarrelImports(source: string, packageName: string): BarrelImport[] {
   const re = new RegExp(`import\\s+(?:type\\s+)?\\{([^}]*)\\}\\s*from\\s*["'](${packageName.replace("/", "\\/")}\\/[^"']+)["']`, "gs");
@@ -76,16 +58,6 @@ export function findBarrelImports(source: string, packageName: string): BarrelIm
     found.push({ line: lineAt(source, match.index), subpath: `.${specifier.slice(packageName.length)}`, symbols });
   }
   return found;
-}
-
-/** A `--foo` custom property the corpus names, and where. */
-export interface CustomPropertyCitation {
-  /** 1-indexed line the token sits on. */
-  line: number;
-  /** The property including its leading `--`. For a family, the prefix without the trailing `-*`. */
-  property: string;
-  /** True when the corpus named a *family* (`--palette-*`) rather than one property. */
-  family: boolean;
 }
 
 /** Every well-formed `--foo` token in a corpus document, plus every `--foo-*` family citation. */
@@ -113,14 +85,6 @@ export function parseDeclaredCustomProperties(css: string): Set<string> {
     if (name !== undefined) names.add(name);
   }
   return names;
-}
-
-/** One class-shaped string literal and the line it starts on. */
-export interface ClassLiteral {
-  /** 1-indexed line the literal's opening quote sits on. */
-  line: number;
-  /** The literal's contents, quotes stripped. */
-  text: string;
 }
 
 const CLASS_POSITION_GLOBAL = /\bclass(?:Name)?\s*[=:]\s*|\bcn\(|\bcva\(/g;
@@ -216,14 +180,6 @@ function harvestSpan(scanned: string, start: number, end: number, lineOf: (index
 
   consumed.push([cursor, end]);
   return { literals, consumed, skipped };
-}
-
-/** A class position the scan dropped because its span never closes. */
-export interface SkippedClassPosition {
-  /** 1-indexed line the position starts on. */
-  line: number;
-  /** The position as written: up to its opening bracket, or the line the unclosed literal opens on. */
-  text: string;
 }
 
 /** Every class position in `source`, split into the ones read and the ones dropped unread. */

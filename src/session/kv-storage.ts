@@ -1,23 +1,10 @@
 import type { SessionStorage } from "@remix-run/session";
 import { createSession } from "@remix-run/session";
 
+import type { KVSessionStorageOptions, SessionKVBinding } from "./types";
+
 /** The `[values, flash]` tuple `Session` persists — not exported upstream, so derived. */
 type SessionData = NonNullable<Parameters<typeof createSession>[1]>;
-
-/** Minimal structural KV surface the session store needs; any Workers `KVNamespace` satisfies it. @public */
-export interface SessionKVBinding {
-  get(key: string, options: { type: "text" }): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-  delete(key: string): Promise<void>;
-}
-
-/** Options for `createKVSessionStorage`. @public */
-export interface KVSessionStorageOptions {
-  /** KV key prefix; the stored key is `${prefix}:${session.id}`. */
-  prefix?: string;
-  /** KV expiration TTL in seconds, refreshed (sliding) on every save. */
-  ttlSeconds?: number;
-}
 
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365;
 

@@ -1,26 +1,14 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+import type { FC } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
-import type { Appearance, Shape, Size, Tone } from "../contracts/vocabulary";
-import type { ForgeIcon } from "./icon";
+import type { Appearance, Shape, Size, Tone } from "../contracts/types";
 import { Spinner } from "./spinner";
+import type { ButtonProps } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 import { toneVariants } from "./utils/tone";
-
-export interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  tone?: Tone | undefined;
-  appearance?: Appearance | undefined;
-  size?: Size | undefined;
-  shape?: Shape | undefined;
-  asChild?: boolean | undefined;
-  /** Marks the button busy: `aria-busy`, `data-busy`, and a `Spinner` before the children when `loadingIcon` is given. */
-  loading?: boolean | undefined;
-  loadingIcon?: ForgeIcon<"spinner"> | undefined;
-  children?: JSXNode | undefined;
-}
 
 const buttonBox = cva({
   base: "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors",

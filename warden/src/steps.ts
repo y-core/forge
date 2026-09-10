@@ -1,7 +1,8 @@
 /** The gate steps for the checks warden owns. Labels are fixed: they are the `--only` tokens. */
 
-import { checkStep, type StepOptions } from "../../src/tooling/gate/builders";
-import type { CheckStep, StepRequirement } from "../../src/tooling/gate/steps";
+import { checkStep } from "../../src/tooling/gate/builders";
+import type { StepOptions } from "../../src/tooling/gate/types";
+import type { CheckStep, StepRequirement } from "../../src/tooling/gate/types";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
 import { checkDesign, type DesignCheckConfig } from "./checks/design";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";

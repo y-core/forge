@@ -7,15 +7,14 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Link } from "../../../ui/core/link";
-import { type OtpLength, OtpInput } from "../../../ui/core/otp-input";
+import { OtpInput } from "../../../ui/core/otp-input";
 import { cn } from "../../../ui/core/utils/cn";
 import { AUTH_OTP_DIGITS } from "../../config";
 import { PASSKEY } from "../../passkey-contract";
 import type { AuthFactorKind } from "../../types";
-import { type AuthPasskeyContract, AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
-import type { AuthViewChrome } from "./types";
+import { AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
+import type { VerifyViewProps } from "./types";
 
 const SECOND_MS = 1000;
 const MINUTE_SECONDS = 60;
@@ -35,39 +34,6 @@ function resentNotice(reissueAfterMs: number | undefined): string {
   const asked = "If another code was due, it is on its way — check your inbox.";
   return reissueAfterMs === undefined ? asked : `${asked} You can ask again in ${waitFor(reissueAfterMs)}.`;
 }
-
-/** What the verification page renders. @public */
-export type VerifyViewProps = AuthViewChrome & {
-  /** Which enrolled factor is being presented. A step-up on `passkey` is a ceremony, not a code. */
-  readonly factor: AuthFactorKind;
-  /** How wide the code field is, read off the factor being presented. Defaults to the six digits forge's own OTP uses. */
-  readonly codeDigits?: OtpLength | undefined;
-  /** The ceremony contract, required when `factor` is `passkey`. */
-  readonly passkey?: AuthPasskeyContract | undefined;
-  readonly submitPath: string;
-  /** Where a new code is asked for. Only an emailed code can be re-sent. */
-  readonly resendPath?: string | undefined;
-  readonly signinPath: string;
-  readonly csrfToken: string;
-  // A token is minted for one path, so the second form on this page cannot borrow the first's.
-  /** The token for `resendPath`, required whenever that path is given. */
-  readonly resendToken?: string | undefined;
-  // Deliberately "a code was asked for", never "a code was sent": only a registered address can be
-  // inside the reissue window, so reporting what actually happened would bin an address list.
-  /** Whether this render follows a press of the resend control. */
-  readonly resent?: boolean | undefined;
-  /** The wait the factor enforces between codes, read off the factor rather than named in copy. */
-  readonly reissueAfterMs?: number | undefined;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  /** The address the code went to, so the visitor can see they are watching the right inbox. */
-  readonly email?: string | undefined;
-  /** A refusal about the code itself. */
-  readonly fieldError?: string | undefined;
-  /** A refusal about the attempt as a whole: too many tries, an expired sign-in. */
-  readonly error?: string | undefined;
-  readonly icon: ForgeIcon<"alert" | "key" | "mail">;
-};
 
 /** How the page names the factor it is asking the visitor to present. */
 const PROMPT: Record<AuthFactorKind, string> = {

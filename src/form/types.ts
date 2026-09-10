@@ -1,6 +1,6 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
-import type { GuardResult } from "../result/result";
+import type { GuardResult } from "../result/types";
 
 /** Options for `createCsrfToken`. @public */
 export interface CsrfTokenOptions {

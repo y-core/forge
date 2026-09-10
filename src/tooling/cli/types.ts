@@ -1,4 +1,4 @@
-import type { Colorize } from "../term/color";
+import type { Colorize } from "../term/types";
 
 export interface BooleanFlagDef {
   type: "boolean";
@@ -105,3 +105,82 @@ export interface ScopedLogger {
 export type AnyFlags = Record<string, boolean | string | string[] | undefined>;
 /** Flag-type-erased call signature `execute` invokes a command through once its flag generic is gone. @internal */
 export type CallableCommand = { run?: (args: string[], flags: AnyFlags, ctx?: CliContext) => void | Promise<void> };
+
+/** Where a bin looks for its configuration module, and what to call it when it is wrong. */
+export interface ConfigModuleRequest {
+  /** Directory a relative `path` resolves against. */
+  root: string;
+  /** Module path, absolute or relative to `root`. */
+  path: string;
+  /** Whether the caller named `path` rather than falling back to the default. */
+  explicit: boolean;
+  /** What the module holds, named in every error — e.g. `"step table"`. */
+  what: string;
+}
+
+/** How wide to render, and what to render it in. @public */
+export interface HelpOptions {
+  /** Columns the block must fit in. Defaults to 80, so a test can pin it and stay exact-match. */
+  width?: number;
+  /** Styler for the headings. Defaults to `PLAIN`. */
+  style?: Colorize;
+}
+
+export interface JsoncEdit {
+  path: JsonPath;
+  value: Primitive;
+}
+
+export interface JsoncEditError {
+  message: string;
+  path?: JsonPath | undefined;
+}
+
+/** A path into a JSON document: object keys and array indices, outermost first. @public */
+export type JsonPath = (string | number)[];
+
+export type Primitive = string | number | boolean | null;
+
+export type JsoncNode =
+  | { kind: "object"; start: number; end: number; members: JsoncMember[] }
+  | { kind: "array"; start: number; end: number; elements: JsoncNode[] }
+  | { kind: "string" | "number" | "boolean" | "null"; start: number; end: number };
+
+export interface JsoncMember {
+  key: string;
+  /** Offset of the key's opening quote. */
+  keyStart: number;
+  /** Offset just past the key's closing quote. */
+  keyEnd: number;
+  value: JsoncNode;
+  /** Offset just past the value — before any trailing comma or comment. */
+  end: number;
+}
+
+export interface JsoncParseError {
+  message: string;
+  offset: number;
+}
+
+/** What one argv element turned out to be. @public */
+export type TokenKind = "option" | "option-terminator" | "positional";
+
+/** One element of the command line, classified but not yet matched against any definition. @public */
+export interface ArgToken {
+  kind: TokenKind;
+  /**
+   * Index into the original argv — **not** into this token stream.
+   *
+   * Members of an expanded cluster all carry the index of the one argv element they came from,
+   * which is what makes `argv.slice(token.index)` correct whatever the token was.
+   */
+  index: number;
+  /** Flag name: the long name without `--`, or the single letter without `-`. */
+  name?: string;
+  /** The element as written, dashes included. */
+  raw?: string;
+  /** A positional's text, or an option's inline `=` value. */
+  value?: string;
+  /** Whether `value` came from an `=` rather than the next element. */
+  inline?: boolean;
+}

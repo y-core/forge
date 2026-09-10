@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
-import { type FakeElement, FakeEvent, fakeTree, type FakeWindow } from "../../ui/client/test-dom";
+import { FakeEvent, fakeTree } from "../../ui/client/test-dom";
+import type { FakeElement, FakeWindow } from "../../ui/client/test-dom";
 import {
   PASSKEY,
   PASSKEY_CSRF_HEADER_ATTR,
@@ -10,20 +11,13 @@ import {
   PASSKEY_OPTIONS_PATH_ATTR,
   PASSKEY_OPTIONS_TOKEN_ATTR,
   PASSKEY_OUTCOME_EVENT,
-  type PasskeyOutcomeDetail,
   PASSKEY_REDIRECT_ATTR,
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
-import {
-  ceremonyReason,
-  encodeCredential,
-  mountPasskey,
-  type PasskeyContract,
-  type PasskeyRealm,
-  readPasskeyContract,
-  runPasskeyCeremony,
-} from "./passkey";
+import type { PasskeyOutcomeDetail } from "../types";
+import { ceremonyReason, encodeCredential, mountPasskey, readPasskeyContract, runPasskeyCeremony } from "./passkey";
+import type { PasskeyContract, PasskeyRealm } from "./types";
 
 const OPTIONS_PATH = "/auth/passkey/options";
 const VERIFY_PATH = "/auth/passkey/verify";

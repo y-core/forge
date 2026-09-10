@@ -1,4 +1,5 @@
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { build } from "../index/build";

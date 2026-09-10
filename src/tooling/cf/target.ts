@@ -1,12 +1,5 @@
 import type { WranglerConfig } from "./types";
-
-/**
- * Where this config deploys to. A binding means different things on either side —
- * a Pages project keeps its variables under `deployment_configs`, a Worker script
- * under `settings.bindings` — so handlers that touch the deployment itself must
- * know which they are addressing.
- */
-export type DeploymentTarget = { kind: "worker" | "pages"; name: string };
+import type { DeploymentTarget } from "./types";
 
 /**
  * Pages iff the config declares a build output directory and no Worker entry point.

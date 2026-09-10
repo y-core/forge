@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 
 import { contrastRatio as uiContrastRatio, relativeLuminance as uiRelativeLuminance } from "../../../ui/contracts/theme/color";
 import { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./color";
-import { type Mode, parseThemeDeclarations, resolveStep } from "./contrast-parse";
+import { parseThemeDeclarations, resolveStep } from "./contrast-parse";
+import type { Mode } from "./types";
 
 const SAMPLES = ["#000000", "#ffffff", "#646464", "#b4b4b4", "#f0f0f0", "#202020", "#c10007", "#ffa2a2", "#008236", "#1c398e"];
 

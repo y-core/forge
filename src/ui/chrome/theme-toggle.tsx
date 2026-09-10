@@ -2,22 +2,13 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
 import { scopeAttrs } from "../contracts/scope-attrs";
-import { THEME_SCOPE, type ThemeAction } from "../contracts/theme-toggle-contract";
-import type { Size } from "../contracts/vocabulary";
-import type { ForgeIcon } from "../core/icon";
+import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
+import type { ThemeAction } from "../contracts/types";
+import type { Size } from "../contracts/types";
 import { cn } from "../core/utils/cn";
 import { Resumable } from "../server/resumable";
 import { DEFAULT_PREF } from "./theme";
-
-/** Props for {@link ThemeToggle}. @public */
-export interface ThemeToggleProps {
-  /** Bound icon supplying the `sun`, `moon`, and `monitor` glyphs. */
-  icon: ForgeIcon<"sun" | "moon" | "monitor">;
-  /** Control size, mapped to a 16 / 20 / 24 px icon. @default "md" */
-  size?: Size | undefined;
-  /** Additional classes merged onto the toggle button. */
-  class?: string | undefined;
-}
+import type { ThemeToggleProps } from "./types";
 
 const ICON_PX: Record<Size, number> = { sm: 16, md: 20, lg: 24 };
 

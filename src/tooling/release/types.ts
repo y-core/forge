@@ -89,3 +89,6 @@ export interface VersionDeps {
   getCommitsSinceTag: (cwd: string, tag: string) => string[];
   readPackageVersion: (cwd: string) => string;
 }
+
+/** Reads a barrel's source at a repo-relative path, or `null` when it is absent. */
+export type BarrelReader = (relPath: string) => string | null;

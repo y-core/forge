@@ -1,27 +1,4 @@
-/** The two blocks a scheme file declares. Matches `Mode` in `src/tooling/gate/checks/contrast-parse.ts`. @public */
-export type Mode = "light" | "dark";
-
-/** A twelve-position scale, as a tuple rather than an array. @public */
-export type Scale<T> = readonly [T, T, T, T, T, T, T, T, T, T, T, T];
-
-/** A colour in OKLCh: lightness 0–1, chroma (0–0.4 in practice), hue in degrees. @public */
-export interface Oklch {
-  l: number;
-  c: number;
-  h: number;
-}
-
-/** The fixed half of a scale: per-step lightness, and per-step chroma as weights in 0–1. @public */
-export interface Ramp {
-  readonly lightness: Scale<number>;
-  readonly chroma: Scale<number>;
-}
-
-/** The two free parameters. `hue` is degrees; `chroma` is the ramp's **peak** chroma. @public */
-export interface Dials {
-  readonly hue: number;
-  readonly chroma: number;
-}
+import type { Dials, Mode, Oklch, Ramp, Scale, ScaleFamily } from "./types";
 
 // Light steps 1 and 2 are non-monotone on purpose: forge swaps them so `--card` reads as raised
 // above `--background` without the semantic layer needing a `.dark` twin.
@@ -51,9 +28,6 @@ export const ACCENT_RAMP: Readonly<Record<Mode, Ramp>> = {
     chroma: [0.129, 0.158, 0.369, 0.495, 0.546, 0.582, 0.629, 0.715, 1, 0.92, 0.596, 0.224],
   },
 };
-
-/** The two scales a generated scheme declares. @public */
-export type ScaleFamily = "gray" | "accent";
 
 /** The highest peak chroma each family's dial reaches. @public */
 export const CHROMA_MAX: Readonly<Record<ScaleFamily, number>> = { gray: 0.1, accent: 0.2 };

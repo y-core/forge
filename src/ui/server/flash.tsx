@@ -3,19 +3,10 @@
 
 import { oobSwap } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
-import type { Tone } from "../contracts/vocabulary";
-import type { ToastPosition } from "../core/toast";
+import type { Tone } from "../contracts/types";
 import { Toast } from "../core/toast";
-
-/** The severity of a flash message. @public */
-export type FlashType = "success" | "info" | "warning" | "error";
-
-/** One flash message carried across a redirect. @public */
-export interface FlashMessage {
-  type: FlashType;
-  text: string;
-  title?: string;
-}
+import type { ToastPosition } from "../core/types";
+import type { FlashMessage, FlashType } from "./types";
 
 const FLASH_DURATION_MS = 5000;
 

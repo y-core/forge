@@ -1,23 +1,4 @@
-/** One subpath section of a README, located by the `> Import path:` line that opens it. */
-export interface ImportPathAnchor {
-  /** The exports-map key form of the subpath — e.g. `./ui/controls`. */
-  subpath: string;
-  /** The barrel the anchor points at, repo-relative as written — e.g. `src/ui/controls/mod.ts`. */
-  barrel: string;
-  /** 1-indexed line the anchor itself sits on. */
-  line: number;
-  /** 1-indexed line of the `##` heading the anchor belongs to. */
-  sectionStart: number;
-  /** 1-indexed line the next `##` heading sits on, or one past the last line. Exclusive. */
-  sectionEnd: number;
-}
-
-/** One symbol a documentation table or a `**Types:**` sentence names, and where it was named. */
-export interface DocumentedSymbol {
-  name: string;
-  /** 1-indexed line the symbol was written on. */
-  line: number;
-}
+import type { DocumentedSymbol, ImportPathAnchor } from "./types";
 
 /** The line that opts a README section into the check. @public */
 export const ANCHOR_RE = /^>\s*Import path:\s*`([^`]+)`\s*→\s*`([^`]+)`/;

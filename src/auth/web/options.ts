@@ -3,93 +3,10 @@ import { CSRF_HEADER_DEFAULT } from "../../form/constants";
 import { mintCsrf } from "../../form/csrf";
 import { csrfHeaderCtx } from "../../form/csrf-context";
 import { safeRedirectPath } from "../../http/redirect-path";
-import type { ForgeIcon } from "../../ui/core/icon";
-import type { AdminUserService } from "../admin/service";
-import type { AuthFactorRegistry } from "../factors/registry";
-import type { AuthEmailChangeFlow } from "../flows/email-change";
-import type { AuthSigninFlow } from "../flows/signin";
-import type { AuthSignupFlow } from "../flows/signup";
-import { PASSKEY_CSRF_HEADER_DEFAULT, type PasskeyMode } from "../passkey-contract";
-import type { UserVerification } from "../passkey/options";
-import type { AdminUserOutcome, AuthAlgorithm, ChallengeStore, CredentialStore, FactorStore, UserStore } from "../types";
-import type { AuthAccountPaths, AuthAdminPaths, AuthEntryPaths } from "./paths";
-import type { AuthViews } from "./render";
-import type { AuthPasskeyContract } from "./views/passkey-enrol";
-
-/** The sprite symbols forge's own auth pages draw from. @public */
-export type AuthIconName = "alert" | "chevron-right" | "key" | "mail";
-
-// The discoverable sign-in has no user to name, so it cannot run through `AuthFactorService`, whose
-// `createChallenge` takes a `userId`. These are the parts the ceremony builders need instead.
-/** What a passkey ceremony is held against on this request; absent when the deployment offers no passkey. @public */
-export interface AuthPasskeyCeremonyOptions {
-  readonly rpId: string;
-  readonly rpName: string;
-  readonly origin: string;
-  /** The session the challenge is bound to, so a challenge issued to one visitor cannot be answered by another. */
-  readonly sessionId: string;
-  readonly challenges: ChallengeStore;
-  readonly algorithms?: readonly AuthAlgorithm[];
-  readonly ttlSeconds?: number;
-  // The stronger posture was unreachable: a discoverable sign-in ran at forge's own defaults with no
-  // way to raise them, while `createPasskeyFactor` picks its own per role.
-  /** What the authenticator is asked for. Defaults to `preferred`, which admits an authenticator that cannot verify a user. */
-  readonly userVerification?: UserVerification;
-  /** Whether an assertion that did not verify the user is refused. Defaults to `false`, so asking is not requiring. */
-  readonly requireUserVerification?: boolean;
-}
-
-/** The domain services one auth request runs against, built per request because a ceremony is bound to its session. @public */
-export interface AuthRequestServices {
-  readonly users: UserStore;
-  readonly credentials: CredentialStore;
-  readonly factors: AuthFactorRegistry;
-  /** The enrolment rows themselves, which the registry keeps private and the account pages must delete. */
-  readonly enrolments: FactorStore;
-  readonly signin: AuthSigninFlow;
-  readonly signup: AuthSignupFlow;
-  readonly emailChange: AuthEmailChangeFlow;
-  readonly admin: AdminUserService;
-  readonly passkey?: AuthPasskeyCeremonyOptions | undefined;
-}
-
-/** The three href maps every loader and action reads its targets off, so no path literal is written twice. @public */
-export interface AuthWebPaths {
-  readonly auth: AuthEntryPaths;
-  readonly account: AuthAccountPaths;
-  readonly admin: AuthAdminPaths;
-}
-
-/** What every loader, action factory and `register*` needs. @public */
-export interface AuthWebOptions<Bindings = Record<string, unknown>> {
-  /** Builds this request's services; per request because a passkey ceremony is bound to its session. */
-  readonly resolveServices: (c: AppContext<Bindings>) => AuthRequestServices | Promise<AuthRequestServices>;
-  readonly paths: AuthWebPaths;
-  readonly icon: ForgeIcon<AuthIconName>;
-  /** Markup a consumer replaces page by page; an entry receives exactly the props forge's own view does. */
-  readonly views?: AuthViews | undefined;
-  /** Where a settled sign-in lands when the request carried no return-to. Defaults to the passkey page. */
-  readonly settledPath?: string | undefined;
-  /** Query parameter carrying the return-to path. Defaults to `next`. */
-  readonly returnParam?: string | undefined;
-  /** The clock every flow call is made against. Defaults to `Date.now`. */
-  readonly now?: (() => number) | undefined;
-}
-
-/** Refusal copy and kept input one page render carries; the view owns everything else it says. @public */
-export interface AuthPageState {
-  /** The value the visitor already typed, kept across a refusal. */
-  readonly email?: string | undefined;
-  /** A refusal about one field, in the web layer's words. */
-  readonly fieldError?: string | undefined;
-  /** A refusal about the attempt as a whole. */
-  readonly error?: string | undefined;
-  /** The address a confirmation has just gone out to. */
-  readonly sentTo?: string | undefined;
-  /** What an administrative write last reported for the account being rendered. */
-  readonly outcome?: AdminUserOutcome | undefined;
-  readonly status?: number | undefined;
-}
+import { PASSKEY_CSRF_HEADER_DEFAULT } from "../passkey-contract";
+import type { PasskeyMode } from "../types";
+import type { AuthWebOptions } from "./types";
+import type { AuthPasskeyContract } from "./views/types";
 
 /** This request's clock. @internal */
 export function authNow<Bindings>(options: AuthWebOptions<Bindings>): number {

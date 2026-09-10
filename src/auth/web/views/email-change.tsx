@@ -7,30 +7,10 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
-import type { AuthViewChrome } from "./types";
-
-/** What the email-change page renders. @public */
-export type EmailChangeViewProps = AuthViewChrome & {
-  /** The address in force now, so the visitor can see what they are replacing. */
-  readonly currentEmail: string;
-  readonly submitPath: string;
-  readonly accountPath: string;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  /** The new address the visitor already typed, kept across a refusal. */
-  readonly email?: string | undefined;
-  readonly fieldError?: string | undefined;
-  /** A refusal about the attempt as a whole. */
-  readonly error?: string | undefined;
-  /** Set once the confirmation has gone out, so the page reports the outcome rather than repeating the form. */
-  readonly sentTo?: string | undefined;
-  readonly icon: ForgeIcon<"alert" | "mail">;
-};
+import type { EmailChangeViewProps } from "./types";
 
 // Design Read: a signed-in visitor changing the address they sign in with; the one action is
 // requesting it; failure is a rejected address — `destructive` Alert above, the typed address kept.

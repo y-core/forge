@@ -7,41 +7,13 @@ import { contextVar } from "../context/accessor";
 import type { AppContext } from "../context/types";
 import { renderPage } from "../jsx/render-to-string";
 import type { JSXNode } from "../jsx/types";
-import { type PageMeta, metaTags } from "./meta";
-
-// Open on purpose: a closed union of mount names would make every mountable forge adds later a
-// breaking change for every shell a consumer has already written.
-/** Which mount and page a shell is wrapping, so one shell can vary its chrome. @public */
-export interface ShellSlot {
-  /** The mountable rendering this page — `auth`, `showcase`, `logs`, or a consumer's own. */
-  readonly mount: string;
-  /** Which page of that mount, in the mount's own vocabulary. */
-  readonly page: string;
-  /** What this page says about itself in `<head>`, the mount's own copy resolved. */
-  readonly meta: PageMeta;
-}
-
-/** The app's document shell, registered once and resolved per request. @public */
-export type PageShell<Bindings = Record<string, unknown>> = (
-  c: AppContext<Bindings>,
-  content: JSXNode,
-  slot: ShellSlot,
-) => JSXNode | Promise<JSXNode>;
+import { metaTags } from "./meta";
+import type { PageShell, ShellDocument, ShellSlot } from "./types";
 
 // `setShell` is the only writer, so absence means the app registered none — read with `getOptional`.
 /** This request's shell. @internal */
 // oxlint-disable-next-line typescript/no-explicit-any -- bindings are the app's, not this slot's
 export const shellCtx = contextVar<PageShell<any>>("pageShell");
-
-/** The chrome `pageShell` renders around a mount's content. @public */
-export interface ShellDocument {
-  /** Stylesheets to link; without one the page renders unstyled, since forge ships no URL it could guess. */
-  readonly stylesheet?: string | readonly string[];
-  /** Scripts to load as modules at the end of `<body>`. */
-  readonly script?: string | readonly string[];
-  /** `<html lang>`. Defaults to `en`. */
-  readonly lang?: string;
-}
 
 /** One entry of a `string | readonly string[]` option as a list, so a single value needs no array. */
 function hrefs(value: string | readonly string[] | undefined): readonly string[] {

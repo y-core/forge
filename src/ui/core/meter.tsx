@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import type { MeterState } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
@@ -35,9 +36,6 @@ const MeterValue: FC<JSX.IntrinsicElements["span"]> = ({ class: cls, children, "
     {children}
   </span>
 );
-
-/** Which of the three bands a measured value reads as. @public */
-export type MeterState = "optimum" | "suboptimum" | "poor";
 
 // `Number.isFinite`, not `?? fallback`: the props are typed `number`, so what actually arrives from
 // a computed value is `NaN`, and every comparison against it is false.

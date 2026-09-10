@@ -4,9 +4,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import { attrOf, attrsOf, elementOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../test-support";
-import { EmailChangeView, type EmailChangeViewProps } from "./email-change";
+import { EmailChangeView } from "./email-change";
+import type { EmailChangeViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert" | "mail">;
 

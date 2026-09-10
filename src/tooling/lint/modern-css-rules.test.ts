@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { RULE_CORPUS_PATH } from "./design-rules";
-import { MODERN_CSS_CITED_RULES, MODERN_CSS_RULES, type ModernCssCitedRuleId, type ModernCssRuleId, modernCssRule } from "./modern-css-rules";
+import { MODERN_CSS_CITED_RULES, MODERN_CSS_RULES, modernCssRule } from "./modern-css-rules";
+import type { ModernCssCitedRuleId, ModernCssRuleId } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 

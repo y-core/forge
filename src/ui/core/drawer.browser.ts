@@ -1,8 +1,9 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
-import type { PhysicalSide } from "../contracts/state-attrs";
+import type { PhysicalSide } from "../contracts/types";
 import { Drawer } from "./drawer";
 
 const CSS = { css: ["./ui/assets/css/forge-ui.css"] };

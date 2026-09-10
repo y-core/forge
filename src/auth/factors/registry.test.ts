@@ -9,14 +9,8 @@ import { fakeD1 } from "../../testing/fakes";
 import { AuthStoreError } from "../errors";
 import { createFactorStore } from "../stores/factors";
 import type { AuthFactor, AuthFactorKind, FactorStore } from "../types";
-import {
-  type AuthFactorPolicy,
-  type AuthFactorService,
-  type AuthFactorsOptions,
-  type EnrollableFactorService,
-  authFactorContext,
-  createFactorRegistry,
-} from "./registry";
+import { authFactorContext, createFactorRegistry } from "./registry";
+import type { AuthFactorPolicy, AuthFactorService, AuthFactorsOptions, EnrollableFactorService } from "./types";
 
 const USER_ID = uuidv7();
 

@@ -1,19 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { parseCallableExports } from "./barrel-parse";
 import { collectFiles } from "./source-scan";
-
-/** What the co-location check needs to know about the project. @public */
-export interface CoLocationCheckConfig {
-  /** Repository root; every reported path is relative to it. */
-  root: string;
-  /** Directories walked for source modules, relative to `root`. */
-  sources: readonly string[];
-  /** Modules exempt from needing a co-located test, each `root`-relative posix path mapped to why. */
-  exempt?: ReadonlyMap<string, string>;
-}
+import type { CoLocationCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 

@@ -2,8 +2,6 @@ import {
   TURNSTILE,
   TURNSTILE_ABANDONED_EVENT,
   TURNSTILE_ACTION_PATTERN,
-  type TurnstileAbandonedDetail,
-  type TurnstileAbandonReason,
   TURNSTILE_CDATA_PATTERN,
   TURNSTILE_EXECUTE_TIMEOUT_MS,
   TURNSTILE_INTERACTIVE_TIMEOUT_MS,
@@ -11,6 +9,7 @@ import {
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
 } from "../contracts/turnstile-contract";
+import type { TurnstileAbandonReason, TurnstileAbandonedDetail } from "../contracts/types";
 import { activeElement, asElement, contains, eventTarget, ownerDocument, ownerWindow } from "./dom";
 
 interface TurnstileAPI {

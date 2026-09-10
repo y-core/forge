@@ -1,20 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { type CheckResult, checkResult, fail } from "../finding";
+import { checkResult, fail } from "../finding";
+import type { CheckResult } from "../types";
 import { fileURLToPathish } from "./design-system";
-
-/** What a bundle-drift check needs to know about the project. @public */
-export interface BundleCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** The TypeScript entry, relative to `root`. */
-  entry: string;
-  /** The committed bundle node loads, relative to `root`. */
-  bundle: string;
-  /** The command that regenerates the bundle, named in the banner and in every failure. */
-  fixer: string;
-}
+import type { BundleCheckConfig } from "./types";
 
 /** Whether `esbuild` can be resolved — a bundle cannot be rebuilt without it, and it is an optional peer. @public */
 export function hasEsbuild(): boolean {

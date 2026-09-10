@@ -5,7 +5,7 @@ import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { createConfig } from "../config/config";
 import { csrfProtection, importCsrfKey } from "../form/csrf";
-import type { SerializedError } from "../logging/serialize-error";
+import type { SerializedError } from "../logging/types";
 import { createSecurityHeaders } from "../security/headers";
 import { rateLimit } from "../security/rate-limit";
 import { requestId } from "../security/request-id";

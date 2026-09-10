@@ -1,18 +1,9 @@
-import {
-  ACCENT_RAMP,
-  buildScale,
-  contrastRatio,
-  GRAY_RAMP,
-  type Mode,
-  oklchCss,
-  type Ramp,
-  type Scale,
-  type ScaleFamily,
-  toSrgbGamut,
-} from "./color";
+import { ACCENT_RAMP, buildScale, contrastRatio, GRAY_RAMP, oklchCss, toSrgbGamut } from "./color";
 import { ACCENT_CONTRAST, CRITERION, scalePairs, sideStep } from "./contrast-pairs";
+import type { Mode, Ramp, Scale, ScaleFamily } from "./types";
 
-export type { ScaleFamily } from "./color";
+export type { ScaleFamily } from "./types";
+import type { CopyTarget, Dial, DialValues, GeneratedTheme, LiveRatio, SchemePreset } from "./types";
 
 /** Resumable-scope name the customiser's lever panel stamps. @public */
 export const CUSTOMISE_SCOPE = "customise";
@@ -38,18 +29,6 @@ export const COPY_STATUS_ATTR = "data-copy-status";
 /** How long a copy button reads "Copied" before its own label returns. @public */
 export const COPY_CONFIRM_MS = 2000;
 
-/** One copy control: the element it reads, and the three things it can say. @public */
-export interface CopyTarget {
-  readonly id: string;
-  /** The element whose `textContent` is copied — what is displayed is what is copied. */
-  readonly source: string;
-  readonly label: string;
-  readonly copied: string;
-  /** Announced through the status span, never through the button's accessible name. */
-  readonly announce: string;
-  readonly failed: string;
-}
-
 /** The two things the customiser hands you, and the control beside each. @public */
 export const COPY_TARGETS: readonly CopyTarget[] = [
   {
@@ -69,27 +48,6 @@ export const COPY_TARGETS: readonly CopyTarget[] = [
     failed: "This browser will not let the page copy; select the CSS and copy it instead",
   },
 ];
-
-/** One lever: what it writes, what it is called, and where it may travel. @public */
-export interface Dial {
-  /** The `SignalRecord` field, the `data-field` the slider stamps, and the state key. */
-  readonly field: string;
-  /** The query-string parameter. */
-  readonly param: string;
-  /** The control's accessible name; must contain {@link short} verbatim. */
-  readonly label: string;
-  /** The family this dial belongs to, printed once per row, or `null` to stand alone. */
-  readonly group: string | null;
-  /** The part of {@link label} drawn beside the control, once the family has been printed. */
-  readonly short: string;
-  readonly min: number;
-  readonly max: number;
-  readonly step: number;
-  /** The value the shipped default scheme sits at, and what an absent parameter means. */
-  readonly fallback: number;
-  /** The unit the number is in, for the readout. */
-  readonly unit: string;
-}
 
 /** The eight levers, in the order they are rendered; chroma is carried in thousandths. @public */
 export const DIALS: readonly Dial[] = [
@@ -125,9 +83,6 @@ export function leverRows(dials: readonly Dial[] = DIALS): readonly (readonly Di
   return rows;
 }
 
-/** Every dial's value, keyed by field. The loader produces one; the scope rehydrates one. @public */
-export type DialValues = Record<string, number>;
-
 /** The dials as a query string. @public */
 export function dialQuery(dials: DialValues): string {
   // `??` passes a NaN straight through, and `?ah=NaN` is a URL that reproduces nothing.
@@ -145,17 +100,6 @@ export const PRESET_ACTION = "applyPreset";
 
 /** The option value standing for "no shipped scheme reproduces these dials". @public */
 export const PRESET_CUSTOM = "";
-
-/** A shipped scheme, and the gray dials that reproduce it. @public */
-export interface SchemePreset {
-  /** Matches the scheme file's name without its prefix — `stone` for `theme-stone.css`. */
-  readonly id: string;
-  readonly file: string;
-  /** How the scheme reads, in one word. */
-  readonly character: string;
-  readonly grayHue: number;
-  readonly grayChroma: number;
-}
 
 // Fitted, not transcribed: only `neutral` is byte-exact; the rest land within 3/255 per channel,
 // and `color.test.ts` re-derives the fit against the real CSS files.
@@ -213,14 +157,6 @@ export function scaleVars(family: ScaleFamily, scales: GeneratedTheme[ScaleFamil
     pairs.push([stepProperty(family, step), lightDark(scales.light.oklch[step] ?? "", scales.dark.oklch[step] ?? "")]);
   }
   return pairs;
-}
-
-// `solid` is kept beside `oklch` rather than derived from it: the ratios and the preview both work
-// in the byte-quantised sRGB the hex names.
-/** Both families, both modes — everything a scheme declares, from five numbers. @public */
-export interface GeneratedTheme {
-  readonly gray: Readonly<Record<Mode, { solid: Scale<string>; oklch: Scale<string> }>>;
-  readonly accent: Readonly<Record<Mode, { solid: Scale<string>; oklch: Scale<string> }>>;
 }
 
 type ScaleStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
@@ -313,17 +249,6 @@ export const STEP_SEGMENTS: readonly { readonly label: string; readonly span: nu
 /** The `data-ratio` value one cell carries. @public */
 export function ratioKey(token: string, background: string, mode: Mode): string {
   return `${token}|${background}:${mode}`;
-}
-
-/** One computed cell: its handle, its number, and the exact text both writers print. @public */
-export interface LiveRatio {
-  readonly key: string;
-  readonly token: string;
-  readonly mode: Mode;
-  readonly value: number;
-  readonly floor: number;
-  /** `"5.19:1 ✓"` — the exact text both the Worker and the browser print. */
-  readonly text: string;
 }
 
 /** Every audited pair a generated scheme can actually be measured on, in both modes. @public */

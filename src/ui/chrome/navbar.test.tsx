@@ -5,8 +5,9 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { createIcon } from "../core/icon";
-import { Navbar, type NavPlacement } from "./navbar";
-import type { NavDefinition } from "./navbar-items";
+import { Navbar } from "./navbar";
+import type { NavPlacement } from "./types";
+import type { NavDefinition } from "./types";
 
 const id = (key: string) => `/route/${key}`;
 

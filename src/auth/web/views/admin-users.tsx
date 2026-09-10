@@ -7,27 +7,13 @@ import { Button } from "../../../ui/core/button";
 import { EmptyState } from "../../../ui/core/empty-state";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { Pagination } from "../../../ui/core/pagination";
 import { Table } from "../../../ui/core/table";
 import { cn } from "../../../ui/core/utils/cn";
-import type { AuthUser } from "../../types";
-import type { AuthAdminPaths } from "../paths";
 import { AuthTimestamp } from "./timestamp";
-import type { AuthViewChrome } from "./types";
-
-/** What the administrative user listing renders. @public */
-export type AdminUsersViewProps = AuthViewChrome & {
-  readonly users: readonly AuthUser[];
-  /** The search term this page was read with; empty when the listing is unfiltered. */
-  readonly query: string;
-  /** The id the next page starts after, or `null` when this page is the last one. */
-  readonly nextCursor: string | null;
-  readonly paths: AuthAdminPaths;
-  readonly icon: ForgeIcon<"chevron-right">;
-};
+import type { AdminUsersViewProps } from "./types";
 
 // Design Read: an administrator finding one account among many; the one action is searching by
 // address; failure is a search matching nothing — an empty state offering the way back to the list.

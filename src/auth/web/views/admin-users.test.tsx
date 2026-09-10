@@ -4,12 +4,14 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthUser } from "../../types";
 import { authPaths } from "../paths";
 import { adminRoutes } from "../routes";
 import { attrOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf } from "../test-support";
-import { AdminUsersView, type AdminUsersViewProps } from "./admin-users";
+import { AdminUsersView } from "./admin-users";
+import type { AdminUsersViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"chevron-right">;
 

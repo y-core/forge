@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { bindAttr, bindText } from "./bind-display";
 import { createSignal } from "./signal";
-import type { SignalRecord } from "./signal-record";
+import type { SignalRecord } from "./types";
 
 /** The slice of `Element` the binders touch, plus the tree walk `queryAcross` performs. */
 class FakeElement {

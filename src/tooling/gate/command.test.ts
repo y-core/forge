@@ -4,7 +4,7 @@ import type { CliContext } from "../cli/types";
 import { PLAIN } from "../term/color";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
-import type { Step } from "./steps";
+import type { Step } from "./types";
 
 // The fake exit throws so the run stops exactly where the real process would; `node:process` is
 // deliberately not mocked, since it is process-global and imported across the CLI.

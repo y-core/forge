@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { v } from "../../validation/mod";
 import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle } from "./types";
 import { AssetsConfigSchema } from "./types";
+import type { LoadConfigOptions } from "./types";
 
 /** Types the default export of an `assets.config.ts`. @public */
 export function defineAssetsConfig(config: AssetsConfig): AssetsConfig {
@@ -29,13 +30,6 @@ export function resolveDefine(value: DefineValue, source: Record<string, string 
     }
   }
   return JSON.stringify(value);
-}
-
-/** What `loadConfig` needs to find and normalise a config file. @public */
-export interface LoadConfigOptions {
-  root: string;
-  configPath?: string;
-  env?: Record<string, string | undefined>;
 }
 
 /** Imports, validates and normalises the asset config. @public */

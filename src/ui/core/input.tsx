@@ -2,10 +2,10 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
 import { applyFormat, INPUT_FORMAT_SCOPE } from "../contracts/input-format-contract";
+import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Size } from "../contracts/vocabulary";
-import type { FieldDescriptor } from "./field";
 import { fieldControlProps, fieldStateProps } from "./field";
+import type { FieldDescriptor } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { FIELD_SIZE } from "./utils/recipes";

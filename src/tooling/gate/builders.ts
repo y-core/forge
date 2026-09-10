@@ -2,42 +2,47 @@
  *  writing a spawnable file per check. Labels are fixed: they are the `--only` tokens.
  */
 
-import { type AssetManifestCheckConfig, checkAssetManifest } from "./checks/asset-manifest";
-import { type AssetRootCheckConfig, checkAssetRoot } from "./checks/asset-root";
+import { checkAssetManifest } from "./checks/asset-manifest";
+import { checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
-import { type BuildTimeBoundaryCheckConfig, checkBuildTimeBoundary } from "./checks/build-time-boundary";
-import { type BundleCheckConfig, checkBundle, hasEsbuild } from "./checks/bundle";
-import { type ClassGroupsCheckConfig, checkClassGroups } from "./checks/class-groups";
-import { checkClassOrder, type ClassOrderCheckConfig } from "./checks/class-order";
-import { checkClassTokens, type ClassTokensCheckConfig } from "./checks/class-tokens";
-import { type CoLocationCheckConfig, checkCoLocation } from "./checks/co-location";
-import { type ContrastCheckConfig, checkContrast } from "./checks/contrast";
-import { type CssSourcesCheckConfig, checkCssSources } from "./checks/css-sources";
-import { type CssTokensCheckConfig, checkCssTokens } from "./checks/css-tokens";
-import { checkDesignScale, type DesignScaleCheckConfig } from "./checks/design-scale";
+import { checkBuildTimeBoundary } from "./checks/build-time-boundary";
+import { checkBundle, hasEsbuild } from "./checks/bundle";
+import { checkClassGroups } from "./checks/class-groups";
+import { checkClassOrder } from "./checks/class-order";
+import { checkClassTokens } from "./checks/class-tokens";
+import { checkCoLocation } from "./checks/co-location";
+import { checkContrast } from "./checks/contrast";
+import { checkCssSources } from "./checks/css-sources";
+import { checkCssTokens } from "./checks/css-tokens";
+import { checkDesignScale } from "./checks/design-scale";
 import { hasTailwind } from "./checks/design-system";
-import { checkExports, type ExportsCheckConfig } from "./checks/exports";
-import { checkJsx, type JsxCheckConfig } from "./checks/jsx";
-import { checkMarkdown, fixMarkdown, type MarkdownCheckConfig } from "./checks/markdown";
-import { checkModernCss, type ModernCssCheckConfig } from "./checks/modern-css";
-import { checkNamespaceGraph, type NamespaceGraphCheckConfig } from "./checks/namespace-graph";
-import { checkSsrBoundary, type SsrBoundaryCheckConfig } from "./checks/ssr-boundary";
+import { checkExports } from "./checks/exports";
+import { checkJsx } from "./checks/jsx";
+import { checkMarkdown, fixMarkdown } from "./checks/markdown";
+import { checkModernCss } from "./checks/modern-css";
+import { checkNamespaceGraph } from "./checks/namespace-graph";
+import { checkSsrBoundary } from "./checks/ssr-boundary";
+import type { AssetManifestCheckConfig } from "./checks/types";
+import type { AssetRootCheckConfig } from "./checks/types";
+import type { BuildTimeBoundaryCheckConfig } from "./checks/types";
+import type { BundleCheckConfig } from "./checks/types";
+import type { ClassGroupsCheckConfig } from "./checks/types";
+import type { ClassOrderCheckConfig } from "./checks/types";
+import type { ClassTokensCheckConfig } from "./checks/types";
+import type { CoLocationCheckConfig } from "./checks/types";
+import type { ContrastCheckConfig } from "./checks/types";
+import type { CssSourcesCheckConfig } from "./checks/types";
+import type { CssTokensCheckConfig } from "./checks/types";
+import type { DesignScaleCheckConfig } from "./checks/types";
+import type { ExportsCheckConfig } from "./checks/types";
+import type { JsxCheckConfig } from "./checks/types";
+import type { MarkdownCheckConfig } from "./checks/types";
+import type { ModernCssCheckConfig } from "./checks/types";
+import type { NamespaceGraphCheckConfig } from "./checks/types";
+import type { SsrBoundaryCheckConfig } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
-import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./steps";
-
-/** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
-export interface StepOptions {
-  /** The lowest mode the step runs in. */
-  tier?: GateMode;
-  /** Replaces the step's default dependency; `null` drops it, so a project that vendors one is not gated on probing it. */
-  requires?: StepRequirement | null;
-}
-
-/** Sources a tool step is pointed at. @public */
-export interface SourceStepOptions extends StepOptions {
-  /** Paths passed to the tool, relative to the runner's `cwd`. */
-  sources?: readonly string[];
-}
+import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./types";
+import type { SourceStepOptions, StepOptions } from "./types";
 
 // The key is omitted when the value is the default, so a table reads as the tiers it departs from.
 function tier(value: GateMode | undefined, fallback: GateMode = "fast"): { tier: GateMode } | Record<string, never> {

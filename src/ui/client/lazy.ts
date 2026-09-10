@@ -1,4 +1,5 @@
 import { ownerDocument, ownerWindow } from "./dom";
+import type { LazyImportOptions } from "./types";
 
 /** How many times {@link lazy} calls `load()` for one element before it gives up. */
 const LAZY_MAX_ATTEMPTS = 3;
@@ -6,18 +7,6 @@ const LAZY_MAX_ATTEMPTS = 3;
 /** Wait between retries. `observe()` re-fires on the next frame for an element already on screen,
  *  so an immediate re-observe spends the whole attempt budget inside a few frames. */
 const LAZY_RETRY_DELAY_MS = 500;
-
-export interface LazyImportOptions<T> {
-  ref: string;
-  load: () => Promise<T>;
-  init: (mod: T, el: Element) => void;
-  rootMargin?: string;
-  threshold?: number | number[];
-  /** Any node in the document to search. Omit for the top-level page. */
-  within?: Node;
-  /** Invoked when `load()` rejects and when `init` throws. */
-  onError?: (error: unknown) => void;
-}
 
 /** Defers loading a module until its anchor element enters the viewport, retrying a rejected load up to `LAZY_MAX_ATTEMPTS` times. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {

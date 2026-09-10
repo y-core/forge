@@ -48,3 +48,15 @@ export function getAppContext<Bindings = Record<string, unknown>, Params extends
   }
   return context as unknown as AppContext<Bindings, Params, Config>;
 }
+
+/** One binding's declared shape. @public */
+export interface BindingSpec {
+  /** The key the binding is reached under on `env`. */
+  name: string;
+  /** Method names the binding must carry; the check is a shape check, not a presence check. */
+  methods: readonly string[];
+  /** How the binding is named in the failure message — `${name} must be ${label}`. */
+  label: string;
+  /** An absent binding passes; a present one of the wrong shape still fails. */
+  optional?: boolean | undefined;
+}

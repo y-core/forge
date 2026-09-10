@@ -1,26 +1,11 @@
 import { base32Encode, hotpCode, randomBytes, timingSafeEqual, totpCounter } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import { authLimit } from "../limits";
-import type { AuthFactor, AuthKeyRing, AuthStoreResult, FactorStore } from "../types";
-import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./registry";
+import type { AuthFactor, AuthStoreResult } from "../types";
 import { openTotpSecret, sealTotpSecret } from "./totp-secret";
-
-/** @public */
-export interface TotpAppFactorOptions {
-  keys: AuthKeyRing;
-  factors: FactorStore;
-  issuer: string;
-  /** The account label a provisioning URI shows for the identity it enrols. */
-  account: (userId: string) => string | Promise<string>;
-  digits?: number;
-  period?: number;
-  secretBytes?: number;
-  /** Wrong codes this enrolment admits before it refuses every one, until an accepted code clears them. */
-  maxAttempts?: number;
-}
-
-/** What an enrolment shows once and never again — the base32 secret and the `otpauth://` URI carrying it. @public */
-export type TotpAppEnrolment = { readonly secret: string; readonly uri: string };
+import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./types";
+import type { TotpAppEnrolment, TotpAppFactorOptions } from "./types";
 
 const DEFAULT_SECRET_BYTES = 20;
 const MIN_SECRET_BYTES = 16;

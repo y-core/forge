@@ -1,4 +1,5 @@
-import { APPEARANCES, type Appearance, type Tone, TONES } from "../../contracts/vocabulary";
+import type { Appearance, Tone } from "../../contracts/types";
+import { APPEARANCES, TONES } from "../../contracts/vocabulary";
 import { cva } from "./cva";
 
 export { APPEARANCES, type Appearance, type Tone, TONES };

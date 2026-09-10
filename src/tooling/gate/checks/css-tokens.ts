@@ -1,20 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
-import { type ClassGroupTable, deriveClassGroups } from "./class-groups-parse";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import { deriveClassGroups } from "./class-groups-parse";
 import { loadDesignSystem } from "./design-system";
 import { blankComments, collectFiles, lineAt } from "./source-scan";
-
-/** What the theme-token namespace check needs to know about the project. @public */
-export interface CssTokensCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** The stylesheet the design system is compiled from, relative to `root`. */
-  stylesheet: string;
-  /** Directory of stylesheets whose `@theme` blocks are read, relative to `root`. */
-  cssDir: string;
-}
+import type { ClassGroupTable } from "./types";
+import type { CssTokensCheckConfig } from "./types";
 
 /** One `@theme` token, with the line it is declared on. */
 interface ThemeToken {

@@ -1,5 +1,7 @@
 import { applyStateAttrs, STATE_ATTRS } from "../contracts/state-attrs";
-import { type FragmentEntry, mountFragmentObserver } from "./fragment-observer";
+import { mountFragmentObserver } from "./fragment-observer";
+import type { FragmentEntry } from "./types";
+import type { CarouselDotsOptions } from "./types";
 
 /** The marker `Carousel.Dots` renders on the current dot, matching `Pagination.Item current`. */
 const CURRENT_ATTR = "aria-current";
@@ -12,14 +14,6 @@ const DEFAULT_DOT_SELECTOR = "a[href^='#']";
 const THRESHOLDS = [0, 0.25, 0.5, 0.75, 1];
 
 const mountedDots = new WeakMap<Element, () => void>();
-
-/** Options for {@link mountCarouselDots}. @public */
-export interface CarouselDotsOptions {
-  /** The `Carousel.Dots` nav whose anchors point at the slides. */
-  root: Element;
-  /** Selector for the dots to drive. */
-  dotSelector?: string;
-}
 
 /** Marks the dot for the slide showing in the strip and returns a disposer; idempotent per nav. @public */
 export function mountCarouselDots(options: CarouselDotsOptions): () => void {

@@ -6,12 +6,12 @@ import type { AppContext } from "../../context/types";
 import { isHxRequest } from "../../html/htmx/hx-request";
 import { fragmentResponse } from "../../http/response";
 import { renderToString } from "../../jsx/render-to-string";
-import type { ForgeIcon } from "../../ui/core/icon";
 import { v } from "../../validation/mod";
-import type { LogChannel, LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
+import type { LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
 import { LOG_LEVELS } from "../types";
-import type { LogViewerLoaderData } from "./components";
 import { LOG_TBODY_ID, LogAppendFragment, LogDetailRow, LogTableBody, LogViewerContent } from "./components";
+import type { LogViewerLoaderData } from "./types";
+import type { LogViewerOptions } from "./types";
 
 const LevelParamSchema = v.picklist(LOG_LEVELS);
 
@@ -21,20 +21,6 @@ function parseLevelParam(raw: string | null): LogLevel | undefined {
   const parsed = v.safeParse(LevelParamSchema, raw);
   return parsed.success ? parsed.output : undefined;
 }
-
-/** Access decision for the log viewer: a per-request predicate, or the explicit literal `"allow-unauthenticated"`. @public */
-export type LogViewerAccess<Bindings = Record<string, unknown>> =
-  | ((c: AppContext<Bindings>) => boolean | Promise<boolean>)
-  | "allow-unauthenticated";
-
-/** Options for the log viewer loader. @public */
-export type LogViewerOptions<Bindings = Record<string, unknown>> = {
-  channel: (c: AppContext<Bindings>) => LogChannel;
-  /** Required access decision; runs before the channel is touched. */
-  access: LogViewerAccess<Bindings>;
-  icon: ForgeIcon<"chevron-down">;
-  basePath?: string;
-};
 
 /** Evaluates `access`, then renders the log page or the HTMX fragment the request asks for. @public */
 export async function loadLogViewer<Bindings = Record<string, unknown>>(

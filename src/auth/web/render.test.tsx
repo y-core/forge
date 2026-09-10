@@ -5,12 +5,14 @@ import { describe, expect, it } from "bun:test";
 
 import { RequestContext } from "@remix-run/fetch-router";
 
-import { type PageShell, pageShell, shellCtx } from "../../app/shell";
+import { pageShell, shellCtx } from "../../app/shell";
+import type { PageShell } from "../../app/types";
 import type { FC } from "../../jsx/types";
-import { type AuthViews, renderAuthPage } from "./render";
+import { renderAuthPage } from "./render";
+import type { AuthViews } from "./types";
 import { PasskeyListView } from "./views/passkey-list";
-import type { SigninViewProps } from "./views/signin";
-import type { VerifyViewProps } from "./views/verify";
+import type { SigninViewProps } from "./views/types";
+import type { VerifyViewProps } from "./views/types";
 
 const icon: SigninViewProps["icon"] = () => null;
 

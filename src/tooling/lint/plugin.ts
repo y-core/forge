@@ -23,6 +23,8 @@ import { platformTextPretty } from "./rules/platform-text-pretty.ts";
 import { reducedMotion } from "./rules/reduced-motion.ts";
 import { spacingScaleOnly } from "./rules/spacing-scale-only.ts";
 import { suppressionNeedsReason } from "./rules/suppression-needs-reason.ts";
+import { typeImportExternal } from "./rules/type-import-external.ts";
+import { typeImportSeparation } from "./rules/type-import-separation.ts";
 import type { LintPlugin } from "./types.ts";
 
 /** forge's rules, loaded by naming `@y-core/forge/tooling/lint` in `jsPlugins`. @public */
@@ -52,6 +54,8 @@ export const lintPlugin: LintPlugin = {
     "reduced-motion": reducedMotion,
     "spacing-scale-only": spacingScaleOnly,
     "suppression-needs-reason": suppressionNeedsReason,
+    "type-import-external": typeImportExternal,
+    "type-import-separation": typeImportSeparation,
   },
 };
 

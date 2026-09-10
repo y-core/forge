@@ -1,5 +1,4 @@
-/** Why a store operation failed at the I/O layer. A domain rule refusing is a reason union, never this. @public */
-export type AuthStoreErrorCode = "conflict" | "unavailable";
+import type { AuthStoreErrorCode } from "./types";
 
 /** The one I/O failure an auth store reports, carried in a `Result`'s error channel. @public */
 export class AuthStoreError extends Error {

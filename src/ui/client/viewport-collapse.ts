@@ -1,4 +1,5 @@
 import { ownerDocument, ownerWindow } from "./dom";
+import type { ViewportCollapseOptions } from "./types";
 
 /** Below Tailwind's `md` breakpoint (`48rem`). Stated in `rem` so it meets the `min-width` side
  *  exactly, leaving no width at which neither query matches. */
@@ -6,19 +7,6 @@ const DEFAULT_QUERY =
   "(max-width: 47.99rem)"; /* modern-css-allow: forge-ui-platform-container-query — this toggles a disclosure's `open` state, which is DOM state rather than style, and `@container` can only drive style; the decision is a page-chrome one taken against the viewport by design. */
 
 const mountedCollapses = new WeakMap<Element, () => void>();
-
-/** Options for {@link mountViewportCollapse}. @public */
-export interface ViewportCollapseOptions {
-  /** The disclosure to drive — a `<details>`. Takes precedence over {@link ViewportCollapseOptions.selector}. */
-  element?: Element | null;
-  /** Selector for the disclosure, resolved in {@link ViewportCollapseOptions.within}'s document.
-   *  Ignored when an element is given. */
-  selector?: string;
-  /** Any node in the document to search. Omit for the top-level page. */
-  within?: Node;
-  /** Media query that, for as long as it matches, keeps the disclosure collapsed. */
-  query?: string;
-}
 
 /** Collapses a disclosure while `query` matches, reopens it only if this controller is what closed it, and returns a disposer. @public */
 export function mountViewportCollapse(options: ViewportCollapseOptions = {}): () => void {

@@ -2,32 +2,8 @@ import type { RequestContext } from "@remix-run/fetch-router";
 
 import { setPendingHeader } from "../../context/pending-headers";
 import { createSignedCookie } from "../../session/signed";
-import type { FlashMessage, FlashType } from "./flash";
-
-/** Options for `createFlash`. @public */
-export interface FlashCookieOptions {
-  secrets: [string, ...string[]];
-  name?: string;
-  path?: string;
-  maxAge?: number;
-  sameSite?: "Strict" | "Lax";
-}
-
-/** Reads and writes flash messages on a signed, single-read cookie. @public */
-export interface Flasher {
-  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant for cookie operations
-  set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void>;
-  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
-  get(c: RequestContext<any, any>): Promise<FlashMessage[]>;
-  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
-  success(c: RequestContext<any, any>, text: string): Promise<void>;
-  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
-  info(c: RequestContext<any, any>, text: string): Promise<void>;
-  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
-  warning(c: RequestContext<any, any>, text: string): Promise<void>;
-  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
-  error(c: RequestContext<any, any>, text: string): Promise<void>;
-}
+import type { FlashMessage, FlashType } from "./types";
+import type { FlashCookieOptions, Flasher } from "./types";
 
 /** Creates a `Flasher` backed by a signed cookie cleared on read. @public */
 export function createFlash(options: FlashCookieOptions): Flasher {

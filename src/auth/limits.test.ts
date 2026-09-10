@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { type AuthLimit, authLimit } from "./limits";
+import { authLimit } from "./limits";
+import type { AuthLimit } from "./types";
 
 const TTL: AuthLimit = {
   fallback: 300,

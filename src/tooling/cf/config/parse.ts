@@ -2,18 +2,19 @@ import { chmodSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSyn
 import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 
-import type { Result } from "../../../result/result";
 import { err, ok } from "../../../result/result";
+import type { Result } from "../../../result/types";
 import { v } from "../../../validation/mod";
 import { CliError } from "../../cli/errors";
 import { countComments, formatPath, stripJsonc } from "../../cli/jsonc";
-import type { JsoncEdit } from "../../cli/jsonc-edit";
 import { applyJsoncEdits } from "../../cli/jsonc-edit";
+import type { JsoncEdit } from "../../cli/types";
 import type { WranglerConfig } from "../types";
-import type { ConfigDiff } from "./diff";
 import { diffConfig } from "./diff";
+import type { ConfigDiff } from "./types";
 
 export { stripJsonc } from "../../cli/jsonc";
+import type { LoadedWranglerConfig, WriteOutcome } from "./types";
 
 // Wrangler configs carry many optional and arbitrary extra keys, so this uses loose
 // objects and asserts only what sync handlers read; `name` is the one hard requirement.
@@ -30,19 +31,6 @@ const WranglerConfigSchema = v.looseObject({
     }),
   ),
 });
-
-/**
- * A config together with the exact bytes it was parsed from.
- *
- * Write-back needs the original text, and it needs to be the same text the offsets
- * were computed against — so the source travels with the config rather than being
- * re-read later, when the user may have edited the file mid-run.
- */
-export interface LoadedWranglerConfig {
-  path: string;
-  source: string;
-  config: WranglerConfig;
-}
 
 export function loadWranglerConfig(configPath: string): LoadedWranglerConfig {
   const abs = resolve(configPath);
@@ -69,16 +57,6 @@ export function loadWranglerConfig(configPath: string): LoadedWranglerConfig {
 
 export function parseWranglerConfig(configPath: string): WranglerConfig {
   return loadWranglerConfig(configPath).config;
-}
-
-export interface WriteOutcome {
-  path: string;
-  /** False when the config was already up to date — in which case no write was attempted. */
-  written: boolean;
-  /** How many values were spliced in. */
-  edits: number;
-  /** Set only on a `--force` rewrite: what that rewrite destroyed. */
-  lost?: { comments: number; unsupported: string[] };
 }
 
 function describeUnsupported(diffs: ConfigDiff[]): string[] {

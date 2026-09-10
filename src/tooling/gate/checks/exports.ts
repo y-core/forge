@@ -1,35 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { findPublicSymbols, parseBarrelExportNames, parseBarrelExports } from "./barrel-parse";
 import { collectFiles, listDirectories, listFiles } from "./source-scan";
-
-/** A package's `exports` map as it appears in `package.json`. */
-export type ExportsMap = Record<string, { import?: string; types?: string } | string>;
-
-/** What the exports check needs to know about the project. @public */
-export interface ExportsCheckConfig {
-  /** Application root. Every path is resolved against it, and reported relative to it. */
-  root: string;
-  /** The package name consumers import under, e.g. `@y-core/forge`. */
-  packageName: string;
-  /** The `exports` map, verbatim from `package.json`. */
-  exports: ExportsMap;
-  /** The `files` array, verbatim from `package.json`. */
-  files: readonly string[];
-  /** Directory scanned for source barrels, relative to `root`. Defaults to `"src"`. */
-  sourceDir?: string;
-  /** Further subpaths whose runtime import is skipped because loading them touches DOM globals.
-   *  A subpath under a `client` segment is derived; this is for one that is browser-only under another name. */
-  browserOnly?: readonly string[];
-  /** Subpaths that intentionally export no value, because they mutate globals or register once. */
-  sideEffectOnly?: readonly string[];
-  /** Barrels that are intentionally unpublished because every symbol is `@internal`. */
-  sealedInternal?: readonly string[];
-  /** Directories of non-module assets whose every member must resolve for a consumer. */
-  assetDirs?: readonly { dir: string; extension: string }[];
-}
+import type { ExportsCheckConfig, ExportsMap } from "./types";
 
 interface PatternEntry {
   specifier: string;

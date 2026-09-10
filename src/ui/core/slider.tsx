@@ -2,11 +2,12 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
 import { scopeAttrs } from "../contracts/scope-attrs";
-import { SLIDER_SCOPE, type SliderAction } from "../contracts/slider-contract";
+import { SLIDER_SCOPE } from "../contracts/slider-contract";
+import type { SliderAction } from "../contracts/types";
+import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Size } from "../contracts/vocabulary";
-import type { FieldDescriptor } from "./field";
 import { fieldControlProps, fieldStateProps } from "./field";
+import type { FieldDescriptor } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { FIELD_SIZE } from "./utils/recipes";

@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { createSession } from "@remix-run/session";
 
-import type { SessionKVBinding } from "./kv-storage";
 import { createKVSessionStorage } from "./kv-storage";
+import type { SessionKVBinding } from "./types";
 
 function fakeSessionKV(seed?: Record<string, string>) {
   const data = new Map<string, { value: string; ttl?: number }>(Object.entries(seed ?? {}).map(([k, v]) => [k, { value: v }]));

@@ -2,7 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { invokerAttrs, POPOVER_SCOPE } from "../contracts/overlay-contract";
-import { type PhysicalSide, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
+import type { PhysicalSide } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 

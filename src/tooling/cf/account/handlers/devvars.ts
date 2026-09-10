@@ -2,6 +2,8 @@ import { chmodSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, 
 import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 
+import type { DevVar, DevVarKind } from "./types";
+
 /** The comment marking the next key as one this project generates, so a fresh value may replace it. */
 export const GENERATE_MARKER = "# foundry:generate";
 
@@ -14,17 +16,6 @@ export const GENERATE_MARKER = "# foundry:generate";
  * that belong on the remote, and only the author can tell which is which.
  */
 export const PUSH_MARKER = "# foundry:push";
-
-/** What a `.dev.vars` key is, decided by the mutually exclusive markers above it. */
-export type DevVarKind = "local" | "secret" | "rotatable";
-
-/** One key read from `.dev.vars`, with the line it came from and what its markers make it. */
-export interface DevVar {
-  name: string;
-  value: string;
-  kind: DevVarKind;
-  line: number;
-}
 
 /**
  * `.dev.vars` sits beside the wrangler config, so the lookup is

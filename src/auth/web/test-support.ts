@@ -1,23 +1,17 @@
 import { err, ok } from "../../result/result";
-import type { ForgeIcon } from "../../ui/core/icon";
-import type { AdminUserService } from "../admin/service";
+import type { ForgeIcon } from "../../ui/core/types";
+import type { AdminUserService } from "../admin/types";
 import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
-import type {
-  AuthFactorCapabilities,
-  AuthFactorPolicy,
-  AuthFactorRegistry,
-  AuthFactorResolution,
-  AuthFactorService,
-  AuthFactorsOptions,
-} from "../factors/registry";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthEmailChangeFlow } from "../flows/email-change";
-import type { AuthSigninFlow } from "../flows/signin";
-import type { AuthSignupFlow } from "../flows/signup";
+import type { AuthFactorCapabilities, AuthFactorPolicy, AuthFactorResolution, AuthFactorService, AuthFactorsOptions } from "../factors/types";
+import type { AuthEmailChangeFlow } from "../flows/types";
+import type { AuthSigninFlow } from "../flows/types";
+import type { AuthSignupFlow } from "../flows/types";
 import type { AuthCredential, AuthFactor, AuthFactorKind, AuthUser, CredentialStore, FactorStore, UserStore } from "../types";
-import type { AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./options";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
+import type { AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
+import type { AuthFactorCell, AuthFactorChoices, AuthFactorOffering } from "./types";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
 function rx(literal: string): string {
@@ -171,39 +165,6 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     advanceCounter: async () => ok(true),
     remove: async () => ok(true),
   };
-}
-
-/** One cell of the factor matrix: an offering crossed with a policy. @internal */
-export interface AuthFactorCell {
-  /** How the cell reads in a failure message, e.g. `email-otp+passkey primary=passkey / second-factor:always`. */
-  readonly label: string;
-  readonly kinds: readonly AuthFactorKind[];
-  /** The named primary, present only where the offered set leaves the choice open. */
-  readonly primary: AuthFactorKind | undefined;
-  readonly policy: AuthFactorPolicy;
-  /** The registry the combination builds, or `null` when `createFactorRegistry` refuses it. */
-  readonly registry: AuthFactorRegistry | null;
-  /** Why it was refused, or `null` when it was not. */
-  readonly refusal: string | null;
-}
-
-/** What a view is told about the factors, read off the registry rather than restated. @internal */
-export interface AuthFactorChoices {
-  /** The one factor that starts a sign-in. Never `totp-app`. */
-  readonly primary: AuthFactorKind;
-  /** Factors that can satisfy a step-up, in offered order. */
-  readonly stepUp: readonly AuthFactorKind[];
-  /** Factors a user enrols in deliberately, in offered order. */
-  readonly enrollable: readonly AuthFactorKind[];
-}
-
-// `createFactorRegistry` refuses two primary-capable factors unless one is named, and the two
-// namings render differently, so the choice is crossed rather than defaulted.
-/** One offered set together with the primary it is configured with. @internal */
-export interface AuthFactorOffering {
-  readonly kinds: readonly AuthFactorKind[];
-  /** The named primary, present only where the offered set leaves the choice open. */
-  readonly primary: AuthFactorKind | undefined;
 }
 
 /** Every offered set with each primary it permits, in a stable order. @internal */

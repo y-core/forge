@@ -1,18 +1,5 @@
-import type { DesignSystem } from "./design-system";
-
-/** The design-system facts the plugin's class-string rules resolve against. @public */
-export interface DesignScale {
-  /** The `--spacing` step size, verbatim — e.g. `0.25rem`. */
-  spacingUnit: string;
-  /** Every utility root whose named value is a multiple of `--spacing`, sign folded off. */
-  spacingRoots: readonly string[];
-  /** Every multiplier the scale enumerates, ascending. */
-  spacingSteps: readonly string[];
-  /** Every utility root that resolves a `--color-*` theme entry. */
-  colorRoots: readonly string[];
-  /** Every colour token the theme declares, `--color-` stripped. */
-  colorTokens: readonly string[];
-}
+import type { DesignSystem } from "./types";
+import type { DesignScale } from "./types";
 
 const SPACING_MULTIPLE = /^\d+(?:\.\d+)?$/;
 

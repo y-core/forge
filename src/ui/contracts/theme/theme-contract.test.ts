@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import {
   buildTheme,
   DIALS,
-  type DialValues,
   dialQuery,
   lightDark,
   liveRatios,
@@ -15,6 +14,7 @@ import {
   shapeVars,
   stepProperty,
 } from "./theme-contract";
+import type { DialValues } from "./types";
 
 const DEFAULTS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
 

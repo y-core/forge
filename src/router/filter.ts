@@ -1,11 +1,8 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import { type RequestMethod, Route, type RouteMap } from "@remix-run/fetch-router/routes";
+import { Route } from "@remix-run/fetch-router/routes";
+import type { RequestMethod, RouteMap } from "@remix-run/fetch-router/routes";
 
-/** Attribute filter for {@link routePaths}. @public */
-export interface RouteFilter {
-  /** Restrict to routes serving this HTTP method; omit to match all. */
-  method?: RequestMethod | "ANY";
-}
+import type { RouteFilter } from "./types";
 
 /** Recursively collects the path string of every {@link Route} in a route map that matches the filter. @internal */
 function collectPaths(routeMap: RouteMap, filter: RouteFilter): string[] {

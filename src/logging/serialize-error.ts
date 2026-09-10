@@ -1,9 +1,4 @@
-/** Plain-object form of a thrown value, safe to put in a `LogRecord`'s `data`. @public */
-export interface SerializedError {
-  name: string;
-  message: string;
-  stack?: string;
-}
+import type { SerializedError } from "./types";
 
 /** Converts any thrown value into a JSON-safe `{ name, message, stack? }` object, never throwing. @public */
 export function serializeError(err: unknown): SerializedError {

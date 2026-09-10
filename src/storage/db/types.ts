@@ -1,6 +1,6 @@
 import type { AppContext } from "../../context/types";
 import type { Logger } from "../../logging/types";
-import type { Result } from "../../result/result";
+import type { Result } from "../../result/types";
 import type { SQL_FRAGMENT_BRAND } from "./sql";
 
 /** A parameterised SQL fragment — values are bind params, never concatenated text. @public */

@@ -8,7 +8,8 @@ import { stripJsonc } from "../../cli/jsonc";
 import { scopeLogger } from "../../cli/log";
 import type { CommandBase } from "../../cli/types";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
-import { DEFAULT_OPTIONS, type GenOptions } from "./cf-env-registry";
+import { DEFAULT_OPTIONS } from "./cf-env-registry";
+import type { GenOptions } from "./types";
 
 /** Parse a `wrangler.jsonc` file at `path` into a config object. @public */
 export function readWranglerConfig(path: string): Record<string, unknown> {

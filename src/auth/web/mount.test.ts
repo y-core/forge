@@ -11,11 +11,12 @@ import { sessionCtx } from "../../session/session";
 import { createD1Client } from "../../storage/db/client";
 import type { D1DatabaseLike } from "../../storage/db/types";
 import type { KVNamespace } from "../../storage/kv/types";
-import { type FakeAuthUser, fakeAuthD1 } from "../../testing/auth-fakes";
+import { fakeAuthD1 } from "../../testing/auth-fakes";
 import { nullLogger } from "../../testing/context";
 import { fakeKV } from "../../testing/fakes";
-import type { AuthFactorService } from "../factors/registry";
+import type { FakeAuthUser } from "../../testing/types";
 import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorService } from "../factors/types";
 import { createSigninFlow } from "../flows/signin";
 import { createSignupFlow } from "../flows/signup";
 import { importAuthKeyRing } from "../keys/ring";
@@ -32,11 +33,11 @@ import { createFactorStore } from "../stores/factors";
 import { createUserStore } from "../stores/users";
 import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, UserStore } from "../types";
 import { createAuthGuards } from "./guards";
-import type { AuthRequestServices, AuthWebOptions } from "./options";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import { AUTH_FACTOR_CAPABILITIES, fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./test-support";
+import type { AuthRequestServices, AuthWebOptions } from "./types";
 
 // This file is the mount AUTH_MOUNTING.md §1 describes, written out with no ellipsis and no free
 // variable, so the documented wiring is held to the real signatures by the compiler rather than by

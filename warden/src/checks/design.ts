@@ -11,18 +11,26 @@ import {
   isValidRuleId,
   parseDeclaredCustomProperties,
 } from "../../../src/tooling/gate/checks/design-parse";
-import type { ExportsMap } from "../../../src/tooling/gate/checks/exports";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../../../src/tooling/gate/finding";
-import { lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER, type RuleId } from "../../../src/tooling/lint/design-rules";
+import type { ExportsMap } from "../../../src/tooling/gate/checks/types";
+import { checkResult, fail, scannedNothing } from "../../../src/tooling/gate/finding";
+import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
+import { lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "../../../src/tooling/lint/design-rules";
 import { MODERN_CSS_RULES } from "../../../src/tooling/lint/modern-css-rules";
 import plugin from "../../../src/tooling/lint/plugin";
+import type { RuleId } from "../../../src/tooling/lint/types";
 import { findSubpathCitations } from "./docs-parse";
 
 // Each states a rule a `docs/` doc owns rather than a corpus file, so neither register names
 // one and the round trip would otherwise read them as unrouted.
 /** The plugin rules that state no design-corpus rule. */
-const STATES_NO_CORPUS_RULE = new Set(["suppression-needs-reason", "data-slot-before-spread", "exact-markup-assertion"]);
+const STATES_NO_CORPUS_RULE = new Set([
+  "suppression-needs-reason",
+  "data-slot-before-spread",
+  "exact-markup-assertion",
+  "type-import-external",
+  "type-import-separation",
+]);
 
 /** What the design check needs to know about the project. @public */
 export interface DesignCheckConfig {

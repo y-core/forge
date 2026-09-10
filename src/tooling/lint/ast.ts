@@ -1,3 +1,4 @@
+import type { ClassText } from "./types.ts";
 import type {
   AstNode,
   CallNode,
@@ -5,18 +6,10 @@ import type {
   JsxAttributeNode,
   LiteralNode,
   PropertyNode,
-  SourceLocation,
   TemplateLiteralNode,
   VariableDeclaratorNode,
   Visitor,
 } from "./types.ts";
-
-/** One piece of class text: the node it was read from, its contents, and where it starts. */
-export interface ClassText {
-  node: AstNode;
-  text: string;
-  loc: SourceLocation;
-}
 
 const CLASS_ATTRIBUTES = new Set(["class", "className"]);
 

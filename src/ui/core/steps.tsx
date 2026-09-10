@@ -1,12 +1,14 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../contracts/state-attrs";
-import type { Tone } from "../contracts/vocabulary";
+import { stateAttrs } from "../contracts/state-attrs";
+import type { Orientation } from "../contracts/types";
+import type { Tone } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { STEP_MARKER, STEP_MARKER_STATE, STEP_STATE_LABEL, type StepState } from "./utils/recipes";
+import { STEP_MARKER, STEP_MARKER_STATE, STEP_STATE_LABEL } from "./utils/recipes";
 import { toneTokens } from "./utils/tone";
+import type { StepState } from "./utils/types";
 
 interface StepsRootProps extends Omit<JSX.IntrinsicElements["ol"], "children"> {
   orientation?: Orientation | undefined;

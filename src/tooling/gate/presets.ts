@@ -14,53 +14,12 @@ import {
   typecheckStep,
   workerdStep,
 } from "./builders";
-import type { ClassOrderCheckConfig } from "./checks/class-order";
-import type { ExportsCheckConfig, ExportsMap } from "./checks/exports";
-import type { JsxCheckConfig } from "./checks/jsx";
-import type { DeferredFinding } from "./checks/modern-css-deferred";
-import type { Step } from "./steps";
+import type { Step } from "./types";
+import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
 
 const RUNTIME_TYPES = "./.types/cloudflare.d.ts";
 
 const BINDING_TYPES = "./.types/worker-configuration.d.ts";
-
-/** The design rows a Worker app opts into, and the paths they read. @public */
-export interface CloudflareWorkerDesignOptions {
-  /** The stylesheet the design system compiles from. Three of the four rows need it. */
-  stylesheet: string;
-  /** Directory of stylesheets the token check reads; omit to skip `validate-css-tokens`. */
-  cssDir?: string;
-  /** Sources the class rules scan. Defaults to `["src/"]` — deliberately not the table's `sources`. */
-  sources?: readonly string[];
-  /** Platform-CSS findings this app defers. Defaults to `[]`, never forge's own list. */
-  deferred?: readonly DeferredFinding[];
-}
-
-/** Options for the shared Cloudflare Worker step table. @public */
-export interface CloudflareWorkerStepOptions {
-  /** Directories linted and type-checked. Defaults to `["src/", "tests/"]`. */
-  sources?: readonly string[];
-  /** Test paths passed to `bun test`. Defaults to `["tests/"]`. */
-  tests?: readonly string[];
-  /** Asset config path; omit to skip the asset-types step entirely. */
-  assetConfig?: string;
-  /** Where the asset-types emitter writes. Defaults to `.forge/assets.ts`. */
-  assetOut?: string;
-  /** Whether to emit the two `wrangler types` steps. Defaults to `true`. */
-  wranglerTypes?: boolean;
-  /** `--config` for the bindings invocation; the runtime invocation takes none. */
-  workerConfig?: string;
-  /** Whether to check the synced `.claude/` trees against the installed corpus. Defaults to `false`. */
-  warden?: boolean;
-  /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
-  root?: string;
-  /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
-  browser?: boolean;
-  /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
-  workerd?: boolean;
-  /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
-  design?: CloudflareWorkerDesignOptions;
-}
 
 /** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
 export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {}): readonly Step[] {
@@ -129,32 +88,6 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   if (options.workerd) steps.push(workerdStep({ tier: "full" }));
 
   return steps;
-}
-
-/** The fields `forgeChecks` reads from the consuming package's `package.json`. @public */
-export interface GatePackage {
-  name: string;
-  version: string;
-  exports: ExportsMap;
-  files: readonly string[];
-}
-
-/** Options for the shared library step table. @public */
-export interface LibraryStepOptions {
-  /** Repository root. Every check resolves and reports its paths against it. */
-  root: string;
-  /** The consuming package's `package.json`, read for its name, version, `exports`, and `files`. */
-  pkg: GatePackage;
-  /** Directories linted. Defaults to `["src/"]`. */
-  sources?: readonly string[];
-  /** Test paths passed to `bun test`. Defaults to the whole project. */
-  tests?: readonly string[];
-  /** Merged over the exports config derived from `pkg`. */
-  exports?: Omit<Partial<ExportsCheckConfig>, "root">;
-  /** Merged over the jsx config derived from `root`. */
-  jsx?: Omit<Partial<JsxCheckConfig>, "root">;
-  /** Merged over the class-order config derived from `root`; `sources` defaults to `["src"]`. */
-  classOrder?: Omit<Partial<ClassOrderCheckConfig>, "root">;
 }
 
 /** The baseline table for a library published under an `exports` map, in execution order.

@@ -1,4 +1,5 @@
-import { type CheckResult, checkResult, type Finding, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import { checkResult, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { fnv1a } from "../corpus/hash";
 import { discover } from "../corpus/source";

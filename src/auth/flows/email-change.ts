@@ -1,36 +1,9 @@
-import { type Result, err, ok } from "../../result/result";
-import type { AuthStoreError } from "../errors";
+import { err, ok } from "../../result/result";
 import { authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken } from "../keys/token";
 import { authLimit } from "../limits";
 import { normalizeEmail } from "../stores/email";
-import type { AuthKeyRing, AuthNotifier, AuthUser, NonceStore, UserStore } from "../types";
-import type { AuthDeferral, AuthIssueOutcome } from "./decoy";
-
-/** Why an address change was refused. @public */
-export type AuthEmailChangeReason = "consumed" | "deactivated" | "expired" | "unavailable" | "unchanged" | "unrecognised";
-
-/** When the confirmation link a change request mailed stops working. @public */
-export interface AuthEmailChangeRequest {
-  readonly expiresAt: number;
-}
-
-/** @public */
-export interface AuthEmailChangeOptions {
-  keys: AuthKeyRing;
-  users: UserStore;
-  nonces: NonceStore;
-  notifier: AuthNotifier;
-  defer: AuthDeferral;
-  /** The link a confirmation mail carries, given the token that authorises the change. */
-  confirmUrl: (token: string) => string;
-  ttlMs?: number;
-}
-
-/** Moves an account to a new address only once that address has answered a link sent to it. @public */
-export interface AuthEmailChangeFlow {
-  request(userId: string, email: string, at: number): Promise<Result<AuthEmailChangeRequest, AuthEmailChangeReason>>;
-  confirm(token: string, at: number): Promise<Result<AuthUser, AuthEmailChangeReason | AuthStoreError>>;
-}
+import type { AuthIssueOutcome } from "./types";
+import type { AuthEmailChangeFlow, AuthEmailChangeOptions } from "./types";
 
 const DEFAULT_TTL_MS = 3_600_000;
 const MIN_TTL_MS = 60_000;

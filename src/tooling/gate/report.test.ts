@@ -15,7 +15,7 @@ import {
   formatStepLine,
   formatSummary,
 } from "./report";
-import type { Step } from "./steps";
+import type { Step } from "./types";
 
 describe("formatDuration()", () => {
   it("renders sub-50ms as `<0.1s` rather than a zero that reads as a broken timer", () => {

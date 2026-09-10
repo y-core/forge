@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { type ScopeAttrsProps, scopeAttrs } from "./scope-attrs";
+import { scopeAttrs } from "./scope-attrs";
+import type { ScopeAttrsProps } from "./types";
 
 describe("scopeAttrs", () => {
   it("maps each on<Event> prop to its data-on-<event> attribute", () => {

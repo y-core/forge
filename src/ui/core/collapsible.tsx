@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import type { ForgeIcon } from "./icon";
+import type { ForgeIcon } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 

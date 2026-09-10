@@ -8,7 +8,7 @@ import { AuthStoreError } from "../errors";
 import { createChallengeStore } from "../stores/challenges";
 import type { AuthChallenge, AuthCredential, ChallengeStore, CredentialStore } from "../types";
 import { createPasskeyRegistrationOptions, createPasskeyRequestOptions, passkeyChallengeKey } from "./options";
-import type { PasskeyCeremonyOptions } from "./options";
+import type { PasskeyCeremonyOptions } from "./types";
 
 const USER_ID = uuidv7();
 const SESSION = "sess-42";

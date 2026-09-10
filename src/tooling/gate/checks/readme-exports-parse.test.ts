@@ -1,12 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  type ImportPathAnchor,
-  parseExportsHeadingLine,
-  parseExportsTableSymbols,
-  parseImportPathAnchors,
-  parseTypesProse,
-} from "./readme-exports-parse";
+import { parseExportsHeadingLine, parseExportsTableSymbols, parseImportPathAnchors, parseTypesProse } from "./readme-exports-parse";
+import type { ImportPathAnchor } from "./types";
 
 const README = [
   "# Title", // 1

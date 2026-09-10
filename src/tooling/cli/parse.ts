@@ -1,6 +1,7 @@
 import { CliError } from "./errors";
 import { suggest } from "./suggest";
-import { type ArgToken, tokenize } from "./tokenize";
+import { tokenize } from "./tokenize";
+import type { ArgToken } from "./types";
 import type { CommandBase, FlagDef, FlagDefs, ResolvedFlags } from "./types";
 
 /** Collects a command's own flags together with every `persistent` flag inherited from its ancestors. @public */

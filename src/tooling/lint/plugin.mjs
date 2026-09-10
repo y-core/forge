@@ -1753,6 +1753,56 @@ var suppressionNeedsReason = {
   }
 };
 
+// src/tooling/lint/rules/type-import-external.ts
+var DECLARED = /* @__PURE__ */ new Set(["TSInterfaceDeclaration", "TSTypeAliasDeclaration"]);
+var kindOf = (type) => type === "TSInterfaceDeclaration" ? "interface" : "type";
+var typeImportExternal = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "A namespace's exported types are declared in one `types.ts` per directory, so a shape can be found from its name rather than from the file that happens to use it."
+    }
+  },
+  create(context) {
+    return {
+      ExportNamedDeclaration(node) {
+        const declaration = node.declaration;
+        if (declaration === void 0 || declaration === null || !DECLARED.has(declaration.type)) return;
+        const name = declaration.id?.name ?? "this type";
+        context.report({
+          message: `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` \u2014 move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/LIBRARY_ARCHITECTURE.md \xA78).`,
+          loc: node.loc
+        });
+      }
+    };
+  }
+};
+
+// src/tooling/lint/rules/type-import-separation.ts
+var typeImportSeparation = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "A type is imported on its own `import type` line, so what a file needs at runtime is legible from the import block alone."
+    }
+  },
+  create(context) {
+    return {
+      ImportDeclaration(node) {
+        const statement = node;
+        if (statement.importKind === "type") return;
+        const inline = (statement.specifiers ?? []).filter((specifier) => specifier.importKind === "type");
+        if (inline.length === 0) return;
+        const named2 = inline.map((specifier) => `\`${specifier.local?.name ?? "?"}\``).join(", ");
+        context.report({
+          message: `${named2} rides in on a value import as an inline \`type\` specifier \u2014 give the type its own \`import type { \u2026 }\` line, so what this file needs at runtime is legible from the import block alone (docs/LIBRARY_ARCHITECTURE.md \xA78).`,
+          loc: node.loc
+        });
+      }
+    };
+  }
+};
+
 // src/tooling/lint/plugin.ts
 var lintPlugin = {
   meta: { name: "forge" },
@@ -1779,7 +1829,9 @@ var lintPlugin = {
     "platform-text-pretty": platformTextPretty,
     "reduced-motion": reducedMotion,
     "spacing-scale-only": spacingScaleOnly,
-    "suppression-needs-reason": suppressionNeedsReason
+    "suppression-needs-reason": suppressionNeedsReason,
+    "type-import-external": typeImportExternal,
+    "type-import-separation": typeImportSeparation
   }
 };
 var plugin_default = lintPlugin;

@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 import { PRESENCE_STATES } from "../../tooling/lint/rules/a11y-aria-beside-data";
 import { ISLAND_STATE_ATTR } from "./island-contract";
-import { type Align, applyStateAttrs, type Orientation, type Side, STATE_ATTRS, stateAttrs, type StateAttrsProps } from "./state-attrs";
+import { applyStateAttrs, STATE_ATTRS, stateAttrs } from "./state-attrs";
+import type { Align, Orientation, Side, StateAttrsProps } from "./types";
 import { PRESENTATION_ATTRS } from "./vocabulary";
 import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs";
 

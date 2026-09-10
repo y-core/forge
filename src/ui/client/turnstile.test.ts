@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { TURNSTILE, TURNSTILE_ABANDONED_EVENT, type TurnstileAbandonedDetail } from "../contracts/turnstile-contract";
+import { TURNSTILE, TURNSTILE_ABANDONED_EVENT } from "../contracts/turnstile-contract";
+import type { TurnstileAbandonedDetail } from "../contracts/types";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
 import { findWidget, hasApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
 

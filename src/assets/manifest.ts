@@ -1,7 +1,4 @@
-/** Resolves a logical asset path to its public, content-hashed URL. @public */
-export interface Manifest {
-  path(key: string): string;
-}
+import type { Manifest } from "./types";
 
 /** Creates a manifest over `data`, serving unmapped keys from `prefix` unchanged. @public */
 export function createManifest(data: Record<string, string>, prefix: string): Manifest {

@@ -9,13 +9,13 @@ import { Card } from "../core/card";
 import { FormField } from "../core/field-layout";
 import { Field } from "../core/field-stack";
 import { Form } from "../core/form";
-import type { ForgeIcon } from "../core/icon";
 import { Select } from "../core/select";
 import { Skeleton } from "../core/skeleton";
 import { Slider } from "../core/slider";
 import { Spinner } from "../core/spinner";
 import { Switch } from "../core/switch";
 import { Toast } from "../core/toast";
+import type { ForgeIcon } from "../core/types";
 import { CatalogStack } from "./components";
 
 /** The two glyphs this band draws: `Spinner` spins one and `Select` points with the other. */

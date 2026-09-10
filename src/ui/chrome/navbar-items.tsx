@@ -1,94 +1,12 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { JSXNode } from "../../jsx/types";
-import type { Align } from "../contracts/state-attrs";
 import { currentAttrs } from "../contracts/state-attrs";
-import type { ForgeIcon } from "../core/icon";
 import { Menu } from "../core/menu";
 import { Popover } from "../core/popover";
 import { slotToken } from "../core/utils/as-child";
 import { cn } from "../core/utils/cn";
-
-/** A leaf link. `href` is a route-map key resolved through {@link NavRenderCtx.resolveHref} — never used raw. @public */
-export interface NavLink {
-  label: string;
-  /** Route-map key (NOT a URL) — passed to `resolveHref` to produce the final `href`. */
-  href: string;
-  /** This link is the page the reader is on. `BAR_LINK`'s `aria-[current]:*` utilities paint it. */
-  current?: boolean | undefined;
-  /** Auth tokens; the item shows only when one is in the active set. */
-  filters?: string[] | undefined;
-}
-
-/** A branch: a menu over child items (recurses for nested submenus). @public */
-export interface NavMenu {
-  label: string;
-  items: NavItem[];
-  /** Auth tokens; the menu shows only when one is in the active set. */
-  filters?: string[] | undefined;
-}
-
-/** A slot: an inline JSX node, OR a string key resolved from {@link NavRenderCtx.slots}. @public */
-export interface NavSlot {
-  slot: JSXNode | string;
-  label?: string | undefined;
-  /** Auth tokens; the slot shows only when one is in the active set. */
-  filters?: string[] | undefined;
-}
-
-/** A megamenu: a wide panel of link columns, one per group, opened from a bar trigger. @public */
-export interface NavMegaMenu {
-  label: string;
-  /** The columns, at most four across; each renders as a headed `NavGroup`. */
-  groups: NavGroup[];
-  /** Which edge of the trigger the panel aligns to; `end` keeps a wide panel on the last bar item inside the viewport. */
-  align?: Align | undefined;
-  /** Auth tokens; the megamenu shows only when one is in the active set. */
-  filters?: string[] | undefined;
-}
-
-/** One navbar entry — a link, a nested menu, a megamenu, or a slot. Discriminated by property presence. @public */
-export type NavItem = NavLink | NavMenu | NavSlot | NavMegaMenu;
-
-/** A heading over a list of visible child items; legal at section level and as a megamenu column. @public */
-export interface NavGroup {
-  heading: string;
-  /** The group's items. Renders as visible bar links; nests no further. */
-  group: NavItem[];
-  /** Auth tokens; the group shows only when one is in the active set. */
-  filters?: string[] | undefined;
-}
-
-/** What a section may hold: any nav item, plus a group — which nests no further. @public */
-export type NavSectionItem = NavItem | NavGroup;
-
-/** A group of items; sibling sections spread across the bar via `justify-between`. @public */
-export interface NavSection {
-  items: NavSectionItem[];
-}
-
-/** The full navbar configuration the app feeds to `Navbar`. @public */
-export interface NavDefinition {
-  sections: NavSection[];
-}
-
-/** The glyphs every bar draws: the menu chevron and the inline toggle's own pair. @public */
-export type NavGlyph = "chevron-down" | "hamburger" | "close";
-
-/** Which breakpoints the bar collapses behind its toggle at. @public */
-export type NavCollapsible = "mobile" | "always";
-
-/** Threaded through the recursive renderers. @internal */
-export interface NavRenderCtx {
-  resolveHref: (key: string) => string;
-  slots?: Record<string, JSXNode> | undefined;
-  activeFilters: string[];
-  icon: ForgeIcon<NavGlyph>;
-  /** Namespace prefix for generated menu ids — the bar's `id` when given, else its placement. */
-  idBase: string;
-  seq: { n: number };
-  collapsible: NavCollapsible;
-}
+import type { NavCollapsible, NavGroup, NavItem, NavMegaMenu, NavRenderCtx, NavSection, NavSlot } from "./types";
 
 /** Section classes per collapse mode; `"always"` never turns the row horizontal. */
 const SECTION_CLASS: Record<NavCollapsible, string> = { mobile: "flex flex-col gap-1 md:flex-row md:items-center", always: "flex flex-col gap-1" };

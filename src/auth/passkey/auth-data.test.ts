@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { base64urlEncode, bytesToHex, hexToBytes, sha256 } from "../../crypto/mod";
-import { type AuthDataExpectation, parseAuthData, verifyAuthData } from "./auth-data";
+import { parseAuthData, verifyAuthData } from "./auth-data";
+import type { AuthDataExpectation } from "./types";
 
 const RP_ID = "example.com";
 

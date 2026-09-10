@@ -1,13 +1,8 @@
 import { BIND_ATTR_ATTR, BIND_TEXT_ATTR, parseBindAttr } from "../contracts/bind-contract";
 import { queryAcross } from "./dom";
 import { effect } from "./signal";
-import type { SignalRecord } from "./signal-record";
-
-/** Options for {@link bindText}. */
-export interface BindTextOptions {
-  /** Renders a signal's value as the text to write. @default String */
-  format?: (value: unknown) => string;
-}
+import type { SignalRecord } from "./types";
+import type { BindTextOptions } from "./types";
 
 /** The signal a binding element names, or `undefined` after reporting that it names none. */
 function resolve<T extends Record<string, unknown>>(signals: SignalRecord<T>, field: string, attr: string) {

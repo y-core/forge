@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import type { DeploymentTarget } from "../target";
+import type { DeploymentTarget } from "../types";
 import type { SyncConfig, WranglerConfig } from "../types";
 import { syncBindings } from "./engine";
 import type { ResourceHandler } from "./handlers/types";

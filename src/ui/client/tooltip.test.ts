@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
+import { FakeEvent, fakeTree } from "./test-dom";
+import type { FakeElement } from "./test-dom";
 import { mountTooltip } from "./tooltip";
 
 /** A tooltip whose content records show/hide calls, since a fake has no top layer. */

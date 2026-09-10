@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import type { ChangelogDocument, VersionHeading } from "../../../src/tooling/gate/changelog";
+import type { ChangelogDocument, VersionHeading } from "../../../src/tooling/gate/types";
 import { checkChangelog, validateChangelog } from "./changelog";
 
 const VALID = [

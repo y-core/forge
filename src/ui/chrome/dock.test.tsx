@@ -4,7 +4,8 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { createIcon } from "../core/icon";
-import { Dock, type DockItem } from "./dock";
+import { Dock } from "./dock";
+import type { DockItem } from "./types";
 
 const icon = createIcon("/sprite.svg", { "icon-home": "0 0 24 24", "icon-search": "0 0 24 24" });
 const href = (key: string) => `/route/${key}`;

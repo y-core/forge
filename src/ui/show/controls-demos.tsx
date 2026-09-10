@@ -22,7 +22,8 @@ import { Form } from "../core/form";
 import { Input as InputPrimitive } from "../core/input";
 import { Label } from "../core/label";
 import { Resumable } from "../server/resumable";
-import { CatalogGroup, CatalogNote, CatalogSection, type ShowIcon } from "./components";
+import { CatalogGroup, CatalogNote, CatalogSection } from "./components";
+import type { ShowIcon } from "./types";
 
 const Readout: FC<{ field: string; value: unknown }> = ({ field, value }) => (
   <output {...bindTextAttr(field)} class='text-sm text-muted-foreground tabular-nums'>

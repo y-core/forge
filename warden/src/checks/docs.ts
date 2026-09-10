@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
-import type { ExportsMap } from "../../../src/tooling/gate/checks/exports";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import type { ExportsMap } from "../../../src/tooling/gate/checks/types";
+import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
+import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
 import { findSubpathCitations, quickReference, uncitedSubpaths } from "./docs-parse";
 
 /** The canon tree a directory's documents are read from. @public */

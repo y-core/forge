@@ -1,5 +1,6 @@
 import type { Forge } from "../../app/forge-app";
-import { type AppContext, type RequestHandler, getAppContext } from "../../context/types";
+import { getAppContext } from "../../context/types";
+import type { AppContext, RequestHandler } from "../../context/types";
 import {
   createAdminElevateActions,
   createAdminUserActions,
@@ -31,8 +32,8 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import type { AuthWebOptions } from "./options";
 import type { accountRoutes, adminRoutes, authRoutes } from "./routes";
+import type { AuthWebOptions } from "./types";
 
 /** One page loader as the router's handler, narrowed to the app context the loader reads. */
 function authPage<Bindings>(

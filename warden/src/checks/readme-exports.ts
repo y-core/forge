@@ -10,7 +10,8 @@ import {
   parseTypesProse,
 } from "../../../src/tooling/gate/checks/readme-exports-parse";
 import { resolveSources } from "../../../src/tooling/gate/checks/source-scan";
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../../../src/tooling/gate/finding";
+import { checkResult, fail, scannedNothing } from "../../../src/tooling/gate/finding";
+import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
 
 /** What the README-exports check needs to find both halves of the coupling. @public */
 export interface ReadmeExportsCheckConfig {

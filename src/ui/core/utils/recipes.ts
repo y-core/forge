@@ -1,3 +1,4 @@
+import type { StepState } from "./types";
 /** The pressed paint every `:has(:checked)` control shares; passed as its own `cn` argument, never a token of another literal. @internal */
 export const PRESSED_PAINT = "has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary";
 
@@ -12,9 +13,6 @@ export const RULE = "border-0 bg-border";
 
 /** Height and type size per control `Size`, read from the `--control-h-*` tokens. @internal */
 export const FIELD_SIZE = { sm: "h-control-sm text-sm", md: "h-control-md text-sm", lg: "h-control-lg text-base" } as const;
-
-/** Where a step or timeline entry stands: done, the one in hand, or still ahead. @internal */
-export type StepState = "complete" | "current" | "upcoming";
 
 /** The marker circle a Steps step or a Timeline item paints its state into. @internal */
 export const STEP_MARKER = "inline-flex size-control-sm items-center justify-center rounded-selector border-field text-sm font-medium";

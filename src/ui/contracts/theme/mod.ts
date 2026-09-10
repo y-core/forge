@@ -3,34 +3,22 @@ export {
   buildScale,
   CHROMA_MAX,
   contrastRatio,
-  type Dials,
   GRAY_RAMP,
   hexToOklch,
-  type Mode,
   oklabToLinearSrgb,
-  type Oklch,
   oklchCss,
   oklchToHex,
-  type Ramp,
   relativeLuminance,
-  type Scale,
   srgbGamma,
   toSrgbGamut,
 } from "./color";
-export { ACCEPTED_CONTRAST, type AcceptedContrastRow } from "./contrast-accepted";
-export {
-  ACCENT_CONTRAST,
-  CONTRAST_PAIRS,
-  type ContrastPair,
-  type ContrastSide,
-  CRITERION,
-  type Criterion,
-  type ScalePair,
-  type ScaleSide,
-  type SideStep,
-  scalePairs,
-  sideStep,
-} from "./contrast-pairs";
+export type { Dials, Mode, Oklch, Ramp } from "./types";
+export type { Scale } from "./types";
+export { ACCEPTED_CONTRAST } from "./contrast-accepted";
+export type { AcceptedContrastRow } from "./types";
+export { ACCENT_CONTRAST, CONTRAST_PAIRS, CRITERION, scalePairs, sideStep } from "./contrast-pairs";
+export type { ContrastPair, ContrastSide, Criterion, ScalePair, ScaleSide } from "./types";
+export type { SideStep } from "./types";
 export {
   buildTheme,
   COPY_ACTION,
@@ -40,15 +28,10 @@ export {
   COPY_STATUS_ATTR,
   COPY_TARGET_ATTR,
   COPY_TARGETS,
-  type CopyTarget,
   CUSTOMISE_SCOPE,
   DIALS,
-  type Dial,
-  type DialValues,
   dialQuery,
-  type GeneratedTheme,
   HEX_ATTR,
-  type LiveRatio,
   leverRows,
   lightDark,
   liveRatios,
@@ -64,10 +47,11 @@ export {
   SCHEME_PRESETS,
   SHAPE_PROPERTIES,
   type ScaleFamily,
-  type SchemePreset,
   STEP_SEGMENTS,
   scaleVars,
   schemeCss,
   shapeVars,
   stepProperty,
 } from "./theme-contract";
+export type { CopyTarget, Dial, DialValues, GeneratedTheme, LiveRatio } from "./types";
+export type { SchemePreset } from "./types";

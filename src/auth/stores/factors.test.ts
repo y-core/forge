@@ -4,7 +4,8 @@ import { uuidToBytes, uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
 import { nullLogger } from "../../testing/context";
-import { fakeD1, type FakeD1Options } from "../../testing/fakes";
+import { fakeD1 } from "../../testing/fakes";
+import type { FakeD1Options } from "../../testing/types";
 import { createFactorStore } from "./factors";
 
 const USER_ID = uuidv7();

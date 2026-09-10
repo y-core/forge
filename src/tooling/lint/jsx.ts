@@ -1,11 +1,6 @@
 import { childrenOf } from "./ast.ts";
 import type { AstNode, IdentifierNode, JsxAttributeNode, LiteralNode } from "./types.ts";
-
-/** A JSX opening element and the attributes it carries, in source order. */
-export interface JsxOpeningElementNode extends AstNode {
-  name?: AstNode | undefined;
-  attributes?: readonly AstNode[] | undefined;
-}
+import type { JsxOpeningElementNode } from "./types.ts";
 
 /** A member or namespaced JSX name, whose parts spell the tag as written. */
 interface JsxNameNode extends AstNode {

@@ -2,33 +2,7 @@
 // https://github.com/visulima/visulima — packages/data-manipulation/string/src/get-string-truncated-width.ts
 
 import { ANSI_PATTERN, CSI, ESC, hasAnsi, RESET } from "./ansi";
-
-/** How many columns each class of character is counted as occupying. @public */
-export interface WidthOptions {
-  /** Columns a tab advances. Defaults to 8. */
-  tabWidth?: number;
-  /** Columns an emoji sequence occupies. Defaults to 2. */
-  emojiWidth?: number;
-  /** Columns an East-Asian wide character occupies. Defaults to 2. */
-  wideWidth?: number;
-  /** Columns everything else occupies. Defaults to 1. */
-  regularWidth?: number;
-}
-
-/** What `truncate` returns: the cut text, its width, and whether anything was dropped. @public */
-export interface TruncateResult {
-  text: string;
-  width: number;
-  truncated: boolean;
-  /** Offset into `input` the cut was made at, before any reset or ellipsis was appended. */
-  index: number;
-}
-
-/** Width options plus the marker written in place of what was cut. @public */
-export interface TruncateOptions extends WidthOptions {
-  /** Appended when the input does not fit. Defaults to `"…"`. */
-  ellipsis?: string;
-}
+import type { TruncateOptions, TruncateResult, WidthOptions } from "./types";
 
 interface Metrics {
   tab: number;

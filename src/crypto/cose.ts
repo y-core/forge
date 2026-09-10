@@ -1,13 +1,6 @@
-import { type CborValue, cborDecodeFirst } from "./cbor";
-
-/** The COSE algorithm identifiers a WebAuthn credential may be verified under. @internal */
-export type CoseAlgorithm = -7 | -8 | -257;
-
-/** A COSE public key reduced to the algorithm and the raw material WebCrypto imports. @internal */
-export type CosePublicKey =
-  | { readonly algorithm: -7; readonly curve: "P-256"; readonly point: Uint8Array<ArrayBuffer> }
-  | { readonly algorithm: -8; readonly curve: "Ed25519"; readonly point: Uint8Array<ArrayBuffer> }
-  | { readonly algorithm: -257; readonly modulus: Uint8Array<ArrayBuffer>; readonly exponent: Uint8Array<ArrayBuffer> };
+import { cborDecodeFirst } from "./cbor";
+import type { CborValue } from "./types";
+import type { CosePublicKey } from "./types";
 
 const LABEL_KTY = 1;
 const LABEL_ALG = 3;

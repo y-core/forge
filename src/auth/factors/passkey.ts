@@ -1,43 +1,16 @@
 import { base64urlEncode, randomBytes } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import { AuthStoreError } from "../errors";
-import { type PasskeyAssertionCredential, type PasskeyAuthenticationReason, verifyPasskeyAuthentication } from "../passkey/authenticate";
-import {
-  type PasskeyCeremonyOptions,
-  type UserVerification,
-  createPasskeyRegistrationOptions,
-  createPasskeyRequestOptions,
-  passkeyTtlSeconds,
-} from "../passkey/options";
-import { type PasskeyRegistrationCredential, type PasskeyRegistrationReason, verifyPasskeyRegistration } from "../passkey/register";
-import type { AuthAlgorithm, AuthFactor, AuthStoreResult, ChallengeStore, CredentialStore, FactorStore, UserStore } from "../types";
-import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./registry";
-
-/** Whether this deployment offers the passkey as the factor that identifies, or as the one that steps up. @public */
-export type PasskeyFactorRole = "primary" | "step-up";
-
-/** How a user is shown in the authenticator's own account picker. @public */
-export interface PasskeyFactorSubject {
-  readonly name: string;
-  readonly displayName: string;
-}
-
-/** @public */
-export interface PasskeyFactorOptions {
-  rpId: string;
-  rpName: string;
-  origin: string;
-  sessionId: string;
-  role: PasskeyFactorRole;
-  users: UserStore;
-  factors: FactorStore;
-  credentials: CredentialStore;
-  challenges: ChallengeStore;
-  /** How the user is shown in the authenticator's own account picker. */
-  subject: (userId: string) => PasskeyFactorSubject | Promise<PasskeyFactorSubject>;
-  algorithms?: readonly AuthAlgorithm[];
-  ttlSeconds?: number;
-}
+import { verifyPasskeyAuthentication } from "../passkey/authenticate";
+import { createPasskeyRegistrationOptions, createPasskeyRequestOptions, passkeyTtlSeconds } from "../passkey/options";
+import { verifyPasskeyRegistration } from "../passkey/register";
+import type { PasskeyAssertionCredential, PasskeyAuthenticationReason } from "../passkey/types";
+import type { PasskeyCeremonyOptions, UserVerification } from "../passkey/types";
+import type { PasskeyRegistrationCredential, PasskeyRegistrationReason } from "../passkey/types";
+import type { AuthFactor, AuthStoreResult } from "../types";
+import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./types";
+import type { PasskeyFactorOptions, PasskeyFactorRole } from "./types";
 
 // A step-up exists to demand a fresh human gesture, so verification is required; as the primary
 // factor it would only lock out authenticators that cannot do it and buy the sign-in nothing.

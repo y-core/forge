@@ -1,43 +1,11 @@
-import { type Result, err, ok } from "../../result/result";
-import {
-  type AuthFactorReason,
-  type AuthFactorRegistry,
-  type AuthFactorResolution,
-  type AuthFactorVerified,
-  authFactorContext,
-} from "../factors/registry";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
+import { authFactorContext } from "../factors/registry";
 import { normalizeEmail } from "../stores/email";
-import type { AuthFactorKind, AuthKeyRing, AuthUser, UserStore } from "../types";
-import { type AuthDeferral, type AuthFlowChallenge, type AuthIssueOutcome, issueAuthDecoy, verifyAuthDecoy } from "./decoy";
-
-/** Why a sign-in was refused, in the detail an operator's log keeps. Never rendered — see `redactSigninReason`. @public */
-export type AuthSigninReason = AuthFactorReason | "deactivated";
-
-/** The one refusal a visitor may be shown, so a deactivated account and an unknown one read alike. @public */
-export type AuthSigninNotice = "throttled" | "unavailable" | "unrecognised";
-
-/** What a completed sign-in establishes, including what the second-factor policy still demands. @public */
-export interface AuthSignin {
-  readonly user: AuthUser;
-  readonly kind: AuthFactorKind;
-  readonly resolution: AuthFactorResolution;
-}
-
-/** @public */
-export interface AuthSigninOptions {
-  keys: AuthKeyRing;
-  users: UserStore;
-  factors: AuthFactorRegistry;
-  defer: AuthDeferral;
-}
-
-/** Signs a visitor in through the registry's primary factor, then applies the second-factor policy. @public */
-export interface AuthSigninFlow {
-  request(email: string, at: number): AuthFlowChallenge;
-  complete(email: string, presented: string, at: number): Promise<Result<AuthSignin, AuthSigninReason>>;
-  requestStepUp(userId: string, kind: AuthFactorKind, at: number): Promise<Result<AuthFlowChallenge, AuthSigninReason>>;
-  stepUp(userId: string, kind: AuthFactorKind, presented: string, at: number): Promise<Result<AuthFactorVerified, AuthSigninReason>>;
-}
+import type { AuthFactorKind, AuthUser } from "../types";
+import { issueAuthDecoy, verifyAuthDecoy } from "./decoy";
+import type { AuthIssueOutcome } from "./types";
+import type { AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./types";
 
 // A deactivated account answering differently from an unknown one is the enumeration oracle the
 // deferred work exists to close, and an expired code on a known address is the same tell.

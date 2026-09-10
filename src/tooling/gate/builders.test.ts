@@ -21,7 +21,8 @@ import {
 } from "./builders";
 import { hasChromium } from "./checks/browser";
 import { hasTailwind } from "./checks/design-system";
-import { isCheckStep, type Step } from "./steps";
+import { isCheckStep } from "./steps";
+import type { Step } from "./types";
 
 const EXPORTS = { ".": "./src/mod.ts" };
 

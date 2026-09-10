@@ -1,5 +1,6 @@
 import { parseDevVars } from "../account/handlers/devvars";
-import { type BindingDef, type Entry, type GenOptions, HEADER, REGISTRY } from "./cf-env-registry";
+import { HEADER, REGISTRY } from "./cf-env-registry";
+import type { BindingDef, Entry, GenOptions } from "./types";
 
 function getPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {

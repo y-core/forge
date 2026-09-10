@@ -5,44 +5,17 @@ import {
   PASSKEY,
   PASSKEY_CSRF_HEADER_ATTR,
   PASSKEY_CSRF_HEADER_DEFAULT,
-  type PasskeyFailureReason,
   PASSKEY_MODE_ATTR,
-  type PasskeyMode,
   PASSKEY_OPTIONS_PATH_ATTR,
   PASSKEY_OPTIONS_TOKEN_ATTR,
   PASSKEY_OUTCOME_EVENT,
-  type PasskeyOutcomeDetail,
   PASSKEY_REDIRECT_ATTR,
   PASSKEY_REDIRECT_FALLBACK,
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
-
-/** Everything a ceremony needs, read once off the scope root's contract attributes. @internal */
-export interface PasskeyContract {
-  mode: PasskeyMode;
-  optionsPath: string;
-  verifyPath: string;
-  optionsToken: string;
-  verifyToken: string;
-  csrfHeader: string;
-  redirect: string;
-}
-
-/** The `navigator.credentials` slice a ceremony calls, named so a test can hand over a fake. @internal */
-export interface PasskeyCredentials {
-  create(options: CredentialCreationOptions): Promise<Credential | null>;
-  get(options: CredentialRequestOptions): Promise<Credential | null>;
-}
-
-/** The realm capabilities a ceremony needs, taken as an argument so the core is DOM-free. @internal */
-export interface PasskeyRealm {
-  /** Whether the realm exposes WebAuthn at all — checked before any network call is made. */
-  supported: boolean;
-  credentials: PasskeyCredentials | undefined;
-  fetch: (url: string, init: RequestInit) => Promise<Response>;
-  navigate: (path: string) => void;
-}
+import type { PasskeyFailureReason, PasskeyOutcomeDetail } from "../types";
+import type { PasskeyContract, PasskeyCredentials, PasskeyRealm } from "./types";
 
 /** Creation options as JSON: every `BufferSource` field crosses the wire base64url-encoded. */
 type CreationOptionsJson = Omit<PublicKeyCredentialCreationOptions, "challenge" | "excludeCredentials" | "user"> & {

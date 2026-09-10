@@ -4,72 +4,8 @@
 // The RGB conversions are after color-convert (MIT, Copyright (c) Heather Arthur, Josh Junon).
 
 import { ESC } from "./ansi";
-import type { ColorLevel } from "./capability";
-
-/** The pair of sequences that opens and closes one style. @public */
-export interface ColorCode {
-  open: string;
-  close: string;
-}
-
-/** Every named colour, foreground and background. @public */
-export type AnsiColor =
-  | "black"
-  | "red"
-  | "green"
-  | "yellow"
-  | "blue"
-  | "magenta"
-  | "cyan"
-  | "white"
-  | "gray"
-  | "grey"
-  | "blackBright"
-  | "redBright"
-  | "greenBright"
-  | "yellowBright"
-  | "blueBright"
-  | "magentaBright"
-  | "cyanBright"
-  | "whiteBright"
-  | "bgBlack"
-  | "bgRed"
-  | "bgGreen"
-  | "bgYellow"
-  | "bgBlue"
-  | "bgMagenta"
-  | "bgCyan"
-  | "bgWhite"
-  | "bgGray"
-  | "bgGrey"
-  | "bgBlackBright"
-  | "bgRedBright"
-  | "bgGreenBright"
-  | "bgYellowBright"
-  | "bgBlueBright"
-  | "bgMagentaBright"
-  | "bgCyanBright"
-  | "bgWhiteBright";
-
-/** Every named non-colour attribute. @public */
-export type AnsiStyle = "reset" | "bold" | "dim" | "italic" | "underline" | "inverse" | "hidden" | "strikethrough";
-
-/** The style methods that take a value rather than a name. @public */
-export interface ColorMethods {
-  ansi256: (code: number) => ColorCode;
-  bgAnsi256: (code: number) => ColorCode;
-  rgb: (r: number, g: number, b: number) => ColorCode;
-  bgRgb: (r: number, g: number, b: number) => ColorCode;
-  hex: (value: string) => ColorCode;
-  bgHex: (value: string) => ColorCode;
-}
-
-/** A whole code table, resolved for one colour level. @public */
-export interface AnsiCodes {
-  colors: Record<AnsiColor, ColorCode>;
-  styles: Record<AnsiStyle, ColorCode>;
-  methods: ColorMethods;
-}
+import type { ColorLevel } from "./types";
+import type { AnsiCodes, AnsiColor, AnsiStyle, ColorCode } from "./types";
 
 const FG_CLOSE = 39;
 const BG_CLOSE = 49;

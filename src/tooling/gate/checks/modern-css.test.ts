@@ -3,8 +3,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { checkModernCss, type ModernCssCheckConfig } from "./modern-css";
-import type { DeferredFinding } from "./modern-css-deferred";
+import { checkModernCss } from "./modern-css";
+import type { ModernCssCheckConfig } from "./types";
+import type { DeferredFinding } from "./types";
 
 /** A throwaway repository root holding exactly the files given. */
 function fixtureRoot(files: Record<string, string>): string {

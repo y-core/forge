@@ -3,18 +3,19 @@
 import { hxAttrs } from "../../html/htmx/htmx-attrs";
 import { oobSwap, SWAP } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
-import type { Tone } from "../../ui/contracts/vocabulary";
+import type { Tone } from "../../ui/contracts/types";
 import { Alert } from "../../ui/core/alert";
 import { Badge } from "../../ui/core/badge";
 import { Button } from "../../ui/core/button";
 import { Card } from "../../ui/core/card";
 import { FormField } from "../../ui/core/field-layout";
-import type { ForgeIcon } from "../../ui/core/icon";
 import { Input } from "../../ui/core/input";
 import { ScrollArea } from "../../ui/core/scroll-area";
 import { Select } from "../../ui/core/select";
 import { Skeleton } from "../../ui/core/skeleton";
+import type { ForgeIcon } from "../../ui/core/types";
 import type { LogLevel, LogRecord, LogRow } from "../types";
+import type { LogViewerLoaderData } from "./types";
 
 /** Stable id of the log table tbody; shared so HTMX outerHTML swaps target the node the partial returns. @internal */
 export const LOG_TBODY_ID = "log-tbody";
@@ -27,17 +28,6 @@ const LOG_COLUMNS = 5;
 // A log key's `|`, `:` and `.` are legal in an HTML id but meaningful in the selector `hx-target` parses.
 function detailRowId(key: string): string {
   return `log-detail-${key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-}
-
-/** Data returned by the log viewer loader. @internal */
-export interface LogViewerLoaderData {
-  rows: LogRow[];
-  cursor?: string | undefined;
-  complete: boolean;
-  level?: string | undefined;
-  q?: string | undefined;
-  basePath: string;
-  failed?: boolean | undefined;
 }
 
 const LEVEL_TONE: Readonly<Record<LogLevel, Tone>> = { debug: "neutral", info: "info", warn: "warning", error: "destructive" };

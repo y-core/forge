@@ -1,4 +1,4 @@
-import type { DeploymentTarget } from "./target";
+import type { Colorize } from "../term/types";
 
 // Auth credentials — always from env or flags, never hardcoded
 export interface CfAuth {
@@ -253,3 +253,44 @@ export interface WranglerConfig {
   pipelines?: PipelineConfig[];
   [key: string]: unknown;
 }
+
+export type TableRow = Record<string, string>;
+
+/** How to render a grid: what to style it with, and what it has to fit in. */
+export interface TableOptions {
+  /** Styler for the headings. Defaults to `PLAIN`, so output carries no escape sequence unless asked. */
+  style?: Colorize;
+  /**
+   * Columns the grid must fit in. Omitted, it is as wide as its content — which is what every
+   * existing caller expects, and what a test asserting exact lines depends on.
+   */
+  width?: number;
+  /**
+   * Columns permitted to wrap onto further lines when `width` forces a shrink. Everything else is
+   * truncated instead, because a binding name broken across two lines is no longer a name you can
+   * search for.
+   */
+  wrap?: readonly string[];
+}
+
+/** One heading, an optional one-line rule that governs every row under it, and the rows. */
+export interface TableSection {
+  title: string;
+  note?: string;
+  rows: TableRow[];
+  /**
+   * Lines printed under the grid — remarks about the section rather than about any
+   * binding in it. A statement like "there is no .dev.vars here" is not a row: giving
+   * it one means inventing a binding name and an action to put in the columns, and
+   * both would be fiction.
+   */
+  footers?: string[];
+}
+
+/**
+ * Where this config deploys to. A binding means different things on either side —
+ * a Pages project keeps its variables under `deployment_configs`, a Worker script
+ * under `settings.bindings` — so handlers that touch the deployment itself must
+ * know which they are addressing.
+ */
+export type DeploymentTarget = { kind: "worker" | "pages"; name: string };

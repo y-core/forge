@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { type CborValue, cborDecodeFirst } from "./cbor";
+import { cborDecodeFirst } from "./cbor";
 import { hexToBytes } from "./mod";
+import type { CborValue } from "./types";
 
 /** RFC 8949 Appendix A, the rows this decoder's subset covers. */
 const RFC_8949_VECTORS: readonly { hex: string; value: CborValue }[] = [

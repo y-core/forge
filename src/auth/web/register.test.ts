@@ -10,7 +10,8 @@ import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mapHandler } from "../../testing/route";
-import { type AuthFactorService, createFactorRegistry } from "../factors/registry";
+import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorService } from "../factors/types";
 import {
   PASSKEY_CSRF_HEADER_ATTR,
   PASSKEY_CSRF_HEADER_DEFAULT,
@@ -23,7 +24,6 @@ import type { AuthChallenge, ChallengeStore } from "../types";
 import { createSigninActions } from "./actions";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, authCtx } from "./identity";
 import { loadSignin } from "./loaders";
-import type { AuthWebOptions } from "./options";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import {
@@ -40,6 +40,7 @@ import {
   fakeFactorStore,
   valuesOf,
 } from "./test-support";
+import type { AuthWebOptions } from "./types";
 
 const CSRF_SECRET = "b".repeat(64);
 

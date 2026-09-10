@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { fail } from "../finding";
-import { checkContrast, type ContrastCheckConfig } from "./contrast";
+import { checkContrast } from "./contrast";
+import type { ContrastCheckConfig } from "./types";
 
 const CRITERIA = { "aa-text": { floor: 4.5, name: "WCAG 2.2 AA text" } };
 

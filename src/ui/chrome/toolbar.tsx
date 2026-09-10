@@ -1,110 +1,17 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { JSX, JSXElement, JSXNode } from "../../jsx/types";
+import type { JSXElement, JSXNode } from "../../jsx/types";
 import { invokerAttrs } from "../contracts/overlay-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
-import type { Size } from "../contracts/vocabulary";
 import { Button } from "../core/button";
-import type { ForgeIcon } from "../core/icon";
 import { Toolbar as CoreToolbar } from "../core/toolbar";
+import type { ForgeIcon } from "../core/types";
 import { slotToken } from "../core/utils/as-child";
 import { cn } from "../core/utils/cn";
 import { commandAttrs } from "../server/command-attrs";
-
-/** Root rail item that fires a delegated action immediately on click. @public */
-export interface ToolbarAction<A extends string = string, G extends string = string> {
-  kind: "action";
-  /** Sprite glyph name, rendered via the bound `icon`. */
-  icon: G;
-  /** Tooltip / aria-label. */
-  label: string;
-  action: A;
-  /** How the action reaches a handler: `"scope"` emits `data-on-click`, `"command"` a native Invoker command. */
-  dispatch?: "scope" | "command" | undefined;
-  /** data-ref (test/parity hook). */
-  ref?: string | undefined;
-  data?: Record<string, string> | undefined;
-  /** Stamps class="active" at SSR for boot highlight. Tri-state: `false` announces an unpressed
-   *  toggle, absent announces a plain action button. */
-  active?: boolean | undefined;
-  /** Height of the icon-shaped item; default `md`. */
-  size?: Size | undefined;
-}
-
-/** An action button rendered inline on a popover's flyout title row. @public */
-export interface ToolbarTitleAction<A extends string = string, G extends string = string> {
-  /** App sprite glyph, rendered via the bound `icon`. */
-  icon: G;
-  /** Tooltip + aria-label. */
-  label: string;
-  action: A;
-  /** data-ref (test/parity hook). */
-  ref?: string | undefined;
-}
-
-/** Root rail item that opens a placement-aware flyout of arbitrary content. @public */
-export interface ToolbarPopover<A extends string = string, G extends string = string> {
-  kind: "popover";
-  /** Sprite glyph name for the trigger icon. */
-  icon: G;
-  /** Trigger aria-label + flyout title-chip text. */
-  label: string;
-  /** data-ref on the trigger button. */
-  ref?: string | undefined;
-  /** The app's control primitives rendered inside the flyout body. */
-  content: JSXNode;
-  /** Shrink flyout to content width (no min-w-52 floor). */
-  compact?: boolean | undefined;
-  titleAction?: ToolbarTitleAction<A, G> | undefined;
-}
-
-/** @public */
-export interface ToolbarSeparator {
-  kind: "separator";
-}
-
-/** Rail item that renders caller-supplied markup in place of a button. @public */
-export interface ToolbarSlot {
-  kind: "slot";
-  slot: JSXNode;
-}
-
-/** @public */
-export type ToolbarItem<A extends string = string, G extends string = string> =
-  | ToolbarAction<A, G>
-  | ToolbarPopover<A, G>
-  | ToolbarSeparator
-  | ToolbarSlot;
-
-/** A cluster of items; a separator is auto-emitted between sibling groups. @public */
-export interface ToolbarGroup<A extends string = string, G extends string = string> {
-  items: ToolbarItem<A, G>[];
-}
-
-/** Full toolbar configuration. @public */
-export interface ToolbarDefinition<A extends string = string, G extends string = string> {
-  groups: ToolbarGroup<A, G>[];
-}
-
-/** Edge the rail pins to; drives flex direction + flyout direction. @public */
-export type ToolbarPlacement = "left" | "right" | "top" | "bottom";
-
-/** Props for {@link Toolbar}; the tree is built from `config`, so `children` is removed. @public */
-export interface ToolbarProps<A extends string = string, G extends string = string> extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  config: ToolbarDefinition<A, G>;
-  /** App sprite icon — glyph names are app-defined. Required. */
-  icon: ForgeIcon<G>;
-  /** Edge the rail pins to. Default `"left"`. */
-  placement?: ToolbarPlacement | undefined;
-  /** `commandfor` sink (element id, bare or `#id`) for actions with `dispatch:"command"`. */
-  commandTarget?: string | undefined;
-  /** DOM id for the rail; also namespaces the generated flyout ids, which two same-placement rails
-   * on one page would otherwise collide on. */
-  id?: string | undefined;
-  class?: string | undefined;
-}
+import type { ToolbarAction, ToolbarGroup, ToolbarItem, ToolbarPlacement, ToolbarProps } from "./types";
 
 /** Threaded through the item renderers. */
 interface RenderCtx<G extends string> {

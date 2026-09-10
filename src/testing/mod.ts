@@ -1,11 +1,11 @@
-export type { FakeAuthFactor, FakeAuthUser } from "./auth-fakes";
+export type { FakeAuthFactor, FakeAuthUser } from "./types";
 export { fakeAuthD1 } from "./auth-fakes";
-export type { TestContextOptions } from "./context";
+export type { TestContextOptions } from "./types";
 export { createTestContext, mockExecutionContext, nullLogger } from "./context";
 export { mintTestCsrfToken } from "./csrf";
-export type { FakeD1Options, FakeKVOptions } from "./fakes";
+export type { FakeD1Options, FakeKVOptions } from "./types";
 export { fakeAssetsFetcher, fakeD1, fakeKV, fakeR2 } from "./fakes";
 export { render } from "./render";
 export { buildRequest } from "./request";
-export type { TestAction } from "./route";
+export type { TestAction } from "./types";
 export { mapHandler } from "./route";

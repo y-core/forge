@@ -1,17 +1,21 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import { Route, type RouteMap } from "@remix-run/fetch-router/routes";
+import { Route } from "@remix-run/fetch-router/routes";
+import type { RouteMap } from "@remix-run/fetch-router/routes";
 
-import type { MiddlewareGuardGroup } from "../../app/middleware-chain";
-import { type AppContext, getAppContext } from "../../context/types";
+import type { MiddlewareGuardGroup } from "../../app/types";
+import { getAppContext } from "../../context/types";
 import { safeRedirectPath } from "../../http/redirect-path";
 import { jsonResponse, redirect } from "../../http/response";
 import { sessionCtx } from "../../session/session";
-import { type AuthFactorRegistry, authFactorContext } from "../factors/registry";
+import { authFactorContext } from "../factors/registry";
 import { authLimit } from "../limits";
-import type { AuthFactorKind, UserStore } from "../types";
-import { type AuthIdentity, authCtx, resolveAuthIdentity } from "./identity";
+import type { AuthFactorKind } from "../types";
+import { authCtx, resolveAuthIdentity } from "./identity";
 import { authEnrolTarget } from "./paths";
-import { type AuthGuardName, type AuthMedium, type AuthRouteGroup, AUTH_ROUTE_GROUPS } from "./routes";
+import { AUTH_ROUTE_GROUPS } from "./routes";
+import type { AuthIdentity } from "./types";
+import type { AuthGuardName, AuthMedium, AuthRouteGroup } from "./types";
+import type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthRouteMaps } from "./types";
 
 const NO_SESSION =
   "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.";
@@ -28,70 +32,6 @@ const NOTHING_OWED = "This account owes no factor enrolment.";
 const UNAVAILABLE = "Service Unavailable";
 
 const MIN_STEP_UP_MAX_AGE_MS = 1_000;
-
-// The same lifetime `AuthWebOptions.resolveServices` has, for the same reason: a store built from a
-// Worker binding cannot exist until there is a request carrying `env`.
-/** Builds one of a guard's dependencies from the request it is guarding. @public */
-export type AuthGuardResolver<Bindings, T> = (c: AppContext<Bindings>) => T | Promise<T>;
-
-/** What `requireAuth` needs to turn a session into an identity. @public */
-export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
-  /** Built per request, and so re-read every request: a demotion or deactivation lands on the next one rather than the next sign-in. */
-  readonly users: AuthGuardResolver<Bindings, Pick<UserStore, "findById">>;
-  /** Where an anonymous request is sent — read off `authPaths`, never written as a literal. */
-  readonly signinPath: string;
-  /** Query parameter carrying the return-to path onto the sign-in page. Defaults to `next`. */
-  readonly returnParam?: string;
-  /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
-  readonly medium?: AuthMedium;
-}
-
-/** What the two enrolment guards need to tell an owed enrolment from an owed step-up from neither. @public */
-export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
-  /** Built per request, for the same reason the user store is: the registry is assembled from Worker bindings. */
-  readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve" | "stepUp">>;
-  // Keyed by kind because the demand is: a deployment offering the authenticator app owes a page an
-  // enrolment can be completed on, and a single path sends every owed kind to whichever one it names.
-  /** Where a user who still owes an enrolment is sent, by the kind they owe — spell it `authEnrolmentPaths(paths.auth)`. */
-  readonly enrolmentPaths: Partial<Record<AuthFactorKind, string>>;
-  /** Where a user who owes a step-up is sent — read off `authPaths`. */
-  readonly stepUpPath: string;
-  /** Where a user with nothing outstanding is sent off an enrolment page — read off `authPaths`. */
-  readonly settledPath: string;
-  /** How long a completed step-up satisfies a later demand, in milliseconds. Omit to last the session. */
-  readonly stepUpMaxAgeMs?: number;
-  // Separate from `stepUpMaxAgeMs` because they answer different questions: that one is how long a
-  // session stays signed in, this one is how recently the visitor proved they are still there.
-  /** How recent a step-up a state-changing request must carry, in milliseconds. Omit and `requireFreshStepUp` demands nothing. */
-  readonly freshStepUpMaxAgeMs?: number;
-  /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
-  readonly medium?: AuthMedium;
-}
-
-/** The built route maps a guard chain attaches to; a builder that was never called is simply absent. @public */
-export interface AuthRouteMaps {
-  readonly auth?: RouteMap;
-  readonly account?: RouteMap;
-  readonly admin?: RouteMap;
-}
-
-/** What `createAuthGuards` needs to wire `AUTH_ROUTE_GROUPS` onto a middleware chain. @public */
-export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
-  readonly routes: AuthRouteMaps;
-  readonly auth: AuthGuardOptions<Bindings>;
-  readonly enrolment: AuthEnrolmentGuardOptions<Bindings>;
-  /** Group table to wire. Defaults to `AUTH_ROUTE_GROUPS`. */
-  readonly groups?: readonly AuthRouteGroup[];
-  // Reached through `MiddlewareGuardGroup` rather than imported from `security/types`: `auth/web`
-  // declares no edge to `security`, and the direct import fails `validate-namespace-graph`.
-  /** Origin/Referer allowlist for every group carrying a mutating leaf; forge cannot pick your origins, so without it none is mounted. */
-  readonly origin?: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
-  // Keyed by the group's own dotted path rather than attached to `AuthRouteGroup`, so the group
-  // table stays the one description of what a group *is* and a consumer never restates it. A window
-  // right for the sign-in POST is wrong for the admin console, so this is per group and not global.
-  /** Rate limits per group, keyed by `path.join(".")` — `"auth"`, `"auth.verify"`, `"account"`. Forge picks no numbers. */
-  readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>>>;
-}
 
 // A group that answers in JSON is refused in JSON: a browser controller posting a ceremony step
 // cannot read an HTML sign-in page, and follows the redirect only to parse the wrong document.

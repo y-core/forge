@@ -1,23 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-/** A node of the AST `candidatesToAst` returns; only the shapes a derivation reads are named. @public */
-export interface CssNode {
-  kind: string;
-  property?: string;
-  name?: string;
-  nodes?: readonly CssNode[];
-}
-
-/** The subset of Tailwind's design system forge's derivations call. @public */
-export interface DesignSystem {
-  candidatesToAst: (candidates: string[]) => readonly (readonly CssNode[] | null)[];
-  candidatesToCss: (candidates: string[]) => readonly (string | null)[];
-  parseCandidate: (candidate: string) => Iterable<{ kind: string; root: string; value?: { kind: string; value: string } | null }>;
-  getClassList: () => readonly (readonly [string, unknown])[];
-  utilities: { keys: (kind: "static" | "functional") => readonly string[] };
-  theme: { entries: () => Iterable<readonly [string, { value: string }]> };
-}
+import type { DesignSystem } from "./types";
 
 /** Whether `tailwindcss` can be resolved — a derivation is unrunnable without it, and it is an optional peer. @public */
 export function hasTailwind(): boolean {

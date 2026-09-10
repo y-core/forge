@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { type BundleCheckConfig, checkBundle, hasEsbuild } from "./bundle";
+import { checkBundle, hasEsbuild } from "./bundle";
+import type { BundleCheckConfig } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const FIXER = "bun run gen:bundles";

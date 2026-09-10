@@ -3,8 +3,9 @@
 
 import type { FC } from "../../jsx/types";
 import { Button } from "../core/button";
-import { Flash, type FlashMessage, FlashOob } from "../server/flash";
+import { Flash, FlashOob } from "../server/flash";
 import { Resumable } from "../server/resumable";
+import type { FlashMessage } from "../server/types";
 import { CatalogGroup, CatalogNote, CatalogSection } from "./components";
 import {
   LAZY_DEMO_PENDING,
@@ -16,7 +17,7 @@ import {
   LAZY_RETRY_REF,
   LAZY_RETRY_STATUS_REF,
 } from "./lazy-contract";
-import type { ShowcasePaths } from "./route";
+import type { ShowcasePaths } from "./types";
 
 /** One message of each severity, so the section shows every variant `Flash` can emit. */
 const FLASH_SAMPLE: FlashMessage[] = [

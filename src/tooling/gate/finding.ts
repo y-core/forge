@@ -1,27 +1,6 @@
-import type { Colorize } from "../term/color";
 import { PLAIN } from "../term/color";
-
-/** The severity of a finding: `fail` fails the check, `warn` is reported and does not. */
-export type FindingLevel = "fail" | "warn";
-
-/** One thing a check has to say about the tree it walked. @public */
-export interface Finding {
-  level: FindingLevel;
-  message: string;
-  /** Repository-relative path, when the finding is about one file. */
-  file?: string;
-  /** 1-indexed line within `file`. */
-  line?: number;
-  /** Evidence lines shown indented beneath `message`. */
-  detail?: readonly string[];
-}
-
-/** What a check returns: its verdict, its findings, and one line naming what it covered. @public */
-export interface CheckResult {
-  ok: boolean;
-  findings: readonly Finding[];
-  summary: string;
-}
+import type { Colorize } from "../term/types";
+import type { CheckResult, Finding } from "./types";
 
 /** Builds a `CheckResult`, deriving `ok` from the findings. @public */
 export function checkResult(findings: readonly Finding[], summary: string): CheckResult {

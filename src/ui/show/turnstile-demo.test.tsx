@@ -13,11 +13,11 @@ import {
   TURNSTILE_DEMO_DEFAULTS,
   TURNSTILE_PASS_KEY,
   TURNSTILE_TEST_KEYS,
-  type TurnstileDemoOptions,
   TurnstileVerdictFragment,
   turnstileSiteKey,
   turnstileSnippet,
 } from "./turnstile-demo";
+import type { TurnstileDemoOptions } from "./types";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;

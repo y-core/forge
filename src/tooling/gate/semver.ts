@@ -1,12 +1,4 @@
-/** A parsed `major.minor.patch` version. @public */
-export interface SemVer {
-  major: number;
-  minor: number;
-  patch: number;
-}
-
-/** Which component of a {@link SemVer} to increment. @public */
-export type BumpKind = "major" | "minor" | "patch";
+import type { BumpKind, SemVer } from "./types";
 
 const isCanonicalDecimal = (part: string): boolean => part === String(Number(part));
 

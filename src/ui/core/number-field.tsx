@@ -2,8 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
+import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Size } from "../contracts/vocabulary";
 import { fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";

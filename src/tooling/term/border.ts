@@ -1,30 +1,6 @@
+import type { BorderSlot, BorderStyle } from "./types";
 // Slot record and the zero-width-means-skip convention adapted from @visulima/tabular
 // (MIT, Copyright (c) visulima) — https://github.com/visulima/visulima — packages/terminal/tabular/src/style.ts
-
-/** One drawing position, whose `width` of zero means the engine skips the slot entirely. @public */
-export interface BorderSlot {
-  char: string;
-  width: number;
-}
-
-/** The fifteen positions a rectangular grid can draw. @public */
-export interface BorderStyle {
-  topLeft: BorderSlot;
-  topBody: BorderSlot;
-  topJoin: BorderSlot;
-  topRight: BorderSlot;
-  joinLeft: BorderSlot;
-  joinBody: BorderSlot;
-  joinJoin: BorderSlot;
-  joinRight: BorderSlot;
-  bodyLeft: BorderSlot;
-  bodyJoin: BorderSlot;
-  bodyRight: BorderSlot;
-  bottomLeft: BorderSlot;
-  bottomBody: BorderSlot;
-  bottomJoin: BorderSlot;
-  bottomRight: BorderSlot;
-}
 
 const SKIP: BorderSlot = { char: "", width: 0 };
 

@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { type BuildTimeBoundaryCheckConfig, buildTimeSubpaths, checkBuildTimeBoundary, isBuildTime } from "./build-time-boundary";
+import { buildTimeSubpaths, checkBuildTimeBoundary, isBuildTime } from "./build-time-boundary";
+import type { BuildTimeBoundaryCheckConfig } from "./types";
 
 const BUILD_DIRS = ["src/tooling", "src/ui/assets/build"] as const;
 

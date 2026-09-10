@@ -1,43 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX } from "../../jsx/types";
+import type { FC } from "../../jsx/types";
 import { currentAttrs } from "../contracts/state-attrs";
+import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Size } from "../contracts/vocabulary";
-import type { ForgeIcon } from "../core/icon";
 import { slotToken } from "../core/utils/as-child";
 import { cn } from "../core/utils/cn";
 import { filterAttrs } from "./navbar-items";
-
-/** One dock destination: a glyph over a label. `href` is a route-map key resolved through {@link DockProps.resolveHref}. @public */
-export interface DockItem<G extends string = string> {
-  label: string;
-  /** Route-map key (NOT a URL) — passed to `resolveHref` to produce the final `href`. */
-  href: string;
-  /** Sprite glyph name, rendered via the bound `icon`. */
-  icon: G;
-  /** Marks the destination the reader is on: `aria-current="page"` plus `data-selected`. */
-  current?: boolean | undefined;
-  /** Auth tokens; the item shows only when one is in the active set. */
-  filters?: string[] | undefined;
-}
-
-/** The breakpoint the dock hides from, where a `Navbar` takes over; `never` keeps it at every width. @public */
-export type DockHideAbove = "md" | "lg" | "never";
-
-/** Props for {@link Dock}. @public */
-export interface DockProps<G extends string = string> extends Omit<JSX.IntrinsicElements["nav"], "children"> {
-  items: DockItem<G>[];
-  /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
-  resolveHref: (key: string) => string;
-  icon: ForgeIcon<G>;
-  /** The bar's accessible name. @default "Primary" */
-  label?: string | undefined;
-  size?: Size | undefined;
-  hideAbove?: DockHideAbove | undefined;
-  /** Initial auth tokens for correct first paint; server-hidden only, with no runtime re-sync. */
-  activeFilters?: string[] | undefined;
-}
+import type { DockHideAbove, DockProps } from "./types";
 
 const ROOT = "fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background pb-[env(safe-area-inset-bottom)]";
 

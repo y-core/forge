@@ -1,27 +1,11 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { findClassDeclarations, findSourceDirectives } from "./css-parse";
 import { collectFiles, listDirectories, listFiles } from "./source-scan";
-
-/** What the `@source` coverage check needs to know about the project. @public */
-export interface CssSourcesCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** The component root whose every subdirectory must be scanned or registered, relative to `root`. */
-  uiDir: string;
-  /** Directory of stylesheets whose `@source` directives are read, relative to `root`. */
-  cssDir: string;
-  /** Source root swept by pass C for class-bearing siblings, relative to `root`. */
-  sourceDir: string;
-  /** README that must publish each `consumerScanned` line verbatim, relative to `root`. */
-  readme: string;
-  /** Directories under `uiDir` that emit no utility class, each mapped to the reason — a claim pass B re-checks. */
-  classFree?: ReadonlyMap<string, string>;
-  /** Directories under `uiDir` that declare classes but are opt-in, each mapped to the exact `@source` line an app must add. */
-  consumerScanned?: ReadonlyMap<string, string>;
-}
+import type { CssSourcesCheckConfig } from "./types";
 
 const SKIP_FILE = (name: string): boolean => name.endsWith(".test.ts") || name.endsWith(".test.tsx") || name.endsWith(".browser.ts");
 

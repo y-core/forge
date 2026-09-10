@@ -1,21 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
 import { collectFiles } from "./source-scan";
-
-/** What the SSR-boundary check needs to know about the project. @public */
-export interface SsrBoundaryCheckConfig {
-  /** Repository root; every reported path is relative to it. */
-  root: string;
-  /** The browser-only directories, relative to `root` — nothing outside them may import from within one. */
-  clientDirs: readonly string[];
-  /** Directories walked for source files, relative to `root`. */
-  sources: readonly string[];
-  /** Basenames permitted to cross the boundary; the registration entry points. */
-  entryPoints: readonly string[];
-}
+import type { SsrBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 

@@ -2,6 +2,7 @@ import type { Session } from "@remix-run/session";
 
 import { contextVar } from "../../context/accessor";
 import type { UserStore } from "../types";
+import type { AuthIdentity } from "./types";
 
 /** The session key the signed-in user's id is stored under. @public */
 export const AUTH_SESSION_KEY = "auth.userId";
@@ -13,15 +14,6 @@ export const AUTH_STEP_UP_SESSION_KEY = "auth.stepUpAt";
 // code was issued to, and a query parameter carrying it lands in history, `Referer` and proxy logs.
 /** The session key an unfinished sign-in keeps the address it challenged under. @public */
 export const AUTH_PENDING_SIGNIN_SESSION_KEY = "auth.pendingSignin";
-
-/** Who the request is, established from the session and re-read from the user store every request. @public */
-export interface AuthIdentity {
-  readonly userId: string;
-  readonly email: string;
-  readonly isAdmin: boolean;
-  /** When this session completed a step-up verification, or `null` when it has not. */
-  readonly stepUpAt: number | null;
-}
 
 /** Per-request accessor for the identity `requireAuth` establishes. @public */
 export const authCtx = contextVar<AuthIdentity>("auth.identity");

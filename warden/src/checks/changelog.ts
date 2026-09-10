@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type ChangelogDocument, parseChangelog } from "../../../src/tooling/gate/changelog";
-import { type CheckResult, checkResult, type Finding, fail, warn } from "../../../src/tooling/gate/finding";
+import { parseChangelog } from "../../../src/tooling/gate/changelog";
+import { checkResult, fail, warn } from "../../../src/tooling/gate/finding";
 import { compareSemVer, parseSemVer } from "../../../src/tooling/gate/semver";
+import type { ChangelogDocument } from "../../../src/tooling/gate/types";
+import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
 
 /** What the changelog check needs to know about the project. @public */
 export interface ChangelogCheckConfig {

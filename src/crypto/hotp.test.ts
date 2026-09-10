@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { type HotpHash, hotpCode, totpCode, totpCounter } from "./hotp";
+import { hotpCode, totpCode, totpCounter } from "./hotp";
 import { utf8Encode } from "./mod";
+import type { HotpHash } from "./types";
 
 /** RFC 4226 Appendix D uses this one 20-byte ASCII secret for every counter. */
 const RFC_4226_SECRET = utf8Encode("12345678901234567890");

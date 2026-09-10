@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { TOGGLE_GROUP_SCOPE } from "../contracts/toggle-contract";
-import type { Size } from "../contracts/vocabulary";
+import type { Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import { ToggleGroup } from "./toggle-group";
 

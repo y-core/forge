@@ -4,14 +4,13 @@ import type { FC, JSX } from "../../jsx/types";
 import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
+import type { Tone } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Tone } from "../contracts/vocabulary";
-import type { PanelAppearance } from "./alert";
+import type { PanelAppearance } from "./types";
+import type { ToastPosition } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { toneVariants } from "./utils/tone";
-
-export type ToastPosition = "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
 type ToastContainerProps = JSX.IntrinsicElements["section"] & {
   position?: ToastPosition | undefined;

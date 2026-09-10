@@ -1,54 +1,8 @@
-import { BORDERS, type BorderSlot, type BorderStyle } from "./border";
+import { BORDERS } from "./border";
+import type { BorderSlot, BorderStyle } from "./types";
+import type { DefinitionEntry, DefinitionOptions, GridColumn, GridOptions } from "./types";
 import { stringWidth, truncate } from "./width";
-import { type Align, padAlign, wrapLines } from "./wrap";
-
-/** One column of a grid: which key it reads, what it is headed, and how it behaves when space runs out. @public */
-export interface GridColumn {
-  /** Row key this column reads. */
-  key: string;
-  /** Heading text. Defaults to `key`. */
-  header?: string;
-  /** Where the slack goes in a cell narrower than the column. Defaults to `left`. */
-  align?: Align;
-  /** Gives up width first when the grid must shrink, and wraps rather than truncates. */
-  wrap?: boolean;
-}
-
-/** How to lay a grid out. @public */
-export interface GridOptions {
-  /** Columns in render order. Omitted, they are derived from the first row's key order. */
-  columns?: readonly (string | GridColumn)[];
-  /** Border preset. Defaults to `BORDERS.markdown`. */
-  border?: BorderStyle;
-  /** Render the column headings and the rule under them. Defaults to `true`. */
-  header?: boolean;
-  /** Columns between two cells where the border draws no vertical. Defaults to 2. */
-  gap?: number;
-  /** Columns of space inside each cell, on both sides. Defaults to 1. */
-  padding?: number;
-  /** Columns every line is prefixed with. Defaults to 0. */
-  indent?: number;
-  /** Total columns the grid must fit in. Omitted, it is as wide as its content. */
-  maxWidth?: number;
-  /** Drop a column that is empty in every row. Defaults to `true`. */
-  dropEmptyColumns?: boolean;
-}
-
-/** One `term — description` pair. @public */
-export interface DefinitionEntry {
-  term: string;
-  description: string;
-}
-
-/** How to lay a definition list out. @public */
-export interface DefinitionOptions {
-  /** Total columns the list must fit in; descriptions wrap to stay inside it. */
-  width?: number;
-  /** Columns every line is prefixed with. Defaults to 0. */
-  indent?: number;
-  /** Columns between the term and its description. Defaults to 2. */
-  gap?: number;
-}
+import { padAlign, wrapLines } from "./wrap";
 
 function toColumn(spec: string | GridColumn): GridColumn {
   return typeof spec === "string" ? { key: spec } : spec;

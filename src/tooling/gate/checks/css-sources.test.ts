@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 
 import { fail } from "../finding";
-import { checkCssSources, type CssSourcesCheckConfig } from "./css-sources";
+import { checkCssSources } from "./css-sources";
+import type { CssSourcesCheckConfig } from "./types";
 
 const CLASSES = 'export const cls = "flex gap-2";\n';
 

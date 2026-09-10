@@ -4,17 +4,9 @@ import { posix, relative, resolve } from "node:path";
 import { loadConfig } from "../../assets/config";
 import { SITE_OUTPUTS } from "../../assets/types";
 import { stripJsonc } from "../../cli/jsonc";
-import { type CheckResult, checkResult, type Finding, fail, warn } from "../finding";
-
-/** What the asset-root check needs to find both halves of the coupling. @public */
-export interface AssetRootCheckConfig {
-  /** Application root. Both config paths resolve against it. */
-  root: string;
-  /** Assets config path, relative to `root`. */
-  assetConfig: string;
-  /** Wrangler config path, relative to `root`. Defaults to `wrangler.jsonc`. */
-  workerConfig?: string;
-}
+import { checkResult, fail, warn } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import type { AssetRootCheckConfig } from "./types";
 
 interface WranglerAssets {
   directory?: string;

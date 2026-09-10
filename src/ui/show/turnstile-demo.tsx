@@ -9,23 +9,16 @@ import { Alert } from "../core/alert";
 import { Button } from "../core/button";
 import { FormField } from "../core/field-layout";
 import { Form } from "../core/form";
-import type { ForgeIcon } from "../core/icon";
 import { Input } from "../core/input";
 import { Select } from "../core/select";
 import { Turnstile } from "../core/turnstile";
+import type { ForgeIcon } from "../core/types";
 import { CatalogPanel, CatalogRow } from "./components";
-import type { ShowcasePaths } from "./route";
+import type { ShowcasePaths } from "./types";
+import type { TurnstileDemoOptions, TurnstileTestKey, TurnstileVerdict } from "./types";
 
 /** Where the verdict fragment lands, so the form and the action never drift. @public */
 export const SHOW_TURNSTILE_VERDICT_ID = "show-turnstile-verdict";
-
-/** One of Cloudflare's published dummy sitekeys, which is all this page ever renders. @public */
-export interface TurnstileTestKey {
-  id: string;
-  siteKey: string;
-  label: string;
-  note: string;
-}
 
 // A fixed list rather than a free-text sitekey: a key off the query string would be an attacker's
 // widget rendered under this origin's name, and no demonstration needs that.
@@ -55,25 +48,11 @@ export const TURNSTILE_TEST_KEYS: readonly TurnstileTestKey[] = [
   { id: "invisible", siteKey: "1x00000000000000000000BB", label: "Invisible — always passes", note: "Nothing is drawn; the token arrives anyway." },
 ];
 
-const SIZES = ["normal", "compact", "flexible"] as const;
-const LOADS = ["eager", "focus"] as const;
-const CHALLENGES = ["render", "submit"] as const;
-const APPEARANCES = ["always", "execute", "interaction-only"] as const;
-const LANGUAGES = ["auto", "en", "de", "fr", "es", "ja", "ar"] as const;
-
-/** Every prop the playground drives, read from the query string. @public */
-export interface TurnstileDemoOptions {
-  key: string;
-  size: (typeof SIZES)[number];
-  load: (typeof LOADS)[number];
-  challenge: (typeof CHALLENGES)[number];
-  appearance: (typeof APPEARANCES)[number];
-  action: string;
-  cData: string;
-  responseFieldName: string;
-  language: (typeof LANGUAGES)[number];
-  tabindex: number | null;
-}
+export const SIZES = ["normal", "compact", "flexible"] as const;
+export const LOADS = ["eager", "focus"] as const;
+export const CHALLENGES = ["render", "submit"] as const;
+export const APPEARANCES = ["always", "execute", "interaction-only"] as const;
+export const LANGUAGES = ["auto", "en", "de", "fr", "es", "ja", "ar"] as const;
 
 /** What the page renders when the query string says nothing. @public */
 export const TURNSTILE_DEMO_DEFAULTS: TurnstileDemoOptions = {
@@ -355,9 +334,6 @@ const ResilienceSection: FC = () => (
     </div>
   </CatalogPanel>
 );
-
-/** How the verify round trip ended: the pipeline's own verdict, not the widget's. @public */
-export type TurnstileVerdict = { kind: "verified" } | { kind: "rejected"; guard: string; reason: TurnstileFailure } | { kind: "unconfigured" };
 
 // Partial, and keyed by every failure this page can actually reach: the one it cannot — a customer-data
 // mismatch, which needs an `expectedCData` the showcase never sets — spells a `data-*` name in source

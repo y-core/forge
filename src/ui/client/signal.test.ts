@@ -1,7 +1,8 @@
 // oxlint-disable eslint/no-unused-expressions -- a bare `.value` read is how a test registers a dependency inside an effect; the read is the assertion
 import { describe, expect, it } from "bun:test";
 
-import { computed, createSignal, effect, type ReadonlySignal, withOwner } from "./signal";
+import { computed, createSignal, effect, withOwner } from "./signal";
+import type { ReadonlySignal } from "./types";
 
 describe("createSignal", () => {
   it("returns initial value", () => {

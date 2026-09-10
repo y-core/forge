@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { mountNumberField } from "./number-field";
-import { type FakeElement, FakeEvent, fakeTree } from "./test-dom";
+import { FakeEvent, fakeTree } from "./test-dom";
+import type { FakeElement } from "./test-dom";
 
 /** A number field whose input records the steps taken on it, since a fake has no value algorithm. */
 function field(inputAttrs: Record<string, string> = {}) {

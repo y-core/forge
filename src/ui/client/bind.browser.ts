@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { ToggleGroup } from "../controls/toggle-group";
@@ -11,7 +12,7 @@ declare global {
     forgeResume: typeof import("./resume");
     forgeSignal: typeof import("./signal");
     forgeSignals: typeof import("./signal-record");
-    demoSignals: import("./signal-record").SignalRecord<{ choice: unknown }>;
+    demoSignals: import("./types").SignalRecord<{ choice: unknown }>;
     lastValue?: unknown;
   }
 }

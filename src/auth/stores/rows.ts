@@ -4,6 +4,7 @@ import { sql } from "../../storage/db/sql";
 import type { D1Client, SqlFragment } from "../../storage/db/types";
 import { AuthStoreError } from "../errors";
 import type { AdminUserOutcome, AuthCredential, AuthFactor, AuthFactorKind, AuthIdentityLink, AuthStoreResult, AuthUser } from "../types";
+import type { CredentialRow, FactorRow, IdentityLinkRow, UserRow } from "./types";
 
 /** How many rows a listing returns when the caller names no limit. @internal */
 export const DEFAULT_PAGE_LIMIT = 50;
@@ -15,58 +16,6 @@ export const MAX_PAGE_LIMIT = 200;
 export function pageLimit(limit: number | undefined): number {
   if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_PAGE_LIMIT;
   return Math.min(MAX_PAGE_LIMIT, Math.max(1, Math.trunc(limit)));
-}
-
-/** @internal */
-export interface UserRow {
-  id: unknown;
-  email: string;
-  email_key: string;
-  email_verified_at: number | null;
-  webauthn_id: unknown;
-  is_admin: number;
-  deactivated_at: number | null;
-  created_at: number;
-  updated_at: number;
-}
-
-/** @internal */
-export interface FactorRow {
-  id: unknown;
-  user_id: unknown;
-  kind: string;
-  secret: unknown;
-  last_counter: number | null;
-  confirmed_at: number | null;
-  created_at: number;
-  updated_at: number;
-}
-
-/** @internal */
-export interface CredentialRow {
-  id: unknown;
-  user_id: unknown;
-  credential_id: string;
-  public_key: unknown;
-  algorithm: number;
-  sign_count: number;
-  transports: string | null;
-  backup_eligible: number;
-  backed_up: number;
-  label: string | null;
-  last_used_at: number | null;
-  created_at: number;
-  updated_at: number;
-}
-
-/** @internal */
-export interface IdentityLinkRow {
-  id: unknown;
-  user_id: unknown;
-  provider: string;
-  subject: string;
-  created_at: number;
-  updated_at: number;
 }
 
 // `tests/workerd/auth-schema.test.ts` measures a plain number array from the D1 workerd answers

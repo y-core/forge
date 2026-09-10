@@ -4,7 +4,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { renderToString } from "../jsx/render-to-string";
-import { type PageMeta, mergeMeta, metaTags } from "./meta";
+import { mergeMeta, metaTags } from "./meta";
+import type { PageMeta } from "./types";
 
 /** The markup a descriptor renders, as the one string a `<head>` would carry. */
 function head(meta: PageMeta, options?: { nonce?: string }): Promise<string> {

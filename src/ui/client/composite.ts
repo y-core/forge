@@ -1,5 +1,6 @@
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { activeElement, contains, eventTarget, isRtl, ownerWindow } from "./dom";
+import type { RovingFocusOptions } from "./types";
 
 const ARROW_UP = "ArrowUp";
 const ARROW_DOWN = "ArrowDown";
@@ -15,20 +16,6 @@ const COMPOSITE_KEYS = new Set<string>([ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_
 const NO_CURRENT = -1;
 
 const mountedComposites = new WeakMap<HTMLElement, () => void>();
-
-/** Options for {@link mountRovingFocus}. @public */
-export interface RovingFocusOptions {
-  /** Selector for the composite's items, resolved **live** against `root` on every interaction. */
-  items: string;
-  /** Which arrows navigate. `both` claims all four. @default "horizontal" */
-  orientation?: "horizontal" | "vertical" | "both";
-  /** Wrap from the last item to the first and back. @default true */
-  loop?: boolean;
-  /** Jump to an item by typing the start of its text. @default false */
-  typeahead?: boolean;
-  /** Idle time before the typeahead buffer resets. @default 500 */
-  typeaheadTimeout?: number;
-}
 
 /** Both forms are checked: `disabled` removes an element from the tab order, while `aria-disabled`
  * keeps it focusable but inert — the right shape for a toolbar button that must stay discoverable. @internal */

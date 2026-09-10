@@ -3,7 +3,8 @@ import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { IdentityLinkStore } from "../types";
-import { type IdentityLinkRow, readIdentityLink, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import { readIdentityLink, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import type { IdentityLinkRow } from "./types";
 
 /** Creates the `IdentityLinkStore` over a SQL database. @public */
 export function createIdentityLinkStore(db: D1Client): IdentityLinkStore {

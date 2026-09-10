@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { ESC } from "./ansi";
-import type { AnsiColor } from "./codes";
 import { ansi256To16, COLOR_NAMES, createAnsiCodes, hexToRgb, rgbToAnsi256, STYLE_NAMES } from "./codes";
+import type { AnsiColor } from "./types";
 
 const NONE = { open: "", close: "" };
 const code = (open: string | number, close: number) => ({ open: `${ESC}[${open}m`, close: `${ESC}[${close}m` });

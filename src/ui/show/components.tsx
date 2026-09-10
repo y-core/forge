@@ -3,9 +3,10 @@
 
 import type { FC } from "../../jsx/types";
 import { Navbar } from "../chrome/navbar";
-import type { NavDefinition } from "../chrome/navbar-items";
 import { ThemeToggle } from "../chrome/theme-toggle";
-import { APPEARANCES, type Appearance, type Tone, TONES } from "../contracts/vocabulary";
+import type { NavDefinition } from "../chrome/types";
+import type { Appearance, Tone } from "../contracts/types";
+import { APPEARANCES, TONES } from "../contracts/vocabulary";
 import { Accordion } from "../core/accordion";
 import { Alert } from "../core/alert";
 import { Avatar } from "../core/avatar";
@@ -24,7 +25,6 @@ import { Field } from "../core/field-stack";
 import { FileInput } from "../core/file-input";
 import { Filter } from "../core/filter";
 import { Form } from "../core/form";
-import type { ForgeIcon } from "../core/icon";
 import { Indicator } from "../core/indicator";
 import { Input } from "../core/input";
 import { Join } from "../core/join";
@@ -64,33 +64,16 @@ import { Resumable } from "../server/resumable";
 import { ChromeDemos } from "./chrome-demos";
 import { ControlsDemos } from "./controls-demos";
 import { FlashSection, LazySection } from "./extra-demos";
-import type { ShowcaseData, ShowcasePaths } from "./route";
 import { SHOW_SCOPES } from "./scope-contract";
 import { DependentSection, PaginateSection, PreviewSection, SearchSection, ToastSection, ValidateSection } from "./sections";
 import { TOAST_CYCLE_DURATION, TOAST_CYCLE_SCOPE } from "./toast-contract";
-import { TurnstileDemos, type TurnstileDemoOptions } from "./turnstile-demo";
-
-/** The showcase's bound sprite. Named once because a dozen section signatures take it. @internal */
-export type ShowIcon = ForgeIcon<
-  | "spinner"
-  | "chevron-down"
-  | "chevron-left"
-  | "chevron-right"
-  | "sun"
-  | "moon"
-  | "monitor"
-  | "hamburger"
-  | "close"
-  | "panel-open"
-  | "panel-close"
-  | "upload"
->;
+import { TurnstileDemos } from "./turnstile-demo";
+import type { ShowcaseData, ShowcasePaths } from "./types";
+import type { TurnstileDemoOptions } from "./types";
+import type { CatalogAlternative, ShowIcon, ShowcasePage } from "./types";
 
 /** The bands the table of contents reads in — a catalog entry names one, and nothing else groups. */
 type ShowcaseGroup = "Primitives" | "Forms & Controls" | "Bound Controls" | "Interaction & Overlay" | "Feedback" | "Chrome" | "Behaviour";
-
-/** The route a catalog entry is served on — pages are cut by what a consumer must wire up. */
-export type ShowcasePage = "index" | "interactive" | "runtime" | "htmx" | "turnstile" | "chrome";
 
 /** Every catalog entry, keyed by the kebab-cased name of the component it shows. */
 export const SECTIONS: { id: string; label: string; group: ShowcaseGroup; page: ShowcasePage }[] = [
@@ -296,14 +279,6 @@ export const CatalogGroup: FC<{ title: string; children: unknown }> = ({ title, 
     {children}
   </div>
 );
-
-/** A job this band's component is not the answer to, and the catalog id of the one that is. @internal */
-export interface CatalogAlternative {
-  /** The other component's own job, in the corpus's words. */
-  when: string;
-  /** Its catalog id — the label and the page are read from `SECTIONS`. */
-  id: string;
-}
 
 // Varied so a band with three alternatives does not read as a list of identical clauses.
 const ALTERNATIVE_VERDICT = ["is likely more useful", "is the better choice", "is the better fit"] as const;

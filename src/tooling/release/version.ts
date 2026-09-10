@@ -1,5 +1,5 @@
 import { bumpSemVer, formatSemVer, isGreaterThan, parseSemVer } from "../gate/semver";
-import type { BumpKind } from "../gate/semver";
+import type { BumpKind } from "../gate/types";
 import { getCommitsSinceTag, getLatestTag } from "./git";
 import { readPackageVersion } from "./pkg-json";
 import type { BumpEvidence, ResolveVersionOptions, VersionDeps, VersionResult } from "./types";

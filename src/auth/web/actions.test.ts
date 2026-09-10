@@ -8,10 +8,13 @@ import { csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
-import { mapHandler, type TestAction } from "../../testing/route";
+import { mapHandler } from "../../testing/route";
+import type { TestAction } from "../../testing/types";
 import { createPasskeyFactor } from "../factors/passkey";
-import { type AuthFactorService, createFactorRegistry } from "../factors/registry";
-import { type PasskeyKeyPair, createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/fixture";
+import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorService } from "../factors/types";
+import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/fixture";
+import type { PasskeyKeyPair } from "../passkey/types";
 import type { AuthChallenge, AuthCredential, ChallengeStore, CredentialStore, UserStore } from "../types";
 import {
   createAdminElevateActions,
@@ -27,7 +30,6 @@ import {
   createVerifyActions,
 } from "./actions";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
-import type { AuthRequestServices, AuthWebOptions } from "./options";
 import {
   attrOf,
   HOSTILE_TEXT,
@@ -43,6 +45,7 @@ import {
   fakeFactorService,
   fakeFactorStore,
 } from "./test-support";
+import type { AuthRequestServices, AuthWebOptions } from "./types";
 
 const sessionCookie = createCookie("__session", { path: "/" });
 

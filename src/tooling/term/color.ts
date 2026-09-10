@@ -4,35 +4,10 @@
 // https://github.com/visulima/visulima — packages/terminal/colorize/src/colorize.server.ts
 
 import { ESC, stripAnsi } from "./ansi";
-import type { ColorLevel } from "./capability";
-import { type AnsiColor, type AnsiStyle, COLOR_NAMES, type ColorCode, createAnsiCodes, STYLE_NAMES } from "./codes";
-
-type Chain = { readonly [K in AnsiColor | AnsiStyle]: Colorize };
-
-/**
- * A callable styler that is also a chain: `style.red.bold("x")`.
- *
- * Threaded, never ambient. There is no detected module-level singleton to reach for, because a
- * level is a property of the stream being written to and `CODE_RULES.md` §1 bans the global that
- * would have to hold it.
- * @public
- */
-export interface Colorize extends Chain {
-  (input: string): string;
-  /** The sequences this chain opens and closes with — empty at level 0. */
-  readonly open: string;
-  readonly close: string;
-  /** The level this styler was built for. */
-  readonly level: ColorLevel;
-  /** Removes every escape sequence, whatever produced it. */
-  strip(input: string): string;
-  hex(value: string): Colorize;
-  bgHex(value: string): Colorize;
-  rgb(r: number, g: number, b: number): Colorize;
-  bgRgb(r: number, g: number, b: number): Colorize;
-  ansi256(code: number): Colorize;
-  bgAnsi256(code: number): Colorize;
-}
+import { COLOR_NAMES, createAnsiCodes, STYLE_NAMES } from "./codes";
+import type { ColorLevel } from "./types";
+import type { ColorCode } from "./types";
+import type { Colorize } from "./types";
 
 interface Props extends ColorCode {
   openStack: string;

@@ -7,13 +7,15 @@ import { buildAllowRule, buildRedirectRule } from "../../../site/zone";
 import { createCommand } from "../../cli/command";
 import { CliError } from "../../cli/errors";
 import type { CliContext } from "../../cli/types";
-import { type Colorize, PLAIN } from "../../term/color";
+import { PLAIN } from "../../term/color";
+import type { Colorize } from "../../term/types";
 import { styleAction } from "../account/commands";
 import { createCfClient } from "../api/client";
 import { ZONE_PHASES, zoneRulesetEntrypoint } from "../api/endpoints";
 import { classifyCfError } from "../api/errors";
 import type { CfApiClientError } from "../api/types";
-import { renderSections, type TableRow, type TableSection } from "../table";
+import { renderSections } from "../table";
+import type { TableRow, TableSection } from "../types";
 import type { SyncAction } from "../types";
 
 /** What the remote entry point ruleset returns, of the fields this command compares or writes. @internal */

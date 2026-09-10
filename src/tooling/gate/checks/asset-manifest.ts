@@ -3,18 +3,10 @@ import { resolve } from "node:path";
 
 import { loadConfig } from "../../assets/config";
 import { readEmittedManifest } from "../../assets/pipeline";
-import { type CheckResult, checkResult, type Finding, fail } from "../finding";
-import type { GateMode } from "../steps";
-
-/** What the asset-manifest check needs to find the emitted module and the tree it describes. @public */
-export interface AssetManifestCheckConfig {
-  /** Application root. Both paths resolve against it. */
-  root: string;
-  /** Assets config path, relative to `root`. */
-  assetConfig: string;
-  /** The emitted module, relative to `root`. Defaults to `.forge/assets.ts`. */
-  assetsPath?: string;
-}
+import { checkResult, fail } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import type { GateMode } from "../types";
+import type { AssetManifestCheckConfig } from "./types";
 
 const BUILD_HINT = "run `forge assets build --minify` — the manifest is ahead of the built tree";
 

@@ -1,23 +1,12 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+import type { FC } from "../../jsx/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import type { Tone } from "../contracts/vocabulary";
+import type { LinkProps } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 import { toneTokens } from "./utils/tone";
-
-/** How a link marks itself as one — always underlined, underlined on hover, or never. Not the
- *  ratified `appearance` axis, which is an emphasis level: this decides text decoration. @public */
-export type LinkDecoration = "underline" | "hover" | "plain";
-
-export interface LinkProps extends Omit<JSX.IntrinsicElements["a"], "children"> {
-  tone?: Tone | undefined;
-  decoration?: LinkDecoration | undefined;
-  asChild?: boolean | undefined;
-  children?: JSXNode | undefined;
-}
 
 // Module-level, as `tone.ts` writes its recipes: `--tone-text` is set by `toneTokens` on the same
 // element, which the class-position colour rule cannot see.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import type { BorderSlot, BorderStyle } from "./border";
 import { BORDERS } from "./border";
+import type { BorderSlot, BorderStyle } from "./types";
 
 const SLOTS: readonly (keyof BorderStyle)[] = [
   "topLeft",

@@ -4,7 +4,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthCredential, AuthUser } from "../../types";
 import { authPaths } from "../paths";
 import { adminRoutes } from "../routes";

@@ -80,6 +80,26 @@
   },
   "overrides": [
     {
+      // The two halves of the type-placement rule, scoped to `src/` — `config/` and `warden/` are
+      // this repository's own scaffolding, not the published library's namespaces.
+      // `docs/LIBRARY_ARCHITECTURE.md` §8 states the rule.
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      "rules": { "forge/type-import-external": "error", "forge/type-import-separation": "error" }
+    },
+    {
+      // A `types.ts` is where the rule sends a declaration, so it cannot itself be a violation. A
+      // spec's fixture types are its own business — nothing outside the file can name them.
+      "files": ["src/**/types.ts", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.browser.ts", "src/**/*.browser.tsx"],
+      "rules": { "forge/type-import-external": "off" }
+    },
+    {
+      // A file that is itself a published subpath is its own `types.ts`: `./testing/workerd` is off
+      // the `./testing` barrel on purpose, and moving its two shapes into the namespace's `types.ts`
+      // would put them on that barrel — the one place `TESTING.md` §7f says they do not belong.
+      "files": ["src/testing/workerd.ts"],
+      "rules": { "forge/type-import-external": "off" }
+    },
+    {
       // These three specs pin the line-scanning detectors themselves, so their fixtures are the
       // exact patterns the rules forbid — the same reason `classOrderStep` excludes four specs.
       // `src/ui/design` is markdown the linter never reads; it is excluded where it is scanned.
@@ -145,7 +165,16 @@
     {
       // The convention is about types a consumer constructs a value of (UI_SSR_COMPONENTS.md §1n);
       // internal option objects keep the bare `?:`, so the rule is on for the component tiers only.
-      "files": ["src/ui/core/*.tsx", "src/ui/controls/*.tsx", "src/ui/chrome/*.tsx"],
+      // The prop shapes themselves now live in the tier's `types.ts` (§8), which is where the rule
+      // has to read them; the `.tsx` files stay listed for a shape still declared beside its markup.
+      "files": [
+        "src/ui/core/*.tsx",
+        "src/ui/controls/*.tsx",
+        "src/ui/chrome/*.tsx",
+        "src/ui/core/types.ts",
+        "src/ui/controls/types.ts",
+        "src/ui/chrome/types.ts"
+      ],
       "rules": { "forge/optional-prop-undefined": "error" }
     },
     {

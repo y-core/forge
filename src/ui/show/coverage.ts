@@ -1,40 +1,4 @@
-/** How a demo's presence is detected inside a section body. @internal */
-export type CoverageMarker =
-  | { kind: "attr"; name: string; value: string }
-  | { kind: "slot"; token: string }
-  | { kind: "class"; token: string }
-  | { kind: "pattern"; source: string };
-
-/** One axis of a component the catalog is expected to demonstrate. @internal */
-export interface CoverageAxis {
-  axis: string;
-  value: string;
-  marker: CoverageMarker;
-}
-
-/** One component the catalog is expected to demonstrate, and the axes it must show. @internal */
-export interface CoverageDemo {
-  name: string;
-  barrel: "core" | "controls" | "chrome" | "server" | "extra";
-  /** The catalog section that demonstrates it, or `PAGE_WIDE` for a component the shell mounts. */
-  section: string;
-  where: string;
-  axes: readonly CoverageAxis[];
-}
-
-/** What the rendered catalog demonstrates, and what it does not. @internal */
-export interface CoverageReport {
-  covered: readonly string[];
-  uncovered: readonly string[];
-}
-
-/** What {@link coverageReport} reads the catalog from. @internal */
-export interface CoverageReportOptions {
-  /** One rendered page per entry; every section id renders on exactly one of them. */
-  html: readonly string[];
-  sectionIds: readonly string[];
-  demos: readonly CoverageDemo[];
-}
+import type { CoverageAxis, CoverageDemo, CoverageMarker, CoverageReport, CoverageReportOptions } from "./types";
 
 const SECTION_TAG = /<section(?: id="([^"]+)")?[^>]*>|<\/section>/g;
 const SLOT_ATTR = /data-slot="([^"]*)"/g;

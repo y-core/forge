@@ -2,6 +2,7 @@ import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, RequestContext } from "../context/types";
 import { requestLog } from "../logging/request-logger";
 import type { Logger } from "../logging/types";
+import type { TestContextOptions } from "./types";
 
 /** Returns an `ExecutionContext` whose `waitUntil`/`passThroughOnException` are no-ops. @public */
 export function mockExecutionContext(): ExecutionContext {
@@ -18,18 +19,6 @@ export const nullLogger: Logger = {
   flush: async () => {},
   child: () => nullLogger,
 };
-
-/** Options for `createTestContext`. @public */
-export interface TestContextOptions<Bindings = Record<string, unknown>, ConfigData = unknown> {
-  /** Workers bindings exposed as `c.env`. @defaultValue `{}` */
-  env?: Bindings;
-  /** Resolved app config exposed as `c.config` and via `ConfigKey`. */
-  config?: ConfigData;
-  /** Execution context exposed as `c.executionCtx`. @defaultValue `mockExecutionContext()` */
-  executionCtx?: ExecutionContext;
-  /** Request logger installed on the context. @defaultValue `nullLogger` */
-  logger?: Logger;
-}
 
 /** Builds a `RequestContext` pre-loaded with `env`, `executionCtx`, `config`, and a request logger exactly as the Forge router injects them. @public */
 export function createTestContext<Bindings = Record<string, unknown>, ConfigData = unknown>(

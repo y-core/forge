@@ -4,7 +4,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import {
   PASSKEY,
   PASSKEY_MODE_ATTR,
@@ -18,7 +19,6 @@ import {
   attrOf,
   attrsOf,
   authFactorGrid,
-  type AuthFactorCell,
   elementOf,
   factorChoices,
   HOSTILE_TEXT,
@@ -27,8 +27,10 @@ import {
   textOf,
   valuesOf,
 } from "../test-support";
-import type { AuthPasskeyContract } from "./passkey-enrol";
-import { SigninView, type SigninViewProps } from "./signin";
+import type { AuthFactorCell } from "../types";
+import { SigninView } from "./signin";
+import type { AuthPasskeyContract } from "./types";
+import type { SigninViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert" | "key" | "mail">;
 

@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 
-import { type CheckResult, fail, type Finding } from "../finding";
-import { checkExports, type ExportsCheckConfig, isPublished, parseSubpathPatterns } from "./exports";
+import { fail } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import { checkExports, isPublished, parseSubpathPatterns } from "./exports";
+import type { ExportsCheckConfig } from "./types";
 
 const TYPE_BARREL = 'export type { Thing } from "./thing";\n';
 

@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { currentAttrs } from "../contracts/state-attrs";
-import type { ForgeIcon } from "./icon";
+import type { ForgeIcon } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 

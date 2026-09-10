@@ -4,11 +4,13 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
 import { attrOf, attrsOf, elementOf, tagOf, textOf } from "../test-support";
-import { TotpEnrolView, type TotpEnrolViewProps } from "./totp-enrol";
+import { TotpEnrolView } from "./totp-enrol";
+import type { TotpEnrolViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
 

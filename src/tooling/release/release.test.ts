@@ -1,7 +1,9 @@
-import { describe, expect, it, type Mock, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
+import type { Mock } from "bun:test";
 
 import { createReleaseCommand } from "./release";
-import { ReleaseError, type VersionResult } from "./types";
+import { ReleaseError } from "./types";
+import type { VersionResult } from "./types";
 
 /** A written `[Unreleased]` — the ordinary case, where release has an entry to promote. */
 const WRITTEN = ["# Changelog", "", "## [Unreleased]", "", "- a thing", "", "---", "", "## [1.0.0] — 2026-01-01", "", "body"].join("\n");

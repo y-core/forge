@@ -7,8 +7,7 @@
 
 import type { AppContext } from "../../context/types";
 import type { FC, JSXNode } from "../../jsx/types";
-import type { Mode, Scale } from "../contracts/theme/color";
-import { CRITERION, type ScalePair, scalePairs } from "../contracts/theme/contrast-pairs";
+import { CRITERION, scalePairs } from "../contracts/theme/contrast-pairs";
 import {
   buildTheme,
   COPY_ACTION,
@@ -17,15 +16,10 @@ import {
   COPY_STATUS_ATTR,
   COPY_TARGET_ATTR,
   COPY_TARGETS,
-  type CopyTarget,
   CUSTOMISE_SCOPE,
   DIALS,
-  type Dial,
-  type DialValues,
   dialQuery,
-  type GeneratedTheme,
   HEX_ATTR,
-  type LiveRatio,
   leverRows,
   liveRatios,
   matchPreset,
@@ -39,25 +33,18 @@ import {
   STEP_SEGMENTS,
   schemeCss,
 } from "../contracts/theme/theme-contract";
+import type { Mode, Scale } from "../contracts/theme/types";
+import type { ScalePair } from "../contracts/theme/types";
+import type { CopyTarget, Dial, DialValues, GeneratedTheme, LiveRatio } from "../contracts/theme/types";
 import { Slider } from "../controls/slider";
 import { Button } from "../core/button";
 import { fieldId } from "../core/field";
-import type { ForgeIcon } from "../core/icon";
 import { Label } from "../core/label";
 import { Select } from "../core/select";
 import { cn } from "../core/utils/cn";
 import { Resumable } from "../server/resumable";
 import { CompositionsSection } from "./compositions";
-
-/** The glyphs the demonstration band draws — the customiser itself needs none. @public */
-export type CustomiseIcon = ForgeIcon<"spinner" | "chevron-down">;
-
-/** Data returned by {@link loadCustomise}. @public */
-export interface CustomiseData {
-  /** Every dial's value, already clamped and snapped. Keyed by `Dial.field`. */
-  dials: DialValues;
-  path: string;
-}
+import type { CustomiseData, CustomiseIcon } from "./types";
 
 /** Reads one dial off the query string, clamped to its range and rounded to its step. */
 function readDial(params: URLSearchParams, dial: Dial): number {

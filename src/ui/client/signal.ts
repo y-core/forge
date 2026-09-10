@@ -1,3 +1,4 @@
+import type { OwnedRun, ReadonlySignal, Signal } from "./types";
 interface Source {
   version: number;
   subs: Set<Consumer>;
@@ -17,17 +18,6 @@ interface EffectNode extends Consumer {
 interface DerivedNode extends Source, Consumer {
   refresh: () => void;
   computing: boolean;
-}
-
-/** A readable and writable reactive value; reading `.value` inside an effect subscribes to it. @public */
-export interface Signal<T> {
-  get value(): T;
-  set value(v: T);
-}
-
-/** A signal exposing only its read side, as returned by `computed`. @public */
-export interface ReadonlySignal<T> {
-  get value(): T;
 }
 
 const NODE_RUN_CAP = 100;
@@ -213,12 +203,6 @@ export function computed<T>(fn: () => T): ReadonlySignal<T> {
       return value;
     },
   };
-}
-
-/** What `withOwner` returns: the callback's value, and a disposer for the effects it created. */
-export interface OwnedRun<T> {
-  result: T;
-  dispose: () => void;
 }
 
 function disposeAll(disposers: Array<() => void>): void {

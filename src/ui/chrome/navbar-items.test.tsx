@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
-import type { NavDefinition } from "./navbar-items";
+import type { NavDefinition } from "./types";
 
 const id = (key: string) => `/route/${key}`;
 

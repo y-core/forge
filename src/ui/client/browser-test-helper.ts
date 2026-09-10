@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { test as playwrightTest, type Page } from "@playwright/test";
+import { test as playwrightTest } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { build } from "esbuild";
+
+import type { MountOptions } from "./types";
 
 /** Specifiers resolve from `src/`, not from this file or the calling spec — a spec in `ui/core/` and
  * one in `ui/client/` then name the same module the same way. */
@@ -56,28 +59,6 @@ function bundleModules(expose: Record<string, string>): Promise<string> {
 
   bundles.set(key, pending);
   return pending;
-}
-
-export interface MountOptions {
-  /** Modules to publish on `window`, keyed by global name. Values are specifiers resolved from
-   * `src/` — e.g. `{ forgeResume: "./ui/client/resume" }`. */
-  expose?: Record<string, string>;
-  /**
-   * Stylesheets to load into the page, as paths resolved from `src/`.
-   *
-   * Served raw, with no Tailwind build: name each sheet the spec needs in `forge.css`'s import
-   * order (a relative `@import` will not resolve through `addStyleTag`), and size fixtures by
-   * content or inline `<style>` rather than by a utility class, which resolves to nothing.
-   */
-  css?: string[];
-  /**
-   * The origin the fixture is served from, defaulting to {@link ORIGIN}.
-   *
-   * Only a spec needing a *secure* context has cause to change it: `http://forge.test/` is not one,
-   * so Chromium exposes no `PublicKeyCredential` and no `navigator.credentials` there at all. Pass
-   * `SECURE_ORIGIN` for a spec that drives WebAuthn.
-   */
-  origin?: string;
 }
 
 /** Loads `html` into the page, applies the requested stylesheets, then publishes the requested modules on `window`. */

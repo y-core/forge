@@ -1,8 +1,9 @@
 import type { AppContext } from "../../context/types";
-import type { AuthPageState, AuthWebOptions } from "./options";
 import { renderAuthPage } from "./render";
-import type { AuthViewName } from "./render";
-import { AUTH_VIEW_GUARDS, type AuthViewRequest, resolveAuthView } from "./resolve";
+import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
+import type { AuthPageState, AuthWebOptions } from "./types";
+import type { AuthViewName } from "./types";
+import type { AuthViewRequest } from "./types";
 
 /** Resolves one page against this request and renders it, or answers the refusal the resolver gave. */
 async function authPage<Name extends AuthViewName, Bindings>(

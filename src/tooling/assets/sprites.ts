@@ -6,19 +6,7 @@ import { fetchURL } from "./download";
 import { hashFile } from "./hash";
 import { safeJoin } from "./paths";
 import type { SpriteGroup, Sprites } from "./types";
-
-/** One built sprite sheet: its manifest key, its symbol-id-to-viewBox map, and its symbol id prefix. @public */
-export interface SpriteGroupResult {
-  spriteKey: string;
-  meta: Record<string, string>;
-  prefix: string;
-}
-
-/** A sprite build's logical-to-emitted path mappings, plus one result per sprite group. @public */
-export interface SpriteBuildResult {
-  mapping: Record<string, string>;
-  groups: Record<string, SpriteGroupResult>;
-}
+import type { SpriteBuildResult, SpriteGroupResult } from "./types";
 
 /** Builds every sprite group into `publicDir`, content-hashing the emitted sheets when `opts.hash` is set. @public */
 export async function buildSprites(sprites: Sprites, publicDir: string, opts?: { hash?: boolean }): Promise<SpriteBuildResult> {

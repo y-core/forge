@@ -1,22 +1,4 @@
-/** A rule the design corpus states and this tooling enforces. @public */
-export type RuleId =
-  | "forge-ui-color-token-only"
-  | "forge-ui-color-theme-no-raw-utility"
-  | "forge-ui-no-inline-style"
-  | "forge-ui-spacing-scale-only"
-  | "forge-ui-no-nested-card"
-  | "forge-ui-interaction-focus-visible"
-  | "forge-ui-catalog-wrong-raw-input"
-  | "forge-ui-contrast-floor"
-  | "forge-ui-a11y-label-association"
-  | "forge-ui-a11y-live-politeness"
-  | "forge-ui-a11y-no-aria-readonly-on-button"
-  | "forge-ui-a11y-one-live-region"
-  | "forge-ui-a11y-aria-beside-data"
-  | "forge-ui-a11y-heading-size-by-class"
-  | "forge-ui-reduced-motion"
-  | "forge-ui-focus-ring"
-  | "forge-ui-optional-prop-undefined";
+import type { RuleEnforcer, RuleId } from "./types";
 
 /** The corpus file that justifies each rule this tooling enforces. @public */
 export const RULE_CORPUS_PATH: Readonly<Record<RuleId, string>> = {
@@ -38,10 +20,6 @@ export const RULE_CORPUS_PATH: Readonly<Record<RuleId, string>> = {
   "forge-ui-focus-ring": "src/ui/design/floor.md",
   "forge-ui-optional-prop-undefined": "src/ui/design/reference/10-accessibility.md",
 };
-
-/** Which mechanism enforces a rule: `validate-design`'s source detectors, forge's oxlint plugin, or
- *  `validate-contrast`, which measures resolved colours rather than reading source at all. @public */
-export type RuleEnforcer = "gate" | "lint" | "contrast";
 
 // This is what keeps a `RULE_CORPUS_PATH` row from asserting nothing once its detector has moved:
 // `checkDesign` reads the enforcer to decide which side it holds the row against.

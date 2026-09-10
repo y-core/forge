@@ -129,3 +129,10 @@ export interface RedirectSpec {
   /** Defaults to 301. */
   statusCode?: 301 | 302 | 307 | 308;
 }
+
+/** What {@link buildAllowRule} needs beyond the surface itself. @public */
+export interface AllowRuleOptions {
+  /** The terminating action taken on traffic the surface does not account for. */
+  action: ZoneAction;
+  description?: string;
+}

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { type ClassText, classExpressionVisitor, classLiteralVisitor } from "./ast.ts";
+import { classExpressionVisitor, classLiteralVisitor } from "./ast.ts";
 import { attribute, call, declaration, declarator, element, identifier, literal, other, property, template, traverse } from "./test-support.ts";
+import type { ClassText } from "./types.ts";
 import type { AstNode } from "./types.ts";
 
 function literals(root: AstNode): string[] {

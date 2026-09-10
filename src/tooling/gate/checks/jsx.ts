@@ -1,18 +1,10 @@
 import { readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { collectFiles } from "./source-scan";
-
-/** What the JSX check needs to know about the project. @public */
-export interface JsxCheckConfig {
-  /** Repository root; every reported path is relative to it. */
-  root: string;
-  /** Directories walked for `.tsx` files, relative to `root`. Defaults to `["src"]`. */
-  sources?: readonly string[];
-  /** Pragma lines every shipped `.tsx` file must contain, matched as substrings; defaults to forge's own pair. */
-  pragmas?: readonly string[];
-}
+import type { JsxCheckConfig } from "./types";
 
 const DEFAULT_PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/jsx"] as const;
 

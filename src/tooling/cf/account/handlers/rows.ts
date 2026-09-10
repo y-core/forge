@@ -3,20 +3,7 @@ import type { CfApiClientError } from "../../api/types";
 import { surfaceDetail } from "../../target";
 import type { ResourceType, SyncResult } from "../../types";
 import type { HandlerContext } from "./types";
-
-/** How a row identifies the binding it is about. */
-export interface RowIdentity {
-  binding: string;
-  remoteName?: string;
-}
-
-export interface FailureRowOptions {
-  /**
-   * Suppress the upstream message. Required wherever the failed request carried a
-   * secret, since Cloudflare's rejection text can quote the payload it rejected.
-   */
-  redactMessage?: boolean;
-}
+import type { FailureRowOptions, RowIdentity } from "./types";
 
 /**
  * The note a row carries when the config named an id that the account does not have.

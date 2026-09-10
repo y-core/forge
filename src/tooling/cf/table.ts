@@ -1,10 +1,10 @@
 import { BORDERS } from "../term/border";
-import type { Colorize } from "../term/color";
 import { PLAIN } from "../term/color";
-import { type GridColumn, renderGrid } from "../term/grid";
+import { renderGrid } from "../term/grid";
+import type { Colorize } from "../term/types";
+import type { GridColumn } from "../term/types";
 import { wrapLines } from "../term/wrap";
-
-export type TableRow = Record<string, string>;
+import type { TableOptions, TableRow, TableSection } from "./types";
 
 /**
  * The border every grid here draws.
@@ -18,37 +18,6 @@ const BORDER = BORDERS.single;
 
 /** What a section's note, grid and footers are all inset by, so they read as one block. */
 const INDENT = "  ";
-
-/** How to render a grid: what to style it with, and what it has to fit in. */
-export interface TableOptions {
-  /** Styler for the headings. Defaults to `PLAIN`, so output carries no escape sequence unless asked. */
-  style?: Colorize;
-  /**
-   * Columns the grid must fit in. Omitted, it is as wide as its content — which is what every
-   * existing caller expects, and what a test asserting exact lines depends on.
-   */
-  width?: number;
-  /**
-   * Columns permitted to wrap onto further lines when `width` forces a shrink. Everything else is
-   * truncated instead, because a binding name broken across two lines is no longer a name you can
-   * search for.
-   */
-  wrap?: readonly string[];
-}
-
-/** One heading, an optional one-line rule that governs every row under it, and the rows. */
-export interface TableSection {
-  title: string;
-  note?: string;
-  rows: TableRow[];
-  /**
-   * Lines printed under the grid — remarks about the section rather than about any
-   * binding in it. A statement like "there is no .dev.vars here" is not a row: giving
-   * it one means inventing a binding name and an action to put in the columns, and
-   * both would be fiction.
-   */
-  footers?: string[];
-}
 
 /** Renders a section title on its own line, with its note dimmed beneath it. */
 function heading(section: TableSection, style: Colorize, width: number | undefined): string[] {

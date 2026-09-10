@@ -3,51 +3,7 @@
 
 import { rawHtml } from "../http/html";
 import type { JSXNode } from "../jsx/types";
-
-/** A tag `PageMeta` has no field for, rendered verbatim. @public */
-export type MetaTag =
-  | { readonly name: string; readonly content: string }
-  | { readonly property: string; readonly content: string }
-  | { readonly tagName: "link"; readonly rel: string; readonly href: string };
-
-// A compound value is the common case — `noindex, nofollow` — so the union is over tokens rather
-// than over whole values, which would have to widen to `string` the first time two were needed.
-/** One token of a `robots` value; give an array for a compound directive. @public */
-export type RobotsDirective = "index" | "noindex" | "follow" | "nofollow" | "noarchive" | "nosnippet" | "noimageindex";
-
-/** The `og:type` values a page is likely to claim. @public */
-export type OgType = "website" | "article" | "profile";
-
-/** What one page says about itself in `<head>`. @public */
-export interface PageMeta {
-  /** The `<title>`, and the default for `og:title` and `twitter:title`. */
-  readonly title: string;
-  readonly description?: string;
-  /** Absolute URL. Forge derives none: behind a proxy a Worker's own `c.url` is not the public one. */
-  readonly canonical?: string;
-  readonly robots?: RobotsDirective | readonly RobotsDirective[];
-  readonly og?: {
-    readonly title?: string;
-    readonly description?: string;
-    readonly type?: OgType;
-    /** Absolute URL — a relative one is dropped by every crawler that reads it. */
-    readonly image?: string;
-    readonly url?: string;
-  };
-  readonly twitter?: { readonly card?: "summary" | "summary_large_image"; readonly title?: string; readonly description?: string };
-  // A field rather than an `extra` entry: forge ships `script-src 'self'`, so the inline script
-  // needs this request's nonce, which `metaTags` is given and an `extra` entry could not receive.
-  /** Structured data, serialised into a nonce-bearing `application/ld+json` script. */
-  readonly jsonLd?: unknown;
-  /** Appended verbatim, in order, after every tag above — never deduplicated against them. */
-  readonly extra?: readonly MetaTag[];
-}
-
-/** What `metaTags` needs from the request. @public */
-export interface MetaOptions {
-  /** This request's CSP nonce, from `getNonce(c)`; without it `jsonLd` renders no script. */
-  readonly nonce?: string;
-}
+import type { MetaOptions, MetaTag, PageMeta, RobotsDirective } from "./types";
 
 /** A `robots` value as the one string the tag carries. */
 function robotsContent(robots: RobotsDirective | readonly RobotsDirective[]): string {

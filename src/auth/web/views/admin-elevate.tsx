@@ -6,25 +6,12 @@ import { Alert } from "../../../ui/core/alert";
 import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { cn } from "../../../ui/core/utils/cn";
-import type { AuthAdminPaths } from "../paths";
-import type { AuthViewChrome } from "./types";
+import type { AdminElevateViewProps } from "./types";
 
 const TAKEN_ID = "admin-elevate-reason";
 
 const TAKEN_REASON = "This deployment already has an administrator, so the first-admin claim is closed. Ask one of them to grant you the role.";
-
-/** What the first-admin elevation page renders. @public */
-export type AdminElevateViewProps = AuthViewChrome & {
-  /** Admins who could still sign in; the claim is open only while this is zero. */
-  readonly adminCount: number;
-  readonly paths: AuthAdminPaths;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  readonly icon: ForgeIcon<"alert">;
-};
 
 // Design Read: a signed-in visitor bootstrapping a deployment with no administrator; the one action
 // is claiming the role; failure is one that already has it — a `warning` Alert over a disabled confirm.

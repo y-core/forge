@@ -1,4 +1,3 @@
-import type { AppContext } from "../context/types";
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { csrfFieldCtx } from "../form/csrf-context";
 import { parseFormData } from "../form/parse-form-data";
@@ -8,28 +7,15 @@ import type { ParseFormDataOptions, ReadonlyFormData } from "../form/types";
 import { renderError, renderValidationErrors } from "../http/fragment";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
-import type { Result } from "../result/result";
 import { err, ok } from "../result/result";
 import { describeValidationField, describeValidationIssue } from "../validation/format-issues";
 import { v } from "../validation/validation";
-import type { ActionDefinition } from "./types";
+import type { SubmissionPipeline, SubmissionPipelineDefinition } from "./types";
 
 const logger = createLogger("pipeline");
 
 /** The pipeline's own option names — the one list both the type and `definePage`'s guard read. @internal */
 export const PIPELINE_ONLY_KEYS = ["turnstile", "onBotDetected", "onValidationError", "maxBytes"] as const;
-
-/** The half of a mutation route's definition the shared submission pipeline consumes. @internal */
-export type SubmissionPipelineDefinition<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> = Pick<
-  ActionDefinition<S, Bindings, ConfigData>,
-  "schema" | (typeof PIPELINE_ONLY_KEYS)[number]
->;
-
-/** One request through read → drop → guard → validate, resolving to the validated body or the refusal that replaces it. @internal */
-export type SubmissionPipeline<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> = (
-  c: AppContext<Bindings>,
-  config: ConfigData,
-) => Promise<Result<v.InferOutput<S>, Response>>;
 
 /** The one refusal this pipeline renders for a body it will not accept. */
 function refuseSubmission(messages: readonly string[]): Response {

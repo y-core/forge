@@ -2,27 +2,13 @@ import { createCookie } from "@remix-run/cookie";
 import type { Middleware } from "@remix-run/fetch-router";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
-import type { AppContext } from "../context/types";
 import { getAppContext } from "../context/types";
-import type { KVSessionStorageOptions, SessionKVBinding } from "./kv-storage";
 import { createKVSessionStorage } from "./kv-storage";
 import { sessionMiddleware } from "./session";
 import { createSignedCookie } from "./signed";
+import type { AnonymousSessionOptions } from "./types";
 
 const DEFAULT_MAX_AGE = 60 * 60 * 24 * 365;
-
-/** Options for `createAnonymousSession`. @public */
-export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> extends KVSessionStorageOptions {
-  cookieName?: string;
-  /** Resolves the signing secret from the request env; secrets shorter than 32 characters throw. */
-  secret: (c: AppContext<Bindings>) => string;
-  /** Resolves the KV binding; when omitted, all session data is serialized into the cookie. */
-  kv?: (c: AppContext<Bindings>) => SessionKVBinding;
-  /** Set `false` ONLY for plain-http test servers; the cookie stays signed, httpOnly and SameSite=Lax. */
-  secure?: boolean | ((c: AppContext<Bindings>) => boolean);
-  /** Cookie lifetime in seconds; also the default KV TTL when `ttlSeconds` is not set. */
-  maxAge?: number;
-}
 
 /** Anonymous per-visitor session middleware over a signed id cookie, with data in KV or in the cookie. @public */
 export function createAnonymousSession<Bindings = Record<string, unknown>>(options: AnonymousSessionOptions<Bindings>): Middleware {

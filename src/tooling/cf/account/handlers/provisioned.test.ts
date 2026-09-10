@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import type { Result } from "../../../../result/result";
 import { err, ok } from "../../../../result/result";
+import type { Result } from "../../../../result/types";
 import type { CfApiError } from "../../api/types";
 import { CfApiClientError } from "../../api/types";
 import type { WranglerConfig } from "../../types";
-import type { ProvisionSpec, RemoteResource } from "./provisioned";
 import { createProvisionedHandler } from "./provisioned";
+import type { ProvisionSpec, RemoteResource } from "./types";
 import type { HandlerContext } from "./types";
 
 interface Local {

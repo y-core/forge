@@ -8,36 +8,14 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { OtpInput } from "../../../ui/core/otp-input";
 import { cn } from "../../../ui/core/utils/cn";
-import type { TotpAppEnrolment } from "../../factors/totp-app";
 import { AuthTimestamp } from "./timestamp";
-import type { AuthViewChrome } from "./types";
+import type { TotpEnrolViewProps } from "./types";
 
 const CODE_LENGTH = 6;
 
 const SECRET_BOX = "rounded-field border-field border-border px-3 py-2 font-mono text-sm break-all text-foreground";
-
-/** Which of the authenticator app's two page states is rendering; only the enrolling one carries the secret. @public */
-export type TotpEnrolState = ({ readonly status: "enrolling" } & TotpAppEnrolment) | { readonly status: "enrolled"; readonly enrolledAt: number };
-
-/** What the authenticator-app page renders. @public */
-export type TotpEnrolViewProps = AuthViewChrome & {
-  readonly state: TotpEnrolState;
-  /** Where the confirmation code is posted. */
-  readonly enrolPath: string;
-  // Absent on the page an owed enrolment lands on: there is nothing enrolled there to take away, and
-  // a session owing a step-up must not be able to remove the factor that would satisfy it.
-  /** Where the settled enrolment is deleted, absent where removal is not offered. */
-  readonly removePath?: string | undefined;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  /** Copy for a rejected confirmation code; the view owns the wording, since `describeValidationIssue` returns only a field name. */
-  readonly fieldError?: string | undefined;
-  readonly icon: ForgeIcon<"alert">;
-};
 
 // Design Read: a signed-in visitor adding an authenticator app; the one action is confirming the code
 // the app shows; failure is a code that does not match — the field's error, the secret still on screen.

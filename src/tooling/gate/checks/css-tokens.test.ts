@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { deriveClassGroups } from "./class-groups-parse";
-import { checkCssTokens, type CssTokensCheckConfig, findThemeTokens, overloadedRoots } from "./css-tokens";
+import { checkCssTokens, findThemeTokens, overloadedRoots } from "./css-tokens";
 import { loadDesignSystem } from "./design-system";
+import type { CssTokensCheckConfig } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const CONFIG: CssTokensCheckConfig = { root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" };

@@ -8,14 +8,12 @@ import { Badge } from "../../../ui/core/badge";
 import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Separator } from "../../../ui/core/separator";
 import { cn } from "../../../ui/core/utils/cn";
 import { isLastAdminRefusal } from "../../admin/service";
-import type { AdminUserOutcome, AuthUser } from "../../types";
-import type { AuthAdminPaths } from "../paths";
+import type { AdminUserOutcome } from "../../types";
 import { AuthTimestamp } from "./timestamp";
-import type { AuthViewChrome } from "./types";
+import type { AdminUserEditViewProps } from "./types";
 
 const DEMOTE_REASON = "This is the last admin who can still sign in — promote another admin before removing this role.";
 
@@ -36,20 +34,6 @@ const REFUSAL_REASON: Readonly<Partial<Record<AdminUserOutcome, string>>> = {
   "last-admin-deactivate": DEACTIVATE_REASON,
   "last-admin-delete": DELETE_REASON,
   "not-found": NOT_FOUND_REASON,
-};
-
-/** What the administrative account page renders. @public */
-export type AdminUserEditViewProps = AuthViewChrome & {
-  readonly user: AuthUser;
-  /** Whether this account is the last admin who could still sign in, read off `AdminUserStore.countAdmins`. */
-  readonly lastAdmin: boolean;
-  /** What an administrative write last reported for this account, or `null` on a plain page load. */
-  readonly outcome: AdminUserOutcome | null;
-  readonly paths: AuthAdminPaths;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  readonly icon: ForgeIcon<"alert">;
 };
 
 // Design Read: an administrator changing one account's role, status or existence; the one action is

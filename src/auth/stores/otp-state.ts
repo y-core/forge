@@ -3,14 +3,7 @@ import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { OtpState, OtpStateStore } from "../types";
 import { storeError, uuidKey } from "./rows";
-
-/** @internal */
-export interface OtpStateRow {
-  token: string;
-  attempts: number;
-  issued_at: number;
-  expires_at: number;
-}
+import type { OtpStateRow } from "./types";
 
 function readOtpState(row: OtpStateRow): OtpState {
   return { token: row.token, attempts: row.attempts, issuedAt: row.issued_at, expiresAt: row.expires_at };

@@ -2,17 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { cn } from "../../../ui/core/utils/cn";
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { findClassLiterals, findSkippedClassPositions } from "./design-parse";
 import { resolveSources } from "./source-scan";
-
-/** What the class-order check needs to know about the project. @public */
-export interface ClassOrderCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** Files and directories to scan, relative to `root`; a `!`-prefixed entry excludes a subtree. */
-  sources: readonly string[];
-}
+import type { ClassOrderCheckConfig } from "./types";
 
 const SCANNED = (name: string): boolean => /\.tsx?$/.test(name);
 

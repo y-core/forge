@@ -4,11 +4,12 @@ import "../core/client";
 import { ownerDocument, ownerWindow, safeStorage } from "../client/dom";
 import { mountNavDrawer } from "../client/drawer";
 import { registerScope } from "../client/resume";
-import type { ReadonlySignal, Signal } from "../client/signal";
 import { computed, createSignal, effect, withOwner } from "../client/signal";
+import type { ReadonlySignal, Signal } from "../client/types";
 import { mountViewportCollapse } from "../client/viewport-collapse";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
-import { THEME_SCOPE, type ThemeAction } from "../contracts/theme-toggle-contract";
+import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
+import type { ThemeAction } from "../contracts/types";
 import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 const CONSTANT_FALSE: ReadonlySignal<boolean> = {

@@ -6,7 +6,6 @@ import { Alert } from "../../../ui/core/alert";
 import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
@@ -20,23 +19,8 @@ import {
   PASSKEY_SCOPE,
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
-  type PasskeyMode,
 } from "../../passkey-contract";
-import type { AuthViewChrome } from "./types";
-
-/** Everything the browser controller reads off the ceremony's scope root. @public */
-export type AuthPasskeyContract = {
-  readonly mode: PasskeyMode;
-  readonly optionsPath: string;
-  readonly verifyPath: string;
-  /** Minted for `optionsPath` alone — `csrfProtection` binds a token to one path. */
-  readonly optionsToken: string;
-  /** Minted for `verifyPath` alone, and never the same value as `optionsToken`. */
-  readonly verifyToken: string;
-  /** The app's own CSRF header name, when it is not `csrfProtection`'s default. */
-  readonly csrfHeader?: string | undefined;
-  readonly redirect?: string | undefined;
-};
+import type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./types";
 
 // Hand-rendered rather than wrapped in `Resumable` — `UI_CLIENT_RUNTIME.md` §2a.
 /** The passkey ceremony's scope root, carrying the contract attributes the controller resumes on. @internal */
@@ -66,18 +50,6 @@ export const AuthPasskeyStatus: FC<{ unsupported: string }> = ({ unsupported }) 
     </p>
   </>
 );
-
-/** What the passkey enrolment page renders. @public */
-export type PasskeyEnrolViewProps = AuthViewChrome & {
-  readonly contract: AuthPasskeyContract;
-  /** Where a visitor who cannot enrol now is sent instead. */
-  readonly signoutPath: string;
-  /** The address the enrolment is being made for, shown so the visitor can tell whose account it is. */
-  readonly email: string;
-  /** A refusal about the attempt as a whole, in this view's own words. */
-  readonly error?: string | undefined;
-  readonly icon: ForgeIcon<"alert" | "key">;
-};
 
 // Design Read: a signed-in visitor who owes a second factor; the one action is creating a passkey;
 // failure is a declined or unsupported ceremony — `destructive` Alert above, trigger stays put.

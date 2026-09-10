@@ -1,32 +1,8 @@
-import type { Result } from "../../../../result/result";
-import type { CfClient } from "../../api/client";
 import { createCfClient } from "../../api/client";
-import type { CfApiClientError } from "../../api/types";
-import type { ResolvedPrefix, ResourceType, SyncResult, WranglerConfig } from "../../types";
+import type { SyncResult } from "../../types";
 import { failureRows, staleIdDetail } from "./rows";
 import type { ReconcileResult, ResourceHandler } from "./types";
-
-/** One remote resource, reduced to the two things reconciliation compares it by. */
-export interface RemoteResource {
-  /** Absent for a resource the API gives no id — an R2 bucket is named and nothing more. */
-  id?: string;
-  name: string;
-}
-
-/** The per-resource part of the provision ladder: everything four handlers do not share. */
-export interface ProvisionSpec<TLocal extends { binding: string }> {
-  type: ResourceType;
-  displayName: string;
-  extract(config: WranglerConfig): TLocal[];
-  list(client: CfClient, accountId: string): Promise<Result<RemoteResource[], CfApiClientError>>;
-  create(client: CfClient, accountId: string, name: string): Promise<Result<RemoteResource, CfApiClientError>>;
-  naming(prefix: ResolvedPrefix, binding: string): string;
-  /** Absent when the resource has no id, so the id-match step and the stale-id note are skipped. */
-  localId?(entry: TLocal): string | undefined;
-  /** Absent when a config name never overrides the computed one — a KV title is always recomputed. */
-  localName?(entry: TLocal): string | undefined;
-  writeback(entry: TLocal, remote: RemoteResource, name: string): TLocal;
-}
+import type { ProvisionSpec } from "./types";
 
 /**
  * Factory for the bindings this tool provisions — D1, KV, Queues, R2.

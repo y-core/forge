@@ -1,18 +1,4 @@
-import type { Mode } from "./color";
-
-/** One contrast pair exempted from the audit, with what it measures and why no criterion binds. @public */
-export interface AcceptedContrastRow {
-  /** The custom property the exemption is about. */
-  token: string;
-  /** The role step it resolves through. */
-  step: string;
-  /** The value the step is pinned at, per mode. */
-  value: Readonly<Record<Mode, string>>;
-  /** Worst-case measured ratios. */
-  measured: string;
-  /** Why no criterion binds. Mandatory and non-empty. */
-  reason: string;
-}
+import type { AcceptedContrastRow } from "./types";
 
 /** The decorative contrast pairs WCAG 1.4.11 does not bind, each pinned at its measured value. @public */
 export const ACCEPTED_CONTRAST: readonly AcceptedContrastRow[] = [

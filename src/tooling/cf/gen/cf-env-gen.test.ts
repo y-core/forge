@@ -5,7 +5,8 @@ import { join } from "node:path";
 
 import { createGenEnvCommand, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
-import { DEFAULT_OPTIONS, type Entry, type GenOptions, HEADER } from "./cf-env-registry";
+import { DEFAULT_OPTIONS, HEADER } from "./cf-env-registry";
+import type { Entry, GenOptions } from "./types";
 
 const CHECK = '(x) => typeof x === "object" && x !== null';
 

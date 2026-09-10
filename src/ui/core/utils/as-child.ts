@@ -2,20 +2,7 @@ import { cloneElement, Fragment, isValidElement } from "../../../jsx/element";
 import type { JSXElement, JSXNode } from "../../../jsx/types";
 import { stateAttrs } from "../../contracts/state-attrs";
 import { cn } from "./cn";
-
-/** How a compound describes itself to {@link cloneAsChild}. */
-export interface AsChildOptions {
-  slot: string;
-  class: string;
-  props: Record<string, unknown>;
-  type?: string | undefined;
-  disabled?: boolean | undefined;
-  /** Rendered inside the cloned child, before its own children. */
-  prefix?: JSXNode;
-  /** Rendered inside the cloned child, after its own children. */
-  suffix?: JSXNode;
-  message: string;
-}
+import type { AsChildOptions } from "./types";
 
 const present = (node: JSXNode | undefined): boolean => node !== undefined && node !== null;
 

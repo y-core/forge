@@ -3,7 +3,8 @@ import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { FactorStore } from "../types";
-import { type FactorRow, inList, readFactor, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import { inList, readFactor, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import type { FactorRow } from "./types";
 
 /** Creates the `FactorStore` over a SQL database. @public */
 export function createFactorStore(db: D1Client): FactorStore {

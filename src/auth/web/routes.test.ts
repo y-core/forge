@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { Route, type RouteMap } from "@remix-run/fetch-router/routes";
+import { Route } from "@remix-run/fetch-router/routes";
+import type { RouteMap } from "@remix-run/fetch-router/routes";
 
 import { createApp } from "../../app/app";
 import { routePaths } from "../../router/filter";
-import { type AuthRouteGroup, AUTH_ROUTE_GROUPS, accountRoutes, adminRoutes, authRoutes } from "./routes";
+import { AUTH_ROUTE_GROUPS, accountRoutes, adminRoutes, authRoutes } from "./routes";
+import type { AuthRouteGroup } from "./types";
 
 /** Every nested map in `routeMap`, as key paths prefixed by `prefix`, deepest last. */
 function nestedGroups(routeMap: RouteMap, prefix: readonly string[]): string[][] {

@@ -1,2 +1,2 @@
-export type { LogViewerAccess, LogViewerOptions } from "./route";
+export type { LogViewerAccess, LogViewerOptions } from "./types";
 export { loadLogViewer } from "./route";

@@ -1,26 +1,7 @@
 import { timingSafeEqual, utf8Decode } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
-
-/** Which ceremony a `clientDataJSON` belongs to. @public */
-export type PasskeyCeremony = "authenticate" | "register";
-
-/** Why client data was refused. Each condition is its own reason, so a regression names the check. @public */
-export type ClientDataReason = "challenge-mismatch" | "cross-origin" | "malformed" | "origin-mismatch" | "type-mismatch";
-
-/** The fields of `clientDataJSON` this verification reads. @public */
-export interface ClientData {
-  readonly type: string;
-  readonly challenge: string;
-  readonly origin: string;
-  readonly crossOrigin?: boolean;
-}
-
-/** What the presented client data is held against. @public */
-export interface ClientDataExpectation {
-  readonly ceremony: PasskeyCeremony;
-  readonly challenge: string;
-  readonly origin: string;
-}
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
+import type { ClientData, ClientDataExpectation, ClientDataReason, PasskeyCeremony } from "./types";
 
 const CEREMONY_TYPE: Readonly<Record<PasskeyCeremony, string>> = { register: "webauthn.create", authenticate: "webauthn.get" };
 

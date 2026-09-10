@@ -1,19 +1,7 @@
-import type { AuthFactorRegistry } from "../factors/registry";
 import { normalizeEmail } from "../stores/email";
-import type { AuthUser, UserStore } from "../types";
-import type { AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./decoy";
-
-/** @public */
-export interface AuthSignupOptions {
-  users: UserStore;
-  factors: AuthFactorRegistry;
-  defer: AuthDeferral;
-}
-
-/** Starts an account from an address, telling a registered address and a new one apart nowhere the caller can see. @public */
-export interface AuthSignupFlow {
-  request(email: string, at: number): AuthFlowChallenge;
-}
+import type { AuthUser } from "../types";
+import type { AuthIssueOutcome } from "./types";
+import type { AuthSignupFlow, AuthSignupOptions } from "./types";
 
 /** Builds the signup flow. It produces no `Response` and touches no `Session` — `auth/web` owns both. @public */
 export function createSignupFlow(options: AuthSignupOptions): AuthSignupFlow {

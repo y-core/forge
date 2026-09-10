@@ -1,20 +1,11 @@
 import { base64urlDecode, base64urlEncode, sha256, utf8Encode } from "../../crypto/mod";
 import type { AuthAlgorithm } from "../types";
-import type { PasskeyAssertionCredential } from "./authenticate";
-import type { PasskeyRegistrationCredential } from "./register";
+import type { PasskeyAssertionCredential } from "./types";
+import type { PasskeyRegistrationCredential } from "./types";
+import type { AuthenticatorDataFixture, CeremonyCborValue, PasskeyAssertionFixture, PasskeyKeyPair, PasskeyRegistrationFixture } from "./types";
 
 /** The authenticator-data flag bits, by the name the specification gives each. @internal */
 export const PASSKEY_FLAG = { up: 0x01, uv: 0x04, be: 0x08, bs: 0x10, at: 0x40, ed: 0x80 } as const;
-
-/** Anything this fixture's CBOR encoder writes. @internal */
-export type CeremonyCborValue = number | string | Uint8Array<ArrayBuffer> | Map<CeremonyCborValue, CeremonyCborValue>;
-
-/** A generated credential key pair, with the COSE encoding of its public half. @internal */
-export interface PasskeyKeyPair {
-  readonly algorithm: AuthAlgorithm;
-  readonly cosePublicKey: Uint8Array<ArrayBuffer>;
-  sign(data: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>>;
-}
 
 function head(major: number, value: number): number[] {
   if (value < 24) return [(major << 5) | value];
@@ -109,15 +100,6 @@ export async function createPasskeyKeyPair(algorithm: AuthAlgorithm): Promise<Pa
   };
 }
 
-/** What one authenticator-data blob declares. @internal */
-export interface AuthenticatorDataFixture {
-  readonly rpId: string;
-  readonly flags: number;
-  readonly signCount?: number;
-  readonly credentialId?: Uint8Array<ArrayBuffer>;
-  readonly cosePublicKey?: Uint8Array<ArrayBuffer>;
-}
-
 /** Builds one authenticator-data blob, with the attested credential segment when a key is supplied. @internal */
 export async function fakeAuthenticatorData(fixture: AuthenticatorDataFixture): Promise<Uint8Array<ArrayBuffer>> {
   const header = [...(await sha256(fixture.rpId)), fixture.flags];
@@ -133,21 +115,6 @@ export async function fakeAuthenticatorData(fixture: AuthenticatorDataFixture): 
 /** Builds one `clientDataJSON` blob, exactly as the browser would serialise it. @internal */
 export function fakeClientData(fields: { type: string; challenge: string; origin: string; crossOrigin?: boolean }): Uint8Array<ArrayBuffer> {
   return utf8Encode(JSON.stringify(fields));
-}
-
-/** What one registration ceremony fixture declares. @internal */
-export interface PasskeyRegistrationFixture {
-  readonly key: PasskeyKeyPair;
-  readonly rpId: string;
-  readonly origin: string;
-  readonly challenge: string;
-  readonly credentialId: Uint8Array<ArrayBuffer>;
-  readonly flags?: number;
-  readonly signCount?: number;
-  readonly fmt?: string;
-  readonly attStmt?: Map<CeremonyCborValue, CeremonyCborValue>;
-  readonly transports?: readonly string[];
-  readonly trailing?: Uint8Array<ArrayBuffer>;
 }
 
 /** Builds the registration credential a browser would post for one ceremony. @internal */
@@ -176,19 +143,6 @@ export async function fakePasskeyRegistration(fixture: PasskeyRegistrationFixtur
       ...(fixture.transports ? { transports: fixture.transports } : {}),
     },
   };
-}
-
-/** What one authentication ceremony fixture declares. @internal */
-export interface PasskeyAssertionFixture {
-  readonly key: PasskeyKeyPair;
-  readonly rpId: string;
-  readonly origin: string;
-  readonly challenge: string;
-  readonly credentialId: string;
-  readonly flags?: number;
-  readonly signCount?: number;
-  readonly userHandle?: string;
-  readonly signOver?: Uint8Array<ArrayBuffer>;
 }
 
 /** Builds the assertion a browser would post, signed over `authenticatorData ‖ SHA-256(clientDataJSON)`. @internal */

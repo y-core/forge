@@ -1,16 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  buildGraph,
-  type EdgeKind,
-  findEnumerations,
-  isTestSource,
-  namespaceOf,
-  parseImports,
-  resolveSpecifier,
-  type SourceFile,
-  sectionWindow,
-} from "./namespace-graph-parse";
+import { buildGraph, findEnumerations, isTestSource, namespaceOf, parseImports, resolveSpecifier, sectionWindow } from "./namespace-graph-parse";
+import type { EdgeKind, SourceFile } from "./types";
 
 function sites(source: string): [string, EdgeKind][] {
   return parseImports(source).map((ref) => [ref.specifier, ref.kind]);

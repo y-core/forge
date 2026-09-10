@@ -6,8 +6,9 @@ import { dirname, join } from "node:path";
 import type { StringFlagDef } from "../../cli/types";
 import { resolveColorLevel } from "../../term/capability";
 import { createColorize, PLAIN } from "../../term/color";
-import type { DeploymentTarget } from "../target";
-import { RESOURCE_TYPES, type SyncNote, type SyncResult } from "../types";
+import type { DeploymentTarget } from "../types";
+import { RESOURCE_TYPES } from "../types";
+import type { SyncNote, SyncResult } from "../types";
 import {
   createSyncAccountCommand,
   describeUntouchedZone,

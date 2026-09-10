@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { type ClassGroupTable, deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./class-groups-parse";
-import type { CssNode, DesignSystem } from "./design-system";
+import { deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./class-groups-parse";
+import type { ClassGroupTable } from "./types";
+import type { CssNode, DesignSystem } from "./types";
 
 const declaration = (property: string): CssNode => ({ kind: "declaration", property });
 const rule = (...nodes: CssNode[]): CssNode[] => [{ kind: "rule", nodes }];

@@ -10,10 +10,8 @@ import { definePage } from "../../app/page";
 import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
 import { v } from "../../validation/validation";
-import type { ForgeIcon } from "../core/icon";
-import { ShowcaseContent, SHOWCASE_PAGES, type ShowcasePage } from "./components";
-import { CustomiseContent, type CustomiseData, loadCustomise } from "./customise";
-import type { ShowcaseData } from "./route";
+import { ShowcaseContent, SHOWCASE_PAGES } from "./components";
+import { CustomiseContent, loadCustomise } from "./customise";
 import {
   loadDependent,
   loadPaginate,
@@ -32,22 +30,10 @@ import {
   renderValidate,
   showcasePaths,
 } from "./route";
-
-/** Icon constraint covering all showcase sections — pass your app's icon component. @public */
-export type ShowcaseIcon = ForgeIcon<
-  | "spinner"
-  | "chevron-down"
-  | "chevron-left"
-  | "chevron-right"
-  | "sun"
-  | "moon"
-  | "monitor"
-  | "hamburger"
-  | "close"
-  | "panel-open"
-  | "panel-close"
-  | "upload"
->;
+import type { ShowcasePage } from "./types";
+import type { CustomiseData } from "./types";
+import type { ShowcaseData } from "./types";
+import type { ShowcaseOptions, ShowcaseUiRoutes } from "./types";
 
 /** The playground form's only declared field; the pipeline drops the token itself. */
 const TURNSTILE_VERIFY_SCHEMA = v.strictObject({ email: v.optional(v.string()) });
@@ -76,17 +62,6 @@ export function showcaseRoutes(base = "/showcase/ui") {
       },
     },
   };
-}
-
-/** The `ui` subtree returned by `showcaseRoutes` — pass this to `registerShowcase`. @public */
-export type ShowcaseUiRoutes = ReturnType<typeof showcaseRoutes>["ui"];
-
-/** Options for `registerShowcase`. @public */
-export interface ShowcaseOptions<Bindings extends object, Config> {
-  /** Icon component used across preview, dependent, and content sections. */
-  icon: ShowcaseIcon;
-  /** Siteverify secret for the Turnstile page's verification panel; without it nothing is sent to Cloudflare. */
-  turnstileSecret?: (c: AppContext<Bindings>, config: Config) => string | Promise<string>;
 }
 
 /** Registers every showcase route, including the seven API endpoints, on `app`. @public */

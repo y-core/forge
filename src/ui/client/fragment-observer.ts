@@ -1,15 +1,10 @@
 import { elementById, ownerWindow } from "./dom";
+import type { FragmentEntry, FragmentObserverConfig } from "./types";
 
 /** `Node.DOCUMENT_POSITION_FOLLOWING`, spelled out rather than read off a bare `Node` global. */
 const POSITION_FOLLOWING = 4;
 
 const NOOP = (): void => {};
-
-/** One fragment link and the element it points at. @internal */
-export interface FragmentEntry {
-  link: Element;
-  target: Element;
-}
 
 /** Links paired with their targets, deduplicated and ordered by the targets' document position
  *  rather than by the nav's markup order, which is free to differ. @internal */
@@ -27,31 +22,6 @@ export function resolveFragmentEntries(root: Element, selector: string): Fragmen
   }
 
   return entries.sort((a, b) => ((a.target.compareDocumentPosition(b.target) & POSITION_FOLLOWING) !== 0 ? -1 : 1));
-}
-
-/** What a controller does once the guards have passed: watch these boxes, this way. @internal */
-export interface FragmentObserverPlan {
-  init: IntersectionObserverInit;
-  onRecords(records: readonly IntersectionObserverEntry[]): void;
-  /** Teardown beyond disconnecting, run before the mount record is dropped. */
-  cleanup?(): void;
-}
-
-/** What {@link mountFragmentObserver} needs to stand one controller up. @internal */
-export interface FragmentObserverConfig {
-  root: Element;
-  selector: string;
-  /** The mounting function's own name, for the `root` error. */
-  fn: string;
-  /** The log prefix, and what the caller should have passed as `root`. */
-  label: string;
-  requires: string;
-  /** What is lost when the guard trips, completing "…; <degraded>". */
-  emptyTarget: string;
-  degraded: string;
-  mounted: WeakMap<Element, () => void>;
-  /** Returns the plan, or `null` after warning about markup it cannot drive. */
-  plan(entries: FragmentEntry[]): FragmentObserverPlan | null;
 }
 
 /** The mount scaffold both fragment-driven controllers share: the idempotence guard, the three

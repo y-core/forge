@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { base64urlEncode, utf8Encode } from "../../crypto/mod";
-import { type ClientDataExpectation, parseClientData, verifyClientData } from "./client-data";
+import { parseClientData, verifyClientData } from "./client-data";
+import type { ClientDataExpectation } from "./types";
 
 const CHALLENGE = base64urlEncode(new Uint8Array(32).fill(9));
 const ORIGIN = "https://example.com";

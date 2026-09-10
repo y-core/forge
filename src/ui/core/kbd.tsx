@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
-import type { Size } from "../contracts/vocabulary";
+import type { Size } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cva } from "./utils/cva";
 

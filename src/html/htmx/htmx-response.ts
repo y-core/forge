@@ -1,18 +1,4 @@
-/** A flat map of `HX-*` response headers. @public */
-export type HxResponseHeaders = Record<string, string>;
-
-/** The htmx response directives `hxHeaders` can emit. @public */
-export interface HxResponseProps {
-  redirect?: string;
-  refresh?: boolean;
-  pushUrl?: string;
-  replaceUrl?: string;
-  trigger?: string;
-  triggerAfterSettle?: string;
-  triggerAfterSwap?: string;
-  retarget?: string;
-  reswap?: string;
-}
+import type { HxResponseHeaders, HxResponseProps } from "./types";
 
 /** Converts typed htmx response directives into an `HX-*` header map, omitting unset values. @public */
 export function hxHeaders(p: HxResponseProps): HxResponseHeaders {

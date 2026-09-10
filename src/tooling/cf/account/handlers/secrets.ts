@@ -5,10 +5,10 @@ import { pagesProject, workerSecrets } from "../../api/endpoints";
 import { describeCfFailure } from "../../api/errors";
 import type { CfPagesEnvVar, CfPagesProject, CfWorkerSecret } from "../../api/types";
 import type { ResourceType, SyncResult } from "../../types";
-import type { DevVarKind } from "./devvars";
 import { devVarsPath, readDevVars } from "./devvars";
 import { randomSecret } from "./rotate";
 import { failureRows } from "./rows";
+import type { DevVarKind } from "./types";
 import type { HandlerContext, ReconcileResult, ResourceHandler } from "./types";
 
 interface SecretEntry {

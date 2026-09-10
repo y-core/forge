@@ -1,24 +1,6 @@
 import { del, get, patch, post, route } from "@remix-run/fetch-router/routes";
 
-/** The body a route group answers with. @public */
-export type AuthMedium = "html" | "json";
-
-/** A guard carried by a route group's middleware stack. @public */
-export type AuthGuardName =
-  | "resolve-auth"
-  | "require-auth"
-  | "require-admin"
-  | "require-enrolment"
-  | "require-pending-enrolment"
-  | "require-fresh-step-up";
-
-/** One middleware group of a built auth route map. @public */
-export interface AuthRouteGroup {
-  /** Key path of the group, opening with the builder name — `["auth"]` is `authRoutes`' own level. */
-  readonly path: readonly string[];
-  readonly guards: readonly AuthGuardName[];
-  readonly medium: AuthMedium;
-}
+import type { AuthRouteGroup } from "./types";
 
 /** Every group the three builders produce — a nested group exists only where its guards or medium differ from its parent's. @public */
 export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [

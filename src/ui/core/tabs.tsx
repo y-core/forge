@@ -2,8 +2,9 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
-import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
 import { TABS_SCOPE } from "../contracts/tabs-contract";
+import type { Orientation } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 

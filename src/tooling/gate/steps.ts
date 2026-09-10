@@ -1,79 +1,13 @@
 import { splitList } from "../cli/parse";
-import type { CheckResult } from "./finding";
+import type { CheckStep, GateMode, Selection, Step } from "./types";
 
 /** The three tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
 export const GATE_MODES = ["fast", "standard", "full"] as const;
-
-/** How much of the table to run: `fast` is the inner loop, `standard` is the gate a task closes on,
- *  `full` adds everything, including the steps that may require a machine prerequisite. @public */
-export type GateMode = (typeof GATE_MODES)[number];
-
-/** A dependency a step needs, with the probe that detects it and the remedy to print — absent, a
- *  fast or standard run reports the step skipped and a full run fails it. @public */
-export interface StepRequirement {
-  /** What is missing, named verbatim in the skipped and failure lines. */
-  tool: string;
-  /** Answers whether the dependency is present. Defaults to whether `<tool> --version` exits 0. */
-  probe?: () => boolean;
-  // Rendered verbatim, so it carries its own verb and backticks: a remedy is not always one command.
-  /** Remedy shown verbatim when the probe fails, e.g. ``run `bun add -d esbuild` ``. */
-  hint: string;
-}
-
-/** What every step carries, whichever way it runs. @public */
-export interface StepBase {
-  /** Stable identifier — the `--only` token, and the name reported on failure. */
-  label: string;
-  /** The lowest mode this step runs in; omitted, it runs from `fast` up. */
-  tier?: GateMode;
-  /** Dependency probed before the step runs: absent, only a full run fails; the lower modes skip. */
-  requires?: StepRequirement;
-}
-
-/** A step run as an external process, reported from the tail of its captured output. @public */
-export interface CommandStep extends StepBase {
-  /** Executable followed by its arguments. Resolved against the runner's `binDir` on `PATH`. */
-  cmd: readonly [string, ...string[]];
-  /** Lines of the step's captured output shown when it fails. */
-  tail: number;
-  /** Auto-fixing counterpart invoked by `--fix`. Steps without one are counted as having no fixer. */
-  fix?: readonly [string, ...string[]];
-  run?: never;
-}
-
-/** A step run in-process, reported from the findings it returns rather than from captured text. @public */
-export interface CheckStep extends StepBase {
-  /** Invoked by the runner with the mode of the run, so a check whose strictness depends on it — a
-   *  release gate refusing what a dev loop tolerates — has one row rather than two. Its findings are
-   *  printed verbatim, so there is no `tail` to truncate to. */
-  run: (mode: GateMode) => CheckResult | Promise<CheckResult>;
-  /** Auto-fixing counterpart invoked by `--fix`, called in-process like `run`. Absent, the step is
-   *  counted as having no fixer. A fixer writes and reports nothing; `run` reports and writes
-   *  nothing — the two halves of the dev loop are not the same verb. */
-  fix?: () => void | Promise<void>;
-  cmd?: never;
-}
-
-/** One gate step: an external command, or a check the runner calls directly. @public */
-export type Step = CommandStep | CheckStep;
 
 /** Narrows a step to the in-process variant. @public */
 export function isCheckStep(step: Step): step is CheckStep {
   return step.run !== undefined;
 }
-
-/** A resolved run plan, or the reason no run may proceed. @public */
-export type Selection =
-  | {
-      ok: true;
-      /** The steps to run, in table order. */
-      steps: readonly Step[];
-      /** How many steps the mode holds in total — the denominator of the scoped banner. */
-      total: number;
-      /** True when fewer steps were selected than the mode holds, i.e. a green is not a gate green. */
-      scoped: boolean;
-    }
-  | { ok: false; error: string };
 
 function rank(mode: GateMode): number {
   return GATE_MODES.indexOf(mode);

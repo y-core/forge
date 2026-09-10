@@ -1,55 +1,15 @@
-import { type CborValue, base64urlDecodeOrNull, cborDecodeFirst } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
+import { base64urlDecodeOrNull, cborDecodeFirst } from "../../crypto/mod";
+import type { CborValue } from "../../crypto/mod";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
 import type { AuthStoreError } from "../errors";
-import type { AuthAlgorithm, AuthCredential, ChallengeStore, CredentialStore } from "../types";
-import { type AuthDataReason, verifyAuthData } from "./auth-data";
-import { type ClientDataReason, verifyClientData } from "./client-data";
+import type { AuthAlgorithm, AuthCredential } from "../types";
+import { verifyAuthData } from "./auth-data";
+import { verifyClientData } from "./client-data";
 import { passkeyChallengeKey } from "./options";
 import { passkeyKeyImportable } from "./signature";
-
-/** Why a registration ceremony was refused. Each condition is its own reason. @public */
-export type PasskeyRegistrationReason =
-  | AuthDataReason
-  | ClientDataReason
-  | "attestation-not-empty"
-  | "challenge-not-found"
-  | "credential-id-mismatch"
-  | "session-mismatch"
-  | "subject-mismatch"
-  | "unsupported-algorithm"
-  | "unsupported-attestation";
-
-/** The attestation response of a finished ceremony, base64url as the browser's JSON carries it. @public */
-export interface PasskeyRegistrationResponse {
-  readonly clientDataJSON: string;
-  readonly attestationObject: string;
-  readonly transports?: readonly string[];
-}
-
-/** The credential a finished registration ceremony posts back. @public */
-export interface PasskeyRegistrationCredential {
-  readonly id: string;
-  readonly response: PasskeyRegistrationResponse;
-}
-
-/** One registration ceremony, as it is presented for verification. @public */
-export interface PasskeyRegistrationInput {
-  readonly sessionId: string;
-  readonly userId: string;
-  readonly credential: PasskeyRegistrationCredential;
-  readonly label?: string | null;
-}
-
-/** What a registration ceremony is held against, and where the credential it establishes is written. @public */
-export interface PasskeyRegistrationVerifyOptions {
-  readonly rpId: string;
-  readonly origin: string;
-  readonly challenges: ChallengeStore;
-  readonly credentials: CredentialStore;
-  readonly algorithms?: readonly AuthAlgorithm[];
-  readonly requireUserVerification?: boolean;
-}
+import type { PasskeyRegistrationInput, PasskeyRegistrationReason, PasskeyRegistrationVerifyOptions } from "./types";
 
 /** The same bound `authPasskeyLabelSchema` holds a rename to, applied here so the store never sees a longer one. */
 const LABEL_MAX = 64;

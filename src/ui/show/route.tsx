@@ -5,23 +5,11 @@ import type { AppContext } from "../../context/types";
 import { joinPath } from "../../http/path";
 import { fragmentResponse } from "../../http/response";
 import { renderToString } from "../../jsx/render-to-string";
-import type { ForgeIcon } from "../core/icon";
+import type { ForgeIcon } from "../core/types";
 import { DependentFragment, PaginateFragment, PreviewFragment, SearchFragment, ToastFragment, ValidateFragment } from "./sections";
-import { loadTurnstileOptions, type TurnstileDemoOptions, type TurnstileVerdict, TurnstileVerdictFragment } from "./turnstile-demo";
-
-/** URL paths for the showcase module — single source of truth so page and controller never drift. @public */
-export interface ShowcasePaths {
-  page: string;
-  preview: string;
-  validate: string;
-  search: string;
-  paginate: string;
-  dependent: string;
-  toast: string;
-  avatar: string;
-  turnstile: string;
-  turnstileVerify: string;
-}
+import { loadTurnstileOptions, TurnstileVerdictFragment } from "./turnstile-demo";
+import type { TurnstileVerdict } from "./types";
+import type { DependentData, PaginateData, PreviewData, SearchData, ShowcaseData, ShowcasePaths, ToastData, ValidateData } from "./types";
 
 /** Returns all showcase paths derived from a base path. Pass `apiPath` to serve API
  * endpoints under a different prefix than the page. @public */
@@ -42,25 +30,12 @@ export function showcasePaths(basePath: string, apiPath?: string): ShowcasePaths
   };
 }
 
-/** Data returned by `loadShowcase`. @public */
-export interface ShowcaseData {
-  paths: ShowcasePaths;
-  turnstile: TurnstileDemoOptions;
-}
-
 /** Loader for the main showcase page. @public */
 export function loadShowcase<Bindings = Record<string, unknown>>(
   c: AppContext<Bindings>,
   opts: { basePath?: string; apiPath?: string } = {},
 ): ShowcaseData {
   return { paths: showcasePaths(opts.basePath ?? "/showcase", opts.apiPath), turnstile: loadTurnstileOptions(c.url.searchParams) };
-}
-
-/** @public */
-export interface PreviewData {
-  tone: string;
-  appearance: string;
-  size: string;
 }
 
 /** Reads the preview fragment's tone, appearance and size from the query string. @public */
@@ -78,12 +53,6 @@ export async function renderPreview(
   return fragmentResponse(body);
 }
 
-/** @public */
-export interface ValidateData {
-  email: string;
-  paths: ShowcasePaths;
-}
-
 /** Reads the email under validation from the query string. @public */
 export function loadValidate<Bindings = Record<string, unknown>>(c: AppContext<Bindings>, paths: ShowcasePaths): ValidateData {
   return { email: c.url.searchParams.get("email") ?? "", paths };
@@ -95,11 +64,6 @@ export async function renderValidate(data: ValidateData, icon: ForgeIcon<"close"
   return fragmentResponse(body);
 }
 
-/** @public */
-export interface SearchData {
-  q: string;
-}
-
 /** Reads the search term from the query string. @public */
 export function loadSearch<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): SearchData {
   return { q: c.url.searchParams.get("q") ?? "" };
@@ -109,12 +73,6 @@ export function loadSearch<Bindings = Record<string, unknown>>(c: AppContext<Bin
 export async function renderSearch(data: SearchData): Promise<Response> {
   const body = await renderToString(<SearchFragment data={data} />);
   return fragmentResponse(body);
-}
-
-/** @public */
-export interface PaginateData {
-  page: number;
-  paths: ShowcasePaths;
 }
 
 /** Reads the requested page number from the query string, clamped to at least 1. @public */
@@ -133,11 +91,6 @@ export async function renderPaginate(data: PaginateData): Promise<Response> {
   return fragmentResponse(body);
 }
 
-/** @public */
-export interface DependentData {
-  category: string;
-}
-
 /** Reads the selected category from the query string. @public */
 export function loadDependent<Bindings = Record<string, unknown>>(c: AppContext<Bindings>): DependentData {
   return { category: c.url.searchParams.get("category") ?? "fruit" };
@@ -150,11 +103,6 @@ export async function renderDependent(
 ): Promise<Response> {
   const body = await renderToString(<DependentFragment data={data} icon={icon} />);
   return fragmentResponse(body);
-}
-
-/** @public */
-export interface ToastData {
-  type: string;
 }
 
 /** Reads the toast variant to demonstrate from the query string. @public */

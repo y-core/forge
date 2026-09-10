@@ -1,6 +1,7 @@
-import type { ModernCssReportedId } from "../../lint/modern-css-rules";
-import { findCssBlocks, isModernCssSuppressed, type ModernCssFinding } from "./modern-css-parse";
+import type { ModernCssReportedId } from "../../lint/types";
+import { findCssBlocks, isModernCssSuppressed } from "./modern-css-parse";
 import { balancedSpan, blankSourceComments, lineAt } from "./source-scan";
+import type { ModernCssFinding } from "./types";
 
 interface Emitter {
   file: string;

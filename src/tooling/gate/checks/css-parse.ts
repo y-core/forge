@@ -1,12 +1,5 @@
 import { blankSourceComments } from "./source-scan";
-
-/** A string literal that reads as a Tailwind class declaration. */
-export interface ClassDeclaration {
-  /** The literal as written, without its quotes. */
-  literal: string;
-  /** The tokens that made it read as classes — at least two, by construction. */
-  anchors: string[];
-}
+import type { ClassDeclaration } from "./types";
 
 const BARE = new Set(["flex", "grid", "hidden", "absolute", "relative", "static", "sticky", "fixed"]);
 

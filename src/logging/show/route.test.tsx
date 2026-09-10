@@ -4,14 +4,14 @@ import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
-import type { PageShell } from "../../app/shell";
+import type { PageShell } from "../../app/types";
 import type { AppContext } from "../../context/types";
 import { mapHandler } from "../../testing/route";
 import { createIcon } from "../../ui/core/icon";
 import type { LogChannel, LogQuery, LogRow } from "../types";
 import { LOG_LEVELS } from "../types";
-import type { LogViewerAccess } from "./route";
 import { loadLogViewer } from "./route";
+import type { LogViewerAccess } from "./types";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 

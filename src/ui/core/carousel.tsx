@@ -1,13 +1,11 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import type { Size } from "../contracts/vocabulary";
+import type { Size } from "../contracts/types";
 import { Pagination } from "./pagination";
+import type { CarouselSnap } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-
-/** Where an item settles in the strip once scrolling stops. @public */
-export type CarouselSnap = "start" | "center";
 
 interface CarouselRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   snap?: CarouselSnap | undefined;

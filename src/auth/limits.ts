@@ -1,12 +1,4 @@
-/** What a configured knob may be, and the reason each bound exists. @internal */
-export interface AuthLimit {
-  fallback: number;
-  min: number;
-  max?: number;
-  unit?: string;
-  floor: string;
-  ceiling?: string;
-}
+import type { AuthLimit } from "./types";
 
 function bound(value: number, unit: string | undefined): string {
   return unit === undefined ? `${value}` : `${value}-${unit}`;

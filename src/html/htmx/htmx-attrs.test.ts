@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { type HxAttrsProps, hxAttrs } from "./htmx-attrs";
+import { hxAttrs } from "./htmx-attrs";
+import type { HxAttrsProps } from "./types";
 
 describe("hxAttrs", () => {
   it("returns empty object for empty props", () => {

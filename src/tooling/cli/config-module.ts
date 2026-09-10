@@ -2,17 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-/** Where a bin looks for its configuration module, and what to call it when it is wrong. */
-export interface ConfigModuleRequest {
-  /** Directory a relative `path` resolves against. */
-  root: string;
-  /** Module path, absolute or relative to `root`. */
-  path: string;
-  /** Whether the caller named `path` rather than falling back to the default. */
-  explicit: boolean;
-  /** What the module holds, named in every error — e.g. `"step table"`. */
-  what: string;
-}
+import type { ConfigModuleRequest } from "./types";
 
 /** Imports a config module's default export. Returns `undefined` only when an unnamed default path
  *  is absent, so a typo in an explicit `--config` is an error rather than a silent fallback. */

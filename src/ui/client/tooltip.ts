@@ -1,12 +1,6 @@
 import { TOOLTIP_MOUNTED_ATTR } from "../contracts/toggle-contract";
 import { elementById, ownerWindow } from "./dom";
-
-export interface TooltipOptions {
-  /** @default 400 */
-  showDelayMs?: number;
-  /** @default 100 */
-  hideDelayMs?: number;
-}
+import type { TooltipOptions } from "./types";
 
 /** Mounts a tooltip's delayed show/hide behaviour and returns a disposer. */
 export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): () => void {

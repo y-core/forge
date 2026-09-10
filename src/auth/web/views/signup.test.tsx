@@ -4,7 +4,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { createIcon, type ForgeIcon } from "../../../ui/core/icon";
+import { createIcon } from "../../../ui/core/icon";
+import type { ForgeIcon } from "../../../ui/core/types";
 import { PASSKEY_SCOPE } from "../../passkey-contract";
 import {
   attrOf,
@@ -18,7 +19,8 @@ import {
   textOf,
   valuesOf,
 } from "../test-support";
-import { SignupView, type SignupViewProps } from "./signup";
+import { SignupView } from "./signup";
+import type { SignupViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
 

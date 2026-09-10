@@ -1,57 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { contrastRatio, oklchToPaintedHex, parseOklch } from "./color";
-import {
-  type AcceptedRow,
-  checkAccepted,
-  checkDarkHoldsOnlySteps,
-  MODE_LABEL,
-  type Mode,
-  mergeThemes,
-  type ParsedTheme,
-  parseThemeDeclarations,
-} from "./contrast-parse";
+import { checkAccepted, checkDarkHoldsOnlySteps, MODE_LABEL, mergeThemes, parseThemeDeclarations } from "./contrast-parse";
 import { blankComments, lineAt, listFiles } from "./source-scan";
-
-/** One side of an audited pair — the token whose resolved colour is measured. */
-export interface ContrastSideInput {
-  readonly token: string;
-}
-
-/** One audited pair — foreground and background tokens judged against a criterion. */
-export interface ContrastPairInput {
-  readonly token: string;
-  readonly criterion: string;
-  readonly foreground: ContrastSideInput;
-  readonly background: ContrastSideInput;
-}
-
-/** A success criterion and the ratio it demands. */
-export interface ContrastCriterion {
-  readonly floor: number;
-  readonly name: string;
-}
-
-/** What the contrast check needs to know about the project. @public */
-export interface ContrastCheckConfig {
-  root: string;
-  /** Directory of stylesheets, relative to `root`. */
-  cssDir: string;
-  /** The token layer, in import order, relative to `root` — a pair may span multiple files, read as one cascade. */
-  tokenFiles: readonly string[];
-  /** The mapping layer, checked by one rule specifically. */
-  mappingFile: string;
-  /** The pairs to measure. */
-  pairs: readonly ContrastPairInput[];
-  /** Each criterion's floor and name, keyed as `pairs[].criterion` names them. */
-  criteria: Readonly<Record<string, ContrastCriterion>>;
-  /** Resolves the absolute path of an upstream palette stylesheet (e.g. Tailwind's `theme.css`); omit when no pair resolves through one. */
-  palettePath?: () => string;
-  /** Pairs the criteria do not bind, recorded with what they measure and why they are exempt. */
-  accepted?: readonly AcceptedRow[];
-}
+import type { Mode, ParsedTheme } from "./types";
+import type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./types";
 
 /** Reads `--color-*` declarations out of an upstream palette stylesheet. @public */
 export function parsePalette(css: string): Map<string, string> {
@@ -62,13 +18,6 @@ export function parsePalette(css: string): Map<string, string> {
     if (property !== undefined && value !== undefined) out.set(property, value.trim().replace(/\s+/g, " "));
   }
   return out;
-}
-
-/** Why a token could not be reduced to a colour. */
-export interface Unresolved {
-  token: string;
-  at: string;
-  reason: string;
 }
 
 /** Follows `var(--x)` from a token down to the `#rrggbb` a browser paints. @public */
@@ -102,17 +51,6 @@ export function resolveColor(token: string, mode: Mode, theme: ParsedTheme, pale
     current = indirect[1] ?? "";
   }
   return { token, at: current, reason: "resolves through more than eight indirections — the chain is cyclic" };
-}
-
-/** One pair measured in one mode. */
-export interface Measurement {
-  token: string;
-  mode: Mode;
-  criterion: string;
-  floor: number;
-  foreground: string | Unresolved;
-  background: string | Unresolved;
-  ratio?: number;
 }
 
 /** Measures every pair in both modes. @public */

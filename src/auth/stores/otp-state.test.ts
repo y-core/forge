@@ -4,10 +4,12 @@ import { uuidToBytes, uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
 import { nullLogger } from "../../testing/context";
-import { fakeD1, type FakeD1Options } from "../../testing/fakes";
+import { fakeD1 } from "../../testing/fakes";
+import type { FakeD1Options } from "../../testing/types";
 import { AuthStoreError } from "../errors";
 import type { OtpState } from "../types";
-import { createOtpStateStore, type OtpStateRow } from "./otp-state";
+import { createOtpStateStore } from "./otp-state";
+import type { OtpStateRow } from "./types";
 
 const USER_ID = uuidv7();
 const OTHER_ID = uuidv7();

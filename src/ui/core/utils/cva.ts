@@ -1,25 +1,5 @@
 import { cn } from "./cn";
-
-type VariantMap = Record<string, string>;
-type VariantConfig = Record<string, VariantMap>;
-type DefaultVariants<V extends VariantConfig> = { [K in keyof V]?: keyof V[K] };
-
-/** One compound rule: every named axis must match (a list matches any of its members) for `class` to apply. @public */
-export type CompoundVariant<V extends VariantConfig> = { [K in keyof V]?: keyof V[K] | ReadonlyArray<keyof V[K]> } & { class: string };
-
-export interface CVADefinition<V extends VariantConfig> {
-  base?: string;
-  variants?: V;
-  defaultVariants?: DefaultVariants<V>;
-  compoundVariants?: ReadonlyArray<CompoundVariant<V>>;
-}
-
-export type CVAProps<V extends VariantConfig> = {
-  [K in keyof V]?: keyof V[K] | undefined;
-} & { class?: string | undefined };
-
-/** The variant props a `cva` resolver accepts, without the trailing `class`. @public */
-export type VariantProps<T extends (props?: never) => string> = Omit<NonNullable<Parameters<T>[0]>, "class">;
+import type { CVADefinition, CVAProps, DefaultVariants, VariantConfig, VariantMap } from "./types";
 
 /** Builds a class-name resolver that composes `base` → variants → matching compounds → `class` through `cn`, so a later part overrides an earlier one. @public */
 export function cva<V extends VariantConfig>(config: CVADefinition<V>) {

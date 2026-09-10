@@ -1,16 +1,15 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
-import { type Orientation, stateAttrs } from "../contracts/state-attrs";
+import { stateAttrs } from "../contracts/state-attrs";
 import { TOGGLE_GROUP_SCOPE } from "../contracts/toggle-contract";
-import type { Size } from "../contracts/vocabulary";
+import type { Orientation } from "../contracts/types";
+import type { Size } from "../contracts/types";
 import { buttonVariants } from "./button";
+import type { ToggleGroupType } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PRESSED_PAINT } from "./utils/recipes";
-
-/** Whether one item may be pressed at a time, or several. @public */
-export type ToggleGroupType = "single" | "multiple";
 
 type ToggleGroupProps = JSX.IntrinsicElements["fieldset"] & { orientation?: Orientation | undefined; type?: ToggleGroupType | undefined };
 

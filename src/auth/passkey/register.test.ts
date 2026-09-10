@@ -4,16 +4,10 @@ import { base64urlEncode, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { AuthStoreError } from "../errors";
 import type { AuthChallenge, AuthCredential, AuthCredentialInput, ChallengeStore, CredentialStore } from "../types";
-import {
-  PASSKEY_FLAG,
-  type CeremonyCborValue,
-  type PasskeyKeyPair,
-  ceremonyCborEncode,
-  createPasskeyKeyPair,
-  fakeClientData,
-  fakePasskeyRegistration,
-} from "./fixture";
-import { type PasskeyRegistrationVerifyOptions, verifyPasskeyRegistration } from "./register";
+import { PASSKEY_FLAG, ceremonyCborEncode, createPasskeyKeyPair, fakeClientData, fakePasskeyRegistration } from "./fixture";
+import { verifyPasskeyRegistration } from "./register";
+import type { CeremonyCborValue, PasskeyKeyPair } from "./types";
+import type { PasskeyRegistrationVerifyOptions } from "./types";
 
 const RP_ID = "example.com";
 const ORIGIN = "https://example.com";

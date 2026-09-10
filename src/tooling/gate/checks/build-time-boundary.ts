@@ -1,24 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing } from "../finding";
-import type { ExportsMap } from "./exports";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
 import { collectFiles } from "./source-scan";
-
-/** What the build-time-boundary check needs to know about the project. @public */
-export interface BuildTimeBoundaryCheckConfig {
-  /** Repository root; every reported path is relative to it. */
-  root: string;
-  /** The package name consumers import under, e.g. `@y-core/forge`. */
-  packageName: string;
-  /** The `exports` map, verbatim from `package.json` — which subpaths are build-time is *derived* from it. */
-  exports: ExportsMap;
-  /** Directories whose modules run on a developer's machine, relative to `root`. */
-  buildTimeDirs: readonly string[];
-  /** Directories walked for source files, relative to `root`. Defaults to `["src"]`. */
-  sources?: readonly string[];
-}
+import type { BuildTimeBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 

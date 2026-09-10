@@ -2,18 +2,7 @@ import type { AppContext } from "../context/types";
 import { renderError } from "../http/fragment";
 import { html } from "../http/html";
 import { htmlResponse } from "../http/response";
-
-/** Options for `createErrorPage`. @public */
-export interface ErrorPageOptions<Bindings = Record<string, unknown>> {
-  /** Show the real error message when it returns `true`. */
-  isDebug?: (c: AppContext<Bindings>) => boolean;
-  /** Page `<title>` and heading. */
-  title?: string;
-  /** Stylesheet `<link>` href, static or resolved per request. */
-  stylesheetHref?: string | ((c: AppContext<Bindings>) => string);
-  /** "Back to safety" link rendered under the error banner. */
-  homeHref?: string;
-}
+import type { ErrorPageOptions } from "./types";
 
 /** Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`. @public */
 export function createErrorPage<Bindings = Record<string, unknown>>(

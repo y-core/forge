@@ -1,32 +1,11 @@
-import type { ModernCssReportedId, ModernCssRuleId } from "../../lint/modern-css-rules";
+import type { ModernCssReportedId, ModernCssRuleId } from "../../lint/types";
 import { blankComments, lineAt, suppressedBy } from "./source-scan";
-
-/** One modern-platform rule violated at one place. @public */
-export interface ModernCssFinding {
-  /** Repo-relative path of the file the violation sits in. */
-  file: string;
-  /** 1-indexed line. */
-  line: number;
-  ruleId: ModernCssReportedId;
-  detail: string;
-}
+import type { CssBlock, ModernCssFinding } from "./types";
 
 /** A `/* modern-css-allow: <rule> — <reason> *​/` comment on `line` or the one above it. The reason
  *  is mandatory — a bare marker with no text after the em dash does not suppress. @public */
 export const isModernCssSuppressed: (lines: readonly string[], line: number, ruleId: ModernCssReportedId) => boolean =
   suppressedBy("modern-css-allow");
-
-/** A declaration block — one with no nested block of its own — and the at-rules enclosing it. @public */
-export interface CssBlock {
-  /** The selector or at-rule prelude, whitespace collapsed. */
-  prelude: string;
-  /** The text between the braces. */
-  body: string;
-  /** Offset of the first character of `body`. */
-  start: number;
-  /** The preludes of every enclosing block, outermost first. */
-  ancestors: string[];
-}
 
 interface Frame {
   preludeStart: number;

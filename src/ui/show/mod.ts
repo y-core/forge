@@ -1,9 +1,10 @@
 export { ShowcaseContent } from "./components";
 export { CollectionSurface, CompositionsSection, FeedbackSurface, SettingsSurface } from "./compositions";
-export { CustomiseContent, type CustomiseData, type CustomiseIcon, loadCustomise } from "./customise";
-export type { ShowcaseIcon, ShowcaseOptions, ShowcaseUiRoutes } from "./register";
+export { CustomiseContent, loadCustomise } from "./customise";
+export type { CustomiseData, CustomiseIcon } from "./types";
+export type { ShowcaseIcon, ShowcaseOptions, ShowcaseUiRoutes } from "./types";
 export { registerShowcase, showcaseRoutes } from "./register";
-export type { DependentData, PaginateData, PreviewData, SearchData, ShowcaseData, ShowcasePaths, ToastData, ValidateData } from "./route";
+export type { DependentData, PaginateData, PreviewData, SearchData, ShowcaseData, ShowcasePaths, ToastData, ValidateData } from "./types";
 export {
   loadDependent,
   loadPaginate,
@@ -41,7 +42,7 @@ export {
   ValidateFragment,
   ValidateSection,
 } from "./sections";
-export type { TurnstileDemoOptions, TurnstileTestKey, TurnstileVerdict } from "./turnstile-demo";
+export type { TurnstileDemoOptions, TurnstileTestKey, TurnstileVerdict } from "./types";
 export {
   loadTurnstileOptions,
   SHOW_TURNSTILE_VERDICT_ID,

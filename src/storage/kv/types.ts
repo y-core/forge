@@ -1,6 +1,6 @@
 import type { AppContext } from "../../context/types";
 import type { Logger } from "../../logging/types";
-import type { Result } from "../../result/result";
+import type { Result } from "../../result/types";
 
 /** Determines which KV get overload to call and how to encode/decode the value. @public */
 export type KvValueType = "text" | "arrayBuffer";

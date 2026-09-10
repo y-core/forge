@@ -1,5 +1,5 @@
 import type { AppContext } from "../../context/types";
-import type { Result } from "../../result/result";
+import type { Result } from "../../result/types";
 
 /** Options for serveObject. @public */
 export interface ServeOptions {

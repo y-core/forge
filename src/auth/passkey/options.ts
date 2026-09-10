@@ -1,5 +1,6 @@
 import { base64urlEncode, randomBytes } from "../../crypto/mod";
-import { type Result, err, ok } from "../../result/result";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import {
   AUTH_PASSKEY_CHALLENGE_BYTES,
   AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
@@ -10,66 +11,14 @@ import {
 } from "../config";
 import type { AuthStoreError } from "../errors";
 import { authLimit } from "../limits";
-import type { AuthAlgorithm, AuthChallenge, ChallengeStore, CredentialStore } from "../types";
-
-/** How firmly the authenticator must establish that the right person is present. @public */
-export type UserVerification = "discouraged" | "preferred" | "required";
-
-/** One entry of `pubKeyCredParams` — the shape `navigator.credentials` reads. @public */
-export interface PublicKeyCredentialParameter {
-  readonly type: "public-key";
-  readonly alg: AuthAlgorithm;
-}
-
-/** One entry of `excludeCredentials` or `allowCredentials`. @public */
-export interface PublicKeyCredentialDescriptor {
-  readonly type: "public-key";
-  readonly id: string;
-  readonly transports?: readonly string[];
-}
-
-/** The options a registration ceremony hands the browser. @public */
-export interface PasskeyRegistrationOptions {
-  readonly rp: { readonly id: string; readonly name: string };
-  readonly user: { readonly id: string; readonly name: string; readonly displayName: string };
-  readonly challenge: string;
-  readonly pubKeyCredParams: readonly PublicKeyCredentialParameter[];
-  readonly timeout: number;
-  readonly attestation: "none";
-  readonly excludeCredentials: readonly PublicKeyCredentialDescriptor[];
-  readonly authenticatorSelection: { readonly residentKey: "preferred" | "required"; readonly userVerification: UserVerification };
-}
-
-/** The options an authentication ceremony hands the browser. @public */
-export interface PasskeyRequestOptions {
-  readonly rpId: string;
-  readonly challenge: string;
-  readonly timeout: number;
-  readonly userVerification: UserVerification;
-  readonly allowCredentials: readonly PublicKeyCredentialDescriptor[];
-}
-
-/** What both ceremonies need to know about this deployment. @public */
-export interface PasskeyCeremonyOptions {
-  rpId: string;
-  rpName: string;
-  challenges: ChallengeStore;
-  credentials: CredentialStore;
-  algorithms?: readonly AuthAlgorithm[];
-  userVerification?: UserVerification;
-  residentKey?: "preferred" | "required";
-  ttlSeconds?: number;
-  challengeBytes?: number;
-}
-
-/** Who the credential is being registered for — `userHandle` is the base64url form of the `webauthnId` `UserStore.setWebAuthnIdIfAbsent` mints. @public */
-export interface PasskeyRegistrationSubject {
-  readonly userId: string;
-  readonly userHandle: string;
-  readonly name: string;
-  readonly displayName: string;
-  readonly sessionId: string;
-}
+import type { AuthChallenge } from "../types";
+import type {
+  PasskeyCeremonyOptions,
+  PasskeyRegistrationOptions,
+  PasskeyRegistrationSubject,
+  PasskeyRequestOptions,
+  PublicKeyCredentialDescriptor,
+} from "./types";
 
 function descriptorsOf(credentials: readonly { credentialId: string; transports: readonly string[] }[]): PublicKeyCredentialDescriptor[] {
   return credentials.map((credential) =>

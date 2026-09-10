@@ -1,7 +1,5 @@
-import type { Mode, ScaleFamily } from "./color";
-
-/** The WCAG success criterion a pair is bound by. Only these two appear in forge's audit. @public */
-export type Criterion = "1.4.3" | "1.4.11";
+import type { Mode } from "./types";
+import type { ContrastPair, ContrastSide, Criterion, ScalePair, ScaleSide } from "./types";
 
 /** The contrast-ratio floor and title of each criterion the audit enforces. @public */
 export const CRITERION: Readonly<Record<Criterion, { floor: number; name: string }>> = {
@@ -9,29 +7,9 @@ export const CRITERION: Readonly<Record<Criterion, { floor: number; name: string
   "1.4.11": { floor: 3, name: "Non-text Contrast — UI components" },
 };
 
-/** A step on a generated scale: one index, or one per mode where the token re-points. @public */
-export type SideStep = number | Readonly<Record<Mode, number>>;
-
-export type ContrastSide =
-  | { readonly kind: "scale"; readonly token: string; readonly family: ScaleFamily; readonly step: SideStep }
-  | { readonly kind: "fixed"; readonly token: string };
-
-/** A side both the audit and the live measurement resolve on a generated scale. @public */
-export type ScaleSide = Extract<ContrastSide, { kind: "scale" }>;
-
 /** The step a side resolves to in one mode — the only reader of {@link SideStep}. @public */
 export function sideStep(side: ScaleSide, mode: Mode): number {
   return typeof side.step === "number" ? side.step : side.step[mode];
-}
-
-export interface ContrastPair {
-  readonly token: string;
-  readonly role: string;
-  readonly step: string;
-  readonly foreground: ContrastSide;
-  readonly background: ContrastSide;
-  readonly against: Readonly<Record<"light" | "dark", string>>;
-  readonly criterion: Criterion;
 }
 
 const gray = (step: number): ScaleSide => ({ kind: "scale", token: `--gray-${step + 1}`, family: "gray", step });
@@ -306,9 +284,6 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
     criterion: "1.4.3",
   },
 ];
-
-/** A pair whose two sides are both steps on a generated scale. @public */
-export type ScalePair = ContrastPair & { foreground: ScaleSide; background: ScaleSide };
 
 /** The pairs whose two sides are both steps on a generated scale, narrowed to that shape. @public */
 export function scalePairs(): readonly ScalePair[] {

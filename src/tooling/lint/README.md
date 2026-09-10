@@ -6,7 +6,7 @@ description: "Forge's oxlint plugin of AST-anchored rules, and the catalogs that
 # `@y-core/forge/tooling/lint`
 
 **forge's oxlint plugin, and the two rule catalogs the gate reads.** A consuming repository names
-`@y-core/forge/tooling/lint/plugin` in `.oxlintrc.json`'s `jsPlugins` and gets twenty-three
+`@y-core/forge/tooling/lint/plugin` in `.oxlintrc.json`'s `jsPlugins` and gets twenty-five
 AST-anchored rules under the `forge/` prefix; the catalogs are the register that keeps each rule id
 tied to the design-corpus file that justifies it.
 
@@ -26,7 +26,7 @@ import { MODERN_CSS_RULES, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge
 
 ## Features
 
-- **Twenty-three oxlint rules** under the `forge/` prefix, read off the AST rather than line by line:
+- **Twenty-five oxlint rules** under the `forge/` prefix, read off the AST rather than line by line:
   a class list bound to a module-scope const and passed by name is judged like an inline literal, and
   a markup rule reads a tag, an attribute or an ancestor chain off `JSXOpeningElement` rather than
   guessing at one with a regular expression.
@@ -56,6 +56,8 @@ import { MODERN_CSS_RULES, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge
   "jsPlugins": ["@y-core/forge/tooling/lint/plugin"],
   "rules": {
     "forge/suppression-needs-reason": "error",
+    "forge/type-import-external": "error",
+    "forge/type-import-separation": "error",
     "forge/a11y-aria-beside-data": "error",
     "forge/a11y-heading-size-by-class": "error",
     "forge/a11y-label-association": "error",
@@ -142,7 +144,7 @@ resolves the same way one minted here does.
 | `lintPlugin` | `LintPlugin` | forge's rules, as oxlint loads them. `meta.name` is `"forge"`. |
 | `default` | `LintPlugin` | The same object — oxlint reads a plugin module's default export. |
 
-The twenty-three rules it registers:
+The twenty-five rules it registers:
 
 | Rule key | Corpus id | Judges |
 | --- | --- | --- |
@@ -169,12 +171,17 @@ The twenty-three rules it registers:
 | `reduced-motion` | `forge-ui-reduced-motion` | Motion with no `prefers-reduced-motion` escape |
 | `spacing-scale-only` | `forge-ui-spacing-scale-only` | A spacing value off the design scale |
 | `suppression-needs-reason` | — none | An `oxlint-disable*` comment that gives no reason |
+| `type-import-external` | — none | An exported interface or type alias declared outside its directory's `types.ts` |
+| `type-import-separation` | — none | A `type` specifier riding inside a value import rather than its own `import type` line |
 
-`data-slot-before-spread`, `exact-markup-assertion` and `suppression-needs-reason` state no design
-rule, so the register names none of them. The first is the ordering half of the JSX contract, moved
+`data-slot-before-spread`, `exact-markup-assertion`, `suppression-needs-reason`,
+`type-import-external` and `type-import-separation` state no design rule, so the register
+names none of them. The first is the ordering half of the JSX contract, moved
 off `validate-jsx`'s tag-frame scanner — the pragma half stays in the gate, where a file-presence
 check belongs. The second is [`TESTING.md`](../../../docs/TESTING.md) §3e's
-rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere.
+rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere. The
+last two are [`LIBRARY_ARCHITECTURE.md`](../../../docs/LIBRARY_ARCHITECTURE.md) §8's two halves —
+where an exported type is declared, and how it is imported.
 
 `suppression-needs-reason` is AST-anchored and covers every rule rather than only the design ones: `oxlint --type-aware` already
 fails a _stale_ suppression, and this states the other half — a live one says why it is one.

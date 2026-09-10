@@ -1,18 +1,11 @@
-import type { Result } from "../../../result/result";
 import { err, ok } from "../../../result/result";
+import type { Result } from "../../../result/types";
 import type { CfAuth } from "../types";
-import { CfApiClientError, type CfApiResponse } from "./types";
+import { CfApiClientError } from "./types";
+import type { CfApiResponse } from "./types";
+import type { CfClient } from "./types";
 
 const BASE_URL = "https://api.cloudflare.com/client/v4";
-
-export interface CfClient {
-  get<T>(path: string): Promise<Result<T, CfApiClientError>>;
-  list<T>(path: string): Promise<Result<T[], CfApiClientError>>;
-  post<T>(path: string, body: unknown): Promise<Result<T, CfApiClientError>>;
-  put<T>(path: string, body: unknown): Promise<Result<T, CfApiClientError>>;
-  patch<T>(path: string, body: unknown): Promise<Result<T, CfApiClientError>>;
-  delete<T>(path: string): Promise<Result<T, CfApiClientError>>;
-}
 
 export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof globalThis.fetch = globalThis.fetch): CfClient {
   async function requestEnvelope<T>(method: string, path: string, body?: unknown): Promise<Result<CfApiResponse<T>, CfApiClientError>> {

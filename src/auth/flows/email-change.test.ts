@@ -6,8 +6,9 @@ import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import { encodeAuthToken } from "../keys/token";
 import type { AuthKeyRing, AuthMessage, AuthUser, NonceStore, UserStore } from "../types";
-import type { AuthIssueOutcome } from "./decoy";
-import { type AuthEmailChangeOptions, createEmailChangeFlow } from "./email-change";
+import { createEmailChangeFlow } from "./email-change";
+import type { AuthIssueOutcome } from "./types";
+import type { AuthEmailChangeOptions } from "./types";
 
 const USER_ID = uuidv7();
 const OTHER_ID = uuidv7();

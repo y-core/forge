@@ -1,17 +1,8 @@
-import type { Result } from "../../result/result";
 import { err, ok } from "../../result/result";
-import type { JsoncMember, JsoncNode, JsonPath, Primitive } from "./jsonc";
+import type { Result } from "../../result/types";
 import { formatPath, parseJsoncTree, skipTrivia } from "./jsonc";
-
-export interface JsoncEdit {
-  path: JsonPath;
-  value: Primitive;
-}
-
-export interface JsoncEditError {
-  message: string;
-  path?: JsonPath | undefined;
-}
+import type { JsonPath, JsoncMember, JsoncNode, Primitive } from "./types";
+import type { JsoncEdit, JsoncEditError } from "./types";
 
 /** A byte-range replacement. Every change to the file is expressed as one of these. */
 interface Splice {

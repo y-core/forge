@@ -1,5 +1,5 @@
 import type { AppContext } from "../context/types";
-import type { GuardResult } from "../result/result";
+import type { GuardResult } from "../result/types";
 import type { NONCE } from "./nonce";
 
 /** A single CSP source value — a string literal or the `NONCE` placeholder. @public */

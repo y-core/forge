@@ -1,13 +1,7 @@
 import { escapeHtml } from "./escape";
 import type { SafeHtml } from "./html";
 import { rawHtml } from "./html";
-
-/** Class-name overrides for the success/error/validation fragment renderers. @public */
-export interface FragmentOptions {
-  class?: string;
-  successAttr?: string;
-  ulClass?: string;
-}
+import type { FragmentOptions } from "./types";
 
 // Duplicates `src/ui/core/alert.tsx`'s variant classes: `http` is a leaf namespace, so importing
 // them would add an `http → ui/core` edge that fails `validate-namespace-graph`.

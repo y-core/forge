@@ -3,10 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { AuthStoreError } from "../errors";
-import { type AuthFactorChallenge, type ImplicitFactorService, createFactorRegistry } from "../factors/registry";
+import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorChallenge, ImplicitFactorService } from "../factors/types";
 import type { AuthFactor, AuthUser, AuthUserInput, FactorStore, UserStore } from "../types";
-import type { AuthIssueOutcome } from "./decoy";
-import { type AuthSignupOptions, createSignupFlow } from "./signup";
+import { createSignupFlow } from "./signup";
+import type { AuthIssueOutcome } from "./types";
+import type { AuthSignupOptions } from "./types";
 
 const EMAIL = "  New.Person@Example.COM  ";
 const EMAIL_KEY = "new.person@example.com";

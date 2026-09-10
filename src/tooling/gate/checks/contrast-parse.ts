@@ -1,41 +1,10 @@
-import { type Finding, fail } from "../finding";
+import { fail } from "../finding";
+import type { Finding } from "../types";
 import { blankComments, lineAt } from "./source-scan";
-
-/** A colour scheme the theme is audited in. */
-export type Mode = "light" | "dark";
+import type { AcceptedRow, Declaration, Mode, ParsedTheme } from "./types";
 
 /** How a mode is named in a finding, both modes now being declared in one `:root` block. */
 export const MODE_LABEL: Readonly<Record<Mode, string>> = { light: "light", dark: "dark" };
-
-/** One `--foo: bar;` declaration, with where it was written. */
-export interface Declaration {
-  /** The declared value, whitespace-collapsed — e.g. `var(--gray-11)`. */
-  value: string;
-  /** 1-indexed line the declaration sits on. */
-  line: number;
-  /** Which stylesheet it came from. Set by `mergeThemes`; absent when a single sheet was parsed. */
-  file?: string;
-}
-
-/** Every declaration in each mode's block, keyed by property. */
-export interface ParsedTheme {
-  light: Map<string, Declaration>;
-  dark: Map<string, Declaration>;
-}
-
-/** One mode's half of a contract row: the value a step must carry, and the measurement against it. */
-export interface AcceptedRow {
-  /** The custom property the exemption is about. */
-  token: string;
-  /** The role step it resolves through. */
-  step: string;
-  /** The value the step is exempted at, per mode. */
-  value: Readonly<Record<Mode, string>>;
-  /** Worst-case measured ratios. */
-  measured: string;
-  /** Why no criterion binds. Mandatory and non-empty. */
-  reason: string;
-}
 
 /** Every top-level block matching `selector`, in source order — the cascade paints them all. */
 function blockBodies(css: string, selector: string): { body: string; offset: number }[] {

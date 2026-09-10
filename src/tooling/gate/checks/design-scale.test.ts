@@ -3,8 +3,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { checkDesignScale, type DesignScaleCheckConfig } from "./design-scale";
+import { checkDesignScale } from "./design-scale";
 import { hasTailwind } from "./design-system";
+import type { DesignScaleCheckConfig } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 

@@ -1,3 +1,4 @@
+import type { ForgeUiIconName, GlyphSource } from "./types";
 // Declared here rather than in `sprites.ts`: that module reaches `node:path`/`node:url` at module
 // scope, and resolution precedes tree-shaking, so a consumer bundling only the names failed to build.
 /** Every forge UI glyph, grouped by the directory its file sits in. @public */
@@ -7,20 +8,8 @@ export const FORGE_UI_SPRITE_FILES = {
   theme: ["sun", "moon", "monitor"],
 } as const;
 
-/** Union of forge UI glyph names. @public */
-export type ForgeUiIconName = (typeof FORGE_UI_SPRITE_FILES)[keyof typeof FORGE_UI_SPRITE_FILES][number];
-
 /** All forge UI glyph names — the complete set the `controls/` and `chrome/` components need. @public */
 export const FORGE_UI_ICON_NAMES: readonly ForgeUiIconName[] = Object.values(FORGE_UI_SPRITE_FILES).flat();
-
-/** One parsed sprite glyph: the symbol's viewBox and its inner markup. */
-export interface GlyphEntry {
-  viewBox: string;
-  markup: string;
-}
-
-/** The parsed glyph map keyed by name (the part after the prefix). */
-export type GlyphSource = Record<string, GlyphEntry>;
 
 /** Parses a build-generated SVG sprite into a glyph map keyed by name without `prefix`. */
 export function parseSpriteGlyphs(svgText: string, prefix = "icon-"): GlyphSource {

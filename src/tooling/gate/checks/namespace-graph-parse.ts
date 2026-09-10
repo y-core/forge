@@ -1,37 +1,7 @@
 import { posix } from "node:path";
 
 import { lineAt } from "./source-scan";
-
-/** Whether an edge survives type erasure. A `type` edge exists only in the type checker. */
-export type EdgeKind = "value" | "type";
-
-/** One import site: a single specifier as it appears in one file. */
-export interface ImportRef {
-  /** 1-indexed line, for the failure message. */
-  line: number;
-  /** The specifier exactly as written. */
-  specifier: string;
-  /** `type` only when every binding at this site is type-only. */
-  kind: EdgeKind;
-}
-
-/** A file handed to the graph builder, already read by the caller. */
-export interface SourceFile {
-  /** Repo-relative posix path, e.g. `src/ui/core/card.tsx`. */
-  path: string;
-  /** The file's full text. */
-  source: string;
-}
-
-/** One namespace-to-namespace edge, as observed across every contributing site. */
-export interface ObservedEdge {
-  /** `value` if any contributing site was a value import; `type` only if all of them were. */
-  kind: EdgeKind;
-  /** A site consistent with `kind`, chosen at the kind finally reported. */
-  file: string;
-  /** 1-indexed line within `file`. */
-  line: number;
-}
+import type { DeclaredGraph, EdgeKind, EnumerationFinding, GraphFinding, ImportRef, ObservedEdge, SourceFile } from "./types";
 
 /** Filler for masked comment and literal interiors: same length, never a quote, never whitespace. */
 const MASK = "\u0001";
@@ -279,34 +249,6 @@ export function buildGraph(files: readonly SourceFile[], dirs: readonly string[]
   return graph;
 }
 
-/** The graph as declared: the primitive set, the leaf set, and every intended edge. */
-export interface DeclaredGraph {
-  /** Namespaces exempt as an import *target*; an edge out of one is a closure violation. */
-  primitives: readonly string[];
-  /** Namespaces declared to have no cross-namespace edge at all. */
-  leaf: readonly string[];
-  /** Source namespace → target namespace → the declared kind. */
-  edges: Record<string, Record<string, EdgeKind>>;
-}
-
-/** The six ways the observed tree and the declaration can disagree. */
-export type GraphFindingKind = "undeclared-edge" | "absent-edge" | "leaf-edge" | "kind-mismatch" | "primitive-escape" | "unknown-namespace";
-
-/** One disagreement, with the site that proves it where the observed tree supplies one. */
-export interface GraphFinding {
-  kind: GraphFindingKind;
-  /** The source namespace, or the namespace the declaration names. */
-  from: string;
-  /** The target namespace, absent only when the finding is about `from` alone. */
-  to?: string;
-  /** Repo-relative path of the first offending site. */
-  file?: string;
-  /** 1-indexed line within `file`. */
-  line?: number;
-  /** Reason and remedy, ready to print after the caller's subject. */
-  detail: string;
-}
-
 /** Sorted keys, so a findings list is a function of the graph and not of insertion order. */
 function sortedKeys<T>(record: Record<string, T>): string[] {
   return Object.keys(record).sort();
@@ -448,16 +390,6 @@ export function sectionWindow(lines: readonly string[], start: RegExp): { from: 
     if (line !== undefined && line.startsWith("## ")) return { from, to: i };
   }
   return { from, to: lines.length };
-}
-
-/** The four ways the document can carry an enumeration the data files own. */
-export type EnumerationFindingKind = "missing-catalog-section" | "missing-classification-section" | "composes-table" | "classification-column";
-
-/** One enumeration finding, carrying no message because its remedy is a fixed string the caller emits. */
-export interface EnumerationFinding {
-  kind: EnumerationFindingKind;
-  /** 1-indexed line, or null for a missing section. */
-  line: number | null;
 }
 
 /** Every enumeration the document carries: the classification section first, then the catalog. */

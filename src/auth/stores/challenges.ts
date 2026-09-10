@@ -5,13 +5,9 @@ import type { KVNamespaceLike } from "../../storage/kv/types";
 import { AuthStoreError } from "../errors";
 import type { AuthChallenge, ChallengeStore } from "../types";
 import { assertKvTtl } from "./ttl";
+import type { ChallengeStoreOptions } from "./types";
 
 const DEFAULT_PREFIX = "auth:challenge";
-
-/** @public */
-export interface ChallengeStoreOptions {
-  prefix?: string;
-}
 
 /** Creates a KV-backed `ChallengeStore`, which is right because a challenge is ephemeral and TTL-bounded. @public */
 export function createChallengeStore(namespace: KVNamespaceLike, options: ChallengeStoreOptions = {}): ChallengeStore {

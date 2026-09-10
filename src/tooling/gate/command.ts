@@ -7,8 +7,8 @@ import { createCommand } from "../cli/command";
 import { loadConfigModule } from "../cli/config-module";
 import { capture, hasTool, insertPath } from "../cli/proc";
 import type { Command } from "../cli/types";
-import type { Colorize } from "../term/color";
 import { PLAIN } from "../term/color";
+import type { Colorize } from "../term/types";
 import {
   formatFailureExcerpt,
   formatFindingBlock,
@@ -20,7 +20,9 @@ import {
   listLabel,
   formatSummary,
 } from "./report";
-import { type CheckStep, GATE_MODES, type GateMode, isCheckStep, type Step, type StepRequirement, selectSteps } from "./steps";
+import { GATE_MODES, isCheckStep, selectSteps } from "./steps";
+import type { CheckStep, GateMode, Step, StepRequirement } from "./types";
+import type { GateCommandConfig } from "./types";
 
 /** Where `forge verify` looks for a step table when `--config` names none. @public */
 export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
@@ -42,16 +44,6 @@ const binFlags = {
   config: { type: "string" as const, description: `Step table module, default-exporting readonly Step[] (default: ${DEFAULT_STEPS_CONFIG})` },
   root: { type: "string" as const, description: "Repository root every step runs in (default: the working directory)" },
 };
-
-/** What the runner needs to know about the project it is gating. @public */
-export interface GateCommandConfig {
-  /** Repository root. Every step is spawned here, so a step's relative paths resolve. */
-  cwd: string;
-  /** The table to resolve against — the project's own steps. */
-  steps: readonly Step[];
-  /** Prepended to `PATH` so bare tool names resolve. Defaults to `${cwd}/node_modules/.bin`. */
-  binDir?: string;
-}
 
 // A filesystem refusal is swallowed: the gate's verdict must be reported even when the log cannot
 // be written.

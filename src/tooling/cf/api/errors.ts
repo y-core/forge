@@ -1,16 +1,8 @@
-import type { DeploymentTarget } from "../target";
 import { describeTarget } from "../target";
+import type { DeploymentTarget } from "../types";
 import { CF_ERROR_CODES, SURFACE_PERMISSIONS } from "./endpoints";
 import type { CfApiClientError } from "./types";
-
-/**
- * Why a Cloudflare call failed, at the granularity a result row cares about.
- *
- * A missing target and a bad token are the two failures a user acts on
- * differently — one means "create it", the other "fix your credentials" — and
- * until this existed they rendered as the same `error` row.
- */
-export type CfFailureKind = "not-found" | "auth" | "network" | "other";
+import type { CfFailureKind, DescribeCfFailureOptions } from "./types";
 
 /**
  * Classify by envelope error code first. Cloudflare's HTTP status does not track
@@ -29,18 +21,6 @@ export function classifyCfError(e: CfApiClientError): CfFailureKind {
   if (e.statusCode === 401 || e.statusCode === 403) return "auth";
 
   return "other";
-}
-
-export interface DescribeCfFailureOptions {
-  /**
-   * Never interpolate the upstream message.
-   *
-   * Cloudflare echoes parts of a rejected request back in its error text, so for a
-   * call whose body carried a secret the message is a leak surface. Callers in that
-   * position pass `redactMessage` and get the error *code* instead — enough to
-   * diagnose, and structurally incapable of carrying a payload.
-   */
-  redactMessage?: boolean;
 }
 
 /**

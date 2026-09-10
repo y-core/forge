@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import { base64urlDecode, base64urlEncode, cborDecodeFirst, decodeCosePublicKey, sha256 } from "../../crypto/mod";
 import {
   PASSKEY_FLAG,
-  type PasskeyKeyPair,
   ceremonyCborEncode,
   createPasskeyKeyPair,
   fakeAuthenticatorData,
@@ -11,6 +10,7 @@ import {
   fakePasskeyRegistration,
 } from "./fixture";
 import { verifyPasskeySignature } from "./signature";
+import type { PasskeyKeyPair } from "./types";
 
 const RP_ID = "example.com";
 const ORIGIN = "https://example.com";

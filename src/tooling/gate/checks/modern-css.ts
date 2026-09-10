@@ -2,21 +2,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { MODERN_CSS_RULES, modernCssRule } from "../../lint/modern-css-rules";
-import { type CheckResult, checkResult, type Finding, fail, scannedNothing, warn } from "../finding";
-import { type DeferredFinding, MODERN_CSS_DEFERRED } from "./modern-css-deferred";
-import { findModernCssViolations, type ModernCssFinding } from "./modern-css-parse";
+import { checkResult, fail, scannedNothing, warn } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import { MODERN_CSS_DEFERRED } from "./modern-css-deferred";
+import { findModernCssViolations } from "./modern-css-parse";
 import { findModernCssSourceViolations } from "./modern-css-source-parse";
 import { resolveSources } from "./source-scan";
-
-/** What the modern-CSS check needs to know about the project. @public */
-export interface ModernCssCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** Files and directories to scan, relative to `root`; a `!`-prefixed entry excludes a subtree. */
-  sources: readonly string[];
-  /** The shrink-only deferral list. Defaults to forge's own, which a consuming app replaces. */
-  deferred?: readonly DeferredFinding[];
-}
+import type { DeferredFinding } from "./types";
+import type { ModernCssFinding } from "./types";
+import type { ModernCssCheckConfig } from "./types";
 
 const SKIPPED = (name: string): boolean => /\.test\.tsx?$/.test(name) || /\.browser\.tsx?$/.test(name);
 

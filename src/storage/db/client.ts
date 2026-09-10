@@ -1,6 +1,6 @@
 import { createLogger } from "../../logging/logger";
-import type { Result } from "../../result/result";
 import { result } from "../../result/result";
+import type { Result } from "../../result/types";
 import type { D1Client, D1ClientOptions, D1Database, D1Result, SqlFragment } from "./types";
 
 /** Creates a D1Client accepting only SqlFragment — raw string SQL is rejected by the type system, so bind parameters are enforced by construction. @public */

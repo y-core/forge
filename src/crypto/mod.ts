@@ -1,14 +1,14 @@
 export { AEAD_NONCE_BYTES, AEAD_TAG_BYTES, aeadNonce, aeadOpen, aeadSeal, importAeadKey } from "./aead";
 export { base32Decode, base32Encode } from "./base32";
-export type { CborDecoded, CborValue } from "./cbor";
+export type { CborDecoded, CborValue } from "./types";
 export { cborDecodeFirst } from "./cbor";
-export type { CoseAlgorithm, CosePublicKey } from "./cose";
+export type { CoseAlgorithm, CosePublicKey } from "./types";
 export { decodeCoseKey, decodeCosePublicKey } from "./cose";
 export { ECDSA_P256_COORDINATE_BYTES, unwrapEcdsaSignature } from "./der";
 export { hkdfExpand, hkdfExtract } from "./hkdf";
-export type { HotpHash, HotpOptions, TotpOptions } from "./hotp";
+export type { HotpHash, HotpOptions, TotpOptions } from "./types";
 export { hotpCode, totpCode, totpCounter } from "./hotp";
-export type { UuidByteInput, Uuidv7Options } from "./uuid";
+export type { UuidByteInput, Uuidv7Options } from "./types";
 export { createUuidv7, createUuidv7Bytes, uuidFromBytes, uuidToBytes, uuidv7, uuidv7Bytes } from "./uuid";
 
 type CfSubtleCrypto = SubtleCrypto & { timingSafeEqual?: (a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView) => boolean };

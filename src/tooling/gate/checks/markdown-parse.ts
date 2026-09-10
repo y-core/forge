@@ -3,151 +3,21 @@
  *  `renderMarkdown`, so the two halves of the dev loop are assertable from a string.
  */
 
-import { type Finding, fail, warn } from "../finding";
-
-/** How a line was classified; a `fence`, `frontmatter` or `indented-code` line is never rewritten. @public */
-export type MarkdownLineKind =
-  | "blank"
-  | "frontmatter"
-  | "fence"
-  | "fence-marker"
-  | "heading"
-  | "setext-underline"
-  | "thematic-break"
-  | "blockquote"
-  | "html"
-  | "indented-code"
-  | "table"
-  | "list-item"
-  | "paragraph";
-
-/** A fenced code block, from its opening marker to its closing one, both 1-indexed and inclusive. @public */
-export interface FenceSpan {
-  start: number;
-  end: number;
-  /** The run of backticks or tildes the fence opened with. */
-  marker: string;
-  /** Leading whitespace of the opening marker. */
-  indent: string;
-  /** The info string as written — the language tag, or `""` for a bare fence. */
-  info: string;
-}
-
-/** One row of a table, split into its raw cell texts. @public */
-export interface TableRow {
-  line: number;
-  kind: "header" | "delimiter" | "body";
-  cells: readonly string[];
-}
-
-/** A GFM table: a header row, its delimiter row, and the body rows under them. @public */
-export interface TableBlock {
-  start: number;
-  end: number;
-  indent: string;
-  rows: readonly TableRow[];
-}
-
-/** One list item, with the items nested under it. @public */
-export interface ListItem {
-  line: number;
-  /** Last line belonging to this item, including its continuations and children. */
-  end: number;
-  /** Columns of leading whitespace before the marker. */
-  indent: number;
-  /** The marker as written — `-`, `*`, `+`, or `1.` / `1)`. */
-  marker: string;
-  ordered: boolean;
-  /** Column the item's content starts at, which is the indent its children are expected to hold. */
-  contentColumn: number;
-  children: readonly ListItem[];
-}
-
-/** An ATX or setext heading. @public */
-export interface Heading {
-  line: number;
-  level: number;
-  text: string;
-  setext: boolean;
-}
-
-/** A block the blank-line rule applies to, at the top level of the document. @public */
-export interface BlockSpan {
-  kind: "heading" | "fence" | "table" | "list" | "blockquote";
-  start: number;
-  end: number;
-}
-
-/** One markdown document, classified line by line. @public */
-export interface MarkdownDoc {
-  lines: readonly string[];
-  /** Parallel to `lines`, 0-indexed. */
-  kinds: readonly MarkdownLineKind[];
-  /** 1-indexed inclusive span of the YAML frontmatter, when the document opens with one. */
-  frontmatter?: { start: number; end: number };
-  fences: readonly FenceSpan[];
-  tables: readonly TableBlock[];
-  /** The top-level list items; nested ones hang off `children`. */
-  lists: readonly ListItem[];
-  headings: readonly Heading[];
-  blocks: readonly BlockSpan[];
-}
-
-/** Which delimiters emphasis is written with. @public */
-export interface EmphasisRule {
-  strong: "**" | "__";
-  em: "_" | "*";
-}
-
-/** How code fences are written, and what their info strings must say. @public */
-export interface FenceRule {
-  style: "backtick" | "tilde";
-  /** Reports a fence with no language. Report-only: a fixer cannot guess one. */
-  requireLanguage: boolean;
-  /** Info strings rewritten to the corpus's majority spelling, e.g. `typescript` → `ts`. */
-  aliases: Readonly<Record<string, string>>;
-}
-
-/** How much trailing whitespace survives. @public */
-export interface TrailingWhitespaceRule {
-  /** Width of a hard line break to preserve; every other trailing run is trimmed. */
-  allowHardBreak: number;
-}
-
-/** Where over-long lines are reported, and how loudly. @public */
-export interface LineLengthRule {
-  limit: number;
-  level: "fail" | "warn";
-  /** Path prefixes the rule applies to; absent, it applies everywhere. */
-  scope?: readonly string[];
-}
-
-/** The house markdown conventions. Every key is optional, and every one accepts `"off"`. @public */
-export interface MarkdownRules {
-  /** Collapse table cell padding to one space per side. */
-  tables?: "compact" | "off";
-  bulletMarker?: "-" | "*" | "+" | "off";
-  orderedMarker?: "." | ")" | "off";
-  /** Indent a nested list item to its parent's content column. */
-  listIndent?: "content-column" | "off";
-  emphasis?: EmphasisRule | "off";
-  fence?: FenceRule | "off";
-  hardTabs?: "forbid" | "off";
-  trailingWhitespace?: TrailingWhitespaceRule | "off";
-  thematicBreak?: "---" | "***" | "___" | "off";
-  /** Reports reference-style links. Report-only. */
-  linkStyle?: "inline" | "off";
-  /** Reports a URL written without `<>` or a link. Report-only. */
-  bareUrls?: "warn" | "fail" | "off";
-  /** Reports a second level-1 heading. Report-only. */
-  singleH1?: boolean;
-  /** Block kinds that must be surrounded by a blank line. */
-  blankLineAround?: readonly BlockSpan["kind"][] | "off";
-  lineLength?: LineLengthRule | false;
-}
-
-/** Every rule resolved, with the library defaults applied. @public */
-export type ResolvedMarkdownRules = Required<Omit<MarkdownRules, "lineLength">> & { lineLength: LineLengthRule | false };
+import { fail, warn } from "../finding";
+import type { Finding } from "../types";
+import type {
+  BlockSpan,
+  EmphasisRule,
+  FenceSpan,
+  Heading,
+  ListItem,
+  MarkdownDoc,
+  MarkdownLineKind,
+  MarkdownRules,
+  ResolvedMarkdownRules,
+  TableBlock,
+  TableRow,
+} from "./types";
 
 /** What a rule means when a config leaves it out. @public */
 export const DEFAULT_MARKDOWN_RULES: ResolvedMarkdownRules = {

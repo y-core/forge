@@ -4,7 +4,8 @@ import { base64urlEncode, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS, AUTH_PASSKEY_TTL_SECONDS } from "../config";
 import { AuthStoreError } from "../errors";
-import { PASSKEY_FLAG, type PasskeyKeyPair, createPasskeyKeyPair, fakePasskeyAssertion, fakePasskeyRegistration } from "../passkey/fixture";
+import { PASSKEY_FLAG, createPasskeyKeyPair, fakePasskeyAssertion, fakePasskeyRegistration } from "../passkey/fixture";
+import type { PasskeyKeyPair } from "../passkey/types";
 import type {
   AuthChallenge,
   AuthCredential,
@@ -16,7 +17,8 @@ import type {
   FactorStore,
   UserStore,
 } from "../types";
-import { type PasskeyFactorOptions, type PasskeyFactorRole, createPasskeyFactor } from "./passkey";
+import { createPasskeyFactor } from "./passkey";
+import type { PasskeyFactorOptions, PasskeyFactorRole } from "./types";
 
 const RP_ID = "example.com";
 const ORIGIN = "https://example.com";

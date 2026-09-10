@@ -1,31 +1,4 @@
-/** A flat map of `hx-*` attributes. @public */
-export type HxAttrs = Record<string, string>;
-
-/** The htmx attributes `hxAttrs` can emit. @public */
-export interface HxAttrsProps {
-  get?: string;
-  post?: string;
-  put?: string;
-  patch?: string;
-  delete?: string;
-  target?: string;
-  swap?: string;
-  select?: string;
-  selectOob?: string;
-  trigger?: string;
-  include?: string;
-  indicator?: string;
-  disabledElt?: string;
-  sync?: string;
-  confirm?: string;
-  encoding?: string;
-  pushUrl?: string;
-  replaceUrl?: string;
-  params?: string;
-  values?: Record<string, string>;
-  headers?: Record<string, string>;
-  boost?: boolean;
-}
+import type { HxAttrs, HxAttrsProps } from "./types";
 
 function encodeMap(m: Record<string, string>): string | undefined {
   if (Object.keys(m).length === 0) return undefined;

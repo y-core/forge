@@ -30,12 +30,6 @@ export const TURNSTILE_INTERACTIVE_TIMEOUT_MS = 60_000;
 /** Form event dispatched when a held submit press is dropped without a request. @public */
 export const TURNSTILE_ABANDONED_EVENT = "turnstile:abandoned";
 
-/** Why a held submit press was dropped. @public */
-export type TurnstileAbandonReason = "timeout" | "interactive-timeout" | "error" | "unsupported" | "superseded";
-
-/** `detail` of `TURNSTILE_ABANDONED_EVENT`; the event's target is the form the press was made on. @public */
-export type TurnstileAbandonedDetail = { reason: TurnstileAbandonReason; submitter: HTMLElement | null };
-
 /** Cloudflare's charset for `action`; the controller reports a violation and forwards it anyway. @public */
 export const TURNSTILE_ACTION_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/;
 

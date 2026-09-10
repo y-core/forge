@@ -1,9 +1,9 @@
-import { RULE_CORPUS_PATH, type RuleId } from "./design-rules.ts";
-import { MODERN_CSS_RULES, type ModernCssRuleId } from "./modern-css-rules.ts";
+import { RULE_CORPUS_PATH } from "./design-rules.ts";
+import { MODERN_CSS_RULES } from "./modern-css-rules.ts";
+import type { RuleId } from "./types.ts";
+import type { ModernCssRuleId } from "./types.ts";
 import type { RuleContext, SourceLocation } from "./types.ts";
-
-/** Any id a plugin rule reports under: a corpus rule, or one of the modern-platform rules. */
-export type ReportedId = RuleId | ModernCssRuleId;
+import type { ReportedId } from "./types.ts";
 
 const corpusPathOf = (id: ReportedId): string =>
   id in RULE_CORPUS_PATH ? RULE_CORPUS_PATH[id as RuleId] : MODERN_CSS_RULES[id as ModernCssRuleId].corpus;

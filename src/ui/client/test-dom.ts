@@ -1,3 +1,4 @@
+import type { FakeRequest } from "./types";
 /** A fake DOM for the client controllers' unit tests — the slice they touch, and nothing else.
  *
  * Hand-rolled rather than happy-dom: forge ships no DOM implementation as a dependency, and
@@ -265,14 +266,6 @@ export class FakeCredentials {
     }
     return Promise.resolve(this.answer);
   }
-}
-
-/** One recorded `fetch`, with the body already parsed back from JSON where it was JSON. */
-export interface FakeRequest {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body: unknown;
 }
 
 /** A window whose timers a test drives by hand, so no test ever waits on a real clock. */

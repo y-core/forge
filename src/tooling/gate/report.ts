@@ -1,7 +1,9 @@
-import type { Colorize } from "../term/color";
 import { PLAIN } from "../term/color";
-import { type Finding, formatFinding } from "./finding";
-import type { GateMode, Step } from "./steps";
+import type { Colorize } from "../term/types";
+import { formatFinding } from "./finding";
+import type { Finding } from "./types";
+import type { GateMode, Step } from "./types";
+import type { SummaryInput } from "./types";
 
 /** Formats a duration for a step line, rendering sub-50ms as `<0.1s`. */
 export function formatDuration(ms: number): string {
@@ -35,24 +37,6 @@ export function formatFindingBlock(findings: readonly Finding[], style: Colorize
 /** Formats the scoped-run warning appended to a summary line. */
 export function formatScopedBanner(selected: number, total: number, style: Colorize = PLAIN): string {
   return `${style.yellow("⚠")} scoped run (${selected} of ${total} steps) — not the gate`;
-}
-
-/** The counts and outcome a closing summary line is rendered from. */
-export interface SummaryInput {
-  /** Gate verb, used verbatim in the line so `check` and `verify` are distinguishable. */
-  gate: string;
-  /** Steps that ran and passed — the only number a green line may be built from. */
-  passed: number;
-  /** Steps whose dependency was absent below the `full` tier. */
-  skipped: number;
-  /** Steps the selection resolved to. */
-  selected: number;
-  /** Steps the gate holds in total. */
-  total: number;
-  /** The failing step and its position in the selection; absent when nothing failed. */
-  failedAt?: { label: string; at: number };
-  /** Wall-clock duration of the whole run. */
-  ms: number;
 }
 
 /** Formats the single closing line, naming the failing step when there is one. */

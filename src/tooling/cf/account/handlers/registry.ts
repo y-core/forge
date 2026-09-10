@@ -21,12 +21,8 @@ import { r2Handler } from "./r2";
 import { rateLimitsHandler } from "./ratelimits";
 import { createRotatableSecretsHandler, createSecretsHandler } from "./secrets";
 import type { ResourceHandler } from "./types";
+import type { HandlerBuildOptions } from "./types";
 import { createVarsHandler } from "./vars";
-
-export interface HandlerBuildOptions {
-  /** Path to the wrangler config, as given on the command line. Secrets look for `.dev.vars` beside it. */
-  configPath: string;
-}
 
 /**
  * Build the full handler set for one invocation.

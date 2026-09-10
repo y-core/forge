@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { fail } from "../finding";
 import { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./namespace-graph";
-import type { EdgeKind } from "./namespace-graph-parse";
+import type { EdgeKind } from "./types";
 
 const DOC = "docs/NAMESPACES.md";
 

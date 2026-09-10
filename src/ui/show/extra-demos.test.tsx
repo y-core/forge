@@ -4,11 +4,12 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { ShowcaseContent, type ShowcasePage } from "./components";
+import { ShowcaseContent } from "./components";
 import { sectionBodies } from "./coverage";
 import { LAZY_DEMO_LOADED, LAZY_DEMO_PENDING, LAZY_DEMO_REF, LAZY_DEMO_SCOPE } from "./lazy-contract";
 import { showcasePaths } from "./route";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
+import type { ShowcasePage } from "./types";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;

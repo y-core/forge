@@ -4,7 +4,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, type ControlsDemoState, controlsReadout } from "../contracts/controls-demo-contract";
+import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, controlsReadout } from "../contracts/controls-demo-contract";
+import type { ControlsDemoState } from "../contracts/types";
 import { fieldId } from "../core/field";
 import { SECTIONS } from "./components";
 import { ControlsDemos } from "./controls-demos";

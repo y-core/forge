@@ -1,5 +1,6 @@
-import type { ValidationResult } from "../../result/result";
 import { err, ok } from "../../result/result";
+import type { ValidationResult } from "../../result/types";
+import type { ChangelogParse, PromoteOptions, VersionHeading } from "./types";
 
 const UNRELEASED_HEADING = /^## \[Unreleased\]$/;
 
@@ -14,50 +15,6 @@ const LINK_REF = /^\[(\d+\.\d+\.\d+)\]: (\S+)$/;
 const SECTION_END = /^## /;
 
 const PLACEHOLDER = "_Nothing yet._";
-
-/** A released version heading, as it appears in the document. @public */
-export interface VersionHeading {
-  /** Bare semver, no brackets — `"0.0.83"`. */
-  version: string;
-  /** ISO calendar date — `"2026-08-11"`. */
-  date: string;
-  /** Zero-indexed line the heading sits on. */
-  line: number;
-}
-
-/** The `[Unreleased]` section: where it sits, what it holds, and whether that amounts to anything. @public */
-export interface UnreleasedSection {
-  /** Zero-indexed line of the `## [Unreleased]` heading. */
-  line: number;
-  /** Verbatim body lines, from just after the heading up to the next `## ` heading or EOF. */
-  body: readonly string[];
-  /** True when the body carries no content — see {@link parseChangelog} for the exact rule. */
-  empty: boolean;
-}
-
-/** A changelog's structure: the editable section, the released headings, and the link definitions. @public */
-export interface ChangelogDocument {
-  unreleased: UnreleasedSection;
-  /** Released headings in document order — newest first, if the document is well-formed. */
-  versions: readonly VersionHeading[];
-  /** Versions named by a link reference definition, in document order. */
-  linkRefs: readonly string[];
-}
-
-/** The outcome of reading a changelog: its structure, or every reason the document could not be read. @public */
-export type ChangelogParse = ValidationResult<ChangelogDocument>;
-
-/** Inputs to {@link promoteUnreleased}. @public */
-export interface PromoteOptions {
-  /** The version the section is being promoted to — bare semver, no leading `v`. */
-  version: string;
-  /** Release date, already formatted — see {@link formatReleaseDate}. */
-  date: string;
-  /** Tag prefix used when building the compare URL. Defaults to `"v"`. */
-  tagPrefix?: string;
-  /** Repository base URL, e.g. `https://github.com/y-core/forge`. Omit to skip the link definition. */
-  compareUrlBase?: string;
-}
 
 function isRealDate(iso: string): boolean {
   const [y = "", m = "", d = ""] = iso.split("-");

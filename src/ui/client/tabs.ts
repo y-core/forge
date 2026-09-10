@@ -2,11 +2,7 @@ import { applyStateAttrs } from "../contracts/state-attrs";
 import { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR } from "../contracts/tabs-contract";
 import { mountRovingFocus } from "./composite";
 import { closestAcross, elementById, eventTarget } from "./dom";
-
-export interface TabsOptions {
-  /** Select a tab as soon as focus reaches it. @default read from the root's `data-activation` */
-  activation?: "automatic" | "manual";
-}
+import type { TabsOptions } from "./types";
 
 function tabsIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(TAB_SELECTOR)];

@@ -1,3 +1,4 @@
+import type { UuidByteInput, Uuidv7Options } from "./types";
 /** Version nibble (7) pre-shifted into position for the 16-bit `rand_a` word. @internal */
 const VERSION_7 = 0x7000;
 /** Clears the two variant bits in octet 8 before they are set. @internal */
@@ -22,9 +23,6 @@ function randomCounterSeed(): number {
   const seed = crypto.getRandomValues(new Uint8Array(2));
   return new DataView(seed.buffer).getUint16(0) & COUNTER_SEED_MASK;
 }
-
-/** The byte encodings a UUID may arrive in — `readonly number[]` is what D1 returns for a `BLOB` column. @public */
-export type UuidByteInput = readonly number[] | Uint8Array | ArrayBuffer;
 
 /** Normalises any accepted byte encoding to a `Uint8Array` view without copying when avoidable. @internal */
 function asBytes(value: UuidByteInput): Uint8Array {
@@ -61,11 +59,6 @@ export function uuidToBytes(id: string): Uint8Array<ArrayBuffer> {
     bytes[octet] = Number.parseInt(hex.slice(octet * 2, octet * 2 + 2), 16);
   }
   return bytes;
-}
-
-/** Options for {@link createUuidv7Bytes} and {@link createUuidv7}. @public */
-export interface Uuidv7Options {
-  now?: () => number;
 }
 
 /** Creates a UUIDv7 generator with its own monotonic state, emitting the raw 16 bytes per RFC 9562 §5.7. @public */

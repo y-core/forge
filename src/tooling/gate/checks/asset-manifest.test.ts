@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { GateMode } from "../steps";
+import type { GateMode } from "../types";
 import { checkAssetManifest } from "./asset-manifest";
 
 let root: string;

@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import type { Appearance, Size } from "../contracts/vocabulary";
+import type { Appearance, Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import { Filter } from "./filter";
 

@@ -1,9 +1,5 @@
-import { SCOPE_EVENTS, type ScopeEvent } from "./scope-events";
-
-/** Typed `data-on-<event>` props for a `Resumable` scope, keyed by action name from `A`. @public */
-export type ScopeAttrsProps<A extends string = string> = {
-  [E in ScopeEvent as `on${Capitalize<E>}`]?: A;
-};
+import { SCOPE_EVENTS } from "./scope-events";
+import type { ScopeAttrsProps } from "./types";
 
 /** Builds typed `data-on-<event>` delegation attributes for a `Resumable` scope. @public */
 export function scopeAttrs<A extends string = string>(p: ScopeAttrsProps<A>): Record<string, string> {

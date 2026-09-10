@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { deriveDesignScale, renderDesignScale } from "./design-scale-parse";
-import type { DesignSystem } from "./design-system";
+import type { DesignSystem } from "./types";
 
 /** A design system that answers only what `deriveDesignScale` asks. */
 function fakeDesignSystem(classes: Record<string, string>, theme: Record<string, string>): DesignSystem {

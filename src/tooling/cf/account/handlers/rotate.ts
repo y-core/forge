@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 
 import { bytesToHex, randomBytes } from "../../../../crypto/mod";
-import type { Result } from "../../../../result/result";
 import { err, ok } from "../../../../result/result";
-import type { DevVar } from "./devvars";
 import { editDevVars, GENERATE_MARKER, writeDevVars } from "./devvars";
+import type { DevVar } from "./types";
+import type { RotationPlan, RotationRefusal } from "./types";
 
 /**
  * A fresh secret in the shape `openssl rand -hex 32` produces — 32 bytes of CSPRNG
@@ -13,20 +13,6 @@ import { editDevVars, GENERATE_MARKER, writeDevVars } from "./devvars";
 export function randomSecret(bytes = 32): string {
   return bytesToHex(randomBytes(bytes));
 }
-
-/**
- * Whether every requested name may be rotated.
- *
- * Two distinct refusals, because they need different fixes: a name absent from
- * `.dev.vars` is a typo, and an unmarked name is a credential this tool must not
- * regenerate — a third-party API key overwritten with random bytes is gone.
- */
-export interface RotationRefusal {
-  unknown: string[];
-  unmarked: string[];
-}
-
-export type RotationPlan = Result<string[], RotationRefusal>;
 
 export function planRotation(vars: readonly DevVar[], requested: readonly string[]): RotationPlan {
   const known = new Map(vars.map((v) => [v.name, v]));

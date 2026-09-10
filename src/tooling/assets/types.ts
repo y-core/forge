@@ -133,3 +133,34 @@ export interface ResolvedConfig {
   cursors: CursorsConfig | null;
   site: SiteBuildConfig | null;
 }
+
+/** What `loadConfig` needs to find and normalise a config file. @public */
+export interface LoadConfigOptions {
+  root: string;
+  configPath?: string;
+  env?: Record<string, string | undefined>;
+}
+
+export interface BuildOptions {
+  minify?: boolean;
+  assetsPath?: string;
+}
+
+/** What `generateAssetsTypes` did to the module on disk. @public */
+export type AssetsTypesOutcome = "written" | "kept-build-artifact";
+
+/** One built sprite sheet: its manifest key, its symbol-id-to-viewBox map, and its symbol id prefix. @public */
+export interface SpriteGroupResult {
+  spriteKey: string;
+  meta: Record<string, string>;
+  prefix: string;
+}
+
+/** A sprite build's logical-to-emitted path mappings, plus one result per sprite group. @public */
+export interface SpriteBuildResult {
+  mapping: Record<string, string>;
+  groups: Record<string, SpriteGroupResult>;
+}
+
+/** A map from build key to the content hash last emitted for it. @public */
+export type BuildState = Record<string, string>;

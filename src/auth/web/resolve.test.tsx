@@ -4,15 +4,17 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
-import { type AppContext, getAppContext } from "../../context/types";
+import { getAppContext } from "../../context/types";
+import type { AppContext } from "../../context/types";
 import { csrfMinterCtx } from "../../form/csrf";
 import { renderToString } from "../../jsx/render-to-string";
 import type { FC, JSXElement } from "../../jsx/types";
 import { err, ok } from "../../result/result";
 import { mapHandler } from "../../testing/route";
-import { type AuthFactorService, createFactorRegistry } from "../factors/registry";
+import { createFactorRegistry } from "../factors/registry";
+import type { AuthFactorService } from "../factors/types";
 import type { AuthChallenge, ChallengeStore } from "../types";
-import { type AuthIdentity, authCtx } from "./identity";
+import { authCtx } from "./identity";
 import {
   loadAdminElevate,
   loadAdminUser,
@@ -28,9 +30,8 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./options";
-import { AUTH_VIEWS, type AuthViewName, type AuthViewProps } from "./render";
-import { AUTH_VIEW_GUARDS, type AuthViewRequest, resolveAuthView } from "./resolve";
+import { AUTH_VIEWS } from "./render";
+import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
 import { AUTH_GOLDEN_PAGES } from "./resolve.golden";
 import { AUTH_ROUTE_GROUPS } from "./routes";
 import {
@@ -48,7 +49,12 @@ import {
   elementsOf,
   tagOf,
 } from "./test-support";
-import { type SigninViewProps, SigninView } from "./views/signin";
+import type { AuthIdentity } from "./types";
+import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthViewName, AuthViewProps } from "./types";
+import type { AuthViewRequest } from "./types";
+import { SigninView } from "./views/signin";
+import type { SigninViewProps } from "./views/types";
 import type { AuthViewChrome } from "./views/types";
 
 type Loader = (c: never, options: AuthWebOptions, state?: AuthPageState) => Promise<Response>;

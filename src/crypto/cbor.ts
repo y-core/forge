@@ -1,11 +1,4 @@
-/** Every value the CTAP2 canonical CBOR subset can carry. @internal */
-export type CborValue = number | bigint | string | boolean | null | undefined | Uint8Array<ArrayBuffer> | CborValue[] | Map<CborValue, CborValue>;
-
-/** A decoded value together with how many bytes it consumed. @internal */
-export interface CborDecoded {
-  readonly value: CborValue;
-  readonly bytesRead: number;
-}
+import type { CborDecoded, CborValue } from "./types";
 
 interface Cursor {
   readonly bytes: Uint8Array<ArrayBuffer>;

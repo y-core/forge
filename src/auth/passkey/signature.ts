@@ -1,4 +1,5 @@
-import { type CosePublicKey, base64urlEncode, unwrapEcdsaSignature } from "../../crypto/mod";
+import { base64urlEncode, unwrapEcdsaSignature } from "../../crypto/mod";
+import type { CosePublicKey } from "../../crypto/mod";
 
 function importPasskeyKey(key: CosePublicKey): Promise<CryptoKey> {
   if (key.algorithm === -7) return crypto.subtle.importKey("raw", key.point, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);

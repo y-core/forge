@@ -5,7 +5,8 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { createIcon } from "../core/icon";
-import { Toolbar, type ToolbarDefinition } from "./toolbar";
+import { Toolbar } from "./toolbar";
+import type { ToolbarDefinition } from "./types";
 
 const icon = createIcon("/sprite.svg");
 

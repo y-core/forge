@@ -7,31 +7,11 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
 import type { AuthFactorKind } from "../../types";
-import type { AuthViewChrome } from "./types";
-
-/** What the sign-up page renders. @public */
-export type SignupViewProps = AuthViewChrome & {
-  readonly submitPath: string;
-  readonly signinPath: string;
-  readonly csrfToken: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  readonly email?: string | undefined;
-  readonly fieldError?: string | undefined;
-  /** A refusal about the attempt as a whole. */
-  readonly error?: string | undefined;
-  // Read off the offered factors rather than assumed: a deployment demanding no second factor must
-  // not promise a step its visitor will never be shown, and one that switched the passkey off must
-  // not name it. Absent means the emailed code is the whole of signing up.
-  /** The factor the visitor enrols after confirming the address, absent when none is demanded. */
-  readonly enrols?: AuthFactorKind | undefined;
-  readonly icon: ForgeIcon<"alert">;
-};
+import type { SignupViewProps } from "./types";
 
 /** What signing up involves, which is the emailed code plus whatever the deployment demands after it. */
 function signupSteps(enrols: AuthFactorKind | undefined): string {

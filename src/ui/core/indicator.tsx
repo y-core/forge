@@ -1,12 +1,10 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
+import type { IndicatorPlacement } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
-
-/** Which corner of the wrapped content an indicator item sits on. @public */
-export type IndicatorPlacement = "top-start" | "top-end" | "bottom-start" | "bottom-end";
 
 type IndicatorItemProps = JSX.IntrinsicElements["span"] & { placement?: IndicatorPlacement | undefined };
 

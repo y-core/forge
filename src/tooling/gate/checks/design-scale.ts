@@ -1,19 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { type CheckResult, checkResult, fail } from "../finding";
-import { type DesignScale, deriveDesignScale, renderDesignScale } from "./design-scale-parse";
+import { checkResult, fail } from "../finding";
+import type { CheckResult } from "../types";
+import { deriveDesignScale, renderDesignScale } from "./design-scale-parse";
 import { canonical, fileURLToPathish, loadDesignSystem } from "./design-system";
-
-/** What the design-scale check needs to know about the project. @public */
-export interface DesignScaleCheckConfig {
-  /** Application root. Every reported path is relative to it. */
-  root: string;
-  /** The stylesheet the design system is compiled from, relative to `root`. */
-  stylesheet: string;
-  /** The generated module the derived scale is committed to, relative to `root`. */
-  table: string;
-}
+import type { DesignScale } from "./types";
+import type { DesignScaleCheckConfig } from "./types";
 
 /** Compiles the stylesheet and derives the scale it implies. @public */
 export async function deriveScale(config: DesignScaleCheckConfig): Promise<DesignScale> {

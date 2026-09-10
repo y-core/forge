@@ -3,7 +3,8 @@ import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { CredentialStore } from "../types";
-import { type CredentialRow, readCredential, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import { readCredential, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import type { CredentialRow } from "./types";
 
 /** Creates the `CredentialStore` over a SQL database — every write scoped to the credential's owner. @public */
 export function createCredentialStore(db: D1Client): CredentialStore {

@@ -1,9 +1,11 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { compiledCss, mount, paintedHex } from "../../client/browser-test-helper";
 import { contrastRatio } from "../../contracts/theme/color";
 import { CRITERION } from "../../contracts/theme/contrast-pairs";
-import { APPEARANCES, type Appearance, TONES, type Tone, toneVariants } from "./tone";
+import { APPEARANCES, TONES, toneVariants } from "./tone";
+import type { Appearance, Tone } from "./tone";
 
 interface Cell {
   tone: Tone;

@@ -1,8 +1,9 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import type { Size } from "../contracts/vocabulary";
+import type { Size } from "../contracts/types";
 import { buttonVariants } from "./button";
+import type { FilterAppearance } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PRESSED_PAINT } from "./utils/recipes";
@@ -12,9 +13,6 @@ interface FilterProps extends Omit<JSX.IntrinsicElements["form"], "children"> {
   nested?: boolean | undefined;
   children?: JSXNode | undefined;
 }
-
-/** How an unchosen chip is painted. @public */
-export type FilterAppearance = "ghost" | "soft";
 
 // `size` is omitted from the input's own attributes before being re-declared: `<input size>` is a
 // character count, and intersecting it with the button scale would leave the prop unusable as either.

@@ -1,30 +1,8 @@
+import type { ArgToken } from "./types";
 // Token shape, the argv-index rule and the digit guards are adopted from
 // @visulima/command-line-args (MIT, Copyright (c) visulima), itself after args-tokens
 // (MIT, Copyright (c) 2025 kazuya kawaguchi)
 // https://github.com/visulima/visulima — packages/terminal/command-line-args/src/tokenizer.ts
-
-/** What one argv element turned out to be. @public */
-export type TokenKind = "option" | "option-terminator" | "positional";
-
-/** One element of the command line, classified but not yet matched against any definition. @public */
-export interface ArgToken {
-  kind: TokenKind;
-  /**
-   * Index into the original argv — **not** into this token stream.
-   *
-   * Members of an expanded cluster all carry the index of the one argv element they came from,
-   * which is what makes `argv.slice(token.index)` correct whatever the token was.
-   */
-  index: number;
-  /** Flag name: the long name without `--`, or the single letter without `-`. */
-  name?: string;
-  /** The element as written, dashes included. */
-  raw?: string;
-  /** A positional's text, or an option's inline `=` value. */
-  value?: string;
-  /** Whether `value` came from an `=` rather than the next element. */
-  inline?: boolean;
-}
 
 const DIGITS = /^[0-9]$/;
 

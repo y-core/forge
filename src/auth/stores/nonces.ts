@@ -5,16 +5,12 @@ import type { KVNamespaceLike } from "../../storage/kv/types";
 import { AuthStoreError } from "../errors";
 import type { NonceStore } from "../types";
 import { assertKvTtl } from "./ttl";
+import type { NonceStoreOptions } from "./types";
 
 const DEFAULT_PREFIX = "auth:nonce";
 
 /** The stored value carries nothing — the key's presence is the whole record. */
 const CONSUMED = "1";
-
-/** @public */
-export interface NonceStoreOptions {
-  prefix?: string;
-}
 
 /** Creates a KV-backed `NonceStore`, which is right because a nonce is ephemeral and TTL-bounded. @public */
 export function createNonceStore(namespace: KVNamespaceLike, options: NonceStoreOptions = {}): NonceStore {

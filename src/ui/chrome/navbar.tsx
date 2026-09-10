@@ -1,67 +1,15 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+
+import type { FC, JSXNode } from "../../jsx/types";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_SCOPE } from "../contracts/navbar-contract";
-import type { ForgeIcon } from "../core/icon";
 import { slotToken } from "../core/utils/as-child";
 import { cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { Resumable } from "../server/resumable";
-import { type NavCollapsible, type NavDefinition, type NavGlyph, type NavRenderCtx, renderSection } from "./navbar-items";
-
-/** Desktop edge the bar pins to; drives the responsive sticky class. @public */
-export type NavPlacement = "top" | "bottom" | "left" | "right";
-
-/** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. @public */
-export type NavCollapsedAs = "inline" | "drawer";
-
-/** The two a drawer's toggle draws instead. One pair, drawn and mirrored under `rtl:` */
-export type NavDrawerGlyph = "panel-open" | "panel-close";
-
-/** What every bar takes, whatever its collapse mode; the tree is built from `config`, so `children` is removed. */
-interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
-  config: NavDefinition;
-  /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
-  resolveHref: (key: string) => string;
-  /** Fills string-keyed slots. */
-  slots?: Record<string, JSXNode> | undefined;
-  /** Initial auth tokens for correct first paint. */
-  activeFilters?: string[] | undefined;
-  /** Desktop edge to pin the bar to; defaults to `"top"`, or `"left"` when `collapsible="always"`. */
-  placement?: NavPlacement | undefined;
-  /** Which breakpoints the bar collapses behind its toggle at. */
-  collapsible?: NavCollapsible | undefined;
-  /** Renders the underlying `<details>` open on first paint. Attribute-only; there is no controller. */
-  defaultOpen?: boolean | undefined;
-  /** DOM id for the bar; also namespaces the generated menu ids, which two same-placement bars on
-   * one page would otherwise collide on. */
-  id?: string | undefined;
-  class?: string | undefined;
-}
-
-/** The in-the-flow bar: the toggle is a hamburger, so the sprite owes nothing new. */
-interface NavbarInlineProps extends NavbarSharedProps {
-  /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. */
-  collapsedAs?: "inline" | undefined;
-  icon: ForgeIcon<NavGlyph>;
-}
-
-/** A top bar that opens off-canvas: still a hamburger, which is the affordance a bar's menu has. */
-interface NavbarBarDrawerProps extends NavbarSharedProps {
-  collapsedAs: "drawer";
-  collapsible?: "mobile" | undefined;
-  icon: ForgeIcon<NavGlyph>;
-}
-
-/** A rail that opens off-canvas: its toggle draws the panel pair, so those two glyphs are owed too. */
-interface NavbarRailDrawerProps extends NavbarSharedProps {
-  collapsedAs: "drawer";
-  collapsible: "always";
-  icon: ForgeIcon<NavGlyph | NavDrawerGlyph>;
-}
-
-/** Props for {@link Navbar}. `collapsedAs` and `collapsible` decide the glyphs owed: opens off-canvas. @public */
-export type NavbarProps = NavbarInlineProps | NavbarBarDrawerProps | NavbarRailDrawerProps;
+import { renderSection } from "./navbar-items";
+import type { NavCollapsible, NavRenderCtx } from "./types";
+import type { NavbarProps } from "./types";
 
 /** One responsive sticky class string per placement: a vertical mobile edge re-pinned horizontally at `md:`. */
 const placementVariants = cva({

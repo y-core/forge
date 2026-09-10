@@ -1,16 +1,7 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { isHxRequest } from "./hx-request";
-
-/** The `HX-*` request headers, read in one pass. @public */
-export interface HxRequest {
-  enabled: boolean;
-  boosted: boolean;
-  trigger: string;
-  target: string;
-  triggerName: string;
-  currentUrl: string;
-}
+import type { HxRequest } from "./types";
 
 /** Reads every `HX-*` header of a request into one object. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant for header reading

@@ -1,14 +1,12 @@
 import type { ResourceType, SyncResult, WranglerConfig } from "../../types";
 import type { ReconcileResult, ResourceHandler } from "./types";
+import type { Verification } from "./types";
 
 type AnyEntry = { binding?: string; name?: string; [key: string]: unknown };
 
 function getBinding(entry: AnyEntry): string {
   return (entry.binding ?? entry.name ?? "unknown") as string;
 }
-
-/** What a handler that performs no API call knows about its bindings. */
-export type Verification = { kind: "no-remote-object"; reason: string } | { kind: "unverified"; reason: string };
 
 /** The detail every unverified handler emits. */
 export const UNVERIFIED_DETAIL = "not verified — no read API";

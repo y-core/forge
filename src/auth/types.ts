@@ -1,7 +1,7 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import type { CoseAlgorithm } from "../crypto/mod";
-import type { Result } from "../result/result";
+import type { Result } from "../result/types";
 import type { AuthStoreError } from "./errors";
 
 /** A COSE algorithm identifier a passkey ceremony may advertise. @public */
@@ -239,3 +239,25 @@ export interface OtpStateStore {
   read(userId: string, at: number): Promise<AuthStoreResult<OtpState | null>>;
   clear(userId: string): Promise<AuthStoreResult<void>>;
 }
+
+/** Why a store operation failed at the I/O layer. A domain rule refusing is a reason union, never this. @public */
+export type AuthStoreErrorCode = "conflict" | "unavailable";
+
+/** What a configured knob may be, and the reason each bound exists. @internal */
+export interface AuthLimit {
+  fallback: number;
+  min: number;
+  max?: number;
+  unit?: string;
+  floor: string;
+  ceiling?: string;
+}
+
+/** Which ceremony the scope root runs: enrolling a new credential, or signing in with one. @public */
+export type PasskeyMode = "registration" | "authentication";
+
+/** Why a ceremony ended without a signed-in visitor. @public */
+export type PasskeyFailureReason = "unsupported" | "declined" | "already-enrolled" | "options-failed" | "ceremony-failed" | "verification-failed";
+
+/** `detail` of `PASSKEY_OUTCOME_EVENT`; `reason` is absent exactly when the ceremony succeeded. @public */
+export type PasskeyOutcomeDetail = { mode: PasskeyMode; reason?: PasskeyFailureReason };

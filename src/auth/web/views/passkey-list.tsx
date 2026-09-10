@@ -8,34 +8,15 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { EmptyState } from "../../../ui/core/empty-state";
 import { Form } from "../../../ui/core/form";
-import type { ForgeIcon } from "../../../ui/core/icon";
 import { cn } from "../../../ui/core/utils/cn";
-import type { AuthCredential, AuthFactorKind } from "../../types";
-import type { AuthAccountPaths } from "../paths";
 import { AuthTimestamp } from "./timestamp";
-import type { AuthViewChrome } from "./types";
+import type { PasskeyListViewProps } from "./types";
 
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
 
 const LOCKOUT_ID = "passkey-lockout";
 
 const LOCKOUT_REASON = "It is your only passkey and no other factor is enrolled, so removing it leaves nothing to sign in with.";
-
-/** One registered passkey and the token authorising the writes on it. @public */
-export type PasskeyRow = { readonly credential: AuthCredential; readonly csrfToken: string };
-
-/** What the passkey management page renders. @public */
-export type PasskeyListViewProps = AuthViewChrome & {
-  readonly rows: readonly PasskeyRow[];
-  /** Factors that would still admit this visitor once every passkey is gone; email-OTP carries no enrolment row, so it cannot be read off `FactorStore`. */
-  readonly fallbackFactors: readonly AuthFactorKind[];
-  readonly paths: AuthAccountPaths;
-  /** Where a passkey is enrolled — an `authRoutes` path, which `accountRoutes` does not carry. */
-  readonly enrolPath: string;
-  /** The header `csrfProtection` checks the token on, when the app renamed it. */
-  readonly csrfHeader?: string | undefined;
-  readonly icon: ForgeIcon<"alert">;
-};
 
 // Design Read: a signed-in visitor keeping their passkeys in order; the one action is adding another;
 // failure is removing the last credential with nothing else enrolled — a `warning` Alert in that row.

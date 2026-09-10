@@ -13,7 +13,7 @@ import { openPopoverAt } from "../client/popover-anchor";
 import { registerScope, resumeScope } from "../client/resume";
 import { mountScrollSpy } from "../client/scroll-spy";
 import { computed, effect } from "../client/signal";
-import type { SignalRecord } from "../client/signal-record";
+import type { SignalRecord } from "../client/types";
 import { CONTROLS_DEMO_SCOPE, controlsReadout } from "../contracts/controls-demo-contract";
 import { NAVBAR_FILTERS_EVENT } from "../contracts/navbar-contract";
 import {
@@ -27,7 +27,6 @@ import {
   COPY_TARGETS,
   CUSTOMISE_SCOPE,
   DIALS,
-  type DialValues,
   dialQuery,
   HEX_ATTR,
   liveRatios,
@@ -43,6 +42,7 @@ import {
   schemeCss,
   shapeVars,
 } from "../contracts/theme/theme-contract";
+import type { DialValues } from "../contracts/theme/types";
 import { LAZY_DEMO_REF, LAZY_DEMO_SCOPE, LAZY_RETRY_FAILURES, LAZY_RETRY_REF, LAZY_RETRY_STATUS_REF, lazyRetryAttempt } from "./lazy-contract";
 import { SHOW_SCOPES } from "./scope-contract";
 import { TOAST_CYCLE_GAP, TOAST_CYCLE_SCOPE } from "./toast-contract";

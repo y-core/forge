@@ -7,7 +7,6 @@ import { importAuthKeyRing } from "./ring";
 import {
   AUTH_KID_BYTES,
   AUTH_TOKEN_VERSION,
-  type AuthTokenPurpose,
   authNonceKey,
   authNonceTtlSeconds,
   decodeAuthToken,
@@ -16,6 +15,7 @@ import {
   sealAtRest,
   tokenKeyId,
 } from "./token";
+import type { AuthTokenPurpose } from "./types";
 
 const SECRET_A = "a1".repeat(32);
 const SECRET_B = "b2".repeat(32);
