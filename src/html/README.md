@@ -1,6 +1,7 @@
 ---
 title: Server-Side HTMX Utilities
 description: "Request-header detection, response-header builders, JSX attribute helpers and pre-built interaction patterns — server-side only, never in the browser."
+audience: consumer
 ---
 
 # `@y-core/forge/html`

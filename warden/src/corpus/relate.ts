@@ -1,5 +1,5 @@
 import { findSubpathCitations } from "../checks/docs-parse";
-import { type Chunk, CORPORA, type Relation, type SourceDoc } from "../types";
+import { type Chunk, type Corpus, CORPORA, type Relation, type SourceDoc } from "../types";
 import { sourceId } from "./ident";
 
 const DEFERS = /^>\s*Defers to:/;
@@ -7,6 +7,12 @@ const CITATION = /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*
 // A defers header names its section the way any citation does, so the scan captures one where the
 // prose writes one and resolves to the document otherwise.
 const DEFERRED_DOC = /\b((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?(?:\s+§([0-9][A-Za-z0-9]*))?/g;
+
+/** The corpora a document of the installed library may cite into. */
+const LIBRARY_CORPORA: readonly Corpus[] = ["dependency", "canon"];
+
+/** The prefix a relative href leaves on a library document's citation of its own `docs/`. */
+const DOCS_PREFIX = "docs/";
 
 /** What a cited `[tree/]DOC.md` spelling named. @public */
 export type Resolution = { kind: "resolved"; id: string } | { kind: "ambiguous"; ids: readonly string[] } | { kind: "none" };
@@ -27,9 +33,22 @@ export type Resolution = { kind: "resolved"; id: string } | { kind: "ambiguous";
  *
  *  **`dependency` is last, deliberately.** A bare `TESTING.md` in a consumer's own document never
  *  means the installed library's copy — the reader wrote it about their own repository, and the
- *  library's is the one spelling they would have had to reach for on purpose. @public */
+ *  library's is the one spelling they would have had to reach for on purpose.
+ *
+ *  **A citation in a library document never names the consumer's file.** The library cannot know
+ *  what documents the repository it is installed into carries, so a `docs/X.md` spelling there names
+ *  the library's own copy or the shared canon and nothing else — and the consumer routinely has a
+ *  same-named `docs/X.md`, which matched exactly and won before any tier ran. The prefix is there
+ *  because a namespace README cites across directories through a relative href
+ *  (`../../docs/X.md`), so the captured spelling arrives qualified where a `docs/` document citing
+ *  a sibling writes the bare name; stripping it once is what lets `forge/X.md` match. @public */
 export function resolveCitation(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): Resolution {
-  const matches = sources.filter((doc) => doc.path === cited || doc.path.endsWith(`/${cited}`) || `${doc.tree}/${doc.path}` === cited);
+  const pool = from?.corpus === "dependency" ? sources.filter((doc) => LIBRARY_CORPORA.includes(doc.corpus)) : sources;
+  const find = (spelling: string) =>
+    pool.filter((doc) => doc.path === spelling || doc.path.endsWith(`/${spelling}`) || `${doc.tree}/${doc.path}` === spelling);
+
+  let matches = find(cited);
+  if (matches.length === 0 && from?.corpus === "dependency" && cited.startsWith(DOCS_PREFIX)) matches = find(cited.slice(DOCS_PREFIX.length));
   const only = matches[0];
   if (only === undefined) return { kind: "none" };
   if (matches.length === 1) return { kind: "resolved", id: sourceId(only.corpus, only.path) };

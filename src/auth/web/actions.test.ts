@@ -201,7 +201,7 @@ describe("createVerifyActions on the second half of a sign-in", () => {
     const wide = { ...fakeFactorService("email-otp"), codeDigits: 8 };
     const options = optionsWith({
       signin: fakeAuthSigninFlow({ complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" } }) }),
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [wide], policy: { mode: "single" } }),
+      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: wide, role: "primary" }] }),
     });
     const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
 
@@ -242,8 +242,10 @@ describe("createVerifyActions on a step-up", () => {
   const stepUpServices: Partial<AuthRequestServices> = {
     users: fakeAuthUserStore([signedIn]),
     factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
-      offered: [fakeFactorService("email-otp"), fakeFactorService("totp-app")],
-      policy: { mode: "second-factor", required: "when-enrolled" },
+      offered: [
+        { service: fakeFactorService("email-otp"), role: "primary" },
+        { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+      ],
     }),
   };
 
@@ -255,8 +257,10 @@ describe("createVerifyActions on a step-up", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [fakeFactorService("email-otp"), fakeFactorService("totp-app")],
-        policy: { mode: "second-factor", required: "always" },
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: fakeFactorService("totp-app"), role: "second", requirement: "mandatory" },
+        ],
       }),
     });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
@@ -460,9 +464,10 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
       credentials: credentials.store,
       enrolments,
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [fakeFactorService("email-otp"), passkey],
-        primary: "email-otp",
-        policy: { mode: "single" },
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: passkey, role: "second", requirement: "optional" },
+        ],
       }),
     });
     const actions = createPasskeyEnrolActions(options);
@@ -641,8 +646,10 @@ describe("createTotpManageActions", () => {
   const totpServices: Partial<AuthRequestServices> = {
     users: fakeAuthUserStore([signedIn]),
     factors: createFactorRegistry(fakeFactorStore([]), {
-      offered: [fakeFactorService("email-otp"), totpService],
-      policy: { mode: "second-factor", required: "when-enrolled" },
+      offered: [
+        { service: fakeFactorService("email-otp"), role: "primary" },
+        { service: totpService, role: "second", requirement: "optional" },
+      ],
     }),
   };
 

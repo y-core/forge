@@ -69,9 +69,10 @@ function requestStores(c: AppContext<MountEnv>) {
     // The offered services are stubbed: assembling the real ones needs a key ring and a mailer, which
     // are the consumer's own domain wiring and not the mount this file is about.
     factors: createFactorRegistry(enrolments, {
-      offered: [fakeFactorService("email-otp"), fakeFactorService("passkey")],
-      primary: "email-otp",
-      policy: { mode: "second-factor", required: "always" },
+      offered: [
+        { service: fakeFactorService("email-otp"), role: "primary" },
+        { service: fakeFactorService("passkey"), role: "second", requirement: "mandatory" },
+      ],
     }),
   };
 }
@@ -339,9 +340,10 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
   const defer = (work: Promise<unknown>) => void pending.push(work.catch(() => undefined));
 
   const factors = createFactorRegistry(enrolments, {
-    offered: [driveableFactor("email-otp", enrolments), driveableFactor(stepUp, enrolments)],
-    primary: "email-otp",
-    policy: { mode: "second-factor", required: "always" },
+    offered: [
+      { service: driveableFactor("email-otp", enrolments), role: "primary" },
+      { service: driveableFactor(stepUp, enrolments), role: "second", requirement: "mandatory" },
+    ],
   });
 
   // The decoy branch spends these; the mount drive-through never reaches it, so an in-memory pair

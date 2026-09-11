@@ -1,6 +1,7 @@
 ---
 title: The Result Primitive
 description: "Forge's single discriminated-union result type, its value constructors, and the wrapper that captures any throw as data."
+audience: consumer
 ---
 
 # `@y-core/forge/result`

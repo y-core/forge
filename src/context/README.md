@@ -1,6 +1,7 @@
 ---
 title: Per-Request Context Accessors
 description: "Type-safe accessors over the framework's stringly-keyed request context, and the loudly-failing seam that exposes env and executionCtx."
+audience: consumer
 ---
 
 # `@y-core/forge/context`

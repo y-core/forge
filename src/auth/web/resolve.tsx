@@ -161,14 +161,11 @@ async function resolveSignin<Bindings>(
 }
 
 // Read off the registry rather than assumed, so the page describes the deployment a visitor is
-// looking at. Both halves are needed: `offered` alone cannot tell a demanded factor from one merely
-// available, and the policy alone does not say which. An implicit factor is never an enrolment —
-// offering it is the enrolment.
+// looking at. `mandatoryForRoles` deliberately does not count: a sign-up has no identity, so no
+// roles. An implicit factor is never an enrolment — offering it is the enrolment.
 /** The factor a new account is asked to enrol once the address is confirmed, or `undefined` for none. */
 function signupEnrols(services: AuthRequestServices): AuthFactorKind | undefined {
-  const { policy, offered } = services.factors;
-  if (policy.mode !== "second-factor" || policy.required !== "always") return undefined;
-  return offered.find((service) => service.enrolment === "explicit")?.kind;
+  return services.factors.seconds.find((offer) => offer.requirement === "mandatory" && offer.service.enrolment === "explicit")?.service.kind;
 }
 
 async function resolveSignup<Bindings>(

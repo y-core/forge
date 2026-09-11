@@ -1,6 +1,7 @@
 ---
 title: Transport-Layer Hardening
 description: "Content-Security-Policy with per-request nonces, CORS, origin and cross-origin guards, rate limiting and content-type checks — before any application logic runs."
+audience: consumer
 ---
 
 # `@y-core/forge/security`

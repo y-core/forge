@@ -1,9 +1,9 @@
 import { err, ok } from "../../result/result";
 import type { ForgeIcon } from "../../ui/core/types";
 import type { AdminUserService } from "../admin/types";
-import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
+import { AUTH_ADMIN_ROLE, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorCapabilities, AuthFactorPolicy, AuthFactorResolution, AuthFactorService, AuthFactorsOptions } from "../factors/types";
+import type { AuthFactorCapabilities, AuthFactorOffer, AuthFactorResolution, AuthFactorService } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
@@ -11,7 +11,7 @@ import type { AuthCredential, AuthFactor, AuthFactorKind, AuthUser, CredentialSt
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
-import type { AuthFactorCell, AuthFactorChoices, AuthFactorOffering } from "./types";
+import type { AuthFactorAssignment, AuthFactorCell, AuthFactorChoices, AuthFactorOffering } from "./types";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
 function rx(literal: string): string {
@@ -109,18 +109,15 @@ export const AUTH_FACTOR_SETS: readonly (readonly AuthFactorKind[])[] = [
   ["email-otp", "passkey", "totp-app"],
 ];
 
-/** Every policy the factor matrix crosses. @internal */
-export const AUTH_FACTOR_POLICIES: readonly AuthFactorPolicy[] = [
-  { mode: "single" },
-  { mode: "second-factor", required: "always" },
-  { mode: "second-factor", required: "when-enrolled" },
-  { mode: "second-factor", required: "for-roles", roles: ["admin"] },
+// A requirement is per factor, so the full cross is 3ⁿ per offering. These four are the shapes that
+// differ in behaviour — nothing demanded, everything demanded, a mix, and a demand only a role carries.
+/** Every requirement assignment the factor matrix crosses. @internal */
+export const AUTH_FACTOR_ASSIGNMENTS: readonly AuthFactorAssignment[] = [
+  { label: "all-optional", requirement: () => "optional" },
+  { label: "all-mandatory", requirement: () => "mandatory" },
+  { label: "first-mandatory", requirement: (index) => (index === 0 ? "mandatory" : "optional") },
+  { label: "for-roles", requirement: () => ({ mandatoryForRoles: [AUTH_ADMIN_ROLE] }) },
 ];
-
-/** How a policy reads in a cell label and a failure message. @internal */
-export function policyLabel(policy: AuthFactorPolicy): string {
-  return policy.mode === "single" ? "single" : `second-factor:${policy.required}`;
-}
 
 /** A factor service standing in for `kind`, carrying that kind's real capabilities and enrolment style. @internal */
 export function fakeFactorService(kind: AuthFactorKind): AuthFactorService {
@@ -173,25 +170,38 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
 export function authFactorOfferings(): AuthFactorOffering[] {
   return AUTH_FACTOR_SETS.flatMap<AuthFactorOffering>((kinds) => {
     const candidates = kinds.filter((kind) => AUTH_FACTOR_CAPABILITIES[kind].primary);
-    if (candidates.length < 2) return [{ kinds, primary: undefined }];
+    if (candidates.length === 0) return [{ kinds, primary: undefined }];
     return candidates.map((primary) => ({ kinds, primary }));
   });
 }
 
-/** Every offering crossed with every policy, in a stable order — the matrix both view units assert across. @internal */
+/** The tagged list `kinds` amounts to under `assignment`, with `primary` declared primary. @internal */
+function authFactorOffers(
+  kinds: readonly AuthFactorKind[],
+  primary: AuthFactorKind | undefined,
+  assignment: AuthFactorAssignment,
+): AuthFactorOffer[] {
+  let seconds = 0;
+  return kinds.map((kind) =>
+    kind === primary
+      ? { service: fakeFactorService(kind), role: "primary" }
+      : { service: fakeFactorService(kind), role: "second", requirement: assignment.requirement(seconds++) },
+  );
+}
+
+/** Every offering crossed with every assignment, in a stable order — the matrix both view units assert across. @internal */
 export function authFactorGrid(enrolled: readonly AuthFactorKind[] = []): AuthFactorCell[] {
   const store = fakeFactorStore(enrolled);
   const cells: AuthFactorCell[] = [];
   for (const { kinds, primary } of authFactorOfferings()) {
-    for (const policy of AUTH_FACTOR_POLICIES) {
+    for (const assignment of AUTH_FACTOR_ASSIGNMENTS) {
       const offering = kinds.length === 0 ? "none" : kinds.join("+");
-      const label = `${offering}${primary === undefined ? "" : ` primary=${primary}`} / ${policyLabel(policy)}`;
-      const options: AuthFactorsOptions =
-        primary === undefined ? { offered: kinds.map(fakeFactorService), policy } : { offered: kinds.map(fakeFactorService), primary, policy };
+      const label = `${offering}${primary === undefined ? "" : ` primary=${primary}`} / ${assignment.label}`;
+      const options = { offered: authFactorOffers(kinds, primary, assignment) };
       try {
-        cells.push({ label, kinds, primary, policy, registry: createFactorRegistry(store, options), refusal: null });
+        cells.push({ label, kinds, primary, assignment, registry: createFactorRegistry(store, options), refusal: null });
       } catch (thrown) {
-        cells.push({ label, kinds, primary, policy, registry: null, refusal: (thrown as Error).message });
+        cells.push({ label, kinds, primary, assignment, registry: null, refusal: (thrown as Error).message });
       }
     }
   }
@@ -201,12 +211,11 @@ export function authFactorGrid(enrolled: readonly AuthFactorKind[] = []): AuthFa
 /** The choices `cell` offers a view, or `null` when the combination is refused. @internal */
 export function factorChoices(cell: AuthFactorCell): AuthFactorChoices | null {
   if (cell.registry === null) return null;
-  const primary = cell.registry.primary.kind;
-  const offered = cell.registry.offered;
+  const seconds = cell.registry.seconds;
   return {
-    primary,
-    stepUp: offered.filter((service) => service.capabilities.stepUp && service.kind !== primary).map((service) => service.kind),
-    enrollable: offered.filter((service) => service.enrolment === "explicit" && service.kind !== primary).map((service) => service.kind),
+    primary: cell.registry.primary.kind,
+    stepUp: seconds.map((offer) => offer.service.kind),
+    enrollable: seconds.filter((offer) => offer.service.enrolment === "explicit").map((offer) => offer.service.kind),
   };
 }
 
@@ -332,7 +341,7 @@ export function fakeAuthServices(overrides: Partial<AuthRequestServices> = {}): 
   return {
     users: fakeAuthUserStore(users),
     credentials: fakeAuthCredentialStore([]),
-    factors: createFactorRegistry(fakeFactorStore([]), { offered: [fakeFactorService("email-otp")], policy: { mode: "single" } }),
+    factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: fakeFactorService("email-otp"), role: "primary" }] }),
     enrolments: fakeFactorStore([]),
     signin: fakeAuthSigninFlow(),
     signup: fakeAuthSignupFlow(),

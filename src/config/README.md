@@ -1,6 +1,7 @@
 ---
 title: Typed Environment Configuration
 description: "Maps raw Worker bindings to a validated config object that resolves on first access and caches per env object."
+audience: consumer
 ---
 
 # `@y-core/forge/config`

@@ -1,6 +1,7 @@
 ---
 title: The Lint Plugin and Rule Catalogs
 description: "Forge's oxlint plugin of AST-anchored rules, and the catalogs that tie each rule id to the design-corpus file justifying it."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/lint`

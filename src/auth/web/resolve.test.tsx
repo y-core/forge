@@ -102,13 +102,17 @@ const totpService = {
 } as AuthFactorService;
 
 const totpRegistry = createFactorRegistry(fakeFactorStore([]), {
-  offered: [fakeFactorService("email-otp"), totpService],
-  policy: { mode: "second-factor", required: "when-enrolled" },
+  offered: [
+    { service: fakeFactorService("email-otp"), role: "primary" },
+    { service: totpService, role: "second", requirement: "optional" },
+  ],
 });
 
 const stepUpRegistry = createFactorRegistry(fakeFactorStore(["totp-app"]), {
-  offered: [fakeFactorService("email-otp"), fakeFactorService("totp-app")],
-  policy: { mode: "second-factor", required: "when-enrolled" },
+  offered: [
+    { service: fakeFactorService("email-otp"), role: "primary" },
+    { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+  ],
 });
 
 interface Case {
@@ -132,7 +136,7 @@ const CASES: readonly Case[] = [
     load: loadSignin,
     options: optionsWith({
       passkey: passkeyCeremony,
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [fakeFactorService("passkey")], policy: { mode: "single" } }),
+      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: fakeFactorService("passkey"), role: "primary" }] }),
     }),
   },
   {
@@ -394,8 +398,14 @@ describe("resolveAuthView refusals", () => {
     const downEnrolments = optionsWith({
       users: fakeAuthUserStore([viewer]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [fakeFactorService("email-otp"), { ...totpService, listEnrolments: async () => err("unavailable" as const) } as AuthFactorService],
-        policy: { mode: "second-factor", required: "when-enrolled" },
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          {
+            service: { ...totpService, listEnrolments: async () => err("unavailable" as const) } as AuthFactorService,
+            role: "second",
+            requirement: "optional",
+          },
+        ],
       }),
     });
     expect((await refusalOf(loadTotpEnrol, downEnrolments, admin)).status).toBe(503);

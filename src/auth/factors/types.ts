@@ -123,18 +123,17 @@ export interface EnrollableFactorService extends FactorServiceBase {
 /** One factor's whole contract. Test `service.enrolment` to reach the enrolment ceremony. @public */
 export type AuthFactorService = EnrollableFactorService | ImplicitFactorService;
 
-/** How many factors a sign-in needs, and when the second one is demanded. @public */
-export type AuthFactorPolicy =
-  | { readonly mode: "single" }
-  | { readonly mode: "second-factor"; readonly required: "always" }
-  | { readonly mode: "second-factor"; readonly required: "when-enrolled" }
-  | { readonly mode: "second-factor"; readonly required: "for-roles"; readonly roles: readonly string[] };
+/** What this deployment demands of one second factor. @public */
+export type AuthFactorRequirement = "optional" | "mandatory" | { readonly mandatoryForRoles: readonly string[] };
+
+/** One factor as this deployment offers it. @public */
+export type AuthFactorOffer =
+  | { readonly service: AuthFactorService; readonly role: "primary" }
+  | { readonly service: AuthFactorService; readonly role: "second"; readonly requirement: AuthFactorRequirement };
 
 /** @public */
 export interface AuthFactorsOptions {
-  readonly offered: readonly AuthFactorService[];
-  readonly primary?: AuthFactorKind;
-  readonly policy: AuthFactorPolicy;
+  readonly offered: readonly AuthFactorOffer[];
 }
 
 /** What the user's own request knows that the policy does not. @public */
@@ -152,9 +151,8 @@ export type AuthFactorResolution =
 export interface AuthFactorRegistry {
   readonly primary: AuthFactorService;
   readonly offered: readonly AuthFactorService[];
-  readonly policy: AuthFactorPolicy;
-  /** The kinds that can satisfy a step-up, in offered order — empty when nothing here can re-authenticate. */
-  readonly stepUp: readonly AuthFactorKind[];
+  /** The second factors this deployment offers, in declared order — empty when nothing here can re-authenticate. */
+  readonly seconds: readonly Extract<AuthFactorOffer, { role: "second" }>[];
   find(kind: AuthFactorKind): AuthFactorService | undefined;
   resolve(userId: string, context?: AuthFactorContext): Promise<AuthStoreResult<AuthFactorResolution>>;
 }

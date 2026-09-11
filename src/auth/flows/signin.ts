@@ -46,9 +46,7 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
   }
 
   function stepUpService(kind: AuthFactorKind) {
-    const service = options.factors.find(kind);
-    if (!service || !service.capabilities.stepUp || kind === options.factors.primary.kind) return undefined;
-    return service;
+    return options.factors.seconds.find((offer) => offer.service.kind === kind)?.service;
   }
 
   return {

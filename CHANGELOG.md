@@ -141,6 +141,33 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Added
 
+- **Forge's nineteen namespace READMEs now enter a consuming repository's warden index.** Until now
+  a consumer was served forge's `docs/` rulings but not the signatures those rulings defer to —
+  eleven `docs/` documents carry a `> Defers to:` clause naming `src/<ns>/README.md`, and in a
+  consumer every one of those edges resolved to nothing. A question like "which prop sets a button
+  variant" now reaches `forge/src/ui/README.md` rather than stopping at the ruling above it. Each
+  README is served at its real on-disk path — `forge/src/ui/README.md`, the file under
+  `node_modules/@y-core/forge/` — so every path warden prints names something the reader can open
+  and `--path forge/src` is a usable scope. Which READMEs are served is declared, not inferred: the
+  nineteen published namespaces carry `audience: consumer` in their frontmatter, and
+  `src/crypto/README.md` plus the seven `src/tooling/*` READMEs carry `audience: internal` and are
+  not served. **`DEPENDENCY_README_WEIGHT`** (0.65) and **`dependencyWeightOf(path)`** are exported
+  from `@y-core/forge/warden`; a library README ranks below the consuming repository's own README at
+  0.9, and both values were swept against all three consuming repositories' golden sets.
+  **`DEPENDENCY_WEIGHT` moves 0.95 → 0.9**, re-calibrated because the corpus it was measured against
+  has more than doubled. A README's per-subpath `### Exports` table is indexed but **not searchable**
+  in the dependency corpus: it is a bag of every identifier a namespace publishes, so in a consumer
+  it competes with every question about any of them at once — it stays readable through
+  `knowledge_read` and visible in `knowledge_outline`, and a consumer reaches an export table
+  through the package's types. **A citation made from a library document can no longer resolve to
+  the consuming repository's own file.** A README cites forge's `docs/` through a relative href, so
+  the captured spelling is `docs/ERROR_HANDLING.md` — which matched a consumer's same-named document
+  exactly and resolved to it silently, at a `§N` meaning something else. `resolveCitation` now
+  restricts a `dependency` citation to the `dependency` and `canon` corpora, and retries once with
+  the `docs/` prefix stripped so the library's own copy matches. Finally, a pair involving a
+  dependency document is classified before the README class in `warden:duplicates`, so library
+  READMEs sort last rather than filling the reporting cap.
+
 - **`resolveAuthView` — an auth page's data and node, for a page you own.** `@y-core/forge/auth/web`
   could serve a whole auth page and nothing smaller: a consumer could replace the markup or wrap it
   in a `layout`, but could not put a sign-in form on a marketing page, could not reach any auth

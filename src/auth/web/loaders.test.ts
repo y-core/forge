@@ -11,7 +11,7 @@ import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorPolicy, AuthFactorService } from "../factors/types";
+import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
 import type { AuthChallenge, ChallengeStore } from "../types";
 import { AUTH_SESSION_KEY, authCtx } from "./identity";
 import {
@@ -138,21 +138,23 @@ describe("loadSignup", () => {
   });
 
   // Offering a factor and demanding it are different deployments, and the page has to say which:
-  // under `when-enrolled` nobody is asked to enrol, so promising the step would be a lie a visitor
-  // never sees honoured. `offered` alone cannot tell the two apart, which is why the policy is read.
+  // under `optional` nobody is asked to enrol, so promising the step would be a lie a visitor never
+  // sees honoured. The role alone cannot tell the two apart, which is why the requirement is read.
   it("promises the enrolment step only where one is actually demanded", async () => {
-    const described = async (policy: AuthFactorPolicy) => {
+    const described = async (requirement: AuthFactorRequirement) => {
       const services = fakeAuthServices({
-        factors: createFactorRegistry(fakeFactorStore([]), { offered: [fakeFactorService("email-otp"), fakeFactorService("totp-app")], policy }),
+        factors: createFactorRegistry(fakeFactorStore([]), {
+          offered: [
+            { service: fakeFactorService("email-otp"), role: "primary" },
+            { service: fakeFactorService("totp-app"), role: "second", requirement },
+          ],
+        }),
       });
       const html = await page(loaderApp(loadSignup, fakeAuthWebOptions({ resolveServices: () => services })));
       return textOf(html, "div", 'data-slot="card-description"');
     };
 
-    expect({
-      mandatory: await described({ mode: "second-factor", required: "always" }),
-      optional: await described({ mode: "second-factor", required: "when-enrolled" }),
-    }).toEqual({
+    expect({ mandatory: await described("mandatory"), optional: await described("optional") }).toEqual({
       mandatory: "We email you a six-digit code to confirm the address. You add an authenticator app afterwards.",
       optional: "We email you a six-digit code to confirm the address.",
     });
@@ -171,8 +173,10 @@ describe("loadVerify", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
-        offered: [fakeFactorService("email-otp"), fakeFactorService("totp-app")],
-        policy: { mode: "second-factor", required: "when-enrolled" },
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+        ],
       }),
     });
     const html = await page(loaderApp(loadVerify, options, "/page", "u9"));
@@ -306,8 +310,10 @@ describe("loadTotpEnrol", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [fakeFactorService("email-otp"), enrolling],
-        policy: { mode: "second-factor", required: "when-enrolled" },
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: enrolling, role: "second", requirement: "optional" },
+        ],
       }),
     });
     const html = await page(loaderApp(loadTotpEnrol, options, "/page", "u9"));
@@ -441,7 +447,7 @@ describe("every token a page renders is bound to the path its own control submit
   it("binds the two sign-in ceremony tokens to their own two endpoints", async () => {
     const options = optionsWith({
       passkey: ceremony,
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [fakeFactorService("passkey")], policy: { mode: "single" } }),
+      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: fakeFactorService("passkey"), role: "primary" }] }),
     });
     const html = await page(loaderApp(loadSignin, options, "/page", undefined, realMinter));
 
@@ -475,8 +481,10 @@ describe("every token a page renders is bound to the path its own control submit
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [fakeFactorService("email-otp"), enrolling],
-        policy: { mode: "second-factor", required: "when-enrolled" },
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: enrolling, role: "second", requirement: "optional" },
+        ],
       }),
     });
     const html = await page(loaderApp(loadTotpEnrol, options, "/page", "u9", realMinter));

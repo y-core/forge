@@ -1,6 +1,7 @@
 ---
 title: Sessions and Cookies
 description: "A curated cookie and session surface plus forge's own session lifecycle middleware and a hardened, HMAC-signed cookie constructor."
+audience: consumer
 ---
 
 # `@y-core/forge/session`

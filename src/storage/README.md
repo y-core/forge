@@ -1,6 +1,7 @@
 ---
 title: Cloudflare Storage Clients
 description: "Typed, codec-aware, injection-safe clients for D1, Workers KV and R2, each returning a Result and resolving its binding the same way."
+audience: consumer
 ---
 
 # `@y-core/forge/storage`

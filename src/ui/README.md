@@ -1,6 +1,7 @@
 ---
 title: The UI Component Surface
 description: "Source-distributed primitives over native elements: props, signatures, variants and worked examples for every component forge ships."
+audience: consumer
 ---
 
 # `@y-core/forge/ui`

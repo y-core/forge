@@ -300,8 +300,9 @@ describe("the CSRF header name a renamed deployment stamps on the passkey scope"
     const services = fakeAuthServices({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [{ ...passkey, beginEnrolment: async () => ok({ options: { rpId: "example.com" } }) } as AuthFactorService],
-        policy: { mode: "single" },
+        offered: [
+          { service: { ...passkey, beginEnrolment: async () => ok({ options: { rpId: "example.com" } }) } as AuthFactorService, role: "primary" },
+        ],
       }),
       passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
     });

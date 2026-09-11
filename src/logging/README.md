@@ -1,6 +1,7 @@
 ---
 title: Structured Channel-Based Logging
 description: "Fans each log record out to one or more channels, with request-logging middleware and an optional viewer for persisted logs."
+audience: consumer
 ---
 
 # `@y-core/forge/logging`

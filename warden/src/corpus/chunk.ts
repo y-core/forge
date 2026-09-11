@@ -150,7 +150,15 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
       // rather than `searchBody !== ""`: `COLUMN_WEIGHTS` ranks both above the body, so a
       // fence-only section carrying a real Quick Reference line stays reachable by exactly the
       // columns that matter most.
-      searchable: !organising && (searchBody !== "" || glossOf !== "" || rules !== ""),
+      //
+      // An export table is the third: a bag of every identifier a namespace publishes, held in one
+      // chunk because the slug qualifies to `<parent>~exports`. In the repository that owns the
+      // code that is a fair competitor; in a consumer it competes with every question about any of
+      // those identifiers at once, and a consumer reaches an export table through the package's
+      // types rather than through prose retrieval. Emitted either way, so it stays addressable by
+      // `knowledge_read` and visible in an outline — this takes it out of ranking only.
+      searchable:
+        !organising && !(doc.corpus === "dependency" && section.endsWith("~exports")) && (searchBody !== "" || glossOf !== "" || rules !== ""),
     });
   }
 

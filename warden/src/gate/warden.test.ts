@@ -78,6 +78,26 @@ describe("checkWarden()", () => {
     expect(result.findings.map((finding) => finding.file)).not.toContain("forge/CONSUMER.md");
   });
 
+  // A README has slugged headings rather than numbered ones, an export table nothing indexes, and a
+  // name the consumer may carry too — none of which is this repository's to answer for.
+  it("holds no finding against a namespace README of the installed library", () => {
+    const library = repo("warden-gate-readme-library-");
+    writeFileSync(join(library, "package.json"), '{ "name": "@y-core/forge" }', "utf-8");
+    mkdirSync(join(library, "src/ui"), { recursive: true });
+    writeFileSync(
+      join(library, "src/ui/README.md"),
+      '---\ntitle: UI\ndescription: "One."\naudience: consumer\n---\n\n# UI\n\n## Button\n\nThe variants.\n\n### Exports\n\n| `Button` | a button |\n',
+      "utf-8",
+    );
+
+    const root = repo("warden-gate-readme-", { catalogue: CATALOGUE });
+    const result = checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon"), dependencyRoot: library });
+
+    expect(result.summary).toContain("4 documents (2 canon, 1 project, 1 dependency)");
+    expect(result.findings.map((finding) => finding.message).join("\n")).not.toContain("README.md");
+    expect(result.findings.filter((finding) => finding.level !== "warn")).toEqual([]);
+  });
+
   it("reports on a document with two `## 1.` headings instead of dying inside the build", () => {
     const duplicated =
       '---\ntitle: Rules\ndescription: "Six rules."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nBody.\n\n## 1. One Again\n\nBody.\n';

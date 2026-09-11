@@ -134,6 +134,31 @@ describe("duplicatePairs()", () => {
     ]);
   });
 
+  // A library README is a README, so the README class would otherwise claim the pair and fill the
+  // reporting cap with advisory pairs — which is the one thing the dependency class exists to stop.
+  it("sorts a pair against the installed library's README behind a README of this repository", () => {
+    const other = RULE.replace("deleted", "removed");
+    const library = repo("warden-dup-library-", [
+      ["package.json", '{"name": "@y-core/forge"}'],
+      ["docs/CODE_RULES.md", `${doc("the comment budget", other).replace("description:", "audience: consumer\ndescription:")}`],
+      ["src/ui/README.md", `${doc("the comment budget", RULE).replace("description:", "audience: consumer\ndescription:")}`],
+    ]);
+    const root = repo("warden-dup-consumer-", [
+      ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", other)],
+      ["docs/CODE_RULES.md", doc("the comment budget", RULE)],
+      ["README.md", doc("the comment budget", RULE)],
+    ]);
+    const pairs = duplicatePairs({ ...config(root), dependencyRoot: library });
+
+    const involving = (id: string) => pairs.filter((pair) => pair.a.includes(id) || pair.b.includes(id));
+
+    expect(involving("dependency:forge/src/ui/README.md").map((pair) => pair.klass)).toEqual(
+      involving("dependency:forge/src/ui/README.md").map(() => 3),
+    );
+    expect(involving("project:README.md").map((pair) => pair.klass)).toContain(1);
+    expect(pairs.map((pair) => pair.klass)).toEqual([...pairs.map((pair) => pair.klass)].sort((left, right) => left - right));
+  });
+
   it("reports nothing where the check reports nothing", () => {
     expect(duplicatePairs(config(repo("warden-dup-pairs-none-", [["warden/canon/libs/CODE_RULES.md", doc("the budget", RULE)]])))).toEqual([]);
   });

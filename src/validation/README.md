@@ -1,6 +1,7 @@
 ---
 title: Schema Validation
 description: "The whole valibot API under one import, forge's own schema and issue helpers beside it, and the result type the request pipeline carries."
+audience: consumer
 ---
 
 # `@y-core/forge/validation`

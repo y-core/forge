@@ -177,6 +177,26 @@ describe("chunkDocument() — a document with no section numbers", () => {
     expect(chunk?.body).toContain("run();");
   });
 
+  // In a consumer an export table is a bag of every identifier a namespace publishes, competing
+  // with every question about any of them at once. Out of ranking only — still readable, still in
+  // an outline.
+  it("keeps the library's export table out of a consumer's search index but not out of the corpus", () => {
+    const library: SourceDoc = { corpus: "dependency", path: "forge/src/ui/README.md", file: "/n/forge/src/ui/README.md", weight: 0.65 };
+    const byName = new Map(chunkDocument(library, source).map((chunk) => [chunk.section, chunk]));
+    const exports = byName.get("~sub-path-a~exports");
+
+    expect(exports?.searchable).toBe(false);
+    expect(exports?.id).toBe("dependency:forge/src/ui/README.md#~sub-path-a~exports");
+    expect(exports?.body).toBe("One.");
+  });
+
+  it("leaves a section of the library that is not an export table searchable", () => {
+    const library: SourceDoc = { corpus: "dependency", path: "forge/src/ui/README.md", file: "/n/forge/src/ui/README.md", weight: 0.65 };
+    const prose = ["# UI", "", "## Usage", "", "Mount the controller in the layout.", ""].join("\n");
+
+    expect(chunkDocument(library, prose)[0]?.searchable).toBe(true);
+  });
+
   it("keeps every id unique, which is what makes one an address", () => {
     const ids = chunkDocument(readme, source).map((chunk) => chunk.id);
 

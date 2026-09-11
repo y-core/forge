@@ -1,6 +1,7 @@
 ---
 title: Test Fixtures for Forge Apps
 description: "The fixtures every consumer previously hand-rolled: a loaded request context, real CSRF minting, in-memory storage fakes, and an SSR render helper."
+audience: consumer
 ---
 
 # `@y-core/forge/testing`

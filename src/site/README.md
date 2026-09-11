@@ -1,6 +1,7 @@
 ---
 title: Site Surface Derived From Routes
 description: "robots.txt, sitemap.xml and an edge allow-list, all derived from the route map rather than hand-maintained beside it."
+audience: consumer
 ---
 
 # `@y-core/forge/site`

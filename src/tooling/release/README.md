@@ -1,6 +1,7 @@
 ---
 title: The Release Workflow
 description: "Resolves the next version from git history, guards the public export surface against a silent shrink, promotes the changelog, commits and tags."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/release`

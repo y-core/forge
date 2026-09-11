@@ -1,6 +1,7 @@
 ---
 title: App Bootstrap and Request Lifecycle
 description: "Turns a route table, middleware and handlers into a single Workers fetch export, wrapped in a fail-closed error boundary."
+audience: consumer
 ---
 
 # `@y-core/forge/app`

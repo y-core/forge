@@ -10,7 +10,15 @@ export { chunkId, headingSlug, parseCorpus, parseId, sourceId } from "./corpus/i
 export type { Resolution } from "./corpus/relate";
 export { citationTarget, headerOf, relationsOf, resolveCitation, resolveDoc } from "./corpus/relate";
 export type { Audience, DependencyOptions } from "./corpus/dependency";
-export { audienceOf, DEPENDENCY_WEIGHT, dependencyRootOf, libraryRoot, librarySources } from "./corpus/dependency";
+export {
+  audienceOf,
+  DEPENDENCY_README_WEIGHT,
+  DEPENDENCY_WEIGHT,
+  dependencyRootOf,
+  dependencyWeightOf,
+  libraryRoot,
+  librarySources,
+} from "./corpus/dependency";
 export { canonSources, discover, localSources, repoRelative, weightOf } from "./corpus/source";
 export type { DuplicateCheckConfig, DuplicatePair } from "./gate/duplicates";
 export { checkDuplicates, duplicatePairs } from "./gate/duplicates";

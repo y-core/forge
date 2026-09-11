@@ -1,6 +1,6 @@
 ---
 title: Auth Flows
-description: "What each auth flow does once mounted: signup, sign-in under each factor policy, passkey and TOTP enrolment, email change, admin management, and the limits this release carries."
+description: "What each auth flow does once mounted: signup, sign-in under each factor requirement, passkey and TOTP enrolment, email change, admin management, and the limits this release carries."
 audience: consumer
 ---
 
@@ -22,8 +22,8 @@ audience: consumer
 ## 0. Quick Reference
 
 - §1 Signup: address in, code out, and why an address already taken is challenged rather than refused
-- §2 Sign-in: the request/verify pair and what each factor policy demands
-- §2a What Each Policy Demands: `single`, `always`, `when-enrolled`, `for-roles`
+- §2 Sign-in: the request/verify pair and what each factor requirement demands
+- §2a What Each Requirement Demands: `optional`, `mandatory`, `mandatoryForRoles`
 - §2b What the Visitor Is Told: the three notices, and the reasons folded into them
 - §2c Where a Resolution Sends the Visitor: enrolment, step-up, or the return path
 - §3 Passkeys: the two-endpoint ceremony both halves share
@@ -61,45 +61,53 @@ decoy** — the same token work, the same shape of response, nothing delivered �
 cannot be told apart by timing or by what comes back.
 
 Completion refuses a deactivated user at the same point it refuses an unknown one, and on success
-resolves the factor policy before deciding where the visitor goes.
+resolves the offered factors before deciding where the visitor goes.
 
-### 2a. What Each Policy Demands
+### 2a. What Each Requirement Demands
 
-`AuthFactorsOptions.policy` covers none, one or both, with no fourth state.
+The requirement sits on the factor, not on the deployment. `AuthFactorsOptions.offered` is a tagged
+list: each entry declares its service `primary` or `second`, and a `second` entry carries what this
+deployment demands of it.
 
-| Policy | What sign-in demands after the primary factor |
+| Requirement | What sign-in demands of that factor |
 | --- | --- |
-| `{ mode: "single" }` | Nothing. The resolution is `satisfied` without a store read. |
-| `{ mode: "second-factor", required: "when-enrolled" }` | A step-up when the user has a step-up factor confirmed; otherwise `satisfied`. |
-| `{ mode: "second-factor", required: "always" }` | A step-up when one is confirmed; otherwise `enrolment-required`, naming the kinds that can be enrolled. |
-| `{ mode: "second-factor", required: "for-roles" }` | `always` semantics for a user whose roles match, `when-enrolled` for everyone else. Forge sources no roles — the caller supplies them. |
+| `"optional"` | Nothing. It can satisfy a step-up once the user confirms it, and is never owed. |
+| `"mandatory"` | An enrolment, until the user confirms it. |
+| `{ mandatoryForRoles: [...] }` | `"mandatory"` for a user whose roles match, `"optional"` for everyone else. Forge sources no roles — the caller supplies them. |
+
+**Mandatory governs enrolment, not step-up.** `resolve` answers in three steps: a mandatory factor
+this user has not confirmed is `enrolment-required` naming **only the owed kinds**; otherwise any
+confirmed second factor is `step-up-required`; otherwise `satisfied`. So a mandatory factor cannot be
+skipped by enrolling a different one, and an optional factor a visitor did enrol is still demanded at
+every later sign-in.
+
+**A deployment offering no second factor is `satisfied` without a store read.** That is what the
+retired `{mode: "single"}` named, and it is now simply an `offered` list with no `second` entry.
 
 **An implicit factor is enrolled for everyone the moment it is offered.** Email-OTP has no enrolment
-row by design, so offering it as the second factor demands it under `when-enrolled` as well as under
-`always`. A `second-factor` policy whose offered factors contain nothing that could step up **throws
-at construction**, rather than quietly behaving as `single`.
+row by design, so offering it as a second factor puts it in the confirmed set unconditionally — it is
+never owed, and it always satisfies the step-up.
 
-**That warning does not apply to the primary factor.** The registry builds its step-up set as
-`offered.filter(s => s.capabilities.stepUp && s.kind !== primary.kind)` — the primary is excluded from
-the factors that can satisfy a step-up, because proving it again proves nothing new. So an
-`email-otp` + `passkey` offering with `primary: "email-otp"` leaves the passkey as the only step-up
-factor, and `required: "always"` therefore demands a **passkey** enrolment. Read §2a's warning alone
-and this configuration looks impossible; it is legitimate, and it is tested end to end.
+**A factor declared `primary` is not available as a second factor.** The registry's step-up set is
+the `role: "second"` entries alone, so the primary is excluded by construction rather than by a
+filter: proving it again proves nothing new. An `email-otp` primary with a `second` passkey therefore
+leaves the passkey as the only step-up factor, and `"mandatory"` there demands a **passkey**
+enrolment.
 
-**The default this release is built around is email-OTP primary with an authenticator-app step-up** —
-`offered: [emailOtp, totpApp]`, `primary: "email-otp"`, `{mode: "second-factor", required: "always"}`.
-Both offerings work and both are driven through the mount in
+**The default this release is built around is email-OTP primary with a mandatory authenticator-app
+second factor** — `offered: [{service: emailOtp, role: "primary"}, {service: totpApp, role: "second",
+requirement: "mandatory"}]`. Both offerings work and both are driven through the mount in
 [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts); the passkey step-up is the alternative.
-With two step-up factors offered the verify page demands **the first in `offered` order**, and forge
+With two second factors confirmed the verify page demands **the first in `offered` order**, and forge
 renders no chooser — that ordering is the whole of the choice.
 
-**`{ mode: "single" }` makes the enrolment pages unreachable, and nothing says so at the option.**
-`requirePendingEnrolment` admits only a visitor who owes an enrolment, and under `single` nobody ever
-does — so every visitor goes to `settledPath` and no enrolment page can be opened. The consequence is
-what matters: **the policy that looks like the safe default silently hides the passkey feature.** If
-you offer passkeys, you want a `second-factor` policy; if you want them optional rather than demanded,
-route your own enrolment page behind `requireAuth` alone. That guard exists to stop an owed step-up
-being enrolled around, and has nothing to do on a page nobody is sent to.
+**Offering nothing mandatory makes the enrolment pages unreachable, and nothing says so at the
+option.** `requirePendingEnrolment` admits only a visitor who owes an enrolment, and nobody ever owes
+an `"optional"` factor — so every visitor goes to `settledPath` and no enrolment page can be opened.
+The consequence is what matters: **an all-optional offering silently hides the passkey feature.** If
+you want passkeys enrollable but not demanded, route your own enrolment page behind `requireAuth`
+alone. That guard exists to stop an owed step-up being enrolled around, and has nothing to do on a
+page nobody is sent to.
 
 ### 2b. What the Visitor Is Told
 
@@ -158,7 +166,7 @@ enrolment does not sign anyone in.
 The sign-in ceremony sends no `userId`, which builds a **discoverable** login: `allowCredentials` is
 empty, the authenticator names the user, and the server never leaks who is enrolled. On success it
 establishes the session and answers JSON carrying the redirect target, which is resolved through the
-same factor policy §2c describes — so a passkey sign-in can still land on an enrolment or a step-up.
+same factor resolution §2c describes — so a passkey sign-in can still land on an enrolment or a step-up.
 
 A refused assertion is a 401 with one message. Which check failed is in your logs.
 
@@ -212,8 +220,8 @@ one that hit the cap — the same `UPDATE` that admits it resets the count to 1.
 `AUTH_TOTP_LOCKOUT_MS`, fifteen minutes, configurable on `TotpAppFactorOptions` between one minute
 and one day. A refused guess writes nothing, so the window runs from the moment the cap was hit
 rather than from the last attempt, and hammering the factor cannot hold it shut. Without the window a
-user who mistypes `maxAttempts` times loses the factor for good, and under
-`{mode: "second-factor", required: "always"}` that is the whole account. The ceiling holds on the
+user who mistypes `maxAttempts` times loses the factor for good, and where that factor is the
+deployment's one `"mandatory"` second factor, that is the whole account. The ceiling holds on the
 enrolment ceremony too, which answers the same secret. **The code width follows the factor**: `digits` is 6–8 on both code factors, and the verify
 page sizes its field and its schema off whichever it is presenting.
 

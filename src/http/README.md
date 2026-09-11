@@ -1,6 +1,7 @@
 ---
 title: HTTP Responses and Safe HTML
 description: "Response builders for pages, fragments and redirects; typed header-value builders; and a safe-HTML toolkit that escapes by default."
+audience: consumer
 ---
 
 # `@y-core/forge/http`

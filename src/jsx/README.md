@@ -1,6 +1,7 @@
 ---
 title: In-House SSR JSX Runtime
 description: "Renders JSX straight to an HTML string on the server with security defaults in the renderer — no virtual DOM, no hydration, no client runtime."
+audience: consumer
 ---
 
 # `@y-core/forge/jsx`

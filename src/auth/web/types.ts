@@ -11,7 +11,7 @@ import type { JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "../../ui/core/types";
 import type { AdminUserService } from "../admin/types";
 import type { AuthFactorRegistry } from "../factors/types";
-import type { AuthFactorPolicy } from "../factors/types";
+import type { AuthFactorRequirement } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
@@ -62,7 +62,7 @@ export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
 /** What the two enrolment guards need to tell an owed enrolment from an owed step-up from neither. @public */
 export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
   /** Built per request, for the same reason the user store is: the registry is assembled from Worker bindings. */
-  readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve" | "stepUp">>;
+  readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve">>;
   // Keyed by kind because the demand is: a deployment offering the authenticator app owes a page an
   // enrolment can be completed on, and a single path sends every owed kind to whichever one it names.
   /** Where a user who still owes an enrolment is sent, by the kind they owe — spell it `authEnrolmentPaths(paths.auth)`. */
@@ -304,14 +304,21 @@ export interface AuthRouteGroup {
   readonly medium: AuthMedium;
 }
 
-/** One cell of the factor matrix: an offering crossed with a policy. @internal */
+/** One requirement assignment the factor matrix crosses, read by position among the second factors. @internal */
+export interface AuthFactorAssignment {
+  /** How the assignment reads in a cell label, e.g. `all-mandatory`. */
+  readonly label: string;
+  requirement(index: number): AuthFactorRequirement;
+}
+
+/** One cell of the factor matrix: an offering crossed with a requirement assignment. @internal */
 export interface AuthFactorCell {
-  /** How the cell reads in a failure message, e.g. `email-otp+passkey primary=passkey / second-factor:always`. */
+  /** How the cell reads in a failure message, e.g. `email-otp+passkey primary=passkey / all-mandatory`. */
   readonly label: string;
   readonly kinds: readonly AuthFactorKind[];
-  /** The named primary, present only where the offered set leaves the choice open. */
+  /** The declared primary, absent only where the offered set has no factor that can be one. */
   readonly primary: AuthFactorKind | undefined;
-  readonly policy: AuthFactorPolicy;
+  readonly assignment: AuthFactorAssignment;
   /** The registry the combination builds, or `null` when `createFactorRegistry` refuses it. */
   readonly registry: AuthFactorRegistry | null;
   /** Why it was refused, or `null` when it was not. */
@@ -328,11 +335,11 @@ export interface AuthFactorChoices {
   readonly enrollable: readonly AuthFactorKind[];
 }
 
-// `createFactorRegistry` refuses two primary-capable factors unless one is named, and the two
-// namings render differently, so the choice is crossed rather than defaulted.
-/** One offered set together with the primary it is configured with. @internal */
+// Every offered set names its primary, and the namings render differently, so the choice is crossed
+// rather than defaulted — a set with nothing primary-capable names none and is refused.
+/** One offered set together with the primary it is declared with. @internal */
 export interface AuthFactorOffering {
   readonly kinds: readonly AuthFactorKind[];
-  /** The named primary, present only where the offered set leaves the choice open. */
+  /** The declared primary, absent only where the offered set has no factor that can be one. */
   readonly primary: AuthFactorKind | undefined;
 }

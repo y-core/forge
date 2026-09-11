@@ -134,7 +134,7 @@ describe("PasskeyEnrolView markup", () => {
 // lands on, and nothing about it reads as a step-up.
 describe("PasskeyEnrolView and the step-up/enrolment distinction", () => {
   it("is the page for an enrolment demand, and renders a registration ceremony rather than a code field", async () => {
-    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app / second-factor:always");
+    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app primary=passkey / all-mandatory");
     expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"] });
 
     const html = await enrol();

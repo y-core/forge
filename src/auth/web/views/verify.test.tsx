@@ -196,7 +196,7 @@ describe("VerifyView per factor", () => {
 // owing an enrolment are different states, and they land on different pages.
 describe("VerifyView and the step-up/enrolment distinction", () => {
   it("is the page for a step-up demand, and renders a code field rather than an enrolment ceremony", async () => {
-    const cell = authFactorGrid(["totp-app"]).find((entry) => entry.label === "passkey+totp-app / second-factor:always");
+    const cell = authFactorGrid(["totp-app"]).find((entry) => entry.label === "passkey+totp-app primary=passkey / all-mandatory");
     expect(await factorDemand(cell as never)).toEqual({ status: "step-up-required", kinds: ["totp-app"] });
 
     const html = await verify({ factor: "totp-app" });

@@ -92,7 +92,7 @@ function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } =
   const deferral = fakeDeferral();
   const flow = createSignupFlow({
     users: users.store,
-    factors: createFactorRegistry(NO_FACTOR_ROWS, { offered: [primary], policy: { mode: "single" } }),
+    factors: createFactorRegistry(NO_FACTOR_ROWS, { offered: [{ service: primary, role: "primary" }] }),
     defer: deferral.defer,
     ...overrides,
   });

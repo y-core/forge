@@ -1,6 +1,7 @@
 ---
 title: The Verification Gate
 description: "The verify command over a declared step table, a pre-built step per check forge ships, and the changelog and semver parsers it reads version state with."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/gate`

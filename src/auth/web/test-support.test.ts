@@ -6,7 +6,7 @@ import {
   attrOf,
   attrsOf,
   AUTH_FACTOR_CAPABILITIES,
-  AUTH_FACTOR_POLICIES,
+  AUTH_FACTOR_ASSIGNMENTS,
   authFactorGrid,
   authFactorOfferings,
   elementOf,
@@ -15,7 +15,6 @@ import {
   factorDemand,
   HOSTILE_TEXT,
   HOSTILE_TEXT_ESCAPED,
-  policyLabel,
   tagOf,
   textOf,
   valuesOf,
@@ -109,20 +108,20 @@ describe("AUTH_FACTOR_CAPABILITIES", () => {
 describe("authFactorGrid", () => {
   const grid = authFactorGrid();
 
-  it("crosses every offering with every policy", () => {
-    expect(grid).toHaveLength(authFactorOfferings().length * AUTH_FACTOR_POLICIES.length);
+  it("crosses every offering with every assignment", () => {
+    expect(grid).toHaveLength(authFactorOfferings().length * AUTH_FACTOR_ASSIGNMENTS.length);
   });
 
-  it("splits an offered set that leaves the primary open into one offering per candidate", () => {
+  it("names a primary per candidate, and none for a set with no factor that can be one", () => {
     expect(authFactorOfferings().map((offering) => `${offering.kinds.join("+") || "none"}:${offering.primary ?? "-"}`)).toEqual([
       "none:-",
-      "email-otp:-",
-      "passkey:-",
+      "email-otp:email-otp",
+      "passkey:passkey",
       "totp-app:-",
       "email-otp+passkey:email-otp",
       "email-otp+passkey:passkey",
-      "email-otp+totp-app:-",
-      "passkey+totp-app:-",
+      "email-otp+totp-app:email-otp",
+      "passkey+totp-app:passkey",
       "email-otp+passkey+totp-app:email-otp",
       "email-otp+passkey+totp-app:passkey",
     ]);
@@ -132,32 +131,31 @@ describe("authFactorGrid", () => {
     expect(authFactorOfferings().filter((offering) => offering.primary === "totp-app")).toEqual([]);
   });
 
-  it("labels each cell by its offered set and policy", () => {
+  it("labels each cell by its offered set and assignment", () => {
     expect(grid.map((cell) => cell.label).slice(0, 5)).toEqual([
-      "none / single",
-      "none / second-factor:always",
-      "none / second-factor:when-enrolled",
-      "none / second-factor:for-roles",
-      "email-otp / single",
+      "none / all-optional",
+      "none / all-mandatory",
+      "none / first-mandatory",
+      "none / for-roles",
+      "email-otp primary=email-otp / all-optional",
     ]);
   });
 
   it("records a refusal rather than throwing, so an illegal cell is still a cell", () => {
-    const cell = grid.find((entry) => entry.label === "none / single");
+    const cell = grid.find((entry) => entry.label === "none / all-optional");
     expect(cell?.registry).toBeNull();
     expect(cell?.refusal).toBe("createFactorRegistry: at least one factor must be offered");
   });
 
   it("refuses a TOTP-app-only offering, because no offered factor can be primary", () => {
-    const cell = grid.find((entry) => entry.label === "totp-app / single");
-    expect(cell?.refusal).toBe("createFactorRegistry: no offered factor can act as the primary one");
+    const cell = grid.find((entry) => entry.label === "totp-app / all-optional");
+    expect(cell?.refusal).toBe("createFactorRegistry: no offered factor is declared primary");
   });
 
-  it("refuses a second-factor policy with nothing able to step up", () => {
-    const cell = grid.find((entry) => entry.label === "passkey / second-factor:always");
-    expect(cell?.refusal).toBe(
-      'createFactorRegistry: a second-factor policy is configured but no offered factor other than the primary "passkey" can step up',
-    );
+  it("admits an offering with nothing able to step up, which is simply a deployment offering no second factor", () => {
+    const cell = grid.find((entry) => entry.label === "passkey primary=passkey / all-mandatory");
+    expect(cell?.refusal).toBeNull();
+    expect(cell?.registry?.seconds).toEqual([]);
   });
 
   it("never resolves `totp-app` as the primary factor in any legal cell", () => {
@@ -171,7 +169,7 @@ describe("factorChoices", () => {
   const cellAt = (label: string) => grid.find((entry) => entry.label === label);
 
   it("reads the primary and the step-up set off the registry", () => {
-    expect(factorChoices(cellAt("email-otp+passkey primary=email-otp / second-factor:always") as never)).toEqual({
+    expect(factorChoices(cellAt("email-otp+passkey primary=email-otp / all-mandatory") as never)).toEqual({
       primary: "email-otp",
       stepUp: ["passkey"],
       enrollable: ["passkey"],
@@ -179,7 +177,7 @@ describe("factorChoices", () => {
   });
 
   it("leaves `enrollable` empty when the only step-up factor is the implicit one", () => {
-    expect(factorChoices(cellAt("email-otp+passkey primary=passkey / single") as never)).toEqual({
+    expect(factorChoices(cellAt("email-otp+passkey primary=passkey / all-optional") as never)).toEqual({
       primary: "passkey",
       stepUp: ["email-otp"],
       enrollable: [],
@@ -187,7 +185,7 @@ describe("factorChoices", () => {
   });
 
   it("offers TOTP-app for step-up and never as primary", () => {
-    expect(factorChoices(cellAt("passkey+totp-app / second-factor:always") as never)).toEqual({
+    expect(factorChoices(cellAt("passkey+totp-app primary=passkey / all-mandatory") as never)).toEqual({
       primary: "passkey",
       stepUp: ["totp-app"],
       enrollable: ["totp-app"],
@@ -195,34 +193,34 @@ describe("factorChoices", () => {
   });
 
   it("returns null for a refused cell", () => {
-    expect(factorChoices(cellAt("none / single") as never)).toBeNull();
+    expect(factorChoices(cellAt("none / all-optional") as never)).toBeNull();
   });
 });
 
 describe("factorDemand", () => {
-  it("demands an enrolment when nothing is enrolled and the policy always asks", async () => {
-    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app / second-factor:always");
+  it("demands an enrolment when nothing is enrolled and the factor is mandatory", async () => {
+    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app primary=passkey / all-mandatory");
     expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"] });
   });
 
   it("demands a step-up once that factor is enrolled, which is the state the enrolment demand is not", async () => {
-    const cell = authFactorGrid(["totp-app"]).find((entry) => entry.label === "passkey+totp-app / second-factor:always");
+    const cell = authFactorGrid(["totp-app"]).find((entry) => entry.label === "passkey+totp-app primary=passkey / all-mandatory");
     expect(await factorDemand(cell as never)).toEqual({ status: "step-up-required", kinds: ["totp-app"] });
   });
 
-  it("demands nothing under a single-factor policy", async () => {
-    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app / single");
+  it("demands nothing where every second factor is optional and none is enrolled", async () => {
+    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app primary=passkey / all-optional");
     expect(await factorDemand(cell as never)).toEqual({ status: "satisfied" });
   });
 });
 
-describe("policyLabel", () => {
-  it("names every policy distinctly", () => {
-    expect(AUTH_FACTOR_POLICIES.map(policyLabel)).toEqual([
-      "single",
-      "second-factor:always",
-      "second-factor:when-enrolled",
-      "second-factor:for-roles",
+describe("AUTH_FACTOR_ASSIGNMENTS", () => {
+  it("names every assignment distinctly, and each assigns what its name says", () => {
+    expect(AUTH_FACTOR_ASSIGNMENTS.map((assignment) => [assignment.label, assignment.requirement(0), assignment.requirement(1)])).toEqual([
+      ["all-optional", "optional", "optional"],
+      ["all-mandatory", "mandatory", "mandatory"],
+      ["first-mandatory", "mandatory", "optional"],
+      ["for-roles", { mandatoryForRoles: ["admin"] }, { mandatoryForRoles: ["admin"] }],
     ]);
   });
 });

@@ -88,6 +88,56 @@ describe("resolveCitation()", () => {
   });
 });
 
+describe("resolveCitation() — a citation made from the installed library", () => {
+  const README: SourceDoc = { corpus: "dependency", path: "forge/src/ui/README.md", file: "/n/forge/src/ui/README.md", weight: 0.7 };
+  const LIBRARY_DOC: SourceDoc = { corpus: "dependency", path: "forge/ERROR_HANDLING.md", file: "/n/forge/ERROR_HANDLING.md", weight: 0.95 };
+  const CONSUMER_DOC: SourceDoc = { corpus: "project", path: "docs/ERROR_HANDLING.md", file: "/r/docs/ERROR_HANDLING.md", weight: 1.2 };
+  const CANON_DOC: SourceDoc = { corpus: "canon", tree: "shared", path: "ERROR_HANDLING.md", file: "/c/s/ERROR_HANDLING.md", weight: 1.3 };
+
+  it("never lands on the consumer's same-named document", () => {
+    expect(resolveCitation("docs/ERROR_HANDLING.md", [CONSUMER_DOC], README)).toEqual({ kind: "none" });
+  });
+
+  it("strips the prefix a relative href left, so the library's own copy matches", () => {
+    expect(resolveCitation("docs/ERROR_HANDLING.md", [CONSUMER_DOC, LIBRARY_DOC], README)).toEqual({
+      kind: "resolved",
+      id: "dependency:forge/ERROR_HANDLING.md",
+    });
+  });
+
+  it("prefers the library's copy over the canon's when the stripped spelling names both", () => {
+    expect(resolveCitation("docs/ERROR_HANDLING.md", [CONSUMER_DOC, LIBRARY_DOC, CANON_DOC], README)).toEqual({
+      kind: "resolved",
+      id: "dependency:forge/ERROR_HANDLING.md",
+    });
+  });
+
+  it("still resolves a tree-qualified canon spelling, which needs no stripping", () => {
+    const canon: SourceDoc = { corpus: "canon", tree: "apps", path: "WORKERS_PLATFORM.md", file: "/c/a/WORKERS_PLATFORM.md", weight: 1.3 };
+
+    expect(resolveCitation("apps/WORKERS_PLATFORM.md", [canon], README)).toEqual({ kind: "resolved", id: "canon:WORKERS_PLATFORM.md" });
+  });
+
+  it("leaves a citation from this repository's own document alone", () => {
+    expect(resolveCitation("docs/TESTING.md", SOURCES, DOC)).toEqual({ kind: "resolved", id: "project:docs/TESTING.md" });
+  });
+
+  // A consumer carrying its own `src/ui/README.md` matches the same spelling twice, and each side
+  // settles on its own copy at the first tier rather than reporting an ambiguity.
+  it("settles a README spelling both corpora carry, per corpus", () => {
+    const own: SourceDoc = { corpus: "project", path: "src/ui/README.md", file: "/r/src/ui/README.md", weight: 0.9 };
+
+    expect(resolveCitation("ui/README.md", [own, README], README)).toEqual({ kind: "resolved", id: "dependency:forge/src/ui/README.md" });
+    expect(resolveCitation("ui/README.md", [own, README], DOC)).toEqual({ kind: "resolved", id: "project:src/ui/README.md" });
+  });
+
+  it("resolves a bare README.md cited from the canon to the repository's root README", () => {
+    const root: SourceDoc = { corpus: "project", path: "README.md", file: "/r/README.md", weight: 0.9 };
+
+    expect(resolveCitation("README.md", [root], SOURCES[0])).toEqual({ kind: "resolved", id: "project:README.md" });
+  });
+});
+
 describe("headerOf()", () => {
   it("takes everything before the first level-2 heading", () => {
     expect(headerOf("---\ntitle: X\n---\n\n> Defers to: A.md\n\n## 1. One\n\nBody.")).toContain("Defers to");
@@ -132,6 +182,27 @@ describe("relationsOf()", () => {
     expect(relationsOf(DOC, [], header, SOURCES)).toEqual([
       { from: "project:docs/TESTING.md", kind: "defers", raw: "CODE_RULES.md §5c", to: "canon:CODE_RULES.md#5c" },
       { from: "project:docs/TESTING.md", kind: "defers", raw: "libs/TESTING.md", to: "canon:TESTING.md" },
+    ]);
+  });
+
+  // `DEFERRED_DOC` captures one leading segment, so `src/ui/README.md` arrives as `ui/README.md`
+  // and the served `<package>/src/...` spelling matches it through the `endsWith` arm.
+  it("resolves a deferral naming a namespace README of the installed library", () => {
+    const readme: SourceDoc = { corpus: "dependency", path: "forge/src/ui/README.md", file: "/n/forge/src/ui/README.md", weight: 0.7 };
+    const citing: SourceDoc = { corpus: "dependency", path: "forge/UI_SSR_COMPONENTS.md", file: "/n/forge/UI_SSR_COMPONENTS.md", weight: 0.95 };
+
+    expect(relationsOf(citing, [], "> Defers to: `src/ui/README.md` for the signatures.", [readme])).toEqual([
+      { from: "dependency:forge/UI_SSR_COMPONENTS.md", kind: "defers", raw: "ui/README.md", to: "dependency:forge/src/ui/README.md" },
+    ]);
+  });
+
+  it("emits one edge for a deferral written as a markdown link to a namespace README", () => {
+    const readme: SourceDoc = { corpus: "dependency", path: "forge/src/auth/README.md", file: "/n/forge/src/auth/README.md", weight: 0.7 };
+    const citing: SourceDoc = { corpus: "dependency", path: "forge/AUTH_MOUNTING.md", file: "/n/forge/AUTH_MOUNTING.md", weight: 0.95 };
+    const header = "> Defers to: [`src/auth/README.md`](../src/auth/README.md) for the surface.";
+
+    expect(relationsOf(citing, [], header, [readme])).toEqual([
+      { from: "dependency:forge/AUTH_MOUNTING.md", kind: "defers", raw: "auth/README.md", to: "dependency:forge/src/auth/README.md" },
     ]);
   });
 

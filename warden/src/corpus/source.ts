@@ -4,7 +4,7 @@ import { posix, relative, resolve, sep } from "node:path";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import { CANON_ROOT } from "../paths";
 import type { Corpus, SourceDoc, Tree } from "../types";
-import { DEPENDENCY_WEIGHT, librarySources } from "./dependency";
+import { dependencyWeightOf, librarySources } from "./dependency";
 
 const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
 
@@ -29,7 +29,7 @@ const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
  *  output rather than from this paragraph. @public */
 export function weightOf(corpus: Corpus, path: string): number {
   if (corpus === "canon") return 1.3;
-  if (corpus === "dependency") return DEPENDENCY_WEIGHT;
+  if (corpus === "dependency") return dependencyWeightOf(path);
   if (path === "src/ui/design/floor.md") return 1.3;
   if (path.startsWith("docs/")) return 1.2;
   if (path.startsWith("src/ui/design/")) return 1.0;

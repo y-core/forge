@@ -1,6 +1,7 @@
 ---
 title: Declarative Route Configuration
 description: "Routes as plain data, bound to handlers by a structurally-checked controller — the same map powers type-safe URL generation and introspection."
+audience: consumer
 ---
 
 # `@y-core/forge/router`

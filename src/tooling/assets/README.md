@@ -1,6 +1,7 @@
 ---
 title: The Asset Build Pipeline
 description: "Turns a typed asset config into hashed, cache-busted static output plus a generated, fully-typed asset module."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/assets`

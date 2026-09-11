@@ -106,10 +106,10 @@ store, the way `requestStores` builds every other store from `c.env`.
 the email-OTP and passkey factors are built per request because two of their seams read a `UserStore`;
 the passkey factor also takes **this request's session id**, which is what the WebAuthn challenge is
 bound to, so a registry built once at bootstrap issues challenges bound to nobody. `requireEnrolment`
-and `requireFreshStepUp` read only `resolve` and `stepUp` — no ceremony, so no session id of their
-own — which means their registry and `resolveServices`'s **need not be the same object**. What they
-must share is `offered`, `primary` and `policy`: the policy is what decides what is owed, so two
-registries configured differently leave `requireEnrolment` refusing a page the flow believes settled.
+and `requireFreshStepUp` read only `resolve` — no ceremony, so no session id of their own — which
+means their registry and `resolveServices`'s **need not be the same object**. What they must share is
+`offered`: the roles and requirements it declares are what decide what is owed, so two registries
+configured differently leave `requireEnrolment` refusing a page the flow believes settled.
 Building one registry per request and handing it to both, as the starter does, is the cheapest way to
 make that true by construction.
 
@@ -177,8 +177,8 @@ the authenticator names the user, and the server learns who from the assertion.
 `resolve-auth` rather than `require-auth`. The page serves two ceremonies that look the same — the
 second half of a sign-in, and a step-up a live session owes — and only the identity tells them apart;
 `resolve-auth` establishes it when the session carries one and admits an anonymous request unchanged.
-Without it every request there reads as a sign-in, `markAuthStepUp` never runs, and a `second-factor`
-policy loops between the enrolment guard and the page meant to satisfy it.
+Without it every request there reads as a sign-in, `markAuthStepUp` never runs, and a deployment
+offering a second factor loops between the enrolment guard and the page meant to satisfy it.
 
 **`auth.verify.ceremony` is a step-up of its own, not the discoverable sign-in pair**, which calls
 `establishAuthSession` and so clears the very mark a step-up writes. **`auth.enrol` carries a page per
@@ -192,10 +192,11 @@ address, or changing somebody's role. A `GET` is always admitted: reading the pa
 action is not the action. Omit `freshStepUpMaxAgeMs` and the window is `AUTH_FRESH_STEP_UP_MS`,
 fifteen minutes; pass `null`, which is the only opt-out, and the guard demands nothing.
 
-**It asks the policy per user, so a deployment with no second factor is not locked out of its own
-admin pages.** The guard resolves the same factor policy `require-enrolment` does and demands a mark
-only where the answer is `step-up-required` — so `{mode:"single"}`, and a `when-enrolled` user with
-nothing enrolled, are admitted rather than sent to a page that could never clear the demand. Both
+**It asks per user, so a deployment with no second factor is not locked out of its own admin
+pages.** The guard resolves the same offered factors `require-enrolment` does and demands a mark only
+where the answer is `step-up-required` — so an offering with no `second` entry, and an all-`optional`
+one nobody has enrolled against, are admitted rather than sent to a page that could never clear the
+demand. Both
 guards read one resolution per request through a context variable, so mounting them together costs no
 second registry query. An unreadable factor registry answers **503**, the same as the other enrolment
 guards, because an unknown demand has no remedy page to redirect to.

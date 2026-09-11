@@ -14,12 +14,12 @@ import { mapHandler } from "../../testing/route";
 import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorContext, AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
-import type { AuthFactorKind, AuthUser, UserStore } from "../types";
+import type { AuthUser, UserStore } from "../types";
 import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment } from "./guards";
 import { AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes, AUTH_ROUTE_GROUPS } from "./routes";
-import { AUTH_FACTOR_POLICIES, fakeFactorService, fakeFactorStore } from "./test-support";
+import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore } from "./test-support";
 
 const authMap = authRoutes("/auth");
 const accountMap = accountRoutes("/account");
@@ -50,13 +50,13 @@ function fakeUsers(users: readonly AuthUser[]): Pick<UserStore, "findById"> {
 
 const unavailableUsers: Pick<UserStore, "findById"> = { findById: async () => ({ ok: false, error: new Error("db down") as never }) };
 
-type FakeRegistry = Pick<AuthFactorRegistry, "resolve" | "stepUp">;
+type FakeRegistry = Pick<AuthFactorRegistry, "resolve">;
 
-function fakeFactors(resolution: AuthFactorResolution, stepUp: readonly AuthFactorKind[] = ["totp-app"]): FakeRegistry {
-  return { stepUp, resolve: async () => ok(resolution) };
+function fakeFactors(resolution: AuthFactorResolution): FakeRegistry {
+  return { resolve: async () => ok(resolution) };
 }
 
-const unavailableFactors: FakeRegistry = { stepUp: ["totp-app"], resolve: async () => ({ ok: false, error: new Error("kv down") as never }) };
+const unavailableFactors: FakeRegistry = { resolve: async () => ({ ok: false, error: new Error("kv down") as never }) };
 
 interface ResolveCall {
   readonly userId: string;
@@ -68,7 +68,6 @@ function recordingFactors(resolution: AuthFactorResolution): FakeRegistry & { re
   const calls: ResolveCall[] = [];
   return {
     calls,
-    stepUp: ["totp-app"],
     resolve: async (userId, context) => {
       calls.push({ userId, context });
       return ok(resolution);
@@ -348,7 +347,7 @@ describe("requireFreshStepUp", () => {
 
   /** The account group's stack, with the freshness window this test is about, under one factor verdict. */
   function freshApp(seed: SessionSeed, freshStepUpMaxAgeMs?: number | null, resolution: AuthFactorResolution = owing) {
-    const factors = perRequest(fakeFactors(resolution, resolution.status === "satisfied" ? [] : ["totp-app"]));
+    const factors = perRequest(fakeFactors(resolution));
     return guardedApp(
       [
         requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))),
@@ -518,12 +517,13 @@ describe("the roles both enrolment guards resolve against", () => {
   }
 
   it("refuses an admin holding no enrolment against the real registry, and admits the same request from a non-admin", async () => {
-    const policy = AUTH_FACTOR_POLICIES.find((held) => held.mode === "second-factor" && held.required === "for-roles");
-    if (policy === undefined) throw new Error("the factor matrix no longer carries a `for-roles` policy");
+    const assignment = AUTH_FACTOR_ASSIGNMENTS.find((held) => held.label === "for-roles");
+    if (assignment === undefined) throw new Error("the factor matrix no longer carries a `for-roles` assignment");
     const factors = createFactorRegistry(fakeFactorStore([]), {
-      offered: [fakeFactorService("email-otp"), fakeFactorService("totp-app")],
-      primary: "email-otp",
-      policy,
+      offered: [
+        { service: fakeFactorService("email-otp"), role: "primary" },
+        { service: fakeFactorService("totp-app"), role: "second", requirement: assignment.requirement(0) },
+      ],
     });
     const app = (isAdmin: boolean) =>
       guardedApp(

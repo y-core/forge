@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { WARDEN_ROOT } from "../paths";
-import { audienceOf, dependencyRootOf, libraryRoot, librarySources } from "./dependency";
+import { audienceOf, dependencyRootOf, dependencyWeightOf, libraryRoot, librarySources } from "./dependency";
 import { discover } from "./source";
 
 function doc(audience: string | undefined, body = "Body."): string {
@@ -27,6 +27,9 @@ const LIBRARY = {
   "docs/UI_CLASS_COMPOSITION.md": doc("consumer"),
   "docs/NAMESPACES.md": doc("internal"),
   "docs/UNDECLARED.md": doc(undefined),
+  "src/ui/README.md": doc("consumer"),
+  "src/crypto/README.md": doc("internal"),
+  "src/tooling/gate/README.md": doc(undefined),
 };
 
 describe("audienceOf()", () => {
@@ -44,8 +47,8 @@ describe("audienceOf()", () => {
 });
 
 describe("librarySources()", () => {
-  it("serves the consumer-facing documents and nothing else", () => {
-    expect(librarySources(tree(LIBRARY)).map((source) => source.path)).toEqual(["forge/UI_CLASS_COMPOSITION.md"]);
+  it("serves the consumer-facing documents and READMEs, and nothing else", () => {
+    expect(librarySources(tree(LIBRARY)).map((source) => source.path)).toEqual(["forge/UI_CLASS_COMPOSITION.md", "forge/src/ui/README.md"]);
   });
 
   // A bare filename collides with the canon on six names; `docs/` collides with the consuming
@@ -56,7 +59,31 @@ describe("librarySources()", () => {
     expect(only?.path).toBe("forge/UI_CLASS_COMPOSITION.md");
     expect(only?.corpus).toBe("dependency");
     expect(only?.tree).toBeUndefined();
-    expect(only?.weight).toBe(0.95);
+  });
+
+  // The real on-disk path under `node_modules/@y-core/forge/`, so every path warden prints names a
+  // file the reader can open and `--path forge/src` stays a usable scope.
+  it("keeps a README's own directory, and carries the same shape as a docs entry", () => {
+    const readme = librarySources(tree(LIBRARY)).find((source) => source.path.endsWith("README.md"));
+
+    expect(readme?.path).toBe("forge/src/ui/README.md");
+    expect(readme?.corpus).toBe("dependency");
+    expect(readme?.tree).toBeUndefined();
+  });
+
+  // One assertion, because the ordering is the invariant: a library README must not outrank the
+  // library's own rules, nor the consuming repository's README at 0.9.
+  it("weighs a README below a docs entry", () => {
+    const weights = Object.fromEntries(librarySources(tree(LIBRARY)).map((source) => [source.path, source.weight]));
+
+    expect(weights).toEqual({ "forge/UI_CLASS_COMPOSITION.md": 0.9, "forge/src/ui/README.md": 0.65 });
+  });
+});
+
+describe("dependencyWeightOf()", () => {
+  it("answers by the kind of document, so `weightOf` and discovery cannot drift", () => {
+    expect(dependencyWeightOf("forge/src/ui/README.md")).toBe(0.65);
+    expect(dependencyWeightOf("forge/TESTING.md")).toBe(0.9);
   });
 });
 
@@ -93,6 +120,6 @@ describe("discover()", () => {
     const canonRoot = join(repo, "warden/canon");
 
     expect(discover(repo, "libs", { canonRoot }).some((source) => source.corpus === "dependency")).toBe(false);
-    expect(discover(repo, "libs", { canonRoot, dependencyRoot: tree(LIBRARY) }).filter((source) => source.corpus === "dependency")).toHaveLength(1);
+    expect(discover(repo, "libs", { canonRoot, dependencyRoot: tree(LIBRARY) }).filter((source) => source.corpus === "dependency")).toHaveLength(2);
   });
 });

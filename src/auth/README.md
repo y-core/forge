@@ -1,6 +1,7 @@
 ---
 title: Identity and Credentials
 description: "The identity domain and the two tiers over it: key rings, the AES-GCM token codec, stores, factors and ceremonies; the mountable routes, guards and views; and the browser passkey controller."
+audience: consumer
 ---
 
 # `@y-core/forge/auth`
@@ -348,33 +349,36 @@ discriminant sits on the service rather than inside `capabilities` because TypeS
 a _direct_ discriminant — a nested one leaves the union unnarrowed, which is exactly the shape that
 gets papered over with a cast.
 
-`policy` is `{mode:"single"}` or `{mode:"second-factor", required: "always" | "when-enrolled" |
-"for-roles"}`, which covers none / one / both with no fourth state. Under `always`, a user with
-nothing enrolled gets `{status: "enrolment-required"}` — a **successful outcome**, because needing
-to enrol is a normal onboarding step and modelling it as an error puts it on the path every caller
-treats as exceptional.
+`offered` is a tagged list: each entry declares its service `primary` or `second`, and a `second`
+entry carries an `AuthFactorRequirement` — `"optional"`, `"mandatory"`, or `{mandatoryForRoles}`.
+Exactly one entry may be `primary`, and it is not available as a second factor. A user who has not
+confirmed a mandatory factor gets `{status: "enrolment-required"}` naming **only the owed kinds** — a
+**successful outcome**, because needing to enrol is a normal onboarding step and modelling it as an
+error puts it on the path every caller treats as exceptional.
+
+**Mandatory governs enrolment, not step-up.** Once nothing is owed, _any_ confirmed second factor
+satisfies the step-up, so an optional factor a visitor enrolled is still useful and a mandatory one
+cannot be skipped by enrolling a different one.
 
 **An implicit step-up factor is enrolled for everyone the moment it is offered.** It has no factor
 row by design, so `resolve` puts it in the confirmed set unconditionally rather than asking the
-store a question the store can only answer "no". Offering email-OTP as the second factor therefore
-demands it under `always` **and** under `when-enrolled` — the reading the capability matrix above
-already implies. The rule is on the `enrolment` discriminant, not on the kind, so a later implicit
+store a question the store can only answer "no". Offering email-OTP as a second factor therefore
+never owes an enrolment and always satisfies the step-up, whatever its requirement — the reading the
+capability matrix above already implies. The rule is on the `enrolment` discriminant, not on the kind, so a later implicit
 factor gets it too.
 
-Two consequences worth naming. `enrolment-required` can never carry an empty `kinds` list, because
-the only kinds a user can be asked to enrol in are the explicit ones and a set with no explicit
-kinds resolves to a step-up instead. And a `second-factor` policy whose offered factors contain
-nothing that could step up **throws at construction** — silently satisfying a config the consumer
-reads as two-factor is the failure mode that is expensive to notice.
+`enrolment-required` can never carry an empty `kinds` list: it is reported only for kinds actually
+owed, and an implicit factor is confirmed the moment it is offered. An `offered` list with no
+`second` entry is `satisfied` without a store read at all.
 
 `resolve` reads the offered factors against one user's enrolments in **one** factor-table query,
-whatever the offered count, and in **none** when every step-up factor is implicit.
+whatever the offered count, and in **none** when every second factor is implicit.
 
 **Forge sources exactly one role, and `authFactorContext` is the only place it is derived.** It maps a
 subject's `isAdmin` to `{ roles: [AUTH_ADMIN_ROLE] }` and everything else to `{}`; the guards, the
-verify page and the sign-in flow all resolve through it, so a `for-roles` policy means the same thing
-in each. Passing no context at all is what silently degrades `for-roles` to `when-enrolled`, which is
-why no caller in forge does. `resolve(userId, context?)` keeps taking a context of your own — that is
+verify page and the sign-in flow all resolve through it, so `mandatoryForRoles` means the same thing
+in each. Passing no context at all is what silently degrades `mandatoryForRoles` to `"optional"`,
+which is why no caller in forge does. `resolve(userId, context?)` keeps taking a context of your own — that is
 the escape hatch for a deployment whose roles go beyond `isAdmin`.
 
 ### Email-OTP — `createEmailOtpFactor`
@@ -726,9 +730,9 @@ index a conflict violated when the backend says which.
 | `purgeAuthEphemera(db, at)` | function | Deletes the challenge and nonce rows that expired at or before `at`. Call it from a scheduled handler; never calling it is slower, not wrong. |
 | `normalizeEmail(email)` | function | The key the `email_key` unique index holds. |
 | `AuthStoreError` | class | The one I/O failure an auth store reports, carried in a `Result`. |
-| `createFactorRegistry(store, options)` | function | Resolves a policy against one user's enrolments and hands out the factor services. |
+| `createFactorRegistry(store, options)` | function | Resolves the offered factors against one user's enrolments and hands out the factor services. |
 | `authFactorContext(subject)` | function | The `AuthFactorContext` a subject's `isAdmin` amounts to — the one place forge turns it into a role name. |
-| `AUTH_ADMIN_ROLE` | const | `"admin"` — the one role forge sources itself, and the name a `for-roles` policy is written against. |
+| `AUTH_ADMIN_ROLE` | const | `"admin"` — the one role forge sources itself, and the name a `mandatoryForRoles` requirement is written against. |
 | `createEmailOtpFactor(…)`, `createPasskeyFactor(…)`, `createTotpAppFactor(…)` | function | The three shipped factor services. |
 | `createPasskeyRegistrationOptions(…)`, `createPasskeyRequestOptions(…)` | function | The two ceremony option builders, each storing a session-bound challenge. |
 | `verifyClientData(…)`, `verifyAuthData(…)` | function | The two ceremony parsers, each check with its own reason. |
@@ -751,7 +755,7 @@ index a conflict violated when the backend says which.
 | `AuthStoreErrorCode`, `AuthStoreResult` | types | `"conflict" \| "invalid" \| "unavailable"`, and what every store method resolves to. |
 | `AdminUserOutcome`, `AdminUserService`, `AdminUserServiceOptions` | types | What an administrative write reports — the three last-admin refusals, `not-found`, `self` and `changed` — the service surface, and its construction options. |
 | `AuthFactorService`, `ImplicitFactorService`, `EnrollableFactorService` | types | The factor contract, discriminated on `enrolment`. |
-| `AuthFactorRegistry`, `AuthFactorsOptions`, `AuthFactorPolicy`, `AuthFactorCapabilities`, `AuthFactorContext` | types | The registry, its options, the policy union, what a kind can do, and the context a resolution reads roles from. |
+| `AuthFactorRegistry`, `AuthFactorsOptions`, `AuthFactorOffer`, `AuthFactorRequirement`, `AuthFactorCapabilities`, `AuthFactorContext` | types | The registry, its options, one tagged offer, what it is demanded to be, what a kind can do, and the context a resolution reads roles from. |
 | `AuthFactorChallenge`, `AuthFactorVerified`, `AuthFactorResolution`, `AuthFactorReason` | types | An issued challenge, a verified factor, the three resolutions, and why one refused. |
 | `EmailOtpOptions`, `PasskeyFactorOptions`, `PasskeyFactorRole`, `PasskeyFactorSubject`, `TotpAppFactorOptions`, `TotpAppEnrolment` | types | Per-factor configuration, the passkey factor's two roles and its subject resolver, and what a TOTP enrolment hands back. |
 | `PasskeyCeremonyOptions`, `PasskeyRegistrationOptions`, `PasskeyRequestOptions`, `PasskeyRegistrationSubject` | types | What a ceremony is held against, the two option payloads a browser receives, and the subject a registration names. |
@@ -829,7 +833,7 @@ session, and because on a Worker every store underneath it needs a binding off `
 | --- | --- | --- |
 | `users` | `UserStore` — `createUserStore(d1Client)` | yes |
 | `credentials` | `CredentialStore` — `createCredentialStore(d1Client)` | yes |
-| `factors` | `AuthFactorRegistry` — `createFactorRegistry(factorStore, { offered, primary?, policy })` | yes |
+| `factors` | `AuthFactorRegistry` — `createFactorRegistry(factorStore, { offered })` | yes |
 | `enrolments` | `FactorStore` — `createFactorStore(d1Client)`. The rows themselves, which the registry keeps private and the account pages must delete | yes |
 | `signin` | `AuthSigninFlow` — `createSigninFlow(…)` | yes |
 | `signup` | `AuthSignupFlow` — `createSignupFlow(…)` | yes |
@@ -863,9 +867,9 @@ mounts. The six primitives are exported for pages a consumer routes themselves:
 | `requireAuth` | A signed-in, non-deactivated visitor. It is what puts the identity on `authCtx`. |
 | `resolveAuth` | Everyone. It establishes the identity when the session carries one, so a page serving an anonymous and a signed-in visitor alike can tell them apart. |
 | `requireAdmin` | An admin. Anyone else gets a plain 403, and it throws if `requireAuth` did not run first. |
-| `requireEnrolment` | A visitor whose factor policy is satisfied. An owed enrolment or step-up is redirected; an unreadable store answers 503. |
+| `requireEnrolment` | A visitor who owes no factor. An owed enrolment or step-up is redirected; an unreadable store answers 503. |
 | `requirePendingEnrolment` | **Only** a visitor who owes an enrolment. An owed step-up goes to the step-up page, and a settled visitor to the settled path. |
-| `requireFreshStepUp` | Every safe method, and a state-changing one only while the session's step-up mark is inside `freshStepUpMaxAgeMs` — or the user's policy demands no step-up at all. |
+| `requireFreshStepUp` | Every safe method, and a state-changing one only while the session's step-up mark is inside `freshStepUpMaxAgeMs` — or the user owes no step-up at all. |
 
 **`requireFreshStepUp` is on by default, and gates only what changes something.** Every `POST`,
 `PATCH` or `DELETE` in the `account`, `admin.users` and `admin.elevate` groups needs a step-up no
@@ -880,9 +884,9 @@ write across a re-authentication, so the visitor repeats the action afterwards.
 (fifteen minutes, exported from `@y-core/forge/auth`); pass `null`, which is the only opt-out, and
 the guard admits every request.
 
-**The demand is the user's policy, not the mount's.** The guard resolves through `factors.resolve`
-and asks for a mark only where that answers `step-up-required`, so a `{mode:"single"}` deployment and
-a `when-enrolled` user with nothing enrolled are admitted rather than sent to a page that could never
+**The demand is the user's own resolution, not the mount's.** The guard resolves through `factors.resolve`
+and asks for a mark only where that answers `step-up-required`, so a deployment offering no second factor and
+an all-optional user with nothing enrolled are admitted rather than sent to a page that could never
 clear the demand. It reuses the resolution `requireEnrolment` already made on the same request
 through a context variable, so mounting both costs one registry query rather than two, and a registry
 it cannot read answers **503** exactly as the other enrolment guards do.
@@ -1088,7 +1092,7 @@ wrong layer.
 | `registerAuth(app, routes, options)`, `registerAccount(…)`, `registerAdmin(…)` | function | Mount each group's handlers on a `Forge` app. No guard is wired here. |
 | `createAuthGuards(options)` | function | The middleware stack for every group, built off `AUTH_ROUTE_GROUPS`, plus the configured origin protection on every group that mutates. |
 | `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` | function | The four guard primitives, for pages a consumer routes themselves. |
-| `requireFreshStepUp` | function | Demands a step-up no older than `freshStepUpMaxAgeMs` on every state-changing request of a user whose policy calls for one. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` is the opt-out. |
+| `requireFreshStepUp` | function | Demands a step-up no older than `freshStepUpMaxAgeMs` on every state-changing request of a user who owes one. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` is the opt-out. |
 | `resolveAuth` | function | Establishes the identity when the session carries one and admits an anonymous request unchanged — what the verify group runs, since that page serves a sign-in and a step-up alike. |
 | `authCtx` | const | The context variable `requireAuth` writes the identity to and every later guard reads. |
 | `resolveAuthIdentity(session, users, at)` | function | Re-reads the signed-in user, answering `null` for a missing or deactivated one, for a session past its absolute lifetime, for one carrying no established-at stamp, and for one established at or before the account's revocation barrier — and **writes**, dropping that session's auth keys in each of those cases. A store outage denies without clearing. |

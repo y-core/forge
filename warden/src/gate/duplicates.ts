@@ -185,13 +185,16 @@ function score(sections: readonly Section[], threshold: number): { pairs: Pair[]
  *  violation at all — the library states a rule about itself and the consumer restates the part
  *  that binds their own code, which is what a consumer's document is for. Without a class of its
  *  own it would sort as `2` alongside the real findings and, at a corpus this size, push them past
- *  the reporting cap. */
+ *  the reporting cap. It is tested before the README class rather than after, because the library
+ *  serves its namespace READMEs too — a library README is a README, so the README class would have
+ *  claimed the pair first and filled the cap with exactly the advisory pairs this class exists to
+ *  sink. */
 function klass(pair: Pair, docsDir: string): number {
   const corpora = [pair.a.corpus, pair.b.corpus];
   const canon = corpora.filter((corpus) => corpus === "canon").length;
   const docs = [pair.a, pair.b].filter((section) => section.path.startsWith(`${docsDir}/`)).length;
   if (canon === 1 && docs === 1) return 0;
+  if (corpora.includes("dependency")) return 3;
   const readmes = [pair.a, pair.b].filter((section) => section.path.endsWith("README.md")).length;
-  if (readmes === 1) return 1;
-  return corpora.includes("dependency") ? 3 : 2;
+  return readmes === 1 ? 1 : 2;
 }
