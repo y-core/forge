@@ -32,6 +32,8 @@ export type AdminUserEditViewProps = AuthViewChrome & {
   readonly user: AuthUser;
   /** Whether this account is the last admin who could still sign in, read off `AdminUserStore.countAdmins`. */
   readonly lastAdmin: boolean;
+  /** Whether the administrator reading this page *is* this account, which is what the two self-lockout controls are disabled on. */
+  readonly self: boolean;
   /** What an administrative write last reported for this account, or `null` on a plain page load. */
   readonly outcome: AdminUserOutcome | null;
   readonly paths: AuthAdminPaths;
@@ -129,8 +131,12 @@ export type AuthPasskeyContract = {
 /** What the passkey enrolment page renders. @public */
 export type PasskeyEnrolViewProps = AuthViewChrome & {
   readonly contract: AuthPasskeyContract;
-  /** Where a visitor who cannot enrol now is sent instead. */
+  /** Where a visitor who cannot enrol now is sent instead. A POST-only route, so it is submitted rather than linked. */
   readonly signoutPath: string;
+  /** The token authorising that sign-out; without one the POST is refused by `csrfProtection`. */
+  readonly signoutCsrfToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
   /** The address the enrolment is being made for, shown so the visitor can tell whose account it is. */
   readonly email: string;
   /** A refusal about the attempt as a whole, in this view's own words. */
@@ -208,6 +214,10 @@ export type TotpEnrolViewProps = AuthViewChrome & {
   readonly csrfToken: string;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
+  /** How wide the code field is, read off the factor. Defaults to the six digits forge's own factor asks for. */
+  readonly codeDigits?: OtpLength | undefined;
+  /** How often the app refreshes the code, in seconds, read off the factor. Defaults to the thirty seconds forge's own factor uses. */
+  readonly codePeriodSeconds?: number | undefined;
   /** Copy for a rejected confirmation code; the view owns the wording, since `describeValidationIssue` returns only a field name. */
   readonly fieldError?: string | undefined;
   readonly icon: ForgeIcon<"alert">;

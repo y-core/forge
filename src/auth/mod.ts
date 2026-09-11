@@ -1,5 +1,6 @@
 export {
   AUTH_ADMIN_ROLE,
+  AUTH_FRESH_STEP_UP_MS,
   AUTH_KEY_ID_LENGTH,
   AUTH_PASSKEY_CHALLENGE_BYTES,
   AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
@@ -11,7 +12,9 @@ export {
   AUTH_OTP_DIGITS,
   AUTH_OTP_MAX_ATTEMPTS,
   AUTH_OTP_TTL_MS,
+  AUTH_SESSION_MAX_MS,
   AUTH_SUPPORTED_ALGORITHMS,
+  AUTH_TOTP_LOCKOUT_MS,
 } from "./config";
 export type { AdminUserService, AdminUserServiceOptions } from "./admin/types";
 export { createAdminUserService, isLastAdminRefusal } from "./admin/service";
@@ -47,8 +50,14 @@ export type { PasskeyFactorOptions, PasskeyFactorRole, PasskeyFactorSubject } fr
 export { createPasskeyFactor } from "./factors/passkey";
 export type { TotpAppEnrolment, TotpAppFactorOptions } from "./factors/types";
 export { createTotpAppFactor } from "./factors/totp-app";
-export type { AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./flows/types";
-export type { AuthEmailChangeFlow, AuthEmailChangeOptions, AuthEmailChangeReason, AuthEmailChangeRequest } from "./flows/types";
+export type { AuthDecoyStores, AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./flows/types";
+export type {
+  AuthEmailChangeConfirm,
+  AuthEmailChangeFlow,
+  AuthEmailChangeOptions,
+  AuthEmailChangeReason,
+  AuthEmailChangeRequest,
+} from "./flows/types";
 export { createEmailChangeFlow } from "./flows/email-change";
 export type { AuthSignin, AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./flows/types";
 export { createSigninFlow, redactSigninReason } from "./flows/signin";
@@ -60,6 +69,7 @@ export { createChallengeStore } from "./stores/challenges";
 export type { NonceStoreOptions } from "./stores/types";
 export { createNonceStore } from "./stores/nonces";
 export { createOtpStateStore } from "./stores/otp-state";
+export { purgeAuthEphemera } from "./stores/ephemera";
 export type {
   PasskeyCeremonyOptions,
   PasskeyRegistrationOptions,

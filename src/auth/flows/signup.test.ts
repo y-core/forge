@@ -20,7 +20,7 @@ const NO_FACTOR_ROWS: FactorStore = {
   findEnrolled: () => Promise.resolve(ok([])),
   enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
   confirm: () => Promise.resolve(ok(true)),
-  countAttempt: () => Promise.resolve(ok(true)),
+  countAttempt: () => Promise.resolve(ok(null)),
   advanceCounter: () => Promise.resolve(ok(true)),
   remove: () => Promise.resolve(ok(true)),
 };
@@ -34,6 +34,7 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -57,6 +58,7 @@ function fakeUsers(seed: readonly AuthUser[], options: { conflict?: boolean } = 
     setWebAuthnIdIfAbsent: () => Promise.resolve(ok(null)),
     markEmailVerified: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
+    revokeSessions: async () => ok(true),
   };
   return { store, rows, created };
 }
@@ -77,6 +79,7 @@ function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } =
     capabilities: { primary: true, stepUp: true },
     challengeTtlMs: OTP_TTL_MS,
     codeDigits: 6,
+    codePeriodSeconds: null,
     reissueAfterMs: null,
     createChallenge: (userId, at) => {
       challenged.push(userId);

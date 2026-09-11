@@ -1,3 +1,4 @@
+import { contextVar } from "../../context/accessor";
 import type { AppContext } from "../../context/types";
 import { CSRF_HEADER_DEFAULT } from "../../form/constants";
 import { mintCsrf } from "../../form/csrf";
@@ -5,8 +6,22 @@ import { csrfHeaderCtx } from "../../form/csrf-context";
 import { safeRedirectPath } from "../../http/redirect-path";
 import { PASSKEY_CSRF_HEADER_DEFAULT } from "../passkey-contract";
 import type { PasskeyMode } from "../types";
-import type { AuthWebOptions } from "./types";
+import type { AuthRequestServices, AuthWebOptions } from "./types";
 import type { AuthPasskeyContract } from "./views/types";
+
+// One request runs a guard, a loader and often an action, and each called `resolveServices` — which
+// rebuilds every store. The promise is memoised rather than the value, so two parallel callers share
+// one build rather than racing two. The same shape `authDemandCtx` uses for the same reason.
+const authServicesCtx = contextVar<Promise<AuthRequestServices>>("auth.services");
+
+/** This request's services, built once however many times this request asks for them. @internal */
+export function authServices<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<AuthRequestServices> {
+  const held = authServicesCtx.getOptional(c);
+  if (held) return held;
+  const built = Promise.resolve(options.resolveServices(c));
+  authServicesCtx.set(c, built);
+  return built;
+}
 
 /** This request's clock. @internal */
 export function authNow<Bindings>(options: AuthWebOptions<Bindings>): number {

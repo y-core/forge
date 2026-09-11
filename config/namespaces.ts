@@ -28,7 +28,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   // `jsx` is the shell's: `app` owns where a document shell is registered and resolved, and a shell
   // renders JSX. Nothing in `jsx` names `app`, so the edge closes no cycle.
   app: { config: "value", form: "value", http: "value", jsx: "value", logging: "value", security: "value" },
-  auth: { "storage/db": "value", "storage/kv": "value" },
+  auth: { "storage/db": "value" },
   // `auth` here is the passkey contract — pure data both tiers read — and nothing else.
   "auth/client": { auth: "value", http: "value", "ui/client": "value" },
   // One-way by construction: `auth` never names `auth/web`, and `validateNoMutualValuePairs` is what

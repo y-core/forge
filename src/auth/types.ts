@@ -38,6 +38,8 @@ export interface AuthUser {
   readonly webauthnId: Uint8Array<ArrayBuffer> | null;
   readonly isAdmin: boolean;
   readonly deactivatedAt: number | null;
+  /** Every session established at or before this instant is refused; `null` while none has been. */
+  readonly sessionsInvalidBefore: number | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -69,6 +71,7 @@ export interface AuthFactor {
   readonly kind: AuthFactorKind;
   readonly secret: Uint8Array<ArrayBuffer> | null;
   readonly lastCounter: number | null;
+  readonly failedAttempts: number;
   readonly confirmedAt: number | null;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -154,10 +157,12 @@ export interface UserStore {
   setWebAuthnIdIfAbsent(id: string, webauthnId: Uint8Array<ArrayBuffer>, at: number): Promise<AuthStoreResult<AuthUser | null>>;
   markEmailVerified(id: string, at: number): Promise<AuthStoreResult<boolean>>;
   changeEmail(id: string, email: string, emailKey: string, at: number): Promise<AuthStoreResult<boolean>>;
+  /** Refuses every session established at or before `at`, which is how a change reaches the sessions this request cannot see. */
+  revokeSessions(id: string, at: number): Promise<AuthStoreResult<boolean>>;
 }
 
 /** What an administrative write did to the row it named — one member per refusal, so each guard says which it was. @public */
-export type AdminUserOutcome = "changed" | "last-admin-deactivate" | "last-admin-delete" | "last-admin-demote" | "not-found";
+export type AdminUserOutcome = "changed" | "last-admin-deactivate" | "last-admin-delete" | "last-admin-demote" | "not-found" | "self";
 
 /** The administrative surface, split from `UserStore` so a sign-in service cannot hold it. @public */
 export interface AdminUserStore {
@@ -178,8 +183,14 @@ export interface FactorStore {
   findEnrolled(userId: string, kinds: readonly AuthFactorKind[]): Promise<AuthStoreResult<readonly AuthFactor[]>>;
   enrol(input: AuthFactorInput, at: number): Promise<AuthStoreResult<AuthFactor>>;
   confirm(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
-  /** Spends one guess against this factor and reports whether the budget admitted it — both in the one statement. */
-  countAttempt(id: string, userId: string, maxAttempts: number, at: number): Promise<AuthStoreResult<boolean>>;
+  /** Finds the factor, spends one guess against it and returns it, reopening a budget spent more than `lockoutMs` ago — all in the one statement; `null` is no such factor, or the budget refusing. */
+  countAttempt(
+    userId: string,
+    kind: AuthFactorKind,
+    maxAttempts: number,
+    at: number,
+    lockoutMs: number,
+  ): Promise<AuthStoreResult<AuthFactor | null>>;
   /** Records an accepted step above the last one, and clears the spent guesses that led to it. */
   advanceCounter(id: string, userId: string, counter: number, at: number): Promise<AuthStoreResult<boolean>>;
   remove(id: string, userId: string): Promise<AuthStoreResult<boolean>>;
@@ -200,7 +211,8 @@ export interface IdentityLinkStore {
   find(provider: string, subject: string): Promise<AuthStoreResult<AuthIdentityLink | null>>;
   listByUser(userId: string): Promise<AuthStoreResult<readonly AuthIdentityLink[]>>;
   link(input: AuthIdentityLinkInput, at: number): Promise<AuthStoreResult<AuthIdentityLink>>;
-  unlink(id: string): Promise<AuthStoreResult<boolean>>;
+  /** The owner is in the statement, so a link id belonging to somebody else unlinks nothing. */
+  unlink(id: string, userId: string): Promise<AuthStoreResult<boolean>>;
 }
 
 /** `take` is read-and-delete, which makes "clear the challenge even on failure" structural. @public */
@@ -237,11 +249,13 @@ export interface OtpStateStore {
   countAttempt(userId: string, maxAttempts: number, at: number): Promise<AuthStoreResult<OtpState | null>>;
   /** The live code without spending a guess — how a refused attempt is told from an expired one. */
   read(userId: string, at: number): Promise<AuthStoreResult<OtpState | null>>;
+  /** Drops one named code, so an undelivered issue gives its cooldown back without wiping a racing successful one. */
+  discard(userId: string, token: string): Promise<AuthStoreResult<void>>;
   clear(userId: string): Promise<AuthStoreResult<void>>;
 }
 
-/** Why a store operation failed at the I/O layer. A domain rule refusing is a reason union, never this. @public */
-export type AuthStoreErrorCode = "conflict" | "unavailable";
+/** Why a store operation failed: a unique index, a CHECK the value broke, or the backend itself. @public */
+export type AuthStoreErrorCode = "conflict" | "invalid" | "unavailable";
 
 /** What a configured knob may be, and the reason each bound exists. @internal */
 export interface AuthLimit {

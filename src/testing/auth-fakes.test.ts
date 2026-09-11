@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { createAdminUserStore } from "../auth/stores/admin-users";
+import { createChallengeStore } from "../auth/stores/challenges";
 import { createFactorStore } from "../auth/stores/factors";
+import { createNonceStore } from "../auth/stores/nonces";
 import { createUserStore } from "../auth/stores/users";
 import { createD1Client } from "../storage/db/client";
 import { fakeAuthD1 } from "./auth-fakes";
@@ -14,7 +17,13 @@ const HANDLE = new Uint8Array([1, 2, 3, 4]);
 // a consumer is that forge's own statements read back, which only the statements themselves prove.
 function stores(users: Parameters<typeof fakeAuthD1>[0]) {
   const client = createD1Client(fakeAuthD1(users) as never);
-  return { users: createUserStore(client), factors: createFactorStore(client) };
+  return {
+    users: createUserStore(client),
+    factors: createFactorStore(client),
+    admin: createAdminUserStore(client),
+    challenges: createChallengeStore(client),
+    nonces: createNonceStore(client),
+  };
 }
 
 const ACCOUNTS = [
@@ -76,5 +85,75 @@ describe("fakeAuthD1 through the factor store", () => {
   it("answers no enrolments for a user that has none", async () => {
     const found = await stores(ACCOUNTS).factors.listByUser(GRACE);
     expect(found.ok && found.data).toEqual([]);
+  });
+});
+
+describe("fakeAuthD1 through the admin user store", () => {
+  it("pages the accounts newest first, which on a UUIDv7 key is time order", async () => {
+    const listed = await stores(ACCOUNTS).admin.list();
+    expect(listed.ok && listed.data.map((row) => row.id)).toEqual([GRACE, ADA]);
+  });
+
+  it("honours the page limit", async () => {
+    const listed = await stores(ACCOUNTS).admin.list({ limit: 1 });
+    expect(listed.ok && listed.data.map((row) => row.id)).toEqual([GRACE]);
+  });
+
+  it("pages past a cursor", async () => {
+    const listed = await stores(ACCOUNTS).admin.list({ after: GRACE });
+    expect(listed.ok && listed.data.map((row) => row.id)).toEqual([ADA]);
+  });
+
+  it("anchors a search at the start of the address, folding case as the index does", async () => {
+    const found = await stores(ACCOUNTS).admin.search("ADA@");
+    expect(found.ok && found.data.map((row) => row.id)).toEqual([ADA]);
+  });
+
+  it("answers nothing for a term that only appears mid-address", async () => {
+    const found = await stores(ACCOUNTS).admin.search("example.com");
+    expect(found.ok && found.data).toEqual([]);
+  });
+
+  it("counts only the admins who could still sign in", async () => {
+    const counted = await stores(ACCOUNTS).admin.countAdmins();
+    expect(counted.ok && counted.data).toBe(0);
+  });
+});
+
+describe("fakeAuthD1 through the challenge store", () => {
+  it("takes a stored challenge back", async () => {
+    const store = stores(ACCOUNTS).challenges;
+    await store.put("ceremony", { challenge: "c1", sessionId: "s1" }, 300);
+    const taken = await store.take("ceremony");
+    expect(taken.ok && taken.data).toEqual({ challenge: "c1", sessionId: "s1" });
+  });
+
+  it("spends it, so a second take is handed nothing", async () => {
+    const store = stores(ACCOUNTS).challenges;
+    await store.put("ceremony", { challenge: "c1", sessionId: "s1" }, 300);
+    await store.take("ceremony");
+    const again = await store.take("ceremony");
+    expect(again.ok && again.data).toBeNull();
+  });
+});
+
+describe("fakeAuthD1 through the nonce store", () => {
+  it("reports the first claim on a key as the one that won", async () => {
+    const claimed = await stores(ACCOUNTS).nonces.markConsumed("token", 300);
+    expect(claimed.ok && claimed.data).toBe(true);
+  });
+
+  it("refuses a replay of the same key", async () => {
+    const store = stores(ACCOUNTS).nonces;
+    await store.markConsumed("token", 300);
+    const replayed = await store.markConsumed("token", 300);
+    expect(replayed.ok && replayed.data).toBe(false);
+  });
+
+  it("keeps two keys apart", async () => {
+    const store = stores(ACCOUNTS).nonces;
+    await store.markConsumed("first", 300);
+    const second = await store.markConsumed("second", 300);
+    expect(second.ok && second.data).toBe(true);
   });
 });

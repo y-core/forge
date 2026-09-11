@@ -25,6 +25,7 @@ export interface UserRow {
   webauthn_id: unknown;
   is_admin: number;
   deactivated_at: number | null;
+  sessions_invalid_before: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -36,6 +37,7 @@ export interface FactorRow {
   kind: string;
   secret: unknown;
   last_counter: number | null;
+  failed_attempts: number;
   confirmed_at: number | null;
   created_at: number;
   updated_at: number;

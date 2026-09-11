@@ -10,7 +10,28 @@ const MINIMUM_KEY_BYTES = 32;
 
 const KEY_ID_DOMAIN = utf8Encode("y-core/forge/auth/kid");
 
-const servicesCache = new WeakMap<object, AuthServices>();
+// Nested on both the env *and* the options: keyed on the env alone, two mounts with different
+// `AuthOptions` on one env shared one `AuthServices`, and the second caller silently got the
+// first's key ring — a token minted under one deployment's secret and read under another's.
+const servicesCache = new WeakMap<object, WeakMap<AuthOptions, AuthServices>>();
+
+/** Fewest distinct byte values a root secret must carry, above which a degenerate key is implausible. */
+const MINIMUM_KEY_ENTROPY_BYTES = 8;
+
+// The floor is a length check, and 32 zero bytes passes it. These are the two shapes that say the
+// secret was never generated: a constant, and a value drawn from a tiny alphabet.
+/** Refuses a root secret whose bytes carry no plausible entropy, naming what was wrong with it. */
+function assertKeyEntropy(key: Uint8Array<ArrayBuffer>): void {
+  const distinct = new Set(key).size;
+  if (distinct === 1) {
+    throw new Error("importAuthKeyRing: a secret whose bytes are all the same value is not a secret — generate one with a CSPRNG");
+  }
+  if (distinct < MINIMUM_KEY_ENTROPY_BYTES) {
+    throw new Error(
+      `importAuthKeyRing: a secret carrying only ${distinct} distinct byte values is not one a CSPRNG produced — at least ${MINIMUM_KEY_ENTROPY_BYTES} are required`,
+    );
+  }
+}
 
 // `Object.hasOwn` and not `ring.keys[kid]`: an attacker-supplied kid of `constructor` resolves to a
 // function through a bare property read, which turns a key lookup into a type confusion.
@@ -34,6 +55,7 @@ export async function importAuthKeyRing(secrets: [string, ...string[]]): Promise
     if (key.byteLength < MINIMUM_KEY_BYTES) {
       throw new Error(`importAuthKeyRing: each secret must be at least ${MINIMUM_KEY_BYTES} bytes (${MINIMUM_KEY_BYTES * 2} hex characters)`);
     }
+    assertKeyEntropy(key);
     const kid = await authKeyId(key);
     keys[kid] = key;
     activeKeyId ??= kid;
@@ -73,10 +95,9 @@ export async function resolveAuthServices(
 ): Promise<AuthServices> {
   const envObj = context.get(EnvKey);
   const cacheKey = envObj && typeof envObj === "object" ? envObj : null;
-  if (cacheKey) {
-    const hit = servicesCache.get(cacheKey);
-    if (hit) return hit;
-  }
+  const perEnv = cacheKey ? servicesCache.get(cacheKey) : undefined;
+  const hit = perEnv?.get(options);
+  if (hit) return hit;
 
   const algorithms = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
   // Resolving a binding throws, where a resolved store answers with a `Result`
@@ -86,6 +107,10 @@ export async function resolveAuthServices(
   assertRingUsable(keys);
 
   const services: AuthServices = { algorithms, keys };
-  if (cacheKey) servicesCache.set(cacheKey, services);
+  if (cacheKey) {
+    const held = perEnv ?? new WeakMap<AuthOptions, AuthServices>();
+    held.set(options, services);
+    servicesCache.set(cacheKey, held);
+  }
   return services;
 }

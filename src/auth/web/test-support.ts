@@ -129,6 +129,7 @@ export function fakeFactorService(kind: AuthFactorKind): AuthFactorService {
     capabilities: AUTH_FACTOR_CAPABILITIES[kind],
     challengeTtlMs: AUTH_OTP_TTL_MS,
     codeDigits: kind === "passkey" ? null : AUTH_OTP_DIGITS,
+    codePeriodSeconds: null,
     reissueAfterMs: kind === "email-otp" ? AUTH_OTP_COOLDOWN_MS : null,
     createChallenge: async () => err("unavailable" as const),
     verifyChallenge: async () => err("unavailable" as const),
@@ -151,6 +152,7 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     kind,
     secret: null,
     lastCounter: null,
+    failedAttempts: 0,
     confirmedAt: 1,
     createdAt: 1,
     updatedAt: 1,
@@ -161,7 +163,7 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     findEnrolled: async (_userId, kinds) => ok(rows.filter((row) => kinds.includes(row.kind))),
     enrol: async () => err(new Error("fakeFactorStore: enrol is not part of the view fixture") as never),
     confirm: async () => ok(true),
-    countAttempt: async () => ok(true),
+    countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
     advanceCounter: async () => ok(true),
     remove: async () => ok(true),
   };
@@ -225,6 +227,7 @@ export function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -262,6 +265,7 @@ export function fakeAuthUserStore(users: readonly AuthUser[]): UserStore {
     setWebAuthnIdIfAbsent: async () => ok(null),
     markEmailVerified: async () => ok(true),
     changeEmail: async () => ok(true),
+    revokeSessions: async () => ok(true),
   };
 }
 

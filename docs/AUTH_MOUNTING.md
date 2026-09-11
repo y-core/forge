@@ -81,7 +81,7 @@ applyMiddlewareChain(app, {                  // session first, then each group's
       enrolmentPaths: authEnrolmentPaths(paths.auth),
       stepUpPath: paths.auth.verify.show(),
       settledPath: paths.account.passkeys(),
-      freshStepUpMaxAgeMs: 900_000,        // optional; without it no state-changing request needs a recent step-up
+      freshStepUpMaxAgeMs: 900_000,        // optional; defaults to 15 minutes, `null` to opt out
     },
     origin: { allowedOrigins },
     rateLimit: { auth: signinLimit, "auth.verify": verifyLimit },
@@ -161,7 +161,7 @@ deliberately not admin-gated" into structure rather than a comment.
 | `auth.enrol` | `require-auth`, `require-pending-enrolment` | HTML | `GET /enrol/passkey`, `GET`/`POST /enrol/totp` |
 | `auth.enrol.ceremony` | `require-auth`, `require-pending-enrolment` | JSON | `POST /enrol/passkey/register/begin`, `POST /enrol/passkey/register/finish` |
 | `account` | `require-auth`, `require-enrolment`, `require-fresh-step-up` | HTML | `GET /passkeys`, `GET /passkeys/:id`, `GET /passkeys/:id/edit`, `PATCH`/`DELETE /passkeys/:id`, `GET`/`POST`/`DELETE /totp`, `GET`/`POST /email-change` |
-| `admin.users` | `require-auth`, `require-enrolment`, `require-admin` | HTML | `GET /users`, `GET /users/:id`, `GET /users/:id/edit`, `PATCH`/`DELETE /users/:id` |
+| `admin.users` | `require-auth`, `require-enrolment`, `require-admin`, `require-fresh-step-up` | HTML | `GET /users`, `GET /users/:id`, `GET /users/:id/edit`, `PATCH`/`DELETE /users/:id` |
 | `admin.elevate` | `require-auth`, `require-enrolment`, `require-fresh-step-up` | HTML | `GET`/`POST /elevate` |
 
 **The medium is not documentation — the guards refuse in it.** `createAuthGuards` hands each group's
@@ -185,12 +185,20 @@ policy loops between the enrolment guard and the page meant to satisfy it.
 enrollable kind**, because `enrolmentPaths` sends an owed enrolment to the kind it actually owes and
 `require-enrolment` refuses the `account` group while that enrolment is outstanding.
 
-**`require-fresh-step-up` gates only what changes something, and only when you ask for it.** Omit
-`freshStepUpMaxAgeMs` and it demands nothing; set it and every `POST`, `PATCH` or `DELETE` in those
-two groups needs a step-up inside the window — what stands between a long-lived session and stripping
-the second factor, removing a passkey or moving the address. A `GET` is always admitted: reading the
-page that offers an action is not the action. Under `{mode:"single"}` nothing could ever produce the
-mark, so it **throws** rather than leaving the freshness you asked for silently unenforced.
+**`require-fresh-step-up` gates only what changes something, and it is on unless you turn it off.**
+Every `POST`, `PATCH` or `DELETE` in those three groups needs a step-up inside the window — what
+stands between a long-lived session and stripping the second factor, removing a passkey, moving the
+address, or changing somebody's role. A `GET` is always admitted: reading the page that offers an
+action is not the action. Omit `freshStepUpMaxAgeMs` and the window is `AUTH_FRESH_STEP_UP_MS`,
+fifteen minutes; pass `null`, which is the only opt-out, and the guard demands nothing.
+
+**It asks the policy per user, so a deployment with no second factor is not locked out of its own
+admin pages.** The guard resolves the same factor policy `require-enrolment` does and demands a mark
+only where the answer is `step-up-required` — so `{mode:"single"}`, and a `when-enrolled` user with
+nothing enrolled, are admitted rather than sent to a page that could never clear the demand. Both
+guards read one resolution per request through a context variable, so mounting them together costs no
+second registry query. An unreadable factor registry answers **503**, the same as the other enrolment
+guards, because an unknown demand has no remedy page to redirect to.
 
 **`auth` and `auth.passkey` carry no guards and are still emitted, once you pass `origin` or name a
 rate limit.** Every mutating leaf of a group gets the allowlist check, and these two are exactly the
@@ -210,8 +218,9 @@ matching flow works at all.
 | An `AuthNotifier` | Forge ships the delivery contract and no mailer. Nothing is emailed until you implement `send`. |
 | An `AuthDeferral` — `executionCtx.waitUntil` in a Worker | Both signup and sign-in return before the credential is issued. Doing the work inline reopens the timing oracle the decoy exists to close. |
 | The email-change **confirm route** | Forge mounts no route that calls `AuthEmailChangeFlow.confirm`; see [`AUTH_FLOWS.md`](./AUTH_FLOWS.md) §5. |
-| A D1 binding and the applied `schema.sql` | The durable stores. The file ships in the package and is applied with `wrangler d1 execute --file`. |
-| A KV binding | The ephemeral ceremony stores — challenges and one-shot nonces. Their TTL floor is Workers KV's own 60 seconds. |
+| A D1 binding and the applied `schema.sql` | Every auth store — the durable ones and the ephemeral ceremony pair, challenges and one-shot nonces. The file ships in the package and is applied with `wrangler d1 execute --file`. |
+| A scheduled call to `purgeAuthEphemera(db, Date.now())` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
+| A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
 | A key ring | Hex root secrets, newest first, each at least 32 bytes, held as a Worker secret. |
 | `EmailOtpOptions.address` — `(userId) => string \| Promise<string>` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` — `(userId) => { name, displayName }` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
@@ -254,6 +263,12 @@ your app config grows the secrets that go with them. Every test fixture that bui
 a literal must now name fields it did not before. Expect to touch every such fixture in one pass; in
 the starter mount that was six. Building fixtures through a factory with defaults rather than as bare
 literals is what makes the next binding cost one line instead of six.
+
+**Every signed-in visitor signs in again within seven days.** `AUTH_SESSION_MAX_MS` is an absolute
+lifetime measured from the moment the session was established, not a window activity extends: a
+session an attacker took is otherwise one they can keep alive forever. A session carrying no
+established-at stamp — one issued before this field existed — is over rather than unbounded, so the
+mount that adds this signs its live population out once.
 
 **A stylesheet rebuild.** The `@source` line in §3 changes what Tailwind scans, so your CSS build
 depends on the installed package's contents as well as on your lockfile.

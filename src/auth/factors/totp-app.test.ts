@@ -15,7 +15,7 @@ const CURRENT = totpCounter(Math.floor(AT / 1000), { period: PERIOD });
 let ring: AuthKeyRing;
 
 beforeAll(async () => {
-  ring = await importAuthKeyRing(["ab".repeat(32)]);
+  ring = await importAuthKeyRing(["2c83943e16eb5c3741d74260b4751de91afeab397689cfd139f7263b21aec037"]);
 });
 
 interface StoreSpy {
@@ -31,6 +31,7 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
   const advances: { id: string; counter: number }[] = [];
   const removals: string[] = [];
   const spent = new Map<string, number>();
+  const lastSpentAt = new Map<string, number>();
 
   const store: FactorStore = {
     listByUser: (userId) => Promise.resolve(ok(rows.filter((row) => row.userId === userId))),
@@ -43,6 +44,7 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
         kind: input.kind,
         secret: input.secret ?? null,
         lastCounter: null,
+        failedAttempts: 0,
         confirmedAt: input.confirmedAt ?? null,
         createdAt: at,
         updatedAt: at,
@@ -50,13 +52,17 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
       rows.push(row);
       return Promise.resolve(ok(row));
     },
-    // The one statement the D1 adapter writes: it spends the guess and reports whether the budget
-    // admitted it, so a wrong code costs the same whether or not it was ever compared.
-    countAttempt: (id, _userId, maxAttempts) => {
-      const used = spent.get(id) ?? 0;
-      if (used >= maxAttempts) return Promise.resolve(ok(false));
-      spent.set(id, used + 1);
-      return Promise.resolve(ok(true));
+    // The one statement the D1 adapter writes: it spends the guess and hands back the row it was
+    // spent against, so a wrong code costs the same whether or not it was ever compared.
+    countAttempt: (userId, kind, maxAttempts, at, lockoutMs) => {
+      const row = rows.find((held) => held.userId === userId && held.kind === kind);
+      if (!row) return Promise.resolve(ok(null));
+      const used = spent.get(row.id) ?? 0;
+      const lastSpent = lastSpentAt.get(row.id) ?? 0;
+      if (used >= maxAttempts && lastSpent > at - lockoutMs) return Promise.resolve(ok(null));
+      spent.set(row.id, used >= maxAttempts ? 1 : used + 1);
+      lastSpentAt.set(row.id, at);
+      return Promise.resolve(ok({ ...row, failedAttempts: spent.get(row.id) ?? 0, updatedAt: at }));
     },
     confirm: (id, _userId, at) => {
       const index = rows.findIndex((row) => row.id === id);
@@ -94,7 +100,7 @@ function factor(spy: StoreSpy): AuthFactor {
   return row;
 }
 
-function build(spy: StoreSpy, maxAttempts?: number) {
+function build(spy: StoreSpy, maxAttempts?: number, lockoutMs?: number) {
   return createTotpAppFactor({
     keys: ring,
     factors: spy.store,
@@ -102,6 +108,7 @@ function build(spy: StoreSpy, maxAttempts?: number) {
     account: () => "person@example.com",
     period: PERIOD,
     ...(maxAttempts === undefined ? {} : { maxAttempts }),
+    ...(lockoutMs === undefined ? {} : { lockoutMs }),
   });
 }
 
@@ -179,13 +186,36 @@ describe("createTotpAppFactor — enrolment", () => {
     expect(factor(spy).confirmedAt).toBeNull();
   });
 
-  it("replaces an abandoned unconfirmed enrolment rather than locking the user out of enrolling again", async () => {
+  // The defect this closes: `beginEnrolment` rebuilt the row unconditionally, so re-rendering the
+  // enrol page — which a mistyped code does — offered a *different* secret from the one the visitor
+  // had just stored in their authenticator, and the ceremony could never be finished.
+  it("re-offers the unconfirmed row's own secret, so a re-render does not rotate it", async () => {
     const spy = fakeFactors();
     const first = await enrolled(spy);
     const second = await enrolled(spy);
+    expect(bytesToHex(second)).toBe(bytesToHex(first));
+    expect(spy.removals).toHaveLength(0);
+    expect(spy.rows).toHaveLength(1);
+  });
+
+  it("re-offers the same provisioning URI too, so the QR code a page renders does not change either", async () => {
+    const spy = fakeFactors();
+    const service = build(spy);
+    const first = await service.beginEnrolment(USER_ID, AT);
+    const second = await service.beginEnrolment(USER_ID, AT);
+    expect(first.ok && second.ok && second.data.options).toEqual(first.ok ? first.data.options : null);
+  });
+
+  // The one case that still rebuilds: the stored secret will not open, which is a rotated key and
+  // not an abandoned ceremony. Without it the user could never enrol again.
+  it("replaces a row whose sealed secret no longer opens, rather than locking the user out of enrolling", async () => {
+    const spy = fakeFactors();
+    const first = await enrolled(spy);
+    spy.rows[0] = { ...(spy.rows[0] as AuthFactor), secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
+    const second = await enrolled(spy);
     expect(spy.removals).toHaveLength(1);
     expect(spy.rows).toHaveLength(1);
-    expect(bytesToHex(first)).not.toBe(bytesToHex(second));
+    expect(bytesToHex(second)).not.toBe(bytesToHex(first));
   });
 
   it("refuses to re-enrol over a confirmed factor, which would disable a working one", async () => {
@@ -219,6 +249,22 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
     await service.verifyChallenge(USER_ID, await wrongCode(secret), AT);
     expect((await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).ok).toBe(true);
     expect(spy.spent.get(factor(spy).id)).toBe(0);
+  });
+
+  // The lock is a window and not a state: past it the next guess reopens the budget, so a user who
+  // mistyped five times is slowed down rather than locked out of their own account for good.
+  it("lets the lockout expire, so a correct code after the window succeeds", async () => {
+    const spy = fakeFactors();
+    const secret = await confirmed(spy);
+    const service = build(spy, 2, 60_000);
+    const wrong = await wrongCode(secret);
+
+    await service.verifyChallenge(USER_ID, wrong, AT);
+    await service.verifyChallenge(USER_ID, wrong, AT + 1);
+    expect(await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT + 59_000)).toEqual({ ok: false, error: "too-many-attempts" });
+    const later = AT + 61_001;
+    const code = await hotpCode(secret, totpCounter(Math.floor(later / 1000), { period: PERIOD }));
+    expect((await service.verifyChallenge(USER_ID, code, later)).ok).toBe(true);
   });
 
   it("holds the ceiling against the enrolment ceremony too, since that is a code the same secret answers", async () => {
@@ -291,6 +337,15 @@ describe("createTotpAppFactor — the ranges it holds at construction", () => {
     );
     expect(factory({ maxAttempts: 21 })).toThrow(
       "createTotpAppFactor: maxAttempts is 21, above the 20-attempt ceiling — beyond it the drift window hands an attacker more of a six-digit space than it withholds.",
+    );
+  });
+
+  it("refuses a lockout window shorter than a minute, and one past a day", () => {
+    expect(factory({ lockoutMs: 59_999 })).toThrow(
+      "createTotpAppFactor: lockoutMs is 59999, below the 60000-millisecond floor — a shorter window hands the spent budget back before an attacker has to slow down.",
+    );
+    expect(factory({ lockoutMs: 86_400_001 })).toThrow(
+      "createTotpAppFactor: lockoutMs is 86400001, above the 86400000-millisecond ceiling — a window past a day is the permanent lock this exists to prevent.",
     );
   });
 

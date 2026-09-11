@@ -49,6 +49,15 @@ export function createOtpStateStore(db: D1Client): OtpStateStore {
       return outcome.ok ? ok(outcome.data ? readOtpState(outcome.data) : null) : err(storeError("otpState.read", outcome.error));
     },
 
+    // The token is in the statement, so rolling back an issue whose mail never went out cannot wipe
+    // a second issue that raced it and did.
+    async discard(userId, token) {
+      const key = uuidKey(userId);
+      if (!key) return ok();
+      const outcome = await db.execute(sql`DELETE FROM auth_otp_state WHERE user_id = ${key} AND token = ${token}`);
+      return outcome.ok ? ok() : err(storeError("otpState.discard", outcome.error));
+    },
+
     async clear(userId) {
       const key = uuidKey(userId);
       if (!key) return ok();

@@ -94,6 +94,7 @@ function fakeFactors() {
         kind: input.kind,
         secret: input.secret ?? null,
         lastCounter: null,
+        failedAttempts: 0,
         confirmedAt: input.confirmedAt ?? null,
         createdAt: at,
         updatedAt: at,
@@ -108,7 +109,7 @@ function fakeFactors() {
       rows[index] = { ...row, confirmedAt: at, updatedAt: at };
       return Promise.resolve(ok(true));
     },
-    countAttempt: () => Promise.resolve(ok(true)),
+    countAttempt: (userId, kind) => Promise.resolve(ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     advanceCounter: () => Promise.resolve(ok(true)),
     remove: () => Promise.resolve(ok(true)),
   };
@@ -124,6 +125,7 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -139,6 +141,7 @@ function fakeUsers(seed: readonly AuthUser[]) {
     findByWebAuthnId: (webauthnId) =>
       Promise.resolve(ok(rows.find((row) => row.webauthnId !== null && base64urlEncode(row.webauthnId) === base64urlEncode(webauthnId)) ?? null)),
     create: () => Promise.reject(new Error("not used")),
+    revokeSessions: () => Promise.resolve(ok(true)),
     setWebAuthnIdIfAbsent: (id, webauthnId, at) => {
       minted.push(webauthnId);
       const index = rows.findIndex((row) => row.id === id);
@@ -429,7 +432,7 @@ describe("createPasskeyFactor — the ceremony lifetime it holds at construction
 
   it("refuses a lifetime below the floor, naming the factory and not a ceremony builder", () => {
     expect(factory(1)).toThrow(
-      `createPasskeyFactor: ttlSeconds is 1, below the ${AUTH_PASSKEY_TTL_MIN_SECONDS}-second floor — the shortest expiration the challenge store accepts, and less time than an authenticator prompt takes to answer.`,
+      `createPasskeyFactor: ttlSeconds is 1, below the ${AUTH_PASSKEY_TTL_MIN_SECONDS}-second floor — less time than an authenticator prompt takes to answer, so a slow one would lose the race.`,
     );
   });
 

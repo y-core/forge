@@ -68,6 +68,16 @@ const AUTH_PAGE_TITLES: Readonly<Record<AuthViewName, string>> = {
   adminElevate: "Elevate",
 };
 
+// Every auth page carries an identity, a pending sign-in or a list of a deployment's accounts, and
+// none of them may sit in a shared cache or come back off the back button after a sign-out. Merged
+// rather than forced, as `applyResponseHeaders` does: a caller stating its own caching keeps it.
+/** The page's headers with `Cache-Control: no-store` supplied where the caller named none. */
+function withNoStore(headers: Record<string, string> | undefined): Record<string, string> {
+  if (headers === undefined) return { "cache-control": "no-store" };
+  const named = Object.keys(headers).some((key) => key.toLowerCase() === "cache-control");
+  return named ? headers : { ...headers, "cache-control": "no-store" };
+}
+
 /** Renders one auth page as a full document or an htmx fragment, honouring a consumer's view override. @public */
 export async function renderAuthPage<Name extends AuthViewName>(
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings and params are irrelevant to the medium decision
@@ -77,14 +87,15 @@ export async function renderAuthPage<Name extends AuthViewName>(
   const View = options.views?.[options.name] ?? options.view ?? AUTH_VIEWS[options.name];
   const content = <View {...options.props} />;
   const status = options.status ?? 200;
+  const headers = withNoStore(options.headers);
 
   if (isPartial(c)) {
-    return fragmentResponse(await renderToString(content), status, options.headers);
+    return fragmentResponse(await renderToString(content), status, headers);
   }
 
   // Every auth page is `noindex`: a sign-in, an account page and an admin page each say who a
   // deployment's users are, and none of them is a page a search result should land on.
   const own: PageMeta = { title: AUTH_PAGE_TITLES[options.name], robots: "noindex" };
   const slot = { mount: "auth", page: options.name, meta: options.meta === undefined ? own : mergeMeta(own, options.meta) };
-  return renderShell(c, content, slot, options.headers === undefined ? { status } : { status, headers: options.headers });
+  return renderShell(c, content, slot, { status, headers });
 }

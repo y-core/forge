@@ -22,6 +22,9 @@ export function parseClientData(bytes: Uint8Array<ArrayBuffer>): Result<ClientDa
     challenge: candidate.challenge,
     origin: candidate.origin,
     ...(typeof candidate.crossOrigin === "boolean" ? { crossOrigin: candidate.crossOrigin } : {}),
+    // Kept rather than dropped with the other unknown keys: `verifyClientData` refuses on it, and a
+    // field this parse discarded is a field no verification could ever have judged.
+    ...(typeof candidate.topOrigin === "string" ? { topOrigin: candidate.topOrigin } : {}),
   });
 }
 
@@ -44,6 +47,11 @@ export function verifyClientData(bytes: Uint8Array<ArrayBuffer>, expected: Clien
   // The specification permits a cross-origin ceremony; forge does not, because a credential
   // created inside a third party's iframe is one this deployment never saw the user consent to.
   if (data.crossOrigin === true) return err("cross-origin");
+
+  // WebAuthn L3 §5.8.1 defines `topOrigin` only for a cross-origin ceremony, so one present without
+  // `crossOrigin: true` is a client misreporting itself — and reporting it at all is the same claim
+  // the line above refuses. Ignoring it would let that claim through unjudged.
+  if (data.topOrigin !== undefined) return err("top-origin");
 
   return ok(data);
 }

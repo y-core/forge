@@ -44,10 +44,13 @@ export function createIdentityLinkStore(db: D1Client): IdentityLinkStore {
       });
     },
 
-    async unlink(id) {
+    // The owner is in the statement and not in a prior read, matching every other child-table
+    // delete: a link id belonging to somebody else removes no row.
+    async unlink(id, userId) {
       const key = uuidKey(id);
-      if (!key) return ok(false);
-      const outcome = await db.execute(sql`DELETE FROM auth_identity_links WHERE id = ${key}`);
+      const owner = uuidKey(userId);
+      if (!key || !owner) return ok(false);
+      const outcome = await db.execute(sql`DELETE FROM auth_identity_links WHERE id = ${key} AND user_id = ${owner}`);
       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("identityLinks.unlink", outcome.error));
     },
   };

@@ -9,9 +9,12 @@ import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
 import { AuthStoreError } from "../errors";
 import { createAdminUserStore } from "./admin-users";
+import { createChallengeStore } from "./challenges";
 import { createCredentialStore } from "./credentials";
+import { purgeAuthEphemera } from "./ephemera";
 import { createFactorStore } from "./factors";
 import { createIdentityLinkStore } from "./identity-links";
+import { createNonceStore } from "./nonces";
 import { createOtpStateStore } from "./otp-state";
 import { blobBytes, MAX_PAGE_LIMIT, storeError } from "./rows";
 import { createUserStore } from "./users";
@@ -50,6 +53,14 @@ describe("storeError", () => {
     expect([error.code, error.operation, error.constraint]).toEqual(["conflict", "users.create", "auth_users.email_key"]);
   });
 
+  // A CHECK is the schema refusing the caller's value — an address that NFKC-expanded past 254
+  // characters. Folded into `unavailable` it would render a client's own mistake as an outage.
+  it("reports a CHECK failure as invalid, not as unavailable", () => {
+    const cause = new Error("D1_ERROR: CHECK constraint failed: auth_users: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_CHECK)");
+    const error = storeError("users.create", cause);
+    expect([error.code, error.operation, error.constraint, error.cause]).toEqual(["invalid", "users.create", undefined, cause]);
+  });
+
   it("reports anything else as unavailable, carrying the cause", () => {
     const cause = new Error("D1_ERROR: network");
     const error = storeError("users.findById", cause);
@@ -68,14 +79,14 @@ describe("every write reports whether a row changed", () => {
     return [
       users.markEmailVerified(USER_ID, 1),
       users.changeEmail(USER_ID, "c@d.test", "c@d.test", 1),
+      users.revokeSessions(USER_ID, 1),
       factors.confirm(OTHER_ID, USER_ID, 1),
-      factors.countAttempt(OTHER_ID, USER_ID, 5, 1),
       factors.advanceCounter(OTHER_ID, USER_ID, 57, 1),
       factors.remove(OTHER_ID, USER_ID),
       credentials.recordUse(OTHER_ID, 1, false, 1),
       credentials.relabel(OTHER_ID, USER_ID, "Work laptop", 1),
       credentials.removeForUser(OTHER_ID, USER_ID),
-      links.unlink(OTHER_ID),
+      links.unlink(OTHER_ID, USER_ID),
     ];
   }
 
@@ -112,6 +123,7 @@ describe("an id that is not a canonical UUID", () => {
       ["users.setWebAuthnIdIfAbsent", users.setWebAuthnIdIfAbsent(id, new Uint8Array([1]), 1), none],
       ["users.markEmailVerified", users.markEmailVerified(id, 1), unchanged],
       ["users.changeEmail", users.changeEmail(id, "c@d.test", "c@d.test", 1), unchanged],
+      ["users.revokeSessions", users.revokeSessions(id, 1), unchanged],
       ["adminUsers.findById", admins.findById(id), none],
       ["adminUsers.list", admins.list({ after: id }), empty],
       ["adminUsers.search", admins.search("ada", { after: id }), empty],
@@ -123,8 +135,8 @@ describe("an id that is not a canonical UUID", () => {
       ["factors.findEnrolled", factors.findEnrolled(id, ["passkey"]), empty],
       ["factors.confirm", factors.confirm(id, USER_ID, 1), unchanged],
       ["factors.confirm — owner", factors.confirm(OTHER_ID, id, 1), unchanged],
-      ["factors.countAttempt", factors.countAttempt(id, USER_ID, 5, 1), unchanged],
-      ["factors.countAttempt — owner", factors.countAttempt(OTHER_ID, id, 5, 1), unchanged],
+      ["factors.countAttempt", factors.countAttempt(id, "totp-app", 5, 1, 900_000), none],
+
       ["factors.advanceCounter", factors.advanceCounter(id, USER_ID, 57, 1), unchanged],
       ["factors.advanceCounter — owner", factors.advanceCounter(OTHER_ID, id, 57, 1), unchanged],
       ["factors.remove", factors.remove(id, USER_ID), unchanged],
@@ -136,10 +148,12 @@ describe("an id that is not a canonical UUID", () => {
       ["credentials.removeForUser", credentials.removeForUser(id, USER_ID), unchanged],
       ["credentials.removeForUser — owner", credentials.removeForUser(OTHER_ID, id), unchanged],
       ["identityLinks.listByUser", links.listByUser(id), empty],
-      ["identityLinks.unlink", links.unlink(id), unchanged],
+      ["identityLinks.unlink", links.unlink(id, USER_ID), unchanged],
+      ["identityLinks.unlink — owner", links.unlink(OTHER_ID, id), unchanged],
       ["otpState.issue", otp.issue(id, { token: "c2VhbGVk", attempts: 0, issuedAt: 1, expiresAt: 2 }, 60_000), unchanged],
       ["otpState.countAttempt", otp.countAttempt(id, 3, 1), none],
       ["otpState.read", otp.read(id, 1), none],
+      ["otpState.discard", otp.discard(id, "c2VhbGVk"), { ok: true, data: undefined }],
       ["otpState.clear", otp.clear(id), { ok: true, data: undefined }],
     ];
   }
@@ -333,7 +347,7 @@ describe("schema drift", () => {
     await factors.findEnrolled(USER_ID, ["passkey", "totp-app"]);
     await factors.enrol({ userId: USER_ID, kind: "passkey" }, 1);
     await factors.confirm(OTHER_ID, USER_ID, 1);
-    await factors.countAttempt(OTHER_ID, USER_ID, 5, 1);
+    await factors.countAttempt(USER_ID, "totp-app", 5, 1, 900_000);
     await factors.advanceCounter(OTHER_ID, USER_ID, 57, 1);
     await factors.remove(OTHER_ID, USER_ID);
     await credentials.listByUser(USER_ID);
@@ -345,16 +359,29 @@ describe("schema drift", () => {
     await links.find("github", "42");
     await links.listByUser(USER_ID);
     await links.link({ userId: USER_ID, provider: "github", subject: "42" }, 1);
-    await links.unlink(OTHER_ID);
+    await links.unlink(OTHER_ID, USER_ID);
     await otp.issue(USER_ID, { token: "c2VhbGVk", attempts: 0, issuedAt: 1, expiresAt: 2 }, 60_000);
     await otp.countAttempt(USER_ID, 3, 1);
     await otp.read(USER_ID, 1);
+    await otp.discard(USER_ID, "c2VhbGVk");
     await otp.clear(USER_ID);
+    await createChallengeStore(client).put("k1", { challenge: "Y2g", sessionId: "s1" }, 300);
+    await createChallengeStore(client).take("k1");
+    await createNonceStore(client).markConsumed("n1", 900);
+    await purgeAuthEphemera(client, 1);
     return db.calls.map((call) => call.sql);
   }
 
-  it("parses the five tables and their columns out of the DDL", () => {
-    expect([...TABLES.keys()].sort()).toEqual(["auth_credentials", "auth_factors", "auth_identity_links", "auth_otp_state", "auth_users"]);
+  it("parses every table and its columns out of the DDL", () => {
+    expect([...TABLES.keys()].sort()).toEqual([
+      "auth_challenges",
+      "auth_credentials",
+      "auth_factors",
+      "auth_identity_links",
+      "auth_nonces",
+      "auth_otp_state",
+      "auth_users",
+    ]);
     expect([...(TABLES.get("auth_users") ?? [])].sort()).toEqual([
       "created_at",
       "deactivated_at",
@@ -363,6 +390,7 @@ describe("schema drift", () => {
       "email_verified_at",
       "id",
       "is_admin",
+      "sessions_invalid_before",
       "updated_at",
       "webauthn_id",
     ]);

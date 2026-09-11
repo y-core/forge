@@ -13,7 +13,10 @@ import { cn } from "../../../ui/core/utils/cn";
 import { AuthTimestamp } from "./timestamp";
 import type { TotpEnrolViewProps } from "./types";
 
-const CODE_LENGTH = 6;
+// The defaults are forge's own factor's, not a second opinion about it: a page mounted without the
+// registry's numbers still renders the shape `createTotpAppFactor` asks for.
+const DEFAULT_CODE_DIGITS = 6;
+const DEFAULT_CODE_PERIOD_SECONDS = 30;
 
 const SECRET_BOX = "rounded-field border-field border-border px-3 py-2 font-mono text-sm break-all text-foreground";
 
@@ -26,12 +29,16 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
   removePath,
   csrfToken,
   csrfHeader,
+  codeDigits,
+  codePeriodSeconds,
   fieldError,
   icon: AppIcon,
   class: cls,
   level,
 }) => {
   const Heading = `h${level ?? 1}` as "h1";
+  const digits = codeDigits ?? DEFAULT_CODE_DIGITS;
+  const period = codePeriodSeconds ?? DEFAULT_CODE_PERIOD_SECONDS;
   return state.status === "enrolled" ? (
     <Card class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
@@ -84,11 +91,11 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
           <FormField name='code' invalid={fieldError !== undefined}>
             <FormField.Label name='code'>Code from your app</FormField.Label>
             <OtpInput
-              length={CODE_LENGTH}
+              length={digits}
               invalid={fieldError !== undefined}
               field={{ name: "code", invalid: fieldError !== undefined, description: true }}
             />
-            <FormField.Description name='code'>Six digits, refreshed by the app every thirty seconds.</FormField.Description>
+            <FormField.Description name='code'>{`${digits} digits, refreshed by the app every ${period} seconds.`}</FormField.Description>
             {fieldError === undefined ? null : (
               <FormField.Error name='code'>
                 <AppIcon name='alert' class='me-2 inline-block size-4' />

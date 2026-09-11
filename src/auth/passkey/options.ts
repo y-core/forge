@@ -45,7 +45,7 @@ export function passkeyTtlSeconds(operation: string, requested: number | undefin
     min: AUTH_PASSKEY_TTL_MIN_SECONDS,
     max: AUTH_PASSKEY_TTL_MAX_SECONDS,
     unit: "second",
-    floor: "the shortest expiration the challenge store accepts, and less time than an authenticator prompt takes to answer",
+    floor: "less time than an authenticator prompt takes to answer, so a slow one would lose the race",
     ceiling: "a replayable ceremony challenge must not stay live longer than an emailed code",
   });
 }

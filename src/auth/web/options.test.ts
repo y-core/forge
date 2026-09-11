@@ -4,8 +4,8 @@ import { RequestContext } from "@remix-run/fetch-router";
 
 import type { AppContext } from "../../context/types";
 import { csrfMinterCtx } from "../../form/csrf";
-import { authNow, authPasskeyContract, authReturnPath, authSettledPath } from "./options";
-import { fakeAuthWebOptions } from "./test-support";
+import { authNow, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
+import { fakeAuthServices, fakeAuthWebOptions } from "./test-support";
 
 function context(url: string): AppContext {
   const c = new RequestContext(new Request(url));
@@ -16,6 +16,55 @@ function context(url: string): AppContext {
 describe("authNow", () => {
   it("reads the injected clock rather than the wall clock", () => {
     expect(authNow(fakeAuthWebOptions({ now: () => 42 }))).toBe(42);
+  });
+});
+
+// `resolveServices` rebuilds every store, and one request runs a guard, a loader and often an
+// action — each of which asked for them separately.
+describe("authServices", () => {
+  it("builds this request's services once, however many callers ask for them", async () => {
+    let calls = 0;
+    const options = fakeAuthWebOptions({
+      resolveServices: () => {
+        calls++;
+        return fakeAuthServices();
+      },
+    });
+    const c = context("https://app.example/account/passkeys");
+
+    const first = await authServices(c, options);
+    const second = await authServices(c, options);
+    expect(calls).toBe(1);
+    expect(second).toBe(first);
+  });
+
+  it("memoises the promise, so two parallel callers share one build rather than racing two", async () => {
+    let calls = 0;
+    const options = fakeAuthWebOptions({
+      resolveServices: async () => {
+        calls++;
+        await Promise.resolve();
+        return fakeAuthServices();
+      },
+    });
+    const c = context("https://app.example/account/passkeys");
+
+    const [first, second] = await Promise.all([authServices(c, options), authServices(c, options)]);
+    expect(calls).toBe(1);
+    expect(second).toBe(first);
+  });
+
+  it("builds again for a second request, since a ceremony is bound to its own session", async () => {
+    let calls = 0;
+    const options = fakeAuthWebOptions({
+      resolveServices: () => {
+        calls++;
+        return fakeAuthServices();
+      },
+    });
+    await authServices(context("https://app.example/a"), options);
+    await authServices(context("https://app.example/b"), options);
+    expect(calls).toBe(2);
   });
 });
 

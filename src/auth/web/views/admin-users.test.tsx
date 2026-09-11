@@ -27,6 +27,7 @@ function user(overrides: Partial<AuthUser> = {}): AuthUser {
     emailVerifiedAt: CREATED_AT,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     webauthnId: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,

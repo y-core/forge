@@ -17,7 +17,18 @@ import {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../../passkey-contract";
-import { attrsOf, authFactorGrid, elementOf, factorDemand, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../test-support";
+import {
+  attrOf,
+  attrsOf,
+  authFactorGrid,
+  elementOf,
+  factorDemand,
+  HOSTILE_TEXT,
+  HOSTILE_TEXT_ESCAPED,
+  tagOf,
+  textOf,
+  valuesOf,
+} from "../test-support";
 import { PasskeyEnrolView } from "./passkey-enrol";
 import type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./types";
 
@@ -32,7 +43,16 @@ const CONTRACT: AuthPasskeyContract = {
 };
 
 function enrol(props: Partial<PasskeyEnrolViewProps> = {}) {
-  return render(<PasskeyEnrolView contract={CONTRACT} signoutPath='/auth/signout' email='ada@example.com' icon={AppIcon} {...props} />);
+  return render(
+    <PasskeyEnrolView
+      contract={CONTRACT}
+      signoutPath='/auth/signout'
+      signoutCsrfToken='csrf-signout'
+      email='ada@example.com'
+      icon={AppIcon}
+      {...props}
+    />,
+  );
 }
 
 describe("PasskeyEnrolView contract attributes", () => {
@@ -121,5 +141,23 @@ describe("PasskeyEnrolView and the step-up/enrolment distinction", () => {
     expect(textOf(html, "h1", 'class="text-xl"')).toBe("Add a passkey");
     expect(attrsOf(html, `data-scope="${PASSKEY_SCOPE}"`)[PASSKEY_MODE_ATTR]).toBe("registration");
     expect(tagOf(html, 'id="field-code"')).toBe("");
+  });
+});
+
+// The defect this closes: the way out of this page was `<Link href={signoutPath}>`, a GET to a route
+// `routes.ts` declares as `post("/signout")` — so it could not work at all, and a visitor who could
+// not enrol now had no way off the page.
+describe("PasskeyEnrolView sign-out", () => {
+  it("submits the sign-out rather than linking it, since the route is POST-only", async () => {
+    const html = await enrol();
+    expect(attrOf(html, 'data-ref="passkey-signout"', "type")).toBe("submit");
+    expect(tagOf(html, 'href="/auth/signout"')).toBe("");
+  });
+
+  it("posts to the sign-out path with the token the route needs, so csrfProtection admits it", async () => {
+    const html = await enrol();
+    expect(attrOf(html, 'data-slot="form"', "method")).toBe("post");
+    expect(attrOf(html, 'data-slot="form"', "action")).toBe("/auth/signout");
+    expect(attrOf(html, 'data-slot="form-csrf"', "value")).toBe("csrf-signout");
   });
 });

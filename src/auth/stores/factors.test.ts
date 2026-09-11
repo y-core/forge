@@ -6,6 +6,7 @@ import type { D1Client, D1Database } from "../../storage/db/types";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
+import type { AuthFactor, AuthStoreResult } from "../types";
 import { createFactorStore } from "./factors";
 
 const USER_ID = uuidv7();
@@ -50,6 +51,7 @@ describe("createFactorStore", () => {
       kind: "totp-app",
       secret,
       lastCounter: null,
+      failedAttempts: 0,
       confirmedAt: null,
       createdAt: 5_000,
       updatedAt: 5_000,
@@ -64,6 +66,7 @@ describe("createFactorStore", () => {
         kind: "totp-app",
         secret: [9, 8, 7],
         last_counter: 41,
+        failed_attempts: 0,
         confirmed_at: 6_000,
         created_at: 1,
         updated_at: 2,
@@ -76,6 +79,7 @@ describe("createFactorStore", () => {
       kind: "totp-app",
       secret: new Uint8Array([9, 8, 7]),
       lastCounter: 41,
+      failedAttempts: 0,
       confirmedAt: 6_000,
       createdAt: 1,
       updatedAt: 2,
@@ -90,6 +94,7 @@ describe("createFactorStore", () => {
         kind: "email-otp",
         secret: null,
         last_counter: null,
+        failed_attempts: 0,
         confirmed_at: null,
         created_at: 1,
         updated_at: 2,
@@ -120,25 +125,91 @@ describe("createFactorStore", () => {
   // The budget is spent by the statement that admits the guess, so N parallel guesses spend N of it
   // rather than each comparing against a count none of them has written.
   it("spends a guess and admits it in one statement, and clears the count on an accepted step", async () => {
-    let spent = 0;
-    const [client, db] = writerOf((sql, params) => {
-      if (sql.includes("SET failed_attempts = failed_attempts + 1")) {
-        if (spent >= (params[3] as number)) return 0;
-        spent += 1;
-        return 1;
-      }
-      spent = 0;
-      return 1;
-    });
+    const [client, db] = writerOf(...spendingRow());
     const factors = createFactorStore(client);
 
-    expect(await factors.countAttempt(OTHER_ID, USER_ID, 2, 1)).toEqual({ ok: true, data: true });
-    expect(await factors.countAttempt(OTHER_ID, USER_ID, 2, 2)).toEqual({ ok: true, data: true });
-    expect(await factors.countAttempt(OTHER_ID, USER_ID, 2, 3)).toEqual({ ok: true, data: false });
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 1, LOCKOUT))).toBe(true);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 2, LOCKOUT))).toBe(true);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 3, LOCKOUT))).toBe(false);
     await factors.advanceCounter(OTHER_ID, USER_ID, 57, 4);
-    expect(await factors.countAttempt(OTHER_ID, USER_ID, 2, 5)).toEqual({ ok: true, data: true });
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 5, LOCKOUT))).toBe(true);
 
-    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toContain("WHERE id = ? AND user_id = ? AND failed_attempts < ?");
+    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toContain("WHERE user_id = ? AND kind = ? AND (failed_attempts < ? OR updated_at <= ?)");
+    expect(db.calls[0]?.params).toEqual([2, 1 - LOCKOUT, 1, uuidToBytes(USER_ID), "totp-app", 2, 1 - LOCKOUT]);
     expect(db.calls[3]?.sql.replace(/\s+/g, " ")).toContain("SET last_counter = ?, failed_attempts = 0");
   });
+
+  // One statement, not a `find` and then a spend: the row the guess was compared against is the row
+  // the guess was spent on, and the sealed secret rides out of the same write.
+  it("returns the factor the guess was spent against, through RETURNING", async () => {
+    const [client, db] = writerOf(...spendingRow());
+    const spent = await createFactorStore(client).countAttempt(USER_ID, "totp-app", 2, 1, LOCKOUT);
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toContain("RETURNING *");
+    expect(spent.ok && spent.data).toEqual({
+      id: OTHER_ID,
+      userId: USER_ID,
+      kind: "totp-app",
+      secret: new Uint8Array([9, 8, 7]),
+      lastCounter: 41,
+      failedAttempts: 1,
+      confirmedAt: 6_000,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+  });
+
+  // The defect this closes: a spent budget stayed spent until a correct code, and a user who could
+  // not produce one was locked out of the factor for good.
+  it("refuses a guess inside the lockout window and admits one after it, with the count reset to 1", async () => {
+    const [client] = writerOf(...spendingRow());
+    const factors = createFactorStore(client);
+
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 1, LOCKOUT))).toBe(true);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 2, LOCKOUT))).toBe(true);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 2 + LOCKOUT - 1, LOCKOUT))).toBe(false);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 2 + LOCKOUT, LOCKOUT))).toBe(true);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 3 + LOCKOUT, LOCKOUT))).toBe(true);
+    expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 4 + LOCKOUT, LOCKOUT))).toBe(false);
+  });
 });
+
+const LOCKOUT = 900_000;
+
+/** Whether the budget admitted the guess — the row is what a spend now answers, `null` the refusal. */
+async function admits(spent: Promise<AuthStoreResult<AuthFactor | null>>): Promise<boolean> {
+  const outcome = await spent;
+  return outcome.ok && outcome.data !== null;
+}
+
+/** A row double that evaluates the adapter's own statement: the budget, the window and the reset it writes. */
+function spendingRow(): [(sql: string, params: unknown[]) => number, (sql: string, params: unknown[]) => unknown[]] {
+  let failed = 0;
+  let updatedAt = 0;
+  return [
+    (sql) => {
+      if (!sql.includes("SET failed_attempts = CASE")) failed = 0;
+      return 1;
+    },
+    (sql, params) => {
+      if (!sql.includes("SET failed_attempts = CASE")) return [];
+      const [maxAttempts, lockedUntil, at] = params as [number, number, number];
+      if (!(failed < maxAttempts || updatedAt <= lockedUntil)) return [];
+      failed = failed >= maxAttempts && updatedAt <= lockedUntil ? 1 : failed + 1;
+      updatedAt = at;
+      return [
+        {
+          id: uuidToBytes(OTHER_ID),
+          user_id: uuidToBytes(USER_ID),
+          kind: "totp-app",
+          secret: [9, 8, 7],
+          last_counter: 41,
+          failed_attempts: failed,
+          confirmed_at: 6_000,
+          created_at: 1,
+          updated_at: at,
+        },
+      ];
+    },
+  ];
+}

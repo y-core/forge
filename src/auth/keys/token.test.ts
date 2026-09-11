@@ -17,8 +17,8 @@ import {
 } from "./token";
 import type { AuthTokenPurpose } from "./types";
 
-const SECRET_A = "a1".repeat(32);
-const SECRET_B = "b2".repeat(32);
+const SECRET_A = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
+const SECRET_B = "49e2bb7eab54cf09b409ffafd3fa8a8a955a60eb972faacaefbed3dbd3207132";
 const NOW = 1_760_000_000_000;
 const TTL = 900_000;
 
@@ -258,6 +258,47 @@ describe("authNonceKey", () => {
   });
 });
 
+// Every alias decodes to the same frame and passes the tag, so without this each spelling of one
+// spent token would derive a fresh nonce key and open again.
+describe("non-canonical base64url spellings of one token", () => {
+  /** The three aliases `base64urlDecode` accepts for one token, or `null` where the token happens to have none. */
+  function aliasesOf(token: string): { name: string; alias: string | null }[] {
+    const padded = token.length % 4 === 0 ? null : `${token}=`;
+    const standard = /[-_]/.test(token) ? token.replace(/-/g, "+").replace(/_/g, "/") : null;
+    // The last character's low bits fall past the byte boundary, so flipping one changes the string and not the frame.
+    const spare = (4 - (token.length % 4)) % 4;
+    const last = token.at(-1) ?? "";
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const lowBits = spare === 0 ? null : `${token.slice(0, -1)}${alphabet[alphabet.indexOf(last) ^ 1]}`;
+    return [
+      { name: "padded", alias: padded },
+      { name: "standard alphabet", alias: standard },
+      { name: "low-bit flip", alias: lowBits },
+    ];
+  }
+
+  it("refuses each alias from decodeAuthToken and authNonceKey while the canonical token still opens", async () => {
+    const ring = await ringOf(SECRET_A);
+    let covered = 0;
+    for (let attempt = 0; covered < 3 && attempt < 32; attempt++) {
+      const token = await encodeAuthToken(ring, "verify", "x".repeat(attempt), TTL, { now: NOW });
+      expect(await decodeAuthToken(ring, "verify", token, { now: NOW })).toMatchObject({ ok: true });
+      expect((await authNonceKey(ring, token)).ok).toBe(true);
+      covered = 0;
+      for (const { name, alias } of aliasesOf(token)) {
+        if (alias === null) continue;
+        covered += 1;
+        expect(`${name}: same frame`).toBe(`${name}: ${base64urlEncode(base64urlDecode(alias)) === token ? "same frame" : "different frame"}`);
+        expect(`${name}: ${JSON.stringify(await decodeAuthToken(ring, "verify", alias, { now: NOW }))}`).toBe(
+          `${name}: {"ok":false,"error":"malformed"}`,
+        );
+        expect(`${name}: ${JSON.stringify(await authNonceKey(ring, alias))}`).toBe(`${name}: {"ok":false,"error":"malformed"}`);
+      }
+    }
+    expect(covered).toBe(3);
+  });
+});
+
 describe("sealAtRest / openAtRest", () => {
   const PLAINTEXT = new Uint8Array([9, 8, 7, 6, 5]) as Uint8Array<ArrayBuffer>;
   const CONTEXT = utf8Encode("totp-app u1");
@@ -313,13 +354,53 @@ describe("sealAtRest / openAtRest", () => {
   });
 });
 
+// The raw subkey was cached and the imported key was not, so every seal, open and sign re-ran
+// `crypto.subtle.importKey` — once per token operation, on the request path.
+describe("the imported key is cached, not just the derived bytes", () => {
+  it("re-imports nothing once a purpose has been used, however many operations follow", async () => {
+    const ring = await importAuthKeyRing([SECRET_A]);
+    // The first operation pays for the HKDF derivation and the import both; what this measures is
+    // every operation after it, which used to pay for the import again each time.
+    const warm = await encodeAuthToken(ring, "verify", "a", 60_000);
+    await authNonceKey(ring, warm);
+
+    // oxlint-disable-next-line typescript/no-explicit-any -- swapping the platform method for a counter
+    const original = (crypto.subtle as any).importKey;
+    let imports = 0;
+    // oxlint-disable-next-line typescript/no-explicit-any -- swapping the platform method for a counter
+    (crypto.subtle as any).importKey = (...args: unknown[]) => {
+      imports++;
+      return original.apply(crypto.subtle, args);
+    };
+    try {
+      await decodeAuthToken(ring, "verify", warm);
+      await decodeAuthToken(ring, "verify", await encodeAuthToken(ring, "verify", "b", 60_000));
+      await authNonceKey(ring, warm);
+      expect(imports).toBe(0);
+    } finally {
+      // oxlint-disable-next-line typescript/no-explicit-any -- restoring the platform method
+      (crypto.subtle as any).importKey = original;
+    }
+  });
+
+  it("keeps the two algorithms apart, so an AEAD key is never handed to the signer", async () => {
+    const ring = await importAuthKeyRing([SECRET_A]);
+    const token = await encodeAuthToken(ring, "verify", "a", 60_000);
+    // A key imported for AES-GCM cannot sign; that this resolves at all is the separation holding.
+    expect((await authNonceKey(ring, token)).ok).toBe(true);
+  });
+});
+
 describe("authNonceTtlSeconds", () => {
   it("rounds a lifetime up to whole seconds", () => {
     expect(authNonceTtlSeconds(900_001)).toBe(901);
   });
 
-  it("never answers under the floor KV itself enforces", () => {
-    expect(authNonceTtlSeconds(1)).toBe(AUTH_KV_MIN_TTL_SECONDS);
+  // No floor any more: the nonce store is a SQL table whose rows a purge reclaims, so a short
+  // lifetime shortens only how long a consumed key is worth keeping — never whether it is consumed.
+  it("carries a short lifetime through rather than clamping it up to a KV floor", () => {
+    expect(authNonceTtlSeconds(1)).toBe(1);
+    expect(authNonceTtlSeconds(-5)).toBe(0);
     expect(authNonceTtlSeconds(AUTH_KV_MIN_TTL_SECONDS * 1000)).toBe(AUTH_KV_MIN_TTL_SECONDS);
   });
 });

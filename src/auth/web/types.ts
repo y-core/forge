@@ -55,6 +55,8 @@ export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
   readonly returnParam?: string;
   /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
   readonly medium?: AuthMedium;
+  /** This request's clock, which the absolute session lifetime is measured against. Defaults to `Date.now`. */
+  readonly now?: () => number;
 }
 
 /** What the two enrolment guards need to tell an owed enrolment from an owed step-up from neither. @public */
@@ -73,10 +75,12 @@ export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
   readonly stepUpMaxAgeMs?: number;
   // Separate from `stepUpMaxAgeMs` because they answer different questions: that one is how long a
   // session stays signed in, this one is how recently the visitor proved they are still there.
-  /** How recent a step-up a state-changing request must carry, in milliseconds. Omit and `requireFreshStepUp` demands nothing. */
-  readonly freshStepUpMaxAgeMs?: number;
+  /** How recent a step-up a state-changing request must carry, in milliseconds. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` and `requireFreshStepUp` demands nothing. */
+  readonly freshStepUpMaxAgeMs?: number | null;
   /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
   readonly medium?: AuthMedium;
+  /** This request's clock, which the absolute session lifetime is measured against. Defaults to `Date.now`. */
+  readonly now?: () => number;
 }
 
 /** The built route maps a guard chain attaches to; a builder that was never called is simply absent. @public */

@@ -6,8 +6,8 @@ import { Alert } from "../../../ui/core/alert";
 import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
+import { Form } from "../../../ui/core/form";
 import { Input } from "../../../ui/core/input";
-import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
 import {
   PASSKEY,
@@ -54,7 +54,17 @@ export const AuthPasskeyStatus: FC<{ unsupported: string }> = ({ unsupported }) 
 // Design Read: a signed-in visitor who owes a second factor; the one action is creating a passkey;
 // failure is a declined or unsupported ceremony — `destructive` Alert above, trigger stays put.
 /** The page a visitor lands on when the factor policy says they still owe an enrolment. @public */
-export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({ contract, signoutPath, email, error, icon: AppIcon, class: cls, level }) => {
+export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({
+  contract,
+  signoutPath,
+  signoutCsrfToken,
+  csrfHeader,
+  email,
+  error,
+  icon: AppIcon,
+  class: cls,
+  level,
+}) => {
   const Heading = `h${level ?? 1}` as "h1";
   return (
     <Card class={cn("mx-auto w-full max-w-md", cls)}>
@@ -86,9 +96,17 @@ export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({ contract, signoutP
         </AuthPasskeyScope>
       </Card.Content>
       <Card.Footer>
-        <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
-          Not now? <Link href={signoutPath}>Sign out</Link> and finish on a device you have to hand.
-        </p>
+        {/* A form and not a link: `/signout` is POST-only, so the anchor this replaced could not
+            work at all — the route has no GET handler to answer it. */}
+        <div class='flex max-w-prose flex-wrap items-baseline gap-1 text-sm text-pretty text-muted-foreground'>
+          <span>Not now?</span>
+          <Form action={signoutPath} csrfToken={signoutCsrfToken} csrfHeader={csrfHeader}>
+            <Button type='submit' tone='neutral' appearance='ghost' size='sm' data-ref='passkey-signout'>
+              Sign out
+            </Button>
+          </Form>
+          <span>and finish on a device you have to hand.</span>
+        </div>
       </Card.Footer>
     </Card>
   );

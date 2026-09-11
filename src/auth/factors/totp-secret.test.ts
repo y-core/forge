@@ -8,8 +8,8 @@ import { openTotpSecret, sealTotpSecret } from "./totp-secret";
 const SECRET = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) as Uint8Array<ArrayBuffer>;
 const USER_ID = uuidv7();
 
-const ROOT_A = "11".repeat(32);
-const ROOT_B = "22".repeat(32);
+const ROOT_A = "e6064ea1614f137496a5d1ccd3408255da4cc39f26900b93f9dc63e4bd8543e8";
+const ROOT_B = "dfa8da70879b5fb481bb6db0032ab0fa7bda29421d4a3714fae42a018b54210d";
 
 let ringA: AuthKeyRing;
 let ringB: AuthKeyRing;

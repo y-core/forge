@@ -71,7 +71,11 @@ export function storeError(operation: string, cause: unknown): AuthStoreError {
   // D1 reports `UNIQUE constraint failed: auth_users.email_key: SQLITE_CONSTRAINT (extended: …)`,
   // so the colon has to end the capture or the index name comes back with one stuck to it.
   const constraint = /UNIQUE constraint failed:\s*([^\s:)]+)/i.exec(message)?.[1];
-  return constraint ? new AuthStoreError("conflict", operation, { constraint, cause }) : new AuthStoreError("unavailable", operation, { cause });
+  if (constraint) return new AuthStoreError("conflict", operation, { constraint, cause });
+  // A CHECK is the schema refusing the caller's value — an over-long address, say. Folding it into
+  // `unavailable` would render a client's own mistake to them as this deployment being down.
+  if (/CHECK constraint failed/i.test(message)) return new AuthStoreError("invalid", operation, { cause });
+  return new AuthStoreError("unavailable", operation, { cause });
 }
 
 function flag(value: number): boolean {
@@ -88,6 +92,7 @@ export function readUser(row: UserRow): AuthUser {
     webauthnId: row.webauthn_id === null || row.webauthn_id === undefined ? null : blobBytes(row.webauthn_id),
     isAdmin: flag(row.is_admin),
     deactivatedAt: row.deactivated_at,
+    sessionsInvalidBefore: row.sessions_invalid_before,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -101,6 +106,7 @@ export function readFactor(row: FactorRow): AuthFactor {
     kind: row.kind as AuthFactorKind,
     secret: row.secret === null || row.secret === undefined ? null : blobBytes(row.secret),
     lastCounter: row.last_counter,
+    failedAttempts: row.failed_attempts,
     confirmedAt: row.confirmed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

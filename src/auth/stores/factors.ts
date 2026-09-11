@@ -50,6 +50,7 @@ export function createFactorStore(db: D1Client): FactorStore {
         kind: input.kind,
         secret,
         lastCounter: null,
+        failedAttempts: 0,
         confirmedAt: input.confirmedAt ?? null,
         createdAt: at,
         updatedAt: at,
@@ -68,17 +69,23 @@ export function createFactorStore(db: D1Client): FactorStore {
       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("factors.confirm", outcome.error));
     },
 
-    async countAttempt(id, userId, maxAttempts, at) {
-      const key = uuidKey(id);
+    async countAttempt(userId, kind, maxAttempts, at, lockoutMs) {
       const owner = uuidKey(userId);
-      if (!key || !owner) return ok(false);
-      // The guess is spent in the statement that admits it, so N parallel guesses spend N of the
-      // budget rather than each comparing against a count none of them has written yet.
-      const outcome = await db.execute(
-        sql`UPDATE auth_factors SET failed_attempts = failed_attempts + 1, updated_at = ${at}
-            WHERE id = ${key} AND user_id = ${owner} AND failed_attempts < ${maxAttempts}`,
+      if (!owner) return ok(null);
+      // Keyed on the owner and the kind, not on a row id a caller had to `find` first: the guess is
+      // spent by the same statement that locates the row and hands it back, so a read cannot sit
+      // between the two. N parallel guesses then spend N of the budget rather than each comparing
+      // against a count none of them has written yet. A refused guess writes nothing, so `updated_at`
+      // is when the cap was hit and the window runs from there.
+      const lockedUntil = at - lockoutMs;
+      const outcome = await db.queryOne<FactorRow>(
+        sql`UPDATE auth_factors
+            SET failed_attempts = CASE WHEN failed_attempts >= ${maxAttempts} AND updated_at <= ${lockedUntil} THEN 1 ELSE failed_attempts + 1 END,
+                updated_at = ${at}
+            WHERE user_id = ${owner} AND kind = ${kind} AND (failed_attempts < ${maxAttempts} OR updated_at <= ${lockedUntil})
+            RETURNING *`,
       );
-      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("factors.countAttempt", outcome.error));
+      return outcome.ok ? readMaybe("factors.countAttempt", outcome.data, readFactor) : err(storeError("factors.countAttempt", outcome.error));
     },
 
     async advanceCounter(id, userId, counter, at) {

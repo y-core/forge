@@ -90,6 +90,22 @@ describe("createOtpStateStore — spending a guess", () => {
   });
 });
 
+// `clear` is an unconditional delete, so rolling an undeliverable issue back with it would wipe a
+// second issue that raced it and did reach the address.
+describe("createOtpStateStore — discarding one named code", () => {
+  it("names the token in the statement, so only the issue being rolled back is deleted", async () => {
+    const [client, db] = clientOf(() => [], { rowsWritten: () => 1 });
+    expect(await createOtpStateStore(client).discard(USER_ID, STATE.token)).toEqual({ ok: true, data: undefined });
+    expect(normalized(db.calls[0]?.sql)).toBe("DELETE FROM auth_otp_state WHERE user_id = ? AND token = ?");
+    expect(db.calls[0]?.params).toEqual([uuidToBytes(USER_ID), STATE.token]);
+  });
+
+  it("reports success when the row was already replaced, since the rollback has nothing left to undo", async () => {
+    const [client] = clientOf(() => [], { rowsWritten: () => 0 });
+    expect(await createOtpStateStore(client).discard(USER_ID, STATE.token)).toEqual({ ok: true, data: undefined });
+  });
+});
+
 describe("createOtpStateStore — failures", () => {
   it("surfaces every backend failure as an AuthStoreError, never as a thrown error", async () => {
     const [client] = clientOf(() => [], { failOn: () => new Error("D1 unreachable") });
@@ -98,6 +114,7 @@ describe("createOtpStateStore — failures", () => {
       ["otpState.issue", await store.issue(USER_ID, STATE, COOLDOWN_MS)],
       ["otpState.countAttempt", await store.countAttempt(USER_ID, 3, NOW)],
       ["otpState.read", await store.read(USER_ID, NOW)],
+      ["otpState.discard", await store.discard(USER_ID, STATE.token)],
       ["otpState.clear", await store.clear(USER_ID)],
     ] as const;
 

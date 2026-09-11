@@ -12,7 +12,7 @@ import { authFactorContext } from "../factors/registry";
 import type { TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
 import { authCtx } from "./identity";
-import { authNow, authCsrfHeader, authPasskeyContract, authReturnPath, authSettledPath } from "./options";
+import { authNow, authCsrfHeader, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
 import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
@@ -133,7 +133,7 @@ async function resolveSignin<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["signin"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth } = options.paths;
   const submitPath = auth.signinSubmit();
   const offersPasskey = services.passkey !== undefined && services.factors.find("passkey") !== undefined;
@@ -176,7 +176,7 @@ async function resolveSignup<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["signup"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth } = options.paths;
   const submitPath = auth.signupSubmit();
   const enrols = signupEnrols(services);
@@ -199,7 +199,7 @@ async function resolveVerify<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["verify"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth } = options.paths;
   const submitPath = auth.verify.submit();
   const demand = await resolveAuthVerifyDemand(c, services);
@@ -240,7 +240,7 @@ async function resolveEnrolPasskey<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["enrolPasskey"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
@@ -249,6 +249,8 @@ async function resolveEnrolPasskey<Bindings>(
   return ok({
     contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), authSettledPath(options)),
     signoutPath: auth.signout(),
+    signoutCsrfToken: await mintCsrf(c, auth.signout()),
+    ...authCsrfHeader(c),
     email: identity.email,
     error: state.error,
     icon: options.icon,
@@ -261,7 +263,7 @@ async function passkeyPage<Bindings>(
   options: AuthWebOptions<Bindings>,
   only: string | undefined,
 ): Promise<Result<PasskeyListViewProps, Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
@@ -308,7 +310,7 @@ async function resolvePasskeyEdit<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountPasskeyEdit"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
@@ -343,7 +345,7 @@ async function totpPage<Bindings>(
   state: AuthPageState,
   targets: TotpPageTargets,
 ): Promise<Result<TotpEnrolViewProps, Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { auth } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
@@ -371,6 +373,10 @@ async function totpPage<Bindings>(
     ...(targets.removePath === undefined ? {} : { removePath: targets.removePath }),
     csrfToken: await mintCsrf(c, posts),
     ...authCsrfHeader(c),
+    // Read off the factor, never restated here: a page asking for a width or promising a refresh
+    // the factor does not use is a page whose copy the factor can be reconfigured out from under.
+    ...(codeWidth(service.codeDigits) === undefined ? {} : { codeDigits: codeWidth(service.codeDigits) }),
+    ...(service.codePeriodSeconds === null ? {} : { codePeriodSeconds: service.codePeriodSeconds }),
     fieldError: state.fieldError,
     icon: options.icon,
   });
@@ -450,7 +456,7 @@ async function factorsPanel<Bindings>(
   userId: string,
   manage: AuthAccountPaths | undefined,
 ): Promise<Result<AuthFactorsViewProps, Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const rows = await resolveFactorRows(services, userId);
   if (rows === null) return err(unavailable());
   const listed = await services.credentials.listByUser(userId);
@@ -474,7 +480,7 @@ async function resolveAdminUserFactors<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
 ): Promise<Result<AuthViewProps["adminUserFactors"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const id = c.params.id;
   if (id === undefined) return err(notFound());
   const found = await services.admin.view(id);
@@ -487,7 +493,7 @@ async function resolveAdminUsers<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
 ): Promise<Result<AuthViewProps["adminUsers"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { admin } = options.paths;
 
   const asked = c.url.searchParams;
@@ -519,7 +525,7 @@ async function adminUserPage<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["adminUser"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { admin } = options.paths;
   const id = c.params.id;
   if (id === undefined) return err(notFound());
@@ -533,6 +539,9 @@ async function adminUserPage<Bindings>(
   return ok({
     user: found.data,
     lastAdmin: found.data.isAdmin && found.data.deactivatedAt === null && counted.data <= 1,
+    // The two controls that would lock this administrator out of the console they are standing in.
+    // The action refuses them; this is what stops the page offering them in the first place.
+    self: resolveAuthViewer(c)?.userId === found.data.id,
     outcome: state.outcome ?? null,
     paths: admin,
     csrfToken: await mintCsrf(c, admin.users.update({ id })),
@@ -545,7 +554,7 @@ async function resolveAdminElevate<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
 ): Promise<Result<AuthViewProps["adminElevate"], Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const { admin } = options.paths;
   const counted = await services.admin.countAdmins();
   if (!counted.ok) return err(unavailable());
@@ -597,10 +606,10 @@ export const AUTH_VIEW_GUARDS = {
   accountTotp: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountEmailChange: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountFactors: ["require-auth", "require-enrolment", "require-fresh-step-up"],
-  adminUsers: ["require-auth", "require-enrolment", "require-admin"],
-  adminUser: ["require-auth", "require-enrolment", "require-admin"],
-  adminUserEdit: ["require-auth", "require-enrolment", "require-admin"],
-  adminUserFactors: ["require-auth", "require-enrolment", "require-admin"],
+  adminUsers: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
+  adminUser: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
+  adminUserEdit: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
+  adminUserFactors: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up"],
 } as const satisfies { readonly [Name in AuthViewName]: readonly AuthGuardName[] };
 

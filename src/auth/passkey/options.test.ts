@@ -2,10 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { base64urlDecode, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
-import { fakeKV } from "../../testing/fakes";
 import { AUTH_PASSKEY_CHALLENGE_MIN_BYTES, AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS } from "../config";
 import { AuthStoreError } from "../errors";
-import { createChallengeStore } from "../stores/challenges";
 import type { AuthChallenge, AuthCredential, ChallengeStore, CredentialStore } from "../types";
 import { createPasskeyRegistrationOptions, createPasskeyRequestOptions, passkeyChallengeKey } from "./options";
 import type { PasskeyCeremonyOptions } from "./types";
@@ -43,15 +41,20 @@ function credentialStore(existing: readonly AuthCredential[]): CredentialStore {
 }
 
 function recordingChallenges(): ChallengeStore & { puts: { key: string; challenge: AuthChallenge; ttl: number }[] } {
-  const inner = createChallengeStore(fakeKV());
+  const held = new Map<string, AuthChallenge>();
   const puts: { key: string; challenge: AuthChallenge; ttl: number }[] = [];
   return {
     puts,
     put: (key, challenge, ttl) => {
       puts.push({ key, challenge, ttl });
-      return inner.put(key, challenge, ttl);
+      held.set(key, challenge);
+      return Promise.resolve(ok());
     },
-    take: (key) => inner.take(key),
+    take: (key) => {
+      const held_ = held.get(key) ?? null;
+      held.delete(key);
+      return Promise.resolve(ok(held_));
+    },
   };
 }
 

@@ -24,6 +24,12 @@ const DELETE_REASON = "This is the last admin who can still sign in — promote 
 
 const NOT_FOUND_REASON = "That account no longer exists, so nothing was changed.";
 
+const SELF_DEACTIVATE_REASON = "This is your own account — deactivating it would sign you out of this console.";
+
+const SELF_DELETE_REASON = "This is your own account — ask another admin to delete it.";
+
+const SELF_REASON = "That would have locked you out of your own account, so nothing was changed.";
+
 const DEMOTE_REASON_ID = "admin-role-reason";
 
 const DEACTIVATE_REASON_ID = "admin-status-reason";
@@ -35,6 +41,7 @@ const REFUSAL_REASON: Readonly<Partial<Record<AdminUserOutcome, string>>> = {
   "last-admin-deactivate": DEACTIVATE_REASON,
   "last-admin-delete": DELETE_REASON,
   "not-found": NOT_FOUND_REASON,
+  self: SELF_REASON,
 };
 
 // Design Read: an administrator changing one account's role, status or existence; the one action is
@@ -43,6 +50,7 @@ const REFUSAL_REASON: Readonly<Partial<Record<AdminUserOutcome, string>>> = {
 export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
   user,
   lastAdmin,
+  self,
   outcome,
   paths,
   csrfToken,
@@ -55,7 +63,10 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
   const guarded = lastAdmin || (outcome !== null && isLastAdminRefusal(outcome));
   const active = user.deactivatedAt === null;
   const demoteGuarded = guarded && user.isAdmin;
-  const deactivateGuarded = guarded && active;
+  // Two guards on one control, each with its own reason: the last-admin one, and the administrator
+  // asking to be locked out of the console they are standing in.
+  const deactivateGuarded = (guarded && active) || (self && active);
+  const deleteGuarded = guarded || self;
   const refused = outcome === null ? undefined : REFUSAL_REASON[outcome];
   const updatePath = paths.users.update({ id: user.id });
 
@@ -121,7 +132,7 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
           <input type='hidden' name='status' value={active ? "deactivated" : "active"} />
           {deactivateGuarded ? (
             <p id={DEACTIVATE_REASON_ID} data-ref='admin-status-reason' class='text-sm text-muted-foreground'>
-              {DEACTIVATE_REASON}
+              {self && active ? SELF_DEACTIVATE_REASON : DEACTIVATE_REASON}
             </p>
           ) : null}
           <Button
@@ -141,18 +152,18 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
           csrfHeader={csrfHeader}
           {...hxAttrs({ delete: paths.users.remove({ id: user.id }) })}
           class='flex flex-col gap-2'>
-          {guarded ? (
+          {deleteGuarded ? (
             <p id={DELETE_REASON_ID} data-ref='admin-delete-reason' class='text-sm text-muted-foreground'>
-              {DELETE_REASON}
+              {self ? SELF_DELETE_REASON : DELETE_REASON}
             </p>
           ) : null}
           <Button
             type='submit'
             tone='destructive'
             class='self-start'
-            disabled={guarded}
+            disabled={deleteGuarded}
             data-ref='admin-delete-submit'
-            aria-describedby={guarded ? DELETE_REASON_ID : undefined}>
+            aria-describedby={deleteGuarded ? DELETE_REASON_ID : undefined}>
             Delete this account
           </Button>
         </Form>

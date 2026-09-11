@@ -31,7 +31,7 @@ audience: consumer
 - §3b Sign-in: the discoverable ceremony, and what it writes to the session
 - §3c Management: what the shipped pages do, and the two limits they carry
 - §4 Authenticator App (TOTP): the secret, the URI, and the confirm step
-- §5 Email Change: the sealed link, and the confirm route you own
+- §5 Email Change: the two sealed links, the stage each one carries, and the confirm route you own
 - §6 Admin Management: the user pages, the last-admin guard, and the first-admin bootstrap
 - §7 Limits in This Release: what does not work yet, stated plainly
 
@@ -48,7 +48,7 @@ owner is harmless. So both branches issue a real challenge, both render the same
 timing is the same because the issue is deferred either way.
 
 The credential itself depends on the primary factor. With email-OTP primary — the shipped case — the
-visitor is emailed a six-digit code valid for ten minutes, and the code is never stored: what the OTP
+visitor is emailed a six-digit code valid for five minutes, and the code is never stored: what the OTP
 state holds is the sealed token the code is checked against.
 
 ---
@@ -108,6 +108,12 @@ Every other reason — expired, consumed, not enrolled, deactivated, unrecognise
 did not match**, because telling them apart is the account-enumeration oracle the decoy closes. The
 unredacted reason is for your logs and your branching, never for the page
 ([`ERROR_HANDLING.md`](./ERROR_HANDLING.md) §1c).
+
+**On the primary path, throttled folds in too.** A known-but-throttled address answering "you are
+throttled" where an unknown one answers "that did not match" is the same membership answer, so
+`complete` reports both `too-many-attempts` and `too-soon` as `unrecognised` there. `stepUp` and
+`requestStepUp` keep the true reason: the visitor is already signed in, so there is no membership
+left to leak, and being told to wait is what makes a lockout comprehensible.
 
 ### 2c. Where a Resolution Sends the Visitor
 
@@ -171,6 +177,11 @@ rename link and a remove control, and warns when removing the last credential wo
 sign in with. Removing a passkey is scoped to its owner in the statement's own `WHERE`, so ownership
 is not a check a caller can forget.
 
+**Removing one signs every other session out.** The removal raises the account's revocation barrier,
+and every session established at or before it — including the ones on devices this request cannot
+see — is refused on its own next request. The acting session is carried past the barrier, so the
+visitor stays where they are. Removing the authenticator-app factor does the same.
+
 **Two limits apply to this page, and no configuration removes either** — §7 states both.
 
 ---
@@ -193,38 +204,77 @@ stored counter so a code cannot be replayed inside its own step. `DELETE /totp` 
 
 **A wrong code costs a guess, spent before it is compared.** `failed_attempts` is incremented by the
 statement that admits the guess, so parallel attempts each spend one rather than all comparing against
-a count none has written; past `maxAttempts` (5 by default, 1–20) even a correct code is refused until
-an accepted one resets it. The ceiling holds on the enrolment ceremony too, which answers the same
-secret. **The code width follows the factor**: `digits` is 6–8 on both code factors, and the verify
+a count none has written; past `maxAttempts` (5 by default, 1–20) even a correct code is refused.
+
+**A spent budget reopens on its own, and the window is why a run of typos is not a permanent lock.**
+An accepted code clears the count, and so does the first guess made more than `lockoutMs` after the
+one that hit the cap — the same `UPDATE` that admits it resets the count to 1. The default is
+`AUTH_TOTP_LOCKOUT_MS`, fifteen minutes, configurable on `TotpAppFactorOptions` between one minute
+and one day. A refused guess writes nothing, so the window runs from the moment the cap was hit
+rather than from the last attempt, and hammering the factor cannot hold it shut. Without the window a
+user who mistypes `maxAttempts` times loses the factor for good, and under
+`{mode: "second-factor", required: "always"}` that is the whole account. The ceiling holds on the
+enrolment ceremony too, which answers the same secret. **The code width follows the factor**: `digits` is 6–8 on both code factors, and the verify
 page sizes its field and its schema off whichever it is presenting.
 
 The secret is stored sealed under a per-purpose subkey with the user's own identity as associated
-data, so a secret lifted from one row cannot be replanted on another. An abandoned enrolment leaves
-an unconfirmed row that the next visit replaces rather than colliding with.
+data, so a secret lifted from one row cannot be replanted on another.
+
+**Re-opening an unfinished enrolment shows the same secret again, not a new one.** A mistyped code
+re-renders the page, and a page that rotated the secret would hand back one the visitor's
+authenticator does not hold — a ceremony that could never be finished. The row is rebuilt only when
+the stored secret will not open, which is a rotated key rather than an abandoned attempt.
+
+**The page states the factor's own width and step**, read off `codeDigits` and `codePeriodSeconds`
+rather than assuming six digits every thirty seconds, so a configured `digits` or `period` is what
+the visitor is told and what the `otpauth://` URI carries.
 
 ---
 
 ## 5. Email Change
 
-`POST /email-change` mints a sealed, one-hour token carrying the user and the new address, and
-defers delivery of a link built by your `confirmUrl`. The page then says a confirmation has been
-sent — a 200 with a notice, not a redirect, because nothing has changed yet.
+**A change of address takes two links, and only the second one moves the account.**
+`POST /email-change` mints a sealed, one-hour token and defers delivery of a link built by your
+`confirmUrl`. The page then says a confirmation has been sent — a 200 with a notice, not a redirect,
+because nothing has changed yet.
 
-**The link goes to the address the account already holds**, whenever that address is verified, so the
-move is authorised by whoever owns the current mailbox rather than by whoever holds the session —
-without which a stolen cookie moves the account to the thief's inbox and, with email-OTP as the
-primary factor, locks the owner out for good. An unverified address has proved nothing, so there the
-new one is the only address to ask and gets the link instead. The token binds the account and the new
-address either way: where it is delivered changes who authorises the move, not what the move is.
+**The first link goes to the address the account already holds**, whenever that address is verified,
+so the move is authorised by whoever owns the current mailbox rather than by whoever holds the
+session — without which a stolen cookie moves the account to the thief's inbox and, with email-OTP as
+the primary factor, locks the owner out for good. An unverified address has proved nothing, so there
+the new one is the only address to ask and gets the link instead.
+
+**Name `sentTo` on the page, not the address the visitor typed.** `request(userId, email, at)`
+answers `AuthEmailChangeRequest` — `expiresAt` and `sentTo`, the address the mail actually went to —
+and which of the two addresses that is depends on whether the account's own is verified. The shipped
+action renders the flow's answer for exactly that reason; a page that echoes the typed address tells
+half its visitors to watch the wrong inbox.
+
+**The token carries a stage, and only a `move` token changes the row.** A link mailed to the address
+the account already holds carries `approve`: answering it writes nothing and instead forwards a
+second link, carrying `move`, to the new address. Answering _that_ one moves the account. An
+unverified account has one stage rather than two — its single link already went to the new address,
+and already carries `move`.
+
+**Two stages, because marking an address verified that nobody answered verifies nothing.**
+`changeEmail` stamps the verification in the same statement that writes the address, so the address
+it marks must be one that has answered a link sent to it. Under a single stage the _old_ address
+answered and the _new_ one became a verified primary factor unread — an account's whole sign-in
+resting on a mailbox no one had proved they could open.
 
 **The new address is deliberately never looked up before the email goes out.** Answering "that
-address is taken" here is the same enumeration oracle sign-in refuses to give.
+address is taken" here is the same enumeration oracle sign-in refuses to give. The unique index
+refuses the collision at the `move` stage instead, folded into the same refusal an unknown account
+gets.
 
-**You mount the confirm route.** Forge ships `AuthEmailChangeFlow.confirm(token, now)` and no route
-that calls it: the URL shape is yours, so the handler is too. `confirm` decodes the token, burns it
-through the nonce store — a second visit to the same link answers `consumed`, which is what makes a
-link scanner harmless — writes the new address, and marks the address verified, because answering
-the link is the proof.
+**You mount the confirm route, and the one route serves both stages.** Forge ships
+`AuthEmailChangeFlow.confirm(token, now)` and no route that calls it: the URL shape is yours, so the
+handler is too. `confirm` decodes the token and burns it through the nonce store — a second visit to
+the same link answers `consumed`, which is what makes a link scanner harmless — and then acts on the
+stage it read. An `approve` token defers the second mail and answers
+`{ status: "forwarded", sentTo, expiresAt }`, describing the link just sent to the new address. A
+`move` token writes the address and marks it verified in one statement, answering
+`{ status: "moved", user }`.
 
 **The confirmation page is yours to render, and `resolveAuthView` does not reach it** — it is no
 `AuthViewName`, so forge has no view for it. Render it in your own layout with your own copy;
@@ -238,15 +288,16 @@ adapter to write and no props this route cannot supply: forge asks a shell for a
 component typed against `AuthViewName`.
 
 **That route is a `GET` that mutates, and the trade is deliberate.** A confirmation link in an email
-can only be a `GET`, so the usual rule gives way; what makes it safe is that the mutation is
-single-use. The first visit changes the address, and every visit after it — a link scanner's, a
-prefetch, the user clicking twice — answers `consumed` and changes nothing. Do not add your own
-idempotency around it, and do not make the route a `POST` behind an interstitial unless you want the
-extra click: the nonce store already carries the guarantee.
+can only be a `GET`, so the usual rule gives way; what makes it safe is that each link is single-use.
+The first visit does its stage's work, and every visit after it — a link scanner's, a prefetch, the
+user clicking twice — answers `consumed` and changes nothing. Do not add your own idempotency around
+it, and do not make the route a `POST` behind an interstitial unless you want the extra click: the
+nonce store already carries the guarantee.
 
-**Branching on the failure needs `instanceof`.** `confirm` returns
-`Result<AuthUser, AuthEmailChangeReason | AuthStoreError>` — a union of a string literal and a class,
-so the two arms are told apart by type, not by value:
+**The route renders two success pages, and the failure arm needs `instanceof`.** `confirm` returns
+`Result<AuthEmailChangeConfirm, AuthEmailChangeReason | AuthStoreError>`: the success value is a
+union discriminated on `status`, and the error is a union of a string literal and a class, so those
+two arms are told apart by type rather than by value.
 
 ```ts
 const outcome = await services.emailChange.confirm(token, Date.now());
@@ -254,14 +305,23 @@ if (!outcome.ok) {
   if (outcome.error instanceof AuthStoreError) return unavailablePage();  // the store is down
   return refusalPage(outcome.error);                                       // "expired" | "consumed" | …
 }
+if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sentTo);  // one link left
+return changedPage(outcome.data.user);                                                // the move is done
 ```
+
+**A `forwarded` answer is not a finished change, and the page has to say so.** The visitor has
+approved the move and nothing has changed yet; what clears it is the link now sitting in the new
+inbox. Render `sentTo` and the fact that one step is left, or the visitor reads approval as
+completion and never opens the second link.
 
 **The token is encrypted, not merely signed.** The confirmation carries an address in a URL, and a
 URL lands in browser history, the `Referer` header, corporate link scanners and proxy logs; a signed
 cleartext token hands the address to every one of them.
 
-The session is untouched by a confirmed change. Identity is re-read from the store on every request,
-so the new address is live on the next one.
+**A completed move signs every session out, this one included.** The address is the account's
+identity, so the `move` stage raises the revocation barrier and nothing is carried over it: the
+confirmation link is opened from whatever browser answered the mail, which is not necessarily one the
+account was signed in on. Render the `moved` page as a page that asks the visitor to sign in again.
 
 ---
 
@@ -270,6 +330,15 @@ so the new address is live on the next one.
 `GET /users` lists and searches accounts by cursor; `GET /users/:id/edit` carries the role, status
 and delete controls. Each control is disabled with its own reason when the guard would refuse it,
 and a refusal that happens anyway comes back as a **409** naming which guard fired.
+
+**An administrator cannot deactivate or delete their own account.** The last-admin guard does not
+catch it — a deployment with two admins would admit it — so both controls are disabled on the page
+with their own reason, and a request that arrives anyway comes back **409** with the outcome `self`.
+Reactivating your own account is still allowed, since it locks nobody out.
+
+**Search is prefix-matched.** A term matches an address that _starts_ with it, which is what lets the
+unique index on `email_key` answer the query instead of a full table scan. A substring in the middle
+of an address — the domain, say — matches nothing. Search by the start of the local part.
 
 **The last-admin guard lives in the statement's own `WHERE`, not in a count-then-write.** Two
 concurrent demotions therefore leave one admin standing rather than none, and the admin count the
@@ -298,9 +367,6 @@ token per row.
 action all work; no shipped view submits a label, and the rename link resolves to a page that shows
 the credential rather than a form. Supply the page through the view-override seam if you want it.
 
-**A nickname typed at enrolment is not kept.** The enrolment view offers the field and the controller
-posts it; nothing reads it, so a newly enrolled credential is unlabelled.
-
 **Rate limiting is yours to configure, and forge ships no numbers.** The seam exists —
 `AuthGuardChainOptions.rateLimit`, keyed by group path,
 [`AUTH_MOUNTING.md`](./AUTH_MOUNTING.md) §1 — and nothing is mounted until you fill it.
@@ -316,16 +382,6 @@ a credential's life and is checked against the enrolled value on every assertion
 refused as the misreporting it is; `backedUp` moves and is kept current. Refusing a synced credential
 outright is right for a high-assurance tenant and wrong for a consumer product — read both off
 `CredentialStore` and decide.
-
-**Removing a passkey or changing an address revokes no other session.** Sessions are keyed by id in
-KV with no per-user index, so "every other session of this user" is not a set forge can name.
-Deactivation does land on the next request of every session, since the identity is re-read each time;
-a credential change does not. Carry a per-user session index of your own if you need that.
-
-**The ephemeral stores are KV, and KV's read-then-write is not atomic.** Two requests inside the
-consistency window can both see one challenge unconsumed. The exposure is mitigated by binding each
-challenge to the session it was issued to, not eliminated; the strict fix is a Durable Object
-adapter, which is not in this release.
 
 **Federated identity is not here.** The OIDC relying party and the OAuth2 provider are a separate
 effort, and they will publish their own subpaths under the same one-way rule

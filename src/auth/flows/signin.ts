@@ -4,7 +4,7 @@ import { authFactorContext } from "../factors/registry";
 import { normalizeEmail } from "../stores/email";
 import type { AuthFactorKind, AuthUser } from "../types";
 import { issueAuthDecoy, verifyAuthDecoy } from "./decoy";
-import type { AuthIssueOutcome } from "./types";
+import type { AuthDecoyStores, AuthIssueOutcome } from "./types";
 import type { AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./types";
 
 // A deactivated account answering differently from an unknown one is the enumeration oracle the
@@ -16,12 +16,23 @@ export function redactSigninReason(reason: AuthSigninReason): AuthSigninNotice {
   return "unrecognised";
 }
 
+// The primary path answers one refusal for every reason a challenge can fail, because the true
+// reason is itself the membership answer: a known-but-throttled address answering `too-many-attempts`
+// where an unknown one answers `unrecognised` is the enumeration oracle `request` already refuses,
+// and `redactSigninReason` renders those two as different notices. `stepUp` keeps the true reason —
+// there the caller is already identified, so a throttle tells an attacker nothing they do not have.
+function redactMembership(reason: AuthSigninReason): AuthSigninReason {
+  return reason === "too-many-attempts" || reason === "too-soon" ? "unrecognised" : reason;
+}
+
 /** Builds the signin flow. It produces no `Response` and touches no `Session` — `auth/web` owns both. @public */
 export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
+  const decoy: AuthDecoyStores = { keys: options.keys, users: options.users, state: options.state, nonces: options.nonces };
+
   async function issue(email: string, at: number): Promise<AuthIssueOutcome> {
     const found = await options.users.findByEmailKey(normalizeEmail(email));
     if (!found.ok) return "unavailable";
-    if (!found.data) return issueAuthDecoy(options.keys, at);
+    if (!found.data) return issueAuthDecoy(decoy, at);
     const challenge = await options.factors.primary.createChallenge(found.data.id, at);
     return challenge.ok ? "challenged" : "unavailable";
   }
@@ -58,12 +69,12 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
       // Both refusals below cost what verifying a real code costs. Returning here on the lookup
       // alone bins an address list by latency, which is the enumeration `request` already refuses.
       if (!user || user.deactivatedAt !== null) {
-        await verifyAuthDecoy(options.keys, options.users, at);
+        await verifyAuthDecoy(decoy, at);
         return err(user ? "deactivated" : "unrecognised");
       }
 
       const verified = await options.factors.primary.verifyChallenge(user.id, presented, at);
-      if (!verified.ok) return err(verified.error);
+      if (!verified.ok) return err(redactMembership(verified.error));
 
       // An implicit factor's enrolment *is* the verified address, so passing its challenge is the
       // proof the row waits for; without this no account verifies and the passkey verifier refuses all.

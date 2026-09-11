@@ -31,7 +31,7 @@ import { createChallengeStore } from "../stores/challenges";
 import { createCredentialStore } from "../stores/credentials";
 import { createFactorStore } from "../stores/factors";
 import { createUserStore } from "../stores/users";
-import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, UserStore } from "../types";
+import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
 import { createAuthGuards } from "./guards";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
@@ -65,7 +65,7 @@ function requestStores(c: AppContext<MountEnv>) {
     users: createUserStore(db),
     credentials: createCredentialStore(db),
     enrolments,
-    challenges: createChallengeStore(c.env.KV),
+    challenges: createChallengeStore(createD1Client(c.env.DB as never)),
     // The offered services are stubbed: assembling the real ones needs a key ring and a mailer, which
     // are the consumer's own domain wiring and not the mount this file is about.
     factors: createFactorRegistry(enrolments, {
@@ -231,6 +231,7 @@ function memoryUsers(): UserStore {
         webauthnId: null,
         isAdmin: false,
         deactivatedAt: null,
+        sessionsInvalidBefore: null,
         createdAt: at,
         updatedAt: at,
       };
@@ -244,6 +245,7 @@ function memoryUsers(): UserStore {
       return ok(row !== undefined);
     },
     changeEmail: async () => ok(true),
+    revokeSessions: async () => ok(true),
   };
 }
 
@@ -261,6 +263,7 @@ function memoryFactors(): FactorStore {
         kind: input.kind,
         secret: input.secret ?? null,
         lastCounter: null,
+        failedAttempts: 0,
         confirmedAt: input.confirmedAt ?? null,
         createdAt: at,
         updatedAt: at,
@@ -273,7 +276,7 @@ function memoryFactors(): FactorStore {
       if (row) rows[rows.indexOf(row)] = { ...row, confirmedAt: at, updatedAt: at };
       return ok(row !== undefined);
     },
-    countAttempt: async () => ok(true),
+    countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
     advanceCounter: async () => ok(true),
     remove: async (id) => {
       const index = rows.findIndex((row) => row.id === id);
@@ -292,6 +295,7 @@ function driveableFactor(kind: AuthFactorKind, store: FactorStore): AuthFactorSe
     capabilities: AUTH_FACTOR_CAPABILITIES[kind],
     challengeTtlMs: 600_000,
     codeDigits: kind === "passkey" ? null : 6,
+    codePeriodSeconds: null,
     reissueAfterMs: kind === "email-otp" ? 60_000 : null,
     createChallenge: async () => ok({ kind, expiresAt: 9_999_999 }),
     verifyChallenge: async (userId: string, presented: string, at: number) =>
@@ -340,22 +344,33 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
     policy: { mode: "second-factor", required: "always" },
   });
 
+  // The decoy branch spends these; the mount drive-through never reaches it, so an in-memory pair
+  // that reports success is all it needs.
+  const otpState: OtpStateStore = {
+    issue: () => Promise.resolve(ok(true)),
+    countAttempt: () => Promise.resolve(ok(null)),
+    read: () => Promise.resolve(ok(null)),
+    discard: () => Promise.resolve(ok()),
+    clear: () => Promise.resolve(ok()),
+  };
+  const nonces: NonceStore = { markConsumed: () => Promise.resolve(ok(true)) };
+
   const flowOptions: AuthWebOptions<MountEnv> = {
     ...options,
     resolveServices: async (c) => {
-      const ring = await importAuthKeyRing(["ef".repeat(32)]);
+      const ring = await importAuthKeyRing(["d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65"]);
       return fakeAuthServices({
         users,
         enrolments,
         factors,
-        signin: createSigninFlow({ keys: ring, users, factors, defer }),
+        signin: createSigninFlow({ keys: ring, users, state: otpState, nonces, factors, defer }),
         signup: createSignupFlow({ users, factors, defer }),
         passkey: {
           rpId: "localhost",
           rpName: "Forge",
           origin: "http://localhost",
           sessionId: sessionCtx.get(c).id,
-          challenges: createChallengeStore(c.env.KV),
+          challenges: createChallengeStore(createD1Client(c.env.DB as never)),
         },
       });
     },

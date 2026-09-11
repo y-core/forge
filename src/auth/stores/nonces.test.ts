@@ -1,93 +1,75 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeKV } from "../../testing/fakes";
+import { createD1Client } from "../../storage/db/client";
+import type { D1Client, D1Database } from "../../storage/db/types";
+import { nullLogger } from "../../testing/context";
+import { fakeD1 } from "../../testing/fakes";
+import type { FakeD1Options } from "../../testing/types";
 import { AuthStoreError } from "../errors";
 import { createNonceStore } from "./nonces";
 
 const TTL = 900;
 
+type FakeDb = ReturnType<typeof fakeD1>;
+
+function clientOf(rowsWritten: (sql: string, params: unknown[]) => number = () => 1, options?: FakeD1Options): [D1Client, FakeDb] {
+  const db = fakeD1(() => [], { rowsWritten, ...options });
+  return [createD1Client(db as unknown as D1Database, { logger: nullLogger }), db];
+}
+
+function normalized(sql: string | undefined): string {
+  return (sql ?? "").replace(/\s+/g, " ").trim();
+}
+
 describe("createNonceStore", () => {
-  it("reports true the first time a key is seen and false after", async () => {
-    const store = createNonceStore(fakeKV());
-    expect(await store.markConsumed("n1", TTL)).toEqual({ ok: true, data: true });
-    expect(await store.markConsumed("n1", TTL)).toEqual({ ok: true, data: false });
-    expect(await store.markConsumed("n1", TTL)).toEqual({ ok: true, data: false });
+  // The whole reason this store left KV: a read then a write lets two verifications each be told
+  // the nonce was theirs to spend. Here the primary key decides, and no read precedes it.
+  it("claims the key in one insert, with no prior read to race", async () => {
+    const [client, db] = clientOf();
+    expect(await createNonceStore(client).markConsumed("n1", TTL)).toEqual({ ok: true, data: true });
+    expect(db.calls).toHaveLength(1);
+    expect(normalized(db.calls[0]?.sql)).toBe("INSERT INTO auth_nonces (key, expires_at) VALUES (?, ?) ON CONFLICT (key) DO NOTHING");
   });
 
-  it("keeps two keys independent", async () => {
-    const store = createNonceStore(fakeKV());
-    expect(await store.markConsumed("n1", TTL)).toEqual({ ok: true, data: true });
-    expect(await store.markConsumed("n2", TTL)).toEqual({ ok: true, data: true });
+  it("reports false when the row was already there, which is the conflict doing nothing", async () => {
+    const [client] = clientOf(() => 0);
+    expect(await createNonceStore(client).markConsumed("n1", TTL)).toEqual({ ok: true, data: false });
   });
 
-  // `fakeKV` records a TTL and never enforces one, so expiry itself is not observable here. What is
-  // observable is that the configured lifetime reaches the binding, and that a key the binding no
-  // longer holds — which is what an expired one looks like — is consumable again.
-  it("passes the configured lifetime to the binding as expirationTtl", async () => {
-    const writes: { key: string; ttl: number | undefined }[] = [];
-    const namespace = fakeKV();
-    const recording = {
-      ...namespace,
-      put: (key: string, value: string, options?: { expirationTtl?: number }) => {
-        writes.push({ key, ttl: options?.expirationTtl });
-        return namespace.put(key, value, options);
-      },
-    } as typeof namespace;
-    await createNonceStore(recording, { prefix: "p" }).markConsumed("n1", TTL);
-    expect(writes).toEqual([{ key: "p||n1", ttl: TTL }]);
-  });
-
-  it("lets a key the binding no longer holds be consumed again", async () => {
-    const namespace = fakeKV();
-    const store = createNonceStore(namespace, { prefix: "p" });
-    await store.markConsumed("n1", TTL);
-    await namespace.delete("p||n1");
-    expect(await store.markConsumed("n1", TTL)).toEqual({ ok: true, data: true });
+  it("writes the prefixed key and an expiry the configured lifetime from now", async () => {
+    const [client, db] = clientOf();
+    const before = Date.now();
+    await createNonceStore(client, { prefix: "p" }).markConsumed("n1", TTL);
+    const [key, expiresAt] = db.calls[0]?.params ?? [];
+    expect(key).toBe("p||n1");
+    expect(expiresAt as number).toBeGreaterThanOrEqual(before + TTL * 1000);
+    expect(expiresAt as number).toBeLessThanOrEqual(Date.now() + TTL * 1000);
   });
 
   it("namespaces its keys under a prefix", async () => {
-    const namespace = fakeKV();
-    await createNonceStore(namespace, { prefix: "auth:nonce" }).markConsumed("n1", TTL);
-    expect(await createNonceStore(namespace, { prefix: "other" }).markConsumed("n1", TTL)).toEqual({ ok: true, data: true });
+    const [client, db] = clientOf();
+    await createNonceStore(client, { prefix: "auth:nonce" }).markConsumed("n1", TTL);
+    await createNonceStore(client, { prefix: "other" }).markConsumed("n1", TTL);
+    expect(db.calls.map((call) => call.params[0])).toEqual(["auth:nonce||n1", "other||n1"]);
   });
 
   it("refuses an empty prefix, which would drop the namespacing the prefix exists for", () => {
-    expect(() => createNonceStore(fakeKV(), { prefix: "" })).toThrow("createNonceStore: `prefix` must not be an empty string");
+    const [client] = clientOf();
+    expect(() => createNonceStore(client, { prefix: "" })).toThrow("createNonceStore: `prefix` must not be an empty string");
   });
 
-  it("refuses a TTL below the 60-second floor KV enforces", () => {
-    const store = createNonceStore(fakeKV());
-    expect(store.markConsumed("n1", 59)).rejects.toThrow(
-      "nonces.markConsumed: KV refuses an expiration under 60 seconds — configure a longer nonce lifetime",
-    );
-  });
-
-  it("accepts exactly the floor", async () => {
-    expect(await createNonceStore(fakeKV()).markConsumed("n1", 60)).toEqual({ ok: true, data: true });
+  it("accepts a lifetime under a minute, which the KV floor used to refuse", async () => {
+    const [client] = clientOf();
+    expect(await createNonceStore(client).markConsumed("n1", 30)).toEqual({ ok: true, data: true });
   });
 });
 
 describe("createNonceStore — failures", () => {
-  function brokenKV(failing: "get" | "put"): Parameters<typeof createNonceStore>[0] {
-    const namespace = fakeKV();
-    return {
-      ...namespace,
-      get: failing === "get" ? () => Promise.reject(new Error("KV unreachable")) : namespace.get.bind(namespace),
-      put: failing === "put" ? () => Promise.reject(new Error("KV unreachable")) : namespace.put.bind(namespace),
-    } as Parameters<typeof createNonceStore>[0];
-  }
-
-  it("surfaces a write failure as an AuthStoreError, not as a thrown error", async () => {
-    const outcome = await createNonceStore(brokenKV("put")).markConsumed("n1", TTL);
+  it("surfaces a write failure as an AuthStoreError, and never reports a nonce fresh because the write failed", async () => {
+    const [client] = clientOf(() => 1, { failOn: () => new Error("D1_ERROR: database unreachable") });
+    const outcome = await createNonceStore(client).markConsumed("n1", TTL);
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.error).toBeInstanceOf(AuthStoreError);
-    expect(outcome.ok === false && outcome.error.code).toBe("unavailable");
-    expect(outcome.ok === false && outcome.error.operation).toBe("nonces.markConsumed");
-  });
-
-  it("surfaces a read failure the same way, and never reports a nonce fresh because the read failed", async () => {
-    const outcome = await createNonceStore(brokenKV("get")).markConsumed("n1", TTL);
-    expect(outcome.ok).toBe(false);
-    expect(outcome.ok === false && outcome.error.code).toBe("unavailable");
+    expect(outcome.ok === false && [outcome.error.code, outcome.error.operation]).toEqual(["unavailable", "nonces.markConsumed"]);
   });
 });

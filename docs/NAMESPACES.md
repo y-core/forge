@@ -540,8 +540,8 @@ import an Ed25519 key. Offering an algorithm and then failing to verify it locks
 account they just enrolled, so the default is the set every supported runtime can check.
 
 **An adapter is named by the contract it fulfils; the backing is the argument's type.** The
-shipped store adapters are `createUserStore(db: D1Client)`, `createChallengeStore(kv)` and their
-siblings — never `createD1UserStore` or `createKvChallengeStore` — and they live under
+shipped store adapters are `createUserStore(db: D1Client)`, `createChallengeStore(db: D1Client)` and their
+siblings — never `createD1UserStore` or `createD1ChallengeStore` — and they live under
 `src/auth/stores/` by contract name. `createD1Client` in `storage/db` is product-named because
 it wraps D1's own API; an auth store wraps a forge contract, and the product beneath it is a
 detail of the argument that a later adapter may change. A second adapter for the same contract

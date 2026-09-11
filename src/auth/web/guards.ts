@@ -3,11 +3,14 @@ import { Route } from "@remix-run/fetch-router/routes";
 import type { RouteMap } from "@remix-run/fetch-router/routes";
 
 import type { MiddlewareGuardGroup } from "../../app/types";
+import { contextVar } from "../../context/accessor";
 import { getAppContext } from "../../context/types";
 import { safeRedirectPath } from "../../http/redirect-path";
 import { jsonResponse, redirect } from "../../http/response";
 import { sessionCtx } from "../../session/session";
+import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { authFactorContext } from "../factors/registry";
+import type { AuthFactorResolution } from "../factors/types";
 import { authLimit } from "../limits";
 import type { AuthFactorKind } from "../types";
 import { authCtx, resolveAuthIdentity } from "./identity";
@@ -25,13 +28,12 @@ const ENROLMENT_OWED = "This account still owes a factor enrolment.";
 const STEP_UP_OWED = "This account owes a step-up verification.";
 const STEP_UP_STALE = "This change needs a fresh verification.";
 
-const NO_STEP_UP_FACTOR =
-  "auth/web guard: `freshStepUpMaxAgeMs` is configured but this deployment offers no step-up factor, so no request could ever carry a mark fresh enough — offer a second factor, or drop the option and the `require-fresh-step-up` guard with it.";
-
 const NOTHING_OWED = "This account owes no factor enrolment.";
 const UNAVAILABLE = "Service Unavailable";
 
 const MIN_STEP_UP_MAX_AGE_MS = 1_000;
+
+const authDemandCtx = contextVar<AuthFactorResolution>("auth.demand");
 
 // A group that answers in JSON is refused in JSON: a browser controller posting a ceremony step
 // cannot read an HTML sign-in page, and follows the redirect only to parse the wrong document.
@@ -48,7 +50,7 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
     if (session === undefined) throw new Error(NO_SESSION);
 
     const users = await options.users(getAppContext<Bindings>(context));
-    const identity = await resolveAuthIdentity(session, users);
+    const identity = await resolveAuthIdentity(session, users, options.now === undefined ? Date.now() : options.now());
     if (identity === null) {
       return refuse(options.medium, NOT_SIGNED_IN, 401, () => {
         // Only a replayable method may be recorded as a return-to: the visitor arrives back by GET,
@@ -71,13 +73,13 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
 // (an anonymous visitor must reach it), and reading the session inside the page instead would put an
 // identity on a request no guard has judged.
 /** Establishes the request's identity when the session carries one, and admits an anonymous request unchanged. @public */
-export function resolveAuth<Bindings = Record<string, unknown>>(options: Pick<AuthGuardOptions<Bindings>, "users">): Middleware {
+export function resolveAuth<Bindings = Record<string, unknown>>(options: Pick<AuthGuardOptions<Bindings>, "users" | "now">): Middleware {
   return async (context, next) => {
     const session = sessionCtx.getOptional(context);
     if (session === undefined) throw new Error(NO_SESSION);
 
     const users = await options.users(getAppContext<Bindings>(context));
-    const identity = await resolveAuthIdentity(session, users);
+    const identity = await resolveAuthIdentity(session, users, options.now === undefined ? Date.now() : options.now());
     if (identity !== null) authCtx.set(context, identity);
     return next();
   };
@@ -133,21 +135,33 @@ function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined): boo
   return maxAgeMs === undefined || age < maxAgeMs;
 }
 
-// One reader for both guards, so the demand is computed in one place and they only disagree about
-// which side of it they admit.
+// One reader for both guards, so the demand is computed in one place and they only disagree about which side of it they admit.
+async function resolveFactorDemand<Bindings>(
+  context: Parameters<Middleware>[0],
+  identity: AuthIdentity,
+  options: Pick<AuthEnrolmentGuardOptions<Bindings>, "factors">,
+): Promise<AuthFactorResolution | undefined> {
+  const held = authDemandCtx.getOptional(context);
+  if (held !== undefined) return held;
+  const factors = await options.factors(getAppContext<Bindings>(context));
+  const resolved = await factors.resolve(identity.userId, authFactorContext(identity));
+  if (!resolved.ok) return undefined;
+  authDemandCtx.set(context, resolved.data);
+  return resolved.data;
+}
+
 /** The outstanding demand for the identity on `context`. */
 async function resolveAuthDemand<Bindings>(
   context: Parameters<Middleware>[0],
   identity: AuthIdentity,
   options: AuthEnrolmentGuardOptions<Bindings>,
 ): Promise<AuthDemand> {
-  const factors = await options.factors(getAppContext<Bindings>(context));
-  const resolved = await factors.resolve(identity.userId, authFactorContext(identity));
-  if (!resolved.ok) return { status: "unknown" };
-  if (resolved.data.status === "enrolment-required") return { status: "enrolment", kinds: resolved.data.kinds };
+  const resolved = await resolveFactorDemand(context, identity, options);
+  if (resolved === undefined) return { status: "unknown" };
+  if (resolved.status === "enrolment-required") return { status: "enrolment", kinds: resolved.kinds };
   // `resolve` reads confirmed factor rows and nothing else, so it answers `step-up-required` on
   // every request of a session that has already verified. The session's own mark is the memory it has not got.
-  if (resolved.data.status === "step-up-required") {
+  if (resolved.status === "step-up-required") {
     return stepUpHolds(identity.stepUpAt, options.stepUpMaxAgeMs) ? { status: "none" } : { status: "step-up" };
   }
   return { status: "none" };
@@ -215,20 +229,19 @@ export function requirePendingEnrolment<Bindings = Record<string, unknown>>(opti
 
 // Only a state-changing request is held to it: reading the page that offers the action is not the
 // action, and gating the `GET` would leave a visitor unable to reach the form that clears the demand.
-// `{mode:"single"}` throws rather than admitting — a deployment asking for freshness it has no factor
-// to prove is a wiring mistake, and admitting silently is the one answer that hides it.
-/** Demands a recent step-up on every state-changing request of its group, so a long-lived session cannot strip a factor. @public */
+/** Demands a step-up inside the window on every state-changing request of a user who is subject to a second factor. @public */
 export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: AuthEnrolmentGuardOptions<Bindings>): Middleware {
-  const maxAgeMs = options.freshStepUpMaxAgeMs;
-  assertStepUpMaxAge("requireFreshStepUp", "freshStepUpMaxAgeMs", maxAgeMs);
+  const maxAgeMs = options.freshStepUpMaxAgeMs === null ? null : (options.freshStepUpMaxAgeMs ?? AUTH_FRESH_STEP_UP_MS);
+  assertStepUpMaxAge("requireFreshStepUp", "freshStepUpMaxAgeMs", maxAgeMs ?? undefined);
 
   return async (context, next) => {
-    if (maxAgeMs === undefined) return next();
+    if (maxAgeMs === null) return next();
     if (SAFE_METHODS.has(context.method.toUpperCase())) return next();
 
     const identity = establishedIdentity(context, "requireFreshStepUp");
-    const factors = await options.factors(getAppContext<Bindings>(context));
-    if (factors.stepUp.length === 0) throw new Error(NO_STEP_UP_FACTOR);
+    const resolved = await resolveFactorDemand(context, identity, options);
+    if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
+    if (resolved.status !== "step-up-required") return next();
     if (stepUpHolds(identity.stepUpAt, maxAgeMs)) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
@@ -284,7 +297,8 @@ function guardMiddleware<Bindings>(
   options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment">,
   medium: AuthMedium,
 ): Middleware {
-  if (name === "resolve-auth") return resolveAuth({ users: options.auth.users });
+  if (name === "resolve-auth")
+    return resolveAuth({ users: options.auth.users, ...(options.auth.now === undefined ? {} : { now: options.auth.now }) });
   if (name === "require-auth") return requireAuth({ ...options.auth, medium });
   // No JSON branch: `require-admin` sits on no JSON group, and an unused branch is an untested one.
   if (name === "require-admin") return requireAdmin();

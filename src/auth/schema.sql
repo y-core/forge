@@ -31,8 +31,14 @@ CREATE TABLE IF NOT EXISTS auth_users (
   webauthn_id BLOB,
   is_admin INTEGER NOT NULL DEFAULT 0,
   deactivated_at INTEGER,
+  -- Every session established at or before this instant is refused on its next request. Removing a
+  -- passkey or moving an address writes it, so the change reaches sessions this request cannot see.
+  sessions_invalid_before INTEGER,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  -- The web schema caps a typed address at 254 characters *before* `normalizeEmail` NFKC-expands it,
+  -- so an expanding input reaches the unique index over-length. This is the backstop that refuses it.
+  CHECK (length(email) <= 254 AND length(email_key) <= 254)
 ) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS auth_users_email_key ON auth_users (email_key);
@@ -104,3 +110,27 @@ CREATE TABLE IF NOT EXISTS auth_otp_state (
   issued_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL
 ) STRICT;
+
+-- A live ceremony challenge, and a consumed one-shot token's key. Both are ephemeral, and both were
+-- KV until KV's read-then-write made them wrong: two requests could take one challenge, and two
+-- verifications could each be told a nonce was theirs to spend. Here each is one statement.
+--
+-- KV expired a key for free; SQLite does not. Correctness rests on the `expires_at` predicate every
+-- read carries, never on a row being gone. `purgeAuthEphemera` reclaims the dead rows, and a
+-- deployment that never calls it is slower, not wrong.
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS auth_challenges_expires_at ON auth_challenges (expires_at);
+
+-- No value column: the key's presence is the whole record, and the primary key is what makes the
+-- first insert the only one that can win.
+CREATE TABLE IF NOT EXISTS auth_nonces (
+  key TEXT PRIMARY KEY NOT NULL,
+  expires_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS auth_nonces_expires_at ON auth_nonces (expires_at);

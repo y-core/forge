@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createTestContext } from "../../testing/context";
 import { buildRequest } from "../../testing/request";
 import type { AuthKeyRing } from "../types";
-import { lookupAuthKey, resolveAuthServices } from "./ring";
+import { importAuthKeyRing, lookupAuthKey, resolveAuthServices } from "./ring";
 
 function ring(overrides: Partial<AuthKeyRing> = {}): AuthKeyRing {
   return { activeKeyId: "k1", keys: { k1: new Uint8Array(32).fill(7) }, ...overrides };
@@ -30,7 +30,62 @@ describe("lookupAuthKey", () => {
   });
 });
 
+// The floor is a length check, and 32 zero bytes clears it. These are the two shapes that say the
+// secret was never generated at all.
+describe("importAuthKeyRing — the entropy floor", () => {
+  it("refuses a secret whose bytes are all the same value, however long it is", async () => {
+    await expect(importAuthKeyRing(["00".repeat(32)])).rejects.toThrow(
+      "importAuthKeyRing: a secret whose bytes are all the same value is not a secret",
+    );
+    await expect(importAuthKeyRing(["ff".repeat(48)])).rejects.toThrow("is not a secret");
+  });
+
+  it("refuses a secret drawn from too small an alphabet, naming the count it found", async () => {
+    await expect(importAuthKeyRing(["0102".repeat(16)])).rejects.toThrow(
+      "importAuthKeyRing: a secret carrying only 2 distinct byte values is not one a CSPRNG produced",
+    );
+  });
+
+  it("accepts a secret a CSPRNG would plausibly have produced", async () => {
+    const imported = await importAuthKeyRing(["9f2c7a41b6d0e358142b9ce70af6135d8b47e29c0d63a5f81e4720cb36d9a875"]);
+    expect(Object.keys(imported.keys)).toHaveLength(1);
+  });
+
+  it("refuses a degenerate secret even when a good one comes first, since a retired key still opens tokens", async () => {
+    await expect(importAuthKeyRing(["9f2c7a41b6d0e358142b9ce70af6135d8b47e29c0d63a5f81e4720cb36d9a875", "00".repeat(32)])).rejects.toThrow(
+      "is not a secret",
+    );
+  });
+});
+
 describe("resolveAuthServices", () => {
+  // Keyed on the env alone, two mounts with different `AuthOptions` on one env shared one
+  // `AuthServices`, and the second silently read the first's key ring.
+  it("answers two option sets on one env with their own services, rather than the first caller's", async () => {
+    const context = contextFor({ DB: {} });
+    const first = { secret: () => ring() };
+    const second = { secret: () => ring({ activeKeyId: "k2", keys: { k2: new Uint8Array(32).fill(9) } }) };
+
+    expect((await resolveAuthServices(context, first)).keys.activeKeyId).toBe("k1");
+    expect((await resolveAuthServices(context, second)).keys.activeKeyId).toBe("k2");
+    // And the first is still cached, rather than having been evicted by the second.
+    expect((await resolveAuthServices(context, first)).keys.activeKeyId).toBe("k1");
+  });
+
+  it("builds one option set once per env, so the cache is still a cache", async () => {
+    const context = contextFor({ DB: {} });
+    let calls = 0;
+    const options = {
+      secret: () => {
+        calls++;
+        return ring();
+      },
+    };
+    await resolveAuthServices(context, options);
+    await resolveAuthServices(context, options);
+    expect(calls).toBe(1);
+  });
+
   it("defaults to the two algorithms every supported runtime can verify", async () => {
     const services = await resolveAuthServices(contextFor({}), { secret: () => ring() });
     expect(services.algorithms).toEqual([-7, -257]);

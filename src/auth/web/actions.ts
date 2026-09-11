@@ -1,3 +1,5 @@
+import type { Session } from "@remix-run/session";
+
 import { getAppContext } from "../../context/types";
 import type { AppContext, RequestHandler } from "../../context/types";
 import { csrfFieldCtx } from "../../form/csrf-context";
@@ -17,7 +19,14 @@ import { createPasskeyRequestOptions } from "../passkey/options";
 import type { PasskeyAssertionCredential } from "../passkey/types";
 import type { PasskeyCeremonyOptions } from "../passkey/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
-import { clearAuthSession, establishAuthSession, markAuthSigninPending, markAuthStepUp, resolveAuthSigninPending } from "./identity";
+import {
+  clearAuthSession,
+  establishAuthSession,
+  markAuthSigninPending,
+  markAuthStepUp,
+  renewAuthSession,
+  resolveAuthSigninPending,
+} from "./identity";
 import {
   loadAdminElevate,
   loadAdminUserEdit,
@@ -30,7 +39,7 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import { authNow, authReturnPath, authSettledPath } from "./options";
+import { authNow, authReturnPath, authServices, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
 import { authVerifyDetour, resolveAuthVerifyDemand, resolveAuthViewer } from "./resolve";
 import {
@@ -75,6 +84,8 @@ const EMAIL_CHANGE_NOTICE = "We could not start that change. Check the address a
 const CEREMONY_REFUSED = "The passkey was not accepted.";
 
 const CEREMONY_UNAVAILABLE = "The passkey service is unavailable.";
+
+const CEREMONY_TOO_LARGE = "That request was too large.";
 
 function unavailable(): Response {
   return new Response("Service Unavailable", { status: 503 });
@@ -131,11 +142,28 @@ function passkeyCeremony(services: AuthRequestServices): PasskeyCeremonyOptions 
   };
 }
 
+// Held to the schema the rename path holds a label to, so one field cannot be bounded on one route
+// and unbounded on another. A missing nickname is a name the visitor declined to give, not a refusal.
+/** The enrolment nickname, or the refusal an over-long one earns. */
+function readEnrolmentNickname(presented: unknown): Result<string | null, undefined> {
+  if (presented === undefined || presented === null) return ok(null);
+  if (typeof presented !== "string") return err(undefined);
+  const parsed = v.safeParse(authPasskeyLabelSchema(), { label: presented }, { abortEarly: true });
+  return parsed.success ? ok(parsed.output.label) : err(undefined);
+}
+
+// A credential id is base64url of at most 1023 bytes (WebAuthn L3 §5.8.3), so 1400 characters is
+// past every real one. Bounded and shaped here rather than at the index: an id of any length and any
+// alphabet otherwise reaches `findByCredentialId` as a bind parameter on every unauthenticated POST.
+const ASSERTION_ID_MAX = 1400;
+const ASSERTION_ID_SHAPE = /^[A-Za-z0-9_-]+$/;
+
 /** The assertion a finished sign-in ceremony posted, or `null` when the body is not one. */
 function readAssertion(body: unknown): PasskeyAssertionCredential | null {
   const credential = (body as { credential?: unknown } | null)?.credential as Record<string, unknown> | undefined;
   const response = credential?.response as Record<string, unknown> | undefined;
   if (typeof credential?.id !== "string" || response === undefined) return null;
+  if (credential.id.length === 0 || credential.id.length > ASSERTION_ID_MAX || !ASSERTION_ID_SHAPE.test(credential.id)) return null;
   const { clientDataJSON, authenticatorData, signature, userHandle } = response;
   if (typeof clientDataJSON !== "string" || typeof authenticatorData !== "string" || typeof signature !== "string") return null;
   return {
@@ -144,12 +172,44 @@ function readAssertion(body: unknown): PasskeyAssertionCredential | null {
   };
 }
 
-/** The JSON body a ceremony endpoint was posted, or `null` when it was not JSON. */
-async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<unknown> {
+// A WebAuthn ceremony envelope is a few kilobytes; 64 KiB is generous for one and still a bound.
+// Without it these three endpoints read whatever a client cared to send, into a Worker's memory.
+/** The largest ceremony envelope a JSON endpoint reads before it answers 413. @internal */
+export const AUTH_CEREMONY_MAX_BYTES = 65_536;
+
+/** What reading a ceremony body produced: the parsed JSON, or the refusal the endpoint owes. */
+type CeremonyBody = { readonly ok: true; readonly body: unknown } | { readonly ok: false; readonly response: Response };
+
+// The two stages `parseFormData` proves: refuse on a `Content-Length` that already says too much,
+// then meter the stream, because a chunked body's header may be absent or lying.
+/** The JSON body a ceremony endpoint was posted, capped at `AUTH_CEREMONY_MAX_BYTES`. */
+async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<CeremonyBody> {
+  const declared = c.request.headers.get("content-length");
+  if (declared !== null && Number.isFinite(Number(declared)) && Number(declared) > AUTH_CEREMONY_MAX_BYTES) {
+    return { ok: false, response: jsonResponse({ error: CEREMONY_TOO_LARGE }, 413) };
+  }
+  if (!c.request.body) return { ok: true, body: null };
+
+  let seen = 0;
+  let overflowed = false;
+  const counter = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      seen += chunk.byteLength;
+      if (seen > AUTH_CEREMONY_MAX_BYTES) {
+        overflowed = true;
+        controller.error(new Error("ceremony body too large"));
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+
   try {
-    return await c.request.json();
+    // A `Response`, not a `Request`, wraps the metered stream: no `duplex` option is needed.
+    const body: unknown = await new Response(c.request.body.pipeThrough(counter), { headers: c.request.headers }).json();
+    return { ok: true, body };
   } catch {
-    return null;
+    return overflowed ? { ok: false, response: jsonResponse({ error: CEREMONY_TOO_LARGE }, 413) } : { ok: true, body: null };
   }
 }
 
@@ -167,7 +227,7 @@ async function signedInTarget<Bindings>(
   userId: string,
   isAdmin: boolean,
 ): Promise<string> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const resolved = await services.factors.resolve(userId, authFactorContext({ isAdmin }));
   if (!resolved.ok) return authSettledPath(options);
   if (resolved.data.status === "enrolment-required") return enrolTarget(options, resolved.data.kinds);
@@ -180,7 +240,7 @@ export function createSigninActions<Bindings>(options: AuthWebOptions<Bindings>)
   return {
     signinSubmit: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
 
       const parsed = await readAuthSubmission(c, authSigninSchema());
@@ -200,7 +260,7 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
   return {
     signupSubmit: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
 
       const parsed = await readAuthSubmission(c, authSignupSchema());
@@ -221,7 +281,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
   return {
     submit: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
       const at = authNow(options);
 
@@ -252,7 +312,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
         return loadVerify(c, options, { email: pending, error: SIGNIN_NOTICE[redactSigninReason(completed.error)], status: 422 });
       }
 
-      establishAuthSession(session, completed.data.user.id);
+      establishAuthSession(session, completed.data.user.id, at);
       const resolution = completed.data.resolution;
       // A successful outcome of a correct sign-in, not a refusal of one: the visitor proved the
       // primary factor and now owes an enrolment, which is a page to visit rather than a 4xx.
@@ -263,7 +323,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
 
     resend: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
       const at = authNow(options);
       // Both branches land on the same marked page whatever happened, because whether a code was
@@ -308,7 +368,7 @@ export function createPasskeySigninActions<Bindings>(options: AuthWebOptions<Bin
   return {
     authenticateBegin: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const ceremony = passkeyCeremony(services);
       if (ceremony === undefined || services.passkey === undefined) return notFound();
 
@@ -320,12 +380,14 @@ export function createPasskeySigninActions<Bindings>(options: AuthWebOptions<Bin
 
     authenticateFinish: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
       const passkey = services.passkey;
       if (passkey === undefined) return notFound();
 
-      const credential = readAssertion(await readCeremonyBody(c));
+      const read = await readCeremonyBody(c);
+      if (!read.ok) return read.response;
+      const credential = readAssertion(read.body);
       if (credential === null) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
       const verified = await verifyPasskeyAuthentication(
@@ -342,7 +404,7 @@ export function createPasskeySigninActions<Bindings>(options: AuthWebOptions<Bin
       );
       if (!verified.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
-      establishAuthSession(session, verified.data.user.id);
+      establishAuthSession(session, verified.data.user.id, authNow(options));
       return jsonResponse({ redirect: await signedInTarget(c, options, verified.data.user.id, verified.data.user.isAdmin) });
     },
   };
@@ -362,7 +424,7 @@ export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bin
   return {
     begin: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       const service = services.factors.find(kind);
       if (identity === null || service === undefined) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
@@ -373,14 +435,16 @@ export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bin
 
     finish: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
       const at = authNow(options);
       const identity = resolveAuthViewer(c);
       const service = services.factors.find(kind);
       if (identity === null || service === undefined) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
-      const body = (await readCeremonyBody(c)) as { credential?: unknown } | null;
+      const read = await readCeremonyBody(c);
+      if (!read.ok) return read.response;
+      const body = read.body as { credential?: unknown } | null;
       if (body?.credential === undefined || body.credential === null) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
       const verified = await service.verifyChallenge(identity.userId, JSON.stringify(body.credential), at);
@@ -407,7 +471,7 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
   return {
     begin: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const held = await enrolmentService(c, services);
       if (held === null) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
@@ -417,17 +481,24 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
 
     finish: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const held = await enrolmentService(c, services);
       if (held === null) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
-      const body = (await readCeremonyBody(c)) as { credential?: unknown; nickname?: unknown } | null;
+      const read = await readCeremonyBody(c);
+      if (!read.ok) return read.response;
+      const body = read.body as { credential?: unknown; nickname?: unknown } | null;
       const credential = body?.credential;
       if (credential === undefined || credential === null) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
+      // The same cap the rename path holds a label to. Without it a name typed at enrolment reached
+      // `credentials.create` on a trim alone, where the same field renamed later is bounded at 64.
+      const nickname = readEnrolmentNickname(body?.nickname);
+      if (!nickname.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
+
       // The whole envelope, not the credential alone: the name the visitor typed is passkey-specific,
       // so it rides in this factor's opaque payload rather than in a parameter every factor carries.
-      const envelope = JSON.stringify({ credential, nickname: body?.nickname });
+      const envelope = JSON.stringify({ credential, nickname: nickname.data });
       const completed = await held.service.completeEnrolment(held.identity.userId, envelope, authNow(options));
       if (!completed.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
       return jsonResponse({ redirect: authSettledPath(options) });
@@ -443,7 +514,7 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
   return {
     passkeyRename: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       const id = c.params.id;
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
@@ -460,7 +531,8 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
 
     passkeyRemove: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
+      const session = sessionCtx.get(c, NO_SESSION);
       const identity = resolveAuthViewer(c);
       const id = c.params.id;
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
@@ -469,9 +541,23 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       const removed = await services.credentials.removeForUser(id, identity.userId);
       if (!removed.ok) return unavailable();
       if (!removed.data) return notFound();
+      // Taking a credential away is what a visitor does when they think it is no longer theirs, so
+      // it has to reach the sessions it may already have signed in — which this request cannot see.
+      const revoked = await revokeOtherSessions(services, session, identity.userId, authNow(options));
+      if (!revoked) return unavailable();
       return loadPasskeyList(c, options);
     },
   };
+}
+
+// The barrier refuses every session established at or before it, this one included, so the acting
+// session is re-stamped past it: the visitor stays where they are and every other device does not.
+/** Raises this account's revocation barrier and carries the acting session over it. */
+async function revokeOtherSessions(services: AuthRequestServices, session: Session, userId: string, at: number): Promise<boolean> {
+  const revoked = await services.users.revokeSessions(userId, at);
+  if (!revoked.ok) return false;
+  renewAuthSession(session, at);
+  return true;
 }
 
 /** How a refused confirmation re-renders — the page it was posted from, which differs by mount. */
@@ -485,7 +571,7 @@ async function confirmTotp<Bindings>(
   options: AuthWebOptions<Bindings>,
   reload: AuthPageReload<Bindings>,
 ): Promise<Result<AuthIdentity, Response>> {
-  const services = await options.resolveServices(c);
+  const services = await authServices(c, options);
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(options.paths.auth.signin(), REDIRECT_STATUS));
   const service = services.factors.find(TOTP_KIND);
@@ -533,7 +619,7 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
 
     totpRemove: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
       const service = services.factors.find(kind);
@@ -545,6 +631,10 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
         const dropped = await services.enrolments.remove(factor.id, identity.userId);
         if (!dropped.ok) return unavailable();
       }
+      // Same reasoning as removing a passkey: a factor taken away must not leave a session that was
+      // admitted on the strength of it standing on another device.
+      const revoked = await revokeOtherSessions(services, sessionCtx.get(c, NO_SESSION), identity.userId, authNow(options));
+      if (!revoked) return unavailable();
       return redirect(options.paths.account.totp(), REDIRECT_STATUS);
     },
   };
@@ -555,7 +645,7 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
   return {
     emailChangeSubmit: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
 
@@ -564,7 +654,7 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
 
       const requested = await services.emailChange.request(identity.userId, parsed.data.email, authNow(options));
       if (!requested.ok) return loadEmailChange(c, options, { email: parsed.data.email, error: EMAIL_CHANGE_NOTICE, status: 422 });
-      return loadEmailChange(c, options, { sentTo: parsed.data.email });
+      return loadEmailChange(c, options, { sentTo: requested.data.sentTo });
     },
   };
 }
@@ -572,7 +662,10 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
 /** The status a refused administrative write answers with, by the guard that refused it. */
 function adminRefusalStatus(outcome: AdminUserOutcome): number | undefined {
   if (outcome === "changed") return undefined;
-  return outcome === "not-found" ? 404 : 409;
+  if (outcome === "not-found") return 404;
+  // `self` is the actor asking to be locked out of the console they are standing in — a refusal of
+  // what was asked, like the last-admin guards, and not a permission they lack.
+  return 409;
 }
 
 /** The role, status and deletion writes of one administered account. @public */
@@ -583,10 +676,13 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
   return {
     update: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const id = c.params.id;
       if (id === undefined) return notFound();
 
+      // Unlike the last-admin guard this needs no in-statement race protection: the acting
+      // administrator is fixed for this request, so no concurrent write can change who they are.
+      const viewer = resolveAuthViewer(c);
       const parsed = await readAuthSubmission(c, authAdminUserSchema());
       if (!parsed.ok) return loadAdminUserEdit(c, options, { fieldError: parsed.error.message, status: 422 });
 
@@ -605,6 +701,11 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
       const wantsActive = parsed.data.status === "active";
       if (outcome === "changed" && wantsActive !== (found.data.deactivatedAt === null)) {
+        // Deactivating your own account signs you out of the console you are standing in, and the
+        // last-admin guard does not catch it: a deployment with two admins would admit it.
+        if (!wantsActive && viewer?.userId === found.data.id) {
+          return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
+        }
         const written = wantsActive ? await services.admin.reactivate(id, at) : await services.admin.deactivate(id, at);
         if (!written.ok) return unavailable();
         outcome = written.data;
@@ -615,9 +716,11 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
     remove: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const id = c.params.id;
       if (id === undefined) return notFound();
+      // Same reasoning as the deactivation above, and worse: this one is not reversible.
+      if (resolveAuthViewer(c)?.userId === id) return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
 
       const removed = await services.admin.remove(id);
       if (!removed.ok) return unavailable();
@@ -632,7 +735,7 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
   return {
     submit: async (context) => {
       const c = getAppContext<Bindings>(context);
-      const services = await options.resolveServices(c);
+      const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
 

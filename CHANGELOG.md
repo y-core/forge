@@ -81,6 +81,64 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   redirects without reading the body at all. Rate limiting is what protects that endpoint until
   Turnstile is wired into the auth forms.
 
+- **The auth review of 2026-09-10, in full.** Twenty-one findings, the breaking ones first.
+
+  **The challenge and nonce stores are D1, not KV.** `createChallengeStore` and `createNonceStore`
+  take a `D1Client`. KV's read-then-write let two requests take one challenge and two verifications
+  each be told a nonce was theirs to spend; each is now one statement — a `DELETE … RETURNING` and an
+  `INSERT … ON CONFLICT DO NOTHING`. `schema.sql` gains `auth_challenges` and `auth_nonces`; KV
+  expired keys for free and SQLite does not, so every read holds a row against the clock and the new
+  **`purgeAuthEphemera(db, at)`** reclaims the dead ones from a scheduled handler. `prefix` still
+  namespaces both, now by key text. `AUTH_KV` stays — session storage is still KV.
+
+  **Sessions expire absolutely, at seven days.** `establishAuthSession(session, userId, at)` takes the
+  clock and stamps `AUTH_SIGNED_IN_SESSION_KEY`; `resolveAuthIdentity(session, users, at)` takes one
+  too and refuses past `AUTH_SESSION_MAX_MS`. A session carrying no stamp — every session issued
+  before this release — is over rather than unbounded, so a deployment signs its users out once.
+  Removing a passkey, removing the authenticator-app factor and completing an address change now
+  raise a revocation barrier (`auth_users.sessions_invalid_before`, `UserStore.revokeSessions`) that
+  every other session dies on at its next request; the two factor removals carry the acting session
+  over it with the new `renewAuthSession`, and the address change does not.
+
+  **Store contracts.** `UserStore.revokeSessions(id, at)`, `OtpStateStore.discard(userId, token)` and
+  `IdentityLinkStore.unlink(id, userId)` are new or newly owner-scoped. `FactorStore.countAttempt` is
+  re-keyed from `(id, userId, …)` onto `(userId, kind, …)` and answers the row rather than a boolean,
+  which is what merges the `find` and the spend into one statement. `AuthFactor` gains
+  `failedAttempts`, `AuthUser` gains `sessionsInvalidBefore`, `AdminUserOutcome` gains `"self"`, and
+  `AuthStoreErrorCode` gains `"invalid"` — a CHECK the caller's own value broke, which must not read
+  to a client as an outage. `schema.sql` also caps `email` and `email_key` at 254 characters, the
+  bound the web schema applies *before* `normalizeEmail` NFKC-expands an address past it.
+
+  **`AUTH_OTP_TTL_MS` is five minutes**, down from ten; the factor's own ceiling is unchanged, so only
+  the default moved. **Admin search is prefix-matched** so the unique index on `email_key` answers it —
+  a substring in the middle of an address no longer matches. **`authTotpEnrolSchema` caps at eight
+  digits**, where the factor's own ceiling is.
+
+  **Refusals that were missing.** `signin.complete` folds `too-many-attempts` and `too-soon` into
+  `unrecognised` on the primary path, where the true reason was itself a membership answer — `stepUp`
+  keeps it, since there the caller is already identified. A discoverable passkey sign-in now requires
+  a `userHandle` when the challenge names no subject, refuses a reported `topOrigin`, and bounds the
+  assertion id. The three ceremony JSON endpoints cap the body at 64 KiB and answer 413, and the
+  enrolment nickname is held to the same 64-character cap the rename path uses. An administrator can
+  no longer deactivate or delete their own account. `importAuthKeyRing` refuses a secret whose bytes
+  are all equal or drawn from too small an alphabet — the length floor alone admitted 32 zero bytes.
+
+  **Fixed without a contract change.** The authenticator-app enrol page rotated the secret on every
+  render, so a mistyped code offered a *different* secret from the one just stored in the app;
+  `beginEnrolment` now re-offers the unconfirmed row's own. A failed mail send left the OTP cooldown
+  claimed and the identity holding an undeliverable code. Every auth page carries
+  `Cache-Control: no-store`. The sign-out control on the passkey enrol page was a `<Link>` to a
+  POST-only route and could not work. The TOTP enrol view hard-coded six digits and thirty seconds
+  rather than reading the factor's own. `resolveAuthServices` cached on the env alone, so two
+  `AuthOptions` on one env shared one key ring. `resolveServices` is memoised per request, and the
+  imported `CryptoKey` is cached rather than re-imported per token operation.
+
+  **One session-namespace change rides along**, because it is the other half of the absolute
+  lifetime: `trackSessionId` marked a session dirty the moment anything read `.id`, and the
+  documented CSRF wiring reads `.id` on every request — so every request re-wrote an unchanged
+  session to KV, and the sliding TTL that produced is what kept a session alive indefinitely. It now
+  dirties only when the presented cookie would not already reproduce that id.
+
 ### Added
 
 - **`resolveAuthView` — an auth page's data and node, for a page you own.** `@y-core/forge/auth/web`

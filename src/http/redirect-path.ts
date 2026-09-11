@@ -20,5 +20,8 @@ export function safeRedirectPath(candidate: string | null | undefined, fallback:
     return fallback;
   }
   if (url.origin !== PARSE_BASE) return fallback;
+  // Checked again after parsing: dot-segment normalisation can open a path with `//` that the raw
+  // string did not — `/..//evil.com/x` resolves to `//evil.com/x`, which a browser reads as a host.
+  if (/^[/\\]{2}/.test(url.pathname)) return fallback;
   return `${url.pathname}${url.search}${url.hash}`;
 }

@@ -6,9 +6,12 @@
 // `/guards` then runs the shipped store adapters themselves against that schema, because a guard
 // answered by a fake is a guard whose SQL was never executed.
 import { createAdminUserStore } from "../../../src/auth/stores/admin-users";
+import { createChallengeStore } from "../../../src/auth/stores/challenges";
 import { createCredentialStore } from "../../../src/auth/stores/credentials";
+import { purgeAuthEphemera } from "../../../src/auth/stores/ephemera";
 import { createFactorStore } from "../../../src/auth/stores/factors";
 import { createIdentityLinkStore } from "../../../src/auth/stores/identity-links";
+import { createNonceStore } from "../../../src/auth/stores/nonces";
 import { createOtpStateStore } from "../../../src/auth/stores/otp-state";
 import { createUserStore } from "../../../src/auth/stores/users";
 import type { Result } from "../../../src/result/result";
@@ -43,7 +46,7 @@ function messageOf(thrown: unknown): string {
 // outlives the schema that created it: `CREATE TABLE IF NOT EXISTS` then silently keeps the old
 // columns and a new index over a new one fails. The spec drops them before it applies anything.
 async function resetSchema(db: D1Database): Promise<Response> {
-  const tables = ["auth_otp_state", "auth_identity_links", "auth_credentials", "auth_factors", "auth_users"];
+  const tables = ["auth_nonces", "auth_challenges", "auth_otp_state", "auth_identity_links", "auth_credentials", "auth_factors", "auth_users"];
   for (const table of tables) await db.prepare(`DROP TABLE IF EXISTS ${table}`).run();
   return json({ dropped: tables });
 }
@@ -165,17 +168,28 @@ const AT = 1_700_000_000_000;
 
 /** Every store the guards live in, over one client, on an empty set of tables. */
 async function storesOn(db: D1Database) {
-  for (const table of ["auth_otp_state", "auth_identity_links", "auth_credentials", "auth_factors", "auth_users"]) {
+  for (const table of [
+    "auth_nonces",
+    "auth_challenges",
+    "auth_otp_state",
+    "auth_identity_links",
+    "auth_credentials",
+    "auth_factors",
+    "auth_users",
+  ]) {
     await db.prepare(`DELETE FROM ${table}`).run();
   }
   const client = createD1Client(db as never);
   return {
+    client,
     users: createUserStore(client),
     admins: createAdminUserStore(client),
     credentials: createCredentialStore(client),
     factors: createFactorStore(client),
     links: createIdentityLinkStore(client),
     otp: createOtpStateStore(client),
+    challenges: createChallengeStore(client),
+    nonces: createNonceStore(client),
   };
 }
 
@@ -228,15 +242,25 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
   const first = await credential("erin-1");
   await credential("erin-2");
   const factor = must(await factors.enrol({ userId: erin, kind: "totp-app", secret: new Uint8Array([9]) }, AT), "enrol factor");
-  await links.link({ userId: erin, provider: "github", subject: "erin" }, AT);
+  const link = must(await links.link({ userId: erin, provider: "github", subject: "erin" }, AT), "link erin");
   must(await otp.issue(erin, { token: "c2VhbGVk", attempts: 0, issuedAt: AT, expiresAt: AT + 600_000 }, 60_000), "issue erin's code");
 
   // Two guesses of a budget of two, then a third that the statement refuses before any code is
-  // compared — and an accepted step, which is the only thing that buys the budget back.
-  const spendFirst = must(await factors.countAttempt(factor.id, erin, 2, AT + 1), "spend 1 of 2");
-  const spendSecond = must(await factors.countAttempt(factor.id, erin, 2, AT + 2), "spend 2 of 2");
-  const spendRefused = must(await factors.countAttempt(factor.id, erin, 2, AT + 3), "spend 3 of 2");
-  const spendByStranger = must(await factors.countAttempt(factor.id, frank, 2, AT + 4), "spend as stranger");
+  // compared — until the lockout window has run from the last admitted guess, when the next one
+  // reopens the budget at a count of one. An accepted step clears it outright.
+  const LOCKOUT_MS = 60_000;
+  // One statement now answers the row too, so the count it reports is the count that guess wrote —
+  // there is no second read for a parallel guess to slip between.
+  const spend = async (userId: string, at: number): Promise<number | null> =>
+    must(await factors.countAttempt(userId, "totp-app", 2, at, LOCKOUT_MS), `spend at ${at}`)?.failedAttempts ?? null;
+  const spendFirst = await spend(erin, AT + 1);
+  const spendSecond = await spend(erin, AT + 2);
+  const spendRefused = await spend(erin, AT + 3);
+  const spendByStranger = await spend(frank, AT + 4);
+  const spendInsideWindow = await spend(erin, AT + 2 + LOCKOUT_MS - 1);
+  const spendAfterWindow = await spend(erin, AT + 2 + LOCKOUT_MS);
+  const spentAfterWindow = await countOf(db, "auth_factors", "failed_attempts = 1");
+  const spentSecretCarried = must(await factors.countAttempt(erin, "totp-app", 9, AT + 9, LOCKOUT_MS), "carry the secret")?.secret?.[0] ?? null;
 
   return {
     removeByStranger: must(await credentials.removeForUser(first.id, frank), "remove as stranger"),
@@ -245,6 +269,14 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
     spendSecond,
     spendRefused,
     spendByStranger,
+    spendInsideWindow,
+    spendAfterWindow,
+    spentAfterWindow,
+    spentSecretCarried,
+    unlinkByStranger: must(await links.unlink(link.id, frank), "unlink as stranger"),
+    unlinkByOwner: must(await links.unlink(link.id, erin), "unlink as owner"),
+    revokeSessions: must(await users.revokeSessions(erin, AT + 10), "revoke erin's sessions"),
+    revokeSessionsBackwards: must(await users.revokeSessions(erin, AT + 9), "revoke backwards"),
     advanceByStranger: must(await factors.advanceCounter(factor.id, frank, 57, AT + 5), "advance as stranger"),
     advanceFirst: must(await factors.advanceCounter(factor.id, erin, 57, AT + 6), "advance 57"),
     advanceReplay: must(await factors.advanceCounter(factor.id, erin, 57, AT + 7), "replay 57"),
@@ -263,11 +295,62 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
   };
 }
 
+// The claim the move off KV rests on: one challenge is taken once, and one nonce is consumed once,
+// however many requests ask at the same moment. A fake cannot settle either — both are the database
+// serialising writers, not anything the adapter does.
+async function probeEphemera(db: D1Database): Promise<Record<string, unknown>> {
+  const { client, challenges, nonces } = await storesOn(db);
+  const record = { challenge: "Y2hhbGxlbmdl", sessionId: "sess-1" };
+
+  must(await challenges.put("race", record, 300), "put the challenge");
+  const takes = await Promise.all([challenges.take("race"), challenges.take("race"), challenges.take("race")]);
+  const taken = takes.map((outcome) => must(outcome, "take the challenge"));
+
+  const consumed = (await Promise.all([nonces.markConsumed("race", 900), nonces.markConsumed("race", 900), nonces.markConsumed("race", 900)])).map(
+    (outcome) => must(outcome, "consume the nonce"),
+  );
+
+  // Expiry is the predicate on the read, never a row being gone: a challenge written already dead
+  // is invisible, and a purge only reclaims the space it left.
+  must(await challenges.put("stale", record, -1), "put an expired challenge");
+  const takeExpired = must(await challenges.take("stale"), "take the expired challenge");
+
+  const beforePurge = await countOf(db, "auth_challenges");
+  must(await purgeAuthEphemera(client, Date.now()), "purge");
+
+  return {
+    challengesTaken: taken.filter((value) => value !== null).length,
+    challengeValue: taken.find((value) => value !== null) ?? null,
+    noncesWon: consumed.filter(Boolean).length,
+    takeExpired,
+    beforePurge,
+    challengesAfterPurge: await countOf(db, "auth_challenges"),
+    // A consumed nonce is still live, so the purge leaves it: only the dead rows go.
+    noncesAfterPurge: await countOf(db, "auth_nonces"),
+  };
+}
+
+// The web schema caps a typed address at 254 characters before `normalizeEmail` NFKC-expands it, so
+// the CHECK is the backstop — and `storeError` must call it the caller's fault, not an outage.
+async function probeEmailLength(db: D1Database): Promise<Record<string, unknown>> {
+  const { users } = await storesOn(db);
+  const long = `${"a".repeat(250)}@example.test`;
+  const refused = await users.create({ email: long, emailKey: long }, AT);
+  const accepted = await users.create({ email: "ada@example.test", emailKey: "ada@example.test" }, AT);
+  return {
+    refusedCode: refused.ok ? "accepted" : (refused.error as { code: string }).code,
+    acceptedOk: accepted.ok,
+    rows: await countOf(db, "auth_users"),
+  };
+}
+
 async function probeGuards(db: D1Database): Promise<Response> {
   return json({
     lastAdmin: await probeLastAdmin(db),
     deactivatedAdmin: await probeDeactivatedAdmin(db),
     ownership: await probeOwnershipAndCounter(db),
+    ephemera: await probeEphemera(db),
+    emailLength: await probeEmailLength(db),
   });
 }
 

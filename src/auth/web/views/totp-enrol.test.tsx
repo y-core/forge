@@ -56,8 +56,17 @@ describe("TotpEnrolView while enrolling", () => {
     );
   });
 
-  it("asks for the code the app now shows, six digits wide", async () => {
+  it("asks for the code the app now shows, six digits wide by default", async () => {
     expect(attrOf(await totp(), 'data-slot="otp-input"', "maxlength")).toBe("6");
+    expect(textOf(await totp(), "p", 'data-slot="field-description"')).toBe("6 digits, refreshed by the app every 30 seconds.");
+  });
+
+  // The defect this closes: the width and the refresh interval were literals here, so a factor
+  // configured for eight digits on a sixty-second step rendered a page that contradicted it.
+  it("takes the width and the refresh interval from the factor, rather than restating forge's own", async () => {
+    const html = await totp({ codeDigits: 8, codePeriodSeconds: 60 });
+    expect(attrOf(html, 'data-slot="otp-input"', "maxlength")).toBe("8");
+    expect(textOf(html, "p", 'data-slot="field-description"')).toBe("8 digits, refreshed by the app every 60 seconds.");
   });
 
   it("posts the confirmation to the enrol path read off the route map", async () => {

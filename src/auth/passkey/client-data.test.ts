@@ -111,4 +111,22 @@ describe("verifyClientData — cross-origin", () => {
   it("refuses a ceremony run inside a third party's frame", () => {
     expect(verifyClientData(clientData({ crossOrigin: true }), EXPECTED)).toEqual({ ok: false, error: "cross-origin" });
   });
+
+  // The defect this closes: `parseClientData` kept only the fields it knew, so a reported
+  // `topOrigin` was dropped before anything could judge it — reporting one is the same claim
+  // `crossOrigin: true` makes, and it went through unrefused.
+  it("refuses a reported topOrigin rather than dropping it unread", () => {
+    expect(verifyClientData(clientData({ topOrigin: "https://embedder.test" }), EXPECTED)).toEqual({ ok: false, error: "top-origin" });
+    expect(verifyClientData(clientData({ crossOrigin: true, topOrigin: "https://embedder.test" }), EXPECTED)).toEqual({
+      ok: false,
+      error: "cross-origin",
+    });
+  });
+
+  it("keeps topOrigin on the parse, so the refusal above has something to judge", () => {
+    expect(parseClientData(clientData({ topOrigin: "https://embedder.test" }))).toEqual({
+      ok: true,
+      data: { type: "webauthn.get", challenge: CHALLENGE, origin: ORIGIN, topOrigin: "https://embedder.test" },
+    });
+  });
 });

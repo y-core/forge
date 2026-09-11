@@ -46,6 +46,7 @@ import {
   createPasskeyRequestOptions,
   importAuthKeyRing,
   normalizeEmail,
+  purgeAuthEphemera,
   resolveAuthServices,
 } from "@y-core/forge/auth";
 ```
@@ -53,7 +54,7 @@ import {
 ### Features
 
 - **Per-request capability resolution** — `resolveAuthServices` reads the root key ring off the
-  request context, validates it, and caches the result per `env` object.
+  request context, validates it, and caches the result per `env` object and per options object.
 - **A capability probe that fails closed** — configuring COSE `-8` on a runtime that cannot import
   an Ed25519 key throws at resolution rather than at the first sign-in.
 - **Deterministic email identity** — `normalizeEmail` produces the key a unique index holds, so two
@@ -63,9 +64,9 @@ import {
 - **An encrypted token codec** — `encodeAuthToken` / `decodeAuthToken` seal a payload under
   AES-256-GCM with a per-purpose subkey, so the address inside an email-change confirmation link is
   not readable from the URL.
-- **Store contracts with shipped adapters** — a SQL adapter for each durable store and a KV adapter
-  for each ephemeral one, every method returning a `Result`, with `UserStore` and `AdminUserStore`
-  split so a sign-in service cannot hold the capability to delete a user.
+- **Store contracts with shipped adapters** — every store, durable and ephemeral alike, is a SQL
+  adapter over one `D1Client`, every method returning a `Result`, with `UserStore` and
+  `AdminUserStore` split so a sign-in service cannot hold the capability to delete a user.
 - **A factor contract and registry** — email-OTP, passkey and TOTP-app, closed, with the enrolment
   ceremony reached by control flow rather than by a cast.
 - **The email-OTP factor** — an exact issue counter inside a self-healing window, and attempts
@@ -90,8 +91,11 @@ for, a key shorter than 32 bytes, or COSE `-8` on a runtime without Ed25519. Tha
 resolving-a-binding half of [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5e — operating on
 a resolved store returns a `Result` instead.
 
-The result is cached in a `WeakMap` keyed on the `env` object's identity, so one Worker isolate
-resolves the ring once and every later request on that isolate reuses it.
+The result is cached in a `WeakMap<env, WeakMap<AuthOptions, AuthServices>>`, so one Worker isolate
+resolves the ring once and every later request on that isolate reuses it. **Both keys, because one
+would be wrong:** keyed on the `env` alone, two mounts with different `AuthOptions` on one binding
+set shared a single `AuthServices`, and the second caller silently got the first's key ring — a
+token minted under one deployment's secret and read under another's.
 
 ### Supported algorithms — `AUTH_SUPPORTED_ALGORITHMS`
 
@@ -157,6 +161,15 @@ Rotation is prepending a secret. Tokens minted under the old key keep opening fo
 stays in the list, and `authNonceKey` derives from the **token's own** key id, so a token consumed
 before a rotation stays consumed after one.
 
+**A degenerate secret is refused, not merely a short one.** The 32-byte floor is a length check, and
+32 zero bytes passes it — so `importAuthKeyRing` also throws on a secret whose bytes are all one
+value, and on one carrying fewer than eight distinct byte values. Both are shapes that say the secret
+was never generated.
+
+Each derived subkey and each imported `CryptoKey` is cached per ring, the `CryptoKey` under its kid,
+purpose **and** algorithm — the AEAD key and the HMAC key of one subkey carry different usages and
+are not the same key under a new name.
+
 ### Stores — the contracts
 
 Every method returns a `Result`. **Not-found is `data: null`, never an error** — the same shape
@@ -172,7 +185,19 @@ domain rule refusing is a reason union on the service that owns the rule.
 | `IdentityLinkStore` | federated identities bound to a local user |
 | `ChallengeStore` | ceremony challenges. `take` is read-and-delete |
 | `NonceStore` | one-shot consumption. `markConsumed` reports `true` only the first time |
+| `OtpStateStore` | one identity's live emailed code and the guesses spent against it |
 | `AuthNotifier` | delivery. Forge ships the contract and **no mailer** |
+
+**Five methods carry rules a hand-written adapter has to reproduce**, because the caller does none of
+this itself:
+
+| Method | What the statement must do |
+| --- | --- |
+| `UserStore.revokeSessions(id, at)` | Raise a monotonic barrier. Every session established at or before `at` is refused on its next request, so the write must not lower one already stamped later. |
+| `FactorStore.countAttempt(userId, kind, maxAttempts, at, lockoutMs)` | Find the factor **and** spend one guess against it in the one statement, answering the `AuthFactor` or `null`. `null` is "no such factor, or the budget refusing" — the two are told apart by a second read, and only once the write has already been refused. |
+| `IdentityLinkStore.unlink(id, userId)` | Carry the owner in the `WHERE`, so a link id belonging to somebody else unlinks nothing. |
+| `OtpStateStore.discard(userId, token)` | Delete **that named code** and no other, so an undelivered issue hands its cooldown back without wiping a racing issue that did send. |
+| `OtpStateStore.issue` / `countAttempt` | Decide in one conditional statement. These are security counters on the primary factor, and a read followed by a write hands every parallel request a free extra guess. |
 
 **The `UserStore` / `AdminUserStore` split is the point, not tidiness.** A sign-in service that
 holds a `UserStore` cannot delete a user, because the method is not on the type it was given — not
@@ -232,8 +257,9 @@ value a bind parameter. A second adapter for the same contract would be named by
 it, never by the product beneath it ([`NAMESPACES.md`](../../docs/NAMESPACES.md) §5h).
 
 A `UNIQUE constraint failed` from D1 becomes `AuthStoreError` with `code: "conflict"` and the index
-name in `constraint`; anything else becomes `code: "unavailable"`. Neither is ever thrown across
-the boundary.
+name in `constraint`; a `CHECK constraint failed` becomes `code: "invalid"`, which says the caller's
+own value was refused rather than that the backend is down; anything else becomes
+`code: "unavailable"`. None is ever thrown across the boundary.
 
 **Every method is total, including on input the caller never validated.** An id that is not a
 canonical UUID answers what that method's contract calls no such row — `null` for a finder, `false`
@@ -253,31 +279,38 @@ refused delete leaves the children too. The outcome is the final `DELETE`'s own 
 leading probe only names which refusal it was, and a probe that disagrees with the delete is
 reported as `unavailable` rather than resolved either way.
 
-### Ephemeral store adapters — `createChallengeStore`, `createNonceStore`
+### Ephemeral store adapters — `createChallengeStore`, `createNonceStore`, `purgeAuthEphemera`
 
 ```ts
-function createChallengeStore(namespace: KVNamespaceLike, options?: ChallengeStoreOptions): ChallengeStore;
-function createNonceStore(namespace: KVNamespaceLike, options?: NonceStoreOptions): NonceStore;
+function createChallengeStore(db: D1Client, options?: ChallengeStoreOptions): ChallengeStore;
+function createNonceStore(db: D1Client, options?: NonceStoreOptions): NonceStore;
+function purgeAuthEphemera(db: D1Client, at: number): Promise<AuthStoreResult<void>>;
 ```
 
-Challenges and nonces are the ephemeral, TTL-bounded stores, which is what makes KV right for them
-today. Everything durable stays on the SQL side.
+Challenges and nonces sit on the same `D1Client` every durable store sits on, in `auth_challenges`
+and `auth_nonces`. **They were KV, and KV's read-then-write made them wrong**: two requests inside
+the consistency window could each take the same challenge, and two verifications could each be told
+a nonce was theirs to spend. Each is now decided by one statement — `take` is a
+`DELETE … WHERE key = ? AND expires_at > ? RETURNING value`, so whichever `DELETE` matches the row
+is the only call `RETURNING` answers a value to; `markConsumed` is an
+`INSERT … ON CONFLICT (key) DO NOTHING`, so the primary key and not a prior read decides who was
+first.
 
-**The email code's state is not one of them.** It was, and KV was the wrong backing: both counters
-it holds are security counters on the primary factor, and KV can only read and then write, so
-parallel guesses each compare against a count none of them has written yet. `createOtpStateStore`
-takes a `D1Client` and lives with the durable adapters above.
+**`DO NOTHING` and never a conditional update**, which is why an unpurged nonce row can only refuse a
+replay and never admit one: a consumed key stays consumed past its own expiry.
 
-**Read the exposure before choosing this adapter.** `take` and `markConsumed` are read-then-write,
-and KV makes that pair non-atomic: two requests inside the consistency window can both see one
-challenge unconsumed. The exposure is **mitigated, not eliminated** — a challenge carries the
-session it was issued to, so a replay from another session still fails the session check. The
-strict fix is a Durable Object adapter, which is not in this release.
+`prefix` still namespaces both stores, but it now namespaces the key **text** inside a shared table
+rather than a KV keyspace. Omit it for the default; an empty string is refused, because it drops the
+separator with it and the store then shares a keyspace with every other store on the binding.
 
-Lifetimes come from your configuration and are passed straight through as `expirationTtl`. A TTL
-below `AUTH_KV_MIN_TTL_SECONDS` — Workers KV's own 60-second floor — **throws** rather than being
-quietly raised to it: silently extending a credential's life is the wrong way to handle a
-misconfiguration.
+**KV expired a key for free and SQLite does not.** Correctness rests on the `expires_at` predicate
+every read carries, never on a row being gone — so a dead row is already inert.
+`purgeAuthEphemera(db, at)` deletes the challenge and nonce rows that expired at or before `at`, in
+one `batch()`; call it from your Worker's scheduled handler. A deployment that never calls it is
+slower, not wrong.
+
+**The email code's state is a durable store, not one of these.** Both counters it holds are security
+counters on the primary factor, so `createOtpStateStore` lives with the durable adapters above.
 
 ### Factors — `createFactorRegistry`
 
@@ -295,6 +328,18 @@ function createFactorRegistry(store: FactorStore, options: AuthFactorsOptions): 
 **TOTP-app is step-up only, deliberately.** An authenticator app proves possession; it does not say
 who you are. Offering it as the primary factor would be a sign-in with no subject, so the registry
 refuses it at construction.
+
+**Its guess budget reopens on a timer as well as on a correct code.**
+`FactorStore.countAttempt(userId, kind, maxAttempts, at, lockoutMs)` finds the factor and spends a
+guess against it in the one `UPDATE` that admits it — keyed on the owner and the kind, so the find
+and the spend are not two statements with a race between them — and that statement admits while
+`failed_attempts < maxAttempts` **or** the last write is older than
+`lockoutMs`, reopening a spent budget at 1 in the same statement rather than in a second write. It
+answers the `AuthFactor` or `null`, and `null` is either no such factor or the budget refusing; a
+second read tells those apart, after the guess has already been spent. A
+refused guess writes nothing, so the window runs from the moment the cap was hit. `lockoutMs`
+defaults to `AUTH_TOTP_LOCKOUT_MS` and is bounded 60_000–86_400_000 at construction; why the window
+exists at all is [`AUTH_FLOWS.md`](../../docs/AUTH_FLOWS.md) §4.
 
 **Reach the enrolment ceremony through `service.enrolment`.** `AuthFactorService` is a union of
 `ImplicitFactorService` and `EnrollableFactorService`, discriminated on that literal, so
@@ -355,6 +400,10 @@ that returns no row is then classified by a second read — expired code, or bud
 race that cannot change the answer, because the attempt was already refused. The guess ceiling is
 `AUTH_OTP_MAX_ATTEMPTS`, the code is `AUTH_OTP_DIGITS` long, and it lives `AUTH_OTP_TTL_MS`.
 
+**A code nobody could receive costs no cooldown.** When `AuthNotifier.send` fails, the factor rolls
+the claimed cooldown back with `OtpStateStore.discard(userId, token)` — named by token and not
+`clear`, so a second issue that raced this one and _did_ send is left alone.
+
 `OtpStateStore.clear` remains public for the operator support path.
 
 The code itself is never stored: what the state holds is the sealed `verify`-purpose token, and the
@@ -378,8 +427,8 @@ this deployment cannot verify.
 The challenge carries `AUTH_PASSKEY_CHALLENGE_BYTES` of entropy, is stored through `ChallengeStore`
 under a **session-bound** key, and lives `AUTH_PASSKEY_TTL_SECONDS` unless configured otherwise. A
 configured `ttlSeconds` is held to `AUTH_PASSKEY_TTL_MIN_SECONDS`–`AUTH_PASSKEY_TTL_MAX_SECONDS`
-(60–600) and the builder **throws** outside it: below the floor the challenge store would refuse the
-expiration mid-ceremony, and above the ceiling a replayable challenge outlives an emailed code.
+(60–600) and the builder **throws** outside it: below the floor a slow authenticator loses the race
+against the expiry, and above the ceiling a replayable challenge outlives an emailed code.
 Registration excludes the credentials the user already has, so re-enrolling one authenticator is
 refused by the browser rather than by a database conflict later. Omitting `userId` from a request
 builds a discoverable sign-in: `allowCredentials` is empty, which is what lets the authenticator name
@@ -395,6 +444,11 @@ Every check here is one an attacker gets to attempt on every sign-in, so each ha
 **`origin` is compared as an exact string** — not a prefix, not a host-only parse.
 `https://example.com.evil.test` passes every relaxed form of this check and fails only the exact
 one.
+
+**A reported `topOrigin` is refused, not dropped unread.** WebAuthn L3 §5.8.1 defines the field only
+for a cross-origin ceremony, so one present at all says this ceremony ran inside a frame forge did
+not authorise — `ClientData` keeps it on the parse precisely so `verifyClientData` has something to
+judge, and the reason is `"top-origin"`.
 
 **`rpIdHash` is compared as a hash**, SHA-256 of the configured id against the presented digest, in
 constant time. Comparing it as text, or decoding it back to a name, is what makes a credential
@@ -419,6 +473,11 @@ something else is not reporting what it enrolled; the attested id remains the on
 assertion carries no attested credential segment, so its `id` has nothing to be held against — it is
 the store lookup, and the key it finds is what the signature must verify under.
 
+**A discoverable assertion must carry a `userHandle`.** Where the stored challenge names no `userId`,
+nothing but the authenticator's own user handle says whose account this is, so an assertion without
+one has not answered the question the ceremony asked and is refused as `unrecognised`. Where the
+challenge _does_ name a subject, an absent handle stays admitted: the account was already known.
+
 `verifyPasskeyRegistration` and `verifyPasskeyAuthentication` are the whole-ceremony verifiers built
 on those checks: each consumes the stored challenge, applies both parsers, and answers a `Result`
 whose error is a reason union.
@@ -431,9 +490,17 @@ address with no account gets a decoy that does the same token work and delivers 
 only hides anything if the real branch does not block the response either.
 
 **Every branch of `complete` costs what verifying a real code costs.** An unknown address and a
-deactivated one run the same row read and token opening the known branch runs before returning; a
-verifier that answers the two cheap cases early bins an address list by latency, which is the
-enumeration the deferred `request` exists to refuse.
+deactivated one spend the guess, open the sealed token and consume the nonce the known branch
+spends before returning; a verifier that answers the two cheap cases early bins an address list by
+latency, which is the enumeration the deferred `request` exists to refuse. **One asymmetry is left,
+and closing it would mean mailing an address nobody asked about:** the real issue ends in
+`AuthNotifier.send` and the decoy cannot. Every statement before it matches.
+
+**`complete` reports a throttled primary factor as `unrecognised`.** A known-but-throttled address
+answering `too-many-attempts` where an unknown one answers `unrecognised` is the same membership
+answer the decoy exists to withhold, and `redactSigninReason` renders the two as different notices.
+`stepUp` and `requestStepUp` keep the true reason — the visitor is already signed in, so there is no
+membership left to leak.
 
 `redactSigninReason` is **required at the rendering boundary** — every response carrying a sign-in
 refusal passes through it, and an `AuthSigninReason` never reaches a page. It maps to the three
@@ -441,10 +508,28 @@ notices a page may carry — unavailable, throttled, or unrecognised — with ev
 into `unrecognised` deliberately. `AuthEmailChangeReason` and `AuthStoreError` have no equivalent
 yet and must not be rendered raw. `confirm` folds the unique index catching the new address into
 `unrecognised` for the same reason `request` never looks it up: reporting the collision would hand
-back at confirmation the enumeration answer the request withheld. It also moves and verifies the row
-in one statement — answering the mailed link _is_ the proof of control, and a second write could fail
-and leave the account holding an address no passkey sign-in accepts. What each flow does end to end is [`AUTH_FLOWS.md`](../../docs/AUTH_FLOWS.md) §1, §2
-and §5.
+back at confirmation the enumeration answer the request withheld. What each flow does end to end is
+[`AUTH_FLOWS.md`](../../docs/AUTH_FLOWS.md) §1, §2 and §5.
+
+**The email-change flow takes two links, and both of its calls answer a record rather than a
+scalar.** `request(userId, email, at)` gives `AuthEmailChangeRequest` — `expiresAt`, and `sentTo`,
+the address the mail actually went to: the account's own where that is verified, the new one where it
+is not. Render `sentTo`, never the address the visitor typed. `confirm(token, at)` gives
+`AuthEmailChangeConfirm`, discriminated on `status`: `"forwarded"` carries the `sentTo` and
+`expiresAt` of a second link just deferred to the new address, and `"moved"` carries the updated
+`user`. The `move` stage writes the address and marks it verified in one statement — answering a link
+sent to _that_ mailbox is the proof of control, and a second write could fail and leave the account
+holding an address no passkey sign-in accepts. That stage also raises the account's revocation
+barrier and carries nothing over it, so a completed move signs **every** session out — the
+confirmation link is opened from whatever browser answered the mail, which need not be one the
+account was signed in on.
+
+```ts
+const outcome = await services.emailChange.confirm(token, Date.now());
+if (!outcome.ok) return outcome.error instanceof AuthStoreError ? unavailablePage() : refusalPage(outcome.error);
+if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sentTo);
+return changedPage(outcome.data.user);
+```
 
 #### What each flow is constructed with
 
@@ -461,8 +546,15 @@ that are.
 | --- | --- |
 | `keys` | `AuthKeyRing` |
 | `users` | `UserStore` |
+| `state` | `OtpStateStore` — the decoy branch's, and it spends the same statements the real branch spends |
+| `nonces` | `NonceStore` — the same |
 | `factors` | `AuthFactorRegistry` |
 | `defer` | `AuthDeferral` |
+
+**`state` and `nonces` are here for the decoy, not for the sign-in.** `AuthDecoyStores` is the
+sub-shape they make up — the emailed-code factor's stores, whatever this deployment's primary factor
+turns out to be. That coupling is the price of the two branches being indistinguishable: a decoy
+holding no store is a latency oracle the moment a caller awaits the promise.
 
 | `AuthEmailChangeOptions` | Type |
 | --- | --- |
@@ -507,7 +599,8 @@ session id.
 | `factors` | `FactorStore` |
 | `issuer` | `string` — what the authenticator app shows as the account's issuer |
 | `account` | `(userId) => string \| Promise<string>` — the account label the provisioning URI carries. A `UserStore` read |
-| `digits`, `period`, `secretBytes` | `number` — all optional |
+| `digits`, `period`, `secretBytes`, `maxAttempts` | `number` — all optional, each bounded at construction |
+| `lockoutMs` | `number` — optional; how long a spent guess budget stays refused. Defaults to `AUTH_TOTP_LOCKOUT_MS` (15 minutes), bounded 1 minute–1 day |
 
 **`address`, `subject` and `account` are the three seams most easily missed.** Each is required, each
 is a `UserStore` read, and none of them is inferable from the factor's name — which is why the factor
@@ -519,6 +612,18 @@ has to be constructed per request alongside the stores rather than once at boots
 searching by cursor, `view`, `countAdmins`, `elevate` / `demote`, `deactivate` / `reactivate` and
 `remove`. It adds no guard of its own — every refusal is decided in the store's statement — and
 `isLastAdminRefusal` is the predicate that tells the three last-admin outcomes apart from the rest.
+
+**Search matches a prefix, not a substring.** `search` builds `LIKE 'term%'`, escaping the two
+wildcards a caller's text may carry, so the unique index on `email_key` answers the query instead of
+a full table scan. **This is a behaviour change a consumer feels**: a term matching the middle of an
+address — a domain, say — no longer finds it. Search by the start of the local part.
+
+**`AdminUserOutcome` carries a sixth member, `"self"`.** An administrator may not deactivate or
+delete their own account: the last-admin guard does not catch it, since a deployment with two admins
+would admit it, and either write locks the operator out of the console they are standing in — the
+delete irreversibly. Reactivating your own account is still allowed. `"self"` is decided in the web
+layer against the acting identity, not in the store's statement, and the shipped page answers it
+with a 409.
 
 ### The passkey contract — `PASSKEY_*`
 
@@ -543,12 +648,22 @@ installed package with a filesystem path:
 wrangler d1 execute <DATABASE> --file node_modules/@y-core/forge/src/auth/schema.sql
 ```
 
-Five tables — `auth_users`, `auth_factors`, `auth_credentials`, `auth_identity_links` and
-`auth_otp_state` — all `STRICT`. The first four take a 16-byte UUIDv7 `BLOB` primary key, and
-bytewise order on a UUIDv7 **is** time order, which is why no table carries an index on `created_at`
-and why paging is a cursor over the key itself. `auth_otp_state` is keyed by the user it belongs to,
-holds at most one live code, and carries no TTL: a row is dead once `expires_at` passes, and the
-next issue for that identity overwrites it.
+Seven tables — `auth_users`, `auth_factors`, `auth_credentials`, `auth_identity_links`,
+`auth_otp_state`, `auth_challenges` and `auth_nonces` — all `STRICT`. The first four take a 16-byte
+UUIDv7 `BLOB` primary key, and bytewise order on a UUIDv7 **is** time order, which is why no table
+carries an index on `created_at` and why paging is a cursor over the key itself. `auth_otp_state` is
+keyed by the user it belongs to and holds at most one live code.
+
+**No table carries a TTL, and none of them needs one.** A row is dead once its `expires_at` has
+passed, because every read holds it against the clock. The two ephemeral tables are keyed by the
+store's own key text and indexed on `expires_at`, which is what `purgeAuthEphemera` reclaims them
+by; the next issue for an identity overwrites its `auth_otp_state` row.
+
+`auth_users` carries `sessions_invalid_before INTEGER` — the revocation barrier `revokeSessions`
+raises — and a `CHECK (length(email) <= 254 AND length(email_key) <= 254)`. The web schema caps a
+typed address at 254 characters _before_ `normalizeEmail` NFKC-expands it, so an expanding input
+reaches the unique index over-length; the `CHECK` is the backstop that refuses it, and it surfaces as
+`AuthStoreError` with `code: "invalid"`.
 
 The `auth_` prefix is fixed. Making it configurable would need raw identifier concatenation, which
 is the one thing `src/storage/db/sql.ts` exists to forbid and offers no escape hatch for.
@@ -577,16 +692,18 @@ distinct.
 
 ```ts
 class AuthStoreError extends Error {
-  readonly code: "conflict" | "unavailable";
+  readonly code: "conflict" | "invalid" | "unavailable";
   readonly operation: string;
   readonly constraint?: string;
 }
 ```
 
 The single I/O failure an auth store reports, carried in a `Result`'s error channel rather than
-thrown across the boundary. `conflict` is a uniqueness violation the caller can act on;
-`unavailable` is everything else the backend refused. `operation` names the store method, and
-`constraint` names the index a conflict violated when the backend says which.
+thrown across the boundary. `conflict` is a uniqueness violation the caller can act on; `invalid` is
+a `CHECK` the value broke — the caller's own input was refused, and rendering it as an outage tells
+a visitor this deployment is down when their address was simply too long; `unavailable` is
+everything else the backend refused. `operation` names the store method, and `constraint` names the
+index a conflict violated when the backend says which.
 
 ### Exports
 
@@ -599,10 +716,14 @@ thrown across the boundary. `conflict` is a uniqueness violation the caller can 
 | `AUTH_SUPPORTED_ALGORITHMS` | const | `[-7, -257]` — the COSE algorithms a ceremony advertises by default. |
 | `AUTH_KEY_ID_LENGTH` | const | Characters in a derived key id. |
 | `AUTH_OTP_DIGITS`, `AUTH_OTP_TTL_MS`, `AUTH_OTP_MAX_ATTEMPTS`, `AUTH_OTP_COOLDOWN_MS` | const | The emailed code's shape, life, guess ceiling and the wait between issues. |
+| `AUTH_TOTP_LOCKOUT_MS` | const | How long an authenticator-app factor stays refused once its guess budget is spent, before the next guess reopens it. |
+| `AUTH_FRESH_STEP_UP_MS` | const | How recent a step-up a state-changing request must carry, unless a mount names its own window or opts out with `null`. |
 | `AUTH_PASSKEY_CHALLENGE_BYTES`, `AUTH_PASSKEY_CHALLENGE_MIN_BYTES`, `AUTH_PASSKEY_TTL_SECONDS`, `AUTH_PASSKEY_TTL_MIN_SECONDS`, `AUTH_PASSKEY_TTL_MAX_SECONDS` | const | A ceremony challenge's entropy, the floor a configured `challengeBytes` throws below, the stored lifetime, and the range a configured `ttlSeconds` throws outside. |
-| `AUTH_KV_MIN_TTL_SECONDS` | const | Workers KV's expiration floor, which a shorter configured TTL is refused against. |
+| `AUTH_KV_MIN_TTL_SECONDS` | const | Workers KV's expiration floor. Session storage is still KV, and it is the floor `AUTH_PASSKEY_TTL_MIN_SECONDS` is set from. |
+| `AUTH_SESSION_MAX_MS` | const | How long a signed-in session stays valid from the moment it was established — an absolute lifetime, not a window activity extends. |
 | `createUserStore(db)`, `createAdminUserStore(db)`, `createFactorStore(db)`, `createCredentialStore(db)`, `createIdentityLinkStore(db)`, `createOtpStateStore(db)` | function | The six durable adapters, each over a `D1Client`. |
-| `createChallengeStore(kv, options?)`, `createNonceStore(kv, options?)` | function | The two ephemeral adapters, each over a KV namespace. |
+| `createChallengeStore(db, options?)`, `createNonceStore(db, options?)` | function | The two ephemeral adapters, each over the same `D1Client`. |
+| `purgeAuthEphemera(db, at)` | function | Deletes the challenge and nonce rows that expired at or before `at`. Call it from a scheduled handler; never calling it is slower, not wrong. |
 | `normalizeEmail(email)` | function | The key the `email_key` unique index holds. |
 | `AuthStoreError` | class | The one I/O failure an auth store reports, carried in a `Result`. |
 | `createFactorRegistry(store, options)` | function | Resolves a policy against one user's enrolments and hands out the factor services. |
@@ -618,17 +739,17 @@ thrown across the boundary. `conflict` is a uniqueness violation the caller can 
 | `PASSKEY`, `PASSKEY_SCOPE`, `PASSKEY_MODE_ATTR`, `PASSKEY_OPTIONS_PATH_ATTR`, `PASSKEY_VERIFY_PATH_ATTR`, `PASSKEY_OPTIONS_TOKEN_ATTR`, `PASSKEY_VERIFY_TOKEN_ATTR`, `PASSKEY_CSRF_HEADER_ATTR`, `PASSKEY_CSRF_HEADER_DEFAULT`, `PASSKEY_REDIRECT_ATTR`, `PASSKEY_REDIRECT_FALLBACK`, `PASSKEY_OUTCOME_EVENT` | const | The DOM contract both ceremony halves import, as pure data. |
 | `AuthOptions`, `AuthServices`, `AuthSecretResolver`, `AuthKeyRing`, `AuthAlgorithm` | types | Namespace configuration, what one request resolves to, the ring resolver, the ring itself, and a COSE algorithm identifier. |
 | `AuthTokenPurpose`, `AuthTokenClaims`, `AuthTokenOptions`, `AuthTokenReason` | types | The four purposes, a decoded token's claims, the injected clock, and why a token did not decode. |
-| `AuthUser`, `AuthUserInput`, `AuthUserPage` | types | The user record, its insert shape, and one cursor page of them. |
-| `AuthFactor`, `AuthFactorInput`, `AuthFactorKind` | types | A stored enrolment, its insert shape, and the closed kind union. |
+| `AuthUser`, `AuthUserInput`, `AuthUserPage` | types | The user record — `sessionsInvalidBefore` included — its insert shape, and one cursor page of them. |
+| `AuthFactor`, `AuthFactorInput`, `AuthFactorKind` | types | A stored enrolment, `failedAttempts` included, its insert shape, and the closed kind union. |
 | `AuthCredential`, `AuthCredentialInput` | types | A registered passkey and its insert shape. |
 | `AuthIdentityLink`, `AuthIdentityLinkInput` | types | A federated identity bound to a local user, and its insert shape. |
 | `AuthChallenge` | type | A ceremony challenge, bound to the session it was issued to. |
 | `UserStore`, `AdminUserStore`, `FactorStore`, `CredentialStore`, `IdentityLinkStore`, `ChallengeStore`, `NonceStore`, `OtpStateStore` | types | The eight store contracts. |
 | `OtpState` | type | The sealed code and its two counters. |
-| `ChallengeStoreOptions`, `NonceStoreOptions` | types | `{ prefix? }` — the KV key prefix each ephemeral adapter writes under; omit it for the default, and an empty string is refused because it drops the namespacing with the separator. A lifetime is per call, not an option. |
+| `ChallengeStoreOptions`, `NonceStoreOptions` | types | `{ prefix? }` — the key-text prefix each ephemeral adapter writes under inside its shared table; omit it for the default, and an empty string is refused because it drops the namespacing with the separator. A lifetime is per call, not an option. |
 | `AuthNotifier`, `AuthMessage` | types | The delivery seam, and what it is asked to deliver. |
-| `AuthStoreErrorCode`, `AuthStoreResult` | types | `"conflict" \| "unavailable"`, and what every store method resolves to. |
-| `AdminUserOutcome`, `AdminUserService`, `AdminUserServiceOptions` | types | What an administrative write reports, the service surface, and its construction options. |
+| `AuthStoreErrorCode`, `AuthStoreResult` | types | `"conflict" \| "invalid" \| "unavailable"`, and what every store method resolves to. |
+| `AdminUserOutcome`, `AdminUserService`, `AdminUserServiceOptions` | types | What an administrative write reports — the three last-admin refusals, `not-found`, `self` and `changed` — the service surface, and its construction options. |
 | `AuthFactorService`, `ImplicitFactorService`, `EnrollableFactorService` | types | The factor contract, discriminated on `enrolment`. |
 | `AuthFactorRegistry`, `AuthFactorsOptions`, `AuthFactorPolicy`, `AuthFactorCapabilities`, `AuthFactorContext` | types | The registry, its options, the policy union, what a kind can do, and the context a resolution reads roles from. |
 | `AuthFactorChallenge`, `AuthFactorVerified`, `AuthFactorResolution`, `AuthFactorReason` | types | An issued challenge, a verified factor, the three resolutions, and why one refused. |
@@ -637,12 +758,12 @@ thrown across the boundary. `conflict` is a uniqueness violation the caller can 
 | `PublicKeyCredentialParameter`, `PublicKeyCredentialDescriptor`, `UserVerification` | types | The WebAuthn shapes those payloads carry. |
 | `PasskeyRegistrationInput`, `PasskeyRegistrationCredential`, `PasskeyRegistrationResponse`, `PasskeyRegistrationVerifyOptions`, `PasskeyRegistrationReason` | types | The registration verifier's input, the credential it parses, its response half, its options and its reason union. |
 | `PasskeyAuthenticationInput`, `PasskeyAssertionCredential`, `PasskeyAssertionResponse`, `PasskeyAuthenticationVerifyOptions`, `PasskeyAuthentication`, `PasskeyAuthenticationReason` | types | The same five for an assertion, plus what a verified authentication carries. |
-| `ClientData`, `ClientDataExpectation`, `ClientDataReason`, `PasskeyCeremony` | types | Parsed client data, what it is held against, why it failed, and which ceremony it belongs to. |
+| `ClientData`, `ClientDataExpectation`, `ClientDataReason`, `PasskeyCeremony` | types | Parsed client data — `topOrigin` included, so a reported one can be refused rather than dropped unread — what it is held against, why it failed, and which ceremony it belongs to. |
 | `AuthData`, `AuthDataExpectation`, `AuthDataFlags`, `AuthDataReason`, `AttestedCredential` | types | Parsed authenticator data, its expectation, its flags, its reason union, and the attested credential inside it. |
 | `AuthSignupFlow`, `AuthSignupOptions` | types | The signup flow and its options. |
 | `AuthSigninFlow`, `AuthSigninOptions`, `AuthSignin`, `AuthSigninReason`, `AuthSigninNotice` | types | The sign-in flow, its options, what a completion carries, why one refused, and the redacted notice a page shows. |
-| `AuthEmailChangeFlow`, `AuthEmailChangeOptions`, `AuthEmailChangeRequest`, `AuthEmailChangeReason` | types | The email-change flow, its options, what a request returns, and why one refused. |
-| `AuthFlowChallenge`, `AuthIssueOutcome`, `AuthDeferral` | types | What a request hands back immediately, what the deferred issue reports, and the deferral you supply. |
+| `AuthEmailChangeFlow`, `AuthEmailChangeOptions`, `AuthEmailChangeRequest`, `AuthEmailChangeConfirm`, `AuthEmailChangeReason` | types | The email-change flow, its options, where a request mailed its link, what answering one did — forwarded a second link or moved the account — and why one refused. |
+| `AuthFlowChallenge`, `AuthIssueOutcome`, `AuthDeferral`, `AuthDecoyStores` | types | What a request hands back immediately, what the deferred issue reports, the deferral you supply, and the stores the unknown-address branch spends so it costs what a known one costs. |
 | `PasskeyMode`, `PasskeyOutcomeDetail`, `PasskeyFailureReason` | types | Which ceremony a scope root runs, what its outcome event carries, and why a ceremony ended badly. |
 
 ---
@@ -723,14 +844,14 @@ no user to name, so it cannot run through the registry:
 | --- | --- | --- |
 | `rpId`, `rpName`, `origin` | `string` | yes |
 | `sessionId` | `string` — the session the challenge is bound to, so a challenge issued to one visitor cannot be answered by another | yes |
-| `challenges` | `ChallengeStore` — `createChallengeStore(kvBinding)` | yes |
+| `challenges` | `ChallengeStore` — `createChallengeStore(d1Client)` | yes |
 | `algorithms` | `readonly AuthAlgorithm[]` | no |
 | `ttlSeconds` | `number` | no |
 
-**Pass the raw KV binding to `createChallengeStore` and `createNonceStore`, not a `createKVStore`
-result.** Both take a `KVNamespaceLike` and build their own typed store over it with their own prefix
-and codec; handing them a `createKVStore` result would key one store inside another. The supertype
-rationale is [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §4c.
+**`resolveServices` is called once per request, however many times the request asks.** A guard, a
+loader and often an action each need the services, and each rebuilding every store was the cost this
+memoisation removes. The **promise** is held rather than the value, so two parallel callers share one
+build rather than racing two.
 
 ### Guards — `createAuthGuards` and the four primitives
 
@@ -744,22 +865,27 @@ mounts. The six primitives are exported for pages a consumer routes themselves:
 | `requireAdmin` | An admin. Anyone else gets a plain 403, and it throws if `requireAuth` did not run first. |
 | `requireEnrolment` | A visitor whose factor policy is satisfied. An owed enrolment or step-up is redirected; an unreadable store answers 503. |
 | `requirePendingEnrolment` | **Only** a visitor who owes an enrolment. An owed step-up goes to the step-up page, and a settled visitor to the settled path. |
-| `requireFreshStepUp` | Every safe method, and a state-changing one only while the session's step-up mark is inside `freshStepUpMaxAgeMs`. |
+| `requireFreshStepUp` | Every safe method, and a state-changing one only while the session's step-up mark is inside `freshStepUpMaxAgeMs` — or the user's policy demands no step-up at all. |
 
-**`requireFreshStepUp` is opt-in, and gates only what changes something.** Omit
-`freshStepUpMaxAgeMs` and it demands nothing, so an existing mount is unaffected. Set it and every
-`POST`, `PATCH` or `DELETE` in the `account` and `admin.elevate` groups needs a step-up no older
-than the window — which is what stands between a long-lived session and stripping the second
-factor, taking a passkey off, or moving the address. A `GET` is always admitted: reading the page
-that offers an action is not the action, and gating it would leave the visitor unable to reach the
-form that clears the demand. A refused request is sent to `stepUpPath` with a **303**, so the
-browser does not replay the mutation; forge keeps no pending write across a re-authentication, so
-the visitor repeats the action afterwards.
+**`requireFreshStepUp` is on by default, and gates only what changes something.** Every `POST`,
+`PATCH` or `DELETE` in the `account`, `admin.users` and `admin.elevate` groups needs a step-up no
+older than the window — which is what stands between a long-lived session and stripping the second
+factor, taking a passkey off, moving the address, or changing another account's role. A `GET` is
+always admitted: reading the page that offers an action is not the action, and gating it would leave
+the visitor unable to reach the form that clears the demand. A refused request is sent to
+`stepUpPath` with a **303**, so the browser does not replay the mutation; forge keeps no pending
+write across a re-authentication, so the visitor repeats the action afterwards.
 
-**Under `{mode:"single"}` it throws rather than admitting.** A deployment that configures
-`freshStepUpMaxAgeMs` while offering no step-up factor has asked for a proof nothing can produce.
-Admitting silently would leave the freshness it asked for unenforced and invisible, so the guard
-fails loudly on the first state-changing request and names the option.
+**`freshStepUpMaxAgeMs` is `number | null` and optional.** Omit it for `AUTH_FRESH_STEP_UP_MS`
+(fifteen minutes, exported from `@y-core/forge/auth`); pass `null`, which is the only opt-out, and
+the guard admits every request.
+
+**The demand is the user's policy, not the mount's.** The guard resolves through `factors.resolve`
+and asks for a mark only where that answers `step-up-required`, so a `{mode:"single"}` deployment and
+a `when-enrolled` user with nothing enrolled are admitted rather than sent to a page that could never
+clear the demand. It reuses the resolution `requireEnrolment` already made on the same request
+through a context variable, so mounting both costs one registry query rather than two, and a registry
+it cannot read answers **503** exactly as the other enrolment guards do.
 
 **A guard refuses in the medium its group answers in.** `AuthGuardOptions` and
 `AuthEnrolmentGuardOptions` each take a `medium` (`"html" | "json"`, defaulting to `"html"`), and
@@ -776,6 +902,21 @@ since the visitor returns by `GET` and a mutation's URL has no `GET` handler to 
 which is what makes deactivation take effect on the next request rather than at the next sign-in. It
 also drops that session's auth keys, so reactivating the account revives none of the cookies issued
 before it; a store outage denies without clearing, since a blip must not sign everyone out.
+
+**It enforces two more bounds on every request, and both are absolute.** A session is refused once
+`at - signedInAt >= AUTH_SESSION_MAX_MS` (seven days), measured from when it was established and
+never refreshed — a sliding window is one an attacker who took a session can keep alive forever. And
+it is refused when `signedInAt <= user.sessionsInvalidBefore`, which is how removing a passkey,
+removing the authenticator-app factor or completing an address change reaches sessions this request
+cannot see. A session carrying **no** stamp — one issued before this field existed — is over rather
+than unbounded, so the deployment that adds this signs its live population out once.
+
+**The barrier refuses the session that raised it, too**, which is why the two factor removals call
+`renewAuthSession` and the address change does not: a visitor removing their own passkey should stay
+where they are, while a confirmation link is opened from whatever browser answered the mail.
+
+`AuthGuardOptions` takes an optional `now?: () => number` — the clock `requireAuth` and `resolveAuth`
+measure both bounds against — so a test drives them off an injected clock rather than off real time.
 
 **What the chain mounts.** The guard stack of every group in the table, and — when you pass
 `origin: { allowedOrigins }` — origin protection on every group carrying a mutating leaf, guard-less
@@ -806,6 +947,30 @@ render seam is `renderAuthPage`, which resolves the view for a page name against
 override and wraps it in a layout. Replacing one page means supplying one entry; the props it
 receives are exactly the ones forge's own view takes, and `AuthViews` is keyed on `AuthViewProps`, so
 an entry typed for the wrong page is a compile error rather than a page reading `undefined`.
+
+**`renderAuthPage` defaults `Cache-Control: no-store` on every auth page.** A sign-in, an account or
+an admin page has no business in a shared cache or on the back button after a sign-out. The header is
+merged rather than imposed, so a page that names its own `Cache-Control` still wins.
+
+**The three ceremony JSON endpoints bound what they read.** A body over
+`AUTH_CEREMONY_MAX_BYTES` (64 KiB) is answered **413** — refused on a `Content-Length` that already
+says too much, then metered through the stream, because a chunked body's header may be absent or
+lying. The assertion's `id` is bounded and shaped before it reaches `findByCredentialId`: 1 to 1400
+base64url characters, past every real credential id, so an id of any length and any alphabet is not a
+bind parameter every unauthenticated POST can supply.
+
+**Three shipped views changed shape**, and an override is held to the new props:
+
+| View | What is new |
+| --- | --- |
+| `PasskeyEnrolView` | `signoutCsrfToken` and `csrfHeader`. The sign-out control is a `<form method="post">` with its own token — it was a `<Link>` to a POST-only route, which could not work, and `csrfProtection` binds a token to one path. |
+| `AdminUserEditView` | `self: boolean` — whether the administrator reading the page _is_ this account, which disables the deactivate and delete controls with their own reasons. |
+| `TotpEnrolView` | `codeDigits` and `codePeriodSeconds`, read off the factor rather than hard-coded at six digits and thirty seconds. |
+
+**The enrolment nickname is held to `authPasskeyLabelSchema`.** It was trimmed and nothing more; it
+now carries that schema's 64-character cap, so one field cannot be bounded on the rename route and
+unbounded on the enrolment one. A missing nickname is still a name the visitor declined to give, not
+a refusal.
 
 **Two shipped pages carry limits** — the passkey list holds one CSRF token against one delete form
 per row, and no shipped view submits a rename. Both are stated in
@@ -871,7 +1036,10 @@ to read it. Four things about testing this capability are not derivable from any
 
 **Use `fakeAuthD1` for the durable side.** `@y-core/forge/testing` exports it: state an account in
 domain terms and it answers the user and factor stores' own statements, binding each id as its 16
-`BLOB` bytes. Pair it with `fakeKV` for the ephemeral stores.
+`BLOB` bytes. Pair it with `fakeKV` for the **session** storage, which is the one thing here still on
+KV. A statement it does not model answers no rows, so a test that needs a challenge to survive a
+round trip hands the ceremony a `ChallengeStore` of its own rather than one over the fake —
+[`src/auth/web/mount.test.ts`](./web/mount.test.ts) does exactly that.
 
 ```ts
 const env = { DB: fakeAuthD1([{ id: ADA, email: "ada@example.com", isAdmin: true, factors: [{ kind: "passkey" }] }]), KV: fakeKV() };
@@ -890,9 +1058,13 @@ you, so you need these only when asserting against a bound parameter yourself.
 then write `AUTH_SESSION_KEY` — and `AUTH_STEP_UP_SESSION_KEY` for a session that has already stepped
 up — through `sessionCtx` in a middleware ahead of the guards. **An anonymous mutation needs no seeded
 session.** Reading `session.id` — which is exactly what a `subject: (c) => sessionCtx.getOptional(c)?.id`
-resolver does — marks the session dirty, so the page GET emits a `Set-Cookie` and the id the token was
-minted under is the id the POST is verified against. Carry the cookie from the GET to the POST, as a
-browser does, and the round trip works: `src/auth/web/mount.test.ts` does it against the real mount.
+resolver does — marks a session dirty **when the presented cookie would not already reproduce that
+id**, which on a first anonymous request means no cookie at all: the page GET emits a `Set-Cookie`,
+and the id the token was minted under is the id the POST is verified against. Carry the cookie from
+the GET to the POST, as a browser does, and the round trip works:
+[`src/auth/web/mount.test.ts`](./web/mount.test.ts) does it against the real mount. On every request
+after that the cookie **does** reproduce the id, so reading it rewrites nothing — which is why the
+CSRF wiring above no longer costs a session write per request.
 
 **Register `csrfProtection` after the session middleware, never before.** The subject resolver runs
 before `next()`, so a `csrfProtection` mounted first sees no session at all: the resolver returns
@@ -916,15 +1088,16 @@ wrong layer.
 | `registerAuth(app, routes, options)`, `registerAccount(…)`, `registerAdmin(…)` | function | Mount each group's handlers on a `Forge` app. No guard is wired here. |
 | `createAuthGuards(options)` | function | The middleware stack for every group, built off `AUTH_ROUTE_GROUPS`, plus the configured origin protection on every group that mutates. |
 | `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` | function | The four guard primitives, for pages a consumer routes themselves. |
-| `requireFreshStepUp` | function | Demands a step-up no older than `freshStepUpMaxAgeMs` on every state-changing request of its group. Opt-in: with no window it demands nothing. |
+| `requireFreshStepUp` | function | Demands a step-up no older than `freshStepUpMaxAgeMs` on every state-changing request of a user whose policy calls for one. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` is the opt-out. |
 | `resolveAuth` | function | Establishes the identity when the session carries one and admits an anonymous request unchanged — what the verify group runs, since that page serves a sign-in and a step-up alike. |
 | `authCtx` | const | The context variable `requireAuth` writes the identity to and every later guard reads. |
-| `resolveAuthIdentity(session, users)` | function | Re-reads the signed-in user, answering `null` for a missing or deactivated one — and **writes**, dropping that session's auth keys when the store refuses the id. A store outage denies without clearing. |
-| `establishAuthSession(session, userId)` | function | Writes the identity, clears the step-up mark and the pending address, and regenerates the session id. |
+| `resolveAuthIdentity(session, users, at)` | function | Re-reads the signed-in user, answering `null` for a missing or deactivated one, for a session past its absolute lifetime, for one carrying no established-at stamp, and for one established at or before the account's revocation barrier — and **writes**, dropping that session's auth keys in each of those cases. A store outage denies without clearing. |
+| `establishAuthSession(session, userId, at)` | function | Writes the identity and the established-at stamp, clears the step-up mark and the pending address, and regenerates the session id. |
+| `renewAuthSession(session, at)` | function | Re-stamps this session past a revocation barrier raised at `at`, so the request that raised one keeps its own session. No id rotation and no cleared step-up mark — the actor is not gaining privilege. |
 | `markAuthStepUp(session, at)` | function | Records a satisfied step-up — the only writer of that mark, clamped to no later than now so a skewed clock cannot make one outlast its window. |
 | `markAuthSigninPending(session, email)`, `resolveAuthSigninPending(session)` | function | Carry the address awaiting verification in the session rather than the URL. |
 | `clearAuthSession(session)` | function | Unsets all three keys and regenerates the session id. |
-| `AUTH_SESSION_KEY`, `AUTH_STEP_UP_SESSION_KEY`, `AUTH_PENDING_SIGNIN_SESSION_KEY` | const | The three session keys, so a consumer reading the session directly names them once. |
+| `AUTH_SESSION_KEY`, `AUTH_SIGNED_IN_SESSION_KEY`, `AUTH_STEP_UP_SESSION_KEY`, `AUTH_PENDING_SIGNIN_SESSION_KEY` | const | The four session keys, so a consumer reading the session directly names them once. |
 | `loadSignin`, `loadSignup`, `loadVerify`, `loadPasskeyEnrol` | function | The four entry-flow page loaders. |
 | `loadEnrolTotp` | function | The authenticator-app page an owed enrolment lands on, outside the account group the enrolment guard closes. |
 | `loadPasskeyList`, `loadPasskey`, `loadPasskeyEdit`, `loadTotpEnrol`, `loadEmailChange` | function | The five self-service page loaders. |
@@ -939,7 +1112,7 @@ wrong layer.
 | `resolveAuthView(c, options, request)` | function | One page's props and node for a page you own, or the refusal forge's own loader would have answered with. |
 | `AUTH_VIEW_GUARDS` | const | Per page name, the guards its data assumes have run — the value a host passes as `guarded`. |
 | `AUTH_VIEWS` | const | Forge's own markup per page name, so a page cannot be rendered by another page's view. |
-| `authSigninSchema()`, `authSignupSchema()`, `authVerifySchema()`, `authEmailChangeSchema()`, `authPasskeyLabelSchema()`, `authTotpEnrolSchema()`, `authAdminUserSchema()`, `authAdminSearchSchema()`, `authAdminElevateSchema()` | function | The form schema each submission parses against. |
+| `authSigninSchema()`, `authSignupSchema()`, `authVerifySchema()`, `authEmailChangeSchema()`, `authPasskeyLabelSchema()`, `authTotpEnrolSchema()`, `authAdminUserSchema()`, `authAdminSearchSchema()`, `authAdminElevateSchema()` | function | The form schema each submission parses against. `authTotpEnrolSchema` admits 6–8 digits, which is `createTotpAppFactor`'s own ceiling — a wider field would take a code the factor refuses and report it as a wrong code rather than as a field that is too long. |
 | `SigninView`, `SignupView`, `VerifyView`, `PasskeyEnrolView` | component | The four entry-flow pages. |
 | `PasskeyListView`, `PasskeyEditView`, `TotpEnrolView`, `EmailChangeView` | component | The four self-service pages. |
 | `AdminUsersView`, `AdminUserEditView`, `AdminElevateView` | component | The user list, the edit page, and the elevation bootstrap. |
@@ -947,7 +1120,7 @@ wrong layer.
 | `AuthWebOptions`, `AuthWebPaths`, `AuthRequestServices`, `AuthPasskeyCeremonyOptions`, `AuthIconName`, `AuthPageState` | types | What every loader and action needs, the three href maps, this request's services, the ceremony parameters, the sprite names, and one render's refusal copy. |
 | `AuthPathMap`, `AuthEntryPaths`, `AuthAccountPaths`, `AuthAdminPaths` | types | What `authPaths` returns, and the three maps it is read through. |
 | `AuthRouteGroup`, `AuthGuardName`, `AuthMedium` | types | One entry of the group table, the six guard names, and the body a group answers with. |
-| `AuthGuardChainOptions`, `AuthGuardOptions`, `AuthEnrolmentGuardOptions`, `AuthRouteMaps` | types | What `createAuthGuards` and the primitives take, the step-up freshness window included. |
+| `AuthGuardChainOptions`, `AuthGuardOptions`, `AuthEnrolmentGuardOptions`, `AuthRouteMaps` | types | What `createAuthGuards` and the primitives take — the step-up freshness window and `AuthGuardOptions.now` included. |
 | `AuthGuardResolver` | type | `(c) => T \| Promise<T>` — how a guard's user store and factor registry are built, per request, from the bindings that request carries. |
 | `AuthIdentity` | type | What `authCtx` carries — the user id, address, admin flag and step-up time. |
 | `AuthViews`, `AuthViewName`, `AuthViewProps`, `AuthPageOptions` | types | The override map, its page names, the props each name's view receives, and what one page render takes. `AuthViewName` is `keyof AuthViewProps`, so the two cannot drift. |

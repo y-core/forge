@@ -8,7 +8,7 @@ import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorChallenge, AuthFactorPolicy, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "../factors/types";
 import type { ImplicitFactorService } from "../factors/types";
 import { importAuthKeyRing } from "../keys/ring";
-import type { AuthFactor, AuthKeyRing, AuthUser, FactorStore, UserStore } from "../types";
+import type { AuthFactor, AuthKeyRing, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
 import { createSigninFlow, redactSigninReason } from "./signin";
 import type { AuthIssueOutcome } from "./types";
 import type { AuthSigninOptions, AuthSigninReason } from "./types";
@@ -21,12 +21,13 @@ const AT = 1_700_000_000_000;
 let ring: AuthKeyRing;
 
 beforeAll(async () => {
-  ring = await importAuthKeyRing(["ef".repeat(32)]);
+  ring = await importAuthKeyRing(["e7ae715d21b12b5421420dbb7636a3a37ff40dc73df25691a57fb38cf9fa25a2"]);
 });
 
 interface FactorSpy {
   challenged: string[];
   verified: string[];
+  verdict?: Result<AuthFactorVerified, AuthFactorReason>;
 }
 
 /** The lifetime the primary factor enforces, which is now the only source of a reported expiry. */
@@ -42,6 +43,7 @@ function implicitFactor(
     capabilities: { primary: true, stepUp: true },
     challengeTtlMs: OTP_TTL_MS,
     codeDigits: 6,
+    codePeriodSeconds: null,
     reissueAfterMs: null,
     createChallenge: (userId, at) => {
       spy.challenged.push(userId);
@@ -62,6 +64,7 @@ function totpFactor(spy: FactorSpy): EnrollableFactorService {
     capabilities: { primary: false, stepUp: true },
     challengeTtlMs: 30_000,
     codeDigits: 6,
+    codePeriodSeconds: null,
     reissueAfterMs: null,
     createChallenge: (userId, at) => {
       spy.challenged.push(userId);
@@ -69,7 +72,7 @@ function totpFactor(spy: FactorSpy): EnrollableFactorService {
     },
     verifyChallenge: (userId) => {
       spy.verified.push(userId);
-      return Promise.resolve(ok({ kind: "totp-app", userId, verifiedAt: AT }));
+      return Promise.resolve(spy.verdict ?? ok({ kind: "totp-app", userId, verifiedAt: AT }));
     },
     beginEnrolment: () => Promise.resolve(err("unrecognised" as const)),
     completeEnrolment: () => Promise.resolve(err("unrecognised" as const)),
@@ -84,7 +87,7 @@ function fakeFactorStore(enrolled: readonly AuthFactor[] = []): FactorStore {
     findEnrolled: (_userId, kinds) => Promise.resolve(ok(enrolled.filter((row) => kinds.includes(row.kind)))),
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
-    countAttempt: () => Promise.resolve(ok(true)),
+    countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     advanceCounter: () => Promise.resolve(ok(true)),
     remove: () => Promise.resolve(ok(true)),
   };
@@ -99,6 +102,7 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -126,8 +130,23 @@ function fakeUsers(rows: readonly AuthUser[]) {
       return Promise.resolve(ok(true));
     },
     changeEmail: () => Promise.resolve(ok(true)),
+    revokeSessions: async () => ok(true),
   };
   return { store, verifiedAt, reads };
+}
+
+/** The two ephemeral stores the decoy spends, recording nothing but that they were reachable. */
+function decoyStores(): { state: OtpStateStore; nonces: NonceStore } {
+  return {
+    state: {
+      issue: () => Promise.resolve(ok(true)),
+      countAttempt: () => Promise.resolve(ok(null)),
+      read: () => Promise.resolve(ok(null)),
+      discard: () => Promise.resolve(ok()),
+      clear: () => Promise.resolve(ok()),
+    },
+    nonces: { markConsumed: () => Promise.resolve(ok(true)) },
+  };
 }
 
 function fakeDeferral() {
@@ -154,6 +173,7 @@ function flow(
   const options: AuthSigninOptions = {
     keys: ring,
     users: world.users.store,
+    ...decoyStores(),
     factors: createFactorRegistry(fakeFactorStore(enrolled), { offered, primary: "email-otp", policy }),
     defer: world.deferral.defer,
     ...overrides,
@@ -166,7 +186,7 @@ function scene(users: readonly AuthUser[] = [userRow()]): Scene {
 }
 
 function factorRow(kind: AuthFactor["kind"], confirmedAt: number | null): AuthFactor {
-  return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, confirmedAt, createdAt: 1, updatedAt: 1 };
+  return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, failedAttempts: 0, confirmedAt, createdAt: 1, updatedAt: 1 };
 }
 
 describe("createSigninFlow — anti-enumeration on complete", () => {
@@ -207,6 +227,35 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
     expect(unknown.outcome).toEqual({ ok: false, error: "unrecognised" });
     expect(deactivated.outcome).toEqual({ ok: false, error: "deactivated" });
     expect(redactSigninReason("deactivated")).toBe(redactSigninReason("unrecognised"));
+  });
+
+  // The defect this closes: a throttled known address answered `too-many-attempts` where an unknown
+  // one answered `unrecognised`, and `redactSigninReason` renders those as two different notices —
+  // so the difference reached the rendered page and named the address as one this deployment knows.
+  it("answers a throttled known address exactly as it answers an unknown one", async () => {
+    const throttled = await flow(scene(), { mode: "single" }, [], err("too-many-attempts" as const)).complete(EMAIL, "000000", AT);
+    const tooSoon = await flow(scene(), { mode: "single" }, [], err("too-soon" as const)).complete(EMAIL, "000000", AT);
+    const unknown = await work(scene([]), "nobody@example.com");
+
+    expect(throttled).toEqual({ ok: false, error: "unrecognised" });
+    expect(tooSoon).toEqual({ ok: false, error: "unrecognised" });
+    expect(throttled).toEqual(unknown.outcome);
+  });
+
+  it("carries every other refusal through unfolded, so an operator still reads the true reason", async () => {
+    const expired = await flow(scene(), { mode: "single" }, [], err("expired" as const)).complete(EMAIL, "000000", AT);
+    expect(expired).toEqual({ ok: false, error: "expired" });
+  });
+});
+
+// The caller is already identified here — the session names them — so a throttle tells an attacker
+// nothing they do not already have, and folding it would cost an operator the true reason for free.
+describe("createSigninFlow — the step-up path keeps the true reason", () => {
+  it("answers `too-many-attempts` from stepUp rather than the primary path's folded refusal", async () => {
+    const world = scene();
+    const signin = flow(world, { mode: "second-factor", required: "always" }, [factorRow("totp-app", 1)]);
+    world.stepUp.verdict = err("too-many-attempts" as const);
+    expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT)).toEqual({ ok: false, error: "too-many-attempts" });
   });
 });
 
@@ -261,10 +310,10 @@ describe("createSigninFlow — completing a sign-in", () => {
     expect(unknown.primary.verified).toEqual([]);
   });
 
-  it("passes the factor's own refusal straight through", async () => {
+  it("passes the factor's own refusal straight through, except the two that name the address", async () => {
     const known = scene();
-    const refused = await flow(known, { mode: "single" }, [], err("too-many-attempts")).complete(EMAIL, "123456", AT);
-    expect(refused).toEqual({ ok: false, error: "too-many-attempts" });
+    const refused = await flow(known, { mode: "single" }, [], err("expired")).complete(EMAIL, "123456", AT);
+    expect(refused).toEqual({ ok: false, error: "expired" });
   });
 
   it("marks the address verified on the first pass of an implicit primary factor", async () => {
@@ -401,6 +450,7 @@ describe("createSigninFlow — the challenge lifetime it reports", () => {
     const options: AuthSigninOptions = {
       keys: ring,
       users: world.users.store,
+      ...decoyStores(),
       factors: createFactorRegistry(fakeFactorStore([]), { offered: [brief], primary: "email-otp", policy: { mode: "single" } }),
       defer: world.deferral.defer,
     };

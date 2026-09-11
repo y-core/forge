@@ -31,7 +31,9 @@ function keyFor(algorithm: AuthAlgorithm): PasskeyKeyPair {
   return key;
 }
 
-function fakeChallenges(seed: AuthChallenge | null = { challenge: CHALLENGE, sessionId: SESSION_ID }) {
+// Bound to a subject by default — a step-up, where the session already names the account. The
+// discoverable seed, which names none, is passed explicitly by the tests that are about it.
+function fakeChallenges(seed: AuthChallenge | null = { challenge: CHALLENGE, sessionId: SESSION_ID, userId: USER_ID }) {
   const entries = new Map<string, AuthChallenge>(seed ? [[CHALLENGE_KEY, seed]] : []);
   const store: ChallengeStore = {
     put: (key, challenge) => {
@@ -106,6 +108,7 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: HANDLE,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -122,6 +125,7 @@ function fakeUsers(rows: readonly AuthUser[]) {
     setWebAuthnIdIfAbsent: () => Promise.resolve(ok(null)),
     markEmailVerified: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
+    revokeSessions: async () => ok(true),
   };
   return store;
 }
@@ -313,6 +317,46 @@ describe("verifyPasskeyAuthentication — the backup flags", () => {
 });
 
 describe("verifyPasskeyAuthentication — resolving the user", () => {
+  // A discoverable sign-in is one where nothing but the authenticator's handle says whose account
+  // this is. An assertion without one has not answered the question the ceremony asked, and admitting
+  // it fell back to whichever account the credential row happened to name.
+  it("refuses a discoverable assertion that carries no user handle", async () => {
+    const discoverable = fakeChallenges({ challenge: CHALLENGE, sessionId: SESSION_ID });
+    const credentials = fakeCredentials(credentialRow({ signCount: 1 }));
+    const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), signCount: 2 });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(discoverable.store, credentials.store, fakeUsers([userRow()])),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome).toEqual({ ok: false, error: "unrecognised" });
+    expect(credentials.uses).toEqual([]);
+  });
+
+  it("admits a discoverable assertion that carries one", async () => {
+    const discoverable = fakeChallenges({ challenge: CHALLENGE, sessionId: SESSION_ID });
+    const credentials = fakeCredentials(credentialRow({ signCount: 1 }));
+    const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), signCount: 2, userHandle: base64urlEncode(HANDLE) });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(discoverable.store, credentials.store, fakeUsers([userRow()])),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome.ok && outcome.data.user.id).toBe(USER_ID);
+  });
+
+  // Where the challenge names the subject the account was already known, so no handle is owed.
+  it("still admits a bound assertion that carries no handle, which is the step-up shape", async () => {
+    const credentials = fakeCredentials(credentialRow({ signCount: 1 }));
+    const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), signCount: 2 });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(fakeChallenges().store, credentials.store, fakeUsers([userRow()])),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome.ok && outcome.data.user.id).toBe(USER_ID);
+  });
+
   it("resolves the account from the authenticator's own handle, decoded once before the lookup", async () => {
     const credentials = fakeCredentials(credentialRow({ signCount: 1 }));
     const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), signCount: 2, userHandle: base64urlEncode(HANDLE) });

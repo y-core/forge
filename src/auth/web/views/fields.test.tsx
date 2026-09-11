@@ -58,6 +58,7 @@ const USER: AuthUser = {
   emailVerifiedAt: CREATED_AT,
   isAdmin: true,
   deactivatedAt: null,
+  sessionsInvalidBefore: null,
   webauthnId: null,
   createdAt: CREATED_AT,
   updatedAt: CREATED_AT,
@@ -140,7 +141,8 @@ const SUBMITTING_VIEWS = [
   {
     view: "AdminUserEditView",
     schema: authAdminUserSchema(),
-    html: () => render(<AdminUserEditView user={USER} lastAdmin={false} outcome={null} paths={ADMIN} csrfToken='csrf-1' icon={AppIcon} />),
+    html: () =>
+      render(<AdminUserEditView user={USER} lastAdmin={false} self={false} outcome={null} paths={ADMIN} csrfToken='csrf-1' icon={AppIcon} />),
   },
 ] as const;
 

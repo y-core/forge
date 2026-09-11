@@ -22,6 +22,7 @@ import {
   createEmailChangeActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
+  AUTH_CEREMONY_MAX_BYTES,
   createPasskeySigninActions,
   createSigninActions,
   createSignoutActions,
@@ -437,7 +438,8 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
       users: minting,
       factors: {
         ...enrolments,
-        enrol: async (input, at) => ok({ ...input, id: "f1", secret: null, lastCounter: null, confirmedAt: at, createdAt: at, updatedAt: at }),
+        enrol: async (input, at) =>
+          ok({ ...input, id: "f1", secret: null, lastCounter: null, failedAttempts: 0, confirmedAt: at, createdAt: at, updatedAt: at }),
       },
       credentials: credentials.store,
       challenges: {
@@ -497,6 +499,78 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
     const scene = enrolling();
     expect((await scene.finish(HOSTILE_TEXT)).status).toBe(200);
     expect(scene.credentials.rows.map((row) => row.label)).toEqual([HOSTILE_TEXT]);
+  });
+
+  // The defect this closes: the enrolment name reached `credentials.create` on a trim alone, while
+  // the rename path ran the same field through a 64-character cap.
+  it("refuses a nickname past the cap the rename path holds the same field to", async () => {
+    const scene = enrolling();
+    const res = await scene.finish("n".repeat(65));
+    expect(res.status).toBe(400);
+    expect(scene.credentials.rows).toEqual([]);
+  });
+
+  it("accepts the cap exactly", async () => {
+    const scene = enrolling();
+    expect((await scene.finish("n".repeat(64))).status).toBe(200);
+    expect(scene.credentials.rows.map((row) => row.label)).toEqual(["n".repeat(64)]);
+  });
+});
+
+// Three JSON endpoints read `request.json()` with no bound at all, so a client could hand a Worker
+// as much body as it cared to allocate.
+describe("the ceremony endpoints cap what they read", () => {
+  const oversized = JSON.stringify({ credential: { id: "c", padding: "x".repeat(AUTH_CEREMONY_MAX_BYTES) } });
+
+  function ceremonyApp() {
+    const challenges: ChallengeStore = { put: async () => ok(undefined), take: async () => ok(null) };
+    const options = optionsWith({
+      passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
+    });
+    return mounted(actionApp(), "POST", "/auth/passkey/authenticate/finish", createPasskeySigninActions(options).authenticateFinish);
+  }
+
+  it("answers 413 on a body whose Content-Length already says too much", async () => {
+    const res = await ceremonyApp().request("/auth/passkey/authenticate/finish", {
+      method: "POST",
+      body: oversized,
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.status).toBe(413);
+  });
+
+  // The streaming count, not `Content-Length`, is what caps a chunked body whose header is absent.
+  it("answers 413 on a streamed body that overruns the cap with no Content-Length to declare it", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversized));
+        controller.close();
+      },
+    });
+    const res = await ceremonyApp().request("/auth/passkey/authenticate/finish", {
+      method: "POST",
+      body,
+      headers: { "content-type": "application/json" },
+      duplex: "half",
+    } as RequestInit);
+    expect(res.status).toBe(413);
+  });
+
+  it("still reads a body inside the cap, so the bound refuses nothing real", async () => {
+    const res = await ceremonyApp().request("/auth/passkey/authenticate/finish", jsonBody({ credential: { id: "c" } }));
+    expect(res.status).toBe(400);
+  });
+
+  // Bounded and shaped before it reaches `findByCredentialId`: an id of any length and any alphabet
+  // otherwise arrives at the index as a bind parameter on every unauthenticated POST.
+  it("refuses an assertion id that is not bounded base64url, before any store is asked", async () => {
+    for (const id of ["", "n".repeat(1401), "not base64url!"]) {
+      const res = await ceremonyApp().request(
+        "/auth/passkey/authenticate/finish",
+        jsonBody({ credential: { id, response: { clientDataJSON: "e30", authenticatorData: "e30", signature: "e30" } } }),
+      );
+      expect(`${id.slice(0, 12)}: ${res.status}`).toBe(`${id.slice(0, 12)}: 400`);
+    }
   });
 });
 
@@ -592,16 +666,21 @@ describe("createTotpManageActions", () => {
 });
 
 describe("createEmailChangeActions", () => {
-  it("re-renders the page at 200 once the confirmation has gone out", async () => {
+  // The flow asks the address the account already holds, so the page names that inbox and not the
+  // one the visitor typed, which is empty until the old one approves.
+  it("re-renders the page at 200 naming the address the confirmation actually went to", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
-      emailChange: fakeAuthEmailChangeFlow({ request: async () => ok({ expiresAt: 2_000 }) }),
+      emailChange: fakeAuthEmailChangeFlow({ request: async () => ok({ expiresAt: 2_000, sentTo: "current@example.com" }) }),
     });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/account/email-change", createEmailChangeActions(options).emailChangeSubmit);
 
     const res = await app.request("/account/email-change", formBody({ email: "new@example.com" }));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const html = await res.text();
+    expect(html).toContain("Open the link we sent to current@example.com.");
+    expect(html).not.toContain("sent to new@example.com");
   });
 
   it("re-renders at 422 when the flow refuses the change", async () => {
@@ -651,6 +730,38 @@ describe("createAdminUserActions", () => {
     const res = await app.request("/admin/users/u2", { method: "DELETE" });
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/admin/users");
+  });
+
+  // The defect this closes: no admin-service method takes the acting administrator's id, so with two
+  // admins in a deployment the last-admin guard admitted an administrator locking out their own
+  // account. Unlike that guard this needs no in-statement race protection: the actor is fixed here.
+  it("refuses an administrator deactivating their own account, writing nothing", async () => {
+    const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
+    const admin = fakeAdminUserService([self]);
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u9", formBody({ role: "admin", status: "deactivated" }, "PATCH"));
+    expect(res.status).toBe(409);
+    expect((await admin.view("u9")).ok).toBe(true);
+  });
+
+  it("refuses an administrator deleting their own account, which is not even reversible", async () => {
+    const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin: fakeAdminUserService([self]) });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u9", { method: "DELETE" });
+    expect(res.status).toBe(409);
+  });
+
+  it("still lets an administrator reactivate their own account, which locks nobody out", async () => {
+    const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true, deactivatedAt: 1 });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin: fakeAdminUserService([self]) });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u9", formBody({ role: "admin", status: "active" }, "PATCH"));
+    expect(res.status).toBe(200);
   });
 });
 

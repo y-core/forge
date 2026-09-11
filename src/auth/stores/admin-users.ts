@@ -6,9 +6,12 @@ import { normalizeEmail } from "./email";
 import { adminRefusal, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
 import type { UserRow } from "./types";
 
-/** Wraps a search term in `LIKE` wildcards, escaping the two the caller's own text may carry. */
+// Prefix-anchored, so the unique index on `email_key` answers the search. A leading `%` made every
+// search a full scan of the table. The product consequence is stated where a consumer reads it:
+// a substring in the middle of an address no longer matches.
+/** Turns a search term into a prefix `LIKE` pattern, escaping the two wildcards a caller's text may carry. */
 function likeTerm(query: string): string {
-  return `%${normalizeEmail(query).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+  return `${normalizeEmail(query).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
 
 /** Creates the `AdminUserStore` over a SQL database — the surface that lists, searches, elevates, deactivates and deletes. @public */

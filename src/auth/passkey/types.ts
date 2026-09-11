@@ -94,7 +94,7 @@ export interface PasskeyAuthentication {
 export type PasskeyCeremony = "authenticate" | "register";
 
 /** Why client data was refused. Each condition is its own reason, so a regression names the check. @public */
-export type ClientDataReason = "challenge-mismatch" | "cross-origin" | "malformed" | "origin-mismatch" | "type-mismatch";
+export type ClientDataReason = "challenge-mismatch" | "cross-origin" | "malformed" | "origin-mismatch" | "top-origin" | "type-mismatch";
 
 /** The fields of `clientDataJSON` this verification reads. @public */
 export interface ClientData {
@@ -102,6 +102,8 @@ export interface ClientData {
   readonly challenge: string;
   readonly origin: string;
   readonly crossOrigin?: boolean;
+  /** The top-level origin of a cross-origin ceremony, kept so a client reporting one can be refused rather than silently ignored. */
+  readonly topOrigin?: string;
 }
 
 /** What the presented client data is held against. @public */

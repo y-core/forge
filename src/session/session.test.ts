@@ -183,6 +183,21 @@ describe("sessionMiddleware id observation", () => {
     expect(await second.text()).toBe(firstId);
   });
 
+  // The defect this closes: the documented CSRF wiring reads `.id` on every request, so every one
+  // of them re-wrote an unchanged record to KV and re-issued a cookie carrying the same id.
+  it("emits nothing on the next request, where the cookie already reproduces the id", async () => {
+    const storage = createMemorySessionStorage();
+    const app = new Forge();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
+
+    const first = await app.request("/");
+    const cookieValue = first.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
+
+    const second = await app.request("/", { headers: { cookie: `__session=${cookieValue}` } });
+    expect(second.headers.get("set-cookie")).toBeNull();
+  });
+
   it("round-trips the observed id identically with cookie storage", async () => {
     const storage = createCookieSessionStorage();
     const app = new Forge();

@@ -35,6 +35,7 @@ function user(overrides: Partial<AuthUser> = {}): AuthUser {
     emailVerifiedAt: CREATED_AT,
     isAdmin: true,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     webauthnId: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
@@ -43,7 +44,9 @@ function user(overrides: Partial<AuthUser> = {}): AuthUser {
 }
 
 function account(props: Partial<AdminUserEditViewProps> = {}) {
-  return render(<AdminUserEditView user={user()} lastAdmin={false} outcome={null} paths={ADMIN} csrfToken='csrf-1' icon={AppIcon} {...props} />);
+  return render(
+    <AdminUserEditView user={user()} lastAdmin={false} self={false} outcome={null} paths={ADMIN} csrfToken='csrf-1' icon={AppIcon} {...props} />,
+  );
 }
 
 describe("AdminUserEditView heading", () => {

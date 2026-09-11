@@ -189,6 +189,7 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
     challengeTtlMs: ttlSeconds * 1000,
     // A ceremony, not a code: there is no field for a page to size.
     codeDigits: null,
+    codePeriodSeconds: null,
     reissueAfterMs: null,
     createChallenge,
     verifyChallenge,

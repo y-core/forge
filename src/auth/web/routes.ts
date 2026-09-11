@@ -14,7 +14,7 @@ export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [
   { path: ["auth", "enrol", "ceremony"], guards: ["require-auth", "require-pending-enrolment"], medium: "json" },
   { path: ["account"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "html" },
   { path: ["admin"], guards: [], medium: "html" },
-  { path: ["admin", "users"], guards: ["require-auth", "require-enrolment", "require-admin"], medium: "html" },
+  { path: ["admin", "users"], guards: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"], medium: "html" },
   { path: ["admin", "elevate"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "html" },
 ];
 

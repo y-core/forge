@@ -69,6 +69,30 @@ describe("renderAuthPage", () => {
   });
 });
 
+// Every auth page carries an identity, a pending sign-in or a list of a deployment's accounts, and
+// none of them may sit in a shared cache or come back off the back button after a sign-out. This is
+// the one choke point every one of them goes through.
+describe("renderAuthPage caching", () => {
+  it("marks every page no-store, as a document and as a fragment alike", async () => {
+    expect((await signin(context({}, appShell))).headers.get("cache-control")).toBe("no-store");
+    expect((await signin(context({ "HX-Request": "true" }, appShell))).headers.get("cache-control")).toBe("no-store");
+    expect(
+      (await renderAuthPage(context(), { name: "signin", view: ForgeSignin, props: signinProps("a@b.test") })).headers.get("cache-control"),
+    ).toBe("no-store");
+  });
+
+  it("keeps a caller's own cache-control, since the default is a default and not an override", async () => {
+    const res = await signin(context({}, appShell), { headers: { "Cache-Control": "private, max-age=30" } });
+    expect(res.headers.get("cache-control")).toBe("private, max-age=30");
+  });
+
+  it("leaves a caller's other headers alone while supplying the default", async () => {
+    const res = await signin(context({}, appShell), { headers: { "x-forge": "1" } });
+    expect(res.headers.get("x-forge")).toBe("1");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
 // An app that registered no shell is the documented base offering, so what it renders has to be a
 // readable page — not the bare `<!DOCTYPE html><p>` a shell-less render used to answer with.
 describe("renderAuthPage without a registered shell", () => {

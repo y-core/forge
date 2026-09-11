@@ -35,6 +35,7 @@ function userRow(overrides: Record<string, unknown> = {}): Record<string, unknow
     webauthn_id: null,
     is_admin: 0,
     deactivated_at: null,
+    sessions_invalid_before: null,
     created_at: 1_000,
     updated_at: 2_000,
     ...overrides,
@@ -55,6 +56,7 @@ describe("createUserStore — reads", () => {
         webauthnId: null,
         isAdmin: true,
         deactivatedAt: null,
+        sessionsInvalidBefore: null,
         createdAt: 1_000,
         updatedAt: 2_000,
       } satisfies AuthUser,
@@ -97,6 +99,7 @@ describe("createUserStore — writes", () => {
       webauthnId: null,
       isAdmin: false,
       deactivatedAt: null,
+      sessionsInvalidBefore: null,
       createdAt: 9_000,
       updatedAt: 9_000,
     });
@@ -111,6 +114,22 @@ describe("createUserStore — writes", () => {
       "UPDATE auth_users SET email = ?, email_key = ?, email_verified_at = ?, updated_at = ? WHERE id = ?",
     );
     expect(db.calls[0]?.params.slice(0, 4)).toEqual(["new@example.test", "new@example.test", 9_000, 9_000]);
+  });
+
+  // Monotonic, so two revocations racing cannot walk the barrier backwards and hand a session that
+  // was already refused back to its holder.
+  it("moves the session barrier forward only, in the statement itself", async () => {
+    const [client, db] = writerOf(() => 1);
+    expect(await createUserStore(client).revokeSessions(USER_ID, 9_000)).toEqual({ ok: true, data: true });
+    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toBe(
+      "UPDATE auth_users SET sessions_invalid_before = ?, updated_at = ? WHERE id = ? AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ?)",
+    );
+    expect(db.calls[0]?.params).toEqual([9_000, 9_000, uuidToBytes(USER_ID), 9_000]);
+  });
+
+  it("reports no change when the barrier already stood at or past the instant asked for", async () => {
+    const [client] = writerOf(() => 0);
+    expect(await createUserStore(client).revokeSessions(USER_ID, 9_000)).toEqual({ ok: true, data: false });
   });
 
   it("has no capability to delete a user", () => {

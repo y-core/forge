@@ -9,6 +9,7 @@ import type { AuthKeyRing } from "../types";
 import type { AuthNotifier } from "../types";
 import type { AuthUser } from "../types";
 import type { NonceStore } from "../types";
+import type { OtpStateStore } from "../types";
 import type { UserStore } from "../types";
 
 /** Where a flow hands work that must outlive the response — `executionCtx.waitUntil` in a Worker. @public */
@@ -26,10 +27,17 @@ export interface AuthFlowChallenge {
 /** Why an address change was refused. @public */
 export type AuthEmailChangeReason = "consumed" | "deactivated" | "expired" | "unavailable" | "unchanged" | "unrecognised";
 
-/** When the confirmation link a change request mailed stops working. @public */
+/** Where the confirmation link a change request mailed went, and when it stops working. @public */
 export interface AuthEmailChangeRequest {
   readonly expiresAt: number;
+  /** The address the mail actually went to — the account's own when it is verified, the new one otherwise. */
+  readonly sentTo: string;
 }
+
+/** What answering a link did: forwarded a second link to the new address, or moved the account onto it. @public */
+export type AuthEmailChangeConfirm =
+  | { readonly status: "forwarded"; readonly sentTo: string; readonly expiresAt: number }
+  | { readonly status: "moved"; readonly user: AuthUser };
 
 /** @public */
 export interface AuthEmailChangeOptions {
@@ -43,10 +51,10 @@ export interface AuthEmailChangeOptions {
   ttlMs?: number;
 }
 
-/** Moves an account to a new address only once that address has answered a link sent to it. @public */
+/** Moves an account to a new address only once the old one has approved it and the new one has answered a link of its own. @public */
 export interface AuthEmailChangeFlow {
   request(userId: string, email: string, at: number): Promise<Result<AuthEmailChangeRequest, AuthEmailChangeReason>>;
-  confirm(token: string, at: number): Promise<Result<AuthUser, AuthEmailChangeReason | AuthStoreError>>;
+  confirm(token: string, at: number): Promise<Result<AuthEmailChangeConfirm, AuthEmailChangeReason | AuthStoreError>>;
 }
 
 /** Why a sign-in was refused, in the detail an operator's log keeps. Never rendered — see `redactSigninReason`. @public */
@@ -62,10 +70,24 @@ export interface AuthSignin {
   readonly resolution: AuthFactorResolution;
 }
 
+// The decoy exists to make the unknown-address branch cost what the known one costs, so it has to
+// spend the statements the known one spends — which are the emailed-code factor's stores, whatever
+// this deployment's primary factor turns out to be. That coupling is the price of the branches
+// being indistinguishable; a decoy holding no store is a latency oracle.
+/** The stores an unknown address is answered with, so that branch spends what a known one spends. @public */
+export interface AuthDecoyStores {
+  keys: AuthKeyRing;
+  users: UserStore;
+  state: OtpStateStore;
+  nonces: NonceStore;
+}
+
 /** @public */
 export interface AuthSigninOptions {
   keys: AuthKeyRing;
   users: UserStore;
+  state: OtpStateStore;
+  nonces: NonceStore;
   factors: AuthFactorRegistry;
   defer: AuthDeferral;
 }

@@ -9,6 +9,8 @@ export interface FakeAuthFactor {
   readonly id?: string;
   readonly secret?: Uint8Array | null;
   readonly lastCounter?: number | null;
+  /** Consecutive failed verifications standing against this enrolment. @defaultValue `0` */
+  readonly failedAttempts?: number;
   /** `null` leaves the enrolment unconfirmed — what a factor begun but never completed looks like. */
   readonly confirmedAt?: number | null;
 }
@@ -24,6 +26,8 @@ export interface FakeAuthUser {
   readonly webauthnId?: Uint8Array | null;
   readonly isAdmin?: boolean;
   readonly deactivatedAt?: number | null;
+  /** The revocation barrier — every session established at or before it is refused. @defaultValue `null` */
+  readonly sessionsInvalidBefore?: number | null;
   readonly createdAt?: number;
   readonly updatedAt?: number;
   readonly factors?: readonly FakeAuthFactor[];
@@ -51,8 +55,8 @@ export interface FakeKVOptions {
 export interface FakeD1Options {
   /** Consulted before every executed statement; returning an `Error` makes that operation reject. */
   failOn?: (sql: string, params: unknown[]) => Error | null;
-  /** Rows a `run()` or a batched statement reports written; defaults to zero, which is what a guarded statement answers when it declines. */
-  rowsWritten?: (sql: string, params: unknown[]) => number;
+  /** Rows a `run()` or a batched statement reports written; `null` declines the statement, and an absent answer is zero — what a guarded statement reports when it changes nothing. */
+  rowsWritten?: (sql: string, params: unknown[]) => number | null;
 }
 
 /** A route action for the test helper: a bare handler or a `{ middleware, handler }` object. @public */

@@ -90,13 +90,22 @@ describe("createAdminUserStore", () => {
     const found = await createAdminUserStore(client).search("  AURORA@Example.TEST ");
     expect(found.ok && found.data.map((user) => user.emailKey)).toEqual(["aurora@example.test"]);
     expect(db.calls[0]?.sql).toContain("email_key LIKE ?");
-    expect(db.calls[0]?.params).toEqual(["%aurora@example.test%", 50]);
+    expect(db.calls[0]?.params).toEqual(["aurora@example.test%", 50]);
+  });
+
+  // Prefix-anchored so the unique index on `email_key` answers the search; a leading `%` made every
+  // search a full scan. The product consequence: a substring mid-address no longer matches.
+  it("anchors the pattern at the start, so the unique index on email_key can answer it", async () => {
+    const [client, db] = clientOf(() => []);
+    await createAdminUserStore(client).search("aurora");
+    expect(db.calls[0]?.params[0]).toBe("aurora%");
+    expect(String(db.calls[0]?.params[0]).startsWith("%")).toBe(false);
   });
 
   it("escapes the two LIKE wildcards a search term may itself carry", async () => {
     const [client, db] = clientOf(() => []);
     await createAdminUserStore(client).search("100%_a");
-    expect(db.calls[0]?.params[0]).toBe("%100\\%\\_a%");
+    expect(db.calls[0]?.params[0]).toBe("100\\%\\_a%");
     expect(db.calls[0]?.sql).toContain("ESCAPE '\\'");
   });
 });

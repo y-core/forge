@@ -78,6 +78,12 @@ export async function verifyPasskeyAuthentication(
   if (!key) return err("unsupported-key");
   if (!(await verifyPasskeySignature(key, signature, await signedBytes(authenticatorDataBytes, clientDataBytes)))) return err("unrecognised");
 
+  // A challenge naming no `userId` is the discoverable case: nothing but the authenticator's own
+  // user handle says whose account this is, so an assertion without one has not answered the
+  // question the ceremony asked. Where the challenge does name a subject, an absent handle is
+  // legitimate — the account was already known — and stays admitted.
+  if (taken.data.userId === undefined && response.userHandle === undefined) return err("unrecognised");
+
   const subject = await resolveSubject(options, credential, response.userHandle);
   if (!subject.ok) return err(subject.error);
   const user = subject.data;

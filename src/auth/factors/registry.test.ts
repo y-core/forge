@@ -20,6 +20,7 @@ function service(kind: AuthFactorKind, capabilities: { primary: boolean; stepUp:
     capabilities,
     challengeTtlMs: 600_000,
     codeDigits: 6,
+    codePeriodSeconds: null,
     reissueAfterMs: null,
     createChallenge: () => Promise.resolve(err("unrecognised" as const)),
     verifyChallenge: () => Promise.resolve(err("unrecognised" as const)),
@@ -41,7 +42,7 @@ const PASSKEY = service("passkey", { primary: true, stepUp: true }, "explicit");
 const TOTP_APP = service("totp-app", { primary: false, stepUp: true }, "explicit");
 
 function factor(kind: AuthFactorKind, confirmedAt: number | null): AuthFactor {
-  return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, confirmedAt, createdAt: 1, updatedAt: 1 };
+  return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, failedAttempts: 0, confirmedAt, createdAt: 1, updatedAt: 1 };
 }
 
 function stubStore(enrolled: readonly AuthFactor[], calls: AuthFactorKind[][] = []): FactorStore {
@@ -54,7 +55,7 @@ function stubStore(enrolled: readonly AuthFactor[], calls: AuthFactorKind[][] = 
     },
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
-    countAttempt: () => Promise.resolve(ok(true)),
+    countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     advanceCounter: () => Promise.resolve(ok(true)),
     remove: () => Promise.resolve(ok(true)),
   };

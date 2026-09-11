@@ -54,7 +54,7 @@ describe("AUTH_ROUTE_GROUPS", () => {
   });
 
   it("leaves `admin.elevate` un-admin-gated, because it creates the first admin", () => {
-    expect(groupAt(["admin", "users"])?.guards).toEqual(["require-auth", "require-enrolment", "require-admin"]);
+    expect(groupAt(["admin", "users"])?.guards).toEqual(["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"]);
     expect(groupAt(["admin", "elevate"])?.guards).toEqual(["require-auth", "require-enrolment", "require-fresh-step-up"]);
   });
 

@@ -8,7 +8,9 @@ const LABEL_MAX = 64;
 
 /** Digit range RFC 4226 §5.3 permits an authenticator app to emit. */
 const TOTP_MIN = 6;
-const TOTP_MAX = 10;
+// Eight, which is where `createTotpAppFactor`'s own ceiling is: admitting more would take a code
+// the factor will refuse and answer it as a wrong code rather than as a field that is too long.
+const TOTP_MAX = 8;
 
 const SEARCH_MAX = 200;
 

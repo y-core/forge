@@ -128,10 +128,23 @@ describe("the shipped store adapters against real D1", () => {
       removeByOwner: true,
       // The attempt ceiling, decided by the statement: two guesses admitted, the third refused
       // before any code is compared, and a stranger's guess spending nothing of the owner's budget.
-      spendFirst: true,
-      spendSecond: true,
-      spendRefused: false,
-      spendByStranger: false,
+      // The count each guess reports is the count that guess wrote, straight out of `RETURNING`.
+      spendFirst: 1,
+      spendSecond: 2,
+      spendRefused: null,
+      spendByStranger: null,
+      // The lockout is a window from the last admitted guess: refused a millisecond inside it,
+      // admitted at its edge with the count reset to one rather than carried on from the cap.
+      spendInsideWindow: null,
+      spendAfterWindow: 1,
+      spentAfterWindow: 1,
+      // The sealed secret rides out of the spend, so no second `find` reads the row again.
+      spentSecretCarried: 9,
+      unlinkByStranger: false,
+      unlinkByOwner: true,
+      revokeSessions: true,
+      // Monotonic: an earlier instant must not walk the barrier back and revive a refused session.
+      revokeSessionsBackwards: false,
       advanceByStranger: false,
       advanceFirst: true,
       advanceReplay: false,
@@ -142,6 +155,34 @@ describe("the shipped store adapters against real D1", () => {
       // Only `frank` is left: the delete batch took the user and all four child rows together.
       leftBehind: { auth_credentials: 0, auth_factors: 0, auth_identity_links: 0, auth_otp_state: 0, auth_users: 1 },
     });
+  });
+});
+
+// The whole reason the challenge and nonce stores left KV. A fake settles neither: both rest on the
+// database serialising writers, which is exactly what a fake stands in for.
+describe("the ephemeral stores against real D1", () => {
+  let guards: Record<string, Record<string, unknown>>;
+
+  beforeAll(async () => {
+    guards = (await get("/guards")) as Record<string, Record<string, unknown>>;
+  }, 60_000);
+
+  it("hands one challenge to exactly one of three concurrent takes, and lets exactly one consume a nonce", () => {
+    expect(guards.ephemera).toEqual({
+      challengesTaken: 1,
+      challengeValue: { challenge: "Y2hhbGxlbmdl", sessionId: "sess-1" },
+      noncesWon: 1,
+      // Expiry is the predicate on the read, not a row being gone: a challenge written already dead
+      // is invisible while its row is still there, and the purge is what reclaims it.
+      takeExpired: null,
+      beforePurge: 1,
+      challengesAfterPurge: 0,
+      noncesAfterPurge: 1,
+    });
+  });
+
+  it("refuses an over-long address at the CHECK, and calls it the caller's fault rather than an outage", () => {
+    expect(guards.emailLength).toEqual({ refusedCode: "invalid", acceptedOk: true, rows: 1 });
   });
 });
 

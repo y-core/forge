@@ -25,6 +25,10 @@ interface FactorServiceBase {
   // for a width the factor will refuse, and the width is the factor's own configuration.
   /** How many digits the code this factor asks for has, or `null` for a factor answered by a ceremony. */
   readonly codeDigits: number | null;
+  // Same reason as the width, and unreachable from the registry until now: an enrolment page telling
+  // a visitor "every 30 seconds" was stating a number only the `otpauth://` URI actually carried.
+  /** How long one code stays current, in seconds, or `null` for a factor whose code is not on a clock. */
+  readonly codePeriodSeconds: number | null;
   readonly reissueAfterMs: number | null;
   createChallenge(userId: string, at: number): Promise<Result<AuthFactorChallenge, AuthFactorReason>>;
   verifyChallenge(userId: string, presented: string, at: number): Promise<Result<AuthFactorVerified, AuthFactorReason>>;
@@ -165,8 +169,10 @@ export interface TotpAppFactorOptions {
   digits?: number;
   period?: number;
   secretBytes?: number;
-  /** Wrong codes this enrolment admits before it refuses every one, until an accepted code clears them. */
+  /** Wrong codes this enrolment admits before it refuses every one, until an accepted code or `lockoutMs` clears them. */
   maxAttempts?: number;
+  /** How long a spent budget stays refused before a new guess reopens it. Defaults to `AUTH_TOTP_LOCKOUT_MS`. */
+  lockoutMs?: number;
 }
 
 /** What an enrolment shows once and never again — the base32 secret and the `otpauth://` URI carrying it. @public */

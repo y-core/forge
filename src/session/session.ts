@@ -14,7 +14,7 @@ export function sessionMiddleware(storage: SessionStorage, cookie: Cookie): Midd
   return async (context, next) => {
     const cookieHeader = context.request.headers.get("cookie") ?? null;
     const cookieValue = await cookie.parse(cookieHeader);
-    const session = trackSessionId(await storage.read(cookieValue));
+    const session = trackSessionId(await storage.read(cookieValue), cookieValue);
     sessionCtx.set(context, session);
 
     const res = await next();

@@ -2,17 +2,17 @@ import { describe, expect, it } from "bun:test";
 
 import { uuidv7 } from "../../crypto/mod";
 import { ok } from "../../result/result";
-import { fakeKV } from "../../testing/fakes";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
-import { createNonceStore } from "../stores/nonces";
-import type { AuthMessage, AuthNotifier, OtpState, OtpStateStore } from "../types";
+import type { AuthMessage, AuthNotifier, NonceStore, OtpState, OtpStateStore } from "../types";
 import { createEmailOtpFactor } from "./email-otp";
 
-const SECRET = "c3".repeat(32);
+const SECRET = "17bd3b2b6521b7cfde60fad521de43d2860704680c51641152e6e05aa786d162";
 const USER_ID = uuidv7();
 const NOW = 1_760_000_000_000;
-const TTL_MS = 600_000;
+import { AUTH_OTP_TTL_MS } from "../config";
+
+const TTL_MS = AUTH_OTP_TTL_MS;
 const COOLDOWN_MS = 60_000;
 
 function recordingNotifier(): AuthNotifier & { sent: AuthMessage[] } {
@@ -23,6 +23,18 @@ function recordingNotifier(): AuthNotifier & { sent: AuthMessage[] } {
 // The contract as the adapter's statements answer it: every method decides in one uninterrupted
 // step, with no `await` between reading a counter and writing it. A store that resolved a promise
 // mid-decision would let two callers past the same count, which is the thing under test here.
+/** A nonce store with the one property that matters here: the first `markConsumed` wins. */
+function memoryNonces(): NonceStore {
+  const seen = new Set<string>();
+  return {
+    markConsumed(key) {
+      const fresh = !seen.has(key);
+      seen.add(key);
+      return Promise.resolve(ok(fresh));
+    },
+  };
+}
+
 function memoryOtpState(): OtpStateStore {
   const rows = new Map<string, OtpState>();
   return {
@@ -43,6 +55,10 @@ function memoryOtpState(): OtpStateStore {
       const row = rows.get(userId);
       return Promise.resolve(ok(row && row.expiresAt > at ? row : null));
     },
+    discard(userId, token) {
+      if (rows.get(userId)?.token === token) rows.delete(userId);
+      return Promise.resolve(ok());
+    },
     clear(userId) {
       rows.delete(userId);
       return Promise.resolve(ok());
@@ -53,7 +69,7 @@ function memoryOtpState(): OtpStateStore {
 async function harness(overrides: Partial<Parameters<typeof createEmailOtpFactor>[0]> = {}) {
   const keys = await importAuthKeyRing([SECRET]);
   const state = memoryOtpState();
-  const nonces = createNonceStore(fakeKV());
+  const nonces = memoryNonces();
   const notifier = recordingNotifier();
   const factor = createEmailOtpFactor({ keys, state, nonces, notifier, address: () => "aurora@example.test", ...overrides });
   return { factor, keys, state, nonces, notifier };
@@ -136,14 +152,42 @@ describe("createEmailOtpFactor — issuing", () => {
     expect((await factor.createChallenge(other, NOW)).ok).toBe(true);
   });
 
-  // The cooldown is claimed before the mail, so a failed send costs the identity one cooldown. That
-  // is the deliberate half of the trade: what is bounded is what is *sent*, not what is recorded.
-  it("reports a failed delivery as unavailable, having already claimed the cooldown", async () => {
+  // The cooldown is claimed before the mail so that what is bounded is what is *sent*. The defect
+  // this closes is the other half: a failed send left the claim standing, so the identity had spent
+  // a cooldown and held a code nobody could read, and could not ask again until it ran out.
+  it("gives the cooldown back when delivery fails, so a second issue is not refused as too-soon", async () => {
     const failing: AuthNotifier = { send: () => Promise.resolve({ ok: false, error: new AuthStoreError("unavailable", "notify.send") }) };
     const { factor, state } = await harness({ notifier: failing, cooldownMs: COOLDOWN_MS });
     expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "unavailable" });
-    expect((await state.read(USER_ID, NOW)).ok).toBe(true);
-    expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "too-soon" });
+    // The row is gone, not merely stale: an undeliverable code must not be answerable either.
+    expect(await state.read(USER_ID, NOW)).toEqual({ ok: true, data: null });
+    expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "unavailable" });
+  });
+
+  // `discard` names the token; `clear` is an unconditional delete. Rolling back with `clear` would
+  // wipe a second issue that raced this one and *did* reach the address, so the choice is the point.
+  it("rolls the failed issue back by its own token, never with an unconditional clear", async () => {
+    const inner = memoryOtpState();
+    const calls: string[] = [];
+    const state: OtpStateStore = {
+      ...inner,
+      discard: (userId, token) => {
+        calls.push(`discard:${token}`);
+        return inner.discard(userId, token);
+      },
+      clear: (userId) => {
+        calls.push("clear");
+        return inner.clear(userId);
+      },
+    };
+    const failing: AuthNotifier = { send: () => Promise.resolve({ ok: false, error: new AuthStoreError("unavailable", "notify.send") }) };
+    const { factor } = await harness({ notifier: failing, state });
+
+    await factor.createChallenge(USER_ID, NOW);
+    const issued = await inner.read(USER_ID, NOW);
+    expect(issued.ok && issued.data).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toStartWith("discard:");
   });
 });
 
@@ -288,7 +332,7 @@ describe("createEmailOtpFactor — the ranges it holds at construction", () => {
       createEmailOtpFactor({
         keys,
         state: memoryOtpState(),
-        nonces: createNonceStore(fakeKV()),
+        nonces: memoryNonces(),
         notifier: recordingNotifier(),
         address: () => "aurora@example.test",
         ...overrides,

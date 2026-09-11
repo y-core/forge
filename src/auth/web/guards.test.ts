@@ -11,11 +11,12 @@ import { originProtection } from "../../security/cop";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
+import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorContext, AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
 import type { AuthFactorKind, AuthUser, UserStore } from "../types";
 import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment } from "./guards";
-import { AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
+import { AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes, AUTH_ROUTE_GROUPS } from "./routes";
 import { AUTH_FACTOR_POLICIES, fakeFactorService, fakeFactorStore } from "./test-support";
@@ -36,6 +37,7 @@ function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
+    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -89,6 +91,7 @@ function guardOptions(users: Pick<UserStore, "findById">) {
 
 interface SessionSeed {
   readonly userId?: string;
+  readonly signedInAt?: number;
   readonly stepUpAt?: number;
 }
 
@@ -98,7 +101,12 @@ function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: Sessio
   app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
   app.use("*", (context, next) => {
     const session = sessionCtx.get(context);
-    if (seed.userId !== undefined) session.set(AUTH_SESSION_KEY, seed.userId);
+    // Both keys, because `establishAuthSession` writes both: without the stamp there is no bound
+    // the absolute lifetime could be checked against, and the identity is refused.
+    if (seed.userId !== undefined) {
+      session.set(AUTH_SESSION_KEY, seed.userId);
+      session.set(AUTH_SIGNED_IN_SESSION_KEY, seed.signedInAt ?? Date.now());
+    }
     if (seed.stepUpAt !== undefined) session.set(AUTH_STEP_UP_SESSION_KEY, seed.stepUpAt);
     return next();
   });
@@ -158,12 +166,13 @@ describe("requireAuth", () => {
   });
 
   it("denies when the user store is unavailable, rather than admitting an unverified request", async () => {
-    const app = guardedApp([requireAuth(guardOptions(unavailableUsers))], { userId: "u1" });
+    const signedInAt = Date.now();
+    const app = guardedApp([requireAuth(guardOptions(unavailableUsers))], { userId: "u1", signedInAt });
     const res = await app.request("/account/passkeys");
 
     expect(res.status).toBe(302);
     // An outage is transient, so it must not sign the visitor out: the identity survives the denial.
-    expect(sessionOf(res)).toEqual({ [AUTH_SESSION_KEY]: "u1" });
+    expect(sessionOf(res)).toEqual({ [AUTH_SESSION_KEY]: "u1", [AUTH_SIGNED_IN_SESSION_KEY]: signedInAt });
   });
 
   it("throws when no session middleware ran, rather than reading as a correct denial", async () => {
@@ -335,13 +344,14 @@ describe("requirePendingEnrolment", () => {
 
 describe("requireFreshStepUp", () => {
   const HOUR = 3_600_000;
+  const owing: AuthFactorResolution = { status: "step-up-required", kinds: ["totp-app"] };
 
-  /** The account group's stack, with the freshness window this test is about. */
-  function freshApp(seed: SessionSeed, freshStepUpMaxAgeMs?: number, stepUp: readonly AuthFactorKind[] = ["totp-app"]) {
-    const factors = perRequest(fakeFactors({ status: "satisfied" }, stepUp));
+  /** The account group's stack, with the freshness window this test is about, under one factor verdict. */
+  function freshApp(seed: SessionSeed, freshStepUpMaxAgeMs?: number | null, resolution: AuthFactorResolution = owing) {
+    const factors = perRequest(fakeFactors(resolution, resolution.status === "satisfied" ? [] : ["totp-app"]));
     return guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
+        requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))),
         requireFreshStepUp({ factors, ...enrolment, ...(freshStepUpMaxAgeMs === undefined ? {} : { freshStepUpMaxAgeMs }) }),
       ],
       seed,
@@ -366,8 +376,21 @@ describe("requireFreshStepUp", () => {
     expect(await res.text()).toBe("passkeys");
   });
 
-  it("demands nothing at all when no window is configured, so the guard is opt-in", async () => {
-    const res = await freshApp({ userId: "u1" }).request("/account/passkeys", { method: "POST" });
+  // On by default: a significant action on an account that has a second factor is held to it
+  // without the mount having to ask, and the window is forge's own constant.
+  it("demands a step-up inside `AUTH_FRESH_STEP_UP_MS` when no window is configured", async () => {
+    const stale = await freshApp({ userId: "u1", stepUpAt: Date.now() - AUTH_FRESH_STEP_UP_MS - 1 }).request("/account/passkeys", {
+      method: "POST",
+    });
+    expect(stale.status).toBe(303);
+    const fresh = await freshApp({ userId: "u1", stepUpAt: Date.now() - AUTH_FRESH_STEP_UP_MS + 5_000 }).request("/account/passkeys", {
+      method: "POST",
+    });
+    expect(await fresh.text()).toBe("enrolled");
+  });
+
+  it("demands nothing when the window is `null`, which is the one way to opt out", async () => {
+    const res = await freshApp({ userId: "u1" }, null).request("/account/passkeys", { method: "POST" });
     expect(await res.text()).toBe("enrolled");
   });
 
@@ -376,15 +399,66 @@ describe("requireFreshStepUp", () => {
     expect(res.status).toBe(303);
   });
 
-  // A deployment asking for freshness it has no factor to prove is a wiring mistake, and admitting
-  // silently is the one answer that hides it. It throws rather than refusing every request forever.
-  it("throws when a window is configured but nothing offered can step up", async () => {
-    const res = await freshApp({ userId: "u1" }, HOUR, []).request("/account/passkeys", { method: "POST" });
-    expect(res.status).toBe(500);
+  // The demand is the policy's, per user: nothing to step up with means nothing to be fresh about.
+  it('admits a user the policy demands no second factor of — `{mode:"single"}`, or `when-enrolled` with nothing enrolled', async () => {
+    const single = await freshApp({ userId: "u1" }, HOUR, { status: "satisfied" }).request("/account/passkeys", { method: "POST" });
+    expect(await single.text()).toBe("enrolled");
+    const unenrolled = await freshApp({ userId: "u1" }, HOUR, { status: "enrolment-required", kinds: ["totp-app"] }).request("/account/passkeys", {
+      method: "POST",
+    });
+    expect(await unenrolled.text()).toBe("enrolled");
+  });
+
+  it("refuses rather than admits when the registry cannot read its store", async () => {
+    const app = guardedApp(
+      [requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))), requireFreshStepUp({ factors: perRequest(unavailableFactors), ...enrolment })],
+      { userId: "u1" },
+    );
+    expect((await app.request("/account/passkeys", { method: "POST" })).status).toBe(503);
+  });
+
+  it("reads the resolution `requireEnrolment` already made, rather than asking the registry twice", async () => {
+    const factors = recordingFactors(owing);
+    const app = guardedApp(
+      [
+        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
+        requireEnrolment({ factors: perRequest(factors), ...enrolment }),
+        requireFreshStepUp({ factors: perRequest(factors), ...enrolment, freshStepUpMaxAgeMs: HOUR }),
+      ],
+      { userId: "u1", stepUpAt: Date.now() - 2 * HOUR },
+    );
+    const res = await app.request("/account/passkeys", { method: "POST" });
+    expect(res.status).toBe(303);
+    expect(factors.calls).toHaveLength(1);
+  });
+
+  // The admin surface was the one place a significant action needed no step-up at all: a role change
+  // or a deletion is exactly what a stolen long-lived session must not be able to do.
+  it("holds the admin group's `PATCH /admin/users/:id` to a fresh mark, and admits it once the session steps up", async () => {
+    const app = (seed: SessionSeed) => {
+      const built = guardedApp(
+        [
+          requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))),
+          requireEnrolment({ factors: perRequest(fakeFactors(owing)), ...enrolment }),
+          requireAdmin(),
+          requireFreshStepUp({ factors: perRequest(fakeFactors(owing)), ...enrolment, freshStepUpMaxAgeMs: HOUR }),
+        ],
+        seed,
+      );
+      mapHandler(built, "PATCH", "/admin/users/:id", () => new Response("updated"));
+      return built;
+    };
+
+    const stale = await app({ userId: "u1", stepUpAt: Date.now() - 2 * HOUR }).request("/admin/users/u2", { method: "PATCH" });
+    expect(stale.status).toBe(303);
+    expect(stale.headers.get("location")).toBe("/auth/verify");
+
+    const marked = await app({ userId: "u1", stepUpAt: Date.now() - 1_000 }).request("/admin/users/u2", { method: "PATCH" });
+    expect(await marked.text()).toBe("updated");
   });
 
   it("refuses a `json` group with a body rather than a redirect a controller cannot read", async () => {
-    const factors = perRequest(fakeFactors({ status: "satisfied" }));
+    const factors = perRequest(fakeFactors(owing));
     const app = guardedApp(
       [
         requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),

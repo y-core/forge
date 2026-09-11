@@ -107,8 +107,11 @@ describe("authTotpEnrolSchema", () => {
     expect(output(authTotpEnrolSchema(), { code: "654321" })).toEqual({ code: "654321" });
   });
 
-  it("accepts the ten-digit ceiling RFC 4226 allows", () => {
-    expect(output(authTotpEnrolSchema(), { code: "0123456789" })).toEqual({ code: "0123456789" });
+  // Eight, where `createTotpAppFactor`'s own ceiling is: admitting ten took a code the factor will
+  // refuse and answered it as a wrong code rather than as a field that is too long.
+  it("accepts the eight-digit ceiling the factor itself allows, and refuses more", () => {
+    expect(output(authTotpEnrolSchema(), { code: "01234567" })).toEqual({ code: "01234567" });
+    expect(fieldsRejected(authTotpEnrolSchema(), { code: "0123456789" })).toEqual(["code"]);
   });
 
   it("rejects a five-digit code", () => {

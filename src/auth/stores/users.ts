@@ -36,6 +36,7 @@ export function createUserStore(db: D1Client): UserStore {
         webauthn_id: null,
         is_admin: input.isAdmin ? 1 : 0,
         deactivated_at: null,
+        sessions_invalid_before: null,
         created_at: at,
         updated_at: at,
       };
@@ -78,6 +79,18 @@ export function createUserStore(db: D1Client): UserStore {
             WHERE id = ${key}`,
       );
       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("users.changeEmail", outcome.error));
+    },
+
+    // Monotonic: two revocations racing must not let the earlier one walk the barrier backwards and
+    // hand a session that was already refused back to its holder.
+    async revokeSessions(id, at) {
+      const key = uuidKey(id);
+      if (!key) return ok(false);
+      const outcome = await db.execute(
+        sql`UPDATE auth_users SET sessions_invalid_before = ${at}, updated_at = ${at}
+            WHERE id = ${key} AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ${at})`,
+      );
+      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("users.revokeSessions", outcome.error));
     },
   };
 }

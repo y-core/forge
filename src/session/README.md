@@ -136,11 +136,11 @@ Forge-specific. Returns a middleware that reads the session cookie on the way in
 | `storage` | `SessionStorage` | The storage backend that reads/saves session data. |
 | `cookie` | `Cookie` | The cookie used to parse the incoming session and serialize the outgoing one. Use `createSignedCookie` in production. |
 
-The middleware skips persistence entirely when the session was **neither modified, nor destroyed, nor had its `id` read**, so a `Set-Cookie` header is written only when needed. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
+The middleware skips persistence entirely when the session was **neither modified, nor destroyed, nor had its `id` read on a session storage has not yet persisted**, so a `Set-Cookie` header is written only when needed. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
 
-> **An observed id is persisted.** Reading `session.id` marks the session dirty, because an id that escaped the request must be honoured on the next one. Without it, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id that no cookie carried forward, and every anonymous mutation would answer 403.
+> **An observed id is persisted, unless the cookie already carries it.** Reading `session.id` marks the session dirty when the value the client presented would not reproduce that id — a first visit, or a record the storage no longer holds. Without that, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id that no cookie carried forward, and every anonymous mutation would answer 403. Where the cookie _is_ the id and the storage restored it, nothing needs writing, so a request that only reads the id emits no `Set-Cookie` and re-writes no record. For a storage whose cookie value is an opaque blob rather than the id — `createCookieSessionStorage` — the two never match, so every observed id is still persisted.
 
-> **Sliding expiry:** callers that rely on a sliding session window must touch the session each request to mark it dirty and force a refreshed `Set-Cookie`. Reading `session.id` now suffices; `session.set(...)` still works.
+> **Sliding expiry:** callers that rely on a sliding session window must change the session each request — `session.set(...)`. Reading `session.id` no longer suffices on a session the cookie already reproduces, which is every request after the first.
 
 ```ts
 app.use("*", sessionMiddleware(storage, sessionCookie));
