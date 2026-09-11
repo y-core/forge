@@ -4,8 +4,11 @@ import { CSRF_HEADER_DEFAULT } from "../../form/constants";
 import { mintCsrf } from "../../form/csrf";
 import { csrfHeaderCtx } from "../../form/csrf-context";
 import { safeRedirectPath } from "../../http/redirect-path";
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
+import type { EnrollableFactorService } from "../factors/types";
 import { PASSKEY_CSRF_HEADER_DEFAULT } from "../passkey-contract";
-import type { PasskeyMode } from "../types";
+import type { AuthFactorKind, PasskeyMode } from "../types";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 import type { AuthPasskeyContract } from "./views/types";
 
@@ -44,6 +47,17 @@ export function authReturnPath<Bindings>(c: AppContext<Bindings>, options: AuthW
 export function authCsrfHeader<Bindings>(c: AppContext<Bindings>): { csrfHeader?: string } {
   const csrfHeader = csrfHeaderCtx.getOptional(c);
   return csrfHeader === undefined || csrfHeader === CSRF_HEADER_DEFAULT ? {} : { csrfHeader };
+}
+
+function notFound(): Response {
+  return new Response("Not Found", { status: 404 });
+}
+
+/** The enrollable factor `kind` names, or the refusal a deployment not offering it must answer. @internal */
+export function authEnrollable(services: AuthRequestServices, kind: AuthFactorKind): Result<EnrollableFactorService, Response> {
+  const service = services.factors.find(kind);
+  if (service === undefined || service.enrolment !== "explicit") return err(notFound());
+  return ok(service);
 }
 
 /** Mints the two path-bound tokens a ceremony needs and packs them with the contract the controller reads. @internal */

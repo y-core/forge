@@ -398,8 +398,8 @@ describe("requireFreshStepUp", () => {
     expect(res.status).toBe(303);
   });
 
-  // The demand is the policy's, per user: nothing to step up with means nothing to be fresh about.
-  it('admits a user the policy demands no second factor of — `{mode:"single"}`, or `when-enrolled` with nothing enrolled', async () => {
+  // The demand is resolved per user: nothing to step up with means nothing to be fresh about.
+  it("admits a user nothing demands a step-up of — no second factor offered, or a mandatory kind not yet enrolled", async () => {
     const single = await freshApp({ userId: "u1" }, HOUR, { status: "satisfied" }).request("/account/passkeys", { method: "POST" });
     expect(await single.text()).toBe("enrolled");
     const unenrolled = await freshApp({ userId: "u1" }, HOUR, { status: "enrolment-required", kinds: ["totp-app"] }).request("/account/passkeys", {
@@ -500,7 +500,7 @@ describe("the roles both enrolment guards resolve against", () => {
   };
 
   for (const [name, guard] of Object.entries(guards)) {
-    it(`hands \`${name}\` the identity's roles, so a \`for-roles\` policy is not silently a \`when-enrolled\` one`, async () => {
+    it(`hands \`${name}\` the identity's roles, so a \`{mandatoryForRoles}\` requirement is not silently an unscoped one`, async () => {
       for (const [isAdmin, expected] of [
         [true, { roles: ["admin"] }],
         [false, {}],

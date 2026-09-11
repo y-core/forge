@@ -3,7 +3,7 @@ import type { ForgeIcon } from "../../ui/core/types";
 import type { AdminUserService } from "../admin/types";
 import { AUTH_ADMIN_ROLE, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorCapabilities, AuthFactorOffer, AuthFactorResolution, AuthFactorService } from "../factors/types";
+import type { AuthFactorCapabilities, AuthFactorOffer, AuthFactorRegistry, AuthFactorResolution, AuthFactorService } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
@@ -164,6 +164,16 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     advanceCounter: async () => ok(true),
     remove: async () => ok(true),
   };
+}
+
+/** A registry offering email-OTP as primary and `kinds` as optional seconds. @internal */
+export function fakeFactorRegistry(kinds: readonly AuthFactorKind[]): AuthFactorRegistry {
+  return createFactorRegistry(fakeFactorStore([]), {
+    offered: [
+      { service: fakeFactorService("email-otp"), role: "primary" },
+      ...kinds.map<AuthFactorOffer>((kind) => ({ service: fakeFactorService(kind), role: "second", requirement: "optional" })),
+    ],
+  });
 }
 
 /** Every offered set with each primary it permits, in a stable order. @internal */

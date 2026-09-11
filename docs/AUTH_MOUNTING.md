@@ -102,6 +102,15 @@ per step-up factor. Read it when a shape here is ambiguous; it is the copy that 
 `factorRegistryFor` is defined there: it builds a `createFactorRegistry` over this request's factor
 store, the way `requestStores` builds every other store from `c.env`.
 
+**A deployment offering no passkey factor must name a `settledPath` of its own — both of them.** The
+snippet above gives the guard chain `paths.account.passkeys()`, and `AuthWebOptions.settledPath`
+defaults to that same path when it is omitted. `/account/passkeys` answers **404** wherever the
+factor registry offers no passkey factor, so on such a deployment a completed sign-in, and a settled
+visitor bounced off an enrolment page, both land on a 404. Name a path the deployment actually
+serves — the account root is the usual choice — and set it in both places, because the two are read
+independently: this one is where a completed sign-in lands, the guard's is where a visitor owing
+nothing is sent off an enrolment page.
+
 **Why that registry is per request, and whether it is the same one `resolveServices` holds.** §3 says
 the email-OTP and passkey factors are built per request because two of their seams read a `UserStore`;
 the passkey factor also takes **this request's session id**, which is what the WebAuthn challenge is

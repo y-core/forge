@@ -43,6 +43,7 @@ import {
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
+  fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
 } from "./test-support";
@@ -581,7 +582,11 @@ describe("the ceremony endpoints cap what they read", () => {
 
 describe("createPasskeyManageActions", () => {
   const credential = fakeAuthCredential({ id: "c1", userId: "u9" });
-  const options = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: fakeAuthCredentialStore([credential]) });
+  const options = optionsWith({
+    users: fakeAuthUserStore([signedIn]),
+    credentials: fakeAuthCredentialStore([credential]),
+    factors: fakeFactorRegistry(["passkey"]),
+  });
 
   // The store's own ownership scope, kept here so a rename across accounts is asserted end to end.
   function renaming(rows: AuthCredential[]): CredentialStore {
@@ -599,7 +604,11 @@ describe("createPasskeyManageActions", () => {
 
   it("renames a credential and re-renders the page the visitor is on", async () => {
     const rows = [fakeAuthCredential({ id: "c1", userId: "u9", label: "Laptop" })];
-    const renameOptions = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: renaming(rows) });
+    const renameOptions = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      credentials: renaming(rows),
+      factors: fakeFactorRegistry(["passkey"]),
+    });
     const app = mounted(actionApp({ userId: "u9" }), "PATCH", "/account/passkeys/:id", createPasskeyManageActions(renameOptions).passkeyRename);
 
     const res = await app.request("/account/passkeys/c1", formBody({ label: "Phone" }, "PATCH"));
@@ -611,7 +620,11 @@ describe("createPasskeyManageActions", () => {
 
   it("clears a name back to nothing rather than writing an empty one", async () => {
     const rows = [fakeAuthCredential({ id: "c1", userId: "u9", label: "Laptop" })];
-    const renameOptions = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: renaming(rows) });
+    const renameOptions = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      credentials: renaming(rows),
+      factors: fakeFactorRegistry(["passkey"]),
+    });
     const app = mounted(actionApp({ userId: "u9" }), "PATCH", "/account/passkeys/:id", createPasskeyManageActions(renameOptions).passkeyRename);
 
     await app.request("/account/passkeys/c1", formBody({ label: "   " }, "PATCH"));
@@ -620,7 +633,11 @@ describe("createPasskeyManageActions", () => {
 
   it("changes nothing and answers 404 for another account's credential", async () => {
     const rows = [fakeAuthCredential({ id: "c1", userId: "u1", label: "Laptop" })];
-    const renameOptions = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: renaming(rows) });
+    const renameOptions = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      credentials: renaming(rows),
+      factors: fakeFactorRegistry(["passkey"]),
+    });
     const app = mounted(actionApp({ userId: "u9" }), "PATCH", "/account/passkeys/:id", createPasskeyManageActions(renameOptions).passkeyRename);
 
     const res = await app.request("/account/passkeys/c1", formBody({ label: "Phone" }, "PATCH"));
@@ -633,6 +650,37 @@ describe("createPasskeyManageActions", () => {
 
     const res = await app.request("/account/passkeys/other", { method: "DELETE" });
     expect(res.status).toBe(404);
+  });
+
+  // The same withdrawal the passkey pages answer 404 for, against a credential this visitor owns —
+  // the rejected option was "404 only while the visitor holds nothing", which this row would pass.
+  const withdrawn = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: fakeAuthCredentialStore([credential]) });
+
+  it("changes nothing and answers 404 to a rename when the deployment offers no passkey factor", async () => {
+    const rows = [fakeAuthCredential({ id: "c1", userId: "u9", label: "Laptop" })];
+    const renameOptions = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: renaming(rows) });
+    const app = mounted(actionApp({ userId: "u9" }), "PATCH", "/account/passkeys/:id", createPasskeyManageActions(renameOptions).passkeyRename);
+
+    const res = await app.request("/account/passkeys/c1", formBody({ label: "Phone" }, "PATCH"));
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("Not Found");
+    expect(rows.map((row) => row.label)).toEqual(["Laptop"]);
+  });
+
+  it("sends an anonymous rename to sign-in rather than reporting which factors this deployment offers", async () => {
+    const app = mounted(actionApp(), "PATCH", "/account/passkeys/:id", createPasskeyManageActions(withdrawn).passkeyRename);
+
+    const res = await app.request("/account/passkeys/c1", formBody({ label: "Phone" }, "PATCH"));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/signin");
+  });
+
+  it("answers 404 to a removal when the deployment offers no passkey factor", async () => {
+    const app = mounted(actionApp({ userId: "u9" }), "DELETE", "/account/passkeys/:id", createPasskeyManageActions(withdrawn).passkeyRemove);
+
+    const res = await app.request("/account/passkeys/c1", { method: "DELETE" });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("Not Found");
   });
 });
 

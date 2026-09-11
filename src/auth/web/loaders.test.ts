@@ -40,6 +40,7 @@ import {
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
+  fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
   textOf,
@@ -223,6 +224,7 @@ describe("loadPasskeyList", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" }), fakeAuthCredential({ id: "c2", userId: "u9" })]),
+      factors: fakeFactorRegistry(["passkey"]),
     });
     const html = await page(loaderApp(loadPasskeyList, options, "/page", "u9"));
 
@@ -235,6 +237,7 @@ describe("loadPasskeyList", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" }), fakeAuthCredential({ id: "c2", userId: "u9" })]),
+      factors: fakeFactorRegistry(["passkey"]),
     });
     const app = loaderApp(loadPasskeyList, options, "/page", "u9", realMinter);
 
@@ -252,6 +255,7 @@ describe("loadPasskeyList", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       credentials: { ...fakeAuthCredentialStore([]), listByUser: async () => err(new Error("kv down") as never) },
+      factors: fakeFactorRegistry(["passkey"]),
     });
     const res = await loaderApp(loadPasskeyList, options, "/page", "u9").request("/page");
 
@@ -272,6 +276,7 @@ describe("loadPasskey", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" }), fakeAuthCredential({ id: "c2", userId: "u9" })]),
+      factors: fakeFactorRegistry(["passkey"]),
     });
     const html = await (await loaderApp(loadPasskey, options, "/page/:id", "u9").request("/page/c2")).text();
 
@@ -283,6 +288,7 @@ describe("loadPasskeyEdit", () => {
   const options = optionsWith({
     users: fakeAuthUserStore([signedIn]),
     credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9", label: "Work laptop" })]),
+    factors: fakeFactorRegistry(["passkey"]),
   });
 
   it("renders the rename form for the one credential, on the path the rename is sent to", async () => {
@@ -467,6 +473,7 @@ describe("every token a page renders is bound to the path its own control submit
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+      factors: fakeFactorRegistry(["passkey"]),
     });
     const html = await (await loaderApp(loadPasskeyEdit, options, "/page/:id", "u9", realMinter).request("/page/c1")).text();
 

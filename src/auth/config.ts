@@ -5,7 +5,7 @@ import type { AuthAlgorithm } from "./types";
 /** The COSE algorithms a passkey ceremony advertises unless a consumer opts into more. @public */
 export const AUTH_SUPPORTED_ALGORITHMS: readonly AuthAlgorithm[] = [-7, -257];
 
-/** The one role forge sources itself, and the name a `for-roles` policy is written against. @public */
+/** The one role forge sources itself, and the name a `mandatoryForRoles` requirement is written against. @public */
 export const AUTH_ADMIN_ROLE = "admin";
 
 /** A key id is eight base64url characters, which is exactly the six kid bytes a token frame carries. @public */

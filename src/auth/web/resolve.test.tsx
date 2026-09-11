@@ -44,6 +44,7 @@ import {
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
+  fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
   attrOf,
@@ -173,21 +174,33 @@ const CASES: readonly Case[] = [
     label: "accountPasskeys",
     name: "accountPasskeys",
     load: loadPasskeyList,
-    options: optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore(credentials) }),
+    options: optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore(credentials),
+      factors: fakeFactorRegistry(["passkey"]),
+    }),
     identity: admin,
   },
   {
     label: "accountPasskeys+empty",
     name: "accountPasskeys",
     load: loadPasskeyList,
-    options: optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore([]) }),
+    options: optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore([]),
+      factors: fakeFactorRegistry(["passkey"]),
+    }),
     identity: admin,
   },
   {
     label: "accountPasskey",
     name: "accountPasskey",
     load: loadPasskey,
-    options: optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore(credentials) }),
+    options: optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore(credentials),
+      factors: fakeFactorRegistry(["passkey"]),
+    }),
     pattern: "/page/:id",
     path: "/page/c2",
     identity: admin,
@@ -196,7 +209,11 @@ const CASES: readonly Case[] = [
     label: "accountPasskeyEdit",
     name: "accountPasskeyEdit",
     load: loadPasskeyEdit,
-    options: optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore(credentials) }),
+    options: optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore(credentials),
+      factors: fakeFactorRegistry(["passkey"]),
+    }),
     pattern: "/page/:id",
     path: "/page/c1",
     identity: admin,
@@ -381,6 +398,7 @@ describe("resolveAuthView refusals", () => {
     const downCredentials = optionsWith({
       users: fakeAuthUserStore([viewer]),
       credentials: { ...fakeAuthCredentialStore([]), listByUser: async () => err(new Error("kv down") as never) },
+      factors: fakeFactorRegistry(["passkey"]),
     });
     expect((await refusalOf(loadPasskeyList, downCredentials, admin)).status).toBe(503);
     expect((await refusalOf(loadPasskeyEdit, downCredentials, admin, "/page/:id", "/page/c1")).status).toBe(503);
@@ -425,6 +443,40 @@ describe("resolveAuthView refusals", () => {
     const res = await loaderApp(loadAdminUsers, options, admin).request(`/page?after=${"x".repeat(500)}`);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/admin/users");
+  });
+});
+
+describe("a deployment offering no passkey factor serves no passkey management page", () => {
+  const withdrawn = optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore([]) });
+
+  const gone = { status: 404, body: "Not Found" };
+
+  async function answerOf(load: Loader, options: AuthWebOptions, pattern = "/page", path = "/page") {
+    const res = await loaderApp(load, options, admin, pattern).request(path);
+    return { status: res.status, body: await res.text() };
+  }
+
+  it("answers 404 for the list, where it rendered an empty `Your passkeys`", async () => {
+    expect(await answerOf(loadPasskeyList, withdrawn)).toEqual(gone);
+  });
+
+  // Holding a credential is what the rejected "404 only while the visitor holds nothing" option
+  // would have kept all three pages alive for; the row is a dead one an operator clears at the store.
+  const holder = optionsWith({
+    users: fakeAuthUserStore([viewer]),
+    credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+  });
+
+  it("answers 404 for the list a visitor still holds a stored credential in", async () => {
+    expect(await answerOf(loadPasskeyList, holder)).toEqual(gone);
+  });
+
+  it("answers 404 for the row of a credential the visitor still holds", async () => {
+    expect(await answerOf(loadPasskey, holder, "/page/:id", "/page/c1")).toEqual(gone);
+  });
+
+  it("answers 404 for the rename page of a credential the visitor still holds", async () => {
+    expect(await answerOf(loadPasskeyEdit, holder, "/page/:id", "/page/c1")).toEqual(gone);
   });
 });
 

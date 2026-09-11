@@ -820,7 +820,7 @@ guarded. The mount order, the middleware that must already be up, and every seam
 | `paths` | `AuthWebPaths` — `{ auth, account, admin }`, one `authPaths(map)` result each. `authPaths` returns **one** map, so the three are assembled by hand: `{ auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) }` | yes |
 | `icon` | `ForgeIcon<AuthIconName>` — build it with `createIcon`, documented at [`src/ui/README.md`](../ui/README.md) section “Icons”. The four glyphs it must cover, and where to get them, are [`AUTH_MOUNTING.md`](../../docs/AUTH_MOUNTING.md) §3 | yes |
 | `views` | `AuthViews` — one override per `AuthViewName`, each held to that page's `AuthViewProps` entry | no |
-| `settledPath` | `string` — where a settled sign-in lands. Defaults to the passkey page | no |
+| `settledPath` | `string` — where a settled sign-in lands. Defaults to the passkey page, which answers 404 where no passkey factor is offered: **a deployment offering none must set this**, and the enrolment guards' own required `settledPath` with it ([`AUTH_MOUNTING.md`](../../docs/AUTH_MOUNTING.md) §1) | no |
 | `returnParam` | `string` — the return-to query parameter. Defaults to `next` | no |
 | `now` | `() => number` — the clock every flow call is made against | no |
 

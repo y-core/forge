@@ -12,7 +12,7 @@ import { authFactorContext } from "../factors/registry";
 import type { TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
 import { authCtx } from "./identity";
-import { authNow, authCsrfHeader, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
+import { authNow, authCsrfHeader, authEnrollable, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
 import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
@@ -264,6 +264,8 @@ async function passkeyPage<Bindings>(
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
+  const offered = authEnrollable(services, "passkey");
+  if (!offered.ok) return err(offered.error);
 
   const listed = await services.credentials.listByUser(identity.userId);
   if (!listed.ok) return err(unavailable());
@@ -311,6 +313,8 @@ async function resolvePasskeyEdit<Bindings>(
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
+  const offered = authEnrollable(services, "passkey");
+  if (!offered.ok) return err(offered.error);
   const id = c.params.id;
   if (id === undefined) return err(notFound());
 
@@ -347,8 +351,9 @@ async function totpPage<Bindings>(
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
 
-  const service = services.factors.find("totp-app");
-  if (service === undefined || service.enrolment !== "explicit") return err(notFound());
+  const offered = authEnrollable(services, "totp-app");
+  if (!offered.ok) return err(offered.error);
+  const service = offered.data;
 
   const enrolled = await service.listEnrolments(identity.userId);
   if (!enrolled.ok) return err(unavailable());

@@ -36,6 +36,7 @@ import {
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
+  fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
   valuesOf,
@@ -147,7 +148,8 @@ describe("registerAuth mounted against the pieces on a custom route", () => {
 
 describe("register* independence", () => {
   it("mounts the account routes with neither of the other two registered", async () => {
-    const options = fakeAuthWebOptions();
+    const services = fakeAuthServices({ factors: fakeFactorRegistry(["passkey"]) });
+    const options = fakeAuthWebOptions({ resolveServices: () => services });
     const app = authApp({ userId: "u1", fixedCsrf: true });
     registerAccount(app, accountRoutes("/account"), options);
 
@@ -211,6 +213,7 @@ describe("csrfProtection over a passkey list of more than one row", () => {
   it("accepts the second row's own token on the second row's remove path", async () => {
     const services = fakeAuthServices({
       credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u1" }), fakeAuthCredential({ id: "c2", userId: "u1" })]),
+      factors: fakeFactorRegistry(["passkey"]),
     });
     const app = authApp({ userId: "u1" });
     registerAccount(app, accountRoutes("/account"), fakeAuthWebOptions({ resolveServices: () => services }));
@@ -231,7 +234,10 @@ describe("the CSRF header a renamed deployment writes into an hx-delete row", ()
   const HEADER = "X-App-Csrf";
 
   function listApp() {
-    const services = fakeAuthServices({ credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u1" })]) });
+    const services = fakeAuthServices({
+      credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u1" })]),
+      factors: fakeFactorRegistry(["passkey"]),
+    });
     const app = authApp({ userId: "u1", csrfHeaderName: HEADER });
     registerAccount(app, accountRoutes("/account"), fakeAuthWebOptions({ resolveServices: () => services }));
     return app;

@@ -490,7 +490,7 @@ describe("a second factor, driven through the mount", () => {
       expect(signedIn.headers.get("location")).toBe(enrolAt);
 
       // The mark cannot have been carried over a sign-in, so the guarded page is still refused.
-      expect((await ada.get("/account/passkeys")).headers.get("location")).toBe(enrolAt);
+      expect((await ada.get("/account/factors")).headers.get("location")).toBe(enrolAt);
 
       // Enrol the factor the demand actually names.
       const enrolled = stepUp === "totp-app" ? await ada.form(enrolAt, { code: CODE }) : await ada.ceremony(enrolAt);
@@ -498,13 +498,13 @@ describe("a second factor, driven through the mount", () => {
 
       // Now the demand is the step-up the enrolment was for, and the verify page can satisfy it —
       // which is unreachable unless the group's `resolve-auth` guard put an identity on the request.
-      expect((await ada.get("/account/passkeys")).headers.get("location")).toBe("/auth/verify");
+      expect((await ada.get("/account/factors")).headers.get("location")).toBe("/auth/verify");
       const stepped = stepUp === "totp-app" ? await ada.form("/auth/verify", { code: CODE }) : await ada.ceremony("/auth/verify");
       expect(stepped.status).toBe(stepUp === "totp-app" ? 303 : 200);
 
-      const settled = await ada.get("/account/passkeys");
+      const settled = await ada.get("/account/factors");
       expect(settled.status).toBe(200);
-      expect(await settled.text()).toContain("<title>Passkeys</title>");
+      expect(await settled.text()).toContain("<title>Sign-in methods</title>");
     });
   }
 

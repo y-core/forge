@@ -39,7 +39,7 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import { authNow, authReturnPath, authServices, authSettledPath } from "./options";
+import { authEnrollable, authNow, authReturnPath, authServices, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
 import { authVerifyDetour, resolveAuthVerifyDemand, resolveAuthViewer } from "./resolve";
 import {
@@ -463,9 +463,9 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
 } {
   async function enrolmentService(c: AppContext<Bindings>, services: AuthRequestServices) {
     const identity = resolveAuthViewer(c);
-    const service = services.factors.find("passkey");
-    if (identity === null || service === undefined || service.enrolment !== "explicit") return null;
-    return { identity, service } as const;
+    const offered = authEnrollable(services, "passkey");
+    if (identity === null || !offered.ok) return null;
+    return { identity, service: offered.data } as const;
   }
 
   return {
@@ -518,6 +518,8 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       const identity = resolveAuthViewer(c);
       const id = c.params.id;
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      const offered = authEnrollable(services, "passkey");
+      if (!offered.ok) return offered.error;
       if (id === undefined) return notFound();
 
       const parsed = await readAuthSubmission(c, authPasskeyLabelSchema());
@@ -536,6 +538,8 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       const identity = resolveAuthViewer(c);
       const id = c.params.id;
       if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      const offered = authEnrollable(services, "passkey");
+      if (!offered.ok) return offered.error;
       if (id === undefined) return notFound();
 
       const removed = await services.credentials.removeForUser(id, identity.userId);

@@ -237,10 +237,11 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   **A guess is spent by the statement that admits it**, so parallel guesses spend the budget instead
   of each comparing against a count none of them has written yet; that is also why the email code's
   state is a durable table and not KV. An **implicit factor is
-  enrolled for everyone the moment it is offered**, so offering email-OTP as the second factor
-  demands it under both `always` and `when-enrolled` rather than dead-ending on one and being
-  skipped on the other; a `second-factor` policy with nothing that could step up throws at
-  construction. And a ceremony's **`origin` is compared as an exact string** while its **`rpIdHash`
+  enrolled for everyone the moment it is offered**, so offering email-OTP as a second factor demands
+  a step-up whatever its `AuthFactorRequirement` says: there is no unenrolled state for `"optional"`
+  to skip over or for `"mandatory"` to owe an enrolment against. A deployment that offers no second
+  factor at all resolves `satisfied` rather than refusing at construction. And a ceremony's
+  **`origin` is compared as an exact string** while its **`rpIdHash`
   is compared as a hash**, which is what refuses `https://example.com.evil.test` and a credential
   minted for another relying party.
 - **`@y-core/forge/auth/web` — the mountable web layer over that domain.** Three route builders —
@@ -262,9 +263,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   inherit it (`NAMESPACES.md` §5h).
 
   **One derivation of roles, and `AuthSigninFlow.complete` no longer takes a context.** Both
-  enrolment guards resolved the factor policy with no `AuthFactorContext`, so a `for-roles` policy
-  degraded to `when-enrolled` and an admin who had never enrolled a second factor reached the console
-  on one — the exact case the policy exists to prevent. `authFactorContext(subject)` and
+  enrolment guards resolved the factor requirement with no `AuthFactorContext`, so a
+  `{mandatoryForRoles}` requirement matched no role and went unenforced — an admin who had never
+  enrolled a second factor reached the console, the exact case the requirement exists to prevent. `authFactorContext(subject)` and
   `AUTH_ADMIN_ROLE` are now the single derivation, used by the guards, the verify page and the
   sign-in flow alike. `complete(email, presented, at)` **drops its fourth parameter** — breaking only
   for a consumer implementing `AuthSigninFlow` themselves — because the caller cannot know the
@@ -371,6 +372,28 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   a regression. The two enrolment guards are not observable without a factor-registry round trip per
   render, so for those `guarded` remains a typed claim; `AUTH_MOUNTING.md` §6 states it as a claim
   rather than a formality.
+
+### Fixed
+
+- **Every `/account/passkeys` path answers 404 on a deployment that offers no passkey factor.**
+  `passkeyPage` read the credential store — whether this visitor holds a passkey — where the question
+  is whether the factor is offered at all, which only the factor registry answers; `totpPage` read
+  the registry and was correct. The page was unlinked but reachable, and its `EmptyState` advertised
+  an "Add your first passkey" button pointing at a path that 404s. The list, a single row, edit,
+  rename and remove now all refuse, exactly as `/account/totp` already did, and the check sits after
+  the anonymous redirect and before any store read, so a prober learns nothing about a deployment's
+  factor set.
+
+  **404 always, not 404-while-empty.** A deployment that withdraws the passkey factor refuses every
+  passkey management path whether the visitor holds credentials or not; the rows a withdrawn factor
+  leaves behind are dead and an operator clears them at the store, because forge deletes nobody's
+  credentials on a configuration change.
+
+  **One thing a deployment may have to act on:** `AuthWebOptions.settledPath` defaults to the passkey
+  list, so a deployment offering no passkey factor and omitting `settledPath` now lands a completed
+  sign-in on a 404. Set it — and the enrolment guards' own required `settledPath`, which a mount
+  typically points at the same page — to a path the deployment serves; `AUTH_MOUNTING.md` §1 states
+  the requirement.
 
 ---
 
