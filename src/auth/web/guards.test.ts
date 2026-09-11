@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import { createCookie } from "@remix-run/cookie";
 import { RequestContext } from "@remix-run/fetch-router";
 import { get, route } from "@remix-run/fetch-router/routes";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
@@ -8,6 +7,7 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { Forge } from "../../app/forge-app";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
+import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
@@ -26,7 +26,7 @@ const accountMap = accountRoutes("/account");
 const adminMap = adminRoutes("/admin");
 const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) };
 
-const sessionCookie = createCookie("__session", { path: "/" });
+const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   return {

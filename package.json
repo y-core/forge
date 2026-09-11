@@ -39,7 +39,6 @@
     "./src/ui/show/client.ts"
   ],
   "dependencies": {
-    "@remix-run/cookie": "^0.5.4",
     "@remix-run/fetch-router": "^0.20.1",
     "@remix-run/headers": "^0.21.1",
     "@remix-run/html-template": "^0.3.1",

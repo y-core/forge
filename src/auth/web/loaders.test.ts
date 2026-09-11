@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { createCookie } from "@remix-run/cookie";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
 import { csrfMinterCtx, importCsrfKey, verifyCsrfToken } from "../../form/csrf";
 import { err, ok } from "../../result/result";
+import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
@@ -48,7 +48,7 @@ import {
 } from "./test-support";
 import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
 
-const sessionCookie = createCookie("__session", { path: "/" });
+const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
 

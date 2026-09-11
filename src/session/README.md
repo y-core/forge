@@ -1,15 +1,15 @@
 ---
 title: Sessions and Cookies
-description: "A curated cookie and session surface plus forge's own session lifecycle middleware and a hardened, HMAC-signed cookie constructor."
+description: "Forge's own cookie implementation and session lifecycle middleware over a curated re-export of the `@remix-run/session` surface."
 audience: consumer
 ---
 
 # `@y-core/forge/session`
 
-Session management and cookie primitives for Cloudflare Workers. This namespace combines a curated re-export of the `@remix-run/cookie` and `@remix-run/session` surface with two forge-specific additions: `sessionMiddleware` (a request/response session lifecycle middleware that avoids cache-defeating cookie writes) and `createSignedCookie` (a hardened cookie constructor that enforces `httpOnly`, `secure`, and HMAC signing).
+Session management and cookie primitives for Cloudflare Workers. The cookies are forge's own — `createSignedCookie` (HMAC-signed, `httpOnly`, key cached per secret) and `createUnsignedCookie` — alongside `sessionMiddleware`, a request/response session lifecycle middleware that avoids cache-defeating cookie writes, over a curated re-export of the `@remix-run/session` surface.
 
 ```ts
-import { sessionMiddleware, sessionCtx, createSignedCookie, createCookieSessionStorage, createCookie } from "@y-core/forge/session";
+import { sessionMiddleware, sessionCtx, createSignedCookie, createUnsignedCookie, createCookieSessionStorage } from "@y-core/forge/session";
 ```
 
 ---
@@ -17,14 +17,16 @@ import { sessionMiddleware, sessionCtx, createSignedCookie, createCookieSessionS
 ## Features
 
 - **Cookie-backed sessions** with a single middleware that reads on the way in and persists on the way out.
-- **Cache-friendly persistence** — `sessionMiddleware` emits a `Set-Cookie` **only** when the session is modified, destroyed, or its `id` was read. A request that touches nothing — a crawler, an asset path — stays cacheable.
+- **Cache-friendly persistence** — `sessionMiddleware` emits a `Set-Cookie` **only** when the cookie it would write differs, byte for byte, from the one the request carried. A request carrying no session cookie at all — a crawler, an asset path — stays cacheable.
+- **Rotation that completes on its own** — a signed cookie holding more than one secret reports `rotating`, so `sessionMiddleware` moves its comparison to the wire bytes with nothing to remember: a cookie still signed with a retired secret is re-signed with the current one on the next request it makes, under both storages, and the retired secret can actually be dropped. Off rotation an unchanged session costs no HMAC.
+- **Declared attribute repair** — `sessionMiddleware(storage, cookie, { reissue: true })` pushes changed cookie attributes (`Secure`, `SameSite`, `Path`, `Max-Age`) to clients holding a valid session, which is otherwise unreachable: a browser echoes only `name=value`, never attributes.
 - **Typed session accessor** — `sessionCtx.get(context)` returns the current `Session` with no stringly-keyed context lookups.
-- **Hardened signed cookies** — `createSignedCookie` always sets `httpOnly` and `secure`, HMAC-signs the value, and rejects weak secrets at construction time.
-- **General-purpose cookies** — `createCookie`/`Cookie` for non-sensitive values (theme, locale) with parse/serialize support.
+- **Hardened signed cookies** — `createSignedCookie` always sets `httpOnly` and `secure`, HMAC-signs the value, and rejects weak secrets at construction time. Neither flag is an option, so neither can be relaxed by a mistyped config. The signing key is imported once per secret and cached for the isolate's life.
+- **General-purpose cookies** — `createUnsignedCookie` for non-sensitive values (theme, locale) with the same parse/serialize surface.
 - **Pluggable storage** — cookie-backed storage for stateless production sessions, in-memory storage for local development.
 - **Flash messages** — `session.flash(key, value)` for one-request-only values.
 
-> Most symbols in this namespace are re-exported from `@remix-run/cookie` and `@remix-run/session`. This document covers the curated forge surface and the forge-specific additions. For exhaustive upstream behaviour, consult the `@remix-run/session` and `@remix-run/cookie` documentation.
+> The session symbols in this namespace are re-exported from `@remix-run/session`; the cookies are forge's own. For exhaustive upstream session behaviour, consult the `@remix-run/session` documentation.
 
 ---
 
@@ -72,9 +74,9 @@ function loginHandler(context) {
 A plain, unsigned cookie for a non-sensitive value:
 
 ```ts
-import { createCookie } from "@y-core/forge/session";
+import { createUnsignedCookie } from "@y-core/forge/session";
 
-const themeCookie = createCookie("theme", {
+const themeCookie = createUnsignedCookie("theme", {
   maxAge: 60 * 60 * 24 * 365, // 1 year
   sameSite: "Lax",
 });
@@ -122,30 +124,46 @@ const settings = session.get("settings"); // read back on any later request
 
 Prefer KV storage for anything beyond a couple of tiny values. `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` — where `prefix` defaults to `session` and an empty string is refused, because it would key every session under a bare `:id` — is also exported standalone for use with `sessionMiddleware` directly — it is the durable sibling of `createMemorySessionStorage` and follows the same storage contract (`read` never throws; `save` returns the id when dirty, `""` when destroyed, `null` when unchanged).
 
-> `secure: false` exists **only** for plain-http test servers (browsers drop `Secure` cookies over http). The cookie remains signed + `httpOnly` + `SameSite=Lax` in every configuration.
+> The cookie is signed + `httpOnly` + `Secure` + `SameSite=Lax` in every configuration, with no option to relax any of them — see [`Secure` is not configurable](#secure-is-not-configurable).
 
 ---
 
 ## Core Components & APIs
 
-### `sessionMiddleware(storage, cookie)`
+### `sessionMiddleware(storage, cookie, options?)`
 
 Forge-specific. Returns a middleware that reads the session cookie on the way in, exposes the resulting `Session` via `sessionCtx`, and persists it on the way out.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `storage` | `SessionStorage` | The storage backend that reads/saves session data. |
-| `cookie` | `Cookie` | The cookie used to parse the incoming session and serialize the outgoing one. Use `createSignedCookie` in production. |
+| `cookie` | `SignedCookie \| UnsignedCookie` | The cookie used to parse the incoming session and serialize the outgoing one. Use `createSignedCookie` in production. |
+| `options.reissue` | `boolean` | Optional, default `false`. Re-issues the cookie on every request that carries one — see “Repairing attribute drift” below. |
+| `options.rotating` | `boolean` | Optional. Defaults to the cookie's own `rotating`, i.e. whether it holds more than one secret — see “Strong, rotatable secrets” below. Pass `false` to suppress the re-signing while keeping a retired secret in the array. |
 
-The middleware skips persistence entirely when the session was **neither modified, nor destroyed, nor had its `id` read on a session storage has not yet persisted**, so a `Set-Cookie` header is written only when needed. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
+The middleware writes to storage only when the session was modified or destroyed. It then compares the value it would write — the saved one, or the value the request already carried — against the value the request carried, and emits nothing when they match. The serialized cookie is queued on the per-request pending-header channel and flushed by the app's single `applyHeaders` pass, not by rebuilding the response in this middleware.
 
-> **An observed id is persisted, unless the cookie already carries it.** Reading `session.id` marks the session dirty when the value the client presented would not reproduce that id — a first visit, or a record the storage no longer holds. Without that, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id that no cookie carried forward, and every anonymous mutation would answer 403. Where the cookie _is_ the id and the storage restored it, nothing needs writing, so a request that only reads the id emits no `Set-Cookie` and re-writes no record. For a storage whose cookie value is an opaque blob rather than the id — `createCookieSessionStorage` — the two never match, so every observed id is still persisted.
+> **The payload decides, except under rotation, where the wire bytes do.** HMAC is deterministic, so an unchanged payload re-signs to exactly the bytes the client already holds — unless the signing secret moved. The signature is therefore worth computing only to tell a current secret from a retired one, which cannot arise unless a rotation is in flight. Off rotation an unchanged session costs no HMAC at all; under rotation the middleware re-signs and compares the bytes, so a cookie still carrying the old signature is re-issued with the new one, on any request it makes, under either storage — including a request that touches nothing. A cookie that fails to parse — tampered, or signed with a secret no longer in the array — is never re-signed back into validity, with or without `rotating`.
 
-> **Sliding expiry:** callers that rely on a sliding session window must change the session each request — `session.set(...)`. Reading `session.id` no longer suffices on a session the cookie already reproduces, which is every request after the first.
+> **An observed id is persisted, unless the cookie already carries it.** Reading `session.id` marks the session dirty when the value the client presented would not reproduce that id — a first visit, or a record the storage no longer holds. Without that, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id that no cookie carried forward, and every anonymous mutation would answer 403. Where the cookie _is_ the id and the storage restored it, nothing needs writing, so a request that only reads the id emits no `Set-Cookie` and re-writes no record.
+
+> **Sliding expiry:** callers that rely on a sliding session window must change the session each request — `session.set(...)`, or `reissue: true`. Neither reading `session.id` nor re-serializing an unchanged session emits a cookie on its own, so nothing re-arms `Max-Age`.
+
+> **Cost:** the key is imported once per secret per isolate, so the steady state is one `verify`, from the incoming `parse` alone. A rotation adds one `sign` per request carrying an unchanged session — the work that completes the rotation, lasting only as long as the rotation does.
 
 ```ts
 app.use("*", sessionMiddleware(storage, sessionCookie));
 ```
+
+#### Repairing attribute drift
+
+A browser echoes only `name=value`; it never tells the server which attributes the cookie it holds was set with. Tightening `sameSite`, adding `Secure`, or changing `Path`/`maxAge` therefore reaches only clients whose session changes — a client holding a valid, unchanged session keeps the old attributes until the cookie expires. This is not detectable, only declarable:
+
+```ts
+app.use("*", sessionMiddleware(storage, sessionCookie, { reissue: true }));
+```
+
+With `reissue`, every request that carries a parseable, non-empty session cookie gets a fresh `Set-Cookie`, so the new attributes land. It also re-arms `Max-Age` on every request, and it makes every such response uncacheable — set it for the deploy window that pushes the change, then take it back out. A request carrying no session cookie still emits nothing.
 
 ### `sessionCtx`
 
@@ -160,14 +178,14 @@ Register `sessionMiddleware` before any handler that calls `sessionCtx.get` — 
 
 ### `createSignedCookie(name, options)`
 
-Forge-specific. Creates a `Cookie` that always enforces `httpOnly: true` and `secure: true`, HMAC-signs the value with the provided secrets, and defaults `sameSite` to `"Lax"`. Use this for any sensitive cookie — sessions, auth tokens.
+Forge-specific. Creates a `SignedCookie` that always enforces `httpOnly: true` and `secure: true`, HMAC-signs the value with the provided secrets, and defaults `sameSite` to `"Lax"`. Use this for any sensitive cookie — sessions, auth tokens.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `name` | `string` | The cookie name (e.g. `"__session"`). |
 | `options.secrets` | `[string, ...string[]]` | One or more signing secrets, **each at least 32 characters**. The first signs new cookies; the rest verify older ones (rotation). |
 | `options.sameSite` | `"Strict" \| "Lax"` | Optional. `SameSite` policy. Defaults to `"Lax"`. `"None"` is not allowed. |
-| `options.maxAge`, `options.path`, `options.domain`, `options.expires`, … | `CookieOptions` | Standard cookie options, except `httpOnly`, `secure`, and `secrets` handling is fixed by this factory. |
+| `options.maxAge`, `options.path`, `options.domain`, `options.expires`, `options.partitioned` | `CookieAttributes` | Standard cookie attributes; `httpOnly` and `secure` are fixed by this factory. |
 
 ```ts
 const sessionCookie = createSignedCookie("__session", {
@@ -219,17 +237,19 @@ session.flash("notice", "Saved!"); // shown once, on the next request
 const notice = session.get("notice");
 ```
 
-### `Cookie` / `createCookie(name, options)`
+### `createUnsignedCookie(name, options?)`
 
-Re-exports from `@remix-run/cookie`. The general-purpose cookie type and its factory, with `parse` and `serialize` support and optional signing via `secrets`.
+Forge-specific. Creates an `UnsignedCookie` — the same `parse` / `serialize` surface, with the value base64-encoded on the wire but carrying no authentication.
 
 ```ts
-const cookie = createCookie("locale", { maxAge: 60 * 60 * 24 * 365 });
+const cookie = createUnsignedCookie("locale", { maxAge: 60 * 60 * 24 * 365 });
 const value = await cookie.parse(context.request.headers.get("cookie")); // string | null
 const header = await cookie.serialize("en-GB"); // Set-Cookie value
 ```
 
-Use `createCookie` for non-sensitive values. For sensitive cookies, use `createSignedCookie`, which enforces the secure defaults `createCookie` leaves optional.
+Use it for non-sensitive values. For anything a client must not forge, use `createSignedCookie`.
+
+`parse` never throws: a missing header, an absent name, malformed base64 and malformed UTF-8 all answer `null`. `serialize` throws only on a value containing a lone surrogate, which UTF-8 cannot represent and which would therefore not survive a round trip.
 
 ### Additional re-exports
 
@@ -242,12 +262,16 @@ Use `createCookie` for non-sensitive values. For sensitive cookies, use `createS
 
 | Type | Shape / purpose |
 | --- | --- |
-| `SignedCookieOptions` | `CookieOptions` minus `httpOnly` / `secure` / `secrets`, plus a required `secrets: [string, ...string[]]` and a `sameSite?: "Strict" \| "Lax"`. |
-| `AnonymousSessionOptions` | `createAnonymousSession`'s options — `secret` (required resolver), `cookieName?`, `kv?`, `secure?`, `maxAge?`, and everything `KVSessionStorageOptions` carries. |
+| `SignedCookie` | `{ name, rotating, parse, serialize }` — `rotating` is true while more than one secret is held. |
+| `UnsignedCookie` | `{ name, parse, serialize }` — what `SignedCookie` extends. |
+| `CookieAttributes` | The `Set-Cookie` attributes — `domain?`, `expires?`, `httpOnly?`, `maxAge?`, `partitioned?`, `path?`, `sameSite?`, `secure?` — as construction defaults or as a per-call override on `serialize`. |
+| `SignedCookieOptions` | `CookieAttributes` minus `httpOnly` and `secure`, plus a required `secrets: [string, ...string[]]` and a `sameSite?: "Strict" \| "Lax"`. |
+| `UnsignedCookieOptions` | `CookieAttributes`, unchanged. |
+| `SessionCookieOptions` | `sessionMiddleware`'s third argument — `{ reissue?, rotating? }`: the declared repair for cookie attribute drift, and an override for the rotation the cookie already reports. |
+| `AnonymousSessionOptions` | `createAnonymousSession`'s options — `secret` (required resolver, a string or a rotation array), `cookieName?`, `kv?`, `maxAge?`, and everything `KVSessionStorageOptions` and `SessionCookieOptions` carry. |
 | `KVSessionStorageOptions` | `{ prefix?, ttlSeconds? }` — the key prefix (`${prefix}:${session.id}`) and the sliding TTL refreshed on every save. |
 | `SessionKVBinding` | The minimal structural KV surface the session store calls (`get` / `put` / `delete`); any Workers `KVNamespace` satisfies it. |
 | `SessionStorage` | The `{ read, save }` storage interface — implement it to back sessions with a custom store. |
-| `CookieOptions` | Options accepted by `createCookie`. |
 
 ---
 
@@ -259,21 +283,64 @@ Bind CSRF tokens to the session id so a token minted in one browser cannot be re
 
 ### Always sign and harden session cookies
 
-Use `createSignedCookie` for the session cookie, never a plain `createCookie`. `createSignedCookie` guarantees three properties that protect the session:
+Use `createSignedCookie` for the session cookie, never `createUnsignedCookie`. `createSignedCookie` guarantees three properties that protect the session:
 
 | Property | Effect |
 | --- | --- |
 | `httpOnly: true` | The cookie is not readable from JavaScript, mitigating session theft via XSS. |
-| `secure: true` | The cookie is only sent over HTTPS, preventing interception in transit. |
+| `secure: true` | Hardcoded; the cookie is only sent over HTTPS, preventing interception in transit. |
 | HMAC signature | The cookie value is signed with the configured secrets, so a tampered value is rejected on parse. |
+
+### `Secure` is not configurable
+
+`createSignedCookie` hardcodes `Secure`, and `createAnonymousSession` takes no `secure` option.
+There is nothing to set, so there is nothing to get wrong — which matters because a session cookie
+that loses `Secure` fails silently in every way that would otherwise catch it: no test goes red,
+nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and
+replays the session.
+
+The option this replaced existed for plain-http development, and the posture it served is the one
+[`WORKERS_PLATFORM.md`](../../warden/canon/apps/WORKERS_PLATFORM.md) §4e rules out:
+
+> **`upgrade-insecure-requests`, HSTS, and `Secure` cookies stay hardcoded.** They are not made
+> conditional on the environment, because under this posture they are correct in development by
+> construction.
+
+**Development is https at every hop** — the TLS-terminating proxy's origin in a container, or the
+loopback https port for a browser suite. Under that posture `Secure` is already correct locally, and
+an option to relax it buys nothing a correct dev transport does not already give. If a local server
+cannot hold a session, the fix is its transport, not the cookie.
+
+> An in-process test harness never needed the option either: `Secure` is enforced by a **browser**
+> deciding whether to send a cookie back over http, and `app.request(...)` has no browser in it.
 
 ### Strong, rotatable secrets
 
-Each secret passed to `createSignedCookie` must be at least 32 characters — the factory throws otherwise. Source secrets from Worker bindings (`env.SESSION_SECRET`), never hardcode them. To rotate, prepend the new secret; older secrets remain in the array so existing cookies still verify:
+Each secret passed to `createSignedCookie` must be at least 32 characters — the factory throws otherwise. Source secrets from Worker bindings (`env.SESSION_SECRET`), never hardcode them.
 
-```ts
-createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD] });
-```
+A rotation is two deploys, and the upgrade in between happens on its own:
+
+1. **Prepend the new secret.** The first element signs; the rest only verify, so existing cookies keep working. There is nothing else to set: the cookie reports `rotating` from its own array.
+
+   ```ts
+   const cookie = createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD] });
+   app.use("*", sessionMiddleware(storage, cookie));
+   ```
+
+   From here on, `sessionMiddleware` re-signs each still-old cookie with the new secret on the next request that carries it, because its byte comparison sees the old signature. A session that is never used again is never upgraded, so leave this deploy in place for at least the cookie's `maxAge`.
+
+   > **Suppressing it is the deliberate act, not enabling it.** `{ rotating: false }` makes the middleware compare payloads only, which cannot see a signature at all — the old cookies keep verifying and are never upgraded, so step 2 would sign every remaining holder out. Pass it only to stop paying the re-signing for a retired secret you are keeping in the array long-term.
+
+2. **Drop the old secret.** Any cookie still carrying the old signature now fails to parse and its holder starts a fresh session — which after a full `maxAge` is only a client that was inactive for the whole window.
+
+   ```ts
+   const cookie = createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NEW] });
+   app.use("*", sessionMiddleware(storage, cookie));
+   ```
+
+`createAnonymousSession` takes the same array from its `secret` resolver — `secret: (c) => [c.env.SESSION_SECRET_NEW, c.env.SESSION_SECRET_OLD]` — and each element is length-checked individually.
+
+> The resolver is called once per isolate, not per request: the built middleware is cached on the `env` object's identity. A secret change ships as a deploy, which starts fresh isolates, so this only means a rotation is picked up when the isolate is, not mid-life.
 
 ### `SameSite` and CSRF
 

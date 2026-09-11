@@ -1,7 +1,7 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { setPendingHeader } from "../../context/pending-headers";
-import { createSignedCookie } from "../../session/signed";
+import { createSignedCookie } from "../../session/cookie";
 import type { FlashMessage, FlashType } from "./types";
 import type { FlashCookieOptions, Flasher } from "./types";
 

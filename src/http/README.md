@@ -308,7 +308,7 @@ return new Response(body, { status: 200, headers: { "content-type": new ContentT
 Each builder also exposes a static `from(value)` that parses an existing header value (string or init)
 into an instance.
 
-> For application cookies prefer `createCookie` from `@y-core/forge/session`, which handles
+> For application cookies prefer `createSignedCookie` / `createUnsignedCookie` from `@y-core/forge/session`, which handle
 > parsing/serialization and signing. Reach for the low-level `SetCookie` builder only when
 > constructing raw header values by hand.
 
@@ -402,5 +402,5 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview" (no leading slas
   JSX render time, and why no `hx-*` attribute is covered by it (§2d).
 - [`NAMESPACES.md`](../../docs/NAMESPACES.md) — the ruling that every HTTP output concern lands here
   rather than reaching for `@remix-run/headers` or `@remix-run/html-template` directly (§5d).
-- [`@y-core/forge/session`](../session/) — `createCookie`, preferred over the raw `SetCookie` builder
+- [`@y-core/forge/session`](../session/) — `createSignedCookie` / `createUnsignedCookie`, preferred over the raw `SetCookie` builder
   for application cookies.

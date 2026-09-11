@@ -1,18 +1,18 @@
 import { describe, expect, it } from "bun:test";
 
-import { createCookie } from "@remix-run/cookie";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../app/forge-app";
 import { csrfProtection, csrfTokenCtx, importCsrfKey } from "../form/csrf";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
+import { createSignedCookie, createUnsignedCookie } from "./cookie";
 import { sessionCtx, sessionMiddleware } from "./session";
 import type { SessionKVBinding } from "./types";
 
 const HEX_SECRET = "c".repeat(64);
 const SESSION_SECRET = "s".repeat(48);
-const sessionCookie = createCookie("__session", { path: "/" });
+const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 function fakeSessionKV(): SessionKVBinding {
   const data = new Map<string, string>();
@@ -93,12 +93,49 @@ describe("sessionMiddleware composed with csrfProtection", () => {
     expect(res.status).toBe(403);
   });
 
+  // The signature is upgraded under the visitor, so the id the token is bound to must not move.
+  it("mints the same subject across a secret rotation", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const OLD = "o".repeat(32);
+    const NEW = "n".repeat(32);
+    const storage = createCookieSessionStorage();
+
+    const build = (secrets: [string, ...string[]]) => {
+      const app = new Forge();
+      const cookie = createSignedCookie("__session", { path: "/", secrets });
+      app.use("*", sessionMiddleware(storage, cookie, { rotating: secrets.length > 1 }));
+      app.use("*", csrfProtection({ secret: () => key, subject: (c) => sessionCtx.getOptional(c)?.id }));
+      mapHandler(app, "GET", "/id", (c) => new Response(sessionCtx.get(c).id));
+      mapHandler(app, "GET", "/signup", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+      mapHandler(app, "POST", "/signup", () => new Response("created"));
+      return app;
+    };
+
+    const first = await build([OLD]).request("/id");
+    const beforeId = await first.text();
+    const before = carry(first);
+
+    const rotating = build([NEW, OLD]);
+    const second = await rotating.request("/id", { headers: { cookie: before } });
+    const after = carry(second);
+
+    expect(await second.text()).toBe(beforeId);
+    expect(after).not.toBe(before);
+
+    // The token was minted under the pre-rotation cookie; it must still verify once the client
+    // carries the re-signed one, and once the retired secret is gone.
+    const token = await (await rotating.request("/signup", { headers: { cookie: before } })).text();
+    const res = await build([NEW]).request("/signup", { method: "POST", headers: { "X-CSRF-Token": token, cookie: after } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("created");
+  });
+
   it("works the same over a KV-backed anonymous session", async () => {
     type Env = { KV: SessionKVBinding };
     const key = await importCsrfKey(HEX_SECRET);
     const env: Env = { KV: fakeSessionKV() };
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ secret: () => SESSION_SECRET, kv: (c) => c.env.KV, secure: false }));
+    app.use("*", createAnonymousSession<Env>({ secret: () => SESSION_SECRET, kv: (c) => c.env.KV }));
     app.use("*", csrfProtection({ secret: () => key, subject: (c) => sessionCtx.getOptional(c)?.id }));
     mapHandler(app, "GET", "/signup", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
     mapHandler(app, "POST", "/signup", () => new Response("created"));

@@ -289,8 +289,14 @@ live-reload CSP hash (§2c).
 Forge's own browser set serves no origin at all, so the canon's loopback-https rule for a browser
 suite does not reach it (`playwright.config.ts` owns why).
 
-Deprecating `createAnonymousSession`'s `secure?: false` escape hatch is a separate, later question and
-is deliberately not ruled on here.
+**`createAnonymousSession`'s `Secure` escape hatch is gone, and this is the ruling on it.** The
+option served plain-http development, which [`WORKERS_PLATFORM.md`](../warden/canon/apps/WORKERS_PLATFORM.md)
+§4e rules out: development is https at every hop, so
+`Secure` is correct there by construction and needs no switch. An in-process test harness never
+needed one either — `Secure` is enforced by a browser deciding whether to send a cookie back over
+http, and forge's own session suite passes identically with it on. `createSignedCookie` therefore
+hardcodes `Secure` as it already hardcodes `httpOnly`, and the failure the option made reachable — a
+relaxation computed from a mistyped env check, shipped silently — has no expression left.
 
 ---
 

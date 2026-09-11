@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import { createCookie } from "@remix-run/cookie";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
@@ -8,6 +7,7 @@ import { getAppContext } from "../../context/types";
 import { csrfMinterCtx, csrfProtection, importCsrfKey } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
+import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
@@ -45,7 +45,7 @@ import type { AuthWebOptions } from "./types";
 
 const CSRF_SECRET = "b".repeat(64);
 
-const sessionCookie = createCookie("__session", { path: "/" });
+const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 interface AppSeed {
   readonly userId?: string;

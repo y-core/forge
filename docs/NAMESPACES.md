@@ -114,6 +114,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/tooling/lint` | `src/tooling/lint/mod.ts` | forge's oxlint JS plugin, default-exported for `.oxlintrc.json`'s `jsPlugins`, plus the two rule catalogs the gate's design and modern-CSS checks read. Loaded as raw TypeScript: oxlint resolves the source directly, so the plugin ships with no build step. Its types are structural restatements of oxlint's own, because `oxlint` is a devDependency and a published module must not depend on it |
 | `@y-core/forge/tooling/lint/plugin` | `src/tooling/lint/plugin.mjs` | The same plugin, prebuilt — the spelling a consumer's `.oxlintrc.json` names in `jsPlugins`. It exists because node refuses to strip types from a file under `node_modules`, so a consumer's oxlint cannot load `mod.ts` at all; `validate-lint-plugin` rebuilds it and fails on any drift from the source |
 | `@y-core/forge/tooling/cf` | `src/tooling/cf/mod.ts` | `createCfCommands` — the whole `forge cf` subtree. `createSyncAccountCommand`, `syncBindings` and the resource handlers (`account/`); `createSyncZoneCommand` (`zone/`); `createGenEnvCommand` (`gen/`); and the pieces both scopes share — `createCfClient`, `loadWranglerConfig`, `renderSections`, `detectTarget`. Imports `tooling/cli`, `tooling/term`, `site` |
+| `@y-core/forge/tooling/db` | `src/tooling/db/mod.ts` | `createDbCommands` — the whole `forge db` subtree: forward-only wrangler migrations with lint, plan, checksums and a schema fingerprint (`migrate/`); verified backup, restore and reset (`backup/`); name-keyed idempotent seeds (`seed/`); library migration sync (`sync/`); and D1 Time Travel bookmarks. Imports `tooling/cli`, `tooling/term`, `tooling/cf` ([`DATABASE_MANAGEMENT.md`](./DATABASE_MANAGEMENT.md)) |
 | `@y-core/forge/tooling/term` | `src/tooling/term/mod.ts` | `stringWidth`, `truncate`, `wrapLines`, `padAlign`, `terminalWidth`, `renderGrid`, `definitionList`, `BORDERS`, `resolveColorLevel`, `createColorize`, `PLAIN` — terminal rendering, and a sink: it imports `node:process` and nothing else in this repository, so every other `tooling/*` namespace may import it and it may import none of them |
 | `@y-core/forge/config` | `src/config/mod.ts` | `Config`, `createConfig`, `env`, `resolveConfig` |
 | `@y-core/forge/context` | `src/context/mod.ts` | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`, `bindingSchema`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
@@ -129,7 +130,7 @@ the shape and send a reader to a resolution error.
 | `@y-core/forge/result` | `src/result/mod.ts` | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
-| `@y-core/forge/session` | `src/session/mod.ts` | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createCookie`, `createSignedCookie` |
+| `@y-core/forge/session` | `src/session/mod.ts` | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createSignedCookie`, `createUnsignedCookie` |
 | `@y-core/forge/site` | `src/site/mod.ts` | `defineSiteConfig`, `resolveSiteConfig`, `SiteConfigSchema`, `renderRobotsTxt`, `renderSitemapXml`, `resolveSitemapEntries`, and the zone builders `buildAllowExpression` / `buildAllowRule` / `buildRedirectRule` with `RESERVED_PREFIXES` |
 | `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | the D1 client, its resolver and binding check, the `sql` tag and its guard, and the UUIDv7 set — which is implemented in `crypto` and surfaced here (§3b) |
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
@@ -262,7 +263,7 @@ does not have, and edges nobody can import.
 
 **`tooling` is a container, not a namespace.** No `mod.ts` sits at the container root: each child —
 `tooling/cli`, `tooling/term`, `tooling/lint`, `tooling/gate`, `tooling/release`, `tooling/cf`,
-`tooling/assets` — owns its own subpath and is its own namespace. `resolveNamespaces` matches by
+`tooling/db`, `tooling/assets` — owns its own subpath and is its own namespace. `resolveNamespaces` matches by
 longest directory prefix, so a `tooling` namespace rooted at `src/tooling/` would swallow every one
 of them. The container earns its name a second way: **every module under it qualifies for the
 build-time exemption** ([`LIBRARY_ARCHITECTURE.md`](../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1e),
@@ -476,12 +477,13 @@ API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`](./UI_CLIENT_RUNTIM
 
 **A new command, gate check, lint rule or release step goes to one of the `tooling` namespaces** —
 `tooling/cli`, `tooling/term`, `tooling/gate`, `tooling/lint`, `tooling/release`, `tooling/cf`,
-`tooling/assets`. Pick by the artifact the tool acts on: the command surface and its flag parsing
-are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate`
-(and a check is a function, not a script — [`BUILD_TOOLING.md`](./BUILD_TOOLING.md) §2i), a lint
-rule is `tooling/lint`, a release step is `tooling/release`, a Cloudflare API call is
-`tooling/cf`, and driving an external builder is `tooling/assets`
-([`ASSET_PIPELINE.md`](./ASSET_PIPELINE.md) §2c).
+`tooling/db`, `tooling/assets`. Pick by the artifact the tool acts on: the command surface and its
+flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is
+`tooling/gate` (and a check is a function, not a script — [`BUILD_TOOLING.md`](./BUILD_TOOLING.md)
+§2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, a Cloudflare API call is
+`tooling/cf`, a D1 migration, backup, seed or sync verb is `tooling/db`
+([`DATABASE_MANAGEMENT.md`](./DATABASE_MANAGEMENT.md)), and driving an external builder is
+`tooling/assets` ([`ASSET_PIPELINE.md`](./ASSET_PIPELINE.md) §2c).
 
 **None of it is ever Worker-reachable.** That is what earns every module here the build-time
 exemption from the Web-APIs-only rule — the exemption is the unreachability and the path is the
@@ -594,6 +596,4 @@ the moment the list reached empty. A new subpath is bound before it ships, or it
 **This rule lives here rather than in the canon, and that placement is deliberate.** It is about a
 repository with an `exports` map, so `canon/libs/` is where it would be portable to — but it has
 been measured against exactly one corpus, forge's. It is promoted to the canon when a second
-repository needs it. That order is reversible; the other is not, because a canon rule is
-byte-identical in every repository that clones it and a rule that turned out to fit only forge
-would already be law everywhere.
+repository needs it.

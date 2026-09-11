@@ -17,7 +17,139 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **Removed `createAnonymousSession`'s `secure` option: `Secure` is hardcoded and no longer
+  configurable.** The option existed for plain-http development, which
+  [`WORKERS_PLATFORM.md`](warden/canon/apps/WORKERS_PLATFORM.md) §4e rules out — development is https
+  at every hop, so `Secure` is correct there by construction. An in-process test harness never needed
+  it either: `Secure` is enforced by a browser deciding whether to send a cookie back over http, and
+  forge's own session suite passes identically with it on. What the option did make reachable was a
+  session cookie shipped **without** `Secure` from a mistyped env check —
+  `secure: env.ENVIRONMENT !== "production"` — a failure that is silent in every other way: no test
+  goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the
+  cookie and replays the session. **A consumer passing `secure` deletes the line**; if a local server
+  then cannot hold a session, the fix is its dev transport (TLS-terminating proxy, or loopback
+  https), not the cookie. `docs/SECURITY_HARDENING.md` §3f now rules on this, where it previously
+  deferred.
+
+- **Forge owns its cookie implementation; `@remix-run/cookie` is gone from the dependency tree.**
+  **Removed from `@y-core/forge/session`:** `Cookie` (a *value* — a downstream `instanceof Cookie`
+  no longer compiles), `CookieOptions`, and `createCookie`. **Added in their place:**
+  `createUnsignedCookie` for non-sensitive values, and the `SignedCookie`, `UnsignedCookie`,
+  `CookieAttributes` and `UnsignedCookieOptions` types; `SignedCookieOptions` is now written over
+  `CookieAttributes` rather than the removed `CookieOptions`. `createSignedCookie` moved from
+  `src/session/signed.ts` to `src/session/cookie.ts`, and still hardcodes `httpOnly` and `secure`. **The wire format is unchanged and
+  pinned by golden vectors captured from a differential run against the package this replaced**, so
+  a cookie already in the wild keeps verifying: `base64(utf8(value))` on the standard alphabet with
+  padding retained, `.`, then the padding-stripped base64 HMAC. Two behaviours were deliberately not
+  carried over: a custom `encode`/`decode` pair (nothing passed one), and an explicit `undefined` in
+  a `serialize` override erasing the construction default (a bug, and unexpressible under
+  `exactOptionalPropertyTypes`). A value containing a lone surrogate now throws rather than being
+  silently mangled into U+FFFD.
+
+### Added
+
+- **`createUnsignedCookie`, and a `parse` that cannot hand back mojibake.** The decoder is
+  `fatal: true`, so a malformed base64 payload or malformed UTF-8 bytes answer `null` instead of
+  flowing into `JSON.parse` or the session store as substituted characters. `serialize` takes a
+  per-call attribute override merged field by field with `??`, so `maxAge: 0` survives the merge and
+  emits `Max-Age=0`. `src/crypto/mod.ts` gained the strict standard-alphabet `base64Encode` /
+  `base64DecodeOrNull` the wire format needs — deliberately *not* wrappers over the lenient
+  base64url pair, which remaps `-`/`_` and re-pads and would turn a rejection into garbage.
+
+- **`forge db` — a D1 database surface: forward-only migrations, verified backups, idempotent seeds
+  and library schema sync.** `forge db migrate` applies every pending migration through wrangler and
+  records what it applied: a SHA-256 per file in `forge_migrations`, and the digest of the applied
+  set plus a fingerprint of the schema they produced in `forge_schema_meta`. `forge db status`
+  compares those three against the files on disk and reports `pending`, `mismatch`, `unrecorded` and
+  `drift`; `--check` turns the same measurement into a CI gate. `forge db lint` runs seven rules over
+  destructive, unbounded and unbackupable SQL — an error aborts any apply, a warning aborts a
+  deployed one unless `--allow-warnings` says otherwise. **Migrations are forward-only and no file
+  has a Down**: on a deployed database the undo is a D1 Time Travel bookmark, captured before every
+  apply and printed as the command that returns to it (`forge db bookmark info` / `restore`), and
+  locally it is `forge db backup`, `forge db reset` and `forge db restore`. A backup artifact is
+  proven before it is written — both restore routes are replayed into a throwaway database and
+  compared row by row — and forge emits the row data itself rather than taking wrangler's dump,
+  because that dumper writes a newline as backslash-`n` and reverses it without escaping the
+  backslash. `forge db seed apply` runs name-keyed seeds recorded in `forge_seed_history`, hashed
+  over the raw file text with `${VAR:-default}` expansion, refusing a seed whose file changed since
+  it ran unless `--force` says so. `forge db sync` copies a library's migrations in as
+  `<NNNN>_lib-<name>_<rest>.sql`, never overwriting a conflicting file and never renumbering one.
+  Every verb takes `--target place[:database]` over four places — `local`, `standby`, `remote`,
+  `preview` — and an optional `config/db.ts` declares `{ sources?, seedsDir?, backupsDir? }`. The
+  namespace is **`@y-core/forge/tooling/db`**, whose barrel publishes `createDbCommands` and the
+  engine beneath it; the rulings are `DATABASE_MANAGEMENT.md` and the surface is
+  `src/tooling/db/README.md`.
+
+- **`confirm` and `ConfirmOptions` in `@y-core/forge/tooling/cli`.** One prompt every destructive
+  verb asks through: it prints what is about to happen and why it cannot be taken back, reads
+  `Continue? [y/N]`, and throws a `CliError` on anything but `y`. A run with no terminal that did not
+  pass `--yes` is **refused rather than assumed**, so a CI job cannot silently take a destructive
+  path.
+
+- **The auth schema ships as a migration.** `src/auth/migrations/0001_auth_init.sql` is published in
+  the package, so a consumer takes it with `forge db sync` and applies it with `forge db migrate`
+  under its own numbering. `src/auth/schema.sql` is that directory concatenated and committed — the
+  one-shot `wrangler d1 execute --file` alternative for a database that will never be migrated.
+
+- **`validate-schema-concat`, a new `standard`-tier gate step.** It regenerates `src/auth/schema.sql`
+  from `src/auth/migrations/` and fails on any drift, so a table added to a migration and not to the
+  concatenation cannot ship. `forge verify --fix` regenerates it; the file is never edited by hand.
+- **`sessionMiddleware(storage, cookie, { reissue })` — the declared repair for cookie attribute
+  drift.** Tightening `sameSite`, adding `Secure`, or changing `Path`/`maxAge` never reaches a client
+  holding a valid unchanged session, and that is undetectable rather than merely undetected: a
+  browser echoes `name=value` and never an attribute. `reissue: true` re-issues the cookie on every
+  request that carries a parseable, non-empty one, so the new attributes land; it re-arms `Max-Age`
+  and makes every such response uncacheable, so it is a deploy-window setting, not a default. A
+  request carrying no session cookie still emits nothing. Exported as `SessionCookieOptions`, and
+  accepted by `createAnonymousSession` too.
+- **`sessionMiddleware(storage, cookie, { rotating })` — set it while the cookie holds more than one
+  secret.** It is what moves the suppression check from the payload to the wire bytes, and so what
+  completes a rotation; without it the old cookies keep verifying, are never upgraded, and dropping
+  the retired secret signs every remaining holder out. It is an option rather than the default
+  because HMAC is deterministic: off rotation an unchanged payload cannot re-sign to different bytes,
+  so computing the signature to discover that would be pure cost — the steady state stays at the one
+  `importKey` + `verify` the incoming `parse` already pays. `createAnonymousSession` derives it from
+  the array its `secret` resolver returned, so only a direct `sessionMiddleware` caller passes it.
+- **`createAnonymousSession` accepts a rotation array.** Its `secret` resolver may now return
+  `[string, ...string[]]` as well as a string — until now it hardcoded `secrets: [secret]`, so an
+  anonymous session could not rotate at all. Each element is length-checked individually, and an
+  empty `cookieName` is refused rather than emitting an empty `set-cookie:` header.
+
+### Fixed
+
+- **A secret rotation now completes without a flag to remember.** `sessionMiddleware`'s `rotating`
+  defaulted to `false` because upstream's `Cookie` kept its `secrets` private, so forge could not ask
+  a cookie whether a rotation was in flight: prepend a secret, forget the flag, and the rotation
+  silently never completed — dropping the retired secret then signed every holder out.
+  `SignedCookie` now reports `rotating` (more than one secret held) and the middleware defaults to
+  it. The option survives as an override for an operator keeping a retired secret in the array
+  long-term. **The signing key is also cached per secret** — upstream imported one inside every
+  `sign` and every `unsign`; forge imports it once per isolate, and a failed import clears its slot
+  rather than poisoning it.
+
+- **`sessionMiddleware` no longer re-issues a cookie the client already holds.** 0.1.9's
+  dirty-on-`id`-read only exempted a storage whose cookie value *is* the id, so under
+  `createCookieSessionStorage` — where the value is `{"i":…,"d":…}` — every request that read
+  `session.id` wrote a `Set-Cookie` carrying byte-identical content. The documented CSRF wiring reads
+  it on every request, so the cookie slid on every page load. The middleware now compares what it
+  would write against the value the request sent and emits nothing when they match, which covers both
+  storage shapes. **Sliding expiry is affected:** no `Set-Cookie` means no re-armed `Max-Age`, so a
+  session window that must slide needs a real change each request (`session.set(...)`) or the new
+  `reissue` option.
+
+  **Under rotation that comparison moves to the wire bytes, which is what makes a secret rotation
+  complete.** Suppressing the re-issue also suppressed the upgrade it was silently
+  performing: `Cookie.serialize` always signs with `secrets[0]` while `parse` accepts any secret in
+  the array, so rotation is designed to happen *by* re-issue — and a payload comparison cannot tell a
+  cookie signed with the current secret from one signed with a retired one. A cookie carrying an old
+  signature was therefore never upgraded and the old secret could never be dropped; under KV the
+  defect predates the suppression guard, since a session that only reads `.id` never reaches `save()`
+  at all. While the cookie holds more than one secret the middleware re-signs an unchanged session
+  and compares the signed bytes, so a still-old cookie is upgraded on the next request it makes, under either storage, on a
+  request that touches nothing. A cookie that fails to parse is never re-signed back into validity,
+  either way. `src/session/README.md` documents the rotation as the two deploys it is.
 
 ---
 

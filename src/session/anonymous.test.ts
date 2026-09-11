@@ -24,17 +24,9 @@ function fakeSessionKV() {
 
 type Env = { SESSION_SECRET: string; SESSIONS: SessionKVBinding };
 
-function makeApp(options?: { secure?: boolean }) {
+function makeApp() {
   const app = new Forge<Env>();
-  app.use(
-    "*",
-    createAnonymousSession<Env>({
-      cookieName: "test_session",
-      secret: (c) => c.env.SESSION_SECRET,
-      kv: (c) => c.env.SESSIONS,
-      secure: options?.secure ?? false, // http test harness — Secure cookies need https
-    }),
-  );
+  app.use("*", createAnonymousSession<Env>({ cookieName: "test_session", secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.SESSIONS }));
   mapHandler(app, "POST", "/save", (context) => {
     const session = sessionCtx.get(context);
     session.set("settings", { theme: "dark" });
@@ -44,6 +36,25 @@ function makeApp(options?: { secure?: boolean }) {
     const session = sessionCtx.get(context);
     return Response.json({ settings: session.get("settings") ?? null });
   });
+  return app;
+}
+
+function rotatingApp(secrets: [string, ...string[]], reissue?: boolean) {
+  const app = new Forge<{ SESSIONS: SessionKVBinding }>();
+  app.use(
+    "*",
+    createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
+      secret: () => secrets,
+      kv: (c) => c.env.SESSIONS,
+      ...(reissue === undefined ? {} : { reissue }),
+    }),
+  );
+  mapHandler(app, "POST", "/save", (context) => {
+    sessionCtx.get(context).set("settings", { theme: "dark" });
+    return new Response("saved");
+  });
+  mapHandler(app, "GET", "/read", (context) => Response.json({ settings: sessionCtx.get(context).get("settings") ?? null }));
+  mapHandler(app, "GET", "/quiet", () => new Response("ok"));
   return app;
 }
 
@@ -96,7 +107,7 @@ describe("createAnonymousSession — KV mode", () => {
       return kv;
     };
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ secret: (c) => c.env.SESSION_SECRET, kv: countingKvResolver, secure: false }));
+    app.use("*", createAnonymousSession<Env>({ secret: (c) => c.env.SESSION_SECRET, kv: countingKvResolver }));
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
     const env = { SESSION_SECRET: SECRET, SESSIONS: kv };
@@ -157,10 +168,59 @@ describe("createAnonymousSession — KV mode", () => {
   });
 });
 
+describe("createAnonymousSession — secret rotation", () => {
+  // No flag is passed here: the factory derives `rotating` from the array it resolved, which is
+  // what keeps a rotation from silently never completing.
+  it("accepts a secret array and signs with the first", async () => {
+    const { kv } = fakeSessionKV();
+    const OLD = "o".repeat(32);
+    const NEW = "n".repeat(32);
+
+    const seeded = await rotatingApp([OLD]).request("/save", { method: "POST" }, { SESSIONS: kv });
+    const sent = (seeded.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+    const res = await rotatingApp([NEW, OLD]).request("/read", { headers: { cookie: sent } }, { SESSIONS: kv });
+    expect(await res.json()).toEqual({ settings: { theme: "dark" } });
+    const issued = (res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    expect(issued).not.toBe("");
+    expect(issued).not.toBe(sent);
+
+    const after = await rotatingApp([NEW]).request("/read", { headers: { cookie: issued } }, { SESSIONS: kv });
+    expect(await after.json()).toEqual({ settings: { theme: "dark" } });
+  });
+
+  it("rejects a short secret inside an array, reporting its character count", async () => {
+    const { kv } = fakeSessionKV();
+    const app = new Forge<{ SESSIONS: SessionKVBinding }>();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    app.use("*", createAnonymousSession<{ SESSIONS: SessionKVBinding }>({ secret: () => ["n".repeat(32), "short"], kv: (c) => c.env.SESSIONS }));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const res = await app.request("/", {}, { SESSIONS: kv });
+    expect(await res.text()).toBe("createAnonymousSession: session secret must be at least 32 characters (got 5)");
+  });
+
+  it("forwards reissue to the middleware", async () => {
+    const { kv } = fakeSessionKV();
+    const seeded = await rotatingApp([SECRET]).request("/save", { method: "POST" }, { SESSIONS: kv });
+    const sent = (seeded.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+    const quiet = await rotatingApp([SECRET]).request("/quiet", { headers: { cookie: sent } }, { SESSIONS: kv });
+    expect(quiet.headers.get("set-cookie")).toBeNull();
+
+    const reissued = await rotatingApp([SECRET], true).request("/quiet", { headers: { cookie: sent } }, { SESSIONS: kv });
+    expect(reissued.headers.getSetCookie()).toHaveLength(1);
+  });
+
+  it("refuses an empty cookie name", () => {
+    expect(() => createAnonymousSession({ cookieName: "", secret: () => SECRET })).toThrow("createAnonymousSession: cookieName must not be empty");
+  });
+});
+
 describe("createAnonymousSession — cookie-storage mode (kv omitted)", () => {
   it("persists small sessions entirely in the cookie", async () => {
     const app = new Forge<{ SESSION_SECRET: string }>();
-    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ secret: (c) => c.env.SESSION_SECRET, secure: false }));
+    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ secret: (c) => c.env.SESSION_SECRET }));
     mapHandler(app, "POST", "/save", (context) => {
       sessionCtx.get(context).set("n", 1);
       return new Response("ok");

@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { createCookie } from "@remix-run/cookie";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
 import { csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
+import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mapHandler } from "../../testing/route";
 import type { TestAction } from "../../testing/types";
@@ -49,7 +49,7 @@ import {
 } from "./test-support";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 
-const sessionCookie = createCookie("__session", { path: "/" });
+const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 interface Seed {
   readonly userId?: string;

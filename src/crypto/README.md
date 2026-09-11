@@ -33,7 +33,11 @@ The module groups a small set of stateless primitives (all `@internal`):
 
 - **UTF-8 encoding / decoding** — string ⇆ bytes via shared encoder/decoder singletons
 - **Hex encoding / decoding** — bytes ⇆ lowercase hex strings
-- **base64url encoding / decoding** — bytes ⇆ unpadded base64url
+- **base64 encoding / decoding** — bytes ⇆ standard-alphabet base64 with padding retained, the
+  decoder strict: the base64url alphabet is rejected rather than remapped, because the wire formats
+  that use this one must not accept a string the encoder could never have produced
+- **base64url encoding / decoding** — bytes ⇆ unpadded base64url, the encoder defined as the base64
+  one with `+`/`/`/`=` substituted, the decoder lenient about both alphabet and padding
 - **base32 encoding / decoding** — bytes ⇆ RFC 4648 base32, unpadded, decoding a character
   outside the alphabet as a failure rather than skipping it
 - **HMAC-SHA-256 sign / verify** — key import (raw bytes or validated hex secret) plus
