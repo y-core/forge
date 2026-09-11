@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "bin": {
     "forge": "./src/tooling/root/bin.ts",
     "warden": "./warden/src/bin.ts"
@@ -195,6 +195,10 @@
     "./tooling/cli": {
       "types": "./src/tooling/cli/mod.ts",
       "import": "./src/tooling/cli/mod.ts"
+    },
+    "./tooling/db": {
+      "types": "./src/tooling/db/mod.ts",
+      "import": "./src/tooling/db/mod.ts"
     },
     "./tooling/gate": {
       "types": "./src/tooling/gate/mod.ts",

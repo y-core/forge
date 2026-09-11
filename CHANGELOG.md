@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.9] — 2026-09-11
+
 ### Breaking Changes
 
 - **Every forge mountable now renders into one document shell the app registers, and takes no chrome
@@ -5732,6 +5738,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.9]: https://github.com/y-core/forge/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/y-core/forge/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/y-core/forge/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/y-core/forge/compare/v0.1.5...v0.1.6
