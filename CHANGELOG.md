@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.10] — 2026-09-11
+
 ### Breaking Changes
 
 - **Removed `createAnonymousSession`'s `secure` option: `Secure` is hardcoded and no longer
@@ -5870,6 +5876,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.10]: https://github.com/y-core/forge/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/y-core/forge/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/y-core/forge/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/y-core/forge/compare/v0.1.6...v0.1.7
