@@ -57,8 +57,26 @@ const EMPHASIS = /(?<![\w*_\\])([*_])(?=[^\s*_])((?:[^*_]*?[^\s*_])|[^\s*_])\1(?
 const PLACEHOLDER = /\uE000(\d+)\uE000/g;
 
 const REFERENCE_LINK = /\][ \t]*\[[^\]]+\]/;
-const REFERENCE_DEFINITION = /^ {0,3}\[[^\]]+\]:[ \t]+\S/;
+const REFERENCE_DEFINITION = /^ {0,3}\[([^\]]+)\]:[ \t]+(\S.*)$/;
 const BARE_URL = /https?:\/\/\S/;
+const INLINE_DOC_LINK = /\]\([^)]*\.md(?:#[^)]*)?\)/;
+const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+
+/** GitHub's heading anchor for `heading`, so a `#fragment` can be checked against the live title.
+ *
+ *  Deliberately `github-slugger`'s rule and not a tidier one: punctuation is dropped in place and the
+ *  hyphen runs that leaves are kept, because `Renderers — the `http` one` anchors at
+ *  `renderers--the-http-one` in a browser and a slug that collapsed the pair would name nothing.
+ *  Inline links are flattened first — a heading is slugged as it renders, not as it is written.
+ *  @public */
+export function githubSlug(heading: string): string {
+  return heading
+    .replace(INLINE_LINK, "$1")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M}\p{Pc}\p{Cf} -]/gu, "")
+    .replace(/ /g, "-");
+}
 
 /** Splits a table row on its unescaped, uncoded cell separators. @public */
 export function splitTableRow(line: string): string[] {
@@ -451,6 +469,39 @@ function missingBlankLines(doc: MarkdownDoc, kinds: readonly BlockSpan["kind"][]
   return out;
 }
 
+/** Where a reference-style document keeps its definitions: one sorted block, at the foot, one blank
+ *  line off the prose. Scattered definitions are how a file ends up with two of an id and no reader
+ *  able to see it. */
+function validateDefinitions(file: string, doc: MarkdownDoc, fenceLines: ReadonlySet<number>): Finding[] {
+  const defined: { line: number; id: string }[] = [];
+  for (const [index, line] of doc.lines.entries()) {
+    if (isLiteral(doc.kinds[index]) || fenceLines.has(index + 1)) continue;
+    const match = REFERENCE_DEFINITION.exec(line);
+    if (match !== null) defined.push({ line: index + 1, id: (match[1] ?? "").toLowerCase() });
+  }
+  const start = defined[0]?.line;
+  const end = defined.at(-1)?.line;
+  if (start === undefined || end === undefined) return [];
+
+  const findings: Finding[] = [];
+  let last = doc.lines.length;
+  while (last > 0 && isBlank(doc.lines[last - 1])) last--;
+
+  if (!defined.every((entry, offset) => entry.line === start + offset) || end !== last) {
+    findings.push(fail("link definitions are not one block at the end of the file", { file, line: start }));
+  } else if (start > 1 && (!isBlank(doc.lines[start - 2]) || (start > 2 && isBlank(doc.lines[start - 3])))) {
+    findings.push(fail("link definition block — exactly one blank line separates it from the prose", { file, line: start }));
+  }
+
+  for (const [offset, entry] of defined.entries()) {
+    const previous = defined[offset - 1];
+    if (previous !== undefined && entry.id < previous.id) {
+      findings.push(fail(`link definition \`[${entry.id}]\` is out of order — definitions are sorted`, { file, line: entry.line }));
+    }
+  }
+  return findings;
+}
+
 /** Every policy decision the markdown check makes, over one already-parsed document. @public */
 export function validateMarkdown(file: string, doc: MarkdownDoc, rules: MarkdownRules = {}): Finding[] {
   const resolved = resolveMarkdownRules(rules);
@@ -488,15 +539,27 @@ export function validateMarkdown(file: string, doc: MarkdownDoc, rules: Markdown
       }
     }
 
+    // Only a document link converts: an external URL is named once and carries its own meaning, where
+    // a path is repeated and is the thing a definition block exists to state once.
+    if (resolved.linkStyle === "reference" && !fenceLines.has(index + 1) && INLINE_DOC_LINK.test(prose(line))) {
+      findings.push(fail("inline link to a document — write it as `[text][id]` with a definition", at));
+    }
+
     if (resolved.bareUrls !== "off" && !fenceLines.has(index + 1) && BARE_URL.test(strippedOfLinks(line))) {
       findings.push((resolved.bareUrls === "fail" ? fail : warn)("bare URL — wrap it in `<>` or write it as a link", at));
     }
 
-    if (resolved.lineLength !== false && inScope(file, resolved.lineLength.scope)) {
+    if (resolved.lineLength !== false && inScope(file, resolved.lineLength.scope) && line.length > resolved.lineLength.limit) {
       const { limit, level } = resolved.lineLength;
-      if (line.length > limit && !fenceLines.has(index + 1) && !tableLines.has(index + 1)) {
-        findings.push((level === "fail" ? fail : warn)(`line is ${line.length} characters, over the ${limit}-column wrap`, at));
-      }
+      const exempt = resolved.lineLength.exempt ?? ["fence", "table"];
+      const excused =
+        (exempt.includes("fence") && fenceLines.has(index + 1)) ||
+        (exempt.includes("table") && tableLines.has(index + 1)) ||
+        (exempt.includes("heading") && (kind === "heading" || kind === "setext-underline")) ||
+        // A link is one token: neither its destination nor a definition line can be wrapped, so the
+        // limit would be asking for something the author has no way to give.
+        (exempt.includes("link") && (line.includes("](") || REFERENCE_DEFINITION.test(line)));
+      if (!excused) findings.push((level === "fail" ? fail : warn)(`line is ${line.length} characters, over the ${limit}-column wrap`, at));
     }
   }
 
@@ -534,6 +597,8 @@ export function validateMarkdown(file: string, doc: MarkdownDoc, rules: Markdown
       findings.push(fail(`blank line missing ${side} this ${block.kind}`, { file, line: side === "before" ? block.start : block.end }));
     }
   }
+
+  if (resolved.linkStyle === "reference") findings.push(...validateDefinitions(file, doc, fenceLines));
 
   if (doc.lines.at(-1) !== "" || doc.lines.at(-2)?.trim() === "") {
     findings.push(fail("file does not end with exactly one newline", { file, line: doc.lines.length }));

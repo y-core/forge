@@ -1,0 +1,7 @@
+{
+  "seed": "INSERT INTO posts (id, body) VALUES (1, 'kept');",
+  "args": ["--rename", "posts.body:content"],
+  "expectSql": ["ALTER TABLE \"posts\" RENAME COLUMN \"body\" TO \"content\";"],
+  "query": "SELECT id, content FROM posts ORDER BY id",
+  "rows": [{ "id": 1, "content": "kept" }]
+}

@@ -29,6 +29,7 @@ export {
   testStep,
   typeAwareLintStep,
   checkStep,
+  dbSchemaStep,
   typecheckStep,
   workerdStep,
 } from "./builders";
@@ -111,6 +112,7 @@ export type {
   FenceRule,
   FenceSpan,
   Heading,
+  LineLengthExemption,
   LineLengthRule,
   ListItem,
   MarkdownDoc,
@@ -124,6 +126,7 @@ export type { TrailingWhitespaceRule } from "./checks/types";
 export {
   DEFAULT_MARKDOWN_RULES,
   flattenListItems,
+  githubSlug,
   parseMarkdown,
   renderMarkdown,
   renderTableRow,

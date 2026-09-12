@@ -140,7 +140,7 @@ async function confirmed(spy: StoreSpy): Promise<Uint8Array<ArrayBuffer>> {
 describe("createTotpAppFactor — the capability matrix", () => {
   it("offers step-up only, because an authenticator app proves possession and does not identify", () => {
     const service = build(fakeFactors());
-    expect(service.capabilities).toEqual({ primary: false, stepUp: true });
+    expect(service.capabilities).toEqual({ stepUp: true });
     expect(service.enrolment).toBe("explicit");
     expect(service.kind).toBe("totp-app");
   });

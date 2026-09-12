@@ -34,7 +34,7 @@ function provisioningUri(issuer: string, account: string, secret: string, digits
 }
 
 /** Verifies a code from an authenticator app. Step-up only — possession proves nothing about who is present. @public */
-export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFactorService {
+export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFactorService<"totp-app"> {
   const digits = authLimit("createTotpAppFactor", "digits", options.digits, {
     fallback: DEFAULT_DIGITS,
     min: MIN_DIGITS,
@@ -208,7 +208,7 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
   return {
     kind: "totp-app",
     enrolment: "explicit",
-    capabilities: { primary: false, stepUp: true },
+    capabilities: { stepUp: true },
     // The ceiling, not the exact life: a code issued mid-step expires when that step ends.
     challengeTtlMs: period * 1000,
     codeDigits: digits,

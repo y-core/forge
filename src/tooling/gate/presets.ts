@@ -5,6 +5,7 @@ import {
   classOrderStep,
   classTokensStep,
   cssTokensStep,
+  dbSchemaStep,
   exportsStep,
   formatStep,
   jsxStep,
@@ -84,6 +85,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   }
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
+  if (options.db) steps.push(...dbSchemaStep({ root }));
   if (options.browser) steps.push(browserStep({ tier: "full" }));
   if (options.workerd) steps.push(workerdStep({ tier: "full" }));
 

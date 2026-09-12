@@ -6,7 +6,9 @@ audience: consumer
 
 # `@y-core/forge/context`
 
-Per-request context utilities for `@remix-run/fetch-router` on Cloudflare Workers. This namespace turns the framework's stringly-keyed `RequestContext` into a set of **type-safe accessors** and exposes the Workers `env` / `executionCtx` through a single, loudly-failing `AppContext` seam.
+Per-request context utilities for `@remix-run/fetch-router` on Cloudflare Workers. This namespace turns the framework's stringly-keyed
+`RequestContext` into a set of **type-safe accessors** and exposes the Workers `env` / `executionCtx` through a single, loudly-failing `AppContext`
+seam.
 
 ```ts
 import { getAppContext, contextVar, type AppContext } from "@y-core/forge/context";
@@ -16,10 +18,13 @@ import { getAppContext, contextVar, type AppContext } from "@y-core/forge/contex
 
 ## Features
 
-- **`AppContext` narrowing** — promote a bare `RequestContext` to a Workers-aware `AppContext<Bindings>` that exposes typed `env`, `executionCtx`, and `config`.
-- **Fail-loud assertions** — `getAppContext` throws a clear error when per-request state was never injected, instead of silently yielding an `undefined env` that surfaces as a spooky error downstream.
+- **`AppContext` narrowing** — promote a bare `RequestContext` to a Workers-aware `AppContext<Bindings>` that exposes typed `env`, `executionCtx`,
+  and `config`.
+- **Fail-loud assertions** — `getAppContext` throws a clear error when per-request state was never injected, instead of silently yielding an
+  `undefined env` that surfaces as a spooky error downstream.
 - **Typed context variables** — `contextVar<T>` binds a key and its value type into one accessor, so `get` and `set` can never drift apart.
-- **Explicit key management** — `createContextKey<T>` plus the `EnvKey` / `ExecutionContextKey` built-ins for middleware authors who manage keys directly.
+- **Explicit key management** — `createContextKey<T>` plus the `EnvKey` / `ExecutionContextKey` built-ins for middleware authors who manage keys
+  directly.
 
 ---
 
@@ -46,7 +51,8 @@ function handler(context) {
 }
 ```
 
-`getAppContext` asserts the Forge router has already injected per-request state. If the handler ran outside the Forge chain, it throws rather than returning a context with a missing `env`:
+`getAppContext` asserts the Forge router has already injected per-request state. If the handler ran outside the Forge chain, it throws rather than
+returning a context with a missing `env`:
 
 ```ts
 // Throws: "getAppContext: per-request state is not available — the Forge router
@@ -85,7 +91,8 @@ const user = userCtx.get(context, "Authentication middleware must run first");
 
 ### Explicit keys for middleware authors
 
-When you need direct control over the key (rather than the `contextVar` accessor pair), create one with `createContextKey` and use the context's native `get`/`set`:
+When you need direct control over the key (rather than the `contextVar` accessor pair), create one with `createContextKey` and use the context's
+native `get`/`set`:
 
 ```ts
 import { createContextKey } from "@y-core/forge/context";
@@ -102,7 +109,8 @@ const traceId = context.get(TraceKey);
 
 ### `getAppContext<Bindings, Params, Config>(context)`
 
-Narrows a `RequestContext` to an `AppContext`, asserting that the Forge router injected per-request state (`env`, `executionCtx`, `config`) via `provideRequestState`. Reads `EnvKey` so it fails loudly with a clear message if state is absent.
+Narrows a `RequestContext` to an `AppContext`, asserting that the Forge router injected per-request state (`env`, `executionCtx`, `config`) via
+`provideRequestState`. Reads `EnvKey` so it fails loudly with a clear message if state is absent.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -118,7 +126,8 @@ Narrows a `RequestContext` to an `AppContext`, asserting that the Forge router i
 
 ### `AppContext<Bindings, Params, Config>`
 
-Extends `RequestContext<Params>` with Workers-specific, read-only properties. Available on any context once the app router has injected per-request state.
+Extends `RequestContext<Params>` with Workers-specific, read-only properties. Available on any context once the app router has injected per-request
+state.
 
 | Property | Type | Description |
 | --- | --- | --- |
@@ -147,11 +156,13 @@ Creates a typed accessor for a per-request variable, binding the key and value t
 
 ### `createContextKey<T>(name?)`
 
-Lower-level key factory re-exported from `@remix-run/fetch-router`. Used internally by `contextVar` and directly by middleware authors who want explicit key management. Pair it with the context's native `get`/`set`.
+Lower-level key factory re-exported from `@remix-run/fetch-router`. Used internally by `contextVar` and directly by middleware authors who want
+explicit key management. Pair it with the context's native `get`/`set`.
 
 ### `EnvKey`
 
-The context key under which the raw Workers `env` bindings are stored. Reading it is how `getAppContext` detects whether per-request state has been injected.
+The context key under which the raw Workers `env` bindings are stored. Reading it is how `getAppContext` detects whether per-request state has been
+injected.
 
 ### `ExecutionContextKey`
 
@@ -159,29 +170,27 @@ The context key under which the Workers `ExecutionContext` is stored.
 
 ### `RequestContext`
 
-Re-exported from `@remix-run/fetch-router` — the base context type every handler and middleware receives. A thin wrapper over the standard `Request`.
+Re-exported from `@remix-run/fetch-router` — the base context type every handler and middleware receives. A thin wrapper over the standard
+`Request`.
 
 ### `validateEnv<T>(env, schema)`
 
-Parses `env` against a valibot schema, returning the validated output or throwing
-`Invalid environment: <field>: <reason>; …`. The rejected value never appears in the message.
+Parses `env` against a valibot schema, returning the validated output or throwing `Invalid environment: <field>: <reason>; …`. The rejected value
+never appears in the message.
 
 ### `validateBindings(schema)`
 
-Builds a `Middleware` that runs `validateEnv` on the first request, and again whenever the `env`
-reference changes. Register it with `app.use("*", …)` **before** `app.map(...)`, so no request is
-served against a broken binding. The storage namespaces' `validateKVBinding` / `validateDBBinding` /
-`validateR2Binding` are thin wrappers over it.
+Builds a `Middleware` that runs `validateEnv` on the first request, and again whenever the `env` reference changes. Register it with
+`app.use("*", …)` **before** `app.map(...)`, so no request is served against a broken binding. The storage namespaces' `validateKVBinding` /
+`validateD1Binding` / `validateR2Binding` are thin wrappers over it.
 
 ### `bindingSchema(name, methods, label, options?)`
 
-The schema for one binding: the named key must carry every method in `methods`, or the failure reads
-`<name> must be <label>`. It is a **shape** check — a value present but of the wrong shape always
-fails.
+The schema for one binding: the named key must carry every method in `methods`, or the failure reads `<name> must be <label>`. It is a **shape**
+check — a value present but of the wrong shape always fails.
 
-`options.optional` relaxes presence only: an absent binding passes, a present one of the wrong shape
-still fails. Use it for a binding the code is written to survive without — a KV log channel, a rate
-limiter — never for one that is security-critical.
+`options.optional` relaxes presence only: an absent binding passes, a present one of the wrong shape still fails. Use it for a binding the code is
+written to survive without — a KV log channel, a rate limiter — never for one that is security-critical.
 
 ```ts
 app.use("*", validateBindings(bindingSchema("LOGS_KV", ["get", "put"], "a KV namespace binding", { optional: true })));
@@ -189,9 +198,8 @@ app.use("*", validateBindings(bindingSchema("LOGS_KV", ["get", "put"], "a KV nam
 
 ### `bindingSetSchema(specs)`
 
-The same, for several bindings in one pass, so an app registers one middleware rather than one per
-binding. Each `BindingSpec` is `{ name, methods, label, optional? }`, and both forms build from the
-same entry so a required and an optional binding cannot diverge.
+The same, for several bindings in one pass, so an app registers one middleware rather than one per binding. Each `BindingSpec` is
+`{ name, methods, label, optional? }`, and both forms build from the same entry so a required and an optional binding cannot diverge.
 
 ```ts
 app.use(
@@ -219,11 +227,12 @@ app.use(
 
 ## See also
 
-- [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) — why `context` is a public
-  subpath and what it is the canonical home of (§4), the rule that a namespace publishes its own
-  accessor rather than letting consumers invent slots (§4a), the one-accessor-per-slot rule (§4b),
-  and what a handler reads from `c` (§5d).
-- [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) — the resolve/validate binding pattern the
-  storage namespaces build on `validateBindings`.
-- [`@y-core/forge/app`](../app/README.md) — `createApp`, which injects the per-request state
-  `getAppContext` asserts on.
+- [`ROUTING_AND_MIDDLEWARE.md`][ram] — why `context` is a public subpath and what it is the canonical home of (§4), the rule that a namespace
+  publishes its own accessor rather than letting consumers invent slots (§4a), the one-accessor-per-slot rule (§4b), and what a handler reads from
+  `c` (§5d).
+- [`STORAGE_BINDINGS.md`][sb] — the resolve/validate binding pattern the storage namespaces build on `validateBindings`.
+- [`@y-core/forge/app`][app-readme] — `createApp`, which injects the per-request state `getAppContext` asserts on.
+
+[app-readme]: ../app/README.md
+[ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
+[sb]: ../../docs/STORAGE_BINDINGS.md

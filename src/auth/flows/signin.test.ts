@@ -43,11 +43,11 @@ const OTP_TTL_MS = 600_000;
 function implicitFactor(
   spy: FactorSpy,
   verdict: Result<AuthFactorVerified, AuthFactorReason> = ok({ kind: "email-otp", userId: USER_ID, verifiedAt: AT }),
-): ImplicitFactorService {
+): ImplicitFactorService<"email-otp"> {
   return {
     kind: "email-otp",
     enrolment: "implicit",
-    capabilities: { primary: true, stepUp: true },
+    capabilities: { stepUp: true },
     challengeTtlMs: OTP_TTL_MS,
     codeDigits: 6,
     codePeriodSeconds: null,
@@ -64,11 +64,11 @@ function implicitFactor(
   };
 }
 
-function totpFactor(spy: FactorSpy): EnrollableFactorService {
+function totpFactor(spy: FactorSpy): EnrollableFactorService<"totp-app"> {
   return {
     kind: "totp-app",
     enrolment: "explicit",
-    capabilities: { primary: false, stepUp: true },
+    capabilities: { stepUp: true },
     challengeTtlMs: 30_000,
     codeDigits: 6,
     codePeriodSeconds: null,
@@ -450,7 +450,7 @@ describe("createSigninFlow — the challenge lifetime it reports", () => {
 
   it("moves with the factor, so the two cannot be configured apart", () => {
     const world = scene();
-    const brief: ImplicitFactorService = { ...implicitFactor(world.primary), challengeTtlMs: 90_000 };
+    const brief: ImplicitFactorService<"email-otp"> = { ...implicitFactor(world.primary), challengeTtlMs: 90_000 };
     const options: AuthSigninOptions = {
       keys: ring,
       users: world.users.store,

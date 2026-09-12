@@ -53,6 +53,12 @@ describe("AUTH_ROUTE_GROUPS", () => {
     }
   });
 
+  // The discoverable sign-in's group was the one unguarded JSON group in the whole mount, and with
+  // no passkey able to start a sign-in there is nothing left for it to hold.
+  it("declares no group at `auth.passkey`, because no ceremony signs anybody in", () => {
+    expect(groupAt(["auth", "passkey"])).toBeUndefined();
+  });
+
   it("leaves `admin.elevate` un-admin-gated, because it creates the first admin", () => {
     expect(groupAt(["admin", "users"])?.guards).toEqual(["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"]);
     expect(groupAt(["admin", "elevate"])?.guards).toEqual(["require-auth", "require-enrolment", "require-fresh-step-up"]);
@@ -75,7 +81,7 @@ describe("AUTH_ROUTE_GROUPS", () => {
 });
 
 describe("authRoutes", () => {
-  it("produces every unauthenticated, passkey and enrolment path", () => {
+  it("produces every unauthenticated, verification and enrolment path", () => {
     expect(routePaths(authRoutes("/auth")).sort()).toEqual(
       [
         "/auth/signin",
@@ -88,8 +94,6 @@ describe("authRoutes", () => {
         "/auth/verify/passkey/begin",
         "/auth/verify/passkey/finish",
         "/auth/signout",
-        "/auth/passkey/authenticate/begin",
-        "/auth/passkey/authenticate/finish",
         "/auth/enrol/passkey",
         "/auth/enrol/totp",
         "/auth/enrol/totp",

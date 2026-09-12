@@ -80,12 +80,16 @@
   },
   "overrides": [
     {
-      // The two halves of the type-placement rule, scoped to `src/` — `config/` and `warden/` are
-      // this repository's own scaffolding, not the published library's namespaces.
-      // `docs/LIBRARY_ARCHITECTURE.md` §8 states the rule.
+      // The type-placement rule (`docs/LIBRARY_ARCHITECTURE.md` §8), scoped to the published namespaces under `src/`.
       "files": ["src/**/*.ts", "src/**/*.tsx"],
       "rules": { "forge/type-import-external": "error", "forge/type-import-separation": "error" }
     },
+    {
+      // A runtime `sql` fragment never opens or closes a transaction (`docs/STORAGE_BINDINGS.md` §1g).
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      "rules": { "forge/sql-explicit-transaction": "error" }
+    },
+    { "files": ["src/tooling/**", "src/**/*.test.ts", "src/**/*.test.tsx"], "rules": { "forge/sql-explicit-transaction": "off" } },
     {
       // A `types.ts` is where the rule sends a declaration, so it cannot itself be a violation. A
       // spec's fixture types are its own business — nothing outside the file can name them.

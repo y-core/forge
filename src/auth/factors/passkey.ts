@@ -1,20 +1,17 @@
 import { base64urlEncode, randomBytes } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
+import { AUTH_PASSKEY_ASSERTION_ID_MAX, AUTH_PASSKEY_ASSERTION_ID_SHAPE } from "../config";
 import { AuthStoreError } from "../errors";
 import { verifyPasskeyAuthentication } from "../passkey/authenticate";
 import { createPasskeyRegistrationOptions, createPasskeyRequestOptions, passkeyTtlSeconds } from "../passkey/options";
 import { verifyPasskeyRegistration } from "../passkey/register";
 import type { PasskeyAssertionCredential, PasskeyAuthenticationReason } from "../passkey/types";
-import type { PasskeyCeremonyOptions, UserVerification } from "../passkey/types";
+import type { PasskeyCeremonyOptions } from "../passkey/types";
 import type { PasskeyRegistrationCredential, PasskeyRegistrationReason } from "../passkey/types";
 import type { AuthFactor, AuthStoreResult } from "../types";
 import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./types";
-import type { PasskeyFactorOptions, PasskeyFactorRole } from "./types";
-
-// A step-up exists to demand a fresh human gesture, so verification is required; as the primary
-// factor it would only lock out authenticators that cannot do it and buy the sign-in nothing.
-const PASSKEY_USER_VERIFICATION: Readonly<Record<PasskeyFactorRole, UserVerification>> = { primary: "preferred", "step-up": "required" };
+import type { PasskeyFactorOptions } from "./types";
 
 /** Bytes of the WebAuthn user handle a discoverable login resolves the account from. */
 const WEBAUTHN_HANDLE_BYTES = 64;
@@ -67,6 +64,10 @@ function parseEnrolment(presented: string): { credential: PasskeyRegistrationCre
 function parseAssertionCredential(presented: string): PasskeyAssertionCredential | null {
   const fields = ceremonyFields(jsonObject(presented));
   if (!fields) return null;
+  // Bounded and shaped before the store: an id of any length and any alphabet otherwise reaches
+  // `findByCredentialId` as a bind parameter.
+  if (fields.id.length === 0 || fields.id.length > AUTH_PASSKEY_ASSERTION_ID_MAX) return null;
+  if (!AUTH_PASSKEY_ASSERTION_ID_SHAPE.test(fields.id)) return null;
   const { clientDataJSON, authenticatorData, signature, userHandle } = fields.response;
   if (typeof clientDataJSON !== "string" || typeof authenticatorData !== "string" || typeof signature !== "string") return null;
   return { id: fields.id, response: { clientDataJSON, authenticatorData, signature, ...(typeof userHandle === "string" ? { userHandle } : {}) } };
@@ -77,10 +78,12 @@ function ceremonyReason(error: PasskeyAuthenticationReason | PasskeyRegistration
   return error === "challenge-not-found" ? "expired" : "unrecognised";
 }
 
-/** Runs the passkey ceremonies behind the factor contract, at the verification strength its role demands. @public */
-export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFactorService {
-  const userVerification = PASSKEY_USER_VERIFICATION[options.role];
-  const requireUserVerification = userVerification === "required";
+// A passkey only ever steps up, and a step-up exists to demand a fresh human gesture — so
+// verification is required, with no role left to weaken it.
+/** Runs the passkey ceremonies behind the factor contract, always requiring the authenticator to verify the user. @public */
+export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFactorService<"passkey"> {
+  const userVerification = "required";
+  const requireUserVerification = true;
   const ttlSeconds = passkeyTtlSeconds("createPasskeyFactor", options.ttlSeconds);
 
   function ceremonyOptions(): PasskeyCeremonyOptions {
@@ -185,7 +188,7 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
   return {
     kind: "passkey",
     enrolment: "explicit",
-    capabilities: { primary: true, stepUp: true },
+    capabilities: { stepUp: true },
     challengeTtlMs: ttlSeconds * 1000,
     // A ceremony, not a code: there is no field for a page to size.
     codeDigits: null,

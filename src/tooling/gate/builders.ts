@@ -164,6 +164,22 @@ export function workerdStep(options: { hint?: string } & SourceStepOptions = {})
   };
 }
 
+/** The two `forge db schema check` rows: digests in `standard`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
+export function dbSchemaStep(options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string } = {}): [CommandStep, CommandStep] {
+  const forge = options.forge ?? ["forge"];
+  const root = options.root === undefined ? [] : ["--root", options.root];
+  return [
+    { label: "db:schema:digests", tier: "standard", tail: 40, cmd: [...forge, "db", "schema", "check", ...root] },
+    {
+      label: "db:schema",
+      tier: "full",
+      tail: 60,
+      cmd: [...forge, "db", "schema", "check", "--replay", ...root],
+      requires: { tool: "workerd", probe: hasWorkerd, hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it" },
+    },
+  ];
+}
+
 /** Audits the `exports` map against what is on disk and what is published. @public */
 export function exportsStep(config: ExportsCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-exports", () => checkExports(config), options);

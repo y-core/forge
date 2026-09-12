@@ -6,15 +6,13 @@ audience: internal
 
 # Source of Truth Register
 
-> The register [`AGENT_GUIDE.md`](../warden/canon/shared/AGENT_GUIDE.md) §8 requires: every fact that would
-> otherwise drift, and the one file that owns it. A source file named here is **authoritative over
-> any prose about it**, anywhere in `docs/` or `CLAUDE.md`.
+> The register [`AGENT_GUIDE.md`][ag-8] §8 requires: every fact that would otherwise drift, and the one file that owns it. A source file named here
+> is **authoritative over any prose about it**, anywhere in `docs/` or `CLAUDE.md`.
 >
 > The rule lives in governance; the rows are forge's own and live here.
 >
-> Defers to: [`AGENT_GUIDE.md`](../warden/canon/shared/AGENT_GUIDE.md) §8 for the single-home rule this
-> table serves, and [`AGENT_GUIDE.md`](../warden/canon/shared/AGENT_GUIDE.md) §5d for why a governance
-> document names this file in prose rather than linking it.
+> Defers to: [`AGENT_GUIDE.md`][ag-8] §8 for the single-home rule this table serves, and [`AGENT_GUIDE.md`][ag-5d] §5d for why a governance document
+> names this file in prose rather than linking it.
 
 ---
 
@@ -28,7 +26,8 @@ audience: internal
 - §2b Enforced Rules: the checks that own their own rule sets
 - §2c Cloudflare Reconciliation: the files that decide what `forge cf sync` creates and writes
 - §2d UI Contracts and Data Tables: the files prose may not re-enumerate
-- §2e The Prose Rows: the rulings whose home is a document, and the five READMEs that own their own
+- §2e On-Disk Database Formats: the format versions and the shapes they number
+- §2f The Prose Rows: the rulings whose home is a document, and the five READMEs that own their own
 - §3 Rows That Name More Than One File: policy split from matchers
 - §3a The Barrel Row: exports and barrel-parse
 - §3b The Namespace-Graph Rows: data, policy, and parser
@@ -41,24 +40,20 @@ audience: internal
 
 ### 1a. Reading a Row
 
-**When a row names a file, that file wins.** A governing document that contradicts it is wrong by
-default, and the fix is to delete the prose rather than to reconcile the two.
+**When a row names a file, that file wins.** A governing document that contradicts it is wrong by default, and the fix is to delete the prose rather
+than to reconcile the two.
 
-The practical instruction: before writing a signature, a constant, a step count, or a file
-inventory into any document, check whether a row already owns it. If one does, **cite the file and
-stop**.
+The practical instruction: before writing a signature, a constant, a step count, or a file inventory into any document, check whether a row already
+owns it. If one does, **cite the file and stop**.
 
 ### 1b. Adding a Row
 
 A fact earns a row when it satisfies both tests:
 
-- **It is enumerable** — a list, a table, a graph, a set of values — so a prose copy of it is a
-  second copy that can disagree.
-- **It changes independently of the prose that would describe it**, which is what makes the
-  disagreement inevitable rather than hypothetical.
+- **It is enumerable** — a list, a table, a graph, a set of values — so a prose copy of it is a second copy that can disagree.
+- **It changes independently of the prose that would describe it**, which is what makes the disagreement inevitable rather than hypothetical.
 
-A fact that is stable and short — a naming convention, a posture, a boundary — does **not** earn a
-row. Those live in governance, where they belong.
+A fact that is stable and short — a naming convention, a posture, a boundary — does **not** earn a row. Those live in governance, where they belong.
 
 ---
 
@@ -83,13 +78,10 @@ row. Those live in governance, where they belong.
 
 Each of these checks **owns the rule set it enforces**. Read the check, not a prose summary of it.
 
-A check whose rule set is _derived_ rather than declared has no row here, and that is decided
-rather than missing: `validate-css-tokens`, `validate-class-order`, `validate-class-tokens`,
-`validate-class-groups` and
-`validate-design-scale` each enforce one invariant against a table computed from the compiled
-stylesheet, so there is no enumeration a prose copy could disagree with (§1b). Where such a check
-commits its derived table, the committed module is the row — `class-groups.ts` and
-`design-scale.ts` in §2d.
+A check whose rule set is _derived_ rather than declared has no row here, and that is decided rather than missing: `validate-css-tokens`,
+`validate-class-order`, `validate-class-tokens`, `validate-class-groups` and `validate-design-scale` each enforce one invariant against a table
+computed from the compiled stylesheet, so there is no enumeration a prose copy could disagree with (§1b). Where such a check commits its derived
+table, the committed module is the row — `class-groups.ts` and `design-scale.ts` in §2d.
 
 | Owns | File |
 | --- | --- |
@@ -112,11 +104,12 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 | Which documents warden indexes, and the retrieval weight each carries | `warden/src/corpus/source.ts` |
 | The `warden` command surface — every command, its flags, and what each writes | `warden/src/cli/commands.ts` + `warden/src/cli/knowledge.ts` |
 | Which modern-CSS findings fail, warn, or are deferred, as _enforced_ | `src/tooling/gate/checks/modern-css.ts` + `src/tooling/gate/checks/modern-css-deferred.ts` |
+| Every SQL migration lint rule — its id, level, matcher and what it excepts, as _enforced_ | `src/tooling/db/migrate/lint.ts` |
 
 ### 2c. Cloudflare Reconciliation
 
-The `sync` half of the CLI decides what exists, what is created, and what is written back. Each
-row names the file that decides it; no prose here restates a naming rule or a handler's plan.
+The `sync` half of the CLI decides what exists, what is created, and what is written back. Each row names the file that decides it; no prose here
+restates a naming rule or a handler's plan.
 
 | Owns | File |
 | --- | --- |
@@ -142,76 +135,82 @@ row names the file that decides it; no prose here restates a naming rule or a ha
 | Theme dial fields, parameters, ranges, units and fallbacks | `src/ui/contracts/theme/theme-contract.ts` |
 | The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.ts` + `src/ui/show/coverage-missing.ts` |
 
-### 2e. The Prose Rows
+### 2e. On-Disk Database Formats
 
-Every row above names a _source_ file. These name prose, because what they own is a **ruling**
-rather than data — §1b's enumerability test is what separates the two, and a ruling has a single
-home for the same reason a table does.
+A format version and the shape it numbers change together and are read by a tool, so prose about either is a copy that outlives it by exactly one
+release. Cite the version constant and the shape; enumerate neither.
 
 | Owns | File |
 | --- | --- |
-| What a source comment may contain, and where displaced rationale goes | [`CODE_RULES.md`](../warden/canon/libs/CODE_RULES.md) §5 |
+| `BACKUP_FORMAT_VERSION` and what a `manifest.json` carries | `BACKUP_FORMAT_VERSION` in `src/tooling/db/backup/artifact.ts` + `BackupManifest` in `src/tooling/db/types.ts` |
+| `SCHEMA_MODEL_VERSION` and the snapshot's shape | `src/tooling/db/schema/types.ts` |
+| The companion tables forge creates and reads | `COMPANION_TABLES` in `src/tooling/db/migrate/companions.ts` |
+| The table-name prefixes forge treats as managed | `MANAGED_TABLE_PREFIXES` in `src/storage/db/schema.ts` |
+
+### 2f. The Prose Rows
+
+Every row above names a _source_ file. These name prose, because what they own is a **ruling** rather than data — §1b's enumerability test is what
+separates the two, and a ruling has a single home for the same reason a table does.
+
+| Owns | File |
+| --- | --- |
+| What a source comment may contain, and where displaced rationale goes | [`CODE_RULES.md`][cr-5] §5 |
 | The `config` namespace's rulings — the store, resolution order, and what a consumer may read | `src/config/README.md` |
 | The `session` namespace's rulings — cookie construction, signing, and the middleware's contract | `src/session/README.md` |
 | The `site` namespace's rulings — what a site descriptor carries and what reads it | `src/site/README.md` |
 | The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
 
-**Five READMEs own their namespace's rulings outright, because no `docs/` document covers them.**
-The alternative was five new governing documents whose whole content would have been what the
-README already said — a second copy of a ruling is the failure this register exists to prevent, and
-writing one on purpose is worse than tolerating the asymmetry. So for these five namespaces the
-README **is** the governing prose: cite it as the owner, and do not restate its rulings in a
-`docs/` document. Every other namespace's README stays what §4's check assumes — API reference,
-deferring its rulings to the `docs/` document that owns them.
+**Five READMEs own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was five new governing documents
+whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to prevent, and
+writing one on purpose is worse than tolerating the asymmetry. So for these five namespaces the README **is** the governing prose: cite it as the
+owner, and do not restate its rulings in a `docs/` document. Every other namespace's README stays what §4's check assumes — API reference, deferring
+its rulings to the `docs/` document that owns them.
 
-**A row moves the day a `docs/` document is written for one of these namespaces**, and the README
-is reduced to reference in the same change. Adding the document without moving the row is how the
-two copies start.
+**A row moves the day a `docs/` document is written for one of these namespaces**, and the README is reduced to reference in the same change. Adding
+the document without moving the row is how the two copies start.
 
 ---
 
 ## 3. Rows That Name More Than One File
 
-Some rows name more than one file. In each case the concern genuinely spans them, and naming one
-would send half of its readers to the wrong place.
+Some rows name more than one file. In each case the concern genuinely spans them, and naming one would send half of its readers to the wrong place.
 
 ### 3a. The Barrel Row
 
-`exports.ts` remains the entry point and retains every policy decision — what fails, in what
-order, with what message — while `barrel-parse.ts` holds the matchers it decides on, the star-ban
-regex among them.
+`exports.ts` remains the entry point and retains every policy decision — what fails, in what order, with what message — while `barrel-parse.ts`
+holds the matchers it decides on, the star-ban regex among them.
 
-**Stating the split is more honest than naming the entry point alone.** A reader chasing "why is
-this a barrel violation at all" wants the matcher; one chasing "why did the gate fail" wants the
-entry point.
+**Stating the split is more honest than naming the entry point alone.** A reader chasing "why is this a barrel violation at all" wants the matcher;
+one chasing "why did the gate fail" wants the entry point.
 
 ### 3b. The Namespace-Graph Rows
 
-These split three ways, and the first is the unusual one: **`config/namespaces.ts` is _data_, and
-it is authoritative over the prose.** [`NAMESPACES.md`](./NAMESPACES.md) §4 cites it and enumerates
-nothing, because a second copy of a graph is indistinguishable from an amendment the moment the two
-disagree.
+These split three ways, and the first is the unusual one: **`config/namespaces.ts` is _data_, and it is authoritative over the prose.**
+[`NAMESPACES.md`][namespaces-4] §4 cites it and enumerates nothing, because a second copy of a graph is indistinguishable from an amendment the
+moment the two disagree.
 
-The enforcement then splits as the barrel row does — `namespace-graph.ts` owns the policy (what
-fails, the namespace set it derives from `exports`, the guard that the enumeration has not
-returned), while `namespace-graph-parse.ts` owns the matchers and the diff (which files are walked,
-how an import resolves to a namespace, how edge kind is decided).
+The enforcement then splits as the barrel row does — `namespace-graph.ts` owns the policy (what fails, the namespace set it derives from `exports`,
+the guard that the enumeration has not returned), while `namespace-graph-parse.ts` owns the matchers and the diff (which files are walked, how an
+import resolves to a namespace, how edge kind is decided).
 
 ### 3c. The Conflict-Group Row
 
-The conflict-group row names the data file alone, and the split is the one §3a and §3b describe:
-`class-groups.ts` is _data_ and is authoritative over any prose describing forge's covered utility
-surface, while `cn.ts` retains every policy decision — which class is dropped, in what order, and
+The conflict-group row names the data file alone, and the split is the one §3a and §3b describe: `class-groups.ts` is _data_ and is authoritative
+over any prose describing forge's covered utility surface, while `cn.ts` retains every policy decision — which class is dropped, in what order, and
 the fail-open rule for anything the table does not claim.
 
 ---
 
 ## 4. Documented Subpaths Are Checked
 
-**Every `@y-core/forge/<subpath>` written anywhere in the documentation set is checked against
-`package.json` `exports`; an unresolvable subpath fails the gate.**
+**Every `@y-core/forge/<subpath>` written anywhere in the documentation set is checked against `package.json` `exports`; an unresolvable subpath
+fails the gate.**
 
-For a subpath matched by a pattern rather than a literal key, the check additionally requires the
-file to exist — otherwise a citation of a stylesheet that was never written would satisfy the shape
-and send a reader to a resolution error.
+For a subpath matched by a pattern rather than a literal key, the check additionally requires the file to exist — otherwise a citation of a
+stylesheet that was never written would satisfy the shape and send a reader to a resolution error.
+
+[ag-5d]: ../warden/canon/shared/AGENT_GUIDE.md#5d-crossing-the-governance-boundary
+[ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
+[cr-5]: ../warden/canon/libs/CODE_RULES.md#5-comment-budget-rule
+[namespaces-4]: ./NAMESPACES.md#4-namespace-classification

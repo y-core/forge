@@ -77,8 +77,7 @@ const SUBMITTING_VIEWS = [
   {
     view: "SigninView",
     schema: authSigninSchema(),
-    html: () =>
-      render(<SigninView primaryFactor='email-otp' submitPath='/auth/signin' signupPath='/auth/signup' csrfToken='csrf-1' icon={AppIcon} />),
+    html: () => render(<SigninView submitPath='/auth/signin' signupPath='/auth/signup' csrfToken='csrf-1' icon={AppIcon} />),
   },
   {
     view: "SignupView",

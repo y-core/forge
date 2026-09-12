@@ -1,15 +1,34 @@
-import type { SafeHtml } from "@remix-run/html-template";
-import { createHtmlResponse } from "@remix-run/response/html";
+import type { SafeHtml } from "./html";
 
-/** Re-export of `@remix-run/response`'s redirect helper (also aliased as `redirect`). @public */
-export { createRedirectResponse, createRedirectResponse as redirect } from "@remix-run/response/redirect";
+const DOCTYPE = "<!DOCTYPE html>";
+
+// `renderPage` prepends its own DOCTYPE, so the check tolerates casing and leading whitespace.
+function withDoctype(body: string): string {
+  return /^\s*<!doctype html/i.test(body) ? body : DOCTYPE + body;
+}
+
+/** Constructs a redirect `Response` for a location, with an optional status or `ResponseInit` (also aliased as `redirect`). @public */
+export function createRedirectResponse(location: string | URL, init?: ResponseInit | number): Response {
+  let status = 302;
+  if (typeof init === "number") {
+    status = init;
+    init = undefined;
+  }
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Location")) {
+    headers.set("Location", typeof location === "string" ? location : location.toString());
+  }
+  return new Response(null, { status, ...init, headers });
+}
+
+export { createRedirectResponse as redirect };
 
 /** Constructs a full-page HTML `Response` with a leading `<!DOCTYPE html>`; throws on a caller-supplied `content-type`. @public */
 export function htmlResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {
   if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
     throw new Error("htmlResponse: content-type is fixed for HTML responses — remove it from headers");
   }
-  return createHtmlResponse(body, { status, headers: { ...headers, "content-type": "text/html; charset=utf-8" } });
+  return new Response(withDoctype(String(body)), { status, headers: { ...headers, "content-type": "text/html; charset=utf-8" } });
 }
 
 /** Constructs a JSON `Response`; throws on a caller-supplied `content-type`. @public */

@@ -9,12 +9,8 @@ import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
-import { Separator } from "../../../ui/core/separator";
 import type { ForgeIcon } from "../../../ui/core/types";
 import { cn } from "../../../ui/core/utils/cn";
-import { PASSKEY } from "../../passkey-contract";
-import { AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
-import type { AuthPasskeyContract } from "./types";
 import type { SigninViewProps } from "./types";
 
 /** The emailed-code path: one address field, submitted to the server. @internal */
@@ -49,27 +45,10 @@ const SigninEmailForm: FC<{
   </Form>
 );
 
-/** The passkey path: a scope root the browser controller resumes on. @internal */
-const SigninPasskey: FC<{ passkey: AuthPasskeyContract; icon: ForgeIcon<"key">; primary: boolean }> = ({ passkey, icon: AppIcon, primary }) => (
-  <AuthPasskeyScope contract={passkey} class='flex flex-col gap-3'>
-    <Button
-      type='button'
-      data-ref={PASSKEY.trigger}
-      class='w-full'
-      {...(primary ? {} : { tone: "neutral" as const, appearance: "outline" as const })}>
-      <AppIcon name='key' class='size-4' />
-      Use a passkey
-    </Button>
-    <AuthPasskeyStatus unsupported='This browser cannot use passkeys. Open this page in a current Chrome, Edge, Firefox or Safari.' />
-  </AuthPasskeyScope>
-);
-
 // Design Read: a returning visitor at the sign-in page; the one action is starting the sign-in with
 // the primary factor; failure is a refusal — `destructive` Alert above, the typed address kept.
-/** The sign-in page, whose primary affordance is whichever factor the deployment made primary. @public */
+/** The sign-in page, whose affordance is the emailed code the primary factor asks for. @public */
 export const SigninView: FC<SigninViewProps> = ({
-  primaryFactor,
-  passkey,
   submitPath,
   signupPath,
   csrfToken,
@@ -81,7 +60,6 @@ export const SigninView: FC<SigninViewProps> = ({
   class: cls,
   level,
 }) => {
-  const passkeyIsPrimary = primaryFactor === "passkey";
   const Heading = `h${level ?? 1}` as "h1";
   return (
     <Card class={cn("mx-auto w-full max-w-md", cls)}>
@@ -89,9 +67,7 @@ export const SigninView: FC<SigninViewProps> = ({
         <Card.Title>
           <Heading class='text-xl'>Sign in</Heading>
         </Card.Title>
-        <Card.Description>
-          {passkeyIsPrimary ? "Use the passkey you saved on this device." : "We email you a single-use code — there is no password."}
-        </Card.Description>
+        <Card.Description>We email you a single-use code — there is no password.</Card.Description>
       </Card.Header>
       <Card.Content class='flex flex-col gap-6'>
         {error === undefined ? null : (
@@ -101,24 +77,14 @@ export const SigninView: FC<SigninViewProps> = ({
             <Alert.Description>{error}</Alert.Description>
           </Alert>
         )}
-        {passkeyIsPrimary && passkey !== undefined ? (
-          <SigninPasskey passkey={passkey} icon={AppIcon} primary />
-        ) : (
-          <SigninEmailForm
-            submitPath={submitPath}
-            csrfToken={csrfToken}
-            csrfHeader={csrfHeader}
-            email={email}
-            fieldError={fieldError}
-            icon={AppIcon}
-          />
-        )}
-        {!passkeyIsPrimary && passkey !== undefined ? (
-          <div class='flex flex-col gap-3'>
-            <Separator />
-            <SigninPasskey passkey={passkey} icon={AppIcon} primary={false} />
-          </div>
-        ) : null}
+        <SigninEmailForm
+          submitPath={submitPath}
+          csrfToken={csrfToken}
+          csrfHeader={csrfHeader}
+          email={email}
+          fieldError={fieldError}
+          icon={AppIcon}
+        />
       </Card.Content>
       <Card.Footer>
         <p class='max-w-prose text-sm text-pretty text-muted-foreground'>

@@ -8,7 +8,10 @@ declare const Bun: {
   readonly stdin: { stream(): AsyncIterable<Uint8Array> };
   // Bun's own subprocess, for a test that must reach a real one: `node:child_process` is mocked
   // process-globally by a sibling release test, and a mock cannot be un-imported.
-  spawnSync(cmd: readonly string[], options?: { cwd?: string }): { stdout: { toString(): string }; exitCode: number };
+  spawnSync(
+    cmd: readonly string[],
+    options?: { cwd?: string; env?: Record<string, string | undefined> },
+  ): { stdout: { toString(): string }; exitCode: number };
 };
 
 interface BunFile {

@@ -24,6 +24,14 @@ export function sql(strings: TemplateStringsArray, ...values: unknown[]): SqlFra
   return { [SQL_FRAGMENT_BRAND]: true, text, params };
 }
 
+/** The guard's text — `abs()` of the minimum int64 is the one SQLite scalar that raises at runtime outside a trigger. @internal */
+export const ROWS_WRITTEN_GUARD = "SELECT CASE WHEN changes() = 0 THEN abs(-9223372036854775808) END";
+
+/** A fragment that aborts the batch when the statement before it wrote no row; one per protected write. @public */
+export function requireRowsWritten(): SqlFragment {
+  return { [SQL_FRAGMENT_BRAND]: true, text: ROWS_WRITTEN_GUARD, params: [] };
+}
+
 /** Type guard for SqlFragment — a provenance check, not a shape check, so a structurally identical `{text, params}` object is rejected and bound as a parameter. @public */
 export function isSqlFragment(x: unknown): x is SqlFragment {
   return typeof x === "object" && x !== null && (x as Partial<SqlFragment>)[SQL_FRAGMENT_BRAND] === true;

@@ -1,7 +1,8 @@
 // `fakeD1` answers what it is told to answer, so three questions about D1 stay open until the real
 // runtime is asked: whether it accepts and enforces `STRICT`, what a mid-batch failure leaves
-// behind, and what shape a BLOB column reads back as. `src/auth/schema.sql` is posted to the
-// fixture rather than imported by it, so what runs is the file a consumer would apply.
+// behind, and what shape a BLOB column reads back as. `src/auth/schema.sql` — the whole of what
+// `lib-auth` publishes — is posted to the fixture rather than imported by it, so what runs is the
+// one-shot build a consumer may take.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
@@ -14,7 +15,7 @@ let server: DevServer;
 
 beforeAll(async () => {
   server = await startDevServer({ config: CONFIG, readyPath: "/guards" });
-  // The fixture's database outlives the run that made it, so a table from an older `schema.sql`
+  // The fixture's database outlives the run that made it, so a table from an older migration
   // would answer `IF NOT EXISTS` with its old columns and fail the index over a new one.
   await fetch(`${server.origin}/reset`, { method: "POST" });
 }, 200_000);
@@ -183,6 +184,35 @@ describe("the ephemeral stores against real D1", () => {
 
   it("refuses an over-long address at the CHECK, and calls it the caller's fault rather than an outage", () => {
     expect(guards.emailLength).toEqual({ refusedCode: "invalid", acceptedOk: true, rows: 1 });
+  });
+});
+
+// spike-260912-53: a guarded `UPDATE` that matches nothing is a success, and the batch commits. Can
+// a fragment appended after it abort the batch instead? Only if `changes()` carries between the
+// batch's statements and an expression can raise outside a trigger.
+describe("D1 open question — a rows-written guard inside batch()", () => {
+  let probe: Record<string, unknown>;
+
+  beforeAll(async () => {
+    probe = await get("/changes");
+  }, 60_000);
+
+  it("reports the previous statement's count through changes() in the next statement of the batch", () => {
+    expect({ matched: probe.changesAfterMatched, unmatched: probe.changesAfterUnmatched }).toEqual({ matched: 1, unmatched: 0 });
+  });
+
+  it("raises a runtime error from abs() of the minimum int64, the one scalar that can fail outside a trigger", () => {
+    expect(probe.overflowError).toBe("D1_ERROR: integer overflow: SQLITE_ERROR");
+  });
+
+  it("aborts and rolls back the whole batch when the guard sees zero rows written", () => {
+    expect(probe.guardAbortError).toBe("D1_ERROR: integer overflow: SQLITE_ERROR");
+    expect(probe.afterAbort).toEqual([1]);
+  });
+
+  it("lets the batch commit when the guarded write matched", () => {
+    expect(probe.guardPassError).toBeNull();
+    expect(probe.afterPass).toEqual([1, 3]);
   });
 });
 

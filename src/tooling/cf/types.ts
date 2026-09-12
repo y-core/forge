@@ -145,6 +145,11 @@ export interface D1DatabaseConfig {
   binding: string;
   database_id?: string;
   database_name?: string;
+  preview_database_id?: string;
+  /** Where `wrangler d1 migrations` reads, relative to the config. Defaults to `migrations`. */
+  migrations_dir?: string;
+  /** The table wrangler records applied migrations in. Defaults to `d1_migrations`. */
+  migrations_table?: string;
 }
 
 export interface R2BucketConfig {

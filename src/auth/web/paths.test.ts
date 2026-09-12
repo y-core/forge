@@ -10,7 +10,6 @@ describe("authPaths", () => {
 
   it("mirrors every nested group as a nested reader", () => {
     const paths = authPaths(authRoutes("/auth"));
-    expect(paths.passkey.authenticateBegin()).toBe("/auth/passkey/authenticate/begin");
     expect(paths.enrol.passkey()).toBe("/auth/enrol/passkey");
     expect(paths.enrol.ceremony.finish()).toBe("/auth/enrol/passkey/register/finish");
   });

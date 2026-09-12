@@ -16,12 +16,48 @@ export interface D1ClientOptions {
   logger?: Logger;
 }
 
+/** One statement's outcome inside a batch: its rows, and the write count `execute` would report. @public */
+export interface D1BatchResult<T = unknown> {
+  readonly results: T[];
+  readonly rowsWritten: number;
+  readonly lastRowId?: number | null;
+}
+
 /** A D1 binding that accepts only `sql` fragments and returns every outcome as a `Result`. @public */
 export interface D1Client {
-  batch<T = unknown>(fragments: SqlFragment[]): Promise<Result<D1Result<T>[]>>;
+  batch<T = unknown>(fragments: SqlFragment[]): Promise<Result<D1BatchResult<T>[]>>;
   execute(fragment: SqlFragment): Promise<Result<{ rowsWritten: number; lastRowId?: number | null }>>;
   query<T = unknown>(fragment: SqlFragment): Promise<Result<T[]>>;
   queryOne<T = unknown>(fragment: SqlFragment): Promise<Result<T | null>>;
+}
+
+/** One `sqlite_master` row, as the inventory read returns it. @public */
+export interface SchemaObject {
+  readonly type: string;
+  readonly name: string;
+  readonly tblName: string;
+  readonly sql: string | null;
+}
+
+/** How the schema stands against the fingerprint `forge db migrate` recorded; `unavailable` means no `forge_schema_meta` table. @public */
+export type SchemaHealthState = "match" | "mismatch" | "unrecorded" | "unavailable";
+
+/** The schema health report: the state, and both fingerprints. @public */
+export interface SchemaHealth {
+  readonly state: SchemaHealthState;
+  readonly recorded: string | null;
+  readonly actual: string | null;
+}
+
+/** Options for `checkSchemaHealth`; the migrations table defaults to wrangler's `d1_migrations`. @public */
+export interface SchemaHealthOptions {
+  migrationsTable?: string | undefined;
+}
+
+/** Options for `schemaHealthMonitor`: where the binding is, and which logger takes the record. @public */
+export interface SchemaHealthMonitorOptions<Bindings = Record<string, unknown>> extends SchemaHealthOptions {
+  binding: (c: AppContext<Bindings>) => D1DatabaseLike | undefined;
+  logger?: Logger | undefined;
 }
 
 /** Options for resolving a D1 binding from context. @public */

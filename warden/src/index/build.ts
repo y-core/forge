@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { readFileSync, statSync } from "node:fs";
 
+import { linkDefinitions, stripFences } from "../checks/docs";
 import { chunkDocument, frontmatter } from "../corpus/chunk";
 import { fnv1a } from "../corpus/hash";
 import { headerOf, relationsOf } from "../corpus/relate";
@@ -29,6 +30,11 @@ interface Loaded {
   hash: string;
 }
 
+/** Each reference id's destination, which is where a reference-style citation keeps its path. */
+function destinations(source: string): Map<string, string> {
+  return new Map([...linkDefinitions(stripFences(source))].map(([id, definition]) => [id, definition.destination]));
+}
+
 /** Reads and parses every document, resolving relations against the whole set.
  *
  *  `packageName` is what lets a section's prose emit a `governs` edge; absent it, none is produced.
@@ -44,7 +50,7 @@ export function load(sources: readonly SourceDoc[], packageName?: string): Loade
       title: title === "" ? doc.path : title,
       description,
       chunks,
-      relations: relationsOf(doc, chunks, headerOf(source), sources, packageName),
+      relations: relationsOf(doc, chunks, headerOf(source), sources, packageName, destinations(source)),
       size: stat.size,
       mtime: stat.mtimeMs ?? 0,
       hash: fnv1a(source),

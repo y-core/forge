@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { isSqlFragment, SQL_PLACEHOLDER, sql } from "./sql";
+import { isSqlFragment, requireRowsWritten, ROWS_WRITTEN_GUARD, SQL_PLACEHOLDER, sql } from "./sql";
 
 describe("sql tagged template — injection prevention", () => {
   it("puts interpolated values in params, never in text", () => {
@@ -92,5 +92,21 @@ describe("sql tagged template — brand forgery (W1-1)", () => {
     expect(Object.keys(fragment)).toEqual(["text", "params"]);
     expect(JSON.stringify(fragment)).toBe('{"text":"SELECT 1","params":[]}');
     expect(isSqlFragment(JSON.parse(JSON.stringify(fragment)))).toBe(false);
+  });
+});
+
+describe("requireRowsWritten", () => {
+  it("mints a branded, parameterless fragment carrying the guard text", () => {
+    const guard = requireRowsWritten();
+    expect(isSqlFragment(guard)).toBe(true);
+    expect(guard.text).toBe(ROWS_WRITTEN_GUARD);
+    expect(guard.text).toBe("SELECT CASE WHEN changes() = 0 THEN abs(-9223372036854775808) END");
+    expect(guard.params).toEqual([]);
+  });
+
+  it("composes inside a larger fragment like any other", () => {
+    const outer = sql`${requireRowsWritten()}`;
+    expect(outer.text).toBe(ROWS_WRITTEN_GUARD);
+    expect(outer.params).toEqual([]);
   });
 });

@@ -5,12 +5,11 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 
 # Testing Discipline
 
-> Owns test file placement, the assertion rules, the fakes-over-mocks posture, the security-test
-> requirements, and the verification gate. Other documents link here rather than restating them.
+> Owns test file placement, the assertion rules, the fakes-over-mocks posture, the security-test requirements, and the verification gate. Other
+> documents link here rather than restating them.
 >
-> Defers to: the gate's step-list config for which steps exist;
-> [`BOUNDARIES.md`](./BOUNDARIES.md) for the boundaries a security test must exercise;
-> [`CODE_RULES.md`](./CODE_RULES.md) §5d for the comment budget inside tests.
+> Defers to: the gate's step-list config for which steps exist; [`BOUNDARIES.md`][boundaries] for the boundaries a security test must exercise;
+> [`CODE_RULES.md`][cr-5d] §5d for the comment budget inside tests.
 
 ---
 
@@ -47,52 +46,42 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 
 ## 1. Test Runners
 
-**There may be more than one runner, and they answer different questions.** A unit runner proves
-that a function returns what it should and that the server emitted the markup it promised. A
-browser runner proves that a controller does what it claims **to a keystroke**. Neither
-substitutes for the other, and both are kept.
+**There may be more than one runner, and they answer different questions.** A unit runner proves that a function returns what it should and that the
+server emitted the markup it promised. A browser runner proves that a controller does what it claims **to a keystroke**. Neither substitutes for the
+other, and both are kept.
 
 ### 1a. Runner Primitives
 
-**Import all test utilities from the runner itself** — never from a third-party assertion or
-mocking library layered over a runner that already has both. A browser driver is the one
-legitimate external test dependency, because driving a real browser needs one and there is no
-in-house equivalent to reach for.
+**Import all test utilities from the runner itself** — never from a third-party assertion or mocking library layered over a runner that already has
+both. A browser driver is the one legitimate external test dependency, because driving a real browser needs one and there is no in-house equivalent
+to reach for.
 
-**Keep suite nesting to at most two levels.** Deeper nesting costs more readability than the
-grouping buys.
+**Keep suite nesting to at most two levels.** Deeper nesting costs more readability than the grouping buys.
 
 ### 1b. No Runtime-Specific Type Package
 
-Use a **hand-written declaration stub** for the runner's globals rather than the runtime's
-published type package. This is a hard requirement, not a preference:
+Use a **hand-written declaration stub** for the runner's globals rather than the runtime's published type package. This is a hard requirement, not a
+preference:
 
-- Such a package typically overrides a standard global's signature with runtime-specific
-  properties — `fetch` is the usual casualty.
-- That override breaks type-checking of Worker code and of test fakes that implement platform
-  interfaces.
+- Such a package typically overrides a standard global's signature with runtime-specific properties — `fetch` is the usual casualty.
+- That override breaks type-checking of Worker code and of test fakes that implement platform interfaces.
 - The stub declares exactly the lifecycle and assertion globals in use, and nothing more.
 
-**A change that adds the runtime's type package must be rejected**, including as a transitive
-dependency of a convenience plugin.
+**A change that adds the runtime's type package must be rejected**, including as a transitive dependency of a convenience plugin.
 
 ### 1c. The Browser Set
 
-**A browser test runs in a real browser under its own verb**, with its own config owning the
-discovery pattern, project list, and parallelism.
+**A browser test runs in a real browser under its own verb**, with its own config owning the discovery pattern, project list, and parallelism.
 
-**The set sits outside the fast gate, and the reason is a prerequisite, not cost.** It needs a
-browser binary an install step fetches, and a prerequisite is the only legitimate ground for a
-set to stand outside the fast run (§6c). **Cost never is.** It **is** a step of the release
-gate, which is permitted to carry a prerequisite.
+**The set sits outside the fast gate, and the reason is a prerequisite, not cost.** It needs a browser binary an install step fetches, and a
+prerequisite is the only legitimate ground for a set to stand outside the fast run (§6c). **Cost never is.** It **is** a step of the release gate,
+which is permitted to carry a prerequisite.
 
-**This is why a DOM shim is rejected, and why the two runners never share a process.** A shim
-defines hundreds of globals, shadows the runtime natives the rest of the suite exercises, and
-certifies components against a model of the platform that lacks the very features they are built
-on; one retargeting rule backwards makes the central assertion pass for the wrong reason. A
-separate process guarantees the isolation by construction instead — no global redefined, and the
-platform's own `Request` / `Response` / `fetch` semantics left exactly as the runtime ships them,
-which matters because those semantics _are_ the product.
+**This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
+natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
+one retargeting rule backwards makes the central assertion pass for the wrong reason. A separate process guarantees the isolation by construction
+instead — no global redefined, and the platform's own `Request` / `Response` / `fetch` semantics left exactly as the runtime ships them, which
+matters because those semantics _are_ the product.
 
 **What each runner is sufficient evidence for:**
 
@@ -102,11 +91,10 @@ which matters because those semantics _are_ the product.
 | a pure function returns this value | the unit runner |
 | a controller moves focus, writes an attribute, consumes a key | **the browser set only** |
 
-Neither subsumes the other: a component can behave correctly while emitting markup no stylesheet
-matches, so a markup change _updates_ the exact-HTML test rather than replacing it with a
-behaviour test. **A browser case asserts a DOM or focus state, never a call count** — it builds
-real markup, dispatches a real event through the browser's own input path, and reads what
-resulted. A test that counts calls is testing the test's own fixture.
+Neither subsumes the other: a component can behave correctly while emitting markup no stylesheet matches, so a markup change _updates_ the
+exact-HTML test rather than replacing it with a behaviour test. **A browser case asserts a DOM or focus state, never a call count** — it builds real
+markup, dispatches a real event through the browser's own input path, and reads what resulted. A test that counts calls is testing the test's own
+fixture.
 
 ---
 
@@ -114,50 +102,44 @@ resulted. A test that counts calls is testing the test's own fixture.
 
 ### 2a. Test File Naming Convention
 
-**Every source file with non-trivial logic has a test file beside it**, same directory, with a
-test suffix:
+**Every source file with non-trivial logic has a test file beside it**, same directory, with a test suffix:
 
     src/security/headers.ts   → src/security/headers.test.ts
     src/ui/core/button.tsx    → src/ui/core/button.test.tsx
 
-**Test files never go in a top-level `__tests__/` or `tests/` directory.** Co-location makes
-coverage visible at a glance and keeps relative imports short (§2c).
+**Test files never go in a top-level `__tests__/` or `tests/` directory.** Co-location makes coverage visible at a glance and keeps relative imports
+short (§2c).
 
-**A configuration file gets no test.** A config names values; it has no logic to exercise, so a
-test over it can only restate the file back to itself and fail whenever the config legitimately
-changes. Where such a test looks like it proves something, the property belongs to the code that
+**A configuration file gets no test.** A config names values; it has no logic to exercise, so a test over it can only restate the file back to
+itself and fail whenever the config legitimately changes. Where such a test looks like it proves something, the property belongs to the code that
 _reads_ the config, and the fix is to enforce it there.
 
-**The browser set follows the same rule with its own suffix.** A subject may have both, and
-often should: the exact-HTML test proves what the server emitted, the browser test proves what
-the markup then does.
+**The browser set follows the same rule with its own suffix.** A subject may have both, and often should: the exact-HTML test proves what the server
+emitted, the browser test proves what the markup then does.
 
-**The one exception is a spec with no single subject.** A test for a scenario that exists only
-_between_ two components sits at the root of the tier it spans rather than beside an arbitrary
-participant. Choosing a co-location for it would name one component as the subject when none is.
+**The one exception is a spec with no single subject.** A test for a scenario that exists only _between_ two components sits at the root of the tier
+it spans rather than beside an arbitrary participant. Choosing a co-location for it would name one component as the subject when none is.
 
-**A cross-cutting sweep enumerates the published surface only.** Deriving subjects from a
-barrel's own exports means a new symbol is covered the day it is exported, and a hand-kept list
-never rots. Walking further — into sub-components a caller does not address directly — makes the
-subject set something the sweep computes rather than something the barrel declares.
+**A cross-cutting sweep enumerates the published surface only.** Deriving subjects from a barrel's own exports means a new symbol is covered the day
+it is exported, and a hand-kept list never rots. Walking further — into sub-components a caller does not address directly — makes the subject set
+something the sweep computes rather than something the barrel declares.
 
 ### 2b. Excluded From Publish
 
-The published-files list excludes every test file, so tests exist only in the source repository.
-This keeps the package lean and stops consumers importing test helpers.
+The published-files list excludes every test file, so tests exist only in the source repository. This keeps the package lean and stops consumers
+importing test helpers.
 
 ### 2c. Import Concrete Files in Tests
 
-**Always import the concrete source file** — never the namespace barrel, and never the package
-name. A test beside its subject reaches it with a relative path one segment long.
+**Always import the concrete source file** — never the namespace barrel, and never the package name. A test beside its subject reaches it with a
+relative path one segment long.
 
-Importing via the barrel couples the test to the export surface rather than the implementation,
-and masks exactly the re-export bugs the export gate exists to catch.
+Importing via the barrel couples the test to the export surface rather than the implementation, and masks exactly the re-export bugs the export gate
+exists to catch.
 
-Two exceptions, both narrow. A **test-fixture namespace** is imported by subpath, because
-consumer test code sits outside the source tree. And a **test whose subject _is_ the export
-surface** must read the published surface — suppress the lint rule at that import with a reason,
-and nowhere else.
+Two exceptions, both narrow. A **test-fixture namespace** is imported by subpath, because consumer test code sits outside the source tree. And a
+**test whose subject _is_ the export surface** must read the published surface — suppress the lint rule at that import with a reason, and nowhere
+else.
 
 ---
 
@@ -165,18 +147,16 @@ and nowhere else.
 
 ### 3a. Assert the Escaped Form
 
-A correct renderer escapes **every** string child, static and interpolated alike. **Assert the
-escaped form, exactly** — the repository's own `docs/TESTING.md` §3a publishes the
-character-to-entity map its renderer produces, and that map is the one to assert against.
+A correct renderer escapes **every** string child, static and interpolated alike. **Assert the escaped form, exactly** — the repository's own
+`docs/TESTING.md` §3a publishes the character-to-entity map its renderer produces, and that map is the one to assert against.
 
-**Static text in the source is escaped exactly as an interpolated value is.** Never assert a raw
-`&`, `<`, `>`, `'` or `"` on the strength of a literal having been written that way in the JSX.
+**Static text in the source is escaped exactly as an interpolated value is.** Never assert a raw `&`, `<`, `>`, `'` or `"` on the strength of a
+literal having been written that way in the JSX.
 
-**The one bypass is an explicitly-trusted HTML value**, which is emitted verbatim. Assert the
-unescaped form there, and only there.
+**The one bypass is an explicitly-trusted HTML value**, which is emitted verbatim. Assert the unescaped form there, and only there.
 
-**URL-bearing attributes are a further exception:** a renderer routes them through a URL
-sanitizer, so a hostile scheme renders as a safe placeholder. Assert the sanitized form.
+**URL-bearing attributes are a further exception:** a renderer routes them through a URL sanitizer, so a hostile scheme renders as a safe
+placeholder. Assert the sanitized form.
 
 ### 3b. Exact Match — Never Substring Matching
 
@@ -191,48 +171,38 @@ expect(html).toMatch(/O'Brien/);
 expect(html).toBe("<td>O&#39;Brien &amp; Associates</td>");
 ```
 
-**If the assertion string is too long, extract the relevant fragment and assert `toBe` on
-that.** Never shorten an assertion by switching to a substring match. Substring matching is
-legitimate on non-markup strings — an error message, a log line, a SQL fragment.
+**If the assertion string is too long, extract the relevant fragment and assert `toBe` on that.** Never shorten an assertion by switching to a
+substring match. Substring matching is legitimate on non-markup strings — an error message, a log line, a SQL fragment.
 
 ### 3c. Render Once, Assert Once
 
-**Render through the shared render helper and assert the full markup with one exact
-assertion.**
+**Render through the shared render helper and assert the full markup with one exact assertion.**
 
-**Do not call a private render path, do not render twice to assert two fragments, and do not
-fall back to substring matching.** A single entity-aware exact assertion on the full output is
-the only accepted shape.
+**Do not call a private render path, do not render twice to assert two fragments, and do not fall back to substring matching.** A single
+entity-aware exact assertion on the full output is the only accepted shape.
 
 ### 3d. Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees
 
-**The operational check, applied before a test is counted as written: delete the mechanism the
-test names; a test that still passes was never testing it.**
+**The operational check, applied before a test is counted as written: delete the mechanism the test names; a test that still passes was never
+testing it.**
 
-The failure shape is always the same. The subject is a _mechanism_ — a timer cleared, a list
-that does not grow, an observer disconnected — and the assertion reads an _outcome_ that a
-second, independent mechanism also produces. A guard clause is the usual second mechanism: an
-early return at the top of a callback makes "nothing visibly happened" true whether or not the
-timer that calls it was ever cancelled.
+The failure shape is always the same. The subject is a _mechanism_ — a timer cleared, a list that does not grow, an observer disconnected — and the
+assertion reads an _outcome_ that a second, independent mechanism also produces. A guard clause is the usual second mechanism: an early return at
+the top of a callback makes "nothing visibly happened" true whether or not the timer that calls it was ever cancelled.
 
 Two shapes worth recognising:
 
-- **A guard downstream of the subject.** Remove a disposal guard and every case stays green
-  except the one counting initialisations, because the guard and the mechanism produce the
-  observable state identically.
-- **An assertion that passes when its subject is absent.** A negative assertion over an optional
-  path — `expect(probe?.[0]).not.toBe("x")` — passes when `probe` has been deleted outright,
-  because the expression is then `undefined`. A negative assertion over an optional path asserts
-  nothing.
+- **A guard downstream of the subject.** Remove a disposal guard and every case stays green except the one counting initialisations, because the
+  guard and the mechanism produce the observable state identically.
+- **An assertion that passes when its subject is absent.** A negative assertion over an optional path — `expect(probe?.[0]).not.toBe("x")` — passes
+  when `probe` has been deleted outright, because the expression is then `undefined`. A negative assertion over an optional path asserts nothing.
 
-**Pin the mechanism, and pin that it was armed.** "The timer never fired" is worth nothing
-without "a timer was scheduled" — a mechanism never set up also never runs. Both halves in one
-assertion is the cheapest form: `expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
+**Pin the mechanism, and pin that it was armed.** "The timer never fired" is worth nothing without "a timer was scheduled" — a mechanism never set
+up also never runs. Both halves in one assertion is the cheapest form: `expect(timers).toEqual({ scheduled: 1, fired: 0 })`.
 
-This does not weaken §1c's rule that a browser case asserts DOM state rather than a call count.
-What is counted here is the **platform's** own invocation, which _is_ the mechanism; §1c bans
-substituting a count of calls into the test's own fixture for the DOM state a controller was
-supposed to produce.
+This does not weaken §1c's rule that a browser case asserts DOM state rather than a call count. What is counted here is the **platform's** own
+invocation, which _is_ the mechanism; §1c bans substituting a count of calls into the test's own fixture for the DOM state a controller was supposed
+to produce.
 
 ---
 
@@ -240,15 +210,14 @@ supposed to produce.
 
 ### 4a. Fake Pattern — Implement the Interface
 
-A fake is a minimal in-test implementation of a real interface, written as a plain object
-literal **annotated with that interface** — every member present, each body the least it can be.
+A fake is a minimal in-test implementation of a real interface, written as a plain object literal **annotated with that interface** — every member
+present, each body the least it can be.
 
-**TypeScript enforces that every interface member is present**, so interface drift breaks the
-test at compile time — which is the whole of the argument for fakes.
+**TypeScript enforces that every interface member is present**, so interface drift breaks the test at compile time — which is the whole of the
+argument for fakes.
 
-Ship the recurring fakes from a **test-fixture namespace** rather than re-deriving them per
-suite: an in-memory store fake, a render helper, a request builder, a single-route registrar.
-A fake that every suite hand-rolls is a fake that drifts per suite.
+Ship the recurring fakes from a **test-fixture namespace** rather than re-deriving them per suite: an in-memory store fake, a render helper, a
+request builder, a single-route registrar. A fake that every suite hand-rolls is a fake that drifts per suite.
 
 ### 4b. Why Fakes Over Mocks
 
@@ -259,14 +228,12 @@ A fake that every suite hand-rolls is a fake that drifts per suite.
 | Coupling | To the interface contract | To call order, argument matchers, invocation counts |
 | Dependencies | None | Requires a mock library |
 
-**Mock libraries are not installed and must not be added.** Use argument-capturing fakes (§4c)
-when you need to inspect calls.
+**Mock libraries are not installed and must not be added.** Use argument-capturing fakes (§4c) when you need to inspect calls.
 
 ### 4c. Capturing Arguments in Fakes
 
-**Use a capture variable at the top of the test block**, and reset it in a lifecycle hook when
-the fake is shared across cases. The fake's method assigns the argument; the assertion is an
-exact `toBe` on the captured value, not a claim about how many times it was called.
+**Use a capture variable at the top of the test block**, and reset it in a lifecycle hook when the fake is shared across cases. The fake's method
+assigns the argument; the assertion is an exact `toBe` on the captured value, not a claim about how many times it was called.
 
 ---
 
@@ -274,17 +241,14 @@ exact `toBe` on the captured value, not a claim about how many times it was call
 
 ### 5a. Both Pass and Fail Cases Required
 
-**Security-sensitive code requires both a positive case — the guard allows a valid request —
-and a negative case — the guard blocks an invalid one.** A suite with only the happy path is
-incomplete and must not be merged.
+**Security-sensitive code requires both a positive case — the guard allows a valid request — and a negative case — the guard blocks an invalid
+one.** A suite with only the happy path is incomplete and must not be merged.
 
-**Build the application under test the way production does: declaratively.** Routes are declared
-as a map bound to a controller and installed as a unit; path-scoped middleware is registered the
-same way production registers it; requests are driven through the app's own request entry point
-so the full chain runs and any deferred work is awaited.
+**Build the application under test the way production does: declaratively.** Routes are declared as a map bound to a controller and installed as a
+unit; path-scoped middleware is registered the same way production registers it; requests are driven through the app's own request entry point so
+the full chain runs and any deferred work is awaited.
 
-A test that wires a handler by hand proves the handler works and proves nothing about the chain,
-which is where guards actually live.
+A test that wires a handler by hand proves the handler works and proves nothing about the chain, which is where guards actually live.
 
 | Feature | Required positive case | Required negative case |
 | --- | --- | --- |
@@ -295,13 +259,13 @@ which is where guards actually live.
 | Content type | Expected type → proceeds | Wrong or missing → 415 |
 | Auth middleware | Valid session → proceeds | Missing or expired session → 401 |
 
-**Keep a row-to-test coverage map in `docs/`**, naming which suite covers each row. A
-matrix nobody has mapped to real files is a checklist, not coverage.
+**Keep a row-to-test coverage map in `docs/`**, naming which suite covers each row. A matrix nobody has mapped to real files is a checklist, not
+coverage.
 
 ### 5b. Negative Case Structure
 
-**The negative case asserts the exact status AND a meaningful body fragment** — not the status
-alone. That proves the error path _renders_, rather than merely that the request exited early.
+**The negative case asserts the exact status AND a meaningful body fragment** — not the status alone. That proves the error path _renders_, rather
+than merely that the request exited early.
 
 ```ts
 it("rejects missing CSRF token with 403", async () => {
@@ -319,18 +283,15 @@ it("rejects missing CSRF token with 403", async () => {
 });
 ```
 
-**"Body is non-empty" is a code smell.** An assertion that the body is not the empty string
-asserts nothing. Reserve loose checks for genuinely runtime-dependent values — signed tokens,
-generated ids.
+**"Body is non-empty" is a code smell.** An assertion that the body is not the empty string asserts nothing. Reserve loose checks for genuinely
+runtime-dependent values — signed tokens, generated ids.
 
 ### 5c. No Mocking of Security Primitives
 
-**Do not mock a security primitive to make a test pass.** Test the real implementation against a
-fake binding.
+**Do not mock a security primitive to make a test pass.** Test the real implementation against a fake binding.
 
-If the real implementation is too hard to invoke from a test, that is a **testability signal —
-refactor to accept injectable dependencies**, not a licence to mock. A mocked guard is a test
-that passes when the guard is deleted.
+If the real implementation is too hard to invoke from a test, that is a **testability signal — refactor to accept injectable dependencies**, not a
+licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ---
 
@@ -338,29 +299,24 @@ that passes when the guard is deleted.
 
 ### 6a. One Command, Three Modes
 
-**There is one gate command with three modes — fast, standard and full — not three commands.**
-Verbs sharing every flag and every line of behaviour, differing only in a membership filter, are
-modes by definition. **`standard` is what a bare invocation runs**, and it is what a task closes
-on; `fast` is the inner loop and `full` is the release gate.
+**There is one gate command with three modes — fast, standard and full — not three commands.** Verbs sharing every flag and every line of behaviour,
+differing only in a membership filter, are modes by definition. **`standard` is what a bare invocation runs**, and it is what a task closes on;
+`fast` is the inner loop and `full` is the release gate.
 
-**A config file owns the step list** — every step, how it runs, and whether it is full-only.
-Read it there rather than trusting any prose copy. A step is one of two things: an external
-command, or a check the runner calls in-process.
+**A config file owns the step list** — every step, how it runs, and whether it is full-only. Read it there rather than trusting any prose copy. A
+step is one of two things: an external command, or a check the runner calls in-process.
 
-**Every step the run actually executed must pass with zero errors before a task is declared
-complete.** A partial pass — "types pass, lint has one warning" — is a failure.
+**Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
+warning" — is a failure.
 
-**A step may declare a prerequisite, and what an absent one means is the mode's answer rather than
-the step's.** The runner probes once per step. Below the `full` tier the step is **skipped**, named
-as skipped with the hint that would install its dependency; in a **`full` run it fails** with that
-same hint, because `full` is the release gate a publish blocks on and a release may not be assured
-by a step nobody ran. **A run in which every selected step skipped is red** — for the reason a
-zero-step selection is refused (§6d): it proves nothing.
+**A step may declare a prerequisite, and what an absent one means is the mode's answer rather than the step's.** The runner probes once per step.
+Below the `full` tier the step is **skipped**, named as skipped with the hint that would install its dependency; in a **`full` run it fails** with
+that same hint, because `full` is the release gate a publish blocks on and a release may not be assured by a step nobody ran. **A run in which every
+selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
 
-The runner reports each step as it finishes, stops at the first failure, and names it. **That
-name is the verdict** — read off the summary line, never inferred from raw tool output. The mode
-is part of the verdict, because the three modes are different assurances, and **a skipped step is
-part of it too** — a green that skipped a step is not the green that ran it.
+The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
+never inferred from raw tool output. The mode is part of the verdict, because the three modes are different assurances, and **a skipped step is part
+of it too** — a green that skipped a step is not the green that ran it.
 
 | Flag | Effect |
 | --- | --- |
@@ -372,8 +328,7 @@ part of it too** — a green that skipped a step is not the green that ran it.
 
 ### 6b. What Each Tool Catches
 
-Keyed by tool rather than by step: which steps exist drifts, and §6a already says where that
-list lives. What a given tool proves does not drift.
+Keyed by tool rather than by step: which steps exist drifts, and §6a already says where that list lives. What a given tool proves does not drift.
 
 | Tool | Catches |
 | --- | --- |
@@ -382,31 +337,27 @@ list lives. What a given tool proves does not drift.
 | The test runner | Functional regressions |
 | The project's own validators | Barrel and export-map drift, governing-doc format, asset coverage |
 
-**Fix type failures first** — they cascade into misleading lint and test failures. The step table
-encodes this by ordering the type check first, so a fail-fast run stops there without being told
-to.
+**Fix type failures first** — they cascade into misleading lint and test failures. The step table encodes this by ordering the type check first, so
+a fail-fast run stops there without being told to.
 
 ### 6c. The Prerequisite Line
 
-**This is the line between the modes, and it is an objective property rather than a judgement.**
-Every step in a fast run works on any machine with the repository's dependencies installed —
-nothing to fetch, no binary beyond the declared dev dependencies. That is what makes the fast run
-the gate anyone may run at any time, and **why cost is never grounds for moving a step out of
-it**.
+**This is the line between the modes, and it is an objective property rather than a judgement.** Every step in a fast run works on any machine with
+the repository's dependencies installed — nothing to fetch, no binary beyond the declared dev dependencies. That is what makes the fast run the gate
+anyone may run at any time, and **why cost is never grounds for moving a step out of it**.
 
-The full run is the release gate and **is** permitted a prerequisite. A step whose prerequisite is
-never worth waiting for is full-only; a step needing nothing carries no marker and runs in every
-mode. Between them sits the step that declares a `requires` probe — it runs wherever its dependency
-happens to be installed, and §6a's mode-decided verdict is what keeps that from weakening the
-release gate.
+The full run is the release gate and **is** permitted a prerequisite. A step whose prerequisite is never worth waiting for is full-only; a step
+needing nothing carries no marker and runs in every mode. Between them sits the step that declares a `requires` probe — it runs wherever its
+dependency happens to be installed, and §6a's mode-decided verdict is what keeps that from weakening the release gate.
 
-The mode enum is closed and ordered, and a step names **the lowest mode it runs in — a rank, not a
-set of modes**. There is consequently no way to express a step a lower mode has and a higher one
-does not, so `fast ⊆ standard ⊆ full` is structural rather than something a test has to catch after
+The mode enum is closed and ordered, and a step names **the lowest mode it runs in — a rank, not a set of modes**. There is consequently no way to
+express a step a lower mode has and a higher one does not, so `fast ⊆ standard ⊆ full` is structural rather than something a test has to catch after
 the fact.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 
-A narrowed selection brands every summary line as scoped and not the gate, so a scoped green can
-never be read as a green gate. **A selection resolving to zero steps is refused outright**: a
-gate that ran nothing must never be indistinguishable from a gate that passed.
+A narrowed selection brands every summary line as scoped and not the gate, so a scoped green can never be read as a green gate. **A selection
+resolving to zero steps is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
+
+[boundaries]: ./BOUNDARIES.md
+[cr-5d]: ./CODE_RULES.md#5d-tests-are-not-exempt

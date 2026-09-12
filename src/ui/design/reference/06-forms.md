@@ -5,11 +5,10 @@ description: "Labels, help text, validation timing and error placement — what 
 
 # Forms
 
-Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules
-cited below are not.
+Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules cited below are not.
 
-A form is where craft is most often skipped, because every part of it already works: an unlabelled
-input still submits. The rules below are about the parts that do not announce their absence.
+A form is where craft is most often skipped, because every part of it already works: an unlabelled input still submits. The rules below are about
+the parts that do not announce their absence.
 
 ---
 
@@ -39,28 +38,24 @@ Three primitives look interchangeable and are not.
 **Default: reach for `FormField` whenever the value is submitted and can be rejected.**
 <!-- rule:forge-ui-form-formfield-default -->
 
-`Field` is not a lighter `FormField`; it has no error slot, so choosing it for a validated control
-means the error has nowhere to render. Override for a control whose value is applied immediately and
-cannot fail — a theme preference, a viewport slider.
+`Field` is not a lighter `FormField`; it has no error slot, so choosing it for a validated control means the error has nowhere to render. Override
+for a control whose value is applied immediately and cannot fail — a theme preference, a viewport slider.
 
 **Default: use `CheckboxGroup` / `RadioGroup` rather than a `FormField` wrapping loose inputs.**
 <!-- rule:forge-ui-form-group-primitive -->
 
-Both accept `name`, `scope`, `description`, `invalid`, `disabled` and `orientation`, and expose
-`.Label`, `.Item`, `.Description` and `.Error`. Override only for a group whose items are not a
-single question — a matrix of independent toggles, which is a stack of `Field` rows.
+Both accept `name`, `scope`, `description`, `invalid`, `disabled` and `orientation`, and expose `.Label`, `.Item`, `.Description` and `.Error`.
+Override only for a group whose items are not a single question — a matrix of independent toggles, which is a stack of `Field` rows.
 
-**Default: `FormField.Legend` takes `appearance="legend"` when it heads a section of fields, and
-`appearance="label"` when it names one cluster.** <!-- rule:forge-ui-form-legend-variant -->
-`legend` renders at `text-base`, `label` at `text-sm` — a section heading versus a field label.
-Choosing by size instead of by role is what produces a legend that outranks the form's own heading.
-Override only under a brief that restates the form's type scale.
+**Default: `FormField.Legend` takes `appearance="legend"` when it heads a section of fields, and `appearance="label"` when it names one cluster.**
+<!-- rule:forge-ui-form-legend-variant --> `legend` renders at `text-base`, `label` at `text-sm` — a section heading versus a field label. Choosing
+by size instead of by role is what produces a legend that outranks the form's own heading. Override only under a brief that restates the form's type
+scale.
 
-**Default: a one-time code is one `<input autocomplete="one-time-code">`, never N inputs with a
-focus-advance script.** <!-- rule:forge-ui-form-otp-one-field -->
-`OtpInput` paints the cells; paste, autofill and the mobile keyboard work because there is one
-field, and the server validates it with `v.pipe(formDigits(), v.length(6))`. Override never — a
-per-cell array assembles its value client-side, which is exactly the value a no-script render loses.
+**Default: a one-time code is one `<input autocomplete="one-time-code">`, never N inputs with a focus-advance script.**
+<!-- rule:forge-ui-form-otp-one-field --> `OtpInput` paints the cells; paste, autofill and the mobile keyboard work because there is one field, and
+the server validates it with `v.pipe(formDigits(), v.length(6))`. Override never — a per-cell array assembles its value client-side, which is
+exactly the value a no-script render loses.
 
 ## 2. `Toggle`, `Switch` and `ToggleGroup`
 
@@ -75,25 +70,23 @@ Three two-state controls. All three submit — what separates them is what the v
 **Default: pick by what the value means, not by which one looks right.**
 <!-- rule:forge-ui-form-toggle-by-submission -->
 
-A `Switch` is a setting that is on or off, and it is announced as a switch. A `Toggle` is a mode the
-reader presses, and it is announced as a checkbox. Reaching for the wrong one
-does not lose the value — both carry a `name` and both submit — it tells the reader the wrong thing
-about what they are changing. Override never — the distinction is what the elements announce.
+A `Switch` is a setting that is on or off, and it is announced as a switch. A `Toggle` is a mode the reader presses, and it is announced as a
+checkbox. Reaching for the wrong one does not lose the value — both carry a `name` and both submit — it tells the reader the wrong thing about what
+they are changing. Override never — the distinction is what the elements announce.
 
-`Filter` is the fourth shape: a row of chips where choosing one hides the others and shows a reset,
-so the narrowed facet stays visible and clearable.
+`Filter` is the fourth shape: a row of chips where choosing one hides the others and shows a reset, so the narrowed facet stays visible and
+clearable.
 
-Default: `Filter` is for one-of-N facet narrowing where the chosen facet must stay visible and
-clearable; a set the reader may combine is `ToggleGroup type="multiple"`, and a choice that changes
-the form's meaning is `RadioGroup` with its label and error slots. <!-- rule:forge-ui-form-filter-when -->
+Default: `Filter` is for one-of-N facet narrowing where the chosen facet must stay visible and clearable; a set the reader may combine is
+`ToggleGroup type="multiple"`, and a choice that changes the form's meaning is `RadioGroup` with its label and error slots.
+<!-- rule:forge-ui-form-filter-when -->
 
 ---
 
 ## 3. Never hand-write the wiring
 
-Forge exports the id derivation as functions precisely so two places cannot disagree about an id. A
-hand-written `for="email"` beside an `id="field-email"` is silent: nothing errors, nothing warns, and
-clicking the label stops focusing the control.
+Forge exports the id derivation as functions precisely so two places cannot disagree about an id. A hand-written `for="email"` beside an
+`id="field-email"` is silent: nothing errors, nothing warns, and clicking the label stops focusing the control.
 
 | Helper | Gives you |
 | --- | --- |
@@ -107,26 +100,23 @@ clicking the label stops focusing the control.
 **Default: derive every field id through the helpers, never as a string literal.**
 <!-- rule:forge-ui-form-id-helpers -->
 
-Override only for an id that forge does not own — a `Dialog`'s `id`, a `Tabs.Content`'s `id` — where
-there is no helper to disagree with.
+Override only for an id that forge does not own — a `Dialog`'s `id`, a `Tabs.Content`'s `id` — where there is no helper to disagree with.
 
 **Default: wire a control by passing it a `field` descriptor rather than by spreading attributes.**
 <!-- rule:forge-ui-form-control-props -->
 
-`Input`, `Select` and `Textarea` call `fieldControlProps` internally when given `field`. Override
-when composing a control forge does not ship, in which case call `fieldControlProps` yourself.
+`Input`, `Select` and `Textarea` call `fieldControlProps` internally when given `field`. Override when composing a control forge does not ship, in
+which case call `fieldControlProps` yourself.
 
-**Default: when building a label-alike that is not a `<label>`, style it with
-`FIELD_LABEL_CLASSES`.** <!-- rule:forge-ui-form-label-classes -->
+**Default: when building a label-alike that is not a `<label>`, style it with `FIELD_LABEL_CLASSES`.** <!-- rule:forge-ui-form-label-classes -->
 Override never — a second label class string is how "field label" comes to mean two sizes.
 
 **Default: pass a `scope` whenever two fields on one page share a `name`.**
 <!-- rule:forge-ui-form-scope-collision -->
 
-A sign-in and a sign-up form both holding `email` otherwise emit one id twice, and the second label
-points at the first control. Pass the same `scope` to the control and to every compound member.
-Override when the page provably renders one such field, which is the common case and why `scope` is
-opt-in.
+A sign-in and a sign-up form both holding `email` otherwise emit one id twice, and the second label points at the first control. Pass the same
+`scope` to the control and to every compound member. Override when the page provably renders one such field, which is the common case and why
+`scope` is opt-in.
 
 ### 3a. Before / after
 
@@ -141,8 +131,8 @@ import { Input } from "@y-core/forge/ui/core";
 </div>;
 ```
 
-Costs: `aria-describedby` names `email-err`, the paragraph is `email-error`. A dangling IDREF is
-reported as an error by assistive technology rather than ignored, and the message is never announced.
+Costs: `aria-describedby` names `email-err`, the paragraph is `email-error`. A dangling IDREF is reported as an error by assistive technology rather
+than ignored, and the message is never announced.
 
 ```tsx
 // Right — one `name`, every id derived.
@@ -155,16 +145,15 @@ import { FormField, Input } from "@y-core/forge/ui/core";
 </FormField>;
 ```
 
-`FormField.Error` renders nothing when its child is `null`, `false` or empty, so it is safe
-unconditionally — no `{error && …}` guard, and therefore no branch that can be forgotten.
+`FormField.Error` renders nothing when its child is `null`, `false` or empty, so it is safe unconditionally — no `{error && …}` guard, and therefore
+no branch that can be forgotten.
 
 ---
 
 ## 4. `ui/core` bases versus `ui/controls` bound variants
 
-`@y-core/forge/ui/controls` exports `Input`, `Select`, `Slider`, `Switch`, `Textarea` and
-`ToggleGroup` under the _same names_ as `@y-core/forge/ui/core`, adding a required `bind` prop that
-stamps `data-field` for the client signal runtime.
+`@y-core/forge/ui/controls` exports `Input`, `Select`, `Slider`, `Switch`, `Textarea` and `ToggleGroup` under the _same names_ as
+`@y-core/forge/ui/core`, adding a required `bind` prop that stamps `data-field` for the client signal runtime.
 
 | Given | Import from |
 | --- | --- |
@@ -175,23 +164,22 @@ stamps `data-field` for the client signal runtime.
 **Default: reach for the `ui/core` base until a client signal actually reads the value.**
 <!-- rule:forge-ui-form-bind-when-client -->
 
-`bind` without a registered scope is an inert `data-field` attribute. Override when the surface is a
-`Resumable` island whose state drives other rendering.
+`bind` without a registered scope is an inert `data-field` attribute. Override when the surface is a `Resumable` island whose state drives other
+rendering.
 
 **Default: one module imports a given control name from exactly one of the two barrels.**
 <!-- rule:forge-ui-form-one-barrel -->
 
-Two `Input`s in one file resolve by whichever import came last, and the loser is invisible. Override
-only by aliasing explicitly at the import, which makes the pair readable:
+Two `Input`s in one file resolve by whichever import came last, and the loser is invisible. Override only by aliasing explicitly at the import,
+which makes the pair readable:
 
 ```tsx
 import { Switch } from "@y-core/forge/ui/controls";
 import { Switch as SwitchPrimitive } from "@y-core/forge/ui/core";
 ```
 
-**Default: `bind` and `field` coexist rather than compete.** <!-- rule:forge-ui-form-bind-and-field -->
-`field` wires accessibility; `bind` wires the signal. Override never — dropping `field` because a
-control is bound is how a bound control loses its label.
+**Default: `bind` and `field` coexist rather than compete.** <!-- rule:forge-ui-form-bind-and-field --> `field` wires accessibility; `bind` wires
+the signal. Override never — dropping `field` because a control is bound is how a bound control loses its label.
 
 ---
 
@@ -200,30 +188,26 @@ control is bound is how a bound control loses its label.
 **Default: the message renders inside the field's own `FormField`, adjacent to the control.**
 <!-- rule:forge-ui-form-error-inline -->
 
-`FormField.Error` renders a `role="alert"` paragraph with the derived error id. Override never for
-placement; a summary may be added, not substituted.
+`FormField.Error` renders a `role="alert"` paragraph with the derived error id. Override never for placement; a summary may be added, not
+substituted.
 
-**Default: a top-of-form summary appears only in addition to the inline messages, and only when more
-than one field failed.** <!-- rule:forge-ui-form-error-summary -->
-An `Alert` `destructive` above the `Form`, naming the count and linking to the first failure.
-Override when the failure is not attributable to a field at all — a declined payment, a rate limit —
-where the `Alert` is the only correct home.
+**Default: a top-of-form summary appears only in addition to the inline messages, and only when more than one field failed.**
+<!-- rule:forge-ui-form-error-summary --> An `Alert` `destructive` above the `Form`, naming the count and linking to the first failure. Override
+when the failure is not attributable to a field at all — a declined payment, a rate limit — where the `Alert` is the only correct home.
 
 **Default: validate on submit first, then on change for the fields that failed.**
 <!-- rule:forge-ui-form-validate-timing -->
 
-Never on first blur of a field the user has not filled: tabbing through a form should not paint it
-red. Override for a field whose validity is expensive to discover late — a username uniqueness check
-— which may validate on blur _after_ a value exists.
+Never on first blur of a field the user has not filled: tabbing through a form should not paint it red. Override for a field whose validity is
+expensive to discover late — a username uniqueness check — which may validate on blur _after_ a value exists.
 
 **Default: an invalid field carries `data-invalid`, `aria-invalid` and an `Icon` together.**
 <!-- rule:forge-ui-form-invalid-triple -->
 
-The first two come from **two different places**, and conflating them is the common bug: `FormField`'s
-`invalid` prop puts `data-invalid` on the `<fieldset>` via `stateAttrs`, while `aria-invalid` reaches
-the control only via `fieldControlProps`. A field marked `invalid` with a control that never went
-through `fieldControlProps` styles as invalid and announces nothing. The icon is yours to place, and
-it is what satisfies `forge-ui-not-color-alone`. Override never.
+The first two come from **two different places**, and conflating them is the common bug: `FormField`'s `invalid` prop puts `data-invalid` on the
+`<fieldset>` via `stateAttrs`, while `aria-invalid` reaches the control only via `fieldControlProps`. A field marked `invalid` with a control that
+never went through `fieldControlProps` styles as invalid and announces nothing. The icon is yours to place, and it is what satisfies
+`forge-ui-not-color-alone`. Override never.
 
 ```tsx
 // Wrong — invalid signalled by a class alone.
@@ -233,8 +217,7 @@ it is what satisfies `forge-ui-not-color-alone`. Override never.
 </FormField>
 ```
 
-Costs: nothing reaches the accessibility tree, and a user who cannot distinguish the border colour
-sees an ordinary field.
+Costs: nothing reaches the accessibility tree, and a user who cannot distinguish the border colour sees an ordinary field.
 
 ```tsx
 // Right — state, semantics and a glyph, from one prop plus one icon.
@@ -261,20 +244,17 @@ const AppIcon = createIcon("/assets/icons.svg");
 **Default: `Turnstile` sits inside the `<form>`, immediately above the submit control.**
 <!-- rule:forge-ui-form-turnstile-placement -->
 
-Inside, so the token input Cloudflare injects is submitted with the form; above submit, so a
-challenge appearing does not push the button the user is reaching for. Override when the form is long
-enough that the widget would be off-screen at submit time, in which case place it in view of the
+Inside, so the token input Cloudflare injects is submitted with the form; above submit, so a challenge appearing does not push the button the user
+is reaching for. Override when the form is long enough that the widget would be off-screen at submit time, in which case place it in view of the
 button.
 
-The widget loads eagerly, which is right for a form the page exists for. Give `load='focus'` to a
-form that is incidental to its page — a footer contact form, a demo — where loading eagerly issues a
-challenge to every reader who scrolls past rather than to the ones who submit.
+The widget loads eagerly, which is right for a form the page exists for. Give `load='focus'` to a form that is incidental to its page — a footer
+contact form, a demo — where loading eagerly issues a challenge to every reader who scrolls past rather than to the ones who submit.
 
 **Default: one `primary` `Button` per form, and it is the submit.**
 <!-- rule:forge-ui-form-one-primary -->
 
-Cancel and secondary paths take `secondary` or `ghost`. Override under a brief for a split primary
-action, where the two are visually one control.
+Cancel and secondary paths take `secondary` or `ghost`. Override under a brief for a split primary action, where the two are visually one control.
 
 ```tsx
 import { Button, Form, Turnstile } from "@y-core/forge/ui/core";
@@ -286,7 +266,6 @@ import { Button, Form, Turnstile } from "@y-core/forge/ui/core";
 </Form>;
 ```
 
-**Default: mark the smaller set.** <!-- rule:forge-ui-form-mark-smaller-set -->
-When most fields are required, mark the optional ones in a `FormField.Description`; when most are
-optional, mark the required ones. Override under a brief with a compliance requirement to mark every
-required field.
+**Default: mark the smaller set.** <!-- rule:forge-ui-form-mark-smaller-set --> When most fields are required, mark the optional ones in a
+`FormField.Description`; when most are optional, mark the required ones. Override under a brief with a compliance requirement to mark every required
+field.

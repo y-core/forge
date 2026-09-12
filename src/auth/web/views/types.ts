@@ -162,10 +162,6 @@ export type PasskeyListViewProps = AuthViewChrome & {
 
 /** What the sign-in page renders. @public */
 export type SigninViewProps = AuthViewChrome & {
-  /** The factor that starts a sign-in. Never `totp-app`, which proves possession but identifies nobody. */
-  readonly primaryFactor: AuthFactorKind;
-  /** The ceremony contract, present exactly when a passkey can sign this deployment in. */
-  readonly passkey?: AuthPasskeyContract | undefined;
   readonly submitPath: string;
   readonly signupPath: string;
   readonly csrfToken: string;
@@ -175,9 +171,9 @@ export type SigninViewProps = AuthViewChrome & {
   readonly email?: string | undefined;
   /** A refusal about the address itself, in this view's own words — `describeValidationIssue` names a field and nothing more. */
   readonly fieldError?: string | undefined;
-  /** A refusal about the attempt as a whole: a rate limit, a refused ceremony. */
+  /** A refusal about the attempt as a whole: a rate limit, a refused code. */
   readonly error?: string | undefined;
-  readonly icon: ForgeIcon<"alert" | "key" | "mail">;
+  readonly icon: ForgeIcon<"alert" | "mail">;
 };
 
 /** What the sign-up page renders. @public */

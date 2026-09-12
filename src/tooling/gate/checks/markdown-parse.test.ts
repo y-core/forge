@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { parseMarkdown, renderMarkdown, splitTableRow, validateMarkdown } from "./markdown-parse";
+import { githubSlug, parseMarkdown, renderMarkdown, splitTableRow, validateMarkdown } from "./markdown-parse";
 import type { MarkdownRules } from "./types";
 
 const ALIASED: MarkdownRules = { fence: { style: "backtick", requireLanguage: true, aliases: { typescript: "ts", sh: "bash" } } };
@@ -136,6 +136,41 @@ describe("validateMarkdown() — the report-only rules", () => {
     expect(validateMarkdown("src/A.md", parseMarkdown(long), { lineLength: rule })).toHaveLength(0);
   });
 
+  it("under `reference`, reports an inline link to a document and accepts the reference form", () => {
+    const reference: MarkdownRules = { linkStyle: "reference" };
+
+    expect(messages("See [`X.md`](./X.md) §1.\n", reference)).toEqual([
+      "fail 1: inline link to a document — write it as `[text][id]` with a definition",
+    ]);
+    expect(messages("See [`X.md`][x-1] §1.\n\n[x-1]: ./X.md#1-a\n", reference)).toEqual([]);
+    // An external URL is named once and stays inline.
+    expect(messages("See [valibot](https://valibot.dev).\n", reference)).toEqual([]);
+  });
+
+  it("holds the definition block to one sorted run at the foot, one blank line off the prose", () => {
+    const reference: MarkdownRules = { linkStyle: "reference" };
+
+    expect(messages("[a][b-1] and [c][a-1]\n\n[b-1]: ./B.md\n[a-1]: ./A.md\n", reference)).toEqual([
+      "fail 4: link definition `[a-1]` is out of order — definitions are sorted",
+    ]);
+    expect(messages("[a][a-1]\n\n[a-1]: ./A.md\n\nTrailing prose.\n", reference)).toEqual([
+      "fail 3: link definitions are not one block at the end of the file",
+    ]);
+    expect(messages("[a][a-1]\n\n\n[a-1]: ./A.md\n", reference)).toEqual([
+      "fail 4: link definition block — exactly one blank line separates it from the prose",
+    ]);
+  });
+
+  it("exempts the line kinds whose width the author does not choose", () => {
+    const rule = { limit: 40, level: "fail" as const, exempt: ["link", "table", "heading", "fence"] as const };
+    const over = "x".repeat(41);
+
+    expect(messages(`${over}\n`, { lineLength: rule })).toEqual([`fail 1: line is 41 characters, over the 40-column wrap`]);
+    expect(messages(`text [a](${over}) tail\n`, { lineLength: rule })).toEqual([]);
+    expect(messages(`# ${over}\n`, { lineLength: rule })).toEqual([]);
+    expect(messages(`[a-1]: ./${over}.md\n`, { lineLength: rule, linkStyle: "off" })).toEqual([]);
+  });
+
   it("says nothing at all when a rule is switched off", () => {
     const rules: MarkdownRules = {
       tables: "off",
@@ -155,6 +190,17 @@ describe("validateMarkdown() — the report-only rules", () => {
     };
 
     expect(messages("* a\n***\n__b__ and [x][y]\n| A   | B |\n| --- | --- |\n", rules)).toEqual([]);
+  });
+});
+
+describe("githubSlug()", () => {
+  it("slugs a heading the way a browser anchors it", () => {
+    expect(githubSlug("1g. Transactions — batch() Is the Boundary")).toBe("1g-transactions--batch-is-the-boundary");
+    expect(githubSlug("4c. Structural Contracts — Cast-Free Platform Bindings")).toBe("4c-structural-contracts--cast-free-platform-bindings");
+  });
+
+  it("flattens an inline link, because a heading anchors as it renders", () => {
+    expect(githubSlug("See [the rule](./X.md)")).toBe("see-the-rule");
   });
 });
 

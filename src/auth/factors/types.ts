@@ -1,4 +1,5 @@
 import type { Result } from "../../result/types";
+import type { AUTH_IDENTIFYING_FACTORS } from "../config";
 import type { AuthKeyRing } from "../types";
 import type { AuthNotifier } from "../types";
 import type { NonceStore } from "../types";
@@ -13,8 +14,8 @@ import type { AuthFactorKind } from "../types";
 import type { AuthStoreResult } from "../types";
 
 /** The parts of a factor contract every factor has, whatever its enrolment story. @public */
-interface FactorServiceBase {
-  readonly kind: AuthFactorKind;
+interface FactorServiceBase<kind extends AuthFactorKind = AuthFactorKind> {
+  readonly kind: kind;
   readonly capabilities: AuthFactorCapabilities;
   // The one place the lifetime lives, so a flow reporting an expiry before it has a challenge to
   // read cannot report a number the factor does not enforce. An upper bound where a factor's
@@ -49,9 +50,6 @@ export interface EmailOtpOptions {
   cooldownMs?: number;
 }
 
-/** Whether this deployment offers the passkey as the factor that identifies, or as the one that steps up. @public */
-export type PasskeyFactorRole = "primary" | "step-up";
-
 /** How a user is shown in the authenticator's own account picker. @public */
 export interface PasskeyFactorSubject {
   readonly name: string;
@@ -64,7 +62,6 @@ export interface PasskeyFactorOptions {
   rpName: string;
   origin: string;
   sessionId: string;
-  role: PasskeyFactorRole;
   users: UserStore;
   factors: FactorStore;
   credentials: CredentialStore;
@@ -77,7 +74,6 @@ export interface PasskeyFactorOptions {
 
 /** What a factor may be used for. Enrolment is not here — it is the service's own discriminant. @public */
 export interface AuthFactorCapabilities {
-  readonly primary: boolean;
   readonly stepUp: boolean;
 }
 
@@ -107,28 +103,32 @@ export type AuthFactorReason =
   | "unavailable";
 
 /** A factor whose enrolment is a side effect of something else — a verified email is the enrolment. @public */
-export interface ImplicitFactorService extends FactorServiceBase {
+export interface ImplicitFactorService<kind extends AuthFactorKind = AuthFactorKind> extends FactorServiceBase<kind> {
   readonly enrolment: "implicit";
 }
 
 /** A factor a user enrols in deliberately, through a ceremony of its own. @public */
-export interface EnrollableFactorService extends FactorServiceBase {
+export interface EnrollableFactorService<kind extends AuthFactorKind = AuthFactorKind> extends FactorServiceBase<kind> {
   readonly enrolment: "explicit";
   beginEnrolment(userId: string, at: number): Promise<Result<AuthFactorChallenge, AuthFactorReason>>;
   completeEnrolment(userId: string, presented: string, at: number): Promise<Result<AuthFactor, AuthFactorReason>>;
 }
 
-// `enrolment` sits on the service and not on `capabilities` because TypeScript narrows a union only
-// on a *direct* discriminant — a nested one leaves it unnarrowed, which is what gets papered over.
 /** One factor's whole contract. Test `service.enrolment` to reach the enrolment ceremony. @public */
-export type AuthFactorService = EnrollableFactorService | ImplicitFactorService;
+export type AuthFactorService<kind extends AuthFactorKind = AuthFactorKind> = EnrollableFactorService<kind> | ImplicitFactorService<kind>;
+
+/** A factor kind that identifies the visitor, and so may be offered as primary. @public */
+export type AuthIdentifyingFactorKind = (typeof AUTH_IDENTIFYING_FACTORS)[number];
+
+/** A factor service that can start a sign-in, because its kind identifies the visitor. @public */
+export type AuthIdentifyingFactorService = AuthFactorService<AuthIdentifyingFactorKind>;
 
 /** What this deployment demands of one second factor. @public */
 export type AuthFactorRequirement = "optional" | "mandatory" | { readonly mandatoryForRoles: readonly string[] };
 
-/** One factor as this deployment offers it. @public */
+/** One factor as this deployment offers it. Only a factor that identifies the visitor may be primary. @public */
 export type AuthFactorOffer =
-  | { readonly service: AuthFactorService; readonly role: "primary" }
+  | { readonly service: AuthIdentifyingFactorService; readonly role: "primary" }
   | { readonly service: AuthFactorService; readonly role: "second"; readonly requirement: AuthFactorRequirement };
 
 /** @public */
@@ -149,7 +149,7 @@ export type AuthFactorResolution =
 
 /** @public */
 export interface AuthFactorRegistry {
-  readonly primary: AuthFactorService;
+  readonly primary: AuthIdentifyingFactorService;
   readonly offered: readonly AuthFactorService[];
   /** The second factors this deployment offers, in declared order — empty when nothing here can re-authenticate. */
   readonly seconds: readonly Extract<AuthFactorOffer, { role: "second" }>[];

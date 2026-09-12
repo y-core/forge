@@ -14,17 +14,10 @@ import { PasskeyListView } from "./views/passkey-list";
 import type { SigninViewProps } from "./views/types";
 import type { VerifyViewProps } from "./views/types";
 
-const icon: SigninViewProps["icon"] = () => null;
+const icon: VerifyViewProps["icon"] = () => null;
 
 /** The real props a signin view is handed, so what this file proves is what a consumer is held to. */
-const signinProps = (email: string): SigninViewProps => ({
-  primaryFactor: "email-otp",
-  submitPath: "/auth/signin",
-  signupPath: "/auth/signup",
-  csrfToken: "tok",
-  email,
-  icon,
-});
+const signinProps = (email: string): SigninViewProps => ({ submitPath: "/auth/signin", signupPath: "/auth/signup", csrfToken: "tok", email, icon });
 
 const ForgeSignin: FC<SigninViewProps> = ({ email }) => <p data-view='forge'>{email}</p>;
 const ForgeVerify: FC<VerifyViewProps> = ({ email }) => <p data-view='forge'>{email}</p>;

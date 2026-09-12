@@ -5,13 +5,11 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 
 # Library Architecture
 
-> Owns the library's structural principles — how it is layered, why it ships raw TypeScript, and
-> the constraints that keep it portable across Workers runtimes.
+> Owns the library's structural principles — how it is layered, why it ships raw TypeScript, and the constraints that keep it portable across
+> Workers runtimes.
 >
-> Defers to: [`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §3 for the leaf/integration
-> classification; [`CODE_RULES.md`](./CODE_RULES.md) for the coding rules;
-> [`BOUNDARIES.md`](./BOUNDARIES.md) for the runtime and layering boundaries; `tsconfig.json`
-> for the compiler configuration.
+> Defers to: [`NAMESPACE_DESIGN.md`][nd-3] §3 for the leaf/integration classification; [`CODE_RULES.md`][cr] for the coding rules;
+> [`BOUNDARIES.md`][boundaries] for the runtime and layering boundaries; `tsconfig.json` for the compiler configuration.
 
 ---
 
@@ -45,91 +43,76 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 
 ### 1a. Facade Over Dependencies
 
-**The library wraps every external dependency behind its own export map.** Consumers import from
-a library subpath — never from a wrapped package directly.
+**The library wraps every external dependency behind its own export map.** Consumers import from a library subpath — never from a wrapped package
+directly.
 
-The benefit is containment: **a dependency's version bump or API change is absorbed inside the
-library**, and every consumer is insulated from it. A consumer that reaches past the facade has
-taken on a coupling the library exists to hold on its behalf, and it will not follow the next
-upgrade.
+The benefit is containment: **a dependency's version bump or API change is absorbed inside the library**, and every consumer is insulated from it. A
+consumer that reaches past the facade has taken on a coupling the library exists to hold on its behalf, and it will not follow the next upgrade.
 
-**Not every namespace is a facade.** An in-house runtime — a renderer, a validation pipeline, a
-component set — wraps nothing and is not judged by this rule. The repository's namespace catalog
-records which is which; naming the dependency each facade covers is implementation, because
-those names change.
+**Not every namespace is a facade.** An in-house runtime — a renderer, a validation pipeline, a component set — wraps nothing and is not judged by
+this rule. The repository's namespace catalog records which is which; naming the dependency each facade covers is implementation, because those
+names change.
 
 ### 1b. Runtime-Only Library Constraint
 
-**The library ships raw TypeScript with no compilation step.** The `exports` map points directly
-at source barrels.
+**The library ships raw TypeScript with no compilation step.** The `exports` map points directly at source barrels.
 
 - No `dist/` directory and no compile step in CI.
 - The consumer's bundler compiles library source inline.
-- **Any file that cannot be consumed directly by the consumer's bundler is a build failure by
-  definition.**
+- **Any file that cannot be consumed directly by the consumer's bundler is a build failure by definition.**
 
-This is the constraint that makes most of the others load-bearing: there is no build stage in
-which a non-portable API could be polyfilled away.
+This is the constraint that makes most of the others load-bearing: there is no build stage in which a non-portable API could be polyfilled away.
 
 ### 1c. Demand Composition Principle
 
-**Each namespace is single-purpose.** An app importing one namespace gets exactly that concern
-and nothing else. Consumers assemble what they use; the library never assembles it for them.
+**Each namespace is single-purpose.** An app importing one namespace gets exactly that concern and nothing else. Consumers assemble what they use;
+the library never assembles it for them.
 
 ### 1d. Web-APIs-Only Constraint
 
-**Runtime source files may use only Web Platform APIs**: `fetch`, `Request`, `Response`,
-`Headers`, `URL`, `URLSearchParams`, `crypto.subtle`, `TextEncoder` / `TextDecoder`,
-`ReadableStream` / `WritableStream`.
+**Runtime source files may use only Web Platform APIs**: `fetch`, `Request`, `Response`, `Headers`, `URL`, `URLSearchParams`, `crypto.subtle`,
+`TextEncoder` / `TextDecoder`, `ReadableStream` / `WritableStream`.
 
-**Never `process.env`, `require()`, runtime-specific globals, or a Node.js built-in**
-(`node:fs`, `node:path`, `node:crypto`) in a runtime source file.
+**Never `process.env`, `require()`, runtime-specific globals, or a Node.js built-in** (`node:fs`, `node:path`, `node:crypto`) in a runtime source
+file.
 
-**Build-time and release tooling is exempt** — it runs on a developer's machine or in CI, never
-inside a Worker.
+**Build-time and release tooling is exempt** — it runs on a developer's machine or in CI, never inside a Worker.
 
 ### 1e. The Build-Time Exemption Is Reachability
 
-**A module qualifies for the §1d exemption when no Worker-executed entry point reaches it. A
-path is evidence of that; it is never the rule itself.**
+**A module qualifies for the §1d exemption when no Worker-executed entry point reaches it. A path is evidence of that; it is never the rule
+itself.**
 
-Where a namespace's surface is mixed, the exemption reaches its build-time modules alone, and
-**the burden sits on the caller**: such a helper is imported from a config file or a script,
-never from a Worker-executed path. A namespace a Worker does execute is never exempt, however
+Where a namespace's surface is mixed, the exemption reaches its build-time modules alone, and **the burden sits on the caller**: such a helper is
+imported from a config file or a script, never from a Worker-executed path. A namespace a Worker does execute is never exempt, however
 tooling-shaped it looks.
 
-Stating the exemption as reachability rather than as a directory list is what keeps it from
-growing: a new glob is cheap to add and impossible to audit, whereas "does a Worker reach this"
-has one answer per module.
+Stating the exemption as reachability rather than as a directory list is what keeps it from growing: a new glob is cheap to add and impossible to
+audit, whereas "does a Worker reach this" has one answer per module.
 
 ### 1f. Semantic Tokens Are a Facade Over the Scale
 
-**A published component resolves a semantic token and never a numbered scale step.** The
-semantic layer is a facade in the sense §1a means it: the scale is the dependency, the semantic
-name is the library's own surface over it, and a component that reaches past the name has taken
-on a coupling the library exists to hold.
+**A published component resolves a semantic token and never a numbered scale step.** The semantic layer is a facade in the sense §1a means it: the
+scale is the dependency, the semantic name is the library's own surface over it, and a component that reaches past the name has taken on a coupling
+the library exists to hold.
 
-The containment is what a retheme is. A consumer swaps the scheme that declares the steps and
-every component follows, because each one asked for a _role_ — the surface it sits on, the text
-that must contrast with it — and never for a colour. One component reaching for a step is enough
-to make a retheme a component-by-component audit again.
+The containment is what a retheme is. A consumer swaps the scheme that declares the steps and every component follows, because each one asked for a
+_role_ — the surface it sits on, the text that must contrast with it — and never for a colour. One component reaching for a step is enough to make a
+retheme a component-by-component audit again.
 
-**This constrains the library, not the consumer.** The scale is a published surface, and an
-application composing its own markup may use it directly — that half of the boundary belongs to
-the application governance corpus, and the two halves are what let the same scheme drive a
-prescriptive component set and an expressive page.
+**This constrains the library, not the consumer.** The scale is a published surface, and an application composing its own markup may use it directly
+— that half of the boundary belongs to the application governance corpus, and the two halves are what let the same scheme drive a prescriptive
+component set and an expressive page.
 
-**Which families exist, how many steps each carries, and which step each semantic name resolves
-to are implementation** — they are the values a scheme tunes, and prose that restates them is a
-second copy of the scheme file.
+**Which families exist, how many steps each carries, and which step each semantic name resolves to are implementation** — they are the values a
+scheme tunes, and prose that restates them is a second copy of the scheme file.
 
 ---
 
 ## 2. Namespace Dependency Tiers
 
-[`NAMESPACE_DESIGN.md`](./NAMESPACE_DESIGN.md) §3 owns the leaf/integration classification, the
-foundational primitives below it, and their enforcement.
-**Classify before adding code; never introduce an undeclared cross-namespace dependency.**
+[`NAMESPACE_DESIGN.md`][nd-3] §3 owns the leaf/integration classification, the foundational primitives below it, and their enforcement. **Classify
+before adding code; never introduce an undeclared cross-namespace dependency.**
 
 ---
 
@@ -137,45 +120,37 @@ foundational primitives below it, and their enforcement.
 
 ### 3a. No Build Step in the Gate
 
-**There is no build step in the verification gate** — the library is always consumed as raw
-source. [`TESTING.md`](./TESTING.md) §6 owns the gate.
+**There is no build step in the verification gate** — the library is always consumed as raw source. [`TESTING.md`][testing-6] §6 owns the gate.
 
 ### 3b. TypeScript Configuration Constraints
 
-`tsconfig.json` is the source of truth. One decision is load-bearing and easy to undo by
-accident: **no ambient type packages are auto-included**, because every added `@types/*` widens
-what source files believe the runtime offers, which is the exact belief §1d exists to constrain.
+`tsconfig.json` is the source of truth. One decision is load-bearing and easy to undo by accident: **no ambient type packages are auto-included**,
+because every added `@types/*` widens what source files believe the runtime offers, which is the exact belief §1d exists to constrain.
 
-The hard ban on a runtime-specific type package, and the hand-written stub that replaces it, are
-owned by [`TESTING.md`](./TESTING.md) §1b.
+The hard ban on a runtime-specific type package, and the hand-written stub that replaces it, are owned by [`TESTING.md`][testing-1b] §1b.
 
 ### 3c. Optional Peer Dependencies for Build Tools
 
-Tools used only by the asset or release pipeline are **optional peer dependencies**. None is in
-the main dependency tree, none is imported by runtime source, and none reaches a Worker bundle.
+Tools used only by the asset or release pipeline are **optional peer dependencies**. None is in the main dependency tree, none is imported by
+runtime source, and none reaches a Worker bundle.
 
-**A tool the pipeline shells out to is a peer dependency, declared.** An undeclared requirement
-does not stop being a requirement — it only stops being checked, and the symptom is a
-`command not found` in the middle of a build where the package manager should have warned.
-Spawning a binary and importing a module are one category for this purpose.
+**A tool the pipeline shells out to is a peer dependency, declared.** An undeclared requirement does not stop being a requirement — it only stops
+being checked, and the symptom is a `command not found` in the middle of a build where the package manager should have warned. Spawning a binary and
+importing a module are one category for this purpose.
 
 ### 3d. Asset Scanning Stops at the Component Tier
 
-**A CSS scanner never scans `node_modules`.** Shipping raw source therefore does not ship
-_rules_ — a consumer's build sees the library's markup only if something tells its scanner where
-to look, and a class with no rule renders as an attribute that does nothing.
+**A CSS scanner never scans `node_modules`.** Shipping raw source therefore does not ship _rules_ — a consumer's build sees the library's markup
+only if something tells its scanner where to look, and a class with no rule renders as an attribute that does nothing.
 
-The library's own stylesheet answers that for components, carrying source paths written
-**relative to itself** so they resolve wherever the package landed — under a workspace, a git
-dependency, or a nested install alike. A consumer-side path would have to hardcode an install
-layout and would be wrong under most of them.
+The library's own stylesheet answers that for components, carrying source paths written **relative to itself** so they resolve wherever the package
+landed — under a workspace, a git dependency, or a nested install alike. A consumer-side path would have to hardcode an install layout and would be
+wrong under most of them.
 
-**The scope stops at the component tier, and that is a decision rather than the reach of a
-relative path.** A component library owes its consumers the classes its own components emit —
-importing the component namespace _is_ the statement that they will be rendered. A namespace
-whose markup is opt-in owes something different: whether an app mounts that surface is the
-app's call, so what it owes is a **documented scanning requirement in that namespace's
-README**, and the app declares it.
+**The scope stops at the component tier, and that is a decision rather than the reach of a relative path.** A component library owes its consumers
+the classes its own components emit — importing the component namespace _is_ the statement that they will be rendered. A namespace whose markup is
+opt-in owes something different: whether an app mounts that surface is the app's call, so what it owes is a **documented scanning requirement in
+that namespace's README**, and the app declares it.
 
 ---
 
@@ -188,17 +163,16 @@ When a namespace wraps a third-party package:
 - **Export only what consumers actually need.**
 - **Never re-export the entire third-party namespace.**
 - **Name exports by the library's own convention**, not the third party's naming quirks.
-- **Never leak a third-party type into a library signature** where a library-owned type would
-  do — a leaked type re-couples every consumer to the package the facade was hiding.
+- **Never leak a third-party type into a library signature** where a library-owned type would do — a leaked type re-couples every consumer to the
+  package the facade was hiding.
 
 ### 4b. Thin Pass-Through Facades
 
-A facade may legitimately be a near-verbatim re-export with little or no authored surface, where
-the wrapped package's API is already the right one and the value of the facade is the _import
-path_ rather than the adaptation.
+A facade may legitimately be a near-verbatim re-export with little or no authored surface, where the wrapped package's API is already the right one
+and the value of the facade is the _import path_ rather than the adaptation.
 
-**A thin facade still obeys the rule**: consumers import it through the library subpath, never
-from the wrapped package. What makes it a facade is that the coupling has exactly one site.
+**A thin facade still obeys the rule**: consumers import it through the library subpath, never from the wrapped package. What makes it a facade is
+that the coupling has exactly one site.
 
 ### 4c. Breaking the Facade
 
@@ -207,8 +181,8 @@ When a consumer needs a third-party feature the facade does not yet expose:
 1. Add the export to the appropriate namespace barrel.
 2. Run the gate — export validation must pass.
 
-**Never reach into `node_modules` directly from application code.** A local workaround that
-bypasses the facade is a fork of the facade with no owner.
+**Never reach into `node_modules` directly from application code.** A local workaround that bypasses the facade is a fork of the facade with no
+owner.
 
 ---
 
@@ -216,37 +190,37 @@ bypasses the facade is a fork of the facade with no owner.
 
 ### 5a. Namespace Assembly in Apps
 
-Apps compose the namespaces they need, one import per namespace, each from that namespace's own
-published subpath.
+Apps compose the namespaces they need, one import per namespace, each from that namespace's own published subpath.
 
-**No single barrel pulls them all in.** Tree-shaking operates at namespace granularity, so an
-unused namespace is never bundled.
+**No single barrel pulls them all in.** Tree-shaking operates at namespace granularity, so an unused namespace is never bundled.
 
 ### 5b. No Namespace Aggregators
 
-**There is no all-in-one subpath and no root index that re-exports everything.** An aggregator
-would defeat tree-shaking and make the dependency graph unauditable — every consumer would
-appear to depend on every namespace, and no reviewer could tell which edges were real.
+**There is no all-in-one subpath and no root index that re-exports everything.** An aggregator would defeat tree-shaking and make the dependency
+graph unauditable — every consumer would appear to depend on every namespace, and no reviewer could tell which edges were real.
 
 ---
 
 ## 6. Cloudflare Workers Runtime Model
 
-Each request runs in a V8 isolate. There is no shared memory between requests and no persistent
-in-process cache across isolate lifetimes.
+Each request runs in a V8 isolate. There is no shared memory between requests and no persistent in-process cache across isolate lifetimes.
 
 **Module-level initialization must not:**
 
 - open network connections,
 - read environment variables — bindings arrive on the request context in handlers,
-- store request-scoped mutable state
-  ([`CODE_RULES.md`](./CODE_RULES.md) §1a).
+- store request-scoped mutable state ([`CODE_RULES.md`][cr-1a] §1a).
 
-**Use the execution context's `waitUntil(p)` for work that must outlive the response** —
-logging, analytics, cache warming. An unguarded async side effect can be killed mid-flight when
-the response stream closes; `waitUntil` extends the isolate lifetime until the promise settles.
+**Use the execution context's `waitUntil(p)` for work that must outlive the response** — logging, analytics, cache warming. An unguarded async side
+effect can be killed mid-flight when the response stream closes; `waitUntil` extends the isolate lifetime until the promise settles.
 
-**The promise handed to `waitUntil` must cover every piece of work the function started**, not
-only the headline one. A detached `void work().catch(…)` branch is untracked, so the isolate may
-suspend before it settles — a probabilistic cleanup pass detached from its write promise is the
-canonical way this ships silently and fails under load.
+**The promise handed to `waitUntil` must cover every piece of work the function started**, not only the headline one. A detached
+`void work().catch(…)` branch is untracked, so the isolate may suspend before it settles — a probabilistic cleanup pass detached from its write
+promise is the canonical way this ships silently and fails under load.
+
+[boundaries]: ./BOUNDARIES.md
+[cr]: ./CODE_RULES.md
+[cr-1a]: ./CODE_RULES.md#1a-no-module-level-mutable-variables
+[nd-3]: ./NAMESPACE_DESIGN.md#3-namespace-classification
+[testing-1b]: ./TESTING.md#1b-no-runtime-specific-type-package
+[testing-6]: ./TESTING.md#6-the-verification-gate

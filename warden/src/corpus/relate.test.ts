@@ -185,6 +185,16 @@ describe("relationsOf()", () => {
     ]);
   });
 
+  it("resolves a reference-style citation through its definition, not through the bare link text", () => {
+    const body = "The budget is [`CODE_RULES.md`][cr-5c] §5c.";
+    const definitions = new Map([["cr-5c", "../warden/canon/libs/CODE_RULES.md#5c-the-comment-budget"]]);
+
+    // Without the definition the link text is a bare basename, which every tree of the canon shares.
+    expect(relationsOf(DOC, [chunk("project:docs/TESTING.md#1", body)], "", SOURCES, undefined, definitions)).toEqual([
+      { from: "project:docs/TESTING.md#1", kind: "cites", raw: "libs/CODE_RULES.md §5c", to: "canon:CODE_RULES.md#5c" },
+    ]);
+  });
+
   // `DEFERRED_DOC` captures one leading segment, so `src/ui/README.md` arrives as `ui/README.md`
   // and the served `<package>/src/...` spelling matches it through the `endsWith` arm.
   it("resolves a deferral naming a namespace README of the installed library", () => {

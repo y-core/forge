@@ -7,7 +7,6 @@ import {
   createEmailChangeActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
-  createPasskeySigninActions,
   createPasskeyStepUpActions,
   createSigninActions,
   createSignoutActions,
@@ -62,7 +61,6 @@ export function registerAuth<Bindings extends object>(
       ...createSignoutActions(options),
     },
   });
-  app.map(routes.passkey, { actions: { ...createPasskeySigninActions(options) } });
   app.map(routes.verify, { actions: { show: authPage(loadVerify, options), ...createVerifyActions(options) } });
   app.map(routes.verify.ceremony, { actions: { ...createPasskeyStepUpActions(options) } });
   app.map(routes.enrol, {

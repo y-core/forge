@@ -6,16 +6,14 @@ audience: consumer
 
 # `@y-core/forge/router`
 
-Declarative, type-safe route configuration for forge apps. Routes are plain **data** — a map of
-names to `{ method, pattern }` definitions — bound to handlers by a structurally-checked controller
-and registered on the app in one call. The same route map powers type-safe URL generation and
+Declarative, type-safe route configuration for forge apps. Routes are plain **data** — a map of names to `{ method, pattern }` definitions — bound
+to handlers by a structurally-checked controller and registered on the app in one call. The same route map powers type-safe URL generation and
 route-table introspection.
 
-This namespace is a **curated re-export** of the `@remix-run/fetch-router` routing engine and the
-`@remix-run/route-pattern` URL helpers, plus one forge-specific addition (`routePaths`). The
-re-exported surface is documented in brief here; for deep reference on the underlying engine, see the
-[`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) and
-[`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) packages.
+This namespace is a **curated re-export** of the `@remix-run/fetch-router` routing engine and the `@remix-run/route-pattern` URL helpers, plus one
+forge-specific addition (`routePaths`). The re-exported surface is documented in brief here; for deep reference on the underlying engine, see the
+[`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) and [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern)
+packages.
 
 ```ts
 import { route, createController, get, post } from "@y-core/forge/router";
@@ -25,20 +23,17 @@ import { route, createController, get, post } from "@y-core/forge/router";
 
 ## Features
 
-- **Routes as data.** Declare every route once with `route({ … })`. The resulting map is the single
-  source of truth for dispatch, URL generation, and introspection.
-- **Structural controller binding.** `createController(routes, { actions })` checks that every route
-  name has exactly one handler — a missing or misspelled action is a **compile error**, not a
-  runtime 404.
-- **Type-safe URLs.** `routes.name.href(params)` and `createHref(pattern, params)` derive URL strings
-  from the pattern type. Required params that you forget are compile errors; bad params throw at
-  runtime.
-- **Verb shorthands.** `get`, `post`, `put`, `patch`, `del`, `options` build typed `Route`
-  objects without spelling out `{ method, pattern }`.
-- **Route-table introspection.** `routePaths(routes, filter?)` flattens a route map into its path
-  strings — useful for navigation menus, sitemaps, or wiring per-path middleware.
-- **Per-route and per-controller middleware.** Each action can carry a `middleware` array; the
-  controller can carry one shared array that runs before every action.
+- **Routes as data.** Declare every route once with `route({ … })`. The resulting map is the single source of truth for dispatch, URL generation,
+  and introspection.
+- **Structural controller binding.** `createController(routes, { actions })` checks that every route name has exactly one handler — a missing or
+  misspelled action is a **compile error**, not a runtime 404.
+- **Type-safe URLs.** `routes.name.href(params)` and `createHref(pattern, params)` derive URL strings from the pattern type. Required params that
+  you forget are compile errors; bad params throw at runtime.
+- **Verb shorthands.** `get`, `post`, `put`, `patch`, `del`, `options` build typed `Route` objects without spelling out `{ method, pattern }`.
+- **Route-table introspection.** `routePaths(routes, filter?)` flattens a route map into its path strings — useful for navigation menus, sitemaps,
+  or wiring per-path middleware.
+- **Per-route and per-controller middleware.** Each action can carry a `middleware` array; the controller can carry one shared array that runs
+  before every action.
 
 ---
 
@@ -46,8 +41,7 @@ import { route, createController, get, post } from "@y-core/forge/router";
 
 ### Declare routes, bind handlers, register
 
-The canonical three-step flow: describe routes, bind them to handlers, map them onto the app
-(`Forge` from [`@y-core/forge/app`](../app/README.md)).
+The canonical three-step flow: describe routes, bind them to handlers, map them onto the app (`Forge` from [`@y-core/forge/app`][app-readme]).
 
 ```ts
 import { route, createController, get, post } from "@y-core/forge/router";
@@ -76,13 +70,13 @@ const controller = createController(routes, {
 app.map(routes, controller);
 ```
 
-Every route leaf in `routes` must have a matching entry in `actions`, and vice-versa. The mapping is
-checked structurally, so a missing, extra, or misspelled handler fails type-checking.
+Every route leaf in `routes` must have a matching entry in `actions`, and vice-versa. The mapping is checked structurally, so a missing, extra, or
+misspelled handler fails type-checking.
 
 ### Two ways to declare a route
 
-A route definition is either a **verb helper** or an object literal. Both produce the same `Route`.
-A bare string or `RoutePattern` is also accepted and defaults to method `ANY`.
+A route definition is either a **verb helper** or an object literal. Both produce the same `Route`. A bare string or `RoutePattern` is also accepted
+and defaults to method `ANY`.
 
 ```ts
 import { route, get, post, Route } from "@y-core/forge/router";
@@ -97,8 +91,7 @@ const routes = route({
 
 ### Nesting and base patterns
 
-`route()` accepts nested maps, and an optional **base pattern** as the first argument that is joined
-onto every contained pattern.
+`route()` accepts nested maps, and an optional **base pattern** as the first argument that is joined onto every contained pattern.
 
 ```ts
 const routes = route({ home: get("/"), api: route({ save: post("/api/save"), load: get("/api/load") }) });
@@ -114,8 +107,7 @@ Nested route names are addressed by path: `routes.api.save.href()`.
 
 ### Generate URLs
 
-Build URLs from the route, never by string concatenation. The pattern's params are part of its type,
-so the call is checked.
+Build URLs from the route, never by string concatenation. The pattern's params are part of its type, so the call is checked.
 
 ```ts
 const routes = route({ user: get("/users/:id"), save: post("/api/save") });
@@ -135,12 +127,11 @@ createHref("/users/:id", { id: "42" }); // "/users/42"
 
 ### Introspect the route table
 
-`routePaths` flattens a route map into its declared path strings, optionally filtered by method. It
-recurses into nested maps and preserves declaration order.
+`routePaths` flattens a route map into its declared path strings, optionally filtered by method. It recurses into nested maps and preserves
+declaration order.
 
-The filter answers **"which paths serve this method?"**, not "which paths were declared with this
-method". A route declared `ANY` is dispatched for every method, so it appears under any concrete
-method filter. `{ method: "ANY" }` is the one exception — it is not a wildcard, and selects only the
+The filter answers **"which paths serve this method?"**, not "which paths were declared with this method". A route declared `ANY` is dispatched for
+every method, so it appears under any concrete method filter. `{ method: "ANY" }` is the one exception — it is not a wildcard, and selects only the
 routes declared `ANY`.
 
 ```ts
@@ -154,9 +145,8 @@ routePaths(routes, { method: "GET" }); // ["/", "/health"]
 routePaths(routes, { method: "ANY" }); // ["/health"]
 ```
 
-A method filter that matches nothing in a route map that does contain routes **throws**. The result
-is nearly always fed to a middleware loop, and an empty path list would attach that middleware to
-nothing — a silent hole rather than a visible error. An unfiltered call never throws, and neither
+A method filter that matches nothing in a route map that does contain routes **throws**. The result is nearly always fed to a middleware loop, and
+an empty path list would attach that middleware to nothing — a silent hole rather than a visible error. An unfiltered call never throws, and neither
 does a route map with no routes at all.
 
 ---
@@ -174,8 +164,8 @@ does a route map with no routes at all.
 | `resources` | `resources(name, options?)` | Build the route map for a **collection** RESTful resource. See upstream docs. |
 | `form` | `form(pattern, options?)` | Build a GET + POST pair for a form endpoint. See upstream docs. |
 
-`route()` definitions (`RouteDef`) accept three shapes: a bare pattern string, a `RoutePattern`, or
-`{ method?, pattern }` (method defaults to `ANY` when omitted).
+`route()` definitions (`RouteDef`) accept three shapes: a bare pattern string, a `RoutePattern`, or `{ method?, pattern }` (method defaults to `ANY`
+when omitted).
 
 ### Controllers and actions
 
@@ -207,7 +197,7 @@ Middleware order at dispatch: controller middleware → action middleware → ha
 | --- | --- | --- |
 | `createMiddleware` | `createMiddleware(...middleware)` | Preserve a middleware chain's exact tuple type when stored in a variable. Prefer plain inline arrays elsewhere. |
 | `createContextKey` | `createContextKey()` | Mint a typed key for storing per-request values on the context. |
-| `RequestContext` | _class_ | The base context object passed to every handler and middleware. forge extends it at runtime with the Workers `env`/`executionCtx` — see [`@y-core/forge/context`](../context/README.md). |
+| `RequestContext` | _class_ | The base context object passed to every handler and middleware. forge extends it at runtime with the Workers `env`/`executionCtx` — see [`@y-core/forge/context`][context-readme]. |
 | `Middleware` `MiddlewareContext` | _types_ | The middleware function type and the context it produces. |
 
 ### Type-safe URL generation
@@ -229,8 +219,8 @@ The only addition forge layers over the upstream engine.
 | `RouteFilter` | `{ method?: RequestMethod \| "ANY" }` | Restrict `routePaths` to routes that serve the method — routes declared `ANY` serve every method and are always included. `"ANY"` selects only routes declared `ANY`. Omit `method` to match all. |
 | `forMethod` | `forMethod(method, middleware)` | Wrap `middleware` so it runs only for the given `RequestMethod` (or array of them) and calls `next()` otherwise. |
 
-**`app.use` is path-scoped only** — dispatch never consults the method — so a filtered `routePaths`
-list selects _paths_, not method-and-path pairs. Pair the two:
+**`app.use` is path-scoped only** — dispatch never consults the method — so a filtered `routePaths` list selects _paths_, not method-and-path pairs.
+Pair the two:
 
 ```ts
 // Wire per-path middleware onto only the mutating endpoints.
@@ -239,20 +229,16 @@ for (const path of routePaths(routes, { method: "POST" })) {
 }
 ```
 
-Without the wrapper the guard applies to every method those paths serve. A route declared
-`ANY` — `health: new Route("ANY", "/health")` — is included under a concrete method filter by
-design, so the unwrapped loop above guarded `/health` on GET. The same overlap always existed for a
-path declared both `get("/x")` and `post("/x")`; the `ANY` inclusion only made it reachable through
-this documented example.
+Without the wrapper the guard applies to every method those paths serve. A route declared `ANY` — `health: new Route("ANY", "/health")` — is
+included under a concrete method filter by design, so the unwrapped loop above guarded `/health` on GET. The same overlap always existed for a path
+declared both `get("/x")` and `post("/x")`; the `ANY` inclusion only made it reachable through this documented example.
 
-`forMethod` reads `context.method`, so a `methodOverride` is honoured — the value dispatch itself
-matches on. Forge rewrites `HEAD` to `GET` before routing, so `forMethod("GET", …)` also covers
-`HEAD`.
+`forMethod` reads `context.method`, so a `methodOverride` is honoured — the value dispatch itself matches on. Forge rewrites `HEAD` to `GET` before
+routing, so `forMethod("GET", …)` also covers `HEAD`.
 
 ### Lower-level router engine
 
-Most apps never touch these — `createApp` from [`@y-core/forge/app`](../app/README.md) builds and
-owns the router for you.
+Most apps never touch these — `createApp` from [`@y-core/forge/app`][app-readme] builds and owns the router for you.
 
 | Symbol | Signature | Description |
 | --- | --- | --- |
@@ -260,8 +246,7 @@ owns the router for you.
 | `RouterOptions` `RouterTypes` | _types_ | Router construction options and the router's context/type configuration. |
 | `RouteEntry` `MatchData` | _types_ | The normalized entry stored in the matcher (`pattern`, `handler`, `method`, `middleware`). |
 
-`RouterOptions` accepts `defaultHandler` (the no-match fallback, default `404`), a `matcher`, and
-router-wide `middleware`.
+`RouterOptions` accepts `defaultHandler` (the no-match fallback, default `404`), a `matcher`, and router-wide `middleware`.
 
 ---
 
@@ -282,13 +267,16 @@ Re-exported types, grouped by concern:
 
 ## See also
 
-- [`@y-core/forge/app`](../app/README.md) — `createApp`, `definePage`, `defineAction`, and
-  `app.map(routes, controller)`, which consume the route maps built here.
-- [`@y-core/forge/context`](../context/README.md) — the `AppContext` extensions to `RequestContext`.
-- [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) — the declarative route-map and
-  controller rulings (§1a, §1b), the `app.map` registration order (§1c), the no-`head`-verb ruling
-  (§1d), and middleware ordering (§3).
-- [`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) — upstream engine reference
-  for `createRouter`, controllers, middleware, and the `resource`/`resources`/`form` helpers.
-- [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) — upstream reference for
-  pattern syntax, `createHref`, and `joinPatterns`.
+- [`@y-core/forge/app`][app-readme] — `createApp`, `definePage`, `defineAction`, and `app.map(routes, controller)`, which consume the route maps
+  built here.
+- [`@y-core/forge/context`][context-readme] — the `AppContext` extensions to `RequestContext`.
+- [`ROUTING_AND_MIDDLEWARE.md`][ram] — the declarative route-map and controller rulings (§1a, §1b), the `app.map` registration order (§1c), the
+  no-`head`-verb ruling (§1d), and middleware ordering (§3).
+- [`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) — upstream engine reference for `createRouter`, controllers, middleware,
+  and the `resource`/`resources`/`form` helpers.
+- [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) — upstream reference for pattern syntax, `createHref`, and
+  `joinPatterns`.
+
+[app-readme]: ../app/README.md
+[context-readme]: ../context/README.md
+[ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md

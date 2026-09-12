@@ -6,57 +6,42 @@ audience: internal
 
 # `@y-core/forge/tooling/gate`
 
-**The verification gate** — the `forge verify` command over a step table you declare in
-`config/steps.ts`, a pre-built step per check forge ships, two presets composing the tables this
-fleet shares, and the pure changelog and semver parsers the gate reads a repository's version state
-with.
+**The verification gate** — the `forge verify` command over a step table you declare in `config/steps.ts`, a pre-built step per check forge ships,
+two presets composing the tables this fleet shares, and the pure changelog and semver parsers the gate reads a repository's version state with.
 
-`forge verify` is a **command, not a script you write**: a consuming repository declares its step
-table and invokes the binary, and owns no binding file. `createGateCommand` stays published for the
-cases the binary cannot serve.
+`forge verify` is a **command, not a script you write**: a consuming repository declares its step table and invokes the binary, and owns no binding
+file. `createGateCommand` stays published for the cases the binary cannot serve.
 
 ```ts
 import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from "@y-core/forge/tooling/gate";
 ```
 
-> **Node.js / Bun only.** This namespace shells out to your build tools via `node:child_process` and
-> reads and writes files via `node:fs`. **Do not import it into a Cloudflare Worker or a client
-> bundle.**
+> **Node.js / Bun only.** This namespace shells out to your build tools via `node:child_process` and reads and writes files via `node:fs`. **Do not
+> import it into a Cloudflare Worker or a client bundle.**
 
-> **`tooling/release` depends on this namespace, never the reverse.** The gate owns the changelog
-> parser, the semver primitives, and the barrel parser;
-> [`@y-core/forge/tooling/release`](../release/README.md) builds its workflow on top of them.
+> **`tooling/release` depends on this namespace, never the reverse.** The gate owns the changelog parser, the semver primitives, and the barrel
+> parser; [`@y-core/forge/tooling/release`][release-readme] builds its workflow on top of them.
 
-> The barrel rule, what stays unpublished and why, the check layering, and where a project root
-> comes from are owned by
-> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2 — as are the three modes and their
-> flags (§2f), and the general law behind them
-> [`TESTING.md`](../../../warden/canon/libs/TESTING.md) §6a.
+> The barrel rule, what stays unpublished and why, the check layering, and where a project root comes from are owned by [`BUILD_TOOLING.md`][bt-2]
+> §2 — as are the three modes and their flags (§2f), and the general law behind them [`TESTING.md`][testing-6a] §6a.
 
 ---
 
 ## Features
 
-- **A `verify` command** — fail-fast execution over the table `config/steps.ts` default-exports, a
-  per-step result line, the failing step named in the summary, the failure's tail plus a path to the
-  untruncated log, and `--mode` / `--full` / `--only` / `--list` / `--fix` / `--config` / `--root`.
-  A missing table is an error, never an empty green.
-- **A zero-selection refusal** — a run resolving to no steps is refused rather than reported green,
-  and a narrowed run brands its summary as scoped.
-- **Dependency probes** (`StepRequirement`) — a step declares a dependency and the predicate that
-  answers whether it is present, and the mode answers its absence
-  ([`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f).
-- **Pure selection** (`selectSteps`) — no disk, no spawning, no clock, no probe, so you can
-  unit-test your own table at zero step cost.
-- **Two presets** — `cloudflareWorkerSteps` for this fleet's Worker apps, `forgeChecks` for a
-  library published under an `exports` map.
-- **A pre-built step per check** (`jsxStep`, …) — a check is named and configured in the table
-  itself, never given a file of its own to be spawnable. The runner calls it in-process, so its
-  findings are printed whole rather than tailed from captured text.
-- **Reusable checks** (`checkJsx`, …) — the same validators as plain functions, for composing into
-  something other than a gate.
-- **Changelog and semver primitives** — a zero-dependency Keep a Changelog parser and promoter, and
-  parse/format/compare/bump over strict `major.minor.patch` versions.
+- **A `verify` command** — fail-fast execution over the table `config/steps.ts` default-exports, a per-step result line, the failing step named in
+  the summary, the failure's tail plus a path to the untruncated log, and `--mode` / `--full` / `--only` / `--list` / `--fix` / `--config` /
+  `--root`. A missing table is an error, never an empty green.
+- **A zero-selection refusal** — a run resolving to no steps is refused rather than reported green, and a narrowed run brands its summary as scoped.
+- **Dependency probes** (`StepRequirement`) — a step declares a dependency and the predicate that answers whether it is present, and the mode
+  answers its absence ([`BUILD_TOOLING.md`][bt-2f] §2f).
+- **Pure selection** (`selectSteps`) — no disk, no spawning, no clock, no probe, so you can unit-test your own table at zero step cost.
+- **Two presets** — `cloudflareWorkerSteps` for this fleet's Worker apps, `forgeChecks` for a library published under an `exports` map.
+- **A pre-built step per check** (`jsxStep`, …) — a check is named and configured in the table itself, never given a file of its own to be
+  spawnable. The runner calls it in-process, so its findings are printed whole rather than tailed from captured text.
+- **Reusable checks** (`checkJsx`, …) — the same validators as plain functions, for composing into something other than a gate.
+- **Changelog and semver primitives** — a zero-dependency Keep a Changelog parser and promoter, and parse/format/compare/bump over strict
+  `major.minor.patch` versions.
 
 ---
 
@@ -64,8 +49,7 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 
 ### Wire up `verify`
 
-**One file.** `config/steps.ts` holds your table and default-exports it; `forge verify` finds it
-there. There is no binding script to write:
+**One file.** `config/steps.ts` holds your table and default-exports it; `forge verify` finds it there. There is no binding script to write:
 
 ```ts
 // config/steps.ts
@@ -84,8 +68,8 @@ export const STEPS: readonly Step[] = [
 export default STEPS;
 ```
 
-A pre-built step is a value, so the table stays the one place to read. Anything forge ships no step
-for is still an ordinary `cmd` entry, as `check:bindings` is above.
+A pre-built step is a value, so the table stays the one place to read. Anything forge ships no step for is still an ordinary `cmd` entry, as
+`check:bindings` is above.
 
 ```json
 {
@@ -99,14 +83,12 @@ for is still an ordinary `cmd` entry, as `check:bindings` is above.
 }
 ```
 
-`config/steps.ts` is the default; `--config` names another path, and `--root` names the directory
-every step runs in when it is not the working directory. **An absent default path is an error, not a
-silent empty gate** — and so is a `--config` naming a file that does not exist, so a typo can never
-read as a green run.
+`config/steps.ts` is the default; `--config` names another path, and `--root` names the directory every step runs in when it is not the working
+directory. **An absent default path is an error, not a silent empty gate** — and so is a `--config` naming a file that does not exist, so a typo can
+never read as a green run.
 
-**`createGateCommand` stays published** for the case the binary cannot serve — the bin-versus-factory
-split, and the one-runner-one-table design it comes from, are
-[`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f's.
+**`createGateCommand` stays published** for the case the binary cannot serve — the bin-versus-factory split, and the one-runner-one-table design it
+comes from, are [`BUILD_TOOLING.md`][bt-2f] §2f's.
 
 ```ts
 import { execute } from "@y-core/forge/tooling/cli";
@@ -125,10 +107,9 @@ bun run verify --only lint,test    # narrow the run (branded as scoped)
 bun run verify --fix               # run each selected step's fixer instead
 ```
 
-**`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only
-lint` runs the check and writes nothing; `--fix` writes and checks nothing. Scripting them as `lint`
-and `fix` keeps that distinction at the call site — a `lint` that quietly rewrote your files would
-be the one that surprises.
+**`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only lint` runs the check and writes nothing; `--fix`
+writes and checks nothing. Scripting them as `lint` and `fix` keeps that distinction at the call site — a `lint` that quietly rewrote your files
+would be the one that surprises.
 
 Output is one line per step, then one verdict line:
 
@@ -140,13 +121,13 @@ Output is one line per step, then one verdict line:
 ✗ verify — failed at `lint` (step 2 of 5, 1.7s)
 ```
 
-**The verdict is the summary line**, not the raw tool output beneath it. A failing step exits 1, so
-`prepublishOnly: "bun run verify:full"` blocks a red gate.
+**The verdict is the summary line**, not the raw tool output beneath it. A failing step exits 1, so `prepublishOnly: "bun run verify:full"` blocks a
+red gate.
 
 ### Run a check
 
-Every validator forge runs on itself is a published function taking a config, so an app can run the
-same rules on its own tree. Each is also a pre-built step, whose label is its `--only` token:
+Every validator forge runs on itself is a published function taking a config, so an app can run the same rules on its own tree. Each is also a
+pre-built step, whose label is its `--only` token:
 
 | Step | Label | Check | Asserts |
 | --- | --- | --- | --- |
@@ -175,19 +156,15 @@ same rules on its own tree. Each is also a pre-built step, whose label is its `-
 | `contrastStep` | `validate-contrast` | `checkContrast` | Every audited foreground/background pair meets its contrast criterion |
 | `browserStep` | `test:browser` | `hasChromium` | A launchable browser exists — declared as the step's `requires.probe` |
 
-The tool steps carry no check: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep`
-(`format`), `typeAwareLintStep` (`lint:types`) and `testStep` (`test`) spawn `tsc`, `oxlint`,
-`oxfmt` and `bun test`.
+The tool steps carry no check: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep` (`lint:types`) and
+`testStep` (`test`) spawn `tsc`, `oxlint`, `oxfmt` and `bun test`.
 
-**`browserStep` spawns `playwright test` — the installed binary off `binDir`, whose shebang is
-node.** Not `bunx`, which installs from the registry when it resolves nothing locally; and not
-under bun, because a dev server playwright spawns itself binds there where the browser cannot reach
-it in a sandbox, so a repo whose specs need a `webServer` cannot run. Node refuses to strip types
-from a file under `node_modules`
-(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so import `resolveChromiumPath` in your
-`playwright.config.ts` from `@y-core/forge/tooling/gate/chromium` — the prebuilt `.mjs` — rather
-than from `@y-core/forge/tooling/gate`. Match your own `test:browser` script to the same command so
-the two cannot diverge.
+**`browserStep` spawns `playwright test` — the installed binary off `binDir`, whose shebang is node.** Not `bunx`, which installs from the registry
+when it resolves nothing locally; and not under bun, because a dev server playwright spawns itself binds there where the browser cannot reach it in
+a sandbox, so a repo whose specs need a `webServer` cannot run. Node refuses to strip types from a file under `node_modules`
+(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so import `resolveChromiumPath` in your `playwright.config.ts` from
+`@y-core/forge/tooling/gate/chromium` — the prebuilt `.mjs` — rather than from `@y-core/forge/tooling/gate`. Match your own `test:browser` script to
+the same command so the two cannot diverge.
 
 **The `chromium` prerequisite names both routes — a direct download, or a devbox container:**
 
@@ -195,14 +172,13 @@ the two cannot diverge.
 ✗ test:browser — chromium not found; run `bunx playwright install chromium`, or use a devbox container — `devctl up`
 ```
 
-`hasChromium` resolves `CHROME_PATH` first and Playwright's own download second, so a container
-image that bakes a browser satisfies it and the line is never printed there. A direct command
-rather than a package script, so nothing has to be defined for it to work. `hint` is **printed
-verbatim** and therefore carries its own verb and backticks — pass one if your browser arrives some
-other way: `browserStep({ hint: "run \`pnpm exec playwright install\`" })`.
+`hasChromium` resolves `CHROME_PATH` first and Playwright's own download second, so a container image that bakes a browser satisfies it and the line
+is never printed there. A direct command rather than a package script, so nothing has to be defined for it to work. `hint` is **printed verbatim**
+and therefore carries its own verb and backticks — pass one if your browser arrives some other way: `browserStep({ hint: "run \`pnpm exec playwright
+install\`" })`.
 
-Configuration goes to the builder, in the step table itself — that file already answers "what does
-this repository's gate do?", so a check's allowlists belong with it:
+Configuration goes to the builder, in the step table itself — that file already answers "what does this repository's gate do?", so a check's
+allowlists belong with it:
 
 ```ts
 // config/steps.ts
@@ -216,58 +192,49 @@ exportsStep({
 }),
 ```
 
-Where the tree already states a fact, the check derives it and the config field is the override, not
-the declaration. `browserOnly` is empty above because a subpath under a `client` segment is
-browser-only by its own name; an entry is for one that is browser-only under another name. The three
-escapes — `browserOnly`, `sideEffectOnly`, `sealedInternal` — are each held to the tree they name: an
-entry the convention already derives, or one naming a subpath the map no longer has, fails rather
-than sitting inert.
+Where the tree already states a fact, the check derives it and the config field is the override, not the declaration. `browserOnly` is empty above
+because a subpath under a `client` segment is browser-only by its own name; an entry is for one that is browser-only under another name. The three
+escapes — `browserOnly`, `sideEffectOnly`, `sealedInternal` — are each held to the tree they name: an entry the convention already derives, or one
+naming a subpath the map no longer has, fails rather than sitting inert.
 
 ### Check markdown against the house conventions
 
-`markdownStep` is the only check that ships a fixer. It walks every `.md` under `sources` (default
-`["src"]`), honouring both a `!`-prefixed source and the `exclude` list — the latter is where a
-generated tree goes, whose bytes another tool owns:
+`markdownStep` ships a fixer. It walks every `.md` under `sources` (default `["src"]`), honouring both a `!`-prefixed source and the `exclude` list
+— the latter is where a generated tree goes, whose bytes another tool owns:
 
 ```ts
 // config/steps.ts
 markdownStep({ root: ROOT, sources: ["src", "docs", "README.md"], exclude: ["CHANGELOG.md", ".claude"], rules }),
 ```
 
-Every rule is optional and every one accepts `"off"`, so a project opts out of any of them without
-forking the check. `rules.lineLength` is off by default and takes a `scope` of path prefixes, for the
-common case of a tree that already holds a wrap column and one that does not.
+Every rule is optional and every one accepts `"off"`, so a project opts out of any of them without forking the check. `rules.lineLength` is off by
+default and takes a `scope` of path prefixes, for the common case of a tree that already holds a wrap column and one that does not.
 
-**The fixer applies only the mechanical rules** — table padding, list markers and nested indent,
-emphasis delimiters, fence style and language aliases, hard tabs, trailing whitespace, thematic
-breaks, and the blank line around a block. **Four rules are report-only**: a bare fence, a bare URL,
-a second `# ` heading, and an over-long line. A fixer that guessed a language or rewrapped an
-author's prose would do more harm than the finding does.
+**The fixer applies only the mechanical rules** — table padding, list markers and nested indent, emphasis delimiters, fence style and language
+aliases, hard tabs, trailing whitespace, thematic breaks, and the blank line around a block. **Four rules are report-only**: a bare fence, a bare
+URL, a second `# ` heading, and an over-long line. A fixer that guessed a language or rewrapped an author's prose would do more harm than the
+finding does.
 
-`renderMarkdown` is idempotent, and a fenced block, an indented code block and the frontmatter are
-literal bytes no rule reaches — a padded table inside a `md` fence is a sample, not a defect.
+`renderMarkdown` is idempotent, and a fenced block, an indented code block and the frontmatter are literal bytes no rule reaches — a padded table
+inside a `md` fence is a sample, not a defect.
 
-**Order matters where a formatter also claims markdown.** `oxfmt` pads every table cell to the
-widest column and has no option to stop, so a project running both must put `**/*.md` in
-`.oxfmtrc.json`'s `ignorePatterns` — otherwise each tool undoes the other on every `bun run fix`.
+**Order matters where a formatter also claims markdown.** `oxfmt` pads every table cell to the widest column and has no option to stop, so a project
+running both must put `**/*.md` in `.oxfmtrc.json`'s `ignorePatterns` — otherwise each tool undoes the other on every `bun run fix`.
 
 ### Check for hand-written CSS the platform replaced
 
-`modernCssStep` scans `.css`, `.scss`, `.sass`, `.ts` and `.tsx` under each entry of `sources`. A
-`!`-prefixed entry **excludes** a subtree — the usual case is a design corpus or a fixture directory
-whose samples quote the very patterns the check forbids:
+`modernCssStep` scans `.css`, `.scss`, `.sass`, `.ts` and `.tsx` under each entry of `sources`. A `!`-prefixed entry **excludes** a subtree — the
+usual case is a design corpus or a fixture directory whose samples quote the very patterns the check forbids:
 
 ```ts
 // config/steps.ts
 modernCssStep({ root: ROOT, sources: ["src/ui", "!src/ui/design"] }),
 ```
 
-`sources` matching nothing is a failure rather than a green run, for the same reason a zero-step
-selection is refused.
+`sources` matching nothing is a failure rather than a green run, for the same reason a zero-step selection is refused.
 
-Findings whose rule is `fail` block the gate; the rest are warnings that survive a passing step.
-`deferred` is the escape for a tree that does not satisfy a `fail` rule yet — a shrink-only list, one
-entry per path and rule, each naming the task that closes it:
+Findings whose rule is `fail` block the gate; the rest are warnings that survive a passing step. `deferred` is the escape for a tree that does not
+satisfy a `fail` rule yet — a shrink-only list, one entry per path and rule, each naming the task that closes it:
 
 ```ts
 modernCssStep({
@@ -277,21 +244,18 @@ modernCssStep({
 }),
 ```
 
-**Naming `deferred` replaces forge's own list rather than adding to it**, so an app carries its
-deferrals and inherits none of forge's. An entry with an empty `owner`, and an entry whose path no
-longer violates its rule, both fail — the list can only shrink.
+**Naming `deferred` replaces forge's own list rather than adding to it**, so an app carries its deferrals and inherits none of forge's. An entry
+with an empty `owner`, and an entry whose path no longer violates its rule, both fail — the list can only shrink.
 
-Every rule id, its tier, its severity and the feature that replaces it are owned by
-`MODERN_CSS_RULES` in [`@y-core/forge/tooling/lint`](../lint/README.md); the rule each finding cites
-is stated for readers in forge's design corpus at `src/ui/design/reference/16-platform.md`.
+Every rule id, its tier, its severity and the feature that replaces it are owned by `MODERN_CSS_RULES` in
+[`@y-core/forge/tooling/lint`][lint-readme]; the rule each finding cites is stated for readers in forge's design corpus at
+`src/ui/design/reference/16-platform.md`.
 
-Every builder takes `{ tier, requires }` as its last argument, so a check can be raised to any tier
-whatever its default, and its dependency replaced or dropped with `requires: null`. Three builders
-declare a tier of their own: `changelogStep` and `browserStep` default to `"full"` — requiring a
-written `[Unreleased]` entry on every inner loop would fail every WIP commit, and playwright needs a
-downloaded browser — and `typeAwareLintStep` to `"standard"`, since it builds its own TypeScript
-program. The design-system builders instead default to a `tailwindcss` dependency, so a run below
-the `full` tier skips them where it is absent.
+Every builder takes `{ tier, requires }` as its last argument, so a check can be raised to any tier whatever its default, and its dependency
+replaced or dropped with `requires: null`. Three builders declare a tier of their own: `changelogStep` and `browserStep` default to `"full"` —
+requiring a written `[Unreleased]` entry on every inner loop would fail every WIP commit, and playwright needs a downloaded browser — and
+`typeAwareLintStep` to `"standard"`, since it builds its own TypeScript program. The design-system builders instead default to a `tailwindcss`
+dependency, so a run below the `full` tier skips them where it is absent.
 
 A check returns findings rather than printing and exiting, so you can also compose one:
 
@@ -307,9 +271,8 @@ if (!result.ok) {
 | `Finding` | `{ level: "fail" \| "warn"; message; file?; line?; detail? }` |
 | `CheckResult` | `{ ok; findings; summary }` — `ok` is **derived** from the findings, never passed |
 
-The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function
-belongs to; the vocabulary and its purity rules are
-[`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2i's.
+The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function belongs to; the vocabulary and its purity rules
+are [`BUILD_TOOLING.md`][bt-2i] §2i's.
 
 ### Test your own step table
 
@@ -335,8 +298,8 @@ expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
 
 ### Read or promote a changelog
 
-Pure string transforms — no filesystem, no clock, no git. Failures are **returned, not thrown**, so a
-caller can report every malformed heading in one pass.
+Pure string transforms — no filesystem, no clock, no git. Failures are **returned, not thrown**, so a caller can report every malformed heading in
+one pass.
 
 ```ts
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "@y-core/forge/tooling/gate";
@@ -374,27 +337,24 @@ formatSemVer(next); // "1.3.0"
 
 #### `forge verify`
 
-Resolves a step table and runs the gate over it. `createGateBinCommand()` builds it, and the `forge`
-binary attaches it.
+Resolves a step table and runs the gate over it. `createGateBinCommand()` builds it, and the `forge` binary attaches it.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--config <path>` | `config/steps.ts` | Module default-exporting `readonly Step[]`, relative to `--root` or absolute. |
 | `--root <path>` | the working directory | Directory every step runs in, and the base a relative `--config` resolves against. |
 
-Plus every flag `createGateCommand` takes — `--mode`, `--full`, `--only`, `--list`, `--fix` — because the
-command delegates to it once the table is loaded rather than reimplementing the run.
-`DEFAULT_STEPS_CONFIG` is the exported default path.
+Plus every flag `createGateCommand` takes — `--mode`, `--full`, `--only`, `--list`, `--fix` — because the command delegates to it once the table is
+loaded rather than reimplementing the run. `DEFAULT_STEPS_CONFIG` is the exported default path.
 
-**Two refusals, both exit 1.** A `--config` naming a file that does not exist is an error rather than
-a fallback to the default, so a typo can never quietly gate a different table. An absent
-`config/steps.ts` is an error rather than an empty run, for the same reason `selectSteps` refuses a
+**Two refusals, both exit 1.** A `--config` naming a file that does not exist is an error rather than a fallback to the default, so a typo can never
+quietly gate a different table. An absent `config/steps.ts` is an error rather than an empty run, for the same reason `selectSteps` refuses a
 zero-step selection: a green that ran nothing is worse than a red.
 
 #### `createGateCommand(config)`
 
-Builds the `verify` CLI `Command`. The returned command takes no positional argument and supports
-`--mode`, `--full`, `--only`, `--list` and `--fix`.
+Builds the `verify` CLI `Command`. The returned command takes no positional argument and supports `--mode`, `--full`, `--only`, `--list` and
+`--fix`.
 
 `GateCommandConfig`:
 
@@ -417,20 +377,14 @@ Flags:
 Behaviour worth relying on:
 
 - **Fail-fast.** The run stops at the first failing step; the summary names its position, `step N of M`.
-- **The full log outlives the run.** A failing step's untruncated output is written to a temp file
-  and its path printed under the excerpt, so a signal outside the `tail` window is recoverable. A
-  filesystem refusal is swallowed — the verdict must always be reported.
-- **A dependency is probed only when its step is selected**, its absence answered by the mode; a
-  zero-step selection is refused, and so is a run whose every step skipped. All three are
-  [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f's, over the law in
-  [`TESTING.md`](../../../warden/canon/libs/TESTING.md) §6a.
+- **The full log outlives the run.** A failing step's untruncated output is written to a temp file and its path printed under the excerpt, so a
+  signal outside the `tail` window is recoverable. A filesystem refusal is swallowed — the verdict must always be reported.
+- **A dependency is probed only when its step is selected**, its absence answered by the mode; a zero-step selection is refused, and so is a run
+  whose every step skipped. All three are [`BUILD_TOOLING.md`][bt-2f] §2f's, over the law in [`TESTING.md`][testing-6a] §6a.
 - **A narrowed run brands its summary as scoped**, so a scoped green never reads as a green gate.
-- **A check that throws fails its step**, rather than unwinding the run — a defect in a check still
-  owes the gate a verdict line.
-- **Exit is direct, not thrown**, so the summary line is the last thing printed and `prepublishOnly`
-  still blocks on a red gate.
-- **The mode is in the verdict**, named canonically: `--full` is an input spelling, not an output
-  one.
+- **A check that throws fails its step**, rather than unwinding the run — a defect in a check still owes the gate a verdict line.
+- **Exit is direct, not thrown**, so the summary line is the last thing printed and `prepublishOnly` still blocks on a red gate.
+- **The mode is in the verdict**, named canonically: `--full` is an input spelling, not an output one.
 
 ### Step table
 
@@ -455,23 +409,19 @@ Behaviour worth relying on:
 | `fix` | `readonly [string, ...string[]]?` (command), `() => void \| Promise<void>` (check) | Auto-fixing counterpart invoked by `--fix`: a command spawns it, a check calls it in-process. Absent, the step is counted as having no fixer. |
 | `run` | `(mode) => CheckResult \| Promise<CheckResult>` | Called in-process with the run's `GateMode`. Its findings are printed whole, so there is no `tail`. |
 
-The two variants are exclusive by construction — `cmd?: never` on one and `run?: never` on the other
-— so a step declaring both is a type error rather than a runtime precedence rule. Narrow with
-`isCheckStep(step)` before reaching for a field only one variant has.
+The two variants are exclusive by construction — `cmd?: never` on one and `run?: never` on the other — so a step declaring both is a type error
+rather than a runtime precedence rule. Narrow with `isCheckStep(step)` before reaching for a field only one variant has.
 
-**A check's fixer runs in-process too**, and nothing is probed before it: an in-process fixer spawns
-no tool, so it has no dependency to be missing. A throw is reported as that step's failure, for the
-reason a throwing `run` is — a defect in a check still owes the gate a verdict line.
+**A check's fixer runs in-process too**, and nothing is probed before it: an in-process fixer spawns no tool, so it has no dependency to be missing.
+A throw is reported as that step's failure, for the reason a throwing `run` is — a defect in a check still owes the gate a verdict line.
 
-**Why a check runs in-process.** A check already returns `Finding[]` with file, line and detail. A
-subprocess would flatten that to stdout text and then truncate it to `tail` lines, so the runner
-prints the findings directly instead: nothing to truncate, warnings survive a passing step, and no
+**Why a check runs in-process.** A check already returns `Finding[]` with file, line and detail. A subprocess would flatten that to stdout text and
+then truncate it to `tail` lines, so the runner prints the findings directly instead: nothing to truncate, warnings survive a passing step, and no
 project needs a spawnable file per check.
 
 #### `selectSteps(steps, { mode, only? })`
 
-Resolves which steps to run. **Pure** — no disk, no spawning, no clock, and no probe. Refusals are
-returned rather than thrown:
+Resolves which steps to run. **Pure** — no disk, no spawning, no clock, and no probe. Refusals are returned rather than thrown:
 
 | Refusal | Why |
 | --- | --- |
@@ -479,32 +429,26 @@ returned rather than thrown:
 | unknown `--only` label | The error lists the labels the requested mode does hold. |
 | a selection of zero steps | Checked on the _outcome_, so it still holds when the selection logic itself is wrong. |
 
-The first is a property of the **table**, so it is checked before the mode is applied and before
-`--only` narrows: a malformed table is refused whichever run was asked for, and `--only` cannot route
-around a bad step. This is what makes a step table self-validating — a project needs no test of its
-own to assert the rule.
+The first is a property of the **table**, so it is checked before the mode is applied and before `--only` narrows: a malformed table is refused
+whichever run was asked for, and `--only` cannot route around a bad step. This is what makes a step table self-validating — a project needs no test
+of its own to assert the rule.
 
-An **empty `only` array is the flag's absence**, not a request for nothing: that is what a repeatable
-flag resolves to when it was never given, and reading it as "select no steps" would refuse every
-unscoped run.
+An **empty `only` array is the flag's absence**, not a request for nothing: that is what a repeatable flag resolves to when it was never given, and
+reading it as "select no steps" would refuse every unscoped run.
 
 #### `cloudflareWorkerSteps(options?)`
 
-The step table every Cloudflare Worker app in this fleet shares, in execution order:
-`types:cf-runtime` → `types:cf-bindings` → `types:assets` → `validate-asset-manifest` →
-`typecheck` → `lint` → `format` →
-(`warden`) → (`validate-modern-css` → `validate-class-order` → `validate-class-tokens` →
-`validate-css-tokens`) → `test` → (`validate-asset-root`) → (`test:browser`). Generation leads
-judgement, so a stale generated type surfaces as a type error.
+The step table every Cloudflare Worker app in this fleet shares, in execution order: `types:cf-runtime` → `types:cf-bindings` → `types:assets` →
+`validate-asset-manifest` → `typecheck` → `lint` → `format` → (`warden`) → (`validate-modern-css` → `validate-class-order` → `validate-class-tokens`
+→ `validate-css-tokens`) → `test` → (`validate-asset-root`) → (`test:browser`). Generation leads judgement, so a stale generated type surfaces as a
+type error.
 
-**The default table declares no dependency and puts every row on the `fast` tier**, so it runs whole
-in a fast run. The two opt-ins are what change that: `browser` adds the only `full`-tier row, and
-`design` adds the only rows carrying a `tailwindcss` prerequisite — skipped below the `full` tier on
-a machine without it, failed in a full run.
+**The default table declares no dependency and puts every row on the `fast` tier**, so it runs whole in a fast run. The two opt-ins are what change
+that: `browser` adds the only `full`-tier row, and `design` adds the only rows carrying a `tailwindcss` prerequisite — skipped below the `full` tier
+on a machine without it, failed in a full run.
 
-The two `wrangler types` invocations are two steps rather than one `&&` chain, so a failure names
-which one broke. `--config` goes on the bindings invocation only — runtime types do not depend on the
-wrangler config.
+The two `wrangler types` invocations are two steps rather than one `&&` chain, so a failure names which one broke. `--config` goes on the bindings
+invocation only — runtime types do not depend on the wrangler config.
 
 `CloudflareWorkerStepOptions`:
 
@@ -518,6 +462,7 @@ wrangler config.
 | `workerConfig` | `string?` | — | `--config` for the bindings invocation. |
 | `warden` | `boolean` | `false` | Add the `warden sync --check` step. Opt-in: it needs the cloned `.claude/` trees. |
 | `root` | `string` | `process.cwd()` | Application root, needed by the asset-root and design checks. |
+| `db` | `boolean` | `false` | Add the two `forge db schema check` rows: `db:schema:digests` in `standard`, `db:schema` (a real replay) in `full`. |
 | `browser` | `boolean` | `false` | Add the `full`-tier `test:browser` step, last in the table. |
 | `design` | `CloudflareWorkerDesignOptions?` | — | Add the design rows. Omit for an app that does not use `ui/*`. |
 
@@ -530,35 +475,29 @@ wrangler config.
 | `sources` | `readonly string[]` | `["src/"]` | Sources the class rules scan. |
 | `deferred` | `readonly DeferredFinding[]` | `[]` | Platform-CSS findings this app defers. |
 
-`design.sources` deliberately does **not** fall back to the table's top-level `sources`.
-`classOrderStep` scans every `.tsx`, specs included, and a spec asserting on `cn` holds deliberately
-self-conflicting literals — forge's own table excludes four such files by name, hoisted to
-`config/exemptions.ts` so the reason has one home. `deferred` defaults
-to `[]` rather than forge's own list, so no app inherits deferrals keyed to `src/ui/…` paths.
+`design.sources` deliberately does **not** fall back to the table's top-level `sources`. `classOrderStep` scans every `.tsx`, specs included, and a
+spec asserting on `cn` holds deliberately self-conflicting literals — forge's own table excludes four such files by name, hoisted to
+`config/exemptions.ts` so the reason has one home. `deferred` defaults to `[]` rather than forge's own list, so no app inherits deferrals keyed to
+`src/ui/…` paths.
 
-The asset-root step is added only when **both** `assetConfig` and `workerConfig` are given: the
-assets config names what is written to the asset root, the wrangler config names what the Worker is
-kept out of, and comparing them needs both halves.
+The asset-root step is added only when **both** `assetConfig` and `workerConfig` are given: the assets config names what is written to the asset
+root, the wrangler config names what the Worker is kept out of, and comparing them needs both halves.
 
-The asset-manifest step needs only `assetConfig`, and sits immediately after `types:assets` — the
-step that may rewrite the artifact is followed by the one that judges it, before a typecheck and a
-test run that would otherwise pass on a manifest ahead of the built tree. **A types-only artifact
-passes a fast run alone — `standard` and `full` both fail it**: `gen types` maps every logical name to itself, and
-those files deliberately do not exist, which is what lets `tsc` run on a clean checkout. A release
-gate has no such excuse — passing there on an artifact nobody built is exactly the 404 the check
-exists to prevent.
+The asset-manifest step needs only `assetConfig`, and sits immediately after `types:assets` — the step that may rewrite the artifact is followed by
+the one that judges it, before a typecheck and a test run that would otherwise pass on a manifest ahead of the built tree. **A types-only artifact
+passes a fast run alone — `standard` and `full` both fail it**: `gen types` maps every logical name to itself, and those files deliberately do not
+exist, which is what lets `tsc` run on a clean checkout. A release gate has no such excuse — passing there on an artifact nobody built is exactly
+the 404 the check exists to prevent.
 
-The two generated-type paths (`./.types/cloudflare.d.ts` and `./.types/worker-configuration.d.ts`)
-are baked in rather than exposed — every app in the fleet uses them, and an option nobody varies is
-surface for nothing.
+The two generated-type paths (`./.types/cloudflare.d.ts` and `./.types/worker-configuration.d.ts`) are baked in rather than exposed — every app in
+the fleet uses them, and an option nobody varies is surface for nothing.
 
 #### `forgeChecks(options)`
 
-The baseline table for a library published under an `exports` map, in execution order: `typecheck` →
-`lint` → `format` → `test` → `validate-exports` → `validate-jsx` → `validate-docs` →
-`validate-changelog` → `validate-class-order`. Only the checks whose config is derivable from `root`
-and `package.json` are here; a design, contrast, namespace-graph or CSS-sources step carries
-project-specific policy, so it is named explicitly alongside.
+The baseline table for a library published under an `exports` map, in execution order: `typecheck` → `lint` → `format` → `test` → `validate-exports`
+→ `validate-jsx` → `validate-docs` → `validate-changelog` → `validate-class-order`. Only the checks whose config is derivable from `root` and
+`package.json` are here; a design, contrast, namespace-graph or CSS-sources step carries project-specific policy, so it is named explicitly
+alongside.
 
 `LibraryStepOptions`:
 
@@ -598,23 +537,20 @@ project-specific policy, so it is named explicitly alongside.
 | `tagPrefix` | `string` | `"v"` | Prefix used in the compare URL's tag names. |
 | `compareUrlBase` | `string?` | — | Repository base URL. Omit to skip the link definition entirely. |
 
-`ChangelogParse` is a [`ValidationResult`](../../result/README.md)`<ChangelogDocument>` —
-`{ ok: true; data }` or `{ ok: false; error: readonly string[] }`. `ChangelogDocument` is
-`{ unreleased: UnreleasedSection; versions: readonly VersionHeading[]; linkRefs: readonly string[] }`.
+`ChangelogParse` is a [`ValidationResult`][result-readme]`<ChangelogDocument>` — `{ ok: true; data }` or `{ ok: false; error: readonly string[] }`.
+`ChangelogDocument` is `{ unreleased: UnreleasedSection; versions: readonly VersionHeading[]; linkRefs: readonly string[] }`.
 
 | Type | Shape |
 | --- | --- |
 | `VersionHeading` | `{ version: string; date: string; line: number }` — bare semver, ISO date, zero-indexed line. |
 | `UnreleasedSection` | `{ line: number; body: readonly string[]; empty: boolean }` — verbatim body up to the next `## ` heading. |
 
-A parse fails on: no `[Unreleased]` section, more than one, an entry heading above it, an entry
-heading not matching `[X.Y.Z]` followed by an **em dash** (U+2014) and an ISO date, or a date whose
-shape is right but whose calendar day does not exist. `empty` is `true` when the body holds only
+A parse fails on: no `[Unreleased]` section, more than one, an entry heading above it, an entry heading not matching `[X.Y.Z]` followed by an **em
+dash** (U+2014) and an ISO date, or a date whose shape is right but whose calendar day does not exist. `empty` is `true` when the body holds only
 blank lines, `---` separators, or the `_Nothing yet._` placeholder.
 
-`promoteUnreleased` leaves every byte below the insertion point untouched, so a document with no
-trailing newline round-trips exactly. The compare link is omitted when `compareUrlBase` is absent or
-there is no earlier released version.
+`promoteUnreleased` leaves every byte below the insertion point untouched, so a document with no trailing newline round-trips exactly. The compare
+link is omitted when `compareUrlBase` is absent or there is no earlier released version.
 
 ### SemVer
 
@@ -626,28 +562,31 @@ there is no earlier released version.
 | `isGreaterThan` | `(next: SemVer, prev: SemVer) => boolean` | `true` when `next` is strictly greater than `prev`. |
 | `bumpSemVer` | `(v: SemVer, kind: BumpKind) => SemVer` | Returns a new version bumped by `kind`, zeroing lower components. |
 
-`SemVer` is `{ major: number; minor: number; patch: number }`. `BumpKind` is
-`"major" | "minor" | "patch"`.
+`SemVer` is `{ major: number; minor: number; patch: number }`. `BumpKind` is `"major" | "minor" | "patch"`.
 
 ### Barrel parsing
 
-The parsers the export and README checks read a `mod.ts` with, published because
-`tooling/release`'s surface guard reads the same shapes: `parseBarrelExports`,
-`parseBarrelExportNames`, `parseConsumerExportNames`, `parseTypeExportNames`, `exportNamesFromLine`,
-and `findPublicSymbols`.
+The parsers the export and README checks read a `mod.ts` with, published because `tooling/release`'s surface guard reads the same shapes:
+`parseBarrelExports`, `parseBarrelExportNames`, `parseConsumerExportNames`, `parseTypeExportNames`, `exportNamesFromLine`, and `findPublicSymbols`.
 
 ---
 
 ## See also
 
-- [`@y-core/forge/tooling/release`](../release/README.md) — the release workflow built on this
-  namespace's changelog and semver primitives.
-- [`@y-core/forge/tooling/lint`](../lint/README.md) — the oxlint plugin and the rule catalogs
-  `validate-design` and `validate-modern-css` read.
-- [`@y-core/forge/tooling/cli`](../cli/README.md) — the command framework and `resolveAppRoot`.
-- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §2f, §2g, §2h and §2i — the published gate,
-  the fleet preset, root resolution, and why checks are functions rather than scripts.
-- [`TESTING.md`](../../../docs/TESTING.md) §6 — the gate's three modes and its
-  flags as forge itself runs them.
-- [`TESTING.md`](../../../warden/canon/libs/TESTING.md) §6a — the general law the modes and the
-  dependency skip implement.
+- [`@y-core/forge/tooling/release`][release-readme] — the release workflow built on this namespace's changelog and semver primitives.
+- [`@y-core/forge/tooling/lint`][lint-readme] — the oxlint plugin and the rule catalogs `validate-design` and `validate-modern-css` read.
+- [`@y-core/forge/tooling/cli`][cli-readme] — the command framework and `resolveAppRoot`.
+- [`BUILD_TOOLING.md`][bt-2f] §2f, §2g, §2h and §2i — the published gate, the fleet preset, root resolution, and why checks are functions rather
+  than scripts.
+- [`TESTING.md`][testing-6] §6 — the gate's three modes and its flags as forge itself runs them.
+- [`TESTING.md`][testing-6a] §6a — the general law the modes and the dependency skip implement.
+
+[bt-2]: ../../../docs/BUILD_TOOLING.md#2-toolinggate-and-toolingrelease--project-tooling
+[bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
+[bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
+[cli-readme]: ../cli/README.md
+[lint-readme]: ../lint/README.md
+[release-readme]: ../release/README.md
+[result-readme]: ../../result/README.md
+[testing-6]: ../../../docs/TESTING.md#6-the-verification-gate
+[testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-three-modes

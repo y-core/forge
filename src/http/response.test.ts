@@ -27,6 +27,18 @@ describe("htmlResponse", () => {
     const body = await htmlResponse("<html></html>").text();
     expect(body.startsWith("<!DOCTYPE html>")).toBe(true);
   });
+
+  it("does not double-prefix a body that already carries a DOCTYPE", async () => {
+    expect(await htmlResponse("<!DOCTYPE html><html></html>").text()).toBe("<!DOCTYPE html><html></html>");
+  });
+
+  it("treats a lowercase doctype as already present", async () => {
+    expect(await htmlResponse("<!doctype html><html></html>").text()).toBe("<!doctype html><html></html>");
+  });
+
+  it("tolerates leading whitespace before the doctype", async () => {
+    expect(await htmlResponse("\n  <!DOCTYPE html><html></html>").text()).toBe("\n  <!DOCTYPE html><html></html>");
+  });
 });
 
 describe("fragmentResponse", () => {
@@ -56,6 +68,36 @@ describe("redirect", () => {
     const res = redirect("/login", 302);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/login");
+  });
+
+  it("defaults to status 302 with no init", () => {
+    expect(redirect("/login").status).toBe(302);
+  });
+
+  it("takes a numeric init as the status", () => {
+    expect(redirect("/x", 303).status).toBe(303);
+  });
+
+  it("merges a ResponseInit — status and extra headers both survive", () => {
+    const res = redirect("/x", { status: 307, headers: { "cache-control": "no-store" } });
+    expect(res.status).toBe(307);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("Location")).toBe("/x");
+  });
+
+  it("stringifies a URL location", () => {
+    expect(redirect(new URL("https://example.com/next")).headers.get("Location")).toBe("https://example.com/next");
+  });
+
+  it("does not overwrite a caller-supplied Location header", () => {
+    const res = redirect("/ignored", { headers: { Location: "/kept" } });
+    expect(res.headers.get("Location")).toBe("/kept");
+  });
+
+  it("has a null body", async () => {
+    const res = redirect("/login");
+    expect(res.body).toBeNull();
+    expect(await res.text()).toBe("");
   });
 });
 

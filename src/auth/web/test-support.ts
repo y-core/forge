@@ -2,12 +2,27 @@ import { err, ok } from "../../result/result";
 import type { ForgeIcon } from "../../ui/core/types";
 import type { AdminUserService } from "../admin/types";
 import { AUTH_ADMIN_ROLE, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
-import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorCapabilities, AuthFactorOffer, AuthFactorRegistry, AuthFactorResolution, AuthFactorService } from "../factors/types";
-import type { AuthEmailChangeFlow } from "../flows/types";
-import type { AuthSigninFlow } from "../flows/types";
-import type { AuthSignupFlow } from "../flows/types";
-import type { AuthCredential, AuthFactor, AuthFactorKind, AuthUser, CredentialStore, FactorStore, UserStore } from "../types";
+import { authIdentifies, createFactorRegistry } from "../factors/registry";
+import type {
+  AuthFactorOffer,
+  AuthFactorRequirement,
+  AuthFactorRegistry,
+  AuthFactorResolution,
+  AuthFactorService,
+  AuthIdentifyingFactorService,
+} from "../factors/types";
+import type { AuthEmailChangeFlow, AuthSigninFlow, AuthSignupFlow } from "../flows/types";
+import type {
+  AuthChallenge,
+  AuthCredential,
+  AuthFactor,
+  AuthFactorKind,
+  AuthUser,
+  ChallengeStore,
+  CredentialStore,
+  FactorStore,
+  UserStore,
+} from "../types";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
@@ -85,15 +100,6 @@ export const HOSTILE_TEXT = `Ada & "Bob" <script>'x'`;
 /** `HOSTILE_TEXT` exactly as the renderer emits it in a text node or an attribute value. @internal */
 export const HOSTILE_TEXT_ESCAPED = "Ada &amp; &quot;Bob&quot; &lt;script&gt;&#39;x&#39;";
 
-// The source of the "never primary" rule, in data: a view cannot offer TOTP-app as primary without
-// contradicting the capability the registry itself reads.
-/** What each factor kind can do — TOTP-app is step-up only, and is never a primary factor. @internal */
-export const AUTH_FACTOR_CAPABILITIES: Readonly<Record<AuthFactorKind, AuthFactorCapabilities>> = {
-  "email-otp": { primary: true, stepUp: true },
-  passkey: { primary: true, stepUp: true },
-  "totp-app": { primary: false, stepUp: true },
-};
-
 /** Which kinds carry an enrolment row; email-OTP's enrolment is a verified email, so it has none. @internal */
 export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "totp-app"];
 
@@ -120,10 +126,10 @@ export const AUTH_FACTOR_ASSIGNMENTS: readonly AuthFactorAssignment[] = [
 ];
 
 /** A factor service standing in for `kind`, carrying that kind's real capabilities and enrolment style. @internal */
-export function fakeFactorService(kind: AuthFactorKind): AuthFactorService {
+export function fakeFactorService<kind extends AuthFactorKind>(kind: kind): AuthFactorService<kind> {
   const base = {
     kind,
-    capabilities: AUTH_FACTOR_CAPABILITIES[kind],
+    capabilities: { stepUp: true },
     challengeTtlMs: AUTH_OTP_TTL_MS,
     codeDigits: kind === "passkey" ? null : AUTH_OTP_DIGITS,
     codePeriodSeconds: null,
@@ -166,20 +172,36 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
   };
 }
 
+/** A challenge store that keeps nothing, for a fixture that only has to be built. @internal */
+export function fakeChallengeStore(): ChallengeStore {
+  return { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
+}
+
+// A fixture that refuses to build an illegal offer is the point: the grid states the ruling as data,
+// so a non-identifying kind must never reach `createFactorRegistry` wearing a primary offer.
+/** One offer of a kind, or of a service, in `role`; a primary offer of a non-identifying kind throws. @internal */
+export function fakeFactorOffer(
+  offered: AuthFactorKind | AuthFactorService,
+  role: "primary" | "second",
+  requirement: AuthFactorRequirement = "optional",
+): AuthFactorOffer {
+  const service = typeof offered === "string" ? fakeFactorService(offered) : offered;
+  if (role !== "primary") return { service, role, requirement };
+  if (!authIdentifies(service.kind)) throw new Error(`fakeFactorOffer: "${service.kind}" cannot be a primary factor`);
+  return { service: service as AuthIdentifyingFactorService, role };
+}
+
 /** A registry offering email-OTP as primary and `kinds` as optional seconds. @internal */
 export function fakeFactorRegistry(kinds: readonly AuthFactorKind[]): AuthFactorRegistry {
   return createFactorRegistry(fakeFactorStore([]), {
-    offered: [
-      { service: fakeFactorService("email-otp"), role: "primary" },
-      ...kinds.map<AuthFactorOffer>((kind) => ({ service: fakeFactorService(kind), role: "second", requirement: "optional" })),
-    ],
+    offered: [fakeFactorOffer("email-otp", "primary"), ...kinds.map((kind) => fakeFactorOffer(kind, "second"))],
   });
 }
 
 /** Every offered set with each primary it permits, in a stable order. @internal */
 export function authFactorOfferings(): AuthFactorOffering[] {
   return AUTH_FACTOR_SETS.flatMap<AuthFactorOffering>((kinds) => {
-    const candidates = kinds.filter((kind) => AUTH_FACTOR_CAPABILITIES[kind].primary);
+    const candidates = kinds.filter((kind) => authIdentifies(kind));
     if (candidates.length === 0) return [{ kinds, primary: undefined }];
     return candidates.map((primary) => ({ kinds, primary }));
   });
@@ -193,9 +215,7 @@ function authFactorOffers(
 ): AuthFactorOffer[] {
   let seconds = 0;
   return kinds.map((kind) =>
-    kind === primary
-      ? { service: fakeFactorService(kind), role: "primary" }
-      : { service: fakeFactorService(kind), role: "second", requirement: assignment.requirement(seconds++) },
+    kind === primary ? fakeFactorOffer(kind, "primary") : fakeFactorOffer(kind, "second", assignment.requirement(seconds++)),
   );
 }
 

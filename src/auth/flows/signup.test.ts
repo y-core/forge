@@ -73,10 +73,10 @@ function fakeDeferral() {
 
 function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } = {}, overrides: Partial<AuthSignupOptions> = {}) {
   const challenged: string[] = [];
-  const primary: ImplicitFactorService = {
+  const primary: ImplicitFactorService<"email-otp"> = {
     kind: "email-otp",
     enrolment: "implicit",
-    capabilities: { primary: true, stepUp: true },
+    capabilities: { stepUp: true },
     challengeTtlMs: OTP_TTL_MS,
     codeDigits: 6,
     codePeriodSeconds: null,

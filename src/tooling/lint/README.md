@@ -6,44 +6,37 @@ audience: internal
 
 # `@y-core/forge/tooling/lint`
 
-**forge's oxlint plugin, and the two rule catalogs the gate reads.** A consuming repository names
-`@y-core/forge/tooling/lint/plugin` in `.oxlintrc.json`'s `jsPlugins` and gets twenty-five
-AST-anchored rules under the `forge/` prefix; the catalogs are the register that keeps each rule id
-tied to the design-corpus file that justifies it.
+**forge's oxlint plugin, and the two rule catalogs the gate reads.** A consuming repository names `@y-core/forge/tooling/lint/plugin` in
+`.oxlintrc.json`'s `jsPlugins` and gets twenty-five AST-anchored rules under the `forge/` prefix; the catalogs are the register that keeps each rule
+id tied to the design-corpus file that justifies it.
 
 ```ts
 import { MODERN_CSS_RULES, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge/tooling/lint";
 ```
 
-> **A leaf namespace.** It imports nothing from another forge namespace. The plugin is loaded by
-> oxlint, and the catalogs are plain data — neither belongs in a Worker or a client bundle, but
-> nothing here reaches for a Node built-in either.
+> **A leaf namespace.** It imports nothing from another forge namespace. The plugin is loaded by oxlint, and the catalogs are plain data — neither
+> belongs in a Worker or a client bundle, but nothing here reaches for a Node built-in either.
 
-> Every rule id, its permanence, and the three-way boundary between the corpus, this register and
-> the gate are owned by
-> [`UI_DESIGN_GUIDANCE.md`](../../../docs/UI_DESIGN_GUIDANCE.md) §3.
+> Every rule id, its permanence, and the three-way boundary between the corpus, this register and the gate are owned by
+> [`UI_DESIGN_GUIDANCE.md`][udg-3] §3.
 
 ---
 
 ## Features
 
-- **Twenty-five oxlint rules** under the `forge/` prefix, read off the AST rather than line by line:
-  a class list bound to a module-scope const and passed by name is judged like an inline literal, and
-  a markup rule reads a tag, an attribute or an ancestor chain off `JSXOpeningElement` rather than
-  guessing at one with a regular expression.
-- **Loaded by subpath** — naming `@y-core/forge/tooling/lint/plugin` in `jsPlugins` is the whole
-  installation: no bundling step, and no `esbuild` of your own. That subpath is a committed bundle,
-  because node refuses to strip types from a file under `node_modules` and so cannot load the
-  TypeScript barrel from a consumer at all. Both spellings export the plugin as `lintPlugin` and as
-  the default export, because oxlint reads the default.
-- **A corpus register** — `RULE_CORPUS_PATH` names the design-corpus file behind every rule id, and
-  `RULE_ENFORCER` names which mechanism enforces it. `validate-design` fails when the register and
-  `.oxlintrc.json` disagree, so a rule cannot drift away from the document that states it.
-- **A platform-CSS catalog** — `MODERN_CSS_RULES` carries each rule's tier, severity, corpus file,
-  the platform feature that replaces the pattern, and what a human must verify before taking it.
-- **Generated scale data** — the colour and spacing rules read `src/tooling/lint/data/design-scale.ts`,
-  which the gate's `validate-design-scale` step regenerates from the compiled stylesheet and fails on
-  any drift.
+- **Twenty-five oxlint rules** under the `forge/` prefix, read off the AST rather than line by line: a class list bound to a module-scope const and
+  passed by name is judged like an inline literal, and a markup rule reads a tag, an attribute or an ancestor chain off `JSXOpeningElement` rather
+  than guessing at one with a regular expression.
+- **Loaded by subpath** — naming `@y-core/forge/tooling/lint/plugin` in `jsPlugins` is the whole installation: no bundling step, and no `esbuild` of
+  your own. That subpath is a committed bundle, because node refuses to strip types from a file under `node_modules` and so cannot load the
+  TypeScript barrel from a consumer at all. Both spellings export the plugin as `lintPlugin` and as the default export, because oxlint reads the
+  default.
+- **A corpus register** — `RULE_CORPUS_PATH` names the design-corpus file behind every rule id, and `RULE_ENFORCER` names which mechanism enforces
+  it. `validate-design` fails when the register and `.oxlintrc.json` disagree, so a rule cannot drift away from the document that states it.
+- **A platform-CSS catalog** — `MODERN_CSS_RULES` carries each rule's tier, severity, corpus file, the platform feature that replaces the pattern,
+  and what a human must verify before taking it.
+- **Generated scale data** — the colour and spacing rules read `src/tooling/lint/data/design-scale.ts`, which the gate's `validate-design-scale`
+  step regenerates from the compiled stylesheet and fails on any drift.
 
 ---
 
@@ -82,28 +75,25 @@ import { MODERN_CSS_RULES, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge
 }
 ```
 
-The plugin declares `meta.name: "forge"`, which is where the `forge/` prefix comes from. Every rule
-is **off until you name it** — the plugin registers them, your config enables them.
+The plugin declares `meta.name: "forge"`, which is where the `forge/` prefix comes from. Every rule is **off until you name it** — the plugin
+registers them, your config enables them.
 
-`forge/optional-prop-undefined` and `forge/catalog-wrong-raw-input` are deliberately absent above.
-Each is local to a slice of the tree rather than universal — the first states a convention about
-types a consumer constructs a value of, the second is about a showcase — so forge scopes them with
+`forge/optional-prop-undefined` and `forge/catalog-wrong-raw-input` are deliberately absent above. Each is local to a slice of the tree rather than
+universal — the first states a convention about types a consumer constructs a value of, the second is about a showcase — so forge scopes them with
 an override rather than turning them on everywhere:
 
 ```jsonc
 { "overrides": [{ "files": ["src/ui/core/*.tsx"], "rules": { "forge/optional-prop-undefined": "error" } }] }
 ```
 
-Inside forge itself the same plugin is loaded from its source, `./src/tooling/lint/mod.ts`: forge
-has no copy of itself under `node_modules`, so the restriction that forces the bundle does not
-apply, and a rule edit takes effect without regenerating anything. `plugin.mjs` is generated by
-`bun run gen:bundles`, and the gate's `validate-lint-plugin` step re-bundles the source and
-fails on any drift — regenerate it in the same commit as a rule change.
+Inside forge itself the same plugin is loaded from its source, `./src/tooling/lint/mod.ts`: forge has no copy of itself under `node_modules`, so the
+restriction that forces the bundle does not apply, and a rule edit takes effect without regenerating anything. `plugin.mjs` is generated by
+`bun run gen:bundles`, and the gate's `validate-lint-plugin` step re-bundles the source and fails on any drift — regenerate it in the same commit as
+a rule change.
 
 ### Cite a rule from the corpus
 
-The two catalogs answer "which file states this rule, and what enforces it?" without opening either
-side:
+The two catalogs answer "which file states this rule, and what enforces it?" without opening either side:
 
 ```ts
 import { corpusIdOf, lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge/tooling/lint";
@@ -115,9 +105,8 @@ lintKeyOf("forge-ui-color-token-only"); // "color-token-only" — the oxlint rul
 corpusIdOf("color-token-only"); // "forge-ui-color-token-only" | undefined
 ```
 
-The `forge-ui-` prefix is the whole of the mapping: a corpus id minus its prefix is the plugin rule
-key, and the register is what makes the round trip total rather than a naming convention nobody
-checks.
+The `forge-ui-` prefix is the whole of the mapping: a corpus id minus its prefix is the plugin rule key, and the register is what makes the round
+trip total rather than a naming convention nobody checks.
 
 ### Read a platform-CSS rule
 
@@ -131,8 +120,7 @@ rule.replacement; // "aspect-ratio"
 rule.verify; // what a human confirms before taking the replacement
 ```
 
-`modernCssRule` resolves an id from either catalog, so a finding reported under a corpus-owned id
-resolves the same way one minted here does.
+`modernCssRule` resolves an id from either catalog, so a finding reported under a corpus-owned id resolves the same way one minted here does.
 
 ---
 
@@ -171,25 +159,24 @@ The twenty-five rules it registers:
 | `platform-text-pretty` | `forge-ui-platform-text-pretty` | Orphan control in place of `text-wrap: pretty` |
 | `reduced-motion` | `forge-ui-reduced-motion` | Motion with no `prefers-reduced-motion` escape |
 | `spacing-scale-only` | `forge-ui-spacing-scale-only` | A spacing value off the design scale |
+| `sql-explicit-transaction` | — none | A runtime `sql` fragment that opens or closes a transaction — `batch()` is the boundary |
 | `suppression-needs-reason` | — none | An `oxlint-disable*` comment that gives no reason |
 | `type-import-external` | — none | An exported interface or type alias declared outside its directory's `types.ts` |
 | `type-import-separation` | — none | A `type` specifier riding inside a value import rather than its own `import type` line |
 
-`data-slot-before-spread`, `exact-markup-assertion`, `suppression-needs-reason`,
-`type-import-external` and `type-import-separation` state no design rule, so the register
-names none of them. The first is the ordering half of the JSX contract, moved
-off `validate-jsx`'s tag-frame scanner — the pragma half stays in the gate, where a file-presence
-check belongs. The second is [`TESTING.md`](../../../docs/TESTING.md) §3e's
-rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere. The
-last two are [`LIBRARY_ARCHITECTURE.md`](../../../docs/LIBRARY_ARCHITECTURE.md) §8's two halves —
-where an exported type is declared, and how it is imported.
+`data-slot-before-spread`, `exact-markup-assertion`, `sql-explicit-transaction`, `suppression-needs-reason`, `type-import-external` and
+`type-import-separation` state no design rule, so the register names none of them. The first is the ordering half of the JSX contract, moved off
+`validate-jsx`'s tag-frame scanner — the pragma half stays in the gate, where a file-presence check belongs. The second is
+[`TESTING.md`][testing-3e] §3e's rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere.
+`sql-explicit-transaction` is [`STORAGE_BINDINGS.md`][sb-1g] §1g's rule for runtime code — the migrate lint's `explicit-transaction` states the same
+for migration files — scoped off `src/tooling` and the specs. The last two are [`LIBRARY_ARCHITECTURE.md`][la-8] §8's two halves — where an exported
+type is declared, and how it is imported.
 
-`suppression-needs-reason` is AST-anchored and covers every rule rather than only the design ones: `oxlint --type-aware` already
-fails a _stale_ suppression, and this states the other half — a live one says why it is one.
+`suppression-needs-reason` is AST-anchored and covers every rule rather than only the design ones: `oxlint --type-aware` already fails a _stale_
+suppression, and this states the other half — a live one says why it is one.
 
-`color-token-only` and `spacing-scale-only` read their vocabularies from
-`src/tooling/lint/data/design-scale.ts`, a generated file. Regenerate it through the gate's
-`validate-design-scale` step rather than editing it.
+`color-token-only` and `spacing-scale-only` read their vocabularies from `src/tooling/lint/data/design-scale.ts`, a generated file. Regenerate it
+through the gate's `validate-design-scale` step rather than editing it.
 
 ### The design-rule register
 
@@ -202,10 +189,9 @@ fails a _stale_ suppression, and this states the other half — a live one says 
 | `lintKeyOf` | `(id: string) => string` | The plugin rule key a corpus id is enforced under — the id minus `forge-ui-`. |
 | `corpusIdOf` | `(key: string) => RuleId \| undefined` | The corpus id a plugin rule key belongs to, or `undefined`. |
 
-`RULE_ENFORCER` is what keeps a `RULE_CORPUS_PATH` row from asserting nothing once its detector has
-moved: `checkDesign` reads the enforcer to decide which side it holds the row against. A `gate` rule
-is held against the gate's own source detectors, a `lint` rule against `.oxlintrc.json`, and
-`contrast` against the measured colour pairs — that one reads no source at all.
+`RULE_ENFORCER` is what keeps a `RULE_CORPUS_PATH` row from asserting nothing once its detector has moved: `checkDesign` reads the enforcer to
+decide which side it holds the row against. A `gate` rule is held against the gate's own source detectors, a `lint` rule against `.oxlintrc.json`,
+and `contrast` against the measured colour pairs — that one reads no source at all.
 
 ### The platform-CSS catalog
 
@@ -231,18 +217,21 @@ is held against the gate's own source detectors, a `lint` rule against `.oxlintr
 | `verify` | `string` | What has to be confirmed by hand before taking the replacement. |
 | `enforcer` | `RuleEnforcer?` | Absent means `"gate"` — a detector in the check. Four rules are `"lint"`. |
 
-A pattern the design corpus already names is reported under **the id it already has**, never under a
-second one minted here — a rule id is permanent and corpus-unique, which is what makes a suppression
-comment citing one stay meaningful. The four rules carrying `enforcer: "lint"` are
-`forge-ui-platform-logical-spacing`, `forge-ui-platform-entry-motion`,
-`forge-ui-platform-text-balance` and `forge-ui-platform-text-pretty` — the ones this plugin catches
-in source, rather than the gate catching them in a stylesheet.
+A pattern the design corpus already names is reported under **the id it already has**, never under a second one minted here — a rule id is permanent
+and corpus-unique, which is what makes a suppression comment citing one stay meaningful. The four rules carrying `enforcer: "lint"` are
+`forge-ui-platform-logical-spacing`, `forge-ui-platform-entry-motion`, `forge-ui-platform-text-balance` and `forge-ui-platform-text-pretty` — the
+ones this plugin catches in source, rather than the gate catching them in a stylesheet.
 
 ---
 
 ## See also
 
-- [`@y-core/forge/tooling/gate`](../gate/README.md) — `validate-design`, `validate-modern-css` and
-  `validate-design-scale`, the three steps that read these catalogs.
-- [`UI_DESIGN_GUIDANCE.md`](../../../docs/UI_DESIGN_GUIDANCE.md) §3, §4 and §5
-  — the stable rule-id scheme, the anti-drift gate contract, and where a new design rule is written.
+- [`@y-core/forge/tooling/gate`][gate-readme] — `validate-design`, `validate-modern-css` and `validate-design-scale`, the three steps that read
+  these catalogs.
+- [`UI_DESIGN_GUIDANCE.md`][udg-3] §3, §4 and §5 — the stable rule-id scheme, the anti-drift gate contract, and where a new design rule is written.
+
+[gate-readme]: ../gate/README.md
+[la-8]: ../../../docs/LIBRARY_ARCHITECTURE.md#8-type-declarations-live-in-typests
+[sb-1g]: ../../../docs/STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
+[testing-3e]: ../../../docs/TESTING.md#3e-forgeexact-markup-assertion--the-enforced-form
+[udg-3]: ../../../docs/UI_DESIGN_GUIDANCE.md#3-rule-identifier-scheme

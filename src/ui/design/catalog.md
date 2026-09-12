@@ -5,11 +5,10 @@ description: "Which component to reach for, for which job — every rule a rebut
 
 # Catalog
 
-Which component for which job. The Floor (`floor.md`) says what you may never do; this file says
-what to reach for first.
+Which component for which job. The Floor (`floor.md`) says what you may never do; this file says what to reach for first.
 
-Every rule here is Tier 2 — it opens with `Default:` and it is rebuttable by an explicit written
-brief from the consumer, never by preference. Floor ids are cited, not restated.
+Every rule here is Tier 2 — it opens with `Default:` and it is rebuttable by an explicit written brief from the consumer, never by preference. Floor
+ids are cited, not restated.
 
 ---
 
@@ -35,8 +34,8 @@ brief from the consumer, never by preference. Floor ids are cited, not restated.
 
 ## 1. Job → Component
 
-Left column is the job as a builder would say it. Right column is the component and the subpath it
-comes from. Every import names a subpath; the `ui` namespace publishes no bare barrel of its own.
+Left column is the job as a builder would say it. Right column is the component and the subpath it comes from. Every import names a subpath; the
+`ui` namespace publishes no bare barrel of its own.
 
 ### 1a. Actions, Status and Notification
 
@@ -135,73 +134,58 @@ comes from. Every import names a subpath; the `ui` namespace publishes no bare b
 | Let the user choose light, dark, or system | `ThemeToggle` | `@y-core/forge/ui/chrome` |
 | Bind a control to a client signal | `Input` `Select` `Slider` `Switch` `Textarea` `ToggleGroup` | `@y-core/forge/ui/controls` |
 
-`Toolbar` also exists in `@y-core/forge/ui/core` as the generic roving-focus row. The chrome one is
-the application shell's; reach for the core one when you are building a control strip inside a
-surface rather than around it.
+`Toolbar` also exists in `@y-core/forge/ui/core` as the generic roving-focus row. The chrome one is the application shell's; reach for the core one
+when you are building a control strip inside a surface rather than around it.
 
 ---
 
 ## 2. Choosing Between Near Neighbours
 
-Each of these is a pair a reader can reasonably arrive at from either side. The rule states the
-default; the sentence after it is the test that separates the two.
+Each of these is a pair a reader can reasonably arrive at from either side. The rule states the default; the sentence after it is the test that
+separates the two.
 
 ### 2a. Actions and Confirmation
 
-**Default:** one primary `Button` per surface, with every other action `appearance="outline"` or
-`appearance="ghost"`. <!-- rule:forge-ui-catalog-action-pyramid -->
-Those three looks _are_ the pyramid — a second primary button on the same surface asserts two
-first actions, and the user reads neither as first. Override when a surface genuinely presents two
-equal terminal paths with no default, as an accept/decline pair does.
+**Default:** one primary `Button` per surface, with every other action `appearance="outline"` or `appearance="ghost"`.
+<!-- rule:forge-ui-catalog-action-pyramid --> Those three looks _are_ the pyramid — a second primary button on the same surface asserts two first
+actions, and the user reads neither as first. Override when a surface genuinely presents two equal terminal paths with no default, as an
+accept/decline pair does.
 
-**Default:** a destructive confirmation is a `Dialog` carrying an `Alert` `tone="destructive"`
-that names what is lost, with the confirm control labelled with the verb rather than
-"OK". <!-- rule:forge-ui-catalog-destructive-confirm -->
-Override when the action is reversible from the same surface within the session — then perform it
-and report with a `Toast`, since a confirmation on an undoable action trains the user to dismiss
+**Default:** a destructive confirmation is a `Dialog` carrying an `Alert` `tone="destructive"` that names what is lost, with the confirm control
+labelled with the verb rather than "OK". <!-- rule:forge-ui-catalog-destructive-confirm --> Override when the action is reversible from the same
+surface within the session — then perform it and report with a `Toast`, since a confirmation on an undoable action trains the user to dismiss
 confirmations.
 
 ### 2b. Waiting and Notification
 
-**Default:** when the awaited content has a known shape, use `Skeleton` in that
-shape. <!-- rule:forge-ui-catalog-skeleton-over-spinner -->
-A `Skeleton` holds the layout, so the load does not end in a reflow. Override when the wait has no
-layout to preserve — a submit button in flight, a background job with no slot — where `Spinner` is
-correct and `Skeleton` would invent a shape.
+**Default:** when the awaited content has a known shape, use `Skeleton` in that shape. <!-- rule:forge-ui-catalog-skeleton-over-spinner --> A
+`Skeleton` holds the layout, so the load does not end in a reflow. Override when the wait has no layout to preserve — a submit button in flight, a
+background job with no slot — where `Spinner` is correct and `Skeleton` would invent a shape.
 
-**Default:** a condition the user must still act on is an `Alert` in the flow; a result of something
-already finished is a `Toast`. <!-- rule:forge-ui-catalog-alert-vs-toast -->
-The test is dismissal: a `Toast` that leaves before it is read must have been safe to miss.
-Override when a persistent condition is genuinely global to the app rather than to a surface, and
-has nowhere in the flow to sit.
+**Default:** a condition the user must still act on is an `Alert` in the flow; a result of something already finished is a `Toast`.
+<!-- rule:forge-ui-catalog-alert-vs-toast --> The test is dismissal: a `Toast` that leaves before it is read must have been safe to miss. Override
+when a persistent condition is genuinely global to the app rather than to a surface, and has nowhere in the flow to sit.
 
 ### 2c. Overlays and Disclosure
 
-**Default:** pick the lightest overlay the job survives — `Collapsible` when the content belongs to
-the page, `Popover` when it is anchored to a trigger, `Dialog` only when the task truly
-blocks. <!-- rule:forge-ui-catalog-overlay-weight -->
-`Dialog` takes the top layer and the user's whole attention; spending that on a two-field form is
-what makes an app feel heavy. Override when the content must be read before anything else can
+**Default:** pick the lightest overlay the job survives — `Collapsible` when the content belongs to the page, `Popover` when it is anchored to a
+trigger, `Dialog` only when the task truly blocks. <!-- rule:forge-ui-catalog-overlay-weight --> `Dialog` takes the top layer and the user's whole
+attention; spending that on a two-field form is what makes an app feel heavy. Override when the content must be read before anything else can
 proceed, or when losing it to a light dismiss would lose work.
 
-**Default:** use `Tabs` for peer views of one subject and `Accordion` for independent sections the
-user may want open at once. <!-- rule:forge-ui-catalog-tabs-vs-accordion -->
-Override when the views are peers but their content is long enough that switching costs the reader
+**Default:** use `Tabs` for peer views of one subject and `Accordion` for independent sections the user may want open at once.
+<!-- rule:forge-ui-catalog-tabs-vs-accordion --> Override when the views are peers but their content is long enough that switching costs the reader
 their place — an `Accordion` lets them keep both.
 
 ### 2d. Choosing an Input Control
 
-**Default:** the number of options picks the control — two, use `Switch` or `Toggle`; three to five,
-use `RadioGroup` or `ToggleGroup`; more than five, use
-`Select`. <!-- rule:forge-ui-catalog-choice-count -->
-Override when the option set is long but the user knows the answer by name, where a `Select` beats
-any expanded set regardless of count.
+**Default:** the number of options picks the control — two, use `Switch` or `Toggle`; three to five, use `RadioGroup` or `ToggleGroup`; more than
+five, use `Select`. <!-- rule:forge-ui-catalog-choice-count --> Override when the option set is long but the user knows the answer by name, where a
+`Select` beats any expanded set regardless of count.
 
-**Default:** wrap every validated input in `FormField` with `FormField.Label` and
-`FormField.Error`. <!-- rule:forge-ui-catalog-field-wrapper -->
-`FormField` derives the `id`, the `for`, the `aria-describedby`, and the `aria-invalid` from one
-`name`, which is how `forge-ui-accessible-name` and `forge-ui-not-color-alone` are satisfied without
-hand-wiring. Override with `Field` for a settings row that has no validation and no error slot.
+**Default:** wrap every validated input in `FormField` with `FormField.Label` and `FormField.Error`. <!-- rule:forge-ui-catalog-field-wrapper -->
+`FormField` derives the `id`, the `for`, the `aria-describedby`, and the `aria-invalid` from one `name`, which is how `forge-ui-accessible-name` and
+`forge-ui-not-color-alone` are satisfied without hand-wiring. Override with `Field` for a settings row that has no validation and no error slot.
 
 ```tsx
 import { FormField, Input } from "@y-core/forge/ui/core";
@@ -213,25 +197,20 @@ import { FormField, Input } from "@y-core/forge/ui/core";
 </FormField>;
 ```
 
-**Default:** import a control from `@y-core/forge/ui/core` unless it needs a client signal, and from
-`@y-core/forge/ui/controls` when it does. <!-- rule:forge-ui-catalog-bound-controls -->
-The two barrels publish the same names deliberately; the `ui/controls` variant adds `bind` and
-pre-spreads the resumable-scope attributes. Import a given name from exactly one of the two in a
-module — never both. Override never applies by preference: the presence of a `bind` target decides
-it.
+**Default:** import a control from `@y-core/forge/ui/core` unless it needs a client signal, and from `@y-core/forge/ui/controls` when it does.
+<!-- rule:forge-ui-catalog-bound-controls --> The two barrels publish the same names deliberately; the `ui/controls` variant adds `bind` and
+pre-spreads the resumable-scope attributes. Import a given name from exactly one of the two in a module — never both. Override never applies by
+preference: the presence of a `bind` target decides it.
 
 ### 2e. Containers and Bounded Regions
 
-**Default:** use `Card` only when the group has its own title, description, or action; otherwise
-group with spacing and a `Separator`. <!-- rule:forge-ui-catalog-container-card -->
-A `Card` is an elevation, and an elevation with nothing to elevate is the shape that
-`forge-ui-no-nested-card` refuses one level down. Override for a surface whose whole job is a grid
-of peer objects, where the border is what makes the boundaries scannable.
+**Default:** use `Card` only when the group has its own title, description, or action; otherwise group with spacing and a `Separator`.
+<!-- rule:forge-ui-catalog-container-card --> A `Card` is an elevation, and an elevation with nothing to elevate is the shape that
+`forge-ui-no-nested-card` refuses one level down. Override for a surface whose whole job is a grid of peer objects, where the border is what makes
+the boundaries scannable.
 
-**Default:** bound a list to a height with `ScrollArea` when the surrounding layout must stay
-fixed. <!-- rule:forge-ui-catalog-scroll-area -->
-Override when the page itself is the scroll container, where a nested scroll region traps the wheel
-and hides content below the fold.
+**Default:** bound a list to a height with `ScrollArea` when the surrounding layout must stay fixed. <!-- rule:forge-ui-catalog-scroll-area -->
+Override when the page itself is the scroll container, where a nested scroll region traps the wheel and hides content below the fold.
 
 ---
 
@@ -251,7 +230,6 @@ These are the substitutions that actually happen.
 | a raw `<input>`, `<select>`, `<textarea>` or `<button>` where the `ui/core` control exists | the label, the id, the error and the focus ring are not free | `Input`, `Select`, `Textarea` or `Button` — inside `FormField` when the value is validated <!-- rule:forge-ui-catalog-wrong-raw-input --> |
 | `ui/core` `Input` for a signal-bound control | it has no `bind` prop | `ui/controls` `Input` <!-- rule:forge-ui-catalog-wrong-unbound-input --> |
 
-Each of these is a Tier 2 default with the same override condition as its `Default:` rule in §2,
-where one exists. Where the wrong tool would also breach the Floor — an unfocusable clickable
-`Badge` breaches `forge-ui-focus-ring` and `forge-ui-hit-target` — the Floor decides and there is no
+Each of these is a Tier 2 default with the same override condition as its `Default:` rule in §2, where one exists. Where the wrong tool would also
+breach the Floor — an unfocusable clickable `Badge` breaches `forge-ui-focus-ring` and `forge-ui-hit-target` — the Floor decides and there is no
 override.

@@ -4,7 +4,6 @@ export {
   createEmailChangeActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
-  createPasskeySigninActions,
   createPasskeyStepUpActions,
   createSigninActions,
   createSignoutActions,
@@ -48,7 +47,7 @@ export {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-export type { AuthIconName, AuthPageState, AuthPasskeyCeremonyOptions, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
+export type { AuthIconName, AuthPageState, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
 export type { AuthAccountPaths, AuthAdminPaths, AuthEntryPaths, AuthPathMap } from "./types";
 export { authEnrolmentPaths, authPaths } from "./paths";
 export { registerAccount, registerAdmin, registerAuth } from "./register";

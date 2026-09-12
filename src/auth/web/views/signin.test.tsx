@@ -6,15 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../../testing/render";
 import { createIcon } from "../../../ui/core/icon";
 import type { ForgeIcon } from "../../../ui/core/types";
-import {
-  PASSKEY,
-  PASSKEY_MODE_ATTR,
-  PASSKEY_OPTIONS_PATH_ATTR,
-  PASSKEY_OPTIONS_TOKEN_ATTR,
-  PASSKEY_SCOPE,
-  PASSKEY_VERIFY_PATH_ATTR,
-  PASSKEY_VERIFY_TOKEN_ATTR,
-} from "../../passkey-contract";
+import { PASSKEY, PASSKEY_SCOPE } from "../../passkey-contract";
 import {
   attrOf,
   attrsOf,
@@ -29,18 +21,9 @@ import {
 } from "../test-support";
 import type { AuthFactorCell } from "../types";
 import { SigninView } from "./signin";
-import type { AuthPasskeyContract } from "./types";
 import type { SigninViewProps } from "./types";
 
-const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert" | "key" | "mail">;
-
-const PASSKEY_CONTRACT: AuthPasskeyContract = {
-  mode: "authentication",
-  optionsPath: "/auth/passkey/authenticate/begin",
-  verifyPath: "/auth/passkey/authenticate/finish",
-  optionsToken: "tok-options",
-  verifyToken: "tok-verify",
-};
+const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert" | "mail">;
 
 const BUTTON_BASE =
   "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap " +
@@ -53,25 +36,8 @@ const PRIMARY_CLASS =
   "[--tone-soft-border:var(--color-primary-soft-border)] border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] " +
   "hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]";
 
-/** The exact class a `neutral`/`outline` control carries. */
-const OUTLINE_CLASS =
-  `${BUTTON_BASE}[--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] ` +
-  "[--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] bg-transparent " +
-  "[--focus-ring:var(--color-ring)] border-input text-foreground hover:bg-accent hover:text-accent-foreground";
-
-/** The trigger's emphasis, named by whole-string equality so an unexpected class shows up in the diff. */
-function triggerEmphasis(html: string): string {
-  const cls = attrsOf(html, `data-ref="${PASSKEY.trigger}"`)["class"];
-  if (cls === undefined) return "no-trigger";
-  if (cls === `${PRIMARY_CLASS} w-full`) return "primary";
-  if (cls === `${OUTLINE_CLASS} w-full`) return "outline";
-  return `unexpected:${cls}`;
-}
-
 function signin(props: Partial<SigninViewProps> = {}) {
-  return render(
-    <SigninView primaryFactor='email-otp' submitPath='/auth/signin' signupPath='/auth/signup' csrfToken='csrf-1' icon={AppIcon} {...props} />,
-  );
+  return render(<SigninView submitPath='/auth/signin' signupPath='/auth/signup' csrfToken='csrf-1' icon={AppIcon} {...props} />);
 }
 
 describe("SigninView", () => {
@@ -128,94 +94,53 @@ describe("SigninView", () => {
   });
 });
 
-describe("SigninView passkey affordance", () => {
-  it("makes the passkey trigger the one primary control when passkey is primary", async () => {
-    expect(triggerEmphasis(await signin({ primaryFactor: "passkey", passkey: PASSKEY_CONTRACT }))).toBe("primary");
-  });
-
-  it("demotes the trigger to outline when it is the alternative, so one primary stands on the surface", async () => {
-    const html = await signin({ passkey: PASSKEY_CONTRACT });
-    expect(triggerEmphasis(html)).toBe("outline");
-    expect(attrsOf(html, 'type="submit"')["class"]).toBe(PRIMARY_CLASS);
-  });
-
-  it("renders no passkey scope at all when the deployment offers no passkey", async () => {
-    expect(tagOf(await signin(), `data-scope="${PASSKEY_SCOPE}"`)).toBe("");
-  });
-
-  it("puts the whole ceremony contract on the scope root, both tokens present and distinct", async () => {
-    const html = await signin({ primaryFactor: "passkey", passkey: PASSKEY_CONTRACT });
-    expect(attrsOf(html, `data-scope="${PASSKEY_SCOPE}"`)).toEqual({
-      "data-scope": PASSKEY_SCOPE,
-      [PASSKEY_MODE_ATTR]: "authentication",
-      [PASSKEY_OPTIONS_PATH_ATTR]: "/auth/passkey/authenticate/begin",
-      [PASSKEY_VERIFY_PATH_ATTR]: "/auth/passkey/authenticate/finish",
-      [PASSKEY_OPTIONS_TOKEN_ATTR]: "tok-options",
-      [PASSKEY_VERIFY_TOKEN_ATTR]: "tok-verify",
-      class: "flex flex-col gap-3",
-    });
-  });
-
-  it("opens no second live region — the ceremony announces through its outcome event", async () => {
-    const html = await signin({ primaryFactor: "passkey", passkey: PASSKEY_CONTRACT });
-    expect(valuesOf(html, "aria-live")).toEqual([]);
-    expect(elementOf(html, "p", `data-ref="${PASSKEY.status}"`)).toBe(
-      `<p data-ref="${PASSKEY.status}" class="max-w-prose text-sm text-pretty text-muted-foreground"></p>`,
-    );
-  });
-});
-
 // The visible half of the factor design: what a consumer's configuration puts on the sign-in page.
 describe("SigninView across the factor matrix", () => {
   const grid = authFactorGrid();
 
   async function renderCell(cell: AuthFactorCell): Promise<string | null> {
-    const choices = factorChoices(cell);
-    if (choices === null) return null;
-    return signin({ primaryFactor: choices.primary, ...(cell.kinds.includes("passkey") ? { passkey: PASSKEY_CONTRACT } : {}) });
+    if (factorChoices(cell) === null) return null;
+    return signin();
   }
 
-  it("puts the passkey trigger at exactly the emphasis the registry's primary implies, in every legal cell", async () => {
+  // Unlike a prop a test can pass, this cannot be kept green from the outside: with one possible
+  // primary there is no passkey affordance on this page in any deployment.
+  it("offers no passkey affordance on the sign-in page, in any legal cell", async () => {
+    for (const cell of grid) {
+      const html = await renderCell(cell);
+      if (html === null) continue;
+      expect({
+        cell: cell.label,
+        scope: tagOf(html, `data-scope="${PASSKEY_SCOPE}"`),
+        trigger: tagOf(html, `data-ref="${PASSKEY.trigger}"`),
+      }).toEqual({ cell: cell.label, scope: "", trigger: "" });
+    }
+  });
+
+  it("renders the address field in every legal cell, whatever else the deployment offers", async () => {
     const rendered: string[] = [];
     for (const cell of grid) {
       const html = await renderCell(cell);
       if (html === null) continue;
-      const field = tagOf(html, 'id="field-email"') === "" ? "no-email-field" : "email-field";
-      rendered.push(`${cell.label} => ${triggerEmphasis(html)} / ${field}`);
+      rendered.push(`${cell.label} => ${tagOf(html, 'id="field-email"') === "" ? "no-email-field" : "email-field"}`);
     }
     expect(rendered).toEqual([
-      "email-otp primary=email-otp / all-optional => no-trigger / email-field",
-      "email-otp primary=email-otp / all-mandatory => no-trigger / email-field",
-      "email-otp primary=email-otp / first-mandatory => no-trigger / email-field",
-      "email-otp primary=email-otp / for-roles => no-trigger / email-field",
-      "passkey primary=passkey / all-optional => primary / no-email-field",
-      "passkey primary=passkey / all-mandatory => primary / no-email-field",
-      "passkey primary=passkey / first-mandatory => primary / no-email-field",
-      "passkey primary=passkey / for-roles => primary / no-email-field",
-      "email-otp+passkey primary=email-otp / all-optional => outline / email-field",
-      "email-otp+passkey primary=email-otp / all-mandatory => outline / email-field",
-      "email-otp+passkey primary=email-otp / first-mandatory => outline / email-field",
-      "email-otp+passkey primary=email-otp / for-roles => outline / email-field",
-      "email-otp+passkey primary=passkey / all-optional => primary / no-email-field",
-      "email-otp+passkey primary=passkey / all-mandatory => primary / no-email-field",
-      "email-otp+passkey primary=passkey / first-mandatory => primary / no-email-field",
-      "email-otp+passkey primary=passkey / for-roles => primary / no-email-field",
-      "email-otp+totp-app primary=email-otp / all-optional => no-trigger / email-field",
-      "email-otp+totp-app primary=email-otp / all-mandatory => no-trigger / email-field",
-      "email-otp+totp-app primary=email-otp / first-mandatory => no-trigger / email-field",
-      "email-otp+totp-app primary=email-otp / for-roles => no-trigger / email-field",
-      "passkey+totp-app primary=passkey / all-optional => primary / no-email-field",
-      "passkey+totp-app primary=passkey / all-mandatory => primary / no-email-field",
-      "passkey+totp-app primary=passkey / first-mandatory => primary / no-email-field",
-      "passkey+totp-app primary=passkey / for-roles => primary / no-email-field",
-      "email-otp+passkey+totp-app primary=email-otp / all-optional => outline / email-field",
-      "email-otp+passkey+totp-app primary=email-otp / all-mandatory => outline / email-field",
-      "email-otp+passkey+totp-app primary=email-otp / first-mandatory => outline / email-field",
-      "email-otp+passkey+totp-app primary=email-otp / for-roles => outline / email-field",
-      "email-otp+passkey+totp-app primary=passkey / all-optional => primary / no-email-field",
-      "email-otp+passkey+totp-app primary=passkey / all-mandatory => primary / no-email-field",
-      "email-otp+passkey+totp-app primary=passkey / first-mandatory => primary / no-email-field",
-      "email-otp+passkey+totp-app primary=passkey / for-roles => primary / no-email-field",
+      "email-otp primary=email-otp / all-optional => email-field",
+      "email-otp primary=email-otp / all-mandatory => email-field",
+      "email-otp primary=email-otp / first-mandatory => email-field",
+      "email-otp primary=email-otp / for-roles => email-field",
+      "email-otp+passkey primary=email-otp / all-optional => email-field",
+      "email-otp+passkey primary=email-otp / all-mandatory => email-field",
+      "email-otp+passkey primary=email-otp / first-mandatory => email-field",
+      "email-otp+passkey primary=email-otp / for-roles => email-field",
+      "email-otp+totp-app primary=email-otp / all-optional => email-field",
+      "email-otp+totp-app primary=email-otp / all-mandatory => email-field",
+      "email-otp+totp-app primary=email-otp / first-mandatory => email-field",
+      "email-otp+totp-app primary=email-otp / for-roles => email-field",
+      "email-otp+passkey+totp-app primary=email-otp / all-optional => email-field",
+      "email-otp+passkey+totp-app primary=email-otp / all-mandatory => email-field",
+      "email-otp+passkey+totp-app primary=email-otp / first-mandatory => email-field",
+      "email-otp+passkey+totp-app primary=email-otp / for-roles => email-field",
     ]);
   });
 
@@ -242,15 +167,26 @@ describe("SigninView across the factor matrix", () => {
       "none / all-mandatory",
       "none / first-mandatory",
       "none / for-roles",
+      "passkey / all-optional",
+      "passkey / all-mandatory",
+      "passkey / first-mandatory",
+      "passkey / for-roles",
       "totp-app / all-optional",
       "totp-app / all-mandatory",
       "totp-app / first-mandatory",
       "totp-app / for-roles",
+      "passkey+totp-app / all-optional",
+      "passkey+totp-app / all-mandatory",
+      "passkey+totp-app / first-mandatory",
+      "passkey+totp-app / for-roles",
     ]);
   });
 
-  it("keeps the heading the same whatever the primary factor is, so only the affordance moves", async () => {
-    expect(textOf(await signin(), "h1", 'class="text-xl"')).toBe("Sign in");
-    expect(textOf(await signin({ primaryFactor: "passkey", passkey: PASSKEY_CONTRACT }), "h1", 'class="text-xl"')).toBe("Sign in");
+  it("heads the page the same in every legal cell", async () => {
+    for (const cell of grid) {
+      const html = await renderCell(cell);
+      if (html === null) continue;
+      expect({ cell: cell.label, heading: textOf(html, "h1", 'class="text-xl"') }).toEqual({ cell: cell.label, heading: "Sign in" });
+    }
   });
 });

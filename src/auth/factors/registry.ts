@@ -1,7 +1,15 @@
 import { err, ok } from "../../result/result";
-import { AUTH_ADMIN_ROLE } from "../config";
+import { AUTH_ADMIN_ROLE, AUTH_IDENTIFYING_FACTORS } from "../config";
 import type { AuthFactorKind, FactorStore } from "../types";
-import type { AuthFactorContext, AuthFactorOffer, AuthFactorRegistry, AuthFactorRequirement, AuthFactorService, AuthFactorsOptions } from "./types";
+import type {
+  AuthFactorContext,
+  AuthFactorOffer,
+  AuthFactorRegistry,
+  AuthFactorRequirement,
+  AuthFactorsOptions,
+  AuthIdentifyingFactorKind,
+  AuthIdentifyingFactorService,
+} from "./types";
 
 type SecondOffer = Extract<AuthFactorOffer, { role: "second" }>;
 
@@ -10,7 +18,18 @@ export function authFactorContext(subject: { readonly isAdmin: boolean }): AuthF
   return subject.isAdmin ? { roles: [AUTH_ADMIN_ROLE] } : {};
 }
 
-function pickPrimary(options: AuthFactorsOptions): AuthFactorService {
+/** Whether `kind` identifies the visitor, and so may start a sign-in. @public */
+export function authIdentifies(kind: AuthFactorKind): kind is AuthIdentifyingFactorKind {
+  return (AUTH_IDENTIFYING_FACTORS as readonly AuthFactorKind[]).includes(kind);
+}
+
+/** The refusal an offer of a non-identifying kind as primary earns, built from the const so it cannot drift. @internal */
+export function authPrimaryRefusal(kind: AuthFactorKind): string {
+  const identifying = AUTH_IDENTIFYING_FACTORS.map((named) => `"${named}"`).join(", ");
+  return `createFactorRegistry: "${kind}" cannot be a primary factor — a primary factor must identify the visitor, which only ${identifying} does`;
+}
+
+function pickPrimary(options: AuthFactorsOptions): AuthIdentifyingFactorService {
   if (options.offered.length === 0) throw new Error("createFactorRegistry: at least one factor must be offered");
   const primaries = options.offered.filter((offer) => offer.role === "primary");
   const [only] = primaries;
@@ -19,7 +38,8 @@ function pickPrimary(options: AuthFactorsOptions): AuthFactorService {
     const named = primaries.map((offer) => `"${offer.service.kind}"`).join(", ");
     throw new Error(`createFactorRegistry: ${primaries.length} offered factors are declared primary — ${named}`);
   }
-  if (!only.service.capabilities.primary) throw new Error(`createFactorRegistry: "${only.service.kind}" cannot be a primary factor`);
+  // The type already forbids this offer; the check is what a consumer casting past it meets.
+  if (!authIdentifies(only.service.kind)) throw new Error(authPrimaryRefusal(only.service.kind));
   return only.service;
 }
 
@@ -41,9 +61,10 @@ export function createFactorRegistry(store: FactorStore, options: AuthFactorsOpt
   }
   const services = options.offered.map((offer) => offer.service);
   const seen = new Set<AuthFactorKind>();
-  for (const service of services) {
-    if (seen.has(service.kind)) throw new Error(`createFactorRegistry: "${service.kind}" is offered twice`);
-    seen.add(service.kind);
+  for (const offer of options.offered) {
+    const { kind } = offer.service;
+    if (seen.has(kind)) throw new Error(`createFactorRegistry: "${kind}" is offered twice`);
+    seen.add(kind);
   }
   const secondKinds = seconds.map((offer) => offer.service.kind);
   // An implicit factor has no enrolment row by design, so asking the store about it always answers

@@ -1,0 +1,16 @@
+{
+  "seed": "INSERT INTO users (id, email, nickname) VALUES (1, 'a@x', NULL), (2, 'b@x', 'b');",
+  "expectSql": [
+    "CREATE TABLE \"_forge_new_users\"",
+    "INSERT INTO \"_forge_new_users\"",
+    "SELECT",
+    "ALTER TABLE \"_forge_new_users\" RENAME TO \"users\";"
+  ],
+  "expectStdout": ["warning: users.nickname becomes NOT NULL", "rehearse it on `standby` first"],
+  "migrateFails": "NOT NULL constraint failed: _forge_new_users.nickname",
+  "query": "SELECT id, nickname FROM users ORDER BY id",
+  "rows": [
+    { "id": 1, "nickname": null },
+    { "id": 2, "nickname": "b" }
+  ]
+}

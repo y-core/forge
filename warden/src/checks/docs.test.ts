@@ -62,6 +62,38 @@ describe("checkDocs() — nested document discovery", () => {
     expect(messages(root)).toContain("link target `.decisions/governance/ABSENT.md` does not exist");
   });
 
+  it("resolves a reference-style link, and reports an anchor naming no heading in the target", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": index("- [`TESTING.md`][t-1] §1: the testing rules", "", "[t-1]: .decisions/governance/TESTING.md#1-one"),
+    });
+
+    expect(run(root).ok).toBe(true);
+
+    const rotted = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": index("- [`TESTING.md`][t-1] §1: the testing rules", "", "[t-1]: .decisions/governance/TESTING.md#1-two"),
+    });
+
+    expect(messages(rotted)).toContain("`#1-two` names no heading in `.decisions/governance/TESTING.md`");
+  });
+
+  it("reports a used id nothing defines, and a definition nothing uses", () => {
+    const undefined_ = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": index("- [`TESTING.md`][t-1] §1: the testing rules"),
+    });
+
+    expect(messages(undefined_)).toContain("`[t-1]` is used as a link but nothing defines it");
+
+    const unused = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "CLAUDE.md": index("- the testing rules", "", "[t-1]: .decisions/governance/TESTING.md#1-one"),
+    });
+
+    expect(messages(unused)).toContain("link definition `[t-1]` is never used");
+  });
+
   it("fails rather than passing vacuously when the directory exists and holds no documents", () => {
     const root = fixtureRoot({ ".decisions/governance/.gitkeep": "", "CLAUDE.md": index("- none") });
 
@@ -137,6 +169,21 @@ describe("checkDocs() — cross-references across a subdirectory", () => {
     expect(messages(root)).toContain(
       "`TESTING.md §9` is ambiguous — governance/TESTING.md and implementation/TESTING.md both match; cite the path",
     );
+  });
+
+  it("disambiguates a shared basename through the id, where the destination is not on the line at all", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      ".decisions/implementation/TESTING.md": doc("Testing Local", "Body."),
+      ".decisions/implementation/SUITES.md": doc("Suites", "See [`TESTING.md`][t-1] §1 for the rule.\n\n[t-1]: ../governance/TESTING.md#1-one"),
+      "CLAUDE.md": index(
+        "- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules",
+        "- [`TESTING.md`](.decisions/implementation/TESTING.md): this repository's testing notes",
+        "- [`SUITES.md`](.decisions/implementation/SUITES.md): this repository's suites",
+      ),
+    });
+
+    expect(messages(root).filter((message) => message.includes("ambiguous"))).toEqual([]);
   });
 
   it("disambiguates a shared basename by the link on the same line", () => {

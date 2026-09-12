@@ -6,18 +6,22 @@ audience: consumer
 
 # `@y-core/forge/testing`
 
-Shared test utilities for apps built on forge — the fixtures every consumer previously hand-rolled: a pre-loaded request context, real CSRF token minting, typed in-memory storage fakes, an SSR render helper, a `Request` builder, and a single-route registrar.
+Shared test utilities for apps built on forge — the fixtures every consumer previously hand-rolled: a pre-loaded request context, real CSRF token
+minting, typed in-memory storage fakes, an SSR render helper, a `Request` builder, and a single-route registrar.
 
-This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging`, `form`, and `storage/db`/`storage/kv`/`storage/r2` types). Reaching into `app` and `jsx` is the declared, acceptable edge for a test-only namespace — see [docs/TESTING.md](../../docs/TESTING.md) §7a. It is intended for **test code only** — never import it from Worker source files.
+This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging`, `form`, and `storage/db`/`storage/kv`/`storage/r2` types).
+Reaching into `app` and `jsx` is the declared, acceptable edge for a test-only namespace — see [docs/TESTING.md][testing-7a] §7a. It is intended for
+**test code only** — never import it from Worker source files.
 
-The namespace publishes a second subpath, `@y-core/forge/testing/workerd`, and it is **node-only and deliberately off the barrel**: it reads `node:child_process`, `node:fs` and `node:net` to run a `wrangler dev` fixture, so a Worker-side test program must not be able to reach it through `@y-core/forge/testing` — see [docs/TESTING.md](../../docs/TESTING.md) §7f.
+The namespace publishes a second subpath, `@y-core/forge/testing/workerd`, and it is **node-only and deliberately off the barrel**: it reads
+`node:child_process`, `node:fs` and `node:net` to run a `wrangler dev` fixture, so a Worker-side test program must not be able to reach it through
+`@y-core/forge/testing` — see [docs/TESTING.md][testing-7f] §7f.
 
 ---
 
 ## `@y-core/forge/testing`
 
-> Import path: `@y-core/forge/testing` → `src/testing/mod.ts`
-> **Test-only.** Never import it from a Worker source file.
+> Import path: `@y-core/forge/testing` → `src/testing/mod.ts` **Test-only.** Never import it from a Worker source file.
 
 ### Exports
 
@@ -60,7 +64,8 @@ const posted = await app.request(
 );
 ```
 
-Prefer `app.request(...)` (the `Forge` test helper) for full-chain integration tests; reach for `createTestContext` when exercising a single handler or middleware in isolation.
+Prefer `app.request(...)` (the `Forge` test helper) for full-chain integration tests; reach for `createTestContext` when exercising a single handler
+or middleware in isolation.
 
 ```ts
 import { fakeD1, fakeR2, render, buildRequest, mapHandler } from "@y-core/forge/testing";
@@ -90,8 +95,8 @@ const res = await app.request("/settings", req, TEST_ENV);
 
 ## `@y-core/forge/testing/workerd`
 
-> Import path: `@y-core/forge/testing/workerd` → `src/testing/workerd.ts`
-> **Node-only, and off the `./testing` barrel.** Import it from a suite the node process runs, never from Worker source or a Worker-side test program.
+> Import path: `@y-core/forge/testing/workerd` → `src/testing/workerd.ts` **Node-only, and off the `./testing` barrel.** Import it from a suite the
+> node process runs, never from Worker source or a Worker-side test program.
 
 ### Exports
 
@@ -101,7 +106,9 @@ const res = await app.request("/settings", req, TEST_ENV);
 | `DevServer` | type | The running server: `origin`, `siteOrigin`, `logs()`, and a `stop()` that kills the group and removes the temp env file. |
 | `DevServerOptions` | type | What to serve and how: `entry`, `config`, `vars`, `readyPath`, `capture` — every one optional. |
 
-`stop()` sends `SIGKILL` to the **process group**, because wrangler spawns workerd and esbuild as its own children and killing the CLI alone orphans them. The same sweep is bound to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`, so an interrupted run that never reaches `afterAll` still takes its children down.
+`stop()` sends `SIGKILL` to the **process group**, because wrangler spawns workerd and esbuild as its own children and killing the CLI alone orphans
+them. The same sweep is bound to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP`, so an interrupted run that never reaches `afterAll` still
+takes its children down.
 
 `wrangler` is an **optional peer dependency** and is resolved out of the consumer's own tree — a suite that imports this subpath installs it.
 
@@ -118,11 +125,23 @@ beforeAll(async () => {
 afterAll(() => server?.stop());
 ```
 
-`SITE_ORIGIN` is always written to the temp env file as `siteOrigin` — `https://127.0.0.1:{port}`, not `origin` — because the dev server stamps `https` onto origin-bearing headers before the Worker sees them, so an app handed the http origin refuses its own suite at the origin guard. Requests still go to `origin`.
+`SITE_ORIGIN` is always written to the temp env file as `siteOrigin` — `https://127.0.0.1:{port}`, not `origin` — because the dev server stamps
+`https` onto origin-bearing headers before the Worker sees them, so an app handed the http origin refuses its own suite at the origin guard.
+Requests still go to `origin`.
 
 ## Design rules
 
-- **Real primitives, typed fakes.** `mintTestCsrfToken` wraps the production `importCsrfKey`/`createCsrfToken`; the fakes implement the real structural contracts (`KVNamespace`, `D1DatabaseLike`, `R2BucketLike`, `AssetsFetcher`) so interface drift breaks tests at compile time. No mock libraries (see [docs/TESTING.md](../../docs/TESTING.md) §4).
-- **No wall-clock behavior.** `fakeKV` enforces an expiry against the clock passed as `now`, defaulting to `Date.now` — assert one by advancing an injected clock, never by letting real time pass. The TTL _floor_ is a constant rather than a clock, and is enforced either way.
-- **The fakes refuse what the platform refuses.** A fake that is green where the real binding throws certifies code that fails on deploy. When a test fails against one of these refusals, fix the test — not the fake.
-- **Render once, assert once.** Use `render()` with a single entity-aware `toBe` on the full markup — never substring `toContain`/`toMatch` (see [docs/TESTING.md](../../docs/TESTING.md) §3, §7c).
+- **Real primitives, typed fakes.** `mintTestCsrfToken` wraps the production `importCsrfKey`/`createCsrfToken`; the fakes implement the real
+  structural contracts (`KVNamespace`, `D1DatabaseLike`, `R2BucketLike`, `AssetsFetcher`) so interface drift breaks tests at compile time. No mock
+  libraries (see [docs/TESTING.md][testing-4] §4).
+- **No wall-clock behavior.** `fakeKV` enforces an expiry against the clock passed as `now`, defaulting to `Date.now` — assert one by advancing an
+  injected clock, never by letting real time pass. The TTL _floor_ is a constant rather than a clock, and is enforced either way.
+- **The fakes refuse what the platform refuses.** A fake that is green where the real binding throws certifies code that fails on deploy. When a
+  test fails against one of these refusals, fix the test — not the fake.
+- **Render once, assert once.** Use `render()` with a single entity-aware `toBe` on the full markup — never substring `toContain`/`toMatch` (see
+  [docs/TESTING.md][testing-3] §3, §7c).
+
+[testing-3]: ../../docs/TESTING.md#3-html-entity-exact-match-assertion-rule
+[testing-4]: ../../docs/TESTING.md#4-fakes-over-mocks
+[testing-7a]: ../../docs/TESTING.md#7a-declared-integration-edge--testing-imports-app-and-jsx
+[testing-7f]: ../../docs/TESTING.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd

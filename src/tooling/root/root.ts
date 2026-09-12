@@ -3,6 +3,7 @@ import { createCfCommands } from "../cf/commands";
 import { addCommand, createCommand } from "../cli/command";
 import { loadConfigModule } from "../cli/config-module";
 import type { CommandBase } from "../cli/types";
+import { createDbCommands } from "../db/commands";
 import { createGateBinCommand } from "../gate/command";
 import { createReleaseBinCommand } from "../release/release";
 
@@ -18,6 +19,7 @@ export async function createRootCommand(cwd: string = process.cwd()): Promise<Co
   addCommand(root, createReleaseBinCommand());
   addCommand(root, createCfCommands());
   addCommand(root, createAssetsCommands());
+  addCommand(root, createDbCommands());
 
   const commands = await loadConfigModule<readonly CommandBase[]>({
     root: cwd,

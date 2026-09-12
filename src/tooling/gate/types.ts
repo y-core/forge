@@ -126,6 +126,8 @@ export interface CloudflareWorkerStepOptions {
   warden?: boolean;
   /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
   root?: string;
+  /** Whether to emit the two `forge db schema check` rows: digests in `standard`, the replay in `full`. Defaults to `false`. */
+  db?: boolean;
   /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
   browser?: boolean;
   /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */

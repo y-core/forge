@@ -7,27 +7,23 @@ description: "The fleet canon, the sync that keeps a repository in step with it,
 
 The fleet's governing corpus, and the machinery that keeps a repository in step with it.
 
-`warden/` sits outside `src/` because it is not a runtime namespace and is never Worker-reachable.
-The import rule runs one way: warden may import up into `src/tooling/`, and nothing in `src/` may
-import warden. `buildTimeBoundaryStep` enforces it.
+`warden/` sits outside `src/` because it is not a runtime namespace and is never Worker-reachable. The import rule runs one way: warden may import
+up into `src/tooling/`, and nothing in `src/` may import warden. `buildTimeBoundaryStep` enforces it.
 
 ## Who Warden Is For
 
-**Warden serves the repositories that already depend on `@y-core/forge`, and only those.** It
-ships inside forge rather than as its own package, so adopting it means taking forge whole. For a
-Workers app that is free — forge is already a dependency. For a repository that does not consume
-forge, it is a large dependency bought for a SQLite index and a CLI, and the exchange is not worth
-it.
+**Warden serves the repositories that already depend on `@y-core/forge`, and only those.** It ships inside forge rather than as its own package, so
+adopting it means taking forge whole. For a Workers app that is free — forge is already a dependency. For a repository that does not consume forge,
+it is a large dependency bought for a SQLite index and a CLI, and the exchange is not worth it.
 
-A repository outside that set keeps its governing documents as plain markdown it owns, reached by
-reading: a directory listing picks the document, its `## 0. Quick Reference` picks the section. Such a repository may still follow the canon's _shape_ —
-numbered sections, a Quick Reference, the single-home rule — without being served by warden.
-`devctl` is the standing example: single-purpose, in maintenance, and deliberately a non-consumer.
+A repository outside that set keeps its governing documents as plain markdown it owns, reached by reading: a directory listing picks the document,
+its `## 0. Quick Reference` picks the section. Such a repository may still follow the canon's _shape_ — numbered sections, a Quick Reference, the
+single-home rule — without being served by warden. `devctl` is the standing example: single-purpose, in maintenance, and deliberately a
+non-consumer.
 
-Two consequences worth stating. A non-consumer gets no `warden sync`, so its agent definitions and
-slash commands are its own to maintain, and they will drift from the fleet's unless someone
-reconciles them. And `docs/` is only warden's corpus convention where warden is in use — a
-repository already using that directory name for something else is not obliged to rename it.
+Two consequences worth stating. A non-consumer gets no `warden sync`, so its agent definitions and slash commands are its own to maintain, and they
+will drift from the fleet's unless someone reconciles them. And `docs/` is only warden's corpus convention where warden is in use — a repository
+already using that directory name for something else is not obliged to rename it.
 
 ## Layout
 
@@ -42,15 +38,13 @@ repository already using that directory name for something else is not obliged t
 | `share/` | Example editor configuration `warden show` writes to stdout |
 | `src/` | Every module — the command, the sync, the checks, the index, the MCP server |
 
-**The canon is never copied into a consumer.** It is read from the installed
-`node_modules/@y-core/forge/warden/canon/`. A sync writes `claude/` and nothing else, so a rule can
-never be edited in a consumer and silently reverted by the next sync.
+**The canon is never copied into a consumer.** It is read from the installed `node_modules/@y-core/forge/warden/canon/`. A sync writes `claude/` and
+nothing else, so a rule can never be edited in a consumer and silently reverted by the next sync.
 
 ## Commands
 
-Every command takes `--root=<path>` to name the repository it acts on; the default is derived from
-warden's own install path. Every command that reads the canon takes `--kind=<libs|apps>` to override
-the tree selection.
+Every command takes `--root=<path>` to name the repository it acts on; the default is derived from warden's own install path. Every command that
+reads the canon takes `--kind=<libs|apps>` to override the tree selection.
 
 ### Keeping a repository in step
 
@@ -65,8 +59,7 @@ warden natives               # place the editor architecture's prebuilt native b
 warden show --zed            # write the Zed user settings to stdout, to merge by hand
 ```
 
-A sync deletes `.claude/agents/` wholesale. A repository-local agent added since the last sync is
-lost — keep one outside that directory.
+A sync deletes `.claude/agents/` wholesale. A repository-local agent added since the last sync is lost — keep one outside that directory.
 
 ### Reading the corpus
 
@@ -95,40 +88,33 @@ warden catalogue --write     # write it to <root>/warden/CATALOGUE.md instead
 warden serve                 # serve the corpus over MCP on stdio
 ```
 
-**Only the canon's home repository commits a catalogue.** `warden catalogue` renders the fleet
-canon and nothing repository-specific, so the file is byte-identical wherever it is written —
-forge owns it, and `wardenStep` asserts it only where `catalogue` is configured. Elsewhere the
-live `knowledge://catalogue` resource is the copy, rendered per repository and stored nowhere.
-`--write` writes under the root it was given and refuses a target inside `node_modules`.
+**Only the canon's home repository commits a catalogue.** `warden catalogue` renders the fleet canon and nothing repository-specific, so the file is
+byte-identical wherever it is written — forge owns it, and `wardenStep` asserts it only where `catalogue` is configured. Elsewhere the live
+`knowledge://catalogue` resource is the copy, rendered per repository and stored nowhere. `--write` writes under the root it was given and refuses a
+target inside `node_modules`.
 
-Search, read, outline and related also take `--gate`, which reads the gate's own index rather than
-the working one.
+Search, read, outline and related also take `--gate`, which reads the gate's own index rather than the working one.
 
-**An empty search result is an answer.** Search refuses a question the corpus does not cover rather
-than returning its ten least-bad matches, so nothing governs a subject that comes back empty.
+**An empty search result is an answer.** Search refuses a question the corpus does not cover rather than returning its ten least-bad matches, so
+nothing governs a subject that comes back empty.
 
-**A chunk id names the corpus and the path.** `canon:CODE_RULES.md#5c` is the fleet's law;
-`project:docs/TESTING.md#3b` is this repository's own. A filename and a section number exist in both
-corpora, so the prefix is what says which one a hit came from.
+**A chunk id names the corpus and the path.** `canon:CODE_RULES.md#5c` is the fleet's law; `project:docs/TESTING.md#3b` is this repository's own. A
+filename and a section number exist in both corpora, so the prefix is what says which one a hit came from.
 
 ## Published Surface
 
-Four subpaths of `@y-core/forge` are warden's, and each is a barrel whose table below is held
-against it by the `validate-readme-exports` gate step.
+Four subpaths of `@y-core/forge` are warden's, and each is a barrel whose table below is held against it by the `validate-readme-exports` gate step.
 
 **The root subpath is the whole of warden, and nothing consumes it but forge's own command.**
-`import { createWardenCommands } from "@y-core/forge/warden"` reaches every module — the corpus
-parser, the sync, the index and the CLI alike — which is what `warden/src/bin.ts` needs and more
-than any consumer should take. A consuming repository imports the four narrow subpaths instead: a
-gate that pulls the root barrel for `docsStep` drags the MCP server and the SQLite index in behind
-it.
+`import { createWardenCommands } from "@y-core/forge/warden"` reaches every module — the corpus parser, the sync, the index and the CLI alike —
+which is what `warden/src/bin.ts` needs and more than any consumer should take. A consuming repository imports the four narrow subpaths instead: a
+gate that pulls the root barrel for `docsStep` drags the MCP server and the SQLite index in behind it.
 
 ## `@y-core/forge/warden/checks`
 
 > Import path: `@y-core/forge/warden/checks` → `warden/src/checks/mod.ts`
 
-The gate checks warden owns, each a pure function from a config to a result, plus the parsers they
-are built out of.
+The gate checks warden owns, each a pure function from a config to a result, plus the parsers they are built out of.
 
 ### Exports
 
@@ -139,6 +125,7 @@ are built out of.
 | `DocKind` | type | Which canon tree a directory's documents are read as — `shared`, `libs` or `apps`. |
 | `ExtraDir` | type | One directory outside `docs/` to hold, with the kind its citations resolve against, and whether its documents are numbered governing prose. |
 | `FrontmatterRule` | type | One extra frontmatter key a directory's documents must carry, and the values it may take. |
+| `linkDefinitions` | function | Every `[id]: destination` a document defines, which is where a reference-style citation keeps its path. |
 | `parseSections` | function | A document's numbered sections, with the line each opens on. |
 | `stripFences` | function | The prose of a document with every fenced block removed, so a rule never fires on a code sample. |
 | `validateFrontmatter` | function | Holds a document's frontmatter to `title`, `description` and whichever extra keys the caller requires. |
@@ -160,8 +147,8 @@ are built out of.
 
 > Import path: `@y-core/forge/warden/steps` → `warden/src/steps.ts`
 
-The same checks as gate steps, ready to drop into a repository's `config/steps.ts`. Each label is
-fixed, because a label is the `--only` token a developer types.
+The same checks as gate steps, ready to drop into a repository's `config/steps.ts`. Each label is fixed, because a label is the `--only` token a
+developer types.
 
 ### Exports
 
@@ -179,8 +166,7 @@ fixed, because a label is the `--only` token a developer types.
 
 > Import path: `@y-core/forge/warden/knowledge` → `warden/src/search/mod.ts`
 
-Building, opening and querying the index — everything the CLI and the MCP server are both written
-against.
+Building, opening and querying the index — everything the CLI and the MCP server are both written against.
 
 ### Exports
 
@@ -259,8 +245,7 @@ The MCP server: the tool and resource surface, the JSON-RPC framing, and the std
 
 ## Selecting the Tree
 
-**`libs` is declared; everything else is `apps`.** `"warden": { "kind": "libs" }` in `package.json`
-selects the library trees. An absent key, an absent `warden` object and an absent `package.json` all
-resolve to `apps`, so an application repository needs no configuration at all. Because the default
-is silent about a library that dropped its declaration — and a sync would then replace its agents
-with the apps set — `warden sync` says when it defaulted.
+**`libs` is declared; everything else is `apps`.** `"warden": { "kind": "libs" }` in `package.json` selects the library trees. An absent key, an
+absent `warden` object and an absent `package.json` all resolve to `apps`, so an application repository needs no configuration at all. Because the
+default is silent about a library that dropped its declaration — and a sync would then replace its agents with the apps set — `warden sync` says
+when it defaulted.

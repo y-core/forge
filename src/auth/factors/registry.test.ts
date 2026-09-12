@@ -9,12 +9,13 @@ import { fakeD1 } from "../../testing/fakes";
 import { AuthStoreError } from "../errors";
 import { createFactorStore } from "../stores/factors";
 import type { AuthFactor, AuthFactorKind, FactorStore } from "../types";
+import { fakeFactorOffer } from "../web/test-support";
 import { authFactorContext, createFactorRegistry } from "./registry";
 import type { AuthFactorOffer, AuthFactorRequirement, AuthFactorService, EnrollableFactorService } from "./types";
 
 const USER_ID = uuidv7();
 
-function service(kind: AuthFactorKind, capabilities: { primary: boolean; stepUp: boolean }, enrolment: "explicit" | "implicit"): AuthFactorService {
+function service(kind: AuthFactorKind, capabilities: { stepUp: boolean }, enrolment: "explicit" | "implicit"): AuthFactorService {
   const base = {
     kind,
     capabilities,
@@ -36,10 +37,14 @@ function service(kind: AuthFactorKind, capabilities: { primary: boolean; stepUp:
       };
 }
 
-/** The capability matrix the epic fixes: email-OTP and passkey identify, TOTP-app only proves possession. */
-const EMAIL_OTP = service("email-otp", { primary: true, stepUp: true }, "implicit");
-const PASSKEY = service("passkey", { primary: true, stepUp: true }, "explicit");
-const TOTP_APP = service("totp-app", { primary: false, stepUp: true }, "explicit");
+/** The three real factor shapes: email-OTP is implicit, the other two are enrolled deliberately. */
+const EMAIL_OTP = service("email-otp", { stepUp: true }, "implicit");
+const PASSKEY = service("passkey", { stepUp: true }, "explicit");
+const TOTP_APP = service("totp-app", { stepUp: true }, "explicit");
+
+// A second factor that needs no enrolment row and identifies nobody, so the implicit-second cases
+// can be written without offering the one identifying kind as a second factor.
+const IMPLICIT_PASSKEY = service("passkey", { stepUp: true }, "implicit");
 
 function factor(kind: AuthFactorKind, confirmedAt: number | null): AuthFactor {
   return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, failedAttempts: 0, confirmedAt, createdAt: 1, updatedAt: 1 };
@@ -62,11 +67,11 @@ function stubStore(enrolled: readonly AuthFactor[], calls: AuthFactorKind[][] = 
 }
 
 function primary(offered: AuthFactorService): AuthFactorOffer {
-  return { service: offered, role: "primary" };
+  return fakeFactorOffer(offered, "primary");
 }
 
 function second(offered: AuthFactorService, requirement: AuthFactorRequirement = "optional"): AuthFactorOffer {
-  return { service: offered, role: "second", requirement };
+  return fakeFactorOffer(offered, "second", requirement);
 }
 
 function registry(offered: readonly AuthFactorOffer[], store: FactorStore = stubStore([])): ReturnType<typeof createFactorRegistry> {
@@ -75,14 +80,14 @@ function registry(offered: readonly AuthFactorOffer[], store: FactorStore = stub
 
 describe("the capability matrix", () => {
   it("fixes what each kind may be used for", () => {
-    const rows: readonly { service: AuthFactorService; primary: boolean; stepUp: boolean; enrolment: string }[] = [
-      { service: EMAIL_OTP, primary: true, stepUp: true, enrolment: "implicit" },
-      { service: PASSKEY, primary: true, stepUp: true, enrolment: "explicit" },
-      { service: TOTP_APP, primary: false, stepUp: true, enrolment: "explicit" },
+    const rows: readonly { service: AuthFactorService; stepUp: boolean; enrolment: string }[] = [
+      { service: EMAIL_OTP, stepUp: true, enrolment: "implicit" },
+      { service: PASSKEY, stepUp: true, enrolment: "explicit" },
+      { service: TOTP_APP, stepUp: true, enrolment: "explicit" },
     ];
     for (const row of rows) {
-      expect(`${row.service.kind}: ${row.service.capabilities.primary} ${row.service.capabilities.stepUp} ${row.service.enrolment}`).toBe(
-        `${row.service.kind}: ${row.primary} ${row.stepUp} ${row.enrolment}`,
+      expect(`${row.service.kind}: ${row.service.capabilities.stepUp} ${row.service.enrolment}`).toBe(
+        `${row.service.kind}: ${row.stepUp} ${row.enrolment}`,
       );
     }
   });
@@ -102,7 +107,7 @@ describe("the capability matrix", () => {
 
 describe("createFactorRegistry — what it refuses to build", () => {
   it("takes the factor declared primary, whichever position it holds", () => {
-    expect(registry([second(TOTP_APP), primary(PASSKEY)]).primary.kind).toBe("passkey");
+    expect(registry([second(TOTP_APP), primary(EMAIL_OTP)]).primary.kind).toBe("email-otp");
     expect(registry([primary(EMAIL_OTP), second(PASSKEY)]).primary.kind).toBe("email-otp");
   });
 
@@ -112,17 +117,29 @@ describe("createFactorRegistry — what it refuses to build", () => {
 
   it("refuses an offer declaring no primary, and one declaring several", () => {
     expect(() => registry([second(TOTP_APP)])).toThrow("createFactorRegistry: no offered factor is declared primary");
-    expect(() => registry([primary(EMAIL_OTP), primary(PASSKEY)])).toThrow(
-      'createFactorRegistry: 2 offered factors are declared primary — "email-otp", "passkey"',
+    expect(() => registry([primary(EMAIL_OTP), primary(EMAIL_OTP)])).toThrow(
+      'createFactorRegistry: 2 offered factors are declared primary — "email-otp", "email-otp"',
     );
   });
 
-  it("refuses TOTP-app as primary, because an authenticator app proves possession and does not identify", () => {
-    expect(() => registry([primary(TOTP_APP), second(PASSKEY)])).toThrow('createFactorRegistry: "totp-app" cannot be a primary factor');
+  // The rule the type states: a primary factor must identify the visitor, and only the emailed code
+  // does — the visitor types the address. An offer of any other kind does not typecheck either.
+  it("refuses a primary factor that does not identify the visitor", () => {
+    for (const offered of [PASSKEY, TOTP_APP]) {
+      expect(() => registry([{ service: offered, role: "primary" } as unknown as AuthFactorOffer, second(TOTP_APP)])).toThrow(
+        `createFactorRegistry: "${offered.kind}" cannot be a primary factor — a primary factor must identify the visitor, which only "email-otp" does`,
+      );
+    }
+  });
+
+  it("does not typecheck an offer of the passkey as primary", () => {
+    // @ts-expect-error a passkey authenticates from nothing, so it can never be the primary factor
+    const illegal: AuthFactorOffer = { service: PASSKEY, role: "primary" };
+    expect(illegal.role).toBe("primary");
   });
 
   it("refuses a second factor that cannot step up", () => {
-    const bystander = service("passkey", { primary: true, stepUp: false }, "explicit");
+    const bystander = service("passkey", { stepUp: false }, "explicit");
     expect(() => registry([primary(EMAIL_OTP), second(bystander)])).toThrow('createFactorRegistry: "passkey" cannot be a second factor');
   });
 
@@ -133,7 +150,7 @@ describe("createFactorRegistry — what it refuses to build", () => {
   // What the retired `{mode: "second-factor"}` throw used to refuse. It is now simply a deployment
   // that offers no second factor, which is the state `{mode: "single"}` named.
   it("admits an offer with no second factor at all", () => {
-    const built = registry([primary(PASSKEY)]);
+    const built = registry([primary(EMAIL_OTP)]);
     expect(built.seconds).toEqual([]);
   });
 });
@@ -141,31 +158,31 @@ describe("createFactorRegistry — what it refuses to build", () => {
 describe("createFactorRegistry — resolving a second factor", () => {
   it("asks for nothing when no second factor is offered, and does not touch the store", async () => {
     const calls: AuthFactorKind[][] = [];
-    const resolved = await registry([primary(PASSKEY)], stubStore([], calls)).resolve(USER_ID);
+    const resolved = await registry([primary(EMAIL_OTP)], stubStore([], calls)).resolve(USER_ID);
     expect(resolved).toEqual({ ok: true, data: { status: "satisfied" } });
     expect(calls).toHaveLength(0);
   });
 
   it("demands a step-up naming exactly the confirmed enrolments", async () => {
     const store = stubStore([factor("totp-app", 5_000)]);
-    const resolved = await registry([primary(PASSKEY), second(TOTP_APP, "mandatory")], store).resolve(USER_ID);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")], store).resolve(USER_ID);
     expect(resolved).toEqual({ ok: true, data: { status: "step-up-required", kinds: ["totp-app"] } });
   });
 
   it("ignores an unconfirmed enrolment, which is a half-finished ceremony and not a factor", async () => {
     const store = stubStore([factor("totp-app", null)]);
-    const resolved = await registry([primary(PASSKEY), second(TOTP_APP)], store).resolve(USER_ID);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP)], store).resolve(USER_ID);
     expect(resolved).toEqual({ ok: true, data: { status: "satisfied" } });
   });
 
   it("asks for enrolment as a successful outcome when a mandatory factor is not enrolled", async () => {
-    const resolved = await registry([primary(PASSKEY), second(TOTP_APP, "mandatory")]).resolve(USER_ID);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")]).resolve(USER_ID);
     expect(resolved.ok).toBe(true);
     expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"] } });
   });
 
   it("asks for nothing when every second factor is optional and nothing is enrolled", async () => {
-    const resolved = await registry([primary(PASSKEY), second(TOTP_APP)]).resolve(USER_ID);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP)]).resolve(USER_ID);
     expect(resolved).toEqual({ ok: true, data: { status: "satisfied" } });
   });
 
@@ -189,7 +206,7 @@ describe("createFactorRegistry — resolving a second factor", () => {
   });
 
   it("demands `mandatoryForRoles` of a matching role alone", async () => {
-    const offered = [primary(PASSKEY), second(TOTP_APP, { mandatoryForRoles: ["admin"] })];
+    const offered = [primary(EMAIL_OTP), second(TOTP_APP, { mandatoryForRoles: ["admin"] })];
     expect(await registry(offered).resolve(USER_ID, { roles: ["admin"] })).toEqual({
       ok: true,
       data: { status: "enrolment-required", kinds: ["totp-app"] },
@@ -211,28 +228,28 @@ describe("createFactorRegistry — resolving a second factor", () => {
 
   it("demands an implicit step-up factor from a user holding no factor rows, whatever it is required to be", async () => {
     for (const requirement of ["mandatory", "optional"] as const) {
-      const resolved = await registry([primary(PASSKEY), second(EMAIL_OTP, requirement)]).resolve(USER_ID);
+      const resolved = await registry([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY, requirement)]).resolve(USER_ID);
       expect(`${requirement}: ${JSON.stringify(resolved)}`).toBe(
-        `${requirement}: ${JSON.stringify({ ok: true, data: { status: "step-up-required", kinds: ["email-otp"] } })}`,
+        `${requirement}: ${JSON.stringify({ ok: true, data: { status: "step-up-required", kinds: ["passkey"] } })}`,
       );
     }
   });
 
   it("names an implicit factor beside a confirmed explicit one, in the order they were offered", async () => {
     const store = stubStore([factor("totp-app", 5_000)]);
-    const resolved = await registry([primary(PASSKEY), second(EMAIL_OTP), second(TOTP_APP)], store).resolve(USER_ID);
-    expect(resolved).toEqual({ ok: true, data: { status: "step-up-required", kinds: ["email-otp", "totp-app"] } });
+    const resolved = await registry([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY), second(TOTP_APP)], store).resolve(USER_ID);
+    expect(resolved).toEqual({ ok: true, data: { status: "step-up-required", kinds: ["passkey", "totp-app"] } });
   });
 
   it("never reports `enrolment-required` with an empty kinds list, whatever is offered and whatever is enrolled", async () => {
-    const seconds: readonly (readonly AuthFactorService[])[] = [[TOTP_APP], [EMAIL_OTP], [EMAIL_OTP, TOTP_APP]];
+    const seconds: readonly (readonly AuthFactorService[])[] = [[TOTP_APP], [IMPLICIT_PASSKEY], [IMPLICIT_PASSKEY, TOTP_APP]];
     const stores = [stubStore([]), stubStore([factor("totp-app", null)]), stubStore([factor("totp-app", 5_000)])];
     const requirements: readonly AuthFactorRequirement[] = ["mandatory", "optional", { mandatoryForRoles: ["admin"] }];
     const empty: string[] = [];
     for (const services of seconds) {
       for (const requirement of requirements) {
         for (const store of stores) {
-          const offered = [primary(PASSKEY), ...services.map((held) => second(held, requirement))];
+          const offered = [primary(EMAIL_OTP), ...services.map((held) => second(held, requirement))];
           const resolved = await registry(offered, store).resolve(USER_ID, { roles: ["admin"] });
           if (!resolved.ok) throw new Error("resolve refused");
           if (resolved.data.status === "enrolment-required" && resolved.data.kinds.length === 0) {
@@ -249,7 +266,7 @@ describe("createFactorRegistry — resolving a second factor", () => {
       ...stubStore([]),
       findEnrolled: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.findEnrolled"))),
     };
-    const resolved = await registry([primary(PASSKEY), second(TOTP_APP, "mandatory")], failing).resolve(USER_ID);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")], failing).resolve(USER_ID);
     expect(resolved.ok).toBe(false);
     expect(resolved.ok === false && resolved.error).toBeInstanceOf(AuthStoreError);
   });
@@ -269,7 +286,7 @@ describe("createFactorRegistry — the query count", () => {
   it("asks the store only about the explicit kinds, because an implicit one has no row to find", async () => {
     const db = fakeD1(() => []);
     const store = createFactorStore(createD1Client(db as unknown as D1Database, { logger: nullLogger }));
-    await createFactorRegistry(store, { offered: [primary(PASSKEY), second(EMAIL_OTP), second(TOTP_APP)] }).resolve(USER_ID);
+    await createFactorRegistry(store, { offered: [primary(EMAIL_OTP), second(IMPLICIT_PASSKEY), second(TOTP_APP)] }).resolve(USER_ID);
     expect(db.calls).toHaveLength(1);
     expect(db.calls[0]?.params.slice(1)).toEqual(["totp-app"]);
   });
@@ -277,15 +294,15 @@ describe("createFactorRegistry — the query count", () => {
   it("issues no statement at all when every second factor is implicit", async () => {
     const db = fakeD1(() => []);
     const store = createFactorStore(createD1Client(db as unknown as D1Database, { logger: nullLogger }));
-    await createFactorRegistry(store, { offered: [primary(PASSKEY), second(EMAIL_OTP, "mandatory")] }).resolve(USER_ID);
+    await createFactorRegistry(store, { offered: [primary(EMAIL_OTP), second(IMPLICIT_PASSKEY, "mandatory")] }).resolve(USER_ID);
     expect(db.calls).toHaveLength(0);
   });
 });
 
 describe("createFactorRegistry — find", () => {
   it("returns an offered service by kind and undefined for one that is not offered", () => {
-    const built = registry([primary(PASSKEY), second(TOTP_APP)]);
-    expect(built.find("passkey")?.kind).toBe("passkey");
-    expect(built.find("email-otp")).toBeUndefined();
+    const built = registry([primary(EMAIL_OTP), second(TOTP_APP)]);
+    expect(built.find("totp-app")?.kind).toBe("totp-app");
+    expect(built.find("passkey")).toBeUndefined();
   });
 });

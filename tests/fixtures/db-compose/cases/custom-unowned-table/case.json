@@ -1,0 +1,8 @@
+{
+  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x'), (2, 'b@x');",
+  "custom": "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT) STRICT;\nINSERT INTO notes (id, body) VALUES (1, 'n');\n",
+  "expectStderr": ["warning: notes is in the migrations and in no declared schema"],
+  "expectStdout": ["add column users.nickname"],
+  "query": "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM notes) AS notes",
+  "rows": [{ "users": 2, "notes": 1 }]
+}

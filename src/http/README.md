@@ -6,11 +6,10 @@ audience: consumer
 
 # `@y-core/forge/http`
 
-HTTP response construction and HTML output helpers for server-rendered apps on
-`@remix-run/fetch-router` + Cloudflare Workers: `Response` builders for full pages, HTMX fragments,
-and redirects; pre-built HTMX status banners; typed header-value builders; and a safe-HTML toolkit
-(`html` tagged template, escaping, URL sanitization) that defends against injection by default. Each
-concern is a separate, independently useful function — compose only what a route needs.
+HTTP response construction and HTML output helpers for server-rendered apps on `@remix-run/fetch-router` + Cloudflare Workers: `Response` builders
+for full pages, HTMX fragments, and redirects; pre-built HTMX status banners; typed header-value builders; and a safe-HTML toolkit (`html` tagged
+template, escaping, URL sanitization) that defends against injection by default. Each concern is a separate, independently useful function — compose
+only what a route needs.
 
 ```ts
 import {
@@ -39,31 +38,26 @@ import {
 
 ## Features
 
-- **Response builders** — `htmlResponse` constructs a full-page `Response` (guaranteed
-  `<!DOCTYPE html>` + `content-type: text/html`); `fragmentResponse` constructs a DOCTYPE-less HTMX
-  partial; `jsonResponse` constructs a JSON `Response`; `redirect` / `createRedirectResponse` build
-  redirect responses.
-- **HTMX status fragments** — `renderSuccess`, `renderError`, and `renderValidationErrors` produce
-  ready-styled banner markup as `SafeHtml`, with every dynamic message HTML-escaped.
-- **Safe HTML by construction** — the `html` tagged template auto-escapes every interpolated value;
-  `rawHtml` opts a trusted string out of escaping; `SafeHtml` is a branded type so unescaped strings
-  can never silently slip into output.
-- **Standalone escaping** — `escapeHtml` escapes text/attribute contexts; `safeUrl` sanitizes URL
-  values, collapsing `javascript:`, `data:`, and other dangerous schemes to `"#"`.
-- **Typed header builders** — `ContentType`, `CacheControl`, `SetCookie`, `Accept`, `Vary`,
-  `ContentDisposition`, `ContentRange`, and `Range` are typed header-value classes that build a
-  correct header **value** string from structured input.
-- **Path joining** — `joinPath` composes URL path segments, collapsing duplicate slashes and trimming
-  a trailing slash.
-- **Return-to guard** — `safeRedirectPath` reduces an untrusted `?next=` value to a same-origin path,
-  or to the caller's fallback.
+- **Response builders** — `htmlResponse` constructs a full-page `Response` (guaranteed `<!DOCTYPE html>` + `content-type: text/html`);
+  `fragmentResponse` constructs a DOCTYPE-less HTMX partial; `jsonResponse` constructs a JSON `Response`; `redirect` / `createRedirectResponse`
+  build redirect responses.
+- **HTMX status fragments** — `renderSuccess`, `renderError`, and `renderValidationErrors` produce ready-styled banner markup as `SafeHtml`, with
+  every dynamic message HTML-escaped.
+- **Safe HTML by construction** — the `html` tagged template auto-escapes every interpolated value; `rawHtml` opts a trusted string out of escaping;
+  `SafeHtml` is a distinct class so unescaped strings can never silently slip into output.
+- **Standalone escaping** — `escapeHtml` escapes text/attribute contexts; `safeUrl` sanitizes URL values, collapsing `javascript:`, `data:`, and
+  other dangerous schemes to `"#"`.
+- **Typed header builders** — `ContentType`, `CacheControl`, `SetCookie`, `Accept`, `Vary`, `ContentDisposition`, `ContentRange`, and `Range` are
+  typed header-value classes that build a correct header **value** string from structured input.
+- **Path joining** — `joinPath` composes URL path segments, collapsing duplicate slashes and trimming a trailing slash.
+- **Return-to guard** — `safeRedirectPath` reduces an untrusted `?next=` value to a same-origin path, or to the caller's fallback.
 
 ---
 
 ## Usage
 
-A route handler that renders a full page, then an action handler that returns an HTMX fragment on
-success and a validation-error fragment on failure:
+A route handler that renders a full page, then an action handler that returns an HTMX fragment on success and a validation-error fragment on
+failure:
 
 ```ts
 import { htmlResponse, fragmentResponse, redirect, renderSuccess, renderValidationErrors, html, CacheControl } from "@y-core/forge/http";
@@ -98,9 +92,8 @@ function logout(context) {
 }
 ```
 
-Because the `html` tag escapes interpolations automatically, `${context.user.name}` is safe even if
-the name contains `<` or `&`. To embed already-trusted markup (e.g. output from another renderer),
-wrap it with `rawHtml`:
+Because the `html` tag escapes interpolations automatically, `${context.user.name}` is safe even if the name contains `<` or `&`. To embed
+already-trusted markup (e.g. output from another renderer), wrap it with `rawHtml`:
 
 ```ts
 import { html, rawHtml } from "@y-core/forge/http";
@@ -119,10 +112,9 @@ const body = html`<div>${trusted} and ${userInput}</div>`; // userInput IS escap
 function htmlResponse(body: string | SafeHtml, status?: number, headers?: Record<string, string>): Response;
 ```
 
-Constructs a full-page HTML `Response`, guaranteeing a leading `<!DOCTYPE html>` and a
-`content-type: text/html; charset=utf-8` header. Accepts a `SafeHtml` value (e.g. from a renderer) or
-a plain string. For HTMX partials that must **not** carry a DOCTYPE, use `fragmentResponse` instead.
-The `content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
+Constructs a full-page HTML `Response`, guaranteeing a leading `<!DOCTYPE html>` and a `content-type: text/html; charset=utf-8` header. Accepts a
+`SafeHtml` value (e.g. from a renderer) or a plain string. For HTMX partials that must **not** carry a DOCTYPE, use `fragmentResponse` instead. The
+`content-type` is fixed: passing a `content-type` key in `headers` (case-insensitive) **throws**.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -136,9 +128,8 @@ The `content-type` is fixed: passing a `content-type` key in `headers` (case-ins
 function fragmentResponse(body: string | SafeHtml, status?: number, headers?: Record<string, string>): Response;
 ```
 
-`htmlResponse` above, minus the DOCTYPE: fragments are swapped into an existing document by HTMX, so
-adding one would nest a second document inside the first. Same parameters, same fixed `content-type`,
-same throw on passing one. Use `htmlResponse` for full documents.
+`htmlResponse` above, minus the DOCTYPE: fragments are swapped into an existing document by HTMX, so adding one would nest a second document inside
+the first. Same parameters, same fixed `content-type`, same throw on passing one. Use `htmlResponse` for full documents.
 
 ### JSON responses — `jsonResponse`
 
@@ -146,9 +137,9 @@ same throw on passing one. Use `htmlResponse` for full documents.
 function jsonResponse(body: unknown, status?: number, headers?: Record<string, string>): Response;
 ```
 
-Serialises `body` with `JSON.stringify` and fixes `content-type: application/json; charset=utf-8`.
-Like the two HTML builders, passing a `content-type` in `headers` throws rather than being ignored,
-in any casing — a response whose declared type disagrees with its bytes is a bug worth failing on.
+Serialises `body` with `JSON.stringify` and fixes `content-type: application/json; charset=utf-8`. Like the two HTML builders, passing a
+`content-type` in `headers` throws rather than being ignored, in any casing — a response whose declared type disagrees with its bytes is a bug worth
+failing on.
 
 ### Redirects — `redirect`, `createRedirectResponse`
 
@@ -157,9 +148,8 @@ function redirect(url: string, status?: number, headers?: Record<string, string>
 function createRedirectResponse(url: string, status?: number, headers?: Record<string, string>): Response;
 ```
 
-`redirect` is an alias of `createRedirectResponse`. Both build a redirect `Response` with the
-`Location` header set to `url`. The default status is `302`; pass `303` (See Other) after a successful
-form POST or `301`/`307`/`308` as appropriate.
+`redirect` is an alias of `createRedirectResponse`. Both build a redirect `Response` with the `Location` header set to `url`. The default status is
+`302`; pass `303` (See Other) after a successful form POST or `301`/`307`/`308` as appropriate.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -181,8 +171,8 @@ function renderError(message: string, options?: FragmentOptions): SafeHtml;
 function renderValidationErrors(errors: readonly string[], options?: FragmentOptions): SafeHtml;
 ```
 
-Each renders a pre-styled banner as `SafeHtml`, with every dynamic value HTML-escaped. They return
-markup, not a `Response` — wrap the result in `fragmentResponse` to send it:
+Each renders a pre-styled banner as `SafeHtml`, with every dynamic value HTML-escaped. They return markup, not a `Response` — wrap the result in
+`fragmentResponse` to send it:
 
 ```ts
 import { fragmentResponse, renderError, renderValidationErrors } from "@y-core/forge/http";
@@ -192,15 +182,14 @@ return fragmentResponse(renderError("Could not save your changes."), 500);
 return fragmentResponse(renderValidationErrors(["Email is required.", "Password is too short."]), 422);
 ```
 
-- `renderSuccess` renders an emerald success banner. It stamps a marker attribute (default
-  `data-success`) on the wrapper so client code / tests can target it.
+- `renderSuccess` renders an emerald success banner. It stamps a marker attribute (default `data-success`) on the wrapper so client code / tests can
+  target it.
 - `renderError` renders a red error banner with the escaped message.
-- `renderValidationErrors` renders a red banner containing a `<ul>` of per-error `<li>` items, each
-  message escaped, under a fixed `"Please correct the following fields."` heading.
+- `renderValidationErrors` renders a red banner containing a `<ul>` of per-error `<li>` items, each message escaped, under a fixed
+  `"Please correct the following fields."` heading.
 
-Those default banner classes — and `ulClass`'s default, which lives in `fragment.ts` too — are
-Tailwind classes that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/http";` to
-your own stylesheet, or override `class` and `ulClass` with your own.
+Those default banner classes — and `ulClass`'s default, which lives in `fragment.ts` too — are Tailwind classes that `forge.css` does not scan, so
+add `@source "…/@y-core/forge/src/http";` to your own stylesheet, or override `class` and `ulClass` with your own.
 
 **`FragmentOptions`:**
 
@@ -213,20 +202,24 @@ your own stylesheet, or override `class` and `ulClass` with your own.
 ### Safe HTML — `html`, `rawHtml`, `isSafeHtml`, `SafeHtml`
 
 ```ts
+class SafeHtml {
+  toString(): string;
+  valueOf(): string;
+}
 const html: HtmlTemplateTag;
 function rawHtml(s: string): SafeHtml;
 function isSafeHtml(value: unknown): value is SafeHtml;
 ```
 
-`SafeHtml` is a **branded string type** representing HTML that is safe to emit without further
-escaping. It can only be produced through this toolkit — never by an ordinary string assignment.
+`SafeHtml` is a **class** wrapping HTML that is safe to emit without further escaping. It can only be produced through this toolkit — never by an
+ordinary string assignment. It is not a string: read the markup out with `String(value)` or template interpolation, not with `String.prototype`
+methods.
 
-- **`html`** is a tagged template literal. Every `${…}` interpolation is HTML-escaped **unless** the
-  value is already `SafeHtml` (e.g. a nested `html` result or a `rawHtml` value), which is inlined
-  verbatim. The result is `SafeHtml`.
-- **`rawHtml(s)`** marks a trusted string as `SafeHtml` so the `html` tag will inline it without
-  escaping. Use it **only** for content you fully control — never for user input. (It replaces the
-  older `html.raw(str)` form.)
+- **`html`** is a tagged template literal. Every `${…}` interpolation is HTML-escaped **unless** the value is already `SafeHtml` (e.g. a nested
+  `html` result or a `rawHtml` value), which is inlined verbatim. `null` and `undefined` render as `""`; arrays are flattened and joined with no
+  separator. The result is `SafeHtml`. Calling `html(value)` as a plain function throws a `TypeError` rather than emitting its argument unescaped.
+- **`rawHtml(s)`** marks a trusted string as `SafeHtml` so the `html` tag will inline it without escaping. It is the **only** escaping opt-out —
+  `html.raw` no longer exists.
 - **`isSafeHtml(value)`** is a type guard that returns `true` for values produced by `html` / `rawHtml`.
 
 ```ts
@@ -238,6 +231,15 @@ isSafeHtml(safe); // true
 isSafeHtml("<b>"); // false — a bare string is never SafeHtml
 ```
 
+**`rawHtml` reintroduces XSS if handed user input.** It is an escape hatch for markup you fully control; there is no second one.
+
+**Escaping is text-content and quoted-attribute grade only.** `html` escapes `& < > " '`, which is sufficient inside element text and inside a
+quoted attribute value. It is **not** sufficient inside an unquoted attribute, inside `<script>` or `<style>`, or for a URL. For a URL use
+`safeUrl`, which the JSX renderer already applies to `href` / `src` / `action` and friends.
+
+**`isSafeHtml` is an `instanceof` check**, so it fails across duplicate copies of this module. Forge ships raw TypeScript and a consumer's bundler
+produces one copy per build, so this only arises if two different forge versions are bundled together.
+
 ### Standalone escaping — `escapeHtml`, `safeUrl`
 
 ```ts
@@ -245,13 +247,11 @@ function escapeHtml(str: string): string;
 function safeUrl(value: string): string;
 ```
 
-`escapeHtml` escapes `&`, `<`, `>`, `"`, and `'` for safe embedding in HTML **text nodes** and
-**double-quoted attribute values**. Use it in non-template contexts (error pages, emails, hand-built
-fragments) where the `html` tag is not in play.
+`escapeHtml` escapes `&`, `<`, `>`, `"`, and `'` for safe embedding in HTML **text nodes** and **double-quoted attribute values**. Use it in
+non-template contexts (error pages, emails, hand-built fragments) where the `html` tag is not in play.
 
-> `escapeHtml` is **not** sufficient for URL attributes (`href`, `src`, `action`) or inline
-> JavaScript. URL values require scheme sanitization via `safeUrl`; the result of `safeUrl` should
-> then be passed through `escapeHtml` before embedding.
+> `escapeHtml` is **not** sufficient for URL attributes (`href`, `src`, `action`) or inline JavaScript. URL values require scheme sanitization via
+> `safeUrl`; the result of `safeUrl` should then be passed through `escapeHtml` before embedding.
 
 `safeUrl` sanitizes a URL for use in `href`/`src`-style attributes:
 
@@ -262,8 +262,8 @@ fragments) where the `html` tag is not in play.
 | `javascript:`, `vbscript:`, `data:`, or any other scheme | collapses to `"#"` |
 | Protocol-relative (`//host`, `\\host`) | collapses to `"#"` |
 
-It defeats obfuscation via leading/embedded whitespace, control characters, and mixed case. The caller
-remains responsible for HTML-escaping the returned value.
+It defeats obfuscation via leading/embedded whitespace, control characters, and mixed case. The caller remains responsible for HTML-escaping the
+returned value.
 
 ```ts
 import { escapeHtml, safeUrl } from "@y-core/forge/http";
@@ -274,11 +274,9 @@ const link = `<a href="${href}">link</a>`;
 
 ### Typed header builders — `ContentType`, `CacheControl`, `SetCookie`, and more
 
-Each builder is a **class** that constructs a typed header **value** from structured input (or from a
-raw string). Instantiate with `new`, passing the corresponding `*Init` object, then stringify with
-`.toString()` (or `String(...)`) to obtain the header value. They do **not** return a `Headers` object
-— pass the stringified value as a header value in a `Response` init or into `htmlResponse` /
-`fragmentResponse` / `redirect`.
+Each builder is a **class** that constructs a typed header **value** from structured input (or from a raw string). Instantiate with `new`, passing
+the corresponding `*Init` object, then stringify with `.toString()` (or `String(...)`) to obtain the header value. They do **not** return a
+`Headers` object — pass the stringified value as a header value in a `Response` init or into `htmlResponse` / `fragmentResponse` / `redirect`.
 
 | Builder | Init type | Builds the value for | Example init fields |
 | --- | --- | --- | --- |
@@ -291,9 +289,8 @@ raw string). Instantiate with `new`, passing the corresponding `*Init` object, t
 | `ContentRange` | `ContentRangeInit` | `Content-Range` | `start`, `end`, `size` |
 | `Range` | `RangeInit` | `Range` | byte ranges |
 
-`fragmentResponse` and `htmlResponse` fix `content-type` themselves (passing that key throws), so
-use the builders for the **other** headers you merge in, and reach for a raw `Response` when you must
-set `content-type` explicitly:
+`fragmentResponse` and `htmlResponse` fix `content-type` themselves (passing that key throws), so use the builders for the **other** headers you
+merge in, and reach for a raw `Response` when you must set `content-type` explicitly:
 
 ```ts
 import { fragmentResponse, ContentType, CacheControl } from "@y-core/forge/http";
@@ -305,12 +302,10 @@ return fragmentResponse(body, 200, { "cache-control": new CacheControl({ maxAge:
 return new Response(body, { status: 200, headers: { "content-type": new ContentType({ mediaType: "text/html", charset: "utf-8" }).toString() } });
 ```
 
-Each builder also exposes a static `from(value)` that parses an existing header value (string or init)
-into an instance.
+Each builder also exposes a static `from(value)` that parses an existing header value (string or init) into an instance.
 
-> For application cookies prefer `createSignedCookie` / `createUnsignedCookie` from `@y-core/forge/session`, which handle
-> parsing/serialization and signing. Reach for the low-level `SetCookie` builder only when
-> constructing raw header values by hand.
+> For application cookies prefer `createSignedCookie` / `createUnsignedCookie` from `@y-core/forge/session`, which handle parsing/serialization and
+> signing. Reach for the low-level `SetCookie` builder only when constructing raw header values by hand.
 
 ### Return-to guard — `safeRedirectPath`
 
@@ -318,9 +313,8 @@ into an instance.
 function safeRedirectPath(candidate: string | null | undefined, fallback: string): string;
 ```
 
-Takes an untrusted return-to candidate — a `?next=` query value, a hidden form field, a stored
-redirect target — and returns either a same-origin path or `fallback`. A candidate qualifies only if
-it starts with a single `/` after C0/C1 controls and spaces are stripped, and resolves without
+Takes an untrusted return-to candidate — a `?next=` query value, a hidden form field, a stored redirect target — and returns either a same-origin
+path or `fallback`. A candidate qualifies only if it starts with a single `/` after C0/C1 controls and spaces are stripped, and resolves without
 changing origin; the returned path is the resolved, normalised `pathname + search + hash`.
 
 | Candidate | Result |
@@ -332,8 +326,7 @@ changing origin; the returned path is the resolved, normalised `pathname + searc
 | `javascript:alert(1)` | the fallback |
 | `#top`, `?`, `""` | the fallback |
 
-The function knows no origin, so an absolute URL is refused even when it names your own host. Pass
-the path, not the URL.
+The function knows no origin, so an absolute URL is refused even when it names your own host. Pass the path, not the URL.
 
 ### Path joining — `joinPath`
 
@@ -341,8 +334,8 @@ the path, not the URL.
 function joinPath(base: string, ...segments: string[]): string;
 ```
 
-Joins a base path with zero or more segments into a clean URL path: it collapses duplicate slashes
-between parts, trims a trailing slash, and preserves a leading slash when `base` has one.
+Joins a base path with zero or more segments into a clean URL path: it collapses duplicate slashes between parts, trims a trailing slash, and
+preserves a leading slash when `base` has one.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -361,7 +354,7 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview" (no leading slas
 
 | Type | Description |
 | --- | --- |
-| `SafeHtml` | Branded string for HTML safe to emit without further escaping; produced only via `html` / `rawHtml`. |
+| `SafeHtml` | Class wrapping HTML safe to emit without further escaping; produced only via `html` / `rawHtml`. |
 | `HtmlTemplateTag` | The signature of the `html` tagged-template function. |
 | `FragmentOptions` | `{ class?, successAttr?, ulClass? }` for the `render*` fragment helpers. |
 | `ContentTypeInit` | Structured input for `ContentType`. |
@@ -377,30 +370,28 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview" (no leading slas
 
 ## Security
 
-- **Prefer the `html` tag and `render*` helpers over hand-built strings.** They escape interpolated
-  values by default; raw template literals do not. When you must build markup by hand, run every
-  dynamic value through `escapeHtml`.
-- **`rawHtml` is an escaping opt-out — use it only for trusted content.** Passing user input through
-  `rawHtml` (or any unescaped interpolation) reintroduces XSS. `SafeHtml` is branded precisely so
-  unescaped strings cannot reach output by accident.
-- **Sanitize URL attribute values with `safeUrl` before escaping.** `escapeHtml` alone does not block
-  `javascript:` / `data:` URLs in `href`/`src`/`action`; `safeUrl` collapses dangerous schemes to
-  `"#"`. Apply `safeUrl` first, then `escapeHtml` the result.
-- **`successAttr` is validated, not escaped.** `renderSuccess` rejects an attribute name that is not a
-  valid HTML identifier (`^[A-Za-z_][A-Za-z0-9_-]*$`) by throwing. Keep `successAttr` developer-supplied
-  configuration — never derive it from request input. Why it alone is interpolated verbatim while
-  every option _class_ value is escaped is [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §2d's.
+- **Prefer the `html` tag and `render*` helpers over hand-built strings.** They escape interpolated values by default; raw template literals do not.
+  When you must build markup by hand, run every dynamic value through `escapeHtml`.
+- **`rawHtml` is an escaping opt-out — use it only for trusted content.** Passing user input through `rawHtml` (or any unescaped interpolation)
+  reintroduces XSS. It is the only opt-out, and `SafeHtml` is a distinct class precisely so unescaped strings cannot reach output by accident.
+- **Sanitize URL attribute values with `safeUrl` before escaping.** `escapeHtml` alone does not block `javascript:` / `data:` URLs in
+  `href`/`src`/`action`; `safeUrl` collapses dangerous schemes to `"#"`. Apply `safeUrl` first, then `escapeHtml` the result.
+- **`successAttr` is validated, not escaped.** `renderSuccess` rejects an attribute name that is not a valid HTML identifier
+  (`^[A-Za-z_][A-Za-z0-9_-]*$`) by throwing. Keep `successAttr` developer-supplied configuration — never derive it from request input. Why it alone
+  is interpolated verbatim while every option _class_ value is escaped is [`ERROR_HANDLING.md`][eh-2d] §2d's.
 
 ---
 
 ## See also
 
-- [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the fragment renderers' contract and where the
-  status goes (§2), the fragment options and their escaping (§2d), and the `htmlResponse` / `html` /
-  `escapeHtml` render paths (§3).
-- [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) — automatic `safeUrl` sanitization at
-  JSX render time, and why no `hx-*` attribute is covered by it (§2d).
-- [`NAMESPACES.md`](../../docs/NAMESPACES.md) — the ruling that every HTTP output concern lands here
-  rather than reaching for `@remix-run/headers` or `@remix-run/html-template` directly (§5d).
-- [`@y-core/forge/session`](../session/) — `createSignedCookie` / `createUnsignedCookie`, preferred over the raw `SetCookie` builder
-  for application cookies.
+- [`ERROR_HANDLING.md`][eh] — the fragment renderers' contract and where the status goes (§2), the fragment options and their escaping (§2d), and
+  the `htmlResponse` / `html` / `escapeHtml` render paths (§3).
+- [`SECURITY_HARDENING.md`][sh] — automatic `safeUrl` sanitization at JSX render time, and why no `hx-*` attribute is covered by it (§2d).
+- [`NAMESPACES.md`][namespaces] — the ruling that every HTTP output concern lands here rather than reaching for `@remix-run/headers` directly (§5d).
+- [`@y-core/forge/session`](../session/) — `createSignedCookie` / `createUnsignedCookie`, preferred over the raw `SetCookie` builder for application
+  cookies.
+
+[eh]: ../../docs/ERROR_HANDLING.md
+[eh-2d]: ../../docs/ERROR_HANDLING.md#2d-fragment-options-and-escaping
+[namespaces]: ../../docs/NAMESPACES.md
+[sh]: ../../docs/SECURITY_HARDENING.md

@@ -1,0 +1,163 @@
+import { join, resolve } from "node:path";
+
+import { CliError } from "../../cli/errors";
+import { sha256 } from "../digest";
+import { migrationsHome } from "../home";
+import { COMPANION_TABLES, ensureCompanionTables } from "../migrate/companions";
+import { migrationChecksum, migrationsDigest } from "../migrate/files";
+import { parseMigrationHeader } from "../schema/header";
+import { INVENTORY_SELECT, quoteSqlIdentifier, rowCountSelect, toSchemaObjects } from "../sql";
+import { isRemotePlace } from "../target";
+import type { BackupManifest, DbRunContext, Migration } from "../types";
+import { executeFile, migrationsApply, queryOne, queryRows, queryRowsIfTable } from "../wrangler";
+import {
+  appSchemaDigestInput,
+  checkRestoreTarget,
+  classifyTable,
+  compareManifests,
+  manifestSelfDigest,
+  validateManifest,
+  verifyBackupArtifact,
+} from "./artifact";
+import { describeTable, readWholeTable } from "./read";
+import type { RestoreOptions, RestoreOutcome, RestorePlan, RestoreTargetState } from "./types";
+
+function refuseRemoteRestore(run: DbRunContext): void {
+  const place = run.config.target.place;
+  if (!isRemotePlace(place)) return;
+  throw new CliError(
+    "invalid-args",
+    `restore is refused for ${place} — return a deployed database to a point in time with \`forge db bookmark restore\`, which is D1's own undo`,
+  );
+}
+
+/** Reads and validates the artifact's manifest, refusing one this tool did not write. @public */
+export function readBackupManifest(run: DbRunContext, artifact: string): BackupManifest {
+  const path = join(artifact, "manifest.json");
+  if (!run.io.exists(path)) {
+    throw new CliError("invalid-args", `${path} does not exist — --artifact takes the directory, not a file inside it`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(run.io.readText(path));
+  } catch (error) {
+    throw new CliError("invalid-args", `${path} is not JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const problems = validateManifest(parsed);
+  if (problems.length > 0) throw new CliError("invalid-args", `${path} is not a manifest this tool wrote:\n  ${problems.join("\n  ")}`);
+  const manifest = parsed as BackupManifest;
+  if (manifestSelfDigest(manifest) !== manifest.selfDigest) {
+    throw new CliError(
+      "invalid-args",
+      `${path} does not hash to the selfDigest it carries — it has been truncated, swapped or corrupted since it was written. The digest detects damage and not tampering: anyone who edits a manifest can recompute it.`,
+    );
+  }
+  return manifest;
+}
+
+function discoverArtifactMigrations(run: DbRunContext, artifact: string, manifest: BackupManifest): Migration[] {
+  return manifest.migrations.map((entry, index) => {
+    const path = join(artifact, "migrations", `${entry.name}.sql`);
+    if (!run.io.exists(path)) throw new CliError("invalid-args", `${path} is declared in the manifest and missing from the artifact`);
+    const sql = run.io.readText(path);
+    if (migrationChecksum(sql) !== entry.sha256) throw new CliError("invalid-args", `${path} does not hash to what the manifest declares for it`);
+    const { origin, stamp } = parseMigrationHeader(sql);
+    return { name: entry.name, version: Number(/^(\d+)_/.exec(entry.name)?.[1] ?? index + 1), path, sha256: entry.sha256, sql, origin, stamp };
+  });
+}
+
+function inspect(run: DbRunContext): RestoreTargetState {
+  const objects = toSchemaObjects(queryRows(run.io, run.home, INVENTORY_SELECT));
+  const counts: Record<string, number> = {};
+  for (const object of objects) {
+    if (object.type !== "table") continue;
+    const kind = classifyTable(object.name, run.config.entry.migrationsTable);
+    if (kind !== "app" && !(kind === "managed" && COMPANION_TABLES.includes(object.name))) continue;
+    counts[object.name] = Number(queryOne(run.io, run.home, rowCountSelect(object.name)).rows ?? 0);
+  }
+  return { objects, counts };
+}
+
+/** Everything a restore checks before it asks: the manifest, the artifact whole, its embedded migrations, and an empty target. @public */
+export function prepareRestore(run: DbRunContext, options: RestoreOptions): RestorePlan {
+  refuseRemoteRestore(run);
+  const { io, home, config } = run;
+  const artifact = resolve(config.root, options.artifact);
+  const manifest = readBackupManifest(run, artifact);
+
+  if (options.expect !== undefined && manifest.database.name !== options.expect) {
+    throw new CliError("invalid-args", `--expect ${options.expect} does not match this artifact, which was taken from ${manifest.database.name}`);
+  }
+  const diverged = manifest.verified.filter((route) => route.divergent > 0);
+  if (diverged.length > 0) {
+    throw new CliError(
+      "invalid-args",
+      `${artifact} was proven by ${diverged.map((route) => `route ${route.route} with ${route.divergent} divergence(s)`).join(" and ")} — its own run refused it; take the backup again`,
+    );
+  }
+  if (manifest.verified.length === 0) io.log("! this artifact was produced with --no-verify and has never been proven to rebuild");
+  for (const warning of manifest.warnings) io.log(`! ${warning}`);
+
+  const file = options.route === "full" ? "full.sql" : "data.sql";
+  if (!io.exists(join(artifact, file))) {
+    throw new CliError("invalid-args", `${file} is missing from ${artifact}, and route ${options.route} loads it`);
+  }
+
+  verifyBackupArtifact(io, artifact, manifest);
+
+  const expectedTables = manifest.tables.map((table) => table.name);
+  const before = inspect(run);
+  const occupied = Object.entries(before.counts).filter(([, count]) => count > 0);
+  if (occupied.length > 0) {
+    throw new CliError(
+      "invalid-args",
+      `${home.database} already holds data (${occupied.map(([table, count]) => `${table} ${count}`).join(", ")}) — run \`forge db reset\` first; a restore adds rows and never removes them`,
+    );
+  }
+
+  const migrations = discoverArtifactMigrations(run, artifact, manifest);
+  const rows = manifest.tables.reduce((total, table) => total + table.rows, 0);
+  return { artifact, route: options.route, manifest, migrations, expectedTables, before, rows };
+}
+
+/** Loads a prepared restore into the target and checks the result against the manifest's own digests. @public */
+export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOutcome {
+  const { io, home, config } = run;
+  const { artifact, manifest, expectedTables, before } = plan;
+  if (plan.route === "full") {
+    const problems = checkRestoreTarget("full", before.objects, before.counts, expectedTables, config.entry.migrationsTable);
+    if (problems.length > 0) throw new CliError("invalid-args", `the target is not empty:\n  ${problems.join("\n  ")}`);
+    executeFile(io, home, join(artifact, "full.sql"));
+  } else {
+    migrationsApply(io, migrationsHome(config, io, plan.migrations, "restore", home));
+    ensureCompanionTables(io, home);
+    const after = inspect(run);
+    const problems = checkRestoreTarget("migrations", after.objects, after.counts, expectedTables, config.entry.migrationsTable);
+    if (problems.length > 0) throw new CliError("invalid-args", `the target is not ready for a data-only load:\n  ${problems.join("\n  ")}`);
+    executeFile(io, home, join(artifact, "data.sql"));
+  }
+
+  const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
+  const recorded = queryRowsIfTable(io, home, `SELECT name FROM ${quoteSqlIdentifier(config.entry.migrationsTable)} ORDER BY id`);
+  const bindings = compareManifests(manifest, {
+    migrations: (recorded ?? []).map((row) => String(row.name ?? "")),
+    digest: sha256(appSchemaDigestInput(objects, config.entry.migrationsTable)),
+    migrationsDigest: migrationsDigest(plan.migrations),
+  });
+
+  const declared = new Map(manifest.tables.map((table) => [table.name, table.digest]));
+  const tables = expectedTables.map((name) => {
+    const read = readWholeTable(io, home, describeTable(io, home, name));
+    return { name, rows: read.rows.length, matches: declared.get(name) === sha256(read.rows.map((row) => row.canonical).join("\n")) };
+  });
+
+  for (const binding of bindings) io.log(`! ${binding}`);
+  const divergent = tables.filter((table) => !table.matches).length;
+  if (divergent > 0 || bindings.length > 0) {
+    throw new CliError(
+      "invalid-args",
+      `${divergent} table(s) do not match the manifest — discard this target and retry from an empty one; there is deliberately no repair path`,
+    );
+  }
+  return { database: home.database, route: plan.route, artifact, tables };
+}

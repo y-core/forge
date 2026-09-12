@@ -83,11 +83,11 @@ function lastCode(notifier: { sent: AuthMessage[] }): string {
 }
 
 describe("createEmailOtpFactor — the contract", () => {
-  it("declares itself implicit, primary and step-up capable", async () => {
+  it("declares itself implicit and step-up capable", async () => {
     const { factor } = await harness();
     expect(factor.kind).toBe("email-otp");
     expect(factor.enrolment).toBe("implicit");
-    expect(factor.capabilities).toEqual({ primary: true, stepUp: true });
+    expect(factor.capabilities).toEqual({ stepUp: true });
   });
 
   it("lists no enrolments, because a verified address is the enrolment", async () => {

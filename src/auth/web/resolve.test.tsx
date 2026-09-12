@@ -13,7 +13,7 @@ import { err, ok } from "../../result/result";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService } from "../factors/types";
-import type { AuthChallenge, ChallengeStore } from "../types";
+import { PASSKEY_SCOPE } from "../passkey-contract";
 import { authCtx } from "./identity";
 import {
   loadAccountFactors,
@@ -45,6 +45,7 @@ import {
   fakeAuthUserStore,
   fakeAuthWebOptions,
   fakeFactorRegistry,
+  fakeFactorOffer,
   fakeFactorService,
   fakeFactorStore,
   attrOf,
@@ -67,10 +68,6 @@ const viewer = fakeAuthUser({ id: "u9", email: "grace@example.com" });
 const admin: AuthIdentity = { userId: "u9", email: "grace@example.com", isAdmin: true, stepUpAt: 1 };
 
 const member: AuthIdentity = { ...admin, isAdmin: false };
-
-const challenges: ChallengeStore = { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
-
-const passkeyCeremony = { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges };
 
 function optionsWith(overrides: Partial<AuthRequestServices>): AuthWebOptions {
   const services = fakeAuthServices(overrides);
@@ -132,15 +129,6 @@ interface Case {
 const CASES: readonly Case[] = [
   { label: "signin", name: "signin", load: loadSignin, options: fakeAuthWebOptions() },
   {
-    label: "signin+passkey",
-    name: "signin",
-    load: loadSignin,
-    options: optionsWith({
-      passkey: passkeyCeremony,
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: fakeFactorService("passkey"), role: "primary" }] }),
-    }),
-  },
-  {
     label: "signin+refusal",
     name: "signin",
     load: loadSignin,
@@ -167,7 +155,7 @@ const CASES: readonly Case[] = [
     label: "enrolPasskey",
     name: "enrolPasskey",
     load: loadPasskeyEnrol,
-    options: optionsWith({ users: fakeAuthUserStore([viewer]), passkey: passkeyCeremony }),
+    options: optionsWith({ users: fakeAuthUserStore([viewer]), factors: fakeFactorRegistry(["passkey"]) }),
     identity: admin,
   },
   {
@@ -363,7 +351,7 @@ describe("resolveAuthView refusals", () => {
   const signin = { status: 302, location: "/auth/signin" };
 
   it("sends an anonymous request to sign-in on every page whose route runs `require-auth`", async () => {
-    const options = optionsWith({ users: fakeAuthUserStore([viewer]), passkey: passkeyCeremony });
+    const options = optionsWith({ users: fakeAuthUserStore([viewer]), factors: fakeFactorRegistry(["passkey"]) });
     expect(await refusalOf(loadPasskeyEnrol, options, null)).toEqual(signin);
     expect(await refusalOf(loadPasskeyList, options, null)).toEqual(signin);
     expect(await refusalOf(loadPasskey, options, null, "/page/:id", "/page/c1")).toEqual(signin);
@@ -443,6 +431,31 @@ describe("resolveAuthView refusals", () => {
     const res = await loaderApp(loadAdminUsers, options, admin).request(`/page?after=${"x".repeat(500)}`);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/admin/users");
+  });
+});
+
+describe("no configuration makes a passkey start a sign-in", () => {
+  async function signinPage(options: AuthWebOptions): Promise<string> {
+    return await (await loaderApp(loadSignin, options, null).request("/page")).text();
+  }
+
+  it("renders no passkey scope on the sign-in page, whether or not the passkey is offered", async () => {
+    const seconds = createFactorRegistry(fakeFactorStore([]), {
+      offered: [fakeFactorOffer("email-otp", "primary"), fakeFactorOffer("passkey", "second")],
+    });
+    expect(tagOf(await signinPage(optionsWith({ factors: seconds })), `data-scope="${PASSKEY_SCOPE}"`)).toBe("");
+    expect(tagOf(await signinPage(fakeAuthWebOptions()), `data-scope="${PASSKEY_SCOPE}"`)).toBe("");
+  });
+
+  it("refuses at runtime to build a registry offering the passkey as primary", () => {
+    expect(() =>
+      createFactorRegistry(fakeFactorStore([]), {
+        // @ts-expect-error a passkey identifies nobody, so the offer does not typecheck either
+        offered: [{ service: fakeFactorService("passkey"), role: "primary" }],
+      }),
+    ).toThrow(
+      'createFactorRegistry: "passkey" cannot be a primary factor — a primary factor must identify the visitor, which only "email-otp" does',
+    );
   });
 });
 

@@ -103,8 +103,7 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
       if (probe.deletable === 0) return ok("last-admin-delete");
       // The probe only names the refusal; the DELETE is what decides. Disagreeing with it inside one
       // transaction is a backend the caller cannot reason about, so it is reported as such.
-      const meta = outcome.data.at(-1)?.meta;
-      const removed = meta?.rows_written ?? meta?.changes ?? 0;
+      const removed = outcome.data.at(-1)?.rowsWritten ?? 0;
       return removed > 0 ? ok("changed") : err(storeError("adminUsers.remove", "the guarded delete matched the probe but removed no row"));
     },
   };

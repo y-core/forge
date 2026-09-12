@@ -1,7 +1,10 @@
 export {
   AUTH_ADMIN_ROLE,
   AUTH_FRESH_STEP_UP_MS,
+  AUTH_IDENTIFYING_FACTORS,
   AUTH_KEY_ID_LENGTH,
+  AUTH_PASSKEY_ASSERTION_ID_MAX,
+  AUTH_PASSKEY_ASSERTION_ID_SHAPE,
   AUTH_PASSKEY_CHALLENGE_BYTES,
   AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
   AUTH_PASSKEY_TTL_SECONDS,
@@ -41,13 +44,15 @@ export type {
   AuthFactorRequirement,
   AuthFactorResolution,
   AuthFactorService,
+  AuthIdentifyingFactorKind,
+  AuthIdentifyingFactorService,
   AuthFactorVerified,
   AuthFactorsOptions,
   EnrollableFactorService,
 } from "./factors/types";
 export type { ImplicitFactorService } from "./factors/types";
-export { authFactorContext, createFactorRegistry } from "./factors/registry";
-export type { PasskeyFactorOptions, PasskeyFactorRole, PasskeyFactorSubject } from "./factors/types";
+export { authFactorContext, authIdentifies, createFactorRegistry } from "./factors/registry";
+export type { PasskeyFactorOptions, PasskeyFactorSubject } from "./factors/types";
 export { createPasskeyFactor } from "./factors/passkey";
 export type { TotpAppEnrolment, TotpAppFactorOptions } from "./factors/types";
 export { createTotpAppFactor } from "./factors/totp-app";

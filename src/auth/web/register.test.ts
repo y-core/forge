@@ -20,7 +20,6 @@ import {
   PASSKEY_OPTIONS_TOKEN_ATTR,
   PASSKEY_SCOPE,
 } from "../passkey-contract";
-import type { AuthChallenge, ChallengeStore } from "../types";
 import { createSigninActions } from "./actions";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, authCtx } from "./identity";
 import { loadSignin } from "./loaders";
@@ -301,16 +300,19 @@ describe("the CSRF header name a renamed deployment stamps on the passkey scope"
   const HEADER = "X-App-Csrf";
 
   function passkeyOptions(): AuthWebOptions {
-    const challenges: ChallengeStore = { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
     const passkey = fakeFactorService("passkey") as AuthFactorService & { beginEnrolment: unknown };
     const services = fakeAuthServices({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
         offered: [
-          { service: { ...passkey, beginEnrolment: async () => ok({ options: { rpId: "example.com" } }) } as AuthFactorService, role: "primary" },
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          {
+            service: { ...passkey, beginEnrolment: async () => ok({ options: { rpId: "example.com" } }) } as AuthFactorService,
+            role: "second",
+            requirement: "mandatory",
+          },
         ],
       }),
-      passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
     });
     return fakeAuthWebOptions({ resolveServices: () => services });
   }

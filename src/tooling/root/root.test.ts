@@ -7,7 +7,7 @@ import { createRootCommand } from "./root";
 
 // `verify` and `release` are bare verbs whose object is the repository; `cf` and `assets` are
 // domain nouns under which the verb and object are both named. That split is the tree's whole rule.
-const FIRST_PARTY = ["verify", "release", "cf", "assets"];
+const FIRST_PARTY = ["verify", "release", "cf", "assets", "db"];
 const KERNEL = resolve(import.meta.dir, "../cli/command.ts");
 
 /** A throwaway project root, optionally carrying a `config/commands.ts` declaring one command. */

@@ -15,12 +15,9 @@ import type { AuthFactorRequirement } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
-import type { UserVerification } from "../passkey/types";
 import type { AuthFactorKind } from "../types";
 import type { UserStore } from "../types";
 import type { AdminUserOutcome } from "../types";
-import type { AuthAlgorithm } from "../types";
-import type { ChallengeStore } from "../types";
 import type { CredentialStore } from "../types";
 import type { FactorStore } from "../types";
 import type { AUTH_VIEW_GUARDS } from "./resolve";
@@ -120,26 +117,6 @@ export interface AuthIdentity {
 /** The sprite symbols forge's own auth pages draw from. @public */
 export type AuthIconName = "alert" | "chevron-right" | "key" | "mail";
 
-// The discoverable sign-in has no user to name, so it cannot run through `AuthFactorService`, whose
-// `createChallenge` takes a `userId`. These are the parts the ceremony builders need instead.
-/** What a passkey ceremony is held against on this request; absent when the deployment offers no passkey. @public */
-export interface AuthPasskeyCeremonyOptions {
-  readonly rpId: string;
-  readonly rpName: string;
-  readonly origin: string;
-  /** The session the challenge is bound to, so a challenge issued to one visitor cannot be answered by another. */
-  readonly sessionId: string;
-  readonly challenges: ChallengeStore;
-  readonly algorithms?: readonly AuthAlgorithm[];
-  readonly ttlSeconds?: number;
-  // The stronger posture was unreachable: a discoverable sign-in ran at forge's own defaults with no
-  // way to raise them, while `createPasskeyFactor` picks its own per role.
-  /** What the authenticator is asked for. Defaults to `preferred`, which admits an authenticator that cannot verify a user. */
-  readonly userVerification?: UserVerification;
-  /** Whether an assertion that did not verify the user is refused. Defaults to `false`, so asking is not requiring. */
-  readonly requireUserVerification?: boolean;
-}
-
 /** The domain services one auth request runs against, built per request because a ceremony is bound to its session. @public */
 export interface AuthRequestServices {
   readonly users: UserStore;
@@ -151,7 +128,6 @@ export interface AuthRequestServices {
   readonly signup: AuthSignupFlow;
   readonly emailChange: AuthEmailChangeFlow;
   readonly admin: AdminUserService;
-  readonly passkey?: AuthPasskeyCeremonyOptions | undefined;
 }
 
 /** The three href maps every loader and action reads its targets off, so no path literal is written twice. @public */

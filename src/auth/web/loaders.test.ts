@@ -12,7 +12,6 @@ import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
-import type { AuthChallenge, ChallengeStore } from "../types";
 import { AUTH_SESSION_KEY, authCtx } from "./identity";
 import {
   loadAdminElevate,
@@ -188,8 +187,6 @@ describe("loadVerify", () => {
 });
 
 describe("loadPasskeyEnrol", () => {
-  const challenges: ChallengeStore = { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
-
   it("sends an anonymous request to the sign-in page", async () => {
     const options = fakeAuthWebOptions();
     const res = await loaderApp(loadPasskeyEnrol, options).request("/page");
@@ -199,10 +196,7 @@ describe("loadPasskeyEnrol", () => {
   });
 
   it("carries both ceremony paths and two different tokens on the scope root", async () => {
-    const options = optionsWith({
-      users: fakeAuthUserStore([signedIn]),
-      passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
-    });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
     const html = await page(loaderApp(loadPasskeyEnrol, options, "/page", "u9"));
 
     expect(attrOf(html, 'data-scope="passkey"', "data-passkey-options-path")).toBe("/auth/enrol/passkey/register/begin");
@@ -420,10 +414,6 @@ describe("the icon a page draws from", () => {
 // Two of the nine mint sites used to be checked this way and seven were not, so a token minted for
 // the wrong path rendered, submitted and 403-ed with every unit still green.
 describe("every token a page renders is bound to the path its own control submits to", () => {
-  const challenges: ChallengeStore = { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
-
-  const ceremony = { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges };
-
   async function boundTo(html: string, selector: string, attr: string, expected: string): Promise<void> {
     const key = await importCsrfKey(CSRF_SECRET);
     expect(await verifyCsrfToken(key, attrOf(html, selector, attr), expected)).toEqual(ok());
@@ -450,19 +440,8 @@ describe("every token a page renders is bound to the path its own control submit
     await boundTo(html, 'data-slot="form-csrf"', "value", "/auth/verify");
   });
 
-  it("binds the two sign-in ceremony tokens to their own two endpoints", async () => {
-    const options = optionsWith({
-      passkey: ceremony,
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: fakeFactorService("passkey"), role: "primary" }] }),
-    });
-    const html = await page(loaderApp(loadSignin, options, "/page", undefined, realMinter));
-
-    await boundTo(html, 'data-scope="passkey"', "data-passkey-options-token", "/auth/passkey/authenticate/begin");
-    await boundTo(html, 'data-scope="passkey"', "data-passkey-verify-token", "/auth/passkey/authenticate/finish");
-  });
-
   it("binds the two enrolment ceremony tokens to their own two endpoints", async () => {
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), passkey: ceremony });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
     const html = await page(loaderApp(loadPasskeyEnrol, options, "/page", "u9", realMinter));
 
     await boundTo(html, 'data-scope="passkey"', "data-passkey-options-token", "/auth/enrol/passkey/register/begin");

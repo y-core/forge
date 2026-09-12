@@ -36,7 +36,7 @@ import { createAuthGuards } from "./guards";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import { AUTH_FACTOR_CAPABILITIES, fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./test-support";
+import { fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./test-support";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 
 // This file is the mount AUTH_MOUNTING.md §1 describes, written out with no ellipsis and no free
@@ -290,10 +290,10 @@ function memoryFactors(): FactorStore {
 // The ceremonies are stubbed and the mount is not: what this file is evidence about is the wiring
 // between the guard chain, the routes and the actions, never the cryptography under a factor.
 /** A factor service that accepts `CODE` and records its enrolment in `store`. */
-function driveableFactor(kind: AuthFactorKind, store: FactorStore): AuthFactorService {
+function driveableFactor<kind extends AuthFactorKind>(kind: kind, store: FactorStore): AuthFactorService<kind> {
   const base = {
     kind,
-    capabilities: AUTH_FACTOR_CAPABILITIES[kind],
+    capabilities: { stepUp: true },
     challengeTtlMs: 600_000,
     codeDigits: kind === "passkey" ? null : 6,
     codePeriodSeconds: null,
@@ -359,7 +359,7 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
 
   const flowOptions: AuthWebOptions<MountEnv> = {
     ...options,
-    resolveServices: async (c) => {
+    resolveServices: async () => {
       const ring = await importAuthKeyRing(["d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65"]);
       return fakeAuthServices({
         users,
@@ -367,13 +367,6 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
         factors,
         signin: createSigninFlow({ keys: ring, users, state: otpState, nonces, factors, defer }),
         signup: createSignupFlow({ users, factors, defer }),
-        passkey: {
-          rpId: "localhost",
-          rpName: "Forge",
-          origin: "http://localhost",
-          sessionId: sessionCtx.get(c).id,
-          challenges: createChallengeStore(createD1Client(c.env.DB as never)),
-        },
       });
     },
   };

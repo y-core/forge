@@ -28,6 +28,7 @@ import {
   namespaceGraphStep,
   type Step,
   buildTimeBoundaryStep,
+  dbSchemaStep,
   ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
@@ -280,6 +281,10 @@ export const STEPS: readonly Step[] = [
   duplicatesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   browserStep({ tier: "full" }),
   workerdStep({ tier: "full" }),
+  // The fixture's `config/db.ts` names `src/auth/schema.sql`, so the check holds it to the snapshot
+  // beside it: by digest every run, and in `full` by loading the file into a real database — which
+  // is what catches a desired state that fails to execute before every consumer does.
+  ...dbSchemaStep({ root: "tests/fixtures/db-schema", forge: ["bun", "run", "src/tooling/root/bin.ts"] }),
 ];
 
 export default STEPS;

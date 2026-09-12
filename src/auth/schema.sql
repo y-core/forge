@@ -1,7 +1,18 @@
--- @y-core/forge/auth — Cloudflare D1 schema.
+-- @y-core/forge/auth — the desired state of the `lib-auth` namespace's D1 schema.
 --
--- Apply it from an installed copy of the package, which is a filesystem path and not an import:
+-- This file is what the schema *is*, and this library ships no SQL that runs. Change a table here,
+-- and `bun run verify --mode full` loads it into a real database to prove it executes.
+--
+-- A consumer reaches this file by naming it in its own `config/db.ts`, by path — nothing here is
+-- discovered, so an app that does not ask for this schema does not get it:
+--   export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] }
+-- `forge db migrate compose` then diffs every file it names against that app's own migrations and
+-- writes the difference into that app's own directory. A database that will never be migrated can
+-- take this file in one shot:
 --   wrangler d1 execute <DB> --file node_modules/@y-core/forge/src/auth/schema.sql
+--
+-- A change here that needs a backfill is documented in CHANGELOG.md; the consumer writes it as
+-- `forge db migrate compose --custom <name>`.
 --
 -- The `auth_` prefix is fixed. Making it configurable would need raw identifier concatenation,
 -- which is the one thing `src/storage/db/sql.ts` exists to forbid and offers no escape hatch for.

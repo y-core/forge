@@ -1,0 +1,5 @@
+{
+  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x');",
+  "query": "SELECT name FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'forge_%' AND name <> 'd1_migrations' ORDER BY name",
+  "rows": [{ "name": "posts" }, { "name": "posts_user" }, { "name": "users" }]
+}

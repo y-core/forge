@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process, { env } from "node:process";
-import { createInterface } from "node:readline/promises";
 
 import { createCommand } from "../../cli/command";
+import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import { splitList } from "../../cli/parse";
 import type { CliContext } from "../../cli/types";
@@ -172,26 +172,16 @@ async function runLocalRotate(flags: LooseFlags, commit: boolean): Promise<void>
 
 /** Asks before replacing secrets that are already in use, refusing a non-interactive run. */
 async function confirmRotation(names: string[], where: string, flags: LooseFlags): Promise<void> {
-  if (names.length === 0 || flags.yes) return;
-
+  if (names.length === 0) return;
   const what = `${names.length} secret${names.length === 1 ? "" : "s"} on ${where}`;
-  if (!process.stdin.isTTY) {
-    throw new CliError(
-      "invalid-args",
-      `Refusing to rotate ${what} without a terminal to confirm at: ${names.join(", ")}.\nThe old values cannot be recovered. Pass --yes to say so deliberately.`,
-    );
-  }
-
-  console.log(`About to replace ${what}: ${names.join(", ")}`);
-  console.log("The current values are destroyed and cannot be recovered.");
-
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await rl.question("Continue? [y/N] ");
-    if (answer.trim().toLowerCase() !== "y") throw new CliError("invalid-args", "Rotation cancelled; nothing was written.");
-  } finally {
-    rl.close();
-  }
+  await confirm({
+    verb: "rotate",
+    what,
+    detail: names.join(", "),
+    consequence: "The current values are destroyed and cannot be recovered.",
+    yes: Boolean(flags.yes),
+    cancelMessage: "Rotation cancelled; nothing was written.",
+  });
 }
 
 function resolvePrefixStrategy(flags: Record<string, unknown>): PrefixStrategy {

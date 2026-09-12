@@ -5,7 +5,6 @@ import type { AuthRouteGroup } from "./types";
 /** Every group the three builders produce — a nested group exists only where its guards or medium differ from its parent's. @public */
 export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [
   { path: ["auth"], guards: [], medium: "html" },
-  { path: ["auth", "passkey"], guards: [], medium: "json" },
   // The one group that admits both an anonymous visitor and a signed-in one: the page serves the
   // second half of a sign-in and a step-up owed by a session, and only the identity tells them apart.
   { path: ["auth", "verify"], guards: ["resolve-auth"], medium: "html" },
@@ -26,13 +25,10 @@ export function authRoutes<base extends string>(basePath: base) {
     signup: get("/signup"),
     signupSubmit: post("/signup"),
     signout: post("/signout"),
-    passkey: { authenticateBegin: post("/passkey/authenticate/begin"), authenticateFinish: post("/passkey/authenticate/finish") },
     verify: {
       show: get("/verify"),
       submit: post("/verify"),
       resend: post("/verify/resend"),
-      // A step-up of its own, never the discoverable sign-in pair above: those establish a session,
-      // which clears the very mark a step-up is there to write.
       ceremony: { begin: post("/verify/passkey/begin"), finish: post("/verify/passkey/finish") },
     },
     enrol: {

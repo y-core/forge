@@ -6,15 +6,18 @@ audience: consumer
 
 # `@y-core/forge/html`
 
-Server-side HTMX utilities for Forge apps on Cloudflare Workers: request-header detection, response-header builders, JSX attribute helpers, and pre-built interaction patterns.
+Server-side HTMX utilities for Forge apps on Cloudflare Workers: request-header detection, response-header builders, JSX attribute helpers, and
+pre-built interaction patterns.
 
-> **There is no top-level `@y-core/forge/html` export.** The only public entry point in this namespace is **`@y-core/forge/html/htmx`** (`src/html/htmx/mod.ts`). Import every symbol below from that path:
+> **There is no top-level `@y-core/forge/html` export.** The only public entry point in this namespace is **`@y-core/forge/html/htmx`**
+> (`src/html/htmx/mod.ts`). Import every symbol below from that path:
 >
 > ```ts
 > import { isHxRequest, hxHeaders, hxAttrs, liveSearch } from "@y-core/forge/html/htmx";
 > ```
 
-This namespace runs **server-side only** (SSR / Workers). It reads inbound `HX-*` request headers, writes outbound `HX-*` response headers, and emits `hx-*` attributes into SSR JSX. It never runs in the browser — the HTMX client library handles the wire on the other side.
+This namespace runs **server-side only** (SSR / Workers). It reads inbound `HX-*` request headers, writes outbound `HX-*` response headers, and
+emits `hx-*` attributes into SSR JSX. It never runs in the browser — the HTMX client library handles the wire on the other side.
 
 ---
 
@@ -30,13 +33,15 @@ This namespace runs **server-side only** (SSR / Workers). It reads inbound `HX-*
 | Swap-strategy constants | `SWAP` |
 | Interaction patterns | `formSubmit`, `liveSearch`, `inlineValidation`, `infiniteScroll`, `paginatedTableLink`, `asyncDialogTrigger`, `dependentSelect`, `oobSwap`, `oobAppend` |
 
-The request readers accept a `RequestContext` from `@remix-run/fetch-router` (the `c` you already have inside a route handler or middleware). The builders and patterns take plain typed props and return plain maps (`Record<string, string>`), so they are pure and trivially testable.
+The request readers accept a `RequestContext` from `@remix-run/fetch-router` (the `c` you already have inside a route handler or middleware). The
+builders and patterns take plain typed props and return plain maps (`Record<string, string>`), so they are pure and trivially testable.
 
 ---
 
 ## Usage
 
-A typical HTMX route reads the inbound headers to decide between a full page and a fragment, mutates state, then returns a fragment plus outbound `HX-*` headers:
+A typical HTMX route reads the inbound headers to decide between a full page and a fragment, mutates state, then returns a fragment plus outbound
+`HX-*` headers:
 
 ```ts
 import { isHxRequest, hxHeaders } from "@y-core/forge/html/htmx";
@@ -80,9 +85,12 @@ function SearchBox() {
 function isHxRequest(c: RequestContext): boolean;
 ```
 
-Returns `true` when the request carries an `HX-Request: true` header — i.e. it originated from the HTMX client rather than a normal browser navigation.
+Returns `true` when the request carries an `HX-Request: true` header — i.e. it originated from the HTMX client rather than a normal browser
+navigation.
 
-> **Security note.** `HX-Request` is a client-supplied header, so `isHxRequest` is a **UX routing hint, not a security boundary** — the ruling is [`HTMX.md`](../../docs/HTMX.md) §7's. For any mutation route, combine it with origin verification (`verifyOrigin` / `originGuard` from `@y-core/forge/security`) and CSRF verification (`csrfProtection` from `@y-core/forge/form`). See [Integration Guide](#integration-guide).
+> **Security note.** `HX-Request` is a client-supplied header, so `isHxRequest` is a **UX routing hint, not a security boundary** — the ruling is
+> [`HTMX.md`][htmx-7] §7's. For any mutation route, combine it with origin verification (`verifyOrigin` / `originGuard` from
+> `@y-core/forge/security`) and CSRF verification (`csrfProtection` from `@y-core/forge/form`). See [Integration Guide](#integration-guide).
 
 ### Inbound header reader — `readHxRequest`
 
@@ -118,7 +126,8 @@ Use these when you only need one header; each reads a single inbound `HX-*` head
 | `isBoosted(c)` | `HX-Boosted` | `boolean` (request came from `hx-boost`) |
 | `isPartial(c)` | `HX-Request` + `HX-Boosted` | `boolean` (HTMX request **and not** boosted) |
 
-`isPartial` is the right predicate when boosted navigations should still receive a full page: it returns `true` only for genuine partial swaps, excluding `hx-boost` navigations.
+`isPartial` is the right predicate when boosted navigations should still receive a full page: it returns `true` only for genuine partial swaps,
+excluding `hx-boost` navigations.
 
 ```ts
 import { isPartial } from "@y-core/forge/html/htmx";
@@ -135,7 +144,8 @@ return htmlResponse(renderPage(data)); // direct hits and boosted navigation
 function hxHeaders(props: HxResponseProps): HxResponseHeaders; // = Record<string, string>
 ```
 
-Builds a map of outbound `HX-*` response headers to spread into `fragmentResponse` / `htmlResponse`. Every prop is optional; `undefined` and empty-string values are omitted. `refresh` only emits a header when `true`.
+Builds a map of outbound `HX-*` response headers to spread into `fragmentResponse` / `htmlResponse`. Every prop is optional; `undefined` and
+empty-string values are omitted. `refresh` only emits a header when `true`.
 
 | Prop | Type | Header | Effect |
 | --- | --- | --- | --- |
@@ -166,7 +176,8 @@ return fragmentResponse(body, 200, hxHeaders({ pushUrl: "/results?q=hello", trig
 function hxAttrs(props: HxAttrsProps): HxAttrs; // = Record<string, string>
 ```
 
-Converts a typed, camelCased props object into a flat `hx-*` attribute map for spreading onto a JSX element. `undefined` and empty-string values are omitted.
+Converts a typed, camelCased props object into a flat `hx-*` attribute map for spreading onto a JSX element. `undefined` and empty-string values are
+omitted.
 
 ```tsx
 <form {...hxAttrs({ post: "/api/contact", target: "#result", swap: "outerHTML" })} />
@@ -194,11 +205,9 @@ Three props are encoded specially:
 | `headers` | `Record<string, string>` | `hx-headers` (JSON) | Omitted when the map is empty |
 | `boost` | `boolean` | `hx-boost` (`"true"` / `"false"`) | Emitted whenever defined |
 
-**Every value here is emitted as the caller wrote it.** Selector-valued props (`target`, `select`,
-`selectOob`, `include`, `indicator`, `disabledElt`), the two JSON props, and the URL-valued verbs
-are not sanitized, so they must be developer-supplied and never derived from request input — the
-trust posture, and why URL-valued `hx-*` attributes are deliberately left out of `safeUrl`, are
-[`HTMX.md`](../../docs/HTMX.md) §7's and §7a's.
+**Every value here is emitted as the caller wrote it.** Selector-valued props (`target`, `select`, `selectOob`, `include`, `indicator`,
+`disabledElt`), the two JSON props, and the URL-valued verbs are not sanitized, so they must be developer-supplied and never derived from request
+input — the trust posture, and why URL-valued `hx-*` attributes are deliberately left out of `safeUrl`, are [`HTMX.md`][htmx-7] §7's and §7a's.
 
 ### Swap-strategy constants — `SWAP`
 
@@ -222,7 +231,8 @@ hxAttrs({ get: "/rows", target: "#list", swap: SWAP.beforeEnd });
 
 ### Interaction patterns
 
-Each pattern returns an `HxAttrs` map (spread directly onto the triggering element) with sensible defaults baked in. Every default is overridable via the matching prop.
+Each pattern returns an `HxAttrs` map (spread directly onto the triggering element) with sensible defaults baked in. Every default is overridable
+via the matching prop.
 
 | Pattern | Required props | Defaults | Notes |
 | --- | --- | --- | --- |
@@ -254,7 +264,8 @@ function oobSwap(props: { strategy?: string; selector?: string }): HxAttrs;
 function oobAppend(selector: string): HxAttrs;
 ```
 
-These emit an `hx-swap-oob` attribute so a fragment in the response is swapped out-of-band into a _different_ element than the request's primary target.
+These emit an `hx-swap-oob` attribute so a fragment in the response is swapped out-of-band into a _different_ element than the request's primary
+target.
 
 ```tsx
 // Replace the element with id="cart-count" wherever it lives in the document.
@@ -264,7 +275,8 @@ These emit an `hx-swap-oob` attribute so a fragment in the response is swapped o
 <li {...oobAppend("#notifications")}>New message</li>
 ```
 
-`oobSwap` defaults `strategy` to `"true"`; supplying a `selector` produces `strategy:selector` (and promotes the bare `"true"` default to `"outerHTML"`). `oobAppend(selector)` is shorthand for `oobSwap({ strategy: "beforeend", selector })`.
+`oobSwap` defaults `strategy` to `"true"`; supplying a `selector` produces `strategy:selector` (and promotes the bare `"true"` default to
+`"outerHTML"`). `oobAppend(selector)` is shorthand for `oobSwap({ strategy: "beforeend", selector })`.
 
 ---
 
@@ -272,7 +284,8 @@ These emit an `hx-swap-oob` attribute so a fragment in the response is swapped o
 
 ### Pair detection with real security guards
 
-`isHxRequest` decides _rendering_, never _authorization_. A mutation route (`POST`/`PUT`/`PATCH`/`DELETE`) must verify origin and CSRF **before** trusting the request, then use `isHxRequest` only to shape the response:
+`isHxRequest` decides _rendering_, never _authorization_. A mutation route (`POST`/`PUT`/`PATCH`/`DELETE`) must verify origin and CSRF **before**
+trusting the request, then use `isHxRequest` only to shape the response:
 
 ```ts
 import { isHxRequest } from "@y-core/forge/html/htmx";
@@ -295,7 +308,8 @@ const contactGuard = async (context, next) => {
 
 ### Returning fragments from `@y-core/forge/http`
 
-The response builders pair with `fragmentResponse` (HTMX partial, no `<!DOCTYPE>`) and `htmlResponse` (full page). Spread `hxHeaders(...)` as the third argument:
+The response builders pair with `fragmentResponse` (HTMX partial, no `<!DOCTYPE>`) and `htmlResponse` (full page). Spread `hxHeaders(...)` as the
+third argument:
 
 ```ts
 import { fragmentResponse } from "@y-core/forge/http";
@@ -306,7 +320,8 @@ return fragmentResponse(renderRow(item), 200, hxHeaders({ trigger: "rowAdded" })
 
 ### Cloudflare Turnstile CSP
 
-If an HTMX form posts to a route protected by Cloudflare Turnstile, the Turnstile widget and its challenge endpoint must be allowed by your Content-Security-Policy. Add `TURNSTILE_CSP` (from `@y-core/forge/security`) to the relevant CSP directives when building headers:
+If an HTMX form posts to a route protected by Cloudflare Turnstile, the Turnstile widget and its challenge endpoint must be allowed by your
+Content-Security-Policy. Add `TURNSTILE_CSP` (from `@y-core/forge/security`) to the relevant CSP directives when building headers:
 
 ```ts
 import { createSecurityHeaders, NONCE, TURNSTILE_CSP } from "@y-core/forge/security";
@@ -323,6 +338,8 @@ Without these CSP sources the Turnstile iframe and its verification calls are bl
 - [`@y-core/forge/http`](../http/) — `fragmentResponse`, `htmlResponse`, redirect helpers
 - [`@y-core/forge/security`](../security/) — origin verification, CSP headers, `TURNSTILE_CSP`
 - [`@y-core/forge/form`](../form/) — CSRF token minting and verification
-- [`HTMX.md`](../../docs/HTMX.md) — the selector and JSON trust posture and the `isHxRequest`
-  not-a-boundary ruling (§7), why URL-valued and `hx-on:*` attributes stay unsanitized (§7a, §7b),
-  and the form-independent `sync` default (§8)
+- [`HTMX.md`][htmx] — the selector and JSON trust posture and the `isHxRequest` not-a-boundary ruling (§7), why URL-valued and `hx-on:*` attributes
+  stay unsanitized (§7a, §7b), and the form-independent `sync` default (§8)
+
+[htmx]: ../../docs/HTMX.md
+[htmx-7]: ../../docs/HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied

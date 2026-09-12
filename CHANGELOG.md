@@ -17,7 +17,466 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`forge db` is three groups of verbs with one shape: `migrate`, `seed` and `schema`.** Each group
+  carries its verbs, and the bare group runs the first of them.
+  - `forge db migrate apply`, `migrate compose` and `migrate status` replace `forge db migrate`,
+    `forge db migrations compose` and `forge db status`; the `migrations` group is gone.
+  - `forge db schema check` replaces the `--check` flag (`--replay` stays a flag on it), and the
+    document the bare `forge db schema` printed is gone — nothing consumed it, and so is
+    `schema snapshot`, since no library keeps a snapshot any more.
+  - The bare verb is an alias, not a shim: `forge db migrate` is `migrate apply`, `forge db seed` is
+    `seed apply`, `forge db schema` is `schema check`, each taking the same flags.
+
+  Two CI lines change: `forge db status --check` → `forge db migrate status --check`, and
+  `forge db schema --check` → `forge db schema check`. `dbSchemaStep` emits the new spelling, so a
+  consumer on the shipped gate step needs no edit.
+- **Nothing is discovered, and namespaces are gone with the discovery.** `forge db` no longer reads
+  a `forge.db` block out of any `package.json` — not a dependency's and not the root's. **Every
+  position is declared in the host config**, by path:
+
+  ```ts
+  export default {
+    schemas: ["node_modules/@acme/auth/schema.sql", "config/schema.sql"],
+    seeds: ["config/seeds"],
+  } satisfies DbHostConfig;
+  ```
+
+  An installed package contributes no DDL to your database because it happens to ship some; it
+  contributes because the app asked for it, in a file a reviewer can see. `schemas` is ordered, so a
+  file with a FOREIGN KEY comes after the file declaring its target — what used to fall out of rank
+  sorting is now stated. With nothing discovered, nothing needs a second name to be discovered *as*:
+  `DbHostConfig.namespaces`, `schema` and `seedsDir` become `schemas`, `seeds` and `snapshot`;
+  `Namespace`, `NamespaceSource`, `AppNamespaceSource`, `MergedSchema`, `MergeRequest`,
+  `NamespaceMigrations`, `resolveNamespaces`, `readDbManifest`, `refuseNamespace`,
+  `NAMESPACE_PATTERN`, `APP_NAMESPACE`, `defaultSchemaPath`, `appSchemaPath`, `mergeMigrations`,
+  `mergedMigrations`, `runNamespaces`, `resolveSeedsDir` and `schemaSnapshotPath` are removed;
+  `DeclaredPath`, `declaredPath`, `declaredSchemas`, `declaredSeeds`, `snapshotPath`, `NO_SCHEMAS`
+  and `readMigrations` replace them. A path names itself, and it is the name every refusal, the
+  snapshot and `status` use. **No `--namespace` flag survives anywhere**: `forge db schema` and
+  `forge db migrate compose` take no selector, `forge db lint` and `forge db seed reset` take
+  `--dir`, and `seed --only` takes `<dir>:<name>`.
+- **The companion tables carry only what they are the record of.** `forge_migrations` is now
+  `(applied_name TEXT PRIMARY KEY, sha256 TEXT NOT NULL)` with no index of its own. Its `namespace`
+  column held the literal `"app"` on every row, `name` held the same value as `applied_name` on every
+  row, and `applied_at` was written and never read — `status` reads the applied time off
+  `d1_migrations`, which is also what makes the pair meaningful: wrangler's table records that a name
+  was applied and when, and forge's records the bytes. All three columns were namespace machinery,
+  and the unique index over `(namespace, name)` keyed a space `applied_name` already covers.
+  `forge_seed_history.namespace` is renamed `source` — it holds the declared seeds directory, which
+  is what its only reader already calls it and what `seed reset --dir` filters on. The
+  `desired_digest:%` sweep an older forge needed is deleted; pre-1.0 ships no shims.
+
+  Seeds keep a table of their own rather than joining migrations behind a `type` column: migration
+  history is forward-only and is the record that makes an edited-after-applied file detectable, while
+  seed history is deliberately deleted by `seed reset`. **There is no upgrade path** — a database
+  written by an earlier forge carries the old shape, and re-creating it is the answer.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §4a, §4c.
+- **`forge db sync` is gone, and a library ships no SQL that runs.** A library publishes a
+  `schema.sql` — desired state only. The app composes **one flat migration sequence of its own** from
+  every declared schema, against a replay of its own committed migrations, and `migrations_dir` holds
+  every file that is ever applied. Nothing is copied into the app and nothing is renamed on the way
+  in. `Migration` loses `source: "app" | "lib"`; `LibrarySource`, `SyncPlan`, `conventionSources`,
+  `libraryFileName`, `planSync`, `resolveSources`, `runSync`, `createSyncCommands` and
+  `SEED_HISTORY_DDL` go with it. [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §8.
+- **`config/schema.lock`, `forge db lock`, `forge db adopt` and `forge db eject` are gone**, with
+  `--update-lock` on `forge db migrate` and the lock clause of `status --check`. Their whole job was
+  giving a *library's migration files* stable identity across machines; with no library files there
+  is no allocation to freeze. `SchemaLock`, `LockedNamespace`, `LockedMigration`, `LockedSeed`,
+  `lockFilePath`, `readLock`, `writeLock`, `parseLock`, `formatLock`, `compareLocks`,
+  `LOCK_VERSION`, `DEFAULT_LOCK_FILE`, `runAdopt`, `runEject`, `createAdoptCommands`,
+  `createEjectCommands`, `AdoptOutcome`, `EjectOutcome`, `DbHostConfig.lockFile` and
+  `appliedMigrationFileName` are removed. **What replaces the lock is the app's snapshot**:
+  `config/schema.snapshot.json` records a desired digest per declared path, so
+  `forge db schema --check` fails naming the schema that moved and pointing at
+  `forge db migrate compose`. The artifact a reviewer reads on a library upgrade is the composed
+  migration — the SQL about to run — not a hash.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §6.
+- **`forge db migrations create` is removed; `forge db migrate compose` replaces it.** There is
+  one composer, and it takes no selector: it diffs the whole replay against every declared schema
+  loaded together, and an object in the replay that nothing declares is excluded from the diff and
+  warned about rather than dropped. A hand-written migration is `compose --custom <name>`, which
+  writes the file under a `forge:custom` stamp. `Migration` gains `origin`
+  (`generated` | `custom` | `legacy`) and `stamp`; `ComposeOptions` loses `namespace`,
+  `OwnershipClaim` keys on `source`, and `assignOwnership` takes the names the last snapshot held as
+  a fourth argument. The cross-namespace-rebuild refusal is gone — a rebuild closure reaching from a
+  library's table into an app table pointing at it is the ordinary case now, inside one migration the
+  app owns.
+- **`Migration` loses `namespace`, `appliedName` and `seq`**, which under one directory were three
+  names for `name`; `namespaceMigrationsDigest` merges into `migrationsDigest`, `Seed.namespace`
+  becomes `Seed.source` (the declaring directory), `StatusRow` loses `namespace`, and
+  `DesiredDigestRow.namespace` becomes `source`. `forge_migrations` and `forge_seed_history` keep
+  their `namespace` column and their `(namespace, name)` unique index — the column holds `app` and
+  the declaring directory — because changing a durable table's shape would cost a companion
+  migration for nothing. `forge_migrations` also carries the `applied_name` wrangler recorded. The
+  next `forge db migrate` upgrades a pre-namespace table in place, in one batch, deriving each row's
+  namespace from its own name; a read path that finds the old shape says to run `migrate`.
+- **`custom-ddl` is an error, and the "unowned object" concept is gone with it.** A custom migration
+  moves data; every table in the database comes from `schema.sql` and compose. With DDL unable to
+  reach the database any other way, an object in the replay that no declared schema declares can only
+  be one you deleted from the file — so compose drops it, and there is no third category to warn
+  about, refuse rebuilds over, or remember. `Ownership.unowned`, `ManagedSchema`, `managedSchemaModel`
+  and `rememberedNames` are removed; `assignOwnership(claims, desired)` keeps only the two refusals
+  that were ever about ownership. A migration carrying DDL with no compose stamp now fails the apply.
+- **The snapshot is two digests, and an older one is refused until it is recomposed.**
+  `SCHEMA_SNAPSHOT_VERSION` is `5` and is its own constant, no longer tied to `SCHEMA_MODEL_VERSION`.
+  `SchemaSnapshot` loses `namespace` and `model`: both models a check compares are rebuilt from the
+  files and the migrations on disk, so a stored one was a fourth rendering of the schema compared
+  against itself. What remains is `desired: Record<path, digest>` keyed as the host config declared
+  it, and a non-null `migrationsDigest`. `config/schema.snapshot.json` drops from hundreds of lines
+  to eight. `--replay` now compares the replayed migrations against the loaded declarations, which is
+  the comparison worth making. `ComposeStamp` carries the same digest map and loses `namespace`. `SchemaCheckEntry[]`
+  becomes one `SchemaCheckReport`: the two cases `--check` used to run collapse into one rule — a
+  declared schema's digest moved — which covers an edited file of your own and an upgraded library
+  alike. Normalization changed with the version: a non-simple identifier is case-folded, a
+  double-quoted token inside a column's `DEFAULT` or `CHECK` that names one of the table's own
+  columns is an identifier rather than a literal, and every double-quoted token in a view or trigger
+  body is kept verbatim. Delete `schema.snapshot.json` and run `forge db migrate compose` once; a
+  library that declares a schema and composes nothing keeps no snapshot at all. A checkout holding a
+  hand-written DDL migration must compose it from `schema.sql` instead — there is no flag that
+  admits one.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §1.
+- **`BACKUP_FORMAT_VERSION` is `5`, and every earlier artifact is refused by name.** Three things
+  changed under it, and there is deliberately no converter: an artifact **embeds the migrations it
+  was taken with**, so route `migrations` replays `<artifact>/migrations/` and never the checkout and
+  an artifact stays restorable from a git checkout years later; the manifest gains `selfDigest` and
+  `tables[].rows` now means the number of rows the artifact holds rather than a `COUNT(*)` taken
+  after the read; and `manifest.json` is validated field by field on the way in — a migration entry
+  whose name is a path, an artifact entry whose file name is not one, a count that is not one — with
+  a manifest that is not JSON refused naming the file rather than surfacing the parser's own error.
+  The manifest carries no `lock`, because the migrations digest is now the whole story. Take a fresh
+  backup before upgrading. New exports `manifestSelfDigest`, `appSchemaDigestInput` and
+  `COMPANION_TABLES`; `acquireApplyLock` takes an optional verb label.
+  [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md).
+- **The recorded desired-state digest is gone, and with it `status --check`'s clause on it.**
+  `DESIRED_DIGEST_PREFIX`, `desiredDigests`, `DesiredDigestRow`, `StatusReport.desired` and
+  `SchemaHealth.desired` are removed, `recordMetaSql` no longer takes `desired`, and the next
+  `forge db migrate` deletes every `desired_digest:*` row from `forge_schema_meta`. It recorded the
+  stamp of the last composed migration rather than the files, so a comment-only edit to a declared
+  schema wedged `status --check` at exit 1 with nothing left to compose. A declared file edited and
+  never composed is `forge db schema --check`'s to catch — it reads files, needs no database, and is
+  already a gate row. `ComposeStamp.desired` stays: it is provenance in the migration a reviewer
+  reads. [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §6c, §10; [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §6.
+- **`forge db schema` is the check, and prints no document.** `Seed` gains `places`.
+- **`--allow-destructive` takes the plan digest.** A destructive compose refusal now ends with a
+  twelve-character digest of its drop set, and `forge db migrate compose --allow-destructive
+  <digest>` approves that set and no other: a drop set that changed since — a schema edit, a
+  snapshot change, a library upgrade — is refused again with the current digest. The bare flag is
+  refused by the parser. `ComposeOptions.allowDestructive` is the digest or absent, and
+  `destructivePlanDigest` is exported. [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §4.
+- **`forge db seed apply --force` is gone.** It meant three overrides at once. `--rerun` runs a
+  seed that already ran, including one whose file changed since, and `--only <dir>:<name>` narrows
+  it to the one seed; `--allow-pending` seeds a database with a migration pending, onto the older
+  schema. Neither implies the other. A seed and its history row now load as one file, so a crash
+  cannot leave a seed applied and unrecorded. `runSeedApply` takes `rerun` and `allowPending`, and
+  `planSeeds` takes `rerun`. [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7.
+- **The lint rules are renamed, promoted and extended.** `drop-table-no-if-exists` is
+  `drop-no-if-exists` and covers `INDEX`, `VIEW` and `TRIGGER`; `virtual-table-fts5` is
+  `virtual-table`; `alter-type` is `alter-column-unsupported` and an error; `not-null-no-default`
+  is `add-column-not-null-no-default` and an error. The `LintRule` union carries every new name.
+  Quoted identifiers are masked before matching, and a `CREATE TRIGGER … BEGIN … END;` is one
+  statement. Eleven rules are new: `autoincrement`, `explicit-transaction`, `attach-database`,
+  `add-column-non-constant-default`, `add-column-constrained`, `rename`,
+  `unique-index-on-existing-table`, `table-rebuild`, `pragma-ignored`, `generated-edited` and
+  `custom-ddl`. `splitSqlStatements` and `maskSqlProse` are exported.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §5.
+- **`src/auth/schema.sql` is the whole of what forge's auth publishes, and `src/auth/migrations/` is
+  gone with the `validate-schema-concat` gate step.** The file is what the schema _is_, and nothing
+  is generated beside it — `db:schema` in `full` loads it into a scratch D1 to prove it executes. The
+  `forge.db` block in `package.json` is gone with discovery: a consumer names the file in its own
+  host config and composes the migration. `schemaConcatStep`, `checkSchemaConcat`, `fixSchemaConcat`
+  and `SchemaConcatCheckConfig` are removed from `@y-core/forge/tooling/gate`, and nothing prints
+  the old concatenation.
+- **`@y-core/forge/tooling/db` publishes one entry point per verb, and nothing beneath it.** The
+  barrel keeps `createDbCommands`, `resolveDbContext`, `confirmPrinter`, every `run*`, `prepare*`
+  and `execute*` function, `composeMigration`, `checkSchema`, `lintMigration(s)`,
+  `lintSeeds`, `readBackupManifest`, `findVerifiedBackup`, the two Time Travel verbs, and the
+  option, outcome, plan and host-config types. Everything else — the homes, the I/O port, the SQL
+  helpers, the wrangler calls, the schema model and normalizer, the backup reader — is `@internal`
+  and reached by file. `@y-core/forge/storage/db` likewise drops `toSchemaMeta`, `toSchemaObjects`,
+  `SCHEMA_META_SELECT`, `INVENTORY_SELECT`, `MIGRATIONS_DIGEST_KEY`, `SCHEMA_FINGERPRINT_KEY`,
+  `isManagedObject`, `MANAGED_TABLE_PREFIXES` and `schemaFingerprintInput`, which only the CLI read,
+  and gains `compareCodePoints`. [`src/tooling/db/README.md`](src/tooling/db/README.md).
+- **`config/db.ts` and every `d1_databases` entry are validated at the boundary.** A host config
+  with a misspelt key or a `schemas` that is a string, and a wrangler entry whose `migrations_dir`,
+  `database_id` or `migrations_table` is not a string, are refused naming the file and the field
+  rather than read as if they were what the types said. [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §8.
+- **`standbyHome` and `scratchHome` take a migrations directory**, and compose writes the file
+  itself, numbering it above every file already in the app's directory.
+- **`D1Client.batch` returns `D1BatchResult<T>[]`.** Each statement's outcome carries its rows and
+  the write count `execute` would have reported (`rowsWritten`, `lastRowId`), rather than rows
+  alone. [`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1g.
+- **`SafeHtml` is a class, not a branded string.** `src/http/html.ts` and `src/http/response.ts` are
+  forge's own, and `html` now returns an instance of an exported `SafeHtml` class. Every
+  `String.prototype` call a branded string admitted breaks: `.length`, `.includes`, `.slice`, a
+  template interpolation's implicit coercion is fine but `typeof value === "string"` is now `false`,
+  and `JSON.stringify` serializes `{}` rather than the markup. Read one with `String(value)`, and
+  test one with `isSafeHtml`. `html.raw` is gone — `rawHtml(s)` is the only opt-out — and calling
+  `html(value)` as a plain function throws a `TypeError` rather than emitting its argument unescaped.
+  `createRedirectResponse` (aliased `redirect`) and `htmlResponse` are forge's own with the same
+  signatures. The load-bearing detail: `renderToString`
+  ([`src/jsx/render-to-string.ts`](src/jsx/render-to-string.ts)) tests `isSafeHtml` **after** its
+  `typeof node === "string"` branch, which is only correct because `SafeHtml` stopped being a string.
+  [`src/http/README.md`](src/http/README.md).
+- **`@remix-run/html-template` and `@remix-run/response` are no longer dependencies.** Both were
+  wrapped by `src/http`, which now implements them; an app importing either directly must add it to
+  its own `package.json` or move to `@y-core/forge/http`.
+- **A primary factor must identify the visitor, and the type enforces it — the discoverable passkey
+  sign-in is gone.** A passkey authenticates from nothing: it names no visitor, so it can never be
+  the factor that starts a sign-in. `AuthFactorOffer`'s primary variant now takes an
+  `AuthIdentifyingFactorService` — a service whose kind is drawn from the new
+  `AUTH_IDENTIFYING_FACTORS`, today `["email-otp"]` — so `{ service: passkey, role: "primary" }` is a
+  type error, and `createFactorRegistry` refuses it at runtime with `createFactorRegistry: "passkey"
+  cannot be a primary factor — a primary factor must identify the visitor, which only "email-otp"
+  does`. The rule stops being a capability a service declares about itself: `AuthFactorCapabilities`
+  loses `primary` and is `{ stepUp }`.
+
+  **Removed with it:** `AuthPasskeyCeremonyOptions`, `AuthFactorRegistry.ceremony`,
+  `createPasskeySigninActions`, `PasskeyFactorRole`, `PasskeyFactorOptions.role`, the
+  `POST /auth/passkey/authenticate/begin` and `/finish` routes and their `["auth", "passkey"]` route
+  group, and `SigninViewProps.primaryFactor` and `.passkey`. `AuthIdentifyingFactorKind`,
+  `AuthIdentifyingFactorService` and the `authIdentifies(kind)` guard are new; `AuthFactorService`,
+  `ImplicitFactorService` and `EnrollableFactorService` take an optional kind parameter whose default
+  leaves every existing annotation valid.
+
+  **A passkey second factor is untouched.** Enrolment and step-up run through `createPasskeyFactor`
+  and the `auth.verify.ceremony` and `auth.enrol.ceremony` endpoints exactly as before — including
+  the second half of a sign-in, which now always runs the step-up pair. With no primary role left,
+  a passkey ceremony always requires user verification, so `PASSKEY_USER_VERIFICATION`'s `preferred`
+  branch is gone; a deployment that had passed `role: "primary"` is strengthened rather than broken.
+
+  **Upgrade:** drop `ceremony` from the passkey's factor offer, drop `role` from
+  `createPasskeyFactor`, drop any `auth.passkey` rate-limit key — an unchecked string that would
+  otherwise become a silent no-op — and stop passing `primaryFactor` and `passkey` to `SigninView`.
+  [`AUTH_FLOWS.md`](docs/AUTH_FLOWS.md) §3b.
+- **The transition, for an app on the previous model:** delete `config/schema.lock`, drop `db:lock`,
+  `db:adopt` and `db:eject` from `package.json`, write a `config/db.ts` naming every schema file and
+  seeds directory by path, then rebuild the database — `forge db reset`,
+  `forge db migrate compose`, `forge db migrate` — and commit the composed file. There is no
+  shim; pre-1.0 ships none. A **deployed** database is reset-and-restore, or a Time Travel bookmark
+  taken before the cut-over.
+
+- **A backup is a snapshot of one instant, and proves the schema it restores.** Pages were read one
+  wrangler spawn at a time with nothing excluding a concurrent writer, and `tables[].rows` recorded
+  a `COUNT(*)` taken *after* the read — so an artifact torn by a write recorded a count no set of
+  rows in it matched, and said nothing. `forge db backup` now holds the apply lock on a local target
+  for the whole run (refusing with `Another backup holds …`), records the rows it actually read, and
+  refuses the backup naming each table whose post-read count disagrees. The per-route proof also
+  compares a digest of the restored schema's app objects and every companion table's rows, where it
+  previously compared app rows alone — a restore that rebuilt the wrong schema, or dropped the
+  `forge_*` rows `data.sql` carries, passed.
+- **`forge db reset` proves the backup still describes the database.** It accepted any verified
+  artifact naming the database, so a week-old backup satisfied the guard after a week of writes and
+  the reset discarded them. It now compares every app table's row count against the manifest's
+  first — refusing immediately, naming the table and both numbers, with no read — and only when
+  every count agrees reads the rows and compares each table's digest, which catches an update
+  hiding behind an unchanged count. `--backup <dir>` names the artifact to rely on instead of the
+  most recent verified one; `--allow-unbacked` still skips all of it.
+- **`forge db restore` checks the artifact before it loads it.** `full.sql` / `data.sql` were read
+  straight after the manifest, never hashed against `manifest.artifacts[].sha256` and never put back
+  through `checkFullArtifact` / `checkDataArtifact` — so a truncated or swapped file was caught only
+  after its rows were in the target, where the documented answer is that there is deliberately no
+  repair path. Every declared file is now hashed, and the route's own file re-checked, before the
+  target is so much as queried. The manifest's `selfDigest` is refused when it no longer hashes: it
+  detects truncation, a swapped file and bit rot, and **not** tampering — anyone who edits a
+  manifest can recompute it.
+
+- **A seed's `${VAR}` is quoted for the context it lands in.** Expansion was textual everywhere, and
+  §7 advertised that it worked "inside a SQL string literal as readily as outside one" — so a value
+  holding `'` ended the literal and one holding `';` ran whatever followed. Inside a literal a quote
+  is now doubled; outside one, where the value is the SQL itself, only an identifier-like token, a
+  number or an empty value is accepted and anything else is refused naming the variable and the
+  value. A NUL is refused either way. New export `SEED_BARE_VALUE`.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7.
+- **A text key that collates otherwise than BINARY no longer fails the backup with a message about
+  the data.** The keyset read compares by code point, which is BINARY's order alone, so a key
+  declared `COLLATE NOCASE` was read in an order the merge did not expect and `forge db backup`
+  reported "rows are not ordered by the key" — a tooling limit blamed on the rows. `describeTable`
+  now reads the key's collation from the table's own DDL (one batched read, new `tableSqlSelect` and
+  `keyCollation`) and orders by `rowid` instead; a `WITHOUT ROWID` table, which has no other column
+  to order by, is refused up front naming the column and its collation.
+  [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md).
+- **Compose matches every name the way SQLite resolves one.** `diff.ts` and `emit.ts` keyed their
+  maps by exact name while renames compared case-insensitively, so a schema file changing `Email` to
+  `email` read as a destructive drop-and-add — and a rebuilt table spelled in another case missed
+  its baseline lookup and copied *no* columns into the replacement. Every name now goes through one
+  comparison (new `sqlIdentifierKey`), so a case-only change is no change at all.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §4.
+- **Compose refuses a rebuild that would drop an unowned view or trigger, instead of reporting a
+  forge bug.** `emit` drops and recreates every view and trigger around a rebuild, but recreates
+  only what a declared schema describes, and compose hands it a baseline already filtered to owned
+  names — so an object nothing declares survived the drop, SQLite refused the rename into place, and
+  the proof reported "this is a forge bug". Compose now names the object and the table it covers and
+  stops, with the repair: claim it in a declared `schema.sql`, or drop it first.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §4.
+- **A table with a BLOB primary key can be backed up and restored.** `wrangler d1 execute --json`
+  returns a BLOB as a *string* holding the text of a byte array, not as an array, so every
+  `auth_*` table — 16-byte UUIDv7 keys — failed its restore proof with
+  `cannot store TEXT value in BLOB column`, the value having been written as a TEXT literal. The
+  same misread left the keyset cursor holding that string: SQLite ranks BLOB above TEXT, so
+  `WHERE "id" > '[90, 10, …]'` matched every row and the cursor never advanced — a table over one
+  page (256 rows) read forever. The paged read now projects `typeof(col)` beside each column and
+  `hex(col)` in place of a blob's value, so a row arrives typed and a TEXT column holding the
+  literal `[1, 2, 3]` can never be mistaken for bytes. New exports `decodeReadRow` and
+  `TYPE_ALIAS_PREFIX`.
+- **Route `migrations` creates the companion tables before it loads `data.sql`.** The artifact's
+  `data.sql` carries the `forge_migrations`, `forge_seed_history` and `forge_schema_meta` rows, and
+  `wrangler d1 migrations apply` builds only the app's own tables — so both the restore and the
+  proof `forge db backup` runs failed with `no such table: forge_migrations`. It was reached only
+  after the BLOB read above stopped failing first.
+
+### Added
+
+- **`forge db migrate compose [name] [--dry-run] [--allow-destructive <digest>] [--rename
+  old:new …] [--custom] [--no-cache]`** — the declarative authoring model. Every schema the host
+  config declares is one desired state; compose replays the migrations on disk into a throwaway
+  local D1 through wrangler, loads the desired files into another, diffs the two models read back
+  through `sqlite_master` and the `pragma_*` table functions, and writes the next numbered migration
+  only after the emitted SQL has been applied to the replay and proven to produce the desired model.
+  Alters in place where SQLite's `ADD COLUMN` / `DROP COLUMN` allow it, and otherwise rebuilds —
+  taking every table whose FOREIGN KEY points at the rebuilt one with it, because D1 enforces foreign
+  keys, ignores `PRAGMA foreign_keys = OFF`, and would cascade-delete or refuse to commit under the
+  textbook rebuild. A drop is refused until `--allow-destructive`; a rename is never inferred.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §1.
+- **`schema.snapshot.json`** — for the app, a desired digest per declared path, the app's own
+  migrations digest and the introspected model of the union, written by every compose; for a library,
+  its own digest and model — and **`forge db schema --check [--replay]`**, which holds the files, the
+  snapshot and the migrations in step by digest (sub-second, no wrangler) or by a real replay.
+  `dbSchemaStep()` in `@y-core/forge/tooling/gate` is the pair of gate rows; forge's own gate runs
+  them over `tests/fixtures/db-migrate`.
+- **Compose warns when a rebuild depends on existing rows.** The proof replays on an empty
+  database, so a column that becomes `NOT NULL`, a `CHECK` added to a column or a table, a table
+  that becomes `STRICT` or a type change under `STRICT` passed compose and failed mid-migration on
+  the real rows. `diffSchemaModels` now reports each such step in `SchemaDiff.dataDependent`, and
+  compose prints one `warning:` line per step after the plan — advisory, never aborting — carried in
+  `ComposeOutcome.warnings` and in the `--json` document.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §4.
+- **Compose refuses to drop a parent an unowned child still references.** Under foreign-key
+  enforcement a `DROP TABLE` cascades into every referencing table, so a child no declared schema
+  claims — one a `--custom` migration created — would be emptied or left dangling; compose names it
+  and stops. [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §3.
+- **`forge db migrate --rehearse` applies the pending migrations to real rows first.** Every other
+  check reads a schema — lint the files, the stamp the history, compose a replay — and a replay
+  holds no rows, so a statement that only fails on data passed all of them and failed on the target.
+  A rehearsal restores a backup artifact into a throwaway database under `.forge/scratch/rehearse/`,
+  applies the pending migrations to it and reports, before the confirmation and before the lock: one
+  that fails leaves the target untouched and names the migration it stopped on. `--rehearse` takes
+  the most recent verified backup of this database and `--artifact <dir>` names one instead; a
+  deployed target is refused, having no local scratch to restore into. New exports
+  `rehearseMigrations`, `restoreScratch` and the `RehearsalOutcome` type; `MigrateOptions` gains
+  `rehearse` and `artifact`, and `MigrateOutcome` gains `rehearsed`. The `table-rebuild` lint names
+  the flag. [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §3, §6e.
+- **`forge db backup --target remote|preview` gives a deployed database a verified artifact.** Time
+  Travel reaches back thirty days and `wrangler d1 export --remote` is the dumper forge refuses to
+  trust; a remote backup now reads the database through the same keyset reader, exports its schema
+  with `--remote`, and proves both restore routes into a scratch forced to `local` — nothing in the
+  proof reaches the deployed database. It takes no lock and no bookmark, so the torn-read count is
+  its only concurrency guard, and it needs no confirmation because it only reads. The manifest names
+  the target and carries a warning that `restore` and `reset` are still refused there, which
+  `restore` now repeats for every manifest warning on the way in. `exportSql` carries `--remote` or
+  `--remote --preview` in place of its refusal, with the place flags after `-c` and `-e`.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §3, [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md) §3.
+- **`forge db lint --seeds` holds a seed to four of the migration rules, as warnings.**
+  `unbounded-update`, `unbounded-delete`, `drop-no-if-exists` and `attach-database` now run over
+  every seed at warning level, through the new `lintStatements(file, sql, { rules, level })` export
+  that runs a named subset of the migration checks; `SEED_MIGRATION_RULES` names the four. A seed
+  that empties a table keeps applying locally with the warning logged, is refused on a deployed
+  target until `--allow-warnings`, and fails `lint --seeds --strict`. In passing, `unbounded-update`
+  no longer fires on an upsert's `ON CONFLICT … DO UPDATE SET` — the idiom seeds are told to write —
+  for migrations either. An apply lints only its pending files, so a library migration applied a
+  year ago no longer aborts every apply in every consuming app because a rule was added since.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §5, §7.
+- **Seeds scoped to places** with a first line of `-- forge:places local,standby`;
+  **`forge db seed status --check`**; and the `seed-insert-not-idempotent` warning, logged by
+  `seed apply` and run by `forge db lint --seeds`.
+- **`db` on `cloudflareWorkerSteps()`** — an app with a database takes the two
+  `forge db schema --check` rows from the preset instead of appending `dbSchemaStep()` itself:
+  `db:schema:digests` in `standard`, `db:schema` (a real replay, behind the workerd probe) in
+  `full`, ordered before the browser and workerd rows.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §10.
+- **`checkSchemaHealth`, `schemaHealthMonitor` and `schemaHealthCheck` in `storage/db`** — a Worker
+  reads whether the schema it serves is the one `forge db migrate` recorded, and reports one of
+  `match`, `mismatch`, `unrecorded` or `unavailable`. The monitor logs one `d1.schema.health`
+  record per isolate at `warn` on a mismatch, handed to `executionCtx.waitUntil` so no request waits
+  on it; the predicate fails a `healthCheck` only on `mismatch`. It writes nothing and gates nothing
+  — the repair stays `forge db migrate`. The fingerprint rules have one home,
+  `src/storage/db/schema.ts`, and `tooling/db` re-exports them, so its surface is unchanged.
+  [`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1f.
+- **`requireRowsWritten()`** — a `sql` fragment appended after a write inside `batch`, which aborts
+  and rolls back the batch when that write matched no row; the client rewords the overflow it
+  raises. [`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1g.
+- **`forge/sql-explicit-transaction`** — an oxlint rule refusing a runtime `sql` fragment whose
+  first statement is `BEGIN`, `COMMIT`, `ROLLBACK`, `END`, `SAVEPOINT` or `RELEASE`, since
+  `batch()` is the transaction boundary. [`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1g.
+- **`CliErrorKind` gains `"external"`** — a command this tool ran (wrangler, say) failed or answered
+  in a shape it cannot read; every user-input refusal in `tooling/db` is now a `CliError`, so each
+  prints as one line. [`src/tooling/cli/README.md`](src/tooling/cli/README.md).
+- **The printed undo is aimed.** The `forge db bookmark restore …` command a deployed apply or seed
+  prints carries `--root`, `--config`, `--db` and `-e`, so it restores the database this run resolved
+  from any directory. `--rehearse` binds its artifact to the target by the stripped migration names,
+  so an artifact taken from this target is accepted rather than refused as taken elsewhere.
+- **`confirmPrinter(run)`** — where a confirmation prints: stderr under `--json`, so stdout stays
+  the one JSON document, and stdout otherwise; every confirming verb uses it.
+- **`clearLocalState`** in `@y-core/forge/tooling/db`, the one state reset backup verification
+  and compose share.
+
+---
+
+### Changed
+
+- **`resolveEnrolPasskey` answers 404 when passkey is not offered**, through `authEnrollable`,
+  rather than rendering an enrolment page for a factor the registry does not hold.
+- **`DATABASE_BACKUPS.md` holds the backup rulings**, which `DATABASE_MANAGEMENT.md` §9 used to carry
+  whole; §9 is now a pointer. Every file forge writes under `.forge/` is created `0600`, and every
+  directory `0700`, since a scratch may hold an expanded seed and an artifact holds every row.
+- **`SCHEMA_COMPOSITION.md` holds the compose rulings**, which `DATABASE_MANAGEMENT.md` §11 used to
+  carry. Nothing about the behaviour changed; the citations did. `§11` is now
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §1, and `§11a`–`§11f` are its §2–§7 in
+  order. `DATABASE_MANAGEMENT.md` keeps §1–§10 at the numbers they had — the places and their undo,
+  the companion tables, the lint rules, applying, seeds, the host config, backups and the CI gate.
+
+---
+
+### Fixed
+
+- **`forge db schema --check --replay` no longer reports false results.** The check narrowed
+  nothing, so an object no declared schema owned read as a difference against the snapshot; it now
+  narrows the replay exactly as compose does, and matches names as SQLite resolves them so a
+  case-only rename is no difference.
+- **A quoted keyword column, a quoted literal in a view, and a `UNIQUE` column drop are read
+  right.** `"unique" TEXT` was classed as a constraint and refused; `WHERE role = "admin"` and
+  `"Admin"` normalized equal and the view change was never emitted; `DROP COLUMN` of a `UNIQUE`
+  column was emitted and refused by SQLite's autoindex — it is now a rebuild, as is adding a
+  `NOT NULL DEFAULT NULL` column. [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §1, §4.
+- **A backup no longer fails on a trigger whose body deletes rows, or on two backups in one
+  second.** `full.sql` is checked statement by statement, with a `CREATE TRIGGER … END` as one, and
+  a second backup whose directory name already exists is refused rather than written over the first.
+  A value holding a NUL byte is refused naming the table and the column.
+  [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md) §1, §5.
+- **A REAL that is integral restores as REAL.** `wrangler d1 execute --json` hands a REAL `1.0`
+  over as `1`, and the artifact wrote it as `1` — so under a column with no affinity it restored as
+  an INTEGER, and the row's canonical form changed with it. The read already projects `typeof`
+  beside every value; `decodeReadRow` now wraps a `real` in the new `SqlReal` class, which
+  canonicalises as `R:1` (distinct from INTEGER's `I:1`) and is written to the artifact as `1.0`.
+  The keyset cursor unwraps it, so a REAL key seeks as a number.
+  [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md).
+- **A seed's `${VAR}` is expanded at apply, and the expanded text does not outlive the load.**
+  Seeds were expanded at discovery, so `seed status --check` and `lint --seeds` failed on any
+  machine lacking a variable only `seed apply` needs — a CI gate wanted every secret. `Seed.sql` is
+  now the file as written; `seed apply` expands every seed in its plan before the first is loaded,
+  refusing an unset variable with nothing run, and removes each expanded file from
+  `.forge/scratch/seed/` once it has been loaded. `parseSeed` and `discoverSeeds` no longer take an
+  `env`. [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7.
+- **`--only` naming a seed the place left out says so**, with the `forge:places` line that would
+  include it, rather than "No seed named". [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7.
+- **The apply lock's release is conditional.** `acquireApplyLock` returned a `release` that removed
+  the lock file unconditionally, so a run outliving `APPLY_LOCK_TTL_MS` and taken over as stale
+  deleted its *successor's* lock on the way out. Release now re-reads the file and removes it only
+  while it still holds the `pid` and `startedAt` this call wrote.
+- **Every wrangler forge spawns runs with `FORCE_COLOR=0`.** bun 1.4 colourises a pipe and not only
+  a TTY, and `parseJsonOutput` locates a payload by the first line matching `^\s*[[{]` — so a
+  colourised `--json` line begins with an escape byte and reads as "printed no JSON".
 
 ---
 

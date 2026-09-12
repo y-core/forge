@@ -6,55 +6,49 @@ audience: internal
 
 # `@y-core/forge/tooling/cli`
 
-A small, dependency-free toolkit for building **typed, hierarchical command-line tools** in
-TypeScript — the framework behind forge's own build and tooling scripts. Declare commands with typed
-flags, compose them into a sub-command tree, and run them with a single `execute` call that handles
-parsing, validation, `--help`, and error reporting. Bundled alongside it are node-only **process and
-PATH primitives** (`run`, `capture`, `requireTools`, `hasTool`, `probeOk`, `insertPath`) and a
-`[scope]`-prefixed logger for script output.
+A small, dependency-free toolkit for building **typed, hierarchical command-line tools** in TypeScript — the framework behind forge's own build and
+tooling scripts. Declare commands with typed flags, compose them into a sub-command tree, and run them with a single `execute` call that handles
+parsing, validation, `--help`, and error reporting. Bundled alongside it are node-only **process and PATH primitives** (`run`, `capture`,
+`requireTools`, `hasTool`, `probeOk`, `insertPath`) and a `[scope]`-prefixed logger for script output.
 
 ```ts
 import { createCommand, addCommand, execute, run, requireTools, scopeLogger } from "@y-core/forge/tooling/cli";
 ```
 
-> **Runtime:** this namespace is **node-only**. `execute` reads `node:process`; `proc.ts` uses
-> `node:child_process`, `node:fs`, and `node:path`. It is intended for build scripts and CLIs, not
-> the browser or Worker bundle.
+> **Runtime:** this namespace is **node-only**. `execute` reads `node:process`; `proc.ts` uses `node:child_process`, `node:fs`, and `node:path`. It
+> is intended for build scripts and CLIs, not the browser or Worker bundle.
 
 ---
 
 ## Features
 
-- **Typed flags** — declare a flag map once; `ResolvedFlags<F>` infers each flag's runtime type. A
-  `boolean` flag resolves to `boolean`; a `string` flag with a `default` or `required: true` resolves
-  to `string`; every other `string` flag resolves to `string | undefined`. No casts in your handler.
-  Why the record is keyed by long name, and why number parsing and repeated flags are absent, are
-  [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §1b's.
-- **Hierarchical commands** — compose commands into a tree with `addCommand`. `execute` walks the
-  tree by matching leading non-flag tokens to sub-command names, then dispatches to the deepest match.
-- **Persistent flags** — a flag marked `persistent: true` is inherited by every descendant command,
-  letting a root command define global flags (e.g. `--verbose`) once.
-- **Argument validation** — declare an `ArgValidator` (`exact`, `min`, `max`, `range`, or `none`) and
-  `execute` enforces the positional-argument count before invoking your handler.
-- **Auto-generated help** — `formatHelp` and `formatUsage` render Cobra-style help text; `--help` /
-  `-h` is handled for free, and group commands invoked without a sub-command print their help.
-- **Structured errors** — `CliError` carries a discriminated `kind` rather than an exit code;
-  `execute` formats it to stderr and exits 1, and user-facing messages never leak stack traces. The
-  two-valued exit contract behind that is
-  [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §1c's.
-- **Process primitives** — `run` spawns child processes with inherited stdio and throws on failure;
-  `capture` buffers their combined output and returns the exit code instead; `requireTools` asserts
-  external tools are on `PATH` with install hints; `hasTool` / `probeOk` answer a prerequisite check
-  by exit code alone; `insertPath` prepends a directory to `PATH`.
-- **Injectable IO** — `execute` accepts a `CliIO` ( `stdout` / `stderr` / `exit` ) so tests can drive
-  a command and capture its output without touching the real console or process.
+- **Typed flags** — declare a flag map once; `ResolvedFlags<F>` infers each flag's runtime type. A `boolean` flag resolves to `boolean`; a `string`
+  flag with a `default` or `required: true` resolves to `string`; every other `string` flag resolves to `string | undefined`. No casts in your
+  handler. Why the record is keyed by long name, and why number parsing and repeated flags are absent, are [`BUILD_TOOLING.md`][bt-1b] §1b's.
+- **Hierarchical commands** — compose commands into a tree with `addCommand`. `execute` walks the tree by matching leading non-flag tokens to
+  sub-command names, then dispatches to the deepest match.
+- **Persistent flags** — a flag marked `persistent: true` is inherited by every descendant command, letting a root command define global flags (e.g.
+  `--verbose`) once.
+- **Argument validation** — declare an `ArgValidator` (`exact`, `min`, `max`, `range`, or `none`) and `execute` enforces the positional-argument
+  count before invoking your handler.
+- **Auto-generated help** — `formatHelp` and `formatUsage` render Cobra-style help text; `--help` / `-h` is handled for free, and group commands
+  invoked without a sub-command print their help.
+- **Structured errors** — `CliError` carries a discriminated `kind` rather than an exit code; `execute` formats it to stderr and exits 1, and
+  user-facing messages never leak stack traces. The two-valued exit contract behind that is [`BUILD_TOOLING.md`][bt-1c] §1c's.
+- **Process primitives** — `run` spawns child processes with inherited stdio and throws on failure; `capture` buffers their combined output and
+  returns the exit code instead; `requireTools` asserts external tools are on `PATH` with install hints; `hasTool` / `probeOk` answer a prerequisite
+  check by exit code alone; `insertPath` prepends a directory to `PATH`.
+- **Destructive-action confirmation** — `confirm` asks `Continue? [y/N]` before an irreversible action, and refuses a run with no terminal that did
+  not pass `--yes`.
+- **Injectable IO** — `execute` accepts a `CliIO` ( `stdout` / `stderr` / `exit` ) so tests can drive a command and capture its output without
+  touching the real console or process.
 
 ---
 
 ## Usage
 
-A complete two-level CLI: a root `build` command with a persistent `--verbose` flag and a `wasm`
-sub-command that requires external tools and takes a typed `--profile` flag.
+A complete two-level CLI: a root `build` command with a persistent `--verbose` flag and a `wasm` sub-command that requires external tools and takes
+a typed `--profile` flag.
 
 ```ts
 import { createCommand, addCommand, execute, run, requireTools, scopeLogger } from "@y-core/forge/tooling/cli";
@@ -126,8 +120,8 @@ await execute(root, ["wasm", "--profile", "dev"], io);
 
 #### `createCommand(config)`
 
-Creates a command definition from a `CommandDefinition`. The generic flag type `F` is inferred from
-`config.flags`, so the `flags` argument passed to `run` is fully typed.
+Creates a command definition from a `CommandDefinition`. The generic flag type `F` is inferred from `config.flags`, so the `flags` argument passed
+to `run` is fully typed.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -137,14 +131,12 @@ Creates a command definition from a `CommandDefinition`. The generic flag type `
 | `args` | `ArgValidator` | Positional-argument count rule. Defaults to `{ kind: "none" }`. |
 | `run` | `(args, flags) => void \| Promise<void>` | Handler invoked when this command is selected. |
 
-Returns a `Command<F>` with an empty `commands` array, ready to receive sub-commands via
-`addCommand`.
+Returns a `Command<F>` with an empty `commands` array, ready to receive sub-commands via `addCommand`.
 
 #### `addCommand(parent, child)`
 
-Attaches `child` as a sub-command of `parent`: sets `child.parent` and pushes it onto
-`parent.commands`. Throws `Error: Duplicate command name: "<name>"` if a sibling with the same name
-already exists. Returns `void` — it mutates `parent`.
+Attaches `child` as a sub-command of `parent`: sets `child.parent` and pushes it onto `parent.commands`. Throws
+`Error: Duplicate command name: "<name>"` if a sibling with the same name already exists. Returns `void` — it mutates `parent`.
 
 ```ts
 const root = createCommand({ name: "tool" });
@@ -158,8 +150,7 @@ addCommand(root, createCommand({ name: "test", run: () => {} }));
 
 #### `execute(root, argv?, io?)`
 
-The main entry point. Resolves the target command and dispatches to its `run` handler. Returns
-`Promise<void>`.
+The main entry point. Resolves the target command and dispatches to its `run` handler. Returns `Promise<void>`.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -169,18 +160,14 @@ The main entry point. Resolves the target command and dispatches to its `run` ha
 
 Behavior, in order:
 
-1. **Descend the tree** — consumes leading non-flag tokens, matching each to a sub-command name,
-   stopping at the first token that starts with `-` or matches no sub-command.
-2. **Help** — if the remaining tokens include `--help` or `-h`, prints `formatHelp(current)` to
-   stdout and returns.
-3. **Parse** — collects the effective flag set (own + inherited persistent) via `collectFlags`, then
-   parses the remaining tokens with `parseArgs`.
-4. **Validate args** — enforces the command's `ArgValidator`; a mismatch throws
-   `CliError("invalid-args", …)`.
-5. **Dispatch** — calls `run(args, flags)` (awaited). A command with no `run` but with sub-commands
-   prints its help; a leaf command with no `run` throws `CliError("missing-command", …)`.
-6. **Errors** — a `CliError` is formatted via `formatError` to stderr; any other `Error` prints
-   `Error: <message>`; then `io.exit(1)` is called.
+1. **Descend the tree** — consumes leading non-flag tokens, matching each to a sub-command name, stopping at the first token that starts with `-` or
+   matches no sub-command.
+2. **Help** — if the remaining tokens include `--help` or `-h`, prints `formatHelp(current)` to stdout and returns.
+3. **Parse** — collects the effective flag set (own + inherited persistent) via `collectFlags`, then parses the remaining tokens with `parseArgs`.
+4. **Validate args** — enforces the command's `ArgValidator`; a mismatch throws `CliError("invalid-args", …)`.
+5. **Dispatch** — calls `run(args, flags)` (awaited). A command with no `run` but with sub-commands prints its help; a leaf command with no `run`
+   throws `CliError("missing-command", …)`.
+6. **Errors** — a `CliError` is formatted via `formatError` to stderr; any other `Error` prints `Error: <message>`; then `io.exit(1)` is called.
 
 ---
 
@@ -188,9 +175,8 @@ Behavior, in order:
 
 #### `parseArgs(argv, flagDefs)`
 
-Parses raw tokens against a flag map, returning `{ args, flags }` where `args` is the positional
-array and `flags` is a typed `ResolvedFlags<F>`. Used internally by `execute`, exported for direct
-use and testing.
+Parses raw tokens against a flag map, returning `{ args, flags }` where `args` is the positional array and `flags` is a typed `ResolvedFlags<F>`.
+Used internally by `execute`, exported for direct use and testing.
 
 Parsing rules:
 
@@ -203,16 +189,14 @@ Parsing rules:
 | `--` | Stops flag parsing; all later tokens are positionals. |
 | `-` | Treated as a positional (e.g. stdin). |
 
-After parsing, unset boolean flags default to `false`, unset string flags fall back to their
-`default`, and a missing `required` string flag throws `CliError("missing-value", …)`. An unknown
-flag throws `CliError("unknown-flag", …)`; a string flag with no value throws
+After parsing, unset boolean flags default to `false`, unset string flags fall back to their `default`, and a missing `required` string flag throws
+`CliError("missing-value", …)`. An unknown flag throws `CliError("unknown-flag", …)`; a string flag with no value throws
 `CliError("missing-value", …)`.
 
 #### `collectFlags(command)`
 
-Walks the command's ancestor chain and returns the effective `FlagDefs`: the command's own flags
-plus any ancestor flag marked `persistent`. Child definitions override an inherited flag of the same
-name.
+Walks the command's ancestor chain and returns the effective `FlagDefs`: the command's own flags plus any ancestor flag marked `persistent`. Child
+definitions override an inherited flag of the same name.
 
 ---
 
@@ -220,9 +204,8 @@ name.
 
 #### `run(cmd, args, opts?)`
 
-Spawns `cmd args` synchronously with **inherited** stdio (child output goes straight to the parent's
-terminal). Returns the exit code (`0`) on success; throws
-``Error: `<cmd> <args>` failed (exit <code>)`` on a non-zero exit.
+Spawns `cmd args` synchronously with **inherited** stdio (child output goes straight to the parent's terminal). Returns the exit code (`0`) on
+success; throws ``Error: `<cmd> <args>` failed (exit <code>)`` on a non-zero exit.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -237,9 +220,8 @@ run("git", ["status"], { cwd: "/src/forge" });
 
 #### `capture(cmd, args, opts?)`
 
-Spawns `cmd args` synchronously with its output **buffered** rather than inherited, and **never
-throws** — the counterpart to `run` for callers that report a failure instead of aborting on it
-(a step runner, a gate). Returns a `CaptureResult`.
+Spawns `cmd args` synchronously with its output **buffered** rather than inherited, and **never throws** — the counterpart to `run` for callers that
+report a failure instead of aborting on it (a step runner, a gate). Returns a `CaptureResult`.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -253,11 +235,9 @@ throws** — the counterpart to `run` for callers that report a failure instead 
 | `output` | `string` | Combined stdout and stderr, interleaved in write order. |
 | `ms` | `number` | Wall-clock duration of the spawn. |
 
-Both streams are pointed at one temp-file descriptor, so `output` matches what `cmd > log 2>&1`
-would have written — `stdio: "pipe"` returns two independent buffers whose relative order is lost.
-A spawn failure (a missing executable) produces no child output, so its error message is appended to
-`output` rather than leaving the caller with an empty capture. `stdin` is `ignore`d: a captured
-process must never block waiting on a terminal.
+Both streams are pointed at one temp-file descriptor, so `output` matches what `cmd > log 2>&1` would have written — `stdio: "pipe"` returns two
+independent buffers whose relative order is lost. A spawn failure (a missing executable) produces no child output, so its error message is appended
+to `output` rather than leaving the caller with an empty capture. `stdin` is `ignore`d: a captured process must never block waiting on a terminal.
 
 ```ts
 const { code, output, ms } = capture("oxfmt", ["--check", "src/"], { cwd: repoRoot });
@@ -266,9 +246,8 @@ if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n")
 
 #### `requireTools(tools)`
 
-Asserts that every tool in a `ToolHints` map is present on `PATH`, in insertion order. Throws on the
-first missing tool with `Error: <cmd> not found — <hint>`, surfacing the install hint verbatim so
-`execute` reports it on stderr and exits 1.
+Asserts that every tool in a `ToolHints` map is present on `PATH`, in insertion order. Throws on the first missing tool with
+`Error: <cmd> not found — <hint>`, surfacing the install hint verbatim so `execute` reports it on stderr and exits 1.
 
 ```ts
 requireTools({ "wasm-snip": "cargo install wasm-snip", "wasm-opt": "npm i -g binaryen" });
@@ -276,23 +255,21 @@ requireTools({ "wasm-snip": "cargo install wasm-snip", "wasm-opt": "npm i -g bin
 
 #### `hasTool(cmd)`
 
-Returns `true` when `cmd --version` exits 0 — i.e. the tool is present and runnable. Non-throwing;
-use it for optional-tool branching. A thin wrapper over `probeOk(cmd, ["--version"])`.
+Returns `true` when `cmd --version` exits 0 — i.e. the tool is present and runnable. Non-throwing; use it for optional-tool branching. A thin
+wrapper over `probeOk(cmd, ["--version"])`.
 
 #### `probeOk(cmd, args)`
 
-Returns `true` when `cmd args` exits 0, with stdout and stderr discarded — a prerequisite check
-whose only signal is the exit code. Non-throwing.
+Returns `true` when `cmd args` exits 0, with stdout and stderr discarded — a prerequisite check whose only signal is the exit code. Non-throwing.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `cmd` | `string` | Executable to run. |
 | `args` | `readonly string[]` | Arguments passed to it. |
 
-Reach for it when the prerequisite is **not** the presence of an executable on `PATH` — a
-downloaded browser, a running service, a provisioned credential — where `hasTool` would pass
-vacuously because the CLI is installed but the thing it needs is not. Such a prerequisite needs a
-command of its own to answer for it.
+Reach for it when the prerequisite is **not** the presence of an executable on `PATH` — a downloaded browser, a running service, a provisioned
+credential — where `hasTool` would pass vacuously because the CLI is installed but the thing it needs is not. Such a prerequisite needs a command of
+its own to answer for it.
 
 ```ts
 if (!probeOk("docker", ["compose", "ps", "--status=running", "--quiet"])) {
@@ -302,11 +279,45 @@ if (!probeOk("docker", ["compose", "ps", "--status=running", "--quiet"])) {
 
 #### `insertPath(dir)`
 
-Idempotently prepends `dir` to `process.env.PATH` for subsequent child processes. A no-op when `dir`
-is empty, does not exist on disk, or is already on `PATH`.
+Idempotently prepends `dir` to `process.env.PATH` for subsequent child processes. A no-op when `dir` is empty, does not exist on disk, or is already
+on `PATH`.
 
 ```ts
 insertPath(`${process.cwd()}/node_modules/.bin`);
+```
+
+---
+
+### Confirmation
+
+#### `confirm(options)`
+
+Asks before an irreversible action and returns `Promise<void>`; a `n` answer throws `CliError("invalid-args", …)`, so a cancelled run aborts rather
+than continuing. Returns immediately when `options.yes` is set.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `what` | `string` | The object of the action, completing `About to <verb> <what>`. **Required.** |
+| `consequence` | `string` | One sentence on why the action cannot be taken back. **Required.** |
+| `verb` | `string` | The verb the prompt and the refusal use. Defaults to `proceed`. |
+| `detail` | `string` | The things affected, listed after a colon in the prompt and the refusal. |
+| `yes` | `boolean` | `--yes`: skip the prompt entirely. |
+| `input` / `output` | `NodeStdioStream` | Streams the answer is read from and the question written to. Default `process.stdin` / `process.stdout`. |
+| `interactive` | `boolean` | Whether a prompt can be shown. Defaults to `input.isTTY`. |
+| `print` | `(line: string) => void` | Where the preamble lines go. Defaults to `console.log`. |
+| `cancelMessage` | `string` | The error message a `n` answer raises. |
+
+**A non-interactive run is refused, not assumed.** With no TTY and no `yes`, `confirm` throws naming the verb, the object and the consequence, and
+says that `--yes` is how to mean it — so a CI job cannot silently take a destructive path.
+
+```ts
+await confirm({
+  verb: "reset",
+  what: `${database} (local)`,
+  consequence: "Its local state files are removed and nothing here restores them.",
+  yes: flags.yes,
+  cancelMessage: "Reset cancelled; the database is unchanged.",
+});
 ```
 
 ---
@@ -315,8 +326,7 @@ insertPath(`${process.cwd()}/node_modules/.bin`);
 
 #### `scopeLogger(scope)`
 
-Returns a `ScopedLogger` whose every line is prefixed with `[scope]`. `info` and `done` write to
-stdout; `warn` writes to stderr.
+Returns a `ScopedLogger` whose every line is prefixed with `[scope]`. `info` and `done` write to stdout; `warn` writes to stderr.
 
 | Method | Stream | Output |
 | --- | --- | --- |
@@ -335,16 +345,18 @@ log.done("done");
 
 ### Help & usage
 
-#### `formatHelp(command)`
+#### `formatHelp(command, options?)`
 
-Renders the full help text for a command: description, usage line, an alphabetised
-**Available Commands** list (when it has sub-commands), and a **Flags** section that always appends
-`--help`. Required string flags are marked `(required)`.
+Renders the full help text for a command: description, usage line, an alphabetised **Available Commands** list (when it has sub-commands), and a
+**Flags** section that always appends `--help`. Required string flags are marked `(required)`.
+
+`HelpOptions` carries `width` (columns the block must fit in, defaulting to `80`) and `style` (the heading styler, defaulting to `PLAIN`). Pin
+`width` in a test so an exact-match assertion stays exact.
 
 #### `formatUsage(command)`
 
-Renders just the usage line, e.g. `Usage:\n  tool wasm [flags]`. Appends `[command]` when the
-command has sub-commands and `[args]` when its `ArgValidator` is not `{ kind: "none" }`.
+Renders just the usage line, e.g. `Usage:\n tool wasm [flags]`. Appends `[command]` when the command has sub-commands and `[args]` when its
+`ArgValidator` is not `{ kind: "none" }`.
 
 ---
 
@@ -352,8 +364,8 @@ command has sub-commands and `[args]` when its `ArgValidator` is not `{ kind: "n
 
 #### `class CliError extends Error`
 
-A structured CLI error carrying a discriminated `kind`. Thrown by the framework (and throwable from
-your own handlers) so `execute` can report it cleanly and exit non-zero.
+A structured CLI error carrying a discriminated `kind`. Thrown by the framework (and throwable from your own handlers) so `execute` can report it
+cleanly and exit non-zero.
 
 ```ts
 new CliError(kind: CliErrorKind, message: string);
@@ -367,6 +379,7 @@ new CliError(kind: CliErrorKind, message: string);
 | `missing-value` | A string flag is missing its value, or a `required` flag was omitted. |
 | `invalid-args` | The positional-argument count violates the command's `ArgValidator`. |
 | `missing-command` | A leaf command has no `run` handler. |
+| `external` | A command this tool ran — `wrangler`, say — failed, or answered in a shape it cannot read. |
 
 #### `formatError(err)`
 
@@ -391,25 +404,28 @@ Formats a `CliError` for display as `Error: <message>`.
 | `CaptureResult` | `{ code; output; ms }` — the `capture` return type. |
 | `ScopedLogger` | `{ info; warn; done }` — the `scopeLogger` return type. |
 | `CliIO` | `{ stdout; stderr; exit }` — injectable IO for `execute`. |
+| `ConfirmOptions` | The prompt `confirm` asks: `what`, `consequence`, and the optional `verb`, `detail`, `yes`, `input`, `output`, `interactive`, `print` and `cancelMessage`. |
 | `CliErrorKind` | Discriminant union of `CliError.kind` values. |
 
-> **Note on flag naming:** a flag's **long** name is its key in the `FlagDefs` record (e.g. `profile`
-> → `--profile`); the optional **short** alias is the `short` field (e.g. `"p"` → `-p`). There is no
-> separate `long` field on `FlagDef`.
+> **Note on flag naming:** a flag's **long** name is its key in the `FlagDefs` record (e.g. `profile` → `--profile`); the optional **short** alias
+> is the `short` field (e.g. `"p"` → `-p`). There is no separate `long` field on `FlagDef`.
 
-> **Note on repeatable flags:** when `multiple: true` a flag resolves to `string[]`, and repeating an
-> unmarked flag is refused — the ruling and its ordering against `default`/`required` are
-> [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) §1b's. Mind the inference trap: a table written
-> `{ type: "string" as const, multiple: true }` widens `multiple` to `boolean` and falls through to
-> `string | undefined`. Write `multiple: true as const`.
+> **Note on repeatable flags:** when `multiple: true` a flag resolves to `string[]`, and repeating an unmarked flag is refused — the ruling and its
+> ordering against `default`/`required` are [`BUILD_TOOLING.md`][bt-1b] §1b's. Mind the inference trap: a table written
+> `{ type: "string" as const, multiple: true }` widens `multiple` to `boolean` and falls through to `string | undefined`. Write
+> `multiple: true as const`.
 
 ---
 
 ## See also
 
-- [`BUILD_TOOLING.md`](../../../docs/BUILD_TOOLING.md) — the decisions behind this surface:
-  commands as values (§1a), the typed flag record (§1b), the kind-not-exit-code error contract
-  (§1c), and why `CommandBase` and `Command` stay separate (§1d).
-- [`@y-core/forge/tooling/gate`](../gate/README.md) — the verification gate built on this framework.
-- [`@y-core/forge/tooling/term`](../term/README.md) — the terminal-output sink the CLIs render
-  through.
+- [`BUILD_TOOLING.md`][bt] — the decisions behind this surface: commands as values (§1a), the typed flag record (§1b), the kind-not-exit-code error
+  contract (§1c), and why `CommandBase` and `Command` stay separate (§1d).
+- [`@y-core/forge/tooling/gate`][gate-readme] — the verification gate built on this framework.
+- [`@y-core/forge/tooling/term`][term-readme] — the terminal-output sink the CLIs render through.
+
+[bt]: ../../../docs/BUILD_TOOLING.md
+[bt-1b]: ../../../docs/BUILD_TOOLING.md#1b-flags-are-a-typed-record
+[bt-1c]: ../../../docs/BUILD_TOOLING.md#1c-errors-carry-a-kind-not-an-exit-code
+[gate-readme]: ../gate/README.md
+[term-readme]: ../term/README.md

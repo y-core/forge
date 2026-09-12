@@ -6,9 +6,8 @@ audience: consumer
 
 # `@y-core/forge/config`
 
-Typed, lazy environment configuration for Cloudflare Workers. Map raw Worker bindings to a structured,
-validated config object that resolves on first access and is cached **per distinct `env` object** for
-the lifetime of the Worker instance.
+Typed, lazy environment configuration for Cloudflare Workers. Map raw Worker bindings to a structured, validated config object that resolves on
+first access and is cached **per distinct `env` object** for the lifetime of the Worker instance.
 
 ```ts
 import { createConfig, env, optionalGroup, resolveConfig, registerConfig, retrieveConfig } from "@y-core/forge/config";
@@ -18,23 +17,18 @@ import { createConfig, env, optionalGroup, resolveConfig, registerConfig, retrie
 
 ## Features
 
-- **Declarative env mapping** — describe your config shape as a record of `env("VAR_NAME")` references
-  and literals; `Config` reads `env[VAR_NAME]` at resolution time.
-- **Runtime validation** — every config is parsed through a [valibot](https://valibot.dev) schema, so a
-  malformed environment fails loudly with a path-qualified error instead of surfacing `undefined` deep
-  in a handler.
-- **Lazy, cached resolution** — `config.get(env)` resolves on first call and caches the result per
-  distinct `env` object (a `WeakMap` keyed by `env` identity). Each distinct `env` resolves once;
-  repeat calls with the same `env` are free.
-- **Optional integration groups** — `optionalGroup` collapses an entire block of related vars to `null`
-  when its required keys are absent, so optional integrations (analytics, email, etc.) stay off until
-  fully configured.
-- **Environment-aware overrides** — patch the resolved config when a detector matches (e.g. apply
-  development defaults when a `DEV` flag is set).
-- **Decoupled sharing** — `registerConfig` / `retrieveConfig` associate a `Config` store with any host
-  object through a `WeakMap`, letting modules read config by reference without a shared import.
-- **Test ergonomics** — `seed()` injects a fixed value bypassing env resolution; `reset()` restores
-  lazy resolution and clears the per-`env` cache.
+- **Declarative env mapping** — describe your config shape as a record of `env("VAR_NAME")` references and literals; `Config` reads `env[VAR_NAME]`
+  at resolution time.
+- **Runtime validation** — every config is parsed through a [valibot](https://valibot.dev) schema, so a malformed environment fails loudly with a
+  path-qualified error instead of surfacing `undefined` deep in a handler.
+- **Lazy, cached resolution** — `config.get(env)` resolves on first call and caches the result per distinct `env` object (a `WeakMap` keyed by `env`
+  identity). Each distinct `env` resolves once; repeat calls with the same `env` are free.
+- **Optional integration groups** — `optionalGroup` collapses an entire block of related vars to `null` when its required keys are absent, so
+  optional integrations (analytics, email, etc.) stay off until fully configured.
+- **Environment-aware overrides** — patch the resolved config when a detector matches (e.g. apply development defaults when a `DEV` flag is set).
+- **Decoupled sharing** — `registerConfig` / `retrieveConfig` associate a `Config` store with any host object through a `WeakMap`, letting modules
+  read config by reference without a shared import.
+- **Test ergonomics** — `seed()` injects a fixed value bypassing env resolution; `reset()` restores lazy resolution and clears the per-`env` cache.
 
 ---
 
@@ -42,8 +36,12 @@ import { createConfig, env, optionalGroup, resolveConfig, registerConfig, retrie
 
 Production apps use a **two-layer** model, and the layers have different sources of truth:
 
-1. **The binding/env surface** (`KVNamespace`s, `R2Bucket`s, secrets, vars) is owned by `wrangler.jsonc` — so its schema should be **generated**, not hand-written. `forge cf gen env` (`@y-core/forge/tooling/cf`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, and `validateBindings(EnvSchema)` enforces it on the first request. A missing or malformed binding then fails loudly at the edge, never silently downstream.
-2. **App config** (site settings, feature flags, service groups) is shaped by hand-written `Config` stores (this namespace) over those already-validated vars.
+1. **The binding/env surface** (`KVNamespace`s, `R2Bucket`s, secrets, vars) is owned by `wrangler.jsonc` — so its schema should be **generated**,
+   not hand-written. `forge cf gen env` (`@y-core/forge/tooling/cf`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, and
+   `validateBindings(EnvSchema)` enforces it on the first request. A missing or malformed binding then fails loudly at the edge, never silently
+   downstream.
+2. **App config** (site settings, feature flags, service groups) is shaped by hand-written `Config` stores (this namespace) over those
+   already-validated vars.
 
 The three files of layer 1, end to end:
 
@@ -63,17 +61,19 @@ export type Env = v.InferOutput<typeof EnvSchema>;
 app.use("*", validateBindings(EnvSchema));
 ```
 
-Wire the generator as a script — `"gen:env": "forge cf gen env"` — and re-run it whenever `wrangler.jsonc` bindings change. Full generator reference: [src/validation/README.md](../validation/README.md) (`@y-core/forge/tooling/cf`); `validateBindings`/`validateEnv` reference: [src/app/README.md](../app/README.md).
+Wire the generator as a script — `"gen:env": "forge cf gen env"` — and re-run it whenever `wrangler.jsonc` bindings change. Full generator
+reference: [src/validation/README.md][validation-readme] (`@y-core/forge/tooling/cf`); `validateBindings`/`validateEnv` reference:
+[src/app/README.md][app-readme].
 
-Layer 2 — the `Config` stores documented below — then consumes the validated vars (`BASE_URL`, `LOG_LEVEL`, …) with mapping, shaping, and per-isolate caching.
+Layer 2 — the `Config` stores documented below — then consumes the validated vars (`BASE_URL`, `LOG_LEVEL`, …) with mapping, shaping, and
+per-isolate caching.
 
 ---
 
 ## Usage
 
-Define a `Config` once at module scope by mapping env variables to a shape and validating that shape.
-Build it with the `createConfig` factory — the `Config` constructor is private, so `new Config(...)`
-is not available:
+Define a `Config` once at module scope by mapping env variables to a shape and validating that shape. Build it with the `createConfig` factory — the
+`Config` constructor is private, so `new Config(...)` is not available:
 
 ```ts
 import { createConfig, env } from "@y-core/forge/config";
@@ -85,17 +85,15 @@ const emailConfig = createConfig(
 );
 ```
 
-Resolve it inside any handler from the Workers `env`. The first call validates and caches; later calls
-return the cached value:
+Resolve it inside any handler from the Workers `env`. The first call validates and caches; later calls return the cached value:
 
 ```ts
 // Inside a loader, action, or middleware with access to the Workers env.
 const { apiKey, fromAddress } = emailConfig.get(c.env);
 ```
 
-The first argument to `createConfig(...)` is an **env mapping**: a record whose values are `env(name)`
-references (read from the raw environment) or string literals (used verbatim). Mappings nest, so you can
-group related variables:
+The first argument to `createConfig(...)` is an **env mapping**: a record whose values are `env(name)` references (read from the raw environment) or
+string literals (used verbatim). Mappings nest, so you can group related variables:
 
 ```ts
 const siteConfig = createConfig(
@@ -121,9 +119,8 @@ const { site, email } = siteConfig.get(c.env);
 
 ### `createConfig(map, schema, overrides?)`
 
-Creates a lazy `Config` holder that resolves an env mapping through a schema and caches the result per
-distinct `env` object. This is the public factory — the `Config` constructor is private, so build every
-holder through `createConfig`.
+Creates a lazy `Config` holder that resolves an env mapping through a schema and caches the result per distinct `env` object. This is the public
+factory — the `Config` constructor is private, so build every holder through `createConfig`.
 
 ```ts
 createConfig<ConfigData>(map, schema, overrides?): Config<ConfigData>
@@ -143,15 +140,14 @@ The returned `Config<ConfigData>` exposes:
 | `seed` | `(config: ConfigData) => void` | Test helper. Sets a fixed value returned by every `get()`, bypassing env resolution. |
 | `reset` | `() => void` | Test helper. Clears the seed and the per-`env` cache, restoring lazy resolution on the next `get()`. |
 
-> The cache lives as long as the V8 isolate, **not** a single request — which is correct on Workers
-> because bindings are stable per isolate. Because resolution is keyed per distinct `env` object,
-> tests that vary `env` across cases no longer need a `reset()` between them; each `env` resolves on
+> The cache lives as long as the V8 isolate, **not** a single request — which is correct on Workers because bindings are stable per isolate. Because
+> resolution is keyed per distinct `env` object, tests that vary `env` across cases no longer need a `reset()` between them; each `env` resolves on
 > its own. Use `seed()`/`reset()` only to inject or clear a fixed whole-holder override.
 
 ### `env(name)`
 
-Creates an `EnvRef` — a marker that resolves to `rawEnv[name]` when the mapping is applied. Use it as a
-mapping value wherever a config field should come from a Worker binding.
+Creates an `EnvRef` — a marker that resolves to `rawEnv[name]` when the mapping is applied. Use it as a mapping value wherever a config field should
+come from a Worker binding.
 
 ```ts
 env<K extends string>(name: K): EnvRef<K>
@@ -163,15 +159,13 @@ const map = { apiKey: env("RESEND_API_KEY") }; // → { apiKey: rawEnv.RESEND_AP
 
 ### `optionalGroup(entries, options)`
 
-Builds a valibot schema for an **optional** group of related fields. If any required key is absent
-(`null`/`undefined`), the entire group resolves to `null` — ideal for integrations that should stay off
-until fully configured. Otherwise `defaults` fill in any missing keys and every value is validated
-against its per-field schema.
+Builds a valibot schema for an **optional** group of related fields. If any required key is absent (`null`/`undefined`), the entire group resolves
+to `null` — ideal for integrations that should stay off until fully configured. Otherwise `defaults` fill in any missing keys and every value is
+validated against its per-field schema.
 
-**Keys not declared in `entries` are stripped.** A group is projected out of a Worker `env` that carries
-many unrelated bindings, so only declared keys reach the parsed config. Two consequences follow: a
-`defaults` value must itself satisfy its entry schema, and a key that is neither required nor defaulted
-is still validated — declare it `v.optional(...)` if it may legitimately be absent.
+**Keys not declared in `entries` are stripped.** A group is projected out of a Worker `env` that carries many unrelated bindings, so only declared
+keys reach the parsed config. Two consequences follow: a `defaults` value must itself satisfy its entry schema, and a key that is neither required
+nor defaulted is still validated — declare it `v.optional(...)` if it may legitimately be absent.
 
 ```ts
 optionalGroup(entries, { required, defaults? })
@@ -195,14 +189,13 @@ const schema = v.object({
 // SITE_ID absent   → analytics resolves to null
 ```
 
-### `resolveConfig(store, env)`
+### `resolveConfig(store, bindings)`
 
-Resolves a `Config` store for the given `env`, tolerating a missing store. Returns `store.get(env)` when
-a store is present, or an empty object cast to `T` when `store` is `undefined`. Pairs naturally with
-`retrieveConfig`, which may return `undefined`.
+Resolves a `Config` store against the given bindings — `c.env`, in a Worker — tolerating a missing store. Returns `store.get(bindings)` when a store
+is present, or an empty object cast to `T` when `store` is `undefined`. Pairs naturally with `retrieveConfig`, which may return `undefined`.
 
 ```ts
-resolveConfig<T>(store: Config<T> | undefined, env: object): T
+resolveConfig<T>(store: Config<T> | undefined, bindings: object): T
 ```
 
 ```ts
@@ -211,9 +204,8 @@ const cfg = resolveConfig(retrieveConfig<EmailCfg>(host), c.env);
 
 ### `registerConfig(target, store)` / `retrieveConfig(target)`
 
-Associate a `Config` store with any host object through a module-private `WeakMap`. This lets modules
-expose and read config **by reference** without importing the store directly — the mechanism by which
-`createApp({ config })` and `applyAssets` share the app's config.
+Associate a `Config` store with any host object through a module-private `WeakMap`. This lets modules expose and read config **by reference**
+without importing the store directly — the mechanism by which `createApp({ config })` and `applyAssets` share the app's config.
 
 ```ts
 registerConfig(target: object, store: unknown): void
@@ -230,8 +222,7 @@ const store = retrieveConfig<EmailCfg>(hostObject);
 const cfg = resolveConfig(store, c.env); // {} when no store was registered
 ```
 
-Because the registry is a `WeakMap`, entries are garbage-collected with their host object; there is no
-explicit unregister.
+Because the registry is a `WeakMap`, entries are garbage-collected with their host object; there is no explicit unregister.
 
 ---
 
@@ -239,9 +230,8 @@ explicit unregister.
 
 ### Environment-aware overrides
 
-Pass an `overrides` object to patch the resolved config when a detector matches the raw environment.
-`detect` runs against the raw env, and `patch` transforms the already-validated config — so overrides
-never bypass schema validation.
+Pass an `overrides` object to patch the resolved config when a detector matches the raw environment. `detect` runs against the raw env, and `patch`
+transforms the already-validated config — so overrides never bypass schema validation.
 
 ```ts
 const config = createConfig(
@@ -259,11 +249,9 @@ const config = createConfig(
 
 ### Testing with `seed` and `reset`
 
-`seed` injects a fixed config and skips env resolution entirely; `reset` clears the seed and the
-per-`env` cache so the next `get()` resolves lazily again. Because resolution is cached per distinct
-`env` object, cases that pass **different** `env` objects each resolve independently and need no
-`reset()` between them; call `reset()` only to clear a `seed()` or to force re-resolution for the
-same `env`.
+`seed` injects a fixed config and skips env resolution entirely; `reset` clears the seed and the per-`env` cache so the next `get()` resolves lazily
+again. Because resolution is cached per distinct `env` object, cases that pass **different** `env` objects each resolve independently and need no
+`reset()` between them; call `reset()` only to clear a `seed()` or to force re-resolution for the same `env`.
 
 ```ts
 import { describe, expect, it, beforeEach } from "bun:test";
@@ -278,8 +266,8 @@ it("uses the seeded value", () => {
 
 ### Inferring the resolved type
 
-`InferConfig<E>` extracts the resolved config type from a record that carries a `Config` field. Use it to
-type code that reads config off an env-shaped object.
+`InferConfig<E>` extracts the resolved config type from a record that carries a `Config` field. Use it to type code that reads config off an
+env-shaped object.
 
 ```ts
 import type { InferConfig } from "@y-core/forge/config";
@@ -308,3 +296,6 @@ type AppConfig = InferConfig<{ Config: { site: { name: string } } }>;
 | `EnvMapping` | type | A string literal, an `EnvRef`, or a nested record of either. |
 | `EnvRef<K>` | type | `{ readonly __env: K }` — a marker produced by `env(name)`. |
 | `InferConfig<E>` | type | Infers the resolved config type from a record carrying a `Config` field. |
+
+[app-readme]: ../app/README.md
+[validation-readme]: ../validation/README.md

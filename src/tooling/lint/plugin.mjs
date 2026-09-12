@@ -1731,6 +1731,38 @@ var spacingScaleOnly = {
   }
 };
 
+// src/tooling/lint/rules/sql-explicit-transaction.ts
+var TRANSACTION_KEYWORD = /^(BEGIN|COMMIT|ROLLBACK|END|SAVEPOINT|RELEASE)\b/i;
+var LEADING_NOISE = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/;
+function transactionKeywordOf(node) {
+  const first = node.quasi.quasis[0];
+  if (first === void 0) return void 0;
+  const text = (first.value.cooked ?? first.value.raw).replace(LEADING_NOISE, "");
+  return TRANSACTION_KEYWORD.exec(text)?.[1]?.toUpperCase();
+}
+var sqlExplicitTransaction = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "D1 runs every statement inside an implicit transaction and refuses a nested one, so a runtime `sql` fragment never opens or closes a transaction \u2014 `batch()` is the boundary."
+    }
+  },
+  create(context) {
+    return {
+      TaggedTemplateExpression(node) {
+        const tagged = node;
+        if (tagged.tag.type !== "Identifier" || tagged.tag.name !== "sql") return;
+        const keyword = transactionKeywordOf(tagged);
+        if (keyword === void 0) return;
+        context.report({
+          message: `\`sql\`${keyword} \u2026\`\` opens an explicit transaction, which D1 refuses inside the implicit one it already holds \u2014 put the statements in one \`batch()\` instead (docs/STORAGE_BINDINGS.md \xA71g).`,
+          loc: node.loc
+        });
+      }
+    };
+  }
+};
+
 // src/tooling/lint/rules/suppression-needs-reason.ts
 var named = (directive) => directive.value === "" ? "every rule" : `\`${directive.value}\``;
 var suppressionNeedsReason = {
@@ -1829,6 +1861,7 @@ var lintPlugin = {
     "platform-text-pretty": platformTextPretty,
     "reduced-motion": reducedMotion,
     "spacing-scale-only": spacingScaleOnly,
+    "sql-explicit-transaction": sqlExplicitTransaction,
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,
     "type-import-separation": typeImportSeparation

@@ -7,6 +7,8 @@ const HEADING = /^(#{2,3}) (.*)$/;
 const NUMBERED = /^(\d[A-Za-z0-9]*)\. (.+)$/;
 const BOLD = /\*\*([^*]+)\*\*/g;
 const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+const REFERENCE_LINK = /\[([^\]]*)\]\[[^\]]*\]/g;
+const LINK_DEFINITION = /^ {0,3}\[[^\]]+\]:[ \t]+\S.*$/gm;
 // `.` is a token character, so `mod.ts` survives — but so would `budget.`, and a reader searching
 // for `budget` would miss the sentence that ends with it. Punctuation followed by whitespace is
 // sentence punctuation; punctuation inside a word is part of the identifier.
@@ -38,11 +40,15 @@ export function ruleClauses(block: readonly string[]): string {
   return [...block.join("\n").matchAll(BOLD)].map((match) => (match[1] ?? "").trim().replace(SENTENCE_PUNCTUATION, "$1")).join(" ");
 }
 
-/** Prose with links flattened to their text, so a URL never outranks a sentence. @public */
+/** Prose with links flattened to their text, so a URL never outranks a sentence. Under reference
+ *  style the destination sits in its own definition line, which is dropped whole: a block of paths
+ *  matches nothing a reader would ask and dilutes every sentence around it. @public */
 export function proseOf(block: readonly string[]): string {
   return block
     .join("\n")
+    .replace(LINK_DEFINITION, "")
     .replace(INLINE_LINK, "$1")
+    .replace(REFERENCE_LINK, "$1")
     .replace(SENTENCE_PUNCTUATION, "$1")
     .replace(/[ \t]+/g, " ")
     .trim();

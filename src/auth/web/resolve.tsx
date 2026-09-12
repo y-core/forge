@@ -133,22 +133,10 @@ async function resolveSignin<Bindings>(
   options: AuthWebOptions<Bindings>,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["signin"], Response>> {
-  const services = await authServices(c, options);
   const { auth } = options.paths;
   const submitPath = auth.signinSubmit();
-  const offersPasskey = services.passkey !== undefined && services.factors.find("passkey") !== undefined;
 
   return ok({
-    primaryFactor: services.factors.primary.kind,
-    passkey: offersPasskey
-      ? await authPasskeyContract(
-          c,
-          "authentication",
-          auth.passkey.authenticateBegin(),
-          auth.passkey.authenticateFinish(),
-          authReturnPath(c, options),
-        )
-      : undefined,
     submitPath,
     signupPath: auth.signup(),
     csrfToken: await mintCsrf(c, submitPath),
@@ -202,13 +190,12 @@ async function resolveVerify<Bindings>(
   const demand = await resolveAuthVerifyDemand(c, services);
   const detour = authVerifyDetour(c, options, demand);
   if (detour !== null) return err(detour);
-  const usesPasskey = demand.factor === "passkey" && services.passkey !== undefined;
+  const usesPasskey = demand.factor === "passkey";
   const resendPath = demand.factor === "email-otp" ? auth.verify.resend() : undefined;
   const reissueAfterMs = services.factors.find(demand.factor)?.reissueAfterMs ?? null;
-  // A step-up runs its own ceremony pair. `auth.passkey.authenticate*` is the discoverable sign-in,
-  // which establishes a session and so clears the very mark a step-up exists to write.
-  const ceremony = demand.identity === null ? auth.passkey.authenticateBegin() : auth.verify.ceremony.begin();
-  const ceremonyFinish = demand.identity === null ? auth.passkey.authenticateFinish() : auth.verify.ceremony.finish();
+  // Always the step-up pair, including for the second half of a sign-in: a passkey never starts one.
+  const ceremony = auth.verify.ceremony.begin();
+  const ceremonyFinish = auth.verify.ceremony.finish();
 
   return ok({
     factor: demand.factor,
@@ -241,7 +228,8 @@ async function resolveEnrolPasskey<Bindings>(
   const { auth } = options.paths;
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(redirect(auth.signin()));
-  if (services.passkey === undefined) return err(notFound());
+  const offered = authEnrollable(services, "passkey");
+  if (!offered.ok) return err(offered.error);
 
   return ok({
     contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), authSettledPath(options)),

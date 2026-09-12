@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { collectSurface, diffSurface, removedSurfaceSince } from "./surface";
@@ -191,7 +192,7 @@ describe("the published tarball", () => {
       .sort();
     // `Bun.spawnSync`, not `node:child_process`: a sibling release test mocks `execFileSync`
     // process-globally, and a module mock cannot be undone for one file.
-    const run = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: repoRoot });
+    const run = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: repoRoot, env: { ...process.env, FORCE_COLOR: "0" } });
     const output = run.stdout.toString();
     const packed = [...output.matchAll(/^packed \S+ (docs\/\S+\.md)$/gm)].map((match) => match[1]).sort();
 

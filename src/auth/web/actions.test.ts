@@ -15,7 +15,7 @@ import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService } from "../factors/types";
 import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/fixture";
 import type { PasskeyKeyPair } from "../passkey/types";
-import type { AuthChallenge, AuthCredential, ChallengeStore, CredentialStore, UserStore } from "../types";
+import type { AuthChallenge, AuthCredential, CredentialStore, UserStore } from "../types";
 import {
   createAdminElevateActions,
   createAdminUserActions,
@@ -23,7 +23,6 @@ import {
   createPasskeyEnrolActions,
   createPasskeyManageActions,
   AUTH_CEREMONY_MAX_BYTES,
-  createPasskeySigninActions,
   createSigninActions,
   createSignoutActions,
   createSignupActions,
@@ -329,69 +328,6 @@ describe("createSignoutActions", () => {
   });
 });
 
-describe("createPasskeySigninActions", () => {
-  const challenges: ChallengeStore = {
-    put: async () => ok(undefined),
-    take: async (): Promise<ReturnType<ChallengeStore["take"]> extends Promise<infer r> ? r : never> => ok(null as AuthChallenge | null),
-  };
-
-  it("refuses the ceremony outright when the deployment offers no passkey", async () => {
-    const options = optionsWith({});
-    const app = mounted(actionApp(), "POST", "/auth/passkey/authenticate/begin", createPasskeySigninActions(options).authenticateBegin);
-
-    const res = await app.request("/auth/passkey/authenticate/begin", jsonBody({ mode: "authentication" }));
-    expect(res.status).toBe(404);
-    expect(await res.text()).toBe("Not Found");
-  });
-
-  it("answers a discoverable ceremony with options carrying no allow-list", async () => {
-    const options = optionsWith({
-      passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
-    });
-    const app = mounted(actionApp(), "POST", "/auth/passkey/authenticate/begin", createPasskeySigninActions(options).authenticateBegin);
-
-    const res = await app.request("/auth/passkey/authenticate/begin", jsonBody({ mode: "authentication" }));
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("application/json; charset=utf-8");
-    const body = (await res.json()) as { rpId: string; allowCredentials: unknown[] };
-    expect(body.rpId).toBe("example.com");
-    expect(body.allowCredentials).toEqual([]);
-  });
-
-  // Forge was at par with better-auth on the default and the stronger posture was simply unreachable:
-  // the discoverable sign-in ran at `preferred` with no way for a deployment to raise it.
-  it("carries the configured user-verification posture into the ceremony options, and defaults to `preferred`", async () => {
-    async function posture(userVerification?: "discouraged" | "preferred" | "required") {
-      const options = optionsWith({
-        passkey: {
-          rpId: "example.com",
-          rpName: "Example",
-          origin: "https://example.com",
-          sessionId: "s1",
-          challenges,
-          ...(userVerification === undefined ? {} : { userVerification }),
-        },
-      });
-      const app = mounted(actionApp(), "POST", "/auth/passkey/authenticate/begin", createPasskeySigninActions(options).authenticateBegin);
-      const res = await app.request("/auth/passkey/authenticate/begin", jsonBody({ mode: "authentication" }));
-      return ((await res.json()) as { userVerification: string }).userVerification;
-    }
-
-    expect(await posture()).toBe("preferred");
-    expect(await posture("required")).toBe("required");
-  });
-
-  it("refuses a finish whose body is not an assertion", async () => {
-    const options = optionsWith({
-      passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
-    });
-    const app = mounted(actionApp(), "POST", "/auth/passkey/authenticate/finish", createPasskeySigninActions(options).authenticateFinish);
-
-    const res = await app.request("/auth/passkey/authenticate/finish", jsonBody({ credential: { id: "c" } }));
-    expect(res.status).toBe(400);
-  });
-});
-
 describe("createPasskeyEnrolActions — the nickname the ceremony carries", () => {
   const RP_ID = "example.com";
   const ORIGIN = "https://example.com";
@@ -439,7 +375,6 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
       rpName: "Forge Demo",
       origin: ORIGIN,
       sessionId: "s1",
-      role: "step-up",
       users: minting,
       factors: {
         ...enrolments,
@@ -527,21 +462,15 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
 // as much body as it cared to allocate.
 describe("the ceremony endpoints cap what they read", () => {
   const oversized = JSON.stringify({ credential: { id: "c", padding: "x".repeat(AUTH_CEREMONY_MAX_BYTES) } });
+  const CEREMONY_PATH = "/auth/enrol/passkey/register/finish";
 
   function ceremonyApp() {
-    const challenges: ChallengeStore = { put: async () => ok(undefined), take: async () => ok(null) };
-    const options = optionsWith({
-      passkey: { rpId: "example.com", rpName: "Example", origin: "https://example.com", sessionId: "s1", challenges },
-    });
-    return mounted(actionApp(), "POST", "/auth/passkey/authenticate/finish", createPasskeySigninActions(options).authenticateFinish);
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
+    return mounted(actionApp({ userId: "u9" }), "POST", CEREMONY_PATH, createPasskeyEnrolActions(options).finish);
   }
 
   it("answers 413 on a body whose Content-Length already says too much", async () => {
-    const res = await ceremonyApp().request("/auth/passkey/authenticate/finish", {
-      method: "POST",
-      body: oversized,
-      headers: { "content-type": "application/json" },
-    });
+    const res = await ceremonyApp().request(CEREMONY_PATH, { method: "POST", body: oversized, headers: { "content-type": "application/json" } });
     expect(res.status).toBe(413);
   });
 
@@ -553,7 +482,7 @@ describe("the ceremony endpoints cap what they read", () => {
         controller.close();
       },
     });
-    const res = await ceremonyApp().request("/auth/passkey/authenticate/finish", {
+    const res = await ceremonyApp().request(CEREMONY_PATH, {
       method: "POST",
       body,
       headers: { "content-type": "application/json" },
@@ -563,20 +492,8 @@ describe("the ceremony endpoints cap what they read", () => {
   });
 
   it("still reads a body inside the cap, so the bound refuses nothing real", async () => {
-    const res = await ceremonyApp().request("/auth/passkey/authenticate/finish", jsonBody({ credential: { id: "c" } }));
+    const res = await ceremonyApp().request(CEREMONY_PATH, jsonBody({ credential: { id: "c" } }));
     expect(res.status).toBe(400);
-  });
-
-  // Bounded and shaped before it reaches `findByCredentialId`: an id of any length and any alphabet
-  // otherwise arrives at the index as a bind parameter on every unauthenticated POST.
-  it("refuses an assertion id that is not bounded base64url, before any store is asked", async () => {
-    for (const id of ["", "n".repeat(1401), "not base64url!"]) {
-      const res = await ceremonyApp().request(
-        "/auth/passkey/authenticate/finish",
-        jsonBody({ credential: { id, response: { clientDataJSON: "e30", authenticatorData: "e30", signature: "e30" } } }),
-      );
-      expect(`${id.slice(0, 12)}: ${res.status}`).toBe(`${id.slice(0, 12)}: 400`);
-    }
   });
 });
 

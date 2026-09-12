@@ -41,8 +41,6 @@
   "dependencies": {
     "@remix-run/fetch-router": "^0.20.1",
     "@remix-run/headers": "^0.21.1",
-    "@remix-run/html-template": "^0.3.1",
-    "@remix-run/response": "^0.3.7",
     "@remix-run/route-pattern": "^0.23.0",
     "@remix-run/session": "^0.4.2",
     "htmx.org": "^2.0.10",

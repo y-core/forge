@@ -14,10 +14,6 @@ import { describeValidationIssue, v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
 import { redactSigninReason } from "../flows/signin";
 import type { AuthSigninNotice } from "../flows/types";
-import { verifyPasskeyAuthentication } from "../passkey/authenticate";
-import { createPasskeyRequestOptions } from "../passkey/options";
-import type { PasskeyAssertionCredential } from "../passkey/types";
-import type { PasskeyCeremonyOptions } from "../passkey/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
 import {
   clearAuthSession,
@@ -127,21 +123,6 @@ async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
   return err({ field, message: FIELD_REFUSAL[field] ?? FIELD_REFUSAL_DEFAULT, values });
 }
 
-/** The ceremony configuration the discoverable sign-in runs against, assembled from this request's services. */
-function passkeyCeremony(services: AuthRequestServices): PasskeyCeremonyOptions | undefined {
-  const passkey = services.passkey;
-  if (passkey === undefined) return undefined;
-  return {
-    rpId: passkey.rpId,
-    rpName: passkey.rpName,
-    challenges: passkey.challenges,
-    credentials: services.credentials,
-    ...(passkey.algorithms === undefined ? {} : { algorithms: passkey.algorithms }),
-    ...(passkey.ttlSeconds === undefined ? {} : { ttlSeconds: passkey.ttlSeconds }),
-    ...(passkey.userVerification === undefined ? {} : { userVerification: passkey.userVerification }),
-  };
-}
-
 // Held to the schema the rename path holds a label to, so one field cannot be bounded on one route
 // and unbounded on another. A missing nickname is a name the visitor declined to give, not a refusal.
 /** The enrolment nickname, or the refusal an over-long one earns. */
@@ -150,26 +131,6 @@ function readEnrolmentNickname(presented: unknown): Result<string | null, undefi
   if (typeof presented !== "string") return err(undefined);
   const parsed = v.safeParse(authPasskeyLabelSchema(), { label: presented }, { abortEarly: true });
   return parsed.success ? ok(parsed.output.label) : err(undefined);
-}
-
-// A credential id is base64url of at most 1023 bytes (WebAuthn L3 §5.8.3), so 1400 characters is
-// past every real one. Bounded and shaped here rather than at the index: an id of any length and any
-// alphabet otherwise reaches `findByCredentialId` as a bind parameter on every unauthenticated POST.
-const ASSERTION_ID_MAX = 1400;
-const ASSERTION_ID_SHAPE = /^[A-Za-z0-9_-]+$/;
-
-/** The assertion a finished sign-in ceremony posted, or `null` when the body is not one. */
-function readAssertion(body: unknown): PasskeyAssertionCredential | null {
-  const credential = (body as { credential?: unknown } | null)?.credential as Record<string, unknown> | undefined;
-  const response = credential?.response as Record<string, unknown> | undefined;
-  if (typeof credential?.id !== "string" || response === undefined) return null;
-  if (credential.id.length === 0 || credential.id.length > ASSERTION_ID_MAX || !ASSERTION_ID_SHAPE.test(credential.id)) return null;
-  const { clientDataJSON, authenticatorData, signature, userHandle } = response;
-  if (typeof clientDataJSON !== "string" || typeof authenticatorData !== "string" || typeof signature !== "string") return null;
-  return {
-    id: credential.id,
-    response: { clientDataJSON, authenticatorData, signature, ...(typeof userHandle === "string" ? { userHandle } : {}) },
-  };
 }
 
 // A WebAuthn ceremony envelope is a few kilobytes; 64 KiB is generous for one and still a bound.
@@ -360,60 +321,8 @@ export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>
   };
 }
 
-/** The two JSON endpoints of a discoverable passkey sign-in. @public */
-export function createPasskeySigninActions<Bindings>(options: AuthWebOptions<Bindings>): {
-  readonly authenticateBegin: RequestHandler;
-  readonly authenticateFinish: RequestHandler;
-} {
-  return {
-    authenticateBegin: async (context) => {
-      const c = getAppContext<Bindings>(context);
-      const services = await authServices(c, options);
-      const ceremony = passkeyCeremony(services);
-      if (ceremony === undefined || services.passkey === undefined) return notFound();
-
-      // No `userId`: the authenticator names the account, so an allow-list here would both break a
-      // discoverable login and leak who is enrolled.
-      const built = await createPasskeyRequestOptions(ceremony, { sessionId: services.passkey.sessionId });
-      return built.ok ? jsonResponse(built.data) : jsonResponse({ error: CEREMONY_UNAVAILABLE }, 503);
-    },
-
-    authenticateFinish: async (context) => {
-      const c = getAppContext<Bindings>(context);
-      const services = await authServices(c, options);
-      const session = sessionCtx.get(c, NO_SESSION);
-      const passkey = services.passkey;
-      if (passkey === undefined) return notFound();
-
-      const read = await readCeremonyBody(c);
-      if (!read.ok) return read.response;
-      const credential = readAssertion(read.body);
-      if (credential === null) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
-
-      const verified = await verifyPasskeyAuthentication(
-        {
-          rpId: passkey.rpId,
-          origin: passkey.origin,
-          challenges: passkey.challenges,
-          credentials: services.credentials,
-          users: services.users,
-          ...(passkey.requireUserVerification === undefined ? {} : { requireUserVerification: passkey.requireUserVerification }),
-        },
-        { sessionId: passkey.sessionId, credential },
-        authNow(options),
-      );
-      if (!verified.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
-
-      establishAuthSession(session, verified.data.user.id, authNow(options));
-      return jsonResponse({ redirect: await signedInTarget(c, options, verified.data.user.id, verified.data.user.isAdmin) });
-    },
-  };
-}
-
-// Its own pair, never `createPasskeySigninActions`: those run the *discoverable* login, which calls
-// `establishAuthSession` and so clears the step-up mark this ceremony exists to write. The challenge
-// is bound to the session's own `userId`, which `createPasskeyFactor.verifyChallenge` re-checks
-// against the assertion before it admits anything.
+// The challenge is bound to the session's own `userId`, which `createPasskeyFactor.verifyChallenge`
+// re-checks against the assertion before it admits anything.
 /** The two JSON endpoints of a passkey step-up, held against the session that is already signed in. @public */
 export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly begin: RequestHandler;

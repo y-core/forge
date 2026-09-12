@@ -6,26 +6,37 @@ audience: consumer
 
 # `@y-core/forge/app`
 
-App bootstrap and request lifecycle for `@y-core/forge` — the namespace that turns a set of routes, middleware, and handlers into a single Cloudflare Workers `fetch` default export.
+App bootstrap and request lifecycle for `@y-core/forge` — the namespace that turns a set of routes, middleware, and handlers into a single
+Cloudflare Workers `fetch` default export.
 
-`createApp` returns a `Forge` instance: a Workers-native request router wrapped in a fail-closed error boundary. Its `fetch(request, env, executionCtx)` method _is_ the Workers module handler, so the entire wiring is `export default app`. Around routing it provides path-scoped middleware, per-request config/env injection, two route-handler factories (`definePage`, `defineAction`), a static-asset catch-all (`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
+`createApp` returns a `Forge` instance: a Workers-native request router wrapped in a fail-closed error boundary. Its
+`fetch(request, env, executionCtx)` method _is_ the Workers module handler, so the entire wiring is `export default app`. Around routing it provides
+path-scoped middleware, per-request config/env injection, two route-handler factories (`definePage`, `defineAction`), a static-asset catch-all
+(`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
 
-This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the app lifecycle. See [`docs/ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) and [`docs/LIBRARY_ARCHITECTURE.md`](../../docs/LIBRARY_ARCHITECTURE.md) for the authoritative architecture.
+This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the
+app lifecycle. See [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] and [`docs/LIBRARY_ARCHITECTURE.md`][la] for the authoritative architecture.
 
 ---
 
 ## Features
 
-- **One-line Workers entry** — `export default createApp(...)`; the `Forge` instance's `fetch` is a valid module-worker default export, including `HEAD` handling.
-- **Fail-closed error boundary** — every throw inside or outside the middleware chain produces a hardened `500` page; an in-chain throw still flows back out through security headers.
+- **One-line Workers entry** — `export default createApp(...)`; the `Forge` instance's `fetch` is a valid module-worker default export, including
+  `HEAD` handling.
+- **Fail-closed error boundary** — every throw inside or outside the middleware chain produces a hardened `500` page; an in-chain throw still flows
+  back out through security headers.
 - **Path-scoped middleware** — `app.use("*", ...)` / `app.use("/api/*", ...)` register guards that wrap matched routes.
 - **Declarative route registration** — `app.map(routes, controller)` binds a route map to its controller.
-- **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (read → bot guards → schema → handle, with automatic `413`/`400`/`422`/`500` error fragments).
+- **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (read → bot guards → schema →
+  handle, with automatic `413`/`400`/`422`/`500` error fragments).
 - **Static-asset catch-all** — `applyAssets` serves the `ASSETS` binding, falling back to the app's own `notFound` hook.
 - **Config injection** — a `Config` store passed to `createApp` is resolved once per request and exposed on the context (`ConfigKey`, `c.config`).
-- **One registered page shell** — `createApp({ shell })` names the document every mounted page renders into, resolved per request; forge's own mounts take no chrome options of their own.
-- **Typed page meta** — every mount hands the shell a `PageMeta` (`title`, `description`, `canonical`, `robots`, `og`, `twitter`, JSON-LD, and an open escape hatch), rendered by `metaTags` and merged over a site base with `mergeMeta`.
-- **Startup binding validation** — `validateEnv` (one-shot, throws) and `validateBindings` (middleware form) check Worker bindings against a valibot schema.
+- **One registered page shell** — `createApp({ shell })` names the document every mounted page renders into, resolved per request; forge's own
+  mounts take no chrome options of their own.
+- **Typed page meta** — every mount hands the shell a `PageMeta` (`title`, `description`, `canonical`, `robots`, `og`, `twitter`, JSON-LD, and an
+  open escape hatch), rendered by `metaTags` and merged over a site base with `mergeMeta`.
+- **Startup binding validation** — `validateEnv` (one-shot, throws) and `validateBindings` (middleware form) check Worker bindings against a valibot
+  schema.
 - **Health endpoint** — `healthCheck` runs named predicates concurrently and returns `{ ok, checks }` as JSON (`200`/`503`).
 - **Test harness** — `app.request(path, init?, env?)` builds a `Request`, dispatches the full chain, and awaits any `waitUntil` work.
 
@@ -79,7 +90,8 @@ applyAssets(app); // static-asset catch-all over the ASSETS binding
 export default app;
 ```
 
-> `renderPage` is imported from `@y-core/forge/jsx`, **not** from this namespace. Pages call it inside their `view` to turn a JSX tree into an `HtmlResponse`.
+> `renderPage` is imported from `@y-core/forge/jsx`, **not** from this namespace. Pages call it inside their `view` to turn a JSX tree into an HTML
+> `Response`.
 
 ---
 
@@ -104,7 +116,8 @@ Creates a `Forge` instance with a structured error boundary.
 
 All options are optional; `createApp()` with no arguments is valid. The generic `Bindings` parameter types `c.env` throughout the app.
 
-The wiring fields make the whole bootstrap a single expression — `createApp` runs them in the enforced canonical order (`middleware` → `routes` → `finalize` → `assets`), so the register-last rule for the asset catch-all cannot be violated:
+The wiring fields make the whole bootstrap a single expression — `createApp` runs them in the enforced canonical order (`middleware` → `routes` →
+`finalize` → `assets`), so the register-last rule for the asset catch-all cannot be violated:
 
 ```ts
 import { applyMiddlewareChain, createApp } from "@y-core/forge/app";
@@ -147,11 +160,16 @@ Because `fetch` is the module handler, the whole app ships as:
 export default app;
 ```
 
-The router is built lazily on the first request, with a static middleware stack: per-request state injection → header flush → error boundary → path-scoped guards → error boundary → matched route. The inner boundary is why error responses still carry the consumer's security headers — the error response flows back out through the guards that queue them. The outer boundary catches a throw from a guard itself, which would otherwise escape the router and skip the header flush entirely. Config resolution runs inside the same `try` as routing, so an invalid env produces the app's own error page rather than the runtime's.
+The router is built lazily on the first request, with a static middleware stack: per-request state injection → header flush → error boundary →
+path-scoped guards → error boundary → matched route. The inner boundary is why error responses still carry the consumer's security headers — the
+error response flows back out through the guards that queue them. The outer boundary catches a throw from a guard itself, which would otherwise
+escape the router and skip the header flush entirely. Config resolution runs inside the same `try` as routing, so an invalid env produces the app's
+own error page rather than the runtime's.
 
 ### `definePage(def)`
 
-Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error recovery.
+Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error
+recovery.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -163,7 +181,10 @@ Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) int
 | `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. Applied last, so it overrides `cache` too. |
 | `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
 
-**The submission sequence's options are declared here too.** `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a `schema`**, and `definePage` throws at registration naming any that were stated without one; why the shared surface is inherited rather than restated, and why a pipeline option without a schema is refused at all, is `ROUTING_AND_MIDDLEWARE.md` §2d's.
+**The submission sequence's options are declared here too.** `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly
+what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a
+`schema`**, and `definePage` throws at registration naming any that were stated without one; why the shared surface is inherited rather than
+restated, and why a pipeline option without a schema is refused at all, is `ROUTING_AND_MIDDLEWARE.md` §2d's.
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -177,17 +198,24 @@ export const homePage = definePage<Bindings, AppConfig>({
 });
 ```
 
-The view receives the resolved `config` (the second argument) and the render `state` (the third). I/O belongs in the `loader` or the `action`, not the `view`.
+The view receives the resolved `config` (the second argument) and the render `state` (the third). I/O belongs in the `loader` or the `action`, not
+the `view`.
 
 ### `defineAction(def)`
 
 Wires a `read → guard → validate → handle` pipeline into a POST handler that returns structured error fragments automatically.
 
-**The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of `schema`, so a route cannot accept a body nothing checked ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1d).
+**The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of
+`schema`, so a route cannot accept a body nothing checked ([`INPUT_VALIDATION.md`][iv-1d] §1d).
 
-**The body-content guards live here; transport guards do not.** The Turnstile check reads a named field out of this form, so it belongs where the body is read and where the field it consumes can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no `middleware` field).
+**The body-content guards live here; transport guards do not.** The Turnstile check reads a named field out of this form, so it belongs where the
+body is read and where the field it consumes can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope
+and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no
+`middleware` field).
 
-`defineAction<S, Bindings, ConfigData>` takes three type arguments and infers `S` from `def.schema`. TypeScript has no partial type-argument inference, so a call site naming `Bindings` names the schema too (`defineAction<typeof ContactSchema, Bindings, AppConfig>`); `createHandlerFactory` removes the need for any of them.
+`defineAction<S, Bindings, ConfigData>` takes three type arguments and infers `S` from `def.schema`. TypeScript has no partial type-argument
+inference, so a call site naming `Bindings` names the schema too (`defineAction<typeof ContactSchema, Bindings, AppConfig>`); `createHandlerFactory`
+removes the need for any of them.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -199,11 +227,19 @@ Wires a `read → guard → validate → handle` pipeline into a POST handler th
 | `onBotDetected` | `(rejection: BotRejection, c) => Response \| Promise<Response>` | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all. |
 | `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |
 
-**What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload schema can see one.
+**What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather
+than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema
+refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload
+schema can see one.
 
-**Nothing is dropped on a guess.** The Turnstile field is dropped because this pipeline checked it; the CSRF field is dropped because `csrfProtection` published the field it took the token from. There is no option for naming a field to drop — the derived-not-declared rule, what a route with no CSRF middleware therefore does with a submitted `_csrf`, and the two alternatives that were rejected are `ROUTING_AND_MIDDLEWARE.md` §2b's.
+**Nothing is dropped on a guess.** The Turnstile field is dropped because this pipeline checked it; the CSRF field is dropped because
+`csrfProtection` published the field it took the token from. There is no option for naming a field to drop — the derived-not-declared rule, what a
+route with no CSRF middleware therefore does with a submitted `_csrf`, and the two alternatives that were rejected are `ROUTING_AND_MIDDLEWARE.md`
+§2b's.
 
-**Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`, and `formDigits()` for a control whose separators are cosmetic — all from `@y-core/forge/validation`. The body read passes values through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `"   "`.
+**Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control, `formMultilineText()` for a
+`<textarea>`, and `formDigits()` for a control whose separators are cosmetic — all from `@y-core/forge/validation`. The body read passes values
+through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `" "`.
 
 ```ts
 import { defineAction } from "@y-core/forge/app";
@@ -233,13 +269,15 @@ The automatic error responses (all are HTMX-swappable fragments):
 | --- | --- |
 | `413` | Form body exceeds the size cap (`parseFormData` throws with `status: 413`). |
 | `400` | Body is unparseable as form data. |
-| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1b). |
-| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4b). |
+| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`][iv-1b] §1b). |
+| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`][iv-4b] §4b). |
 | `500` | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
 
 ### `createHandlerFactory<Bindings, ConfigData>()`
 
-Returns `{ definePage, defineAction }` with the app's `Bindings` and `ConfigData` generics pre-bound, so individual route modules stop repeating them. Per-call generics (`LoaderData`, `ActionData`, and the action's schema) remain inferred as usual — and since the schema infers from `def.schema`, a bound `defineAction` needs no type arguments at all. Bind once in an `app/handlers.ts` module and import the bound pair everywhere:
+Returns `{ definePage, defineAction }` with the app's `Bindings` and `ConfigData` generics pre-bound, so individual route modules stop repeating
+them. Per-call generics (`LoaderData`, `ActionData`, and the action's schema) remain inferred as usual — and since the schema infers from
+`def.schema`, a bound `defineAction` needs no type arguments at all. Bind once in an `app/handlers.ts` module and import the bound pair everywhere:
 
 ```ts
 // app/handlers.ts
@@ -258,7 +296,8 @@ The standalone `definePage`/`defineAction` exports are unchanged — the factory
 
 ### `healthCheck(checks)`
 
-Returns a `RequestHandler` that runs each named predicate concurrently (`Promise.allSettled`) and responds with JSON. A check that throws or rejects is recorded as `false`.
+Returns a `RequestHandler` that runs each named predicate concurrently (`Promise.allSettled`) and responds with JSON. A check that throws or rejects
+is recorded as `false`.
 
 - Each value is `(c: AppContext<Bindings>) => boolean | Promise<boolean>`.
 - Response body is `HealthCheckResult` — `{ ok: boolean; checks: Record<string, boolean> }`.
@@ -276,7 +315,8 @@ health: healthCheck<Bindings>({
 
 ### `applyAssets(app, path?)` / `serveAssets(app)`
 
-`applyAssets` registers a catch-all route that serves static files from the `ASSETS` binding, falling back to the app's own `notFound` hook. The `Bindings` type must include an optional `ASSETS` fetcher (`HasAssets`).
+`applyAssets` registers a catch-all route that serves static files from the `ASSETS` binding, falling back to the app's own `notFound` hook. The
+`Bindings` type must include an optional `ASSETS` fetcher (`HasAssets`).
 
 | Parameter | Type | Description |
 | --- | --- | --- |
@@ -290,13 +330,18 @@ const app = createApp<Bindings>({ notFound: (c, config) => renderPage(<NotFound 
 applyAssets(app);
 ```
 
-**There is one not-found answer, whether or not `assets` is configured.** The asset catch-all shadows the router's own no-match path, so without a single owner the same unmatched URL would get two different responses.
+**There is one not-found answer, whether or not `assets` is configured.** The asset catch-all shadows the router's own no-match path, so without a
+single owner the same unmatched URL would get two different responses.
 
-`serveAssets` is the underlying `RequestHandler` if you need to register it on a non-catch-all route yourself. It renders the app's not-found answer on a `404` from the binding, on a missing `ASSETS` binding, or on a non-`GET`/`HEAD` method. Register `applyAssets` **last**, after `app.map`, so real routes take precedence over the catch-all.
+`serveAssets` is the underlying `RequestHandler` if you need to register it on a non-catch-all route yourself. It renders the app's not-found answer
+on a `404` from the binding, on a missing `ASSETS` binding, or on a non-`GET`/`HEAD` method. Register `applyAssets` **last**, after `app.map`, so
+real routes take precedence over the catch-all.
 
 ### `createErrorPage(options?)`
 
-Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` (and reusable as `definePage`'s `onError`). It preserves the default boundary's guarantees — the real error message appears **only** when `isDebug(c)` returns `true` (a throwing `isDebug` counts as `false`), and all interpolated content is HTML-escaped.
+Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` (and reusable as `definePage`'s `onError`). It preserves the default
+boundary's guarantees — the real error message appears **only** when `isDebug(c)` returns `true` (a throwing `isDebug` counts as `false`), and all
+interpolated content is HTML-escaped.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -305,7 +350,8 @@ Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` 
 | `stylesheetHref` | `string \| ((c) => string)` | — | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
 | `homeHref` | `string` | — | Optional "Back to safety" link. |
 
-**A `Reference: <id>` line appears when the `requestId` middleware ran** — the same id as the `x-request-id` header, for a user to quote in a support ticket. Neither this page nor the default boundary page generates an id, so without that middleware the line is simply absent.
+**A `Reference: <id>` line appears when the `requestId` middleware ran** — the same id as the `x-request-id` header, for a user to quote in a
+support ticket. Neither this page nor the default boundary page generates an id, so without that middleware the line is simply absent.
 
 ```ts
 import { createApp, createErrorPage } from "@y-core/forge/app";
@@ -318,17 +364,21 @@ const onError = createErrorPage<Bindings>({
 export default createApp<Bindings>({ config: configStore, onError });
 ```
 
-The page is Tailwind-classed markup that `forge.css` does not scan, so add
-`@source "…/@y-core/forge/src/app";` to your own stylesheet or the page renders unstyled.
+The page is Tailwind-classed markup that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/app";` to your own stylesheet or the page
+renders unstyled.
 
 ### `validateEnv(env, schema)` / `validateBindings(schema)`
 
 Two forms of binding validation against a valibot schema.
 
-- `validateEnv(env, schema)` — one-shot. Returns the typed, validated env, or **throws** `Error("Invalid environment: …")` with the offending paths. Call it at startup when you have the raw env in hand.
-- `validateBindings(schema)` — middleware form. Validates `c.env` on the first request, and again whenever the env reference changes (so a swapped binding set is re-checked). Throws on failure; it does not store or mutate the env — read bindings via `c.env` directly.
+- `validateEnv(env, schema)` — one-shot. Returns the typed, validated env, or **throws** `Error("Invalid environment: …")` with the offending paths.
+  Call it at startup when you have the raw env in hand.
+- `validateBindings(schema)` — middleware form. Validates `c.env` on the first request, and again whenever the env reference changes (so a swapped
+  binding set is re-checked). Throws on failure; it does not store or mutate the env — read bindings via `c.env` directly.
 
-In production apps the schema is **typically generated**, not hand-written: `forge cf gen env` (`bun run gen:env`, from `@y-core/forge/tooling/cf`) emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, so the schema can never drift from the actual binding surface. Hand-written schemas remain fine for small surfaces. See the standard setup guide in [src/config/README.md](../config/README.md).
+In production apps the schema is **typically generated**, not hand-written: `forge cf gen env` (`bun run gen:env`, from `@y-core/forge/tooling/cf`)
+emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, so the schema can never drift from the actual binding surface. Hand-written schemas
+remain fine for small surfaces. See the standard setup guide in [src/config/README.md][config-readme].
 
 ```ts
 import { validateEnv, validateBindings } from "@y-core/forge/app";
@@ -347,7 +397,7 @@ app.use("*", validateBindings(EnvSchema));
 
 | Export | Kind | Description |
 | --- | --- | --- |
-| `metaTags(meta, options?)` | function | Renders a `PageMeta` as `<head>` children. `options.nonce` is required for `jsonLd` to render at all — the element it emits needs the request's nonce ([`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2d). |
+| `metaTags(meta, options?)` | function | Renders a `PageMeta` as `<head>` children. `options.nonce` is required for `jsonLd` to render at all — the element it emits needs the request's nonce ([`SECURITY_HARDENING.md`][sh-2d] §2d). |
 | `mergeMeta(base, page)` | function | Merges a page's descriptor over the site-wide one — shallow at the top, one level deep for `og`/`twitter`, `extra` concatenated base-first. |
 | `PageMeta` | type | `{ title, description?, canonical?, robots?, og?, twitter?, jsonLd?, extra? }`. `canonical` and `og.image` must be absolute; forge derives neither. |
 | `MetaTag` | type | The `extra` escape hatch: `{ name, content }`, `{ property, content }`, or `{ tagName: "link", rel, href }`. Appended verbatim, never deduplicated. |
@@ -365,7 +415,9 @@ app.use("*", validateBindings(EnvSchema));
 
 ### `ConfigKey`
 
-A typed context key (`createContextKey<unknown>()`) under which the resolved app config is stored for the current request. forge's router injects it; `definePage` and `defineAction` read it for you and pass the typed config to your `view`/`handle`. Read it directly only when writing a custom `RequestHandler`:
+A typed context key (`createContextKey<unknown>()`) under which the resolved app config is stored for the current request. forge's router injects
+it; `definePage` and `defineAction` read it for you and pass the typed config to your `view`/`handle`. Read it directly only when writing a custom
+`RequestHandler`:
 
 ```ts
 import { ConfigKey } from "@y-core/forge/app";
@@ -384,7 +436,8 @@ In most code, prefer the `config` argument passed to your loader/view/handle, or
 
 ### 1. Declare routes as data
 
-Build the route map with `route()` from `@y-core/forge/router` — names mapped to `{ method, pattern }`. Why the map carries no handlers, and why registration order against `app.use` matters, are `ROUTING_AND_MIDDLEWARE.md` §1a's and §1c's.
+Build the route map with `route()` from `@y-core/forge/router` — names mapped to `{ method, pattern }`. Why the map carries no handlers, and why
+registration order against `app.use` matters, are `ROUTING_AND_MIDDLEWARE.md` §1a's and §1c's.
 
 ```ts
 import { route } from "@y-core/forge/router";
@@ -394,7 +447,8 @@ export const routes = route({ home: { method: "GET", pattern: "/" }, contact: { 
 
 ### 2. Bind handlers in a controller
 
-`createController(routes, { actions })` maps each route name to either a bare `RequestHandler` or `{ middleware, handler }`. The `actions` keys must match the route names exactly — a missing or misspelled handler is a compile error.
+`createController(routes, { actions })` maps each route name to either a bare `RequestHandler` or `{ middleware, handler }`. The `actions` keys must
+match the route names exactly — a missing or misspelled handler is a compile error.
 
 ```ts
 import { createController } from "@y-core/forge/router";
@@ -418,7 +472,9 @@ export default app;
 
 ### Middleware ordering
 
-**Prefer `applyMiddlewareChain`** — it encodes the canonical global order once, so apps never re-derive it. The chain it encodes, the guard-major registration that keeps one `rateLimit` per group, the global-before-route-level rule, and the nonce-consumer rule a hand-written chain must still respect are all `ROUTING_AND_MIDDLEWARE.md` §3a, §3d and §3e's.
+**Prefer `applyMiddlewareChain`** — it encodes the canonical global order once, so apps never re-derive it. The chain it encodes, the guard-major
+registration that keeps one `rateLimit` per group, the global-before-route-level rule, and the nonce-consumer rule a hand-written chain must still
+respect are all `ROUTING_AND_MIDDLEWARE.md` §3a, §3d and §3e's.
 
 ### Page rendering
 
@@ -430,13 +486,16 @@ import { renderPage } from "@y-core/forge/jsx";
 view: (_c, _cfg, state) => renderPage(<Home data={state.data} />),
 ```
 
-`renderPage` converts the JSX tree to an `HtmlResponse` directly — there is no global render-middleware step.
+`renderPage` converts the JSX tree to an HTML `Response` directly — there is no global render-middleware step.
 
 ### The page shell
 
-**A page forge mounts — the auth pages, the showcase, the log viewer — renders into one shell the app registers**, resolved per request. A mountable takes no `layout`, `context` or `document` option of its own; the ruling and the reasoning are [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §6.
+**A page forge mounts — the auth pages, the showcase, the log viewer — renders into one shell the app registers**, resolved per request. A mountable
+takes no `layout`, `context` or `document` option of its own; the ruling and the reasoning are [`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6.
 
-`PageShell` is `(c, content, slot) => JSXNode | Promise<JSXNode>`, where `slot` is `{ mount, page, meta }` — `mount` names the mountable (`"auth"`, `"showcase"`, `"logs"`, or your own) and is an open string, so a shell that branches on it needs a default arm. `meta` is the page's `PageMeta`, whose `title` is always set.
+`PageShell` is `(c, content, slot) => JSXNode | Promise<JSXNode>`, where `slot` is `{ mount, page, meta }` — `mount` names the mountable (`"auth"`,
+`"showcase"`, `"logs"`, or your own) and is an open string, so a shell that branches on it needs a default arm. `meta` is the page's `PageMeta`,
+whose `title` is always set.
 
 ```tsx
 createApp({ shell: async (c, content, slot) => <Layout ctx={await renderContext(c, c.config)}>{content}</Layout> });
@@ -452,7 +511,8 @@ import { pageShell } from "@y-core/forge/app";
 createApp({ shell: pageShell({ stylesheet: "/assets/app.css", script: "/assets/app.js" }) });
 ```
 
-**With no shell registered**, a mounted page renders a bare document — doctype, a `<head>` built from the slot's `meta`, content in `<body>`. It is readable and unstyled: forge ships no stylesheet URL it could guess.
+**With no shell registered**, a mounted page renders a bare document — doctype, a `<head>` built from the slot's `meta`, content in `<body>`. It is
+readable and unstyled: forge ships no stylesheet URL it could guess.
 
 **A fragment never reaches the shell.** An htmx partial or an API fragment is swapped into a document that already exists, so it is rendered bare.
 
@@ -464,7 +524,8 @@ view: (c, _cfg, state) => renderShell(c, <Home data={state.data} />, { mount: "a
 
 ### Page meta
 
-A page says what it says about itself in a `PageMeta`, and the shell renders it with `metaTags`. The ruling — why a typed shape rather than a merged array of tag descriptors, and the three things it deliberately does not do — is [`ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) §6d.
+A page says what it says about itself in a `PageMeta`, and the shell renders it with `metaTags`. The ruling — why a typed shape rather than a merged
+array of tag descriptors, and the three things it deliberately does not do — is [`ROUTING_AND_MIDDLEWARE.md`][ram-6d] §6d.
 
 ```tsx
 import { mergeMeta, metaTags } from "@y-core/forge/app";
@@ -487,7 +548,8 @@ createApp({
 });
 ```
 
-**Every page forge mounts states `robots: "noindex"`** — an auth page, the log viewer and the showcase each have no business in an index. Merging the site's base under the page's meta, as above, keeps that.
+**Every page forge mounts states `robots: "noindex"`** — an auth page, the log viewer and the showcase each have no business in an index. Merging
+the site's base under the page's meta, as above, keeps that.
 
 ---
 
@@ -495,19 +557,30 @@ createApp({
 
 ### `HEAD` request handling
 
-`Forge.fetch` rewrites `HEAD` to an internal `GET` by copy-constructing the request (`new Request(request, { method: "GET" })`), so `signal`, `cf`, `redirect` and `credentials` carry into the handler as well as the headers. It runs the full chain, cancels the GET response's body, then returns a body-less `Response` with that status and headers. Handlers never need to special-case `HEAD`; why `router` therefore exports no `head` verb, and when a `HEAD` branch inside a unit is still correct, is `ROUTING_AND_MIDDLEWARE.md` §1d's.
+`Forge.fetch` rewrites `HEAD` to an internal `GET` by copy-constructing the request (`new Request(request, { method: "GET" })`), so `signal`, `cf`,
+`redirect` and `credentials` carry into the handler as well as the headers. It runs the full chain, cancels the GET response's body, then returns a
+body-less `Response` with that status and headers. Handlers never need to special-case `HEAD`; why `router` therefore exports no `head` verb, and
+when a `HEAD` branch inside a unit is still correct, is `ROUTING_AND_MIDDLEWARE.md` §1d's.
 
 ### Lazy router build and per-request state
 
-The dispatching router is built once, on the first `fetch`, with a fixed middleware stack. Per-request `env`, `executionCtx`, and resolved `config` are stored in a `WeakMap` keyed by the `Request` and re-published onto the context inside the chain. If the request object is replaced between `fetch` and routing (an incompatible `@remix-run/fetch-router` version), forge throws a loud diagnostic rather than silently dropping `env`/`config`.
+The dispatching router is built once, on the first `fetch`, with a fixed middleware stack. Per-request `env`, `executionCtx`, and resolved `config`
+are stored in a `WeakMap` keyed by the `Request` and re-published onto the context inside the chain. If the request object is replaced between
+`fetch` and routing (an incompatible `@remix-run/fetch-router` version), forge throws a loud diagnostic rather than silently dropping
+`env`/`config`.
 
 ### Config resolution
 
-When `createApp({ config })` is given a store, `fetch` calls `resolveConfig(store, env)` once per request and exposes the result via `ConfigKey` / `c.config`. `definePage` and `defineAction` read it and pass the typed value to your `view`/`handle`. `applyAssets`/`serveAssets` resolve the same store to pass `config` into the app's `notFound` hook. No config means `c.config` is `undefined` and handlers receive `undefined` for their config argument.
+When `createApp({ config })` is given a store, `fetch` calls `resolveConfig(store, env)` once per request and exposes the result via `ConfigKey` /
+`c.config`. `definePage` and `defineAction` read it and pass the typed value to your `view`/`handle`. `applyAssets`/`serveAssets` resolve the same
+store to pass `config` into the app's `notFound` hook. No config means `c.config` is `undefined` and handlers receive `undefined` for their config
+argument.
 
 ### Testing with `app.request`
 
-`app.request(path, init?, env?)` is the canonical way to exercise the full chain in `bun test`. It builds a `Request`, supplies a test `ExecutionContext`, dispatches through every middleware, and awaits any `waitUntil` promises before resolving — so fire-and-forget work has completed when you assert.
+`app.request(path, init?, env?)` is the canonical way to exercise the full chain in `bun test`. It builds a `Request`, supplies a test
+`ExecutionContext`, dispatches through every middleware, and awaits any `waitUntil` promises before resolving — so fire-and-forget work has
+completed when you assert.
 
 ```ts
 import { Forge } from "@y-core/forge/app";
@@ -529,27 +602,38 @@ expect(res.status).toBe(200);
 
 ## Security
 
-- **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page that carries security headers by construction. The three paths, the baseline header set an out-of-chain throw ships, and what a guard throwing mid-chain does and does not queue are [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5b's.
-- **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a generic message. Never wire `isDebug` to a value an attacker controls.
-- **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
-- **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §1b.
-- **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`](../../docs/INPUT_VALIDATION.md) §4b.
-- **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at startup or on the first request, never silently downstream.
-- **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to the app's not-found answer, so the asset catch-all cannot be used as a write surface.
+- **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page that carries
+  security headers by construction. The three paths, the baseline header set an out-of-chain throw ships, and what a guard throwing mid-chain does
+  and does not queue are [`ERROR_HANDLING.md`][eh-5b] §5b's.
+- **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a
+  generic message. Never wire `isDebug` to a value an attacker controls.
+- **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply
+  `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
+- **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app
+  rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`][iv-1b] §1b.
+- **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without
+  changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`][iv-4b] §4b.
+- **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at
+  startup or on the first request, never silently downstream.
+- **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to the app's not-found answer, so the asset
+  catch-all cannot be used as a write surface.
 
 ---
 
 ## Architecture
 
-`app` is an **integration namespace** — what that classification obliges, and the facade rule that keeps `@remix-run/*` out of a consumer's imports, are `NAMESPACE_DESIGN.md` §3's and [`LIBRARY_ARCHITECTURE.md`](../../warden/canon/libs/LIBRARY_ARCHITECTURE.md) §1a's.
+`app` is an **integration namespace** — what that classification obliges, and the facade rule that keeps `@remix-run/*` out of a consumer's imports,
+are `NAMESPACE_DESIGN.md` §3's and [`LIBRARY_ARCHITECTURE.md`][la-1a] §1a's.
 
-Per the Workers runtime model, `createApp` is a factory that captures bindings at request time, not at module evaluation — module-level state stays request-independent across V8 isolates. Use `c.executionCtx.waitUntil` for work that should outlive the response.
+Per the Workers runtime model, `createApp` is a factory that captures bindings at request time, not at module evaluation — module-level state stays
+request-independent across V8 isolates. Use `c.executionCtx.waitUntil` for work that should outlive the response.
 
 Related docs:
 
-- [`docs/ROUTING_AND_MIDDLEWARE.md`](../../docs/ROUTING_AND_MIDDLEWARE.md) — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
-- [`docs/LIBRARY_ARCHITECTURE.md`](../../docs/LIBRARY_ARCHITECTURE.md) — facade pattern, namespace tiers, Workers runtime constraints.
-- [`docs/ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the error boundary's three paths and their header guarantees (§5b), and the `definePage`/`defineAction` recovery divergence (§5d).
+- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
+- [`docs/LIBRARY_ARCHITECTURE.md`][la] — facade pattern, namespace tiers, Workers runtime constraints.
+- [`docs/ERROR_HANDLING.md`][eh] — the error boundary's three paths and their header guarantees (§5b), and the `definePage`/`defineAction` recovery
+  divergence (§5d).
 
 ---
 
@@ -577,3 +661,16 @@ Related docs:
 | `CacheDirective` | type | `{ maxAge; scope? }` for `definePage({ cache })`. |
 | `HealthCheckResult` | type | `{ ok; checks }` health response body. |
 | `PageDefinition` | type | The `definePage` config shape, inheriting the submission sequence's options. |
+
+[config-readme]: ../config/README.md
+[eh]: ../../docs/ERROR_HANDLING.md
+[eh-5b]: ../../docs/ERROR_HANDLING.md#5b-unexpected-errors--the-router-error-boundary
+[iv-1b]: ../../docs/INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
+[iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
+[iv-4b]: ../../docs/INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
+[la]: ../../docs/LIBRARY_ARCHITECTURE.md
+[la-1a]: ../../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1a-facade-over-dependencies
+[ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
+[ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
+[ram-6d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6d-the-meta-descriptor
+[sh-2d]: ../../docs/SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

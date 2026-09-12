@@ -268,10 +268,10 @@ describe("renderToString — html tagged template", () => {
     expect(String(result)).toBe("<div>&lt;script&gt;</div>");
   });
 
-  it("allows raw HTML via html.raw``", async () => {
-    const { html } = await import("../http/html");
+  it("allows raw HTML via rawHtml", async () => {
+    const { html, rawHtml } = await import("../http/html");
     const raw = "<span>raw</span>";
-    const result = html`<div>${html.raw`${raw}`}</div>`;
+    const result = html`<div>${rawHtml(raw)}</div>`;
     expect(String(result)).toBe("<div><span>raw</span></div>");
   });
 
@@ -280,7 +280,7 @@ describe("renderToString — html tagged template", () => {
     const node = el("title", null);
     node.props.children = "My Page";
     const rendered = await renderToString(node);
-    const result = html`<!DOCTYPE html>${html.raw`${rendered}`}`;
+    const result = html`<!DOCTYPE html>${rendered}`;
     expect(String(result)).toBe("<!DOCTYPE html><title>My Page</title>");
   });
 });

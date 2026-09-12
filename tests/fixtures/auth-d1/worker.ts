@@ -1,7 +1,7 @@
 // Four questions about D1 that a fake cannot answer, asked of the real thing: does it accept and
 // enforce `STRICT`, what does a mid-batch failure leave behind, what JavaScript shape does a BLOB
-// column read back as, and which rows-affected field a write populates. The spec posts
-// `src/auth/schema.sql` here rather than importing it, so what runs is the file a consumer would apply.
+// column read back as, and which rows-affected field a write populates. The spec posts the files
+// from `src/auth/schema.sql` here rather than importing them, so what runs is what a consumer composes.
 //
 // `/guards` then runs the shipped store adapters themselves against that schema, because a guard
 // answered by a fake is a guard whose SQL was never executed.
@@ -16,6 +16,7 @@ import { createOtpStateStore } from "../../../src/auth/stores/otp-state";
 import { createUserStore } from "../../../src/auth/stores/users";
 import type { Result } from "../../../src/result/result";
 import { createD1Client } from "../../../src/storage/db/client";
+import { requireRowsWritten } from "../../../src/storage/db/sql";
 
 interface Env {
   DB: D1Database;
@@ -100,6 +101,67 @@ async function probeBatch(db: D1Database): Promise<Response> {
 
   const rows = await db.prepare("SELECT id FROM probe_batch ORDER BY id").all<{ id: number }>();
   return json({ batchError, survivingRows: rows.results.map((row) => row.id) });
+}
+
+// Whether a fragment appended after a write can abort the batch when that write matched nothing:
+// `changes()` must report the previous statement, and an expression must be able to raise outside a
+// trigger. The text run here is the shipped one, so what `requireRowsWritten()` mints is what is proved.
+const GUARD = requireRowsWritten().text;
+
+async function probeChanges(db: D1Database): Promise<Response> {
+  await db.prepare("DROP TABLE IF EXISTS probe_changes").run();
+  await db.prepare("CREATE TABLE probe_changes (id INTEGER PRIMARY KEY NOT NULL, n INTEGER NOT NULL)").run();
+  await db.prepare("INSERT INTO probe_changes (id, n) VALUES (1, 0)").run();
+
+  const matched = await db.batch<{ c: number }>([
+    db.prepare("UPDATE probe_changes SET n = 5 WHERE id = ?").bind(1),
+    db.prepare("SELECT changes() AS c"),
+  ]);
+  const unmatched = await db.batch<{ c: number }>([
+    db.prepare("UPDATE probe_changes SET n = 5 WHERE id = ?").bind(99),
+    db.prepare("SELECT changes() AS c"),
+  ]);
+
+  let overflowError: string | null = null;
+  try {
+    await db.prepare("SELECT abs(-9223372036854775808) AS x").run();
+  } catch (thrown) {
+    overflowError = messageOf(thrown);
+  }
+
+  let guardAbortError: string | null = null;
+  try {
+    await db.batch([
+      db.prepare("INSERT INTO probe_changes (id, n) VALUES (2, 0)"),
+      db.prepare("UPDATE probe_changes SET n = 5 WHERE id = ?").bind(99),
+      db.prepare(GUARD),
+    ]);
+  } catch (thrown) {
+    guardAbortError = messageOf(thrown);
+  }
+  const afterAbort = (await db.prepare("SELECT id FROM probe_changes ORDER BY id").all<{ id: number }>()).results.map((row) => row.id);
+
+  let guardPassError: string | null = null;
+  try {
+    await db.batch([
+      db.prepare("INSERT INTO probe_changes (id, n) VALUES (3, 0)"),
+      db.prepare("UPDATE probe_changes SET n = 7 WHERE id = ?").bind(1),
+      db.prepare(GUARD),
+    ]);
+  } catch (thrown) {
+    guardPassError = messageOf(thrown);
+  }
+  const afterPass = (await db.prepare("SELECT id FROM probe_changes ORDER BY id").all<{ id: number }>()).results.map((row) => row.id);
+
+  return json({
+    changesAfterMatched: matched[1]?.results[0]?.c ?? null,
+    changesAfterUnmatched: unmatched[1]?.results[0]?.c ?? null,
+    overflowError,
+    guardAbortError,
+    afterAbort,
+    guardPassError,
+    afterPass,
+  });
 }
 
 async function probeBlob(db: D1Database): Promise<Response> {
@@ -363,6 +425,7 @@ export default {
       if (pathname === "/strict") return await probeStrict(env.DB);
       if (pathname === "/batch") return await probeBatch(env.DB);
       if (pathname === "/blob") return await probeBlob(env.DB);
+      if (pathname === "/changes") return await probeChanges(env.DB);
       if (pathname === "/rows-written") return await probeRowsWritten(env.DB);
       if (pathname === "/guards") return await probeGuards(env.DB);
     } catch (thrown) {

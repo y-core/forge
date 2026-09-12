@@ -5,7 +5,9 @@ import { CANON_ROOT } from "../paths";
 import type { Divergence, SyncTree } from "../types";
 import { identical, walk } from "./sync";
 
-const DOCS_HREF = /\]\(([^)]*\bdocs\/[^)]*)\)/g;
+// Both link forms: under reference style the destination is not on the prose line at all, it is in
+// the definition block — which is exactly where a boundary-crossing path would now hide.
+const DOCS_HREF = /\]\(([^)]*\bdocs\/[^)]*)\)|^ {0,3}\[[^\]]+\]:[ \t]+(\S*\bdocs\/\S*)/gm;
 
 /** Compares one synced tree against the installed corpus. @public */
 export function checkTree(repo: string, { tree, from }: SyncTree): Divergence[] {
@@ -57,7 +59,10 @@ export function checkBoundary(canonRoot = CANON_ROOT): Divergence[] {
   for (const file of walk(canonRoot).filter((name) => name.endsWith(".md"))) {
     const source = readFileSync(resolve(canonRoot, file), "utf-8");
     for (const match of source.matchAll(DOCS_HREF)) {
-      problems.push({ code: "boundary", detail: `${file} links \`${match[1] ?? ""}\` — governance never cites a repository's own docs/` });
+      problems.push({
+        code: "boundary",
+        detail: `${file} links \`${match[1] ?? match[2] ?? ""}\` — governance never cites a repository's own docs/`,
+      });
     }
   }
   return problems;

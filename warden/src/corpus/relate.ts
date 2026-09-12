@@ -3,10 +3,26 @@ import { type Chunk, type Corpus, CORPORA, type Relation, type SourceDoc } from 
 import { sourceId } from "./ident";
 
 const DEFERS = /^>\s*Defers to:/;
-const CITATION = /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*)/g;
+// What closes a link around the document name, either way it is written: an inline link ends `)`
+// and a reference one ends `][id]`. Neither is required — a bare `X.md §N` in prose is a citation.
+const LINK_CLOSE = "`?(?:\\]\\[([^\\]]+)\\]|\\))?";
+const CITATION = new RegExp(`((?:[A-Za-z0-9_-]+/)?[A-Z_]+\\.md)${LINK_CLOSE}\\s+§([0-9][A-Za-z0-9]*)`, "g");
 // A defers header names its section the way any citation does, so the scan captures one where the
 // prose writes one and resolves to the document otherwise.
-const DEFERRED_DOC = /\b((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?(?:\s+§([0-9][A-Za-z0-9]*))?/g;
+const DEFERRED_DOC = new RegExp(`\\b((?:[A-Za-z0-9_-]+/)?[A-Z_]+\\.md)${LINK_CLOSE}(?:\\s+§([0-9][A-Za-z0-9]*))?`, "g");
+
+/** The `[tree/]DOC.md` spelling a reference id names, or the link text where nothing defines it.
+ *
+ *  **Under reference style the path is not on the citing line at all.** The link text is a bare
+ *  basename, and a bare basename is exactly the spelling every tree of the canon shares — so a
+ *  citation that used to resolve through its href resolves to the citing repository's own file
+ *  instead. Reading the destination out of the definition puts the disambiguating path back. */
+function spellingOf(text: string, id: string | undefined, definitions: ReadonlyMap<string, string>): string {
+  const destination = id === undefined ? undefined : definitions.get(id.toLowerCase());
+  if (destination === undefined) return text;
+  const segments = (destination.split("#")[0] ?? "").split("/").filter((part) => part !== "" && part !== "." && part !== "..");
+  return segments.slice(-2).join("/");
+}
 
 /** The corpora a document of the installed library may cite into. */
 const LIBRARY_CORPORA: readonly Corpus[] = ["dependency", "canon"];
@@ -106,6 +122,7 @@ export function relationsOf(
   header: string,
   sources: readonly SourceDoc[],
   packageName?: string,
+  definitions: ReadonlyMap<string, string> = new Map(),
 ): Relation[] {
   const relations: Relation[] = [];
   const docId = sourceId(doc.corpus, doc.path);
@@ -117,8 +134,8 @@ export function relationsOf(
     // spellings differ (`X.md` and `tree/X.md` are one edge), and the section-bearing one wins.
     const targets = new Map<string, { raw: string; to?: string }>();
     for (const match of deferral.matchAll(DEFERRED_DOC)) {
-      const cited = match[1] ?? "";
-      const section = match[2];
+      const cited = spellingOf(match[1] ?? "", match[2], definitions);
+      const section = match[3];
       const target = resolveDoc(cited, sources, doc);
       const to = target === undefined || section === undefined ? target : `${target}#${section}`;
       const held = targets.get(target ?? cited);
@@ -131,15 +148,16 @@ export function relationsOf(
   for (const chunk of chunks) {
     const seen = new Set<string>();
     for (const match of `${chunk.body}`.matchAll(CITATION)) {
-      const raw = `${match[1] ?? ""} §${match[2] ?? ""}`;
+      const cited = spellingOf(match[1] ?? "", match[2], definitions);
+      const raw = `${cited} §${match[3] ?? ""}`;
       if (seen.has(raw)) continue;
       seen.add(raw);
-      const resolution = resolveCitation(match[1] ?? "", sources, doc);
+      const resolution = resolveCitation(cited, sources, doc);
       relations.push({
         from: chunk.id,
         kind: "cites",
         raw,
-        ...(resolution.kind === "resolved" ? { to: `${resolution.id}#${match[2] ?? ""}` } : {}),
+        ...(resolution.kind === "resolved" ? { to: `${resolution.id}#${match[3] ?? ""}` } : {}),
         ...(resolution.kind === "ambiguous" ? { ambiguous: resolution.ids } : {}),
       });
     }

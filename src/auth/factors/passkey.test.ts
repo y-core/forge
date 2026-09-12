@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 
 import { base64urlEncode, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
-import { AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS, AUTH_PASSKEY_TTL_SECONDS } from "../config";
+import { AUTH_PASSKEY_ASSERTION_ID_MAX, AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS, AUTH_PASSKEY_TTL_SECONDS } from "../config";
 import { AuthStoreError } from "../errors";
 import { PASSKEY_FLAG, createPasskeyKeyPair, fakePasskeyAssertion, fakePasskeyRegistration } from "../passkey/fixture";
 import type { PasskeyKeyPair } from "../passkey/types";
@@ -18,7 +18,7 @@ import type {
   UserStore,
 } from "../types";
 import { createPasskeyFactor } from "./passkey";
-import type { PasskeyFactorOptions, PasskeyFactorRole } from "./types";
+import type { PasskeyFactorOptions } from "./types";
 
 const RP_ID = "example.com";
 const ORIGIN = "https://example.com";
@@ -167,13 +167,12 @@ function world(users: readonly AuthUser[] = [userRow()], credentials: readonly A
   return { challenges: fakeChallenges(), credentials: fakeCredentials(credentials), factors: fakeFactors(), users: fakeUsers(users) };
 }
 
-function build(scene: World, role: PasskeyFactorRole = "step-up") {
+function build(scene: World) {
   const options: PasskeyFactorOptions = {
     rpId: RP_ID,
     rpName: "Forge Demo",
     origin: ORIGIN,
     sessionId: SESSION_ID,
-    role,
     users: scene.users.store,
     factors: scene.factors.store,
     credentials: scene.credentials.store,
@@ -215,27 +214,43 @@ describe("createPasskeyFactor — the contract it implements", () => {
     const service = build(world());
     expect(service.kind).toBe("passkey");
     expect(service.enrolment).toBe("explicit");
-    expect(service.capabilities).toEqual({ primary: true, stepUp: true });
+    expect(service.capabilities).toEqual({ stepUp: true });
   });
 });
 
-describe("createPasskeyFactor — the user-verification matrix", () => {
-  // A step-up exists to demand a fresh human gesture; as the primary factor `required` would only
-  // lock out authenticators that cannot do it.
-  it("asks for `required` as a step-up and `preferred` as the primary factor, in both ceremonies", async () => {
-    for (const [role, expected] of [
-      ["step-up", "required"],
-      ["primary", "preferred"],
-    ] as const) {
-      const scene = world();
-      const enrolment = await build(scene, role).beginEnrolment(USER_ID, AT);
-      const request = await build(scene, role).createChallenge(USER_ID, AT);
-      const registration = enrolment.ok ? (enrolment.data.options as { authenticatorSelection: { userVerification: string } }) : undefined;
-      const assertion = request.ok ? (request.data.options as { userVerification: string }) : undefined;
-      expect(`${role}: ${registration?.authenticatorSelection.userVerification} ${assertion?.userVerification}`).toBe(
-        `${role}: ${expected} ${expected}`,
+describe("createPasskeyFactor — the user-verification posture", () => {
+  // A passkey only ever steps up, and a step-up exists to demand a fresh human gesture — so there is
+  // no role left that could ask for less.
+  it("asks for `required` in both ceremonies, with no configuration that weakens it", async () => {
+    const scene = world();
+    const enrolment = await build(scene).beginEnrolment(USER_ID, AT);
+    const request = await build(scene).createChallenge(USER_ID, AT);
+    const registration = enrolment.ok ? (enrolment.data.options as { authenticatorSelection: { userVerification: string } }) : undefined;
+    const assertion = request.ok ? (request.data.options as { userVerification: string }) : undefined;
+    expect(`${registration?.authenticatorSelection.userVerification} ${assertion?.userVerification}`).toBe("required required");
+  });
+});
+
+// `readAssertion` on the deleted discoverable endpoint was the only place holding a presented
+// credential id to a length and an alphabet; the step-up path checked it was a string and no more.
+describe("createPasskeyFactor — the credential id an assertion may present", () => {
+  async function verifying(id: string) {
+    const scene = world();
+    const presented = JSON.stringify({ id, response: { clientDataJSON: "e30", authenticatorData: "e30", signature: "e30" } });
+    return await build(scene).verifyChallenge(USER_ID, presented, AT);
+  }
+
+  it("refuses an empty id, one past the cap, and one outside base64url, before any store is asked", async () => {
+    for (const id of ["", "n".repeat(AUTH_PASSKEY_ASSERTION_ID_MAX + 1), "not base64url!"]) {
+      expect(`${id.slice(0, 12)}: ${JSON.stringify(await verifying(id))}`).toBe(
+        `${id.slice(0, 12)}: ${JSON.stringify({ ok: false, error: "unrecognised" })}`,
       );
     }
+  });
+
+  it("admits an id at the cap exactly, which then fails on the ceremony rather than on its shape", async () => {
+    const refused = await verifying("n".repeat(AUTH_PASSKEY_ASSERTION_ID_MAX));
+    expect(refused).toEqual({ ok: false, error: "expired" });
   });
 });
 
@@ -400,7 +415,6 @@ describe("createPasskeyFactor — listing and store failures", () => {
       rpName: "Forge Demo",
       origin: ORIGIN,
       sessionId: SESSION_ID,
-      role: "step-up",
       users: broken,
       factors: scene.factors.store,
       credentials: scene.credentials.store,
@@ -420,7 +434,6 @@ describe("createPasskeyFactor — the ceremony lifetime it holds at construction
         rpName: "Forge Demo",
         origin: ORIGIN,
         sessionId: SESSION_ID,
-        role: "step-up",
         users: scene.users.store,
         factors: scene.factors.store,
         credentials: scene.credentials.store,
@@ -466,7 +479,6 @@ describe("createPasskeyFactor — the ceremony lifetime it holds at construction
         rpName: "Forge Demo",
         origin: ORIGIN,
         sessionId: SESSION_ID,
-        role: "step-up",
         users: scene.users.store,
         factors: scene.factors.store,
         credentials: scene.credentials.store,

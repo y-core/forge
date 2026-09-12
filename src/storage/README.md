@@ -6,14 +6,12 @@ audience: consumer
 
 # `@y-core/forge/storage`
 
-Typed, codec-aware clients for the three Cloudflare Workers storage services: **D1** (SQL database),
-**Workers KV** (key-value store), and **R2** (object storage). Each namespace wraps the raw platform
-binding with an opinionated, injection-safe, `Result`-returning API plus a consistent
+Typed, codec-aware clients for the three Cloudflare Workers storage services: **D1** (SQL database), **Workers KV** (key-value store), and **R2**
+(object storage). Each namespace wraps the raw platform binding with an opinionated, injection-safe, `Result`-returning API plus a consistent
 binding-resolution and validation pattern.
 
-> **There is no top-level `@y-core/forge/storage` barrel.** Import from one of the three sub-paths
-> instead. Each is a self-contained namespace with its own factory, codecs/helpers, binding
-> resolvers, and types.
+> **There is no top-level `@y-core/forge/storage` barrel.** Import from one of the three sub-paths instead. Each is a self-contained namespace with
+> its own factory, codecs/helpers, binding resolvers, and types.
 
 | Sub-path | Service | Entry factory |
 | --- | --- | --- |
@@ -23,12 +21,12 @@ binding-resolution and validation pattern.
 
 All three share two cross-cutting conventions:
 
-- **`Result`-wrapped operations.** Every async operation returns `Promise<Result<T>>` — the
-  discriminated union `{ ok: true; data: T } | { ok: false; error: Error }` — so you handle failure
-  by branching on `result.ok` instead of wrapping every call in `try`/`catch`.
-- **Resolve / validate pair.** Each namespace exports `resolveX(c, opts)` (builds a typed client from
-  the request context) and `validateXBinding(name)` (a `Middleware` that shape-checks the binding on
-  the first request). See [Binding resolution and validation](#binding-resolution-and-validation).
+- **`Result`-wrapped operations.** Every async operation returns `Promise<Result<T>>` — the discriminated union
+  `{ ok: true; data: T } | { ok: false; error: Error }` — so you handle failure by branching on `result.ok` instead of wrapping every call in
+  `try`/`catch`.
+- **Resolve / validate pair.** Each namespace exports `resolveX(c, opts)` (builds a typed client from the request context) and
+  `validateXBinding(name)` (a `Middleware` that shape-checks the binding on the first request). See
+  [Binding resolution and validation](#binding-resolution-and-validation).
 
 ---
 
@@ -38,12 +36,11 @@ All three share two cross-cutting conventions:
 
 ### Features
 
-- **Injection-safe by construction.** The client accepts only `SqlFragment` values built by the `sql`
-  tagged template — raw query strings are rejected by the type system.
-- **Parameterized everything.** Every interpolated value becomes a bind parameter (`?`); fragments
-  compose by nesting and flatten automatically.
-- **Four operations:** `query` (rows), `queryOne` (single row or `null`), `execute` (writes), and
-  `batch` (multiple statements in one round trip).
+- **Injection-safe by construction.** The client accepts only `SqlFragment` values built by the `sql` tagged template — raw query strings are
+  rejected by the type system.
+- **Parameterized everything.** Every interpolated value becomes a bind parameter (`?`); fragments compose by nesting and flatten automatically.
+- **Four operations:** `query` (rows), `queryOne` (single row or `null`), `execute` (writes), and `batch` (several statements as one transaction —
+  the only transaction boundary D1 offers).
 - **`Result`-wrapped.** No exceptions leak from the client surface; you branch on `result.ok`.
 
 ### Usage
@@ -70,6 +67,20 @@ if (found.data === null) {
 return Response.json(found.data);
 ```
 
+#### Transactions
+
+`batch()` is the transaction: a later statement's failure rolls back every earlier write. Never write `sql\`BEGIN\`` at runtime — D1 already holds
+one, and the `forge/sql-explicit-transaction` lint rule refuses it. A guarded write that matches no row commits as a success; append
+`requireRowsWritten()` directly after it to make the batch roll back instead. The rules and their reasons are [`STORAGE_BINDINGS.md`][sb-1g] §1g.
+
+```ts
+const outcome = await db.batch([
+  sql`UPDATE accounts SET balance = balance - ${amount} WHERE id = ${from} AND balance >= ${amount}`,
+  requireRowsWritten(),
+  sql`UPDATE accounts SET balance = balance + ${amount} WHERE id = ${to}`,
+]);
+```
+
 ### Core components and APIs
 
 #### `createD1Client(db, options?)`
@@ -81,15 +92,14 @@ Wraps a raw `D1Database` binding with a typed `D1Client`.
 | `db` | `D1Database` | The D1 binding, typically `c.env.DB` |
 | `options` | `D1ClientOptions` _(optional)_ | `{ logger?: Logger }` — logs each prepared query at `debug` level |
 
-The returned `D1Client` has four methods. Each accepts a `SqlFragment` (or array of fragments for
-`batch`) and resolves to a `Result`:
+The returned `D1Client` has four methods. Each accepts a `SqlFragment` (or array of fragments for `batch`) and resolves to a `Result`:
 
 | Method | Signature | Returns (on `ok`) |
 | --- | --- | --- |
 | `query` | `query<T>(fragment)` | `T[]` — all matching rows |
 | `queryOne` | `queryOne<T>(fragment)` | `T \| null` — first row or `null` |
-| `execute` | `execute(fragment)` | `{ rowsWritten: number; lastRowId?: number \| null }` |
-| `batch` | `batch<T>(fragments)` | `D1Result<T>[]` — one result per statement |
+| `execute` | `execute(fragment)` | `{ rowsWritten: number; lastRowId?: number \| null }` — `meta.changes` where D1 reports it, since that is the count of rows the statement matched |
+| `batch` | `batch<T>(fragments)` | `D1BatchResult<T>[]` — one `{ results, rowsWritten, lastRowId? }` per statement |
 
 ```ts
 const created = await db.execute(sql`INSERT INTO users (email) VALUES (${email})`);
@@ -100,9 +110,8 @@ if (created.ok) {
 
 #### `sql` — the tagged template
 
-`sql` builds a `SqlFragment`: `{ readonly text: string; readonly params: readonly unknown[] }`. Each
-interpolated value becomes a `?` placeholder bound to `params`; this is the **only** safe way to build
-a D1 query.
+`sql` builds a `SqlFragment`: `{ readonly text: string; readonly params: readonly unknown[] }`. Each interpolated value becomes a `?` placeholder
+bound to `params`; this is the **only** safe way to build a D1 query.
 
 ```ts
 import { sql } from "@y-core/forge/storage/db";
@@ -114,8 +123,8 @@ const frag = sql`SELECT * FROM users WHERE status = ${status} LIMIT ${limit}`;
 // frag.params === ["active", 20]
 ```
 
-Fragments **compose** — interpolating a `SqlFragment` into another fragment merges the text and
-concatenates the params, so you can build a query from reusable pieces:
+Fragments **compose** — interpolating a `SqlFragment` into another fragment merges the text and concatenates the params, so you can build a query
+from reusable pieces:
 
 ```ts
 const whereActive = sql`status = ${"active"}`;
@@ -130,8 +139,7 @@ const query = sql`SELECT * FROM users WHERE ${whereActive} ORDER BY created_at D
 
 #### `uuidv7()` — time-ordered record identifiers
 
-`uuidv7()` returns a canonical UUIDv7 string for a primary key: unique and non-sequential, yet
-lexicographically sortable by creation time.
+`uuidv7()` returns a canonical UUIDv7 string for a primary key: unique and non-sequential, yet lexicographically sortable by creation time.
 
 ```ts
 import { sql, uuidv7 } from "@y-core/forge/storage/db";
@@ -139,8 +147,7 @@ import { sql, uuidv7 } from "@y-core/forge/storage/db";
 await db.execute(sql`INSERT INTO orders (id, customer_id) VALUES (${uuidv7()}, ${customerId})`);
 ```
 
-Store it in a `TEXT` column, and `ORDER BY id` doubles as creation order — keyset pagination needs
-no separate timestamp index:
+Store it in a `TEXT` column, and `ORDER BY id` doubles as creation order — keyset pagination needs no separate timestamp index:
 
 ```sql
 CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL);
@@ -148,18 +155,15 @@ CREATE TABLE orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL);
 SELECT * FROM orders WHERE id > ?1 ORDER BY id LIMIT 50;
 ```
 
-What that ordering buys against the B-tree, the monotonic counter it depends on under the Workers
-frozen clock, and the rule that a UUIDv7 is **never** a secret are
-[`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §1e's.
+What that ordering buys against the B-tree, the monotonic counter it depends on under the Workers frozen clock, and the rule that a UUIDv7 is
+**never** a secret are [`STORAGE_BINDINGS.md`][sb-1e] §1e's.
 
 ##### Storing the bytes instead — `uuidv7Bytes()`
 
-`uuidv7Bytes()` mints the **same value** as `uuidv7()`, from the same generator, as its raw 16
-octets. SQLite compares a `BLOB` with `memcmp` and the bytes are most-significant first, so ordering
-is identical to the `TEXT` form — this is purely a density trade, and one to take per table rather
-than as a schema-wide default. The measured footprint, the intra-request ordering guarantee, and why
-`WITHOUT ROWID` is the wrong lever are
-[`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §1e's.
+`uuidv7Bytes()` mints the **same value** as `uuidv7()`, from the same generator, as its raw 16 octets. SQLite compares a `BLOB` with `memcmp` and
+the bytes are most-significant first, so ordering is identical to the `TEXT` form — this is purely a density trade, and one to take per table rather
+than as a schema-wide default. The measured footprint, the intra-request ordering guarantee, and why `WITHOUT ROWID` is the wrong lever are
+[`STORAGE_BINDINGS.md`][sb-1e] §1e's.
 
 ```ts
 import { sql, uuidFromBytes, uuidToBytes, uuidv7Bytes } from "@y-core/forge/storage/db";
@@ -175,10 +179,9 @@ if (row.ok && row.data) console.log(uuidFromBytes(row.data.id)); // "0192f8a1-b2
 await db.queryOne(sql`SELECT * FROM events WHERE id = ${uuidToBytes(id)}`);
 ```
 
-Concretely, the legibility §1e prices means byte arrays in every `wrangler d1 execute` result,
-dashboard query, log line and error message; `x'0192…'` literals in hand-written SQL; no `LIKE` or
-prefix matching on the id; and a `json_object('id', id)` that no longer produces anything sendable
-to a client.
+Concretely, the legibility §1e prices means byte arrays in every `wrangler d1 execute` result, dashboard query, log line and error message;
+`x'0192…'` literals in hand-written SQL; no `LIKE` or prefix matching on the id; and a `json_object('id', id)` that no longer produces anything
+sendable to a client.
 
 | Export | Description |
 | --- | --- |
@@ -209,19 +212,34 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
 | `resolveD1Client(c, opts)` | Reads the binding via `opts.binding(c)` and builds a `D1Client`. Throws when absent unless `opts.required === false` (then returns `null`). Accepts an optional `opts.client: D1ClientOptions`. |
 | `validateD1Binding(name)` | Returns a `Middleware`; on first request asserts `c.env[name]` is an object whose `prepare` is a function, rejecting a stray string/number bound to the name. |
 
+#### Schema health
+
+A Worker can read whether the schema it serves is the one `forge db migrate` recorded, and report it. The report is read-only: nothing is written,
+no request is gated, and the repair stays `forge db migrate` on the CLI.
+
+```ts
+import { healthCheck } from "@y-core/forge/app";
+import { schemaHealthCheck, schemaHealthMonitor } from "@y-core/forge/storage/db";
+
+// Once per isolate: one `d1.schema.health` record, at `warn` on a mismatch; always calls next().
+app.use("*", schemaHealthMonitor({ binding: (c) => c.env.DB }));
+
+// On a health route: 503 only on `mismatch`; `unrecorded` and `unavailable` pass.
+mapHandler(app, "GET", "/health", healthCheck({ schema: schemaHealthCheck((c) => c.env.DB) }));
+```
+
+`checkSchemaHealth(db)` is the raw form, returning `{ state, recorded, actual }` where `state` is `match`, `mismatch`, `unrecorded` (no fingerprint
+row) or `unavailable` (no `forge_schema_meta` table at all).
+
 ### Security
 
-- **Never build SQL by string concatenation.** Always use ``sql`…` ``. The `D1Client` surface only
-  accepts `SqlFragment`, so any attempt to pass a raw string is a type error — keep it that way and
-  do not coerce around the type with `as`.
-- `isSqlFragment` is the runtime guard for code paths that receive `unknown` and must reject
-  non-fragments before reaching the client. It checks **provenance, not shape**: `SqlFragment`
-  carries a `unique symbol` brand that only `sql` sets and that is not re-exported from `mod.ts`,
-  so a hand-built `{text, params}` literal no longer satisfies it. This is what closes the
-  injection path — `JSON.parse` output can never carry a symbol key, so attacker-controlled JSON
-  shaped like a fragment is bound as a **parameter** instead of being concatenated into the
-  statement text. The brand is non-enumerable in practice: ``JSON.stringify(sql`…`)`` round-trips
-  to a value `isSqlFragment` rejects.
+- **Never build SQL by string concatenation.** Always use ``sql`…` ``. The `D1Client` surface only accepts `SqlFragment`, so any attempt to pass a
+  raw string is a type error — keep it that way and do not coerce around the type with `as`.
+- `isSqlFragment` is the runtime guard for code paths that receive `unknown` and must reject non-fragments before reaching the client. It checks
+  **provenance, not shape**: `SqlFragment` carries a `unique symbol` brand that only `sql` sets and that is not re-exported from `mod.ts`, so a
+  hand-built `{text, params}` literal no longer satisfies it. This is what closes the injection path — `JSON.parse` output can never carry a symbol
+  key, so attacker-controlled JSON shaped like a fragment is bound as a **parameter** instead of being concatenated into the statement text. The
+  brand is non-enumerable in practice: ``JSON.stringify(sql`…`)`` round-trips to a value `isSqlFragment` rejects.
 
 ### Exports
 
@@ -233,6 +251,7 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
 | `sql` | function | Tagged template producing a `SqlFragment` — the only value `D1Client` accepts. |
 | `isSqlFragment(value)` | function | Provenance guard: only a fragment `sql` minted passes. |
 | `SQL_PLACEHOLDER` | const | The placeholder (`"?"`) emitted for each bind parameter. |
+| `requireRowsWritten()` | function | A fragment appended after a write inside `batch`; aborts and rolls back the batch when that write matched no row. |
 | `uuidv7()`, `uuidv7Bytes()` | function | A canonical UUIDv7 string, and the same value as its raw 16 octets, from one shared generator. |
 | `uuidFromBytes(value)`, `uuidToBytes(id)` | function | Renders 16 octets as the canonical string, and parses a canonical UUID back to its octets. |
 | `createUuidv7(options?)`, `createUuidv7Bytes(options?)` | function | Independent string and byte generators; pass `options.now` to inject a clock in tests. |
@@ -240,12 +259,19 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
 | `D1Client`, `D1ClientOptions` | types | The four-method client `createD1Client` returns, and its `{ logger? }` options. |
 | `D1Database`, `D1DatabaseLike` | types | Forge's neutral D1 binding, and the structural supertype resolvers constrain to. |
 | `D1PreparedStatement` | type | The prepared-statement surface `D1Database.prepare` returns. |
-| `D1Result` | type | One statement's result — what `batch` resolves to, one entry per statement. |
+| `D1Result` | type | The raw result a `D1DatabaseLike` returns — the shape `batch` normalises, never what it resolves to. |
+| `D1BatchResult` | type | One statement's outcome inside `batch`: `{ results, rowsWritten, lastRowId? }`, the same write count `execute` reports. |
 | `SqlFragment` | type | Branded `{ text, params }`. |
 | `D1BindingOptions` | type | `{ binding, required?, client? }` for `resolveD1Client`. |
+| `checkSchemaHealth(db, options?)` | function | Reads `forge_schema_meta` and `sqlite_master` and reports `{ state, recorded, actual }`; writes nothing. |
+| `schemaHealthCheck(binding, options?)` | function | A `healthCheck` predicate that is `false` only on `mismatch` or an absent binding. |
+| `schemaHealthMonitor(options)` | function | `Middleware` logging one `d1.schema.health` record per isolate, at `warn` on a mismatch; always calls `next()`. |
+| `compareCodePoints(a, b)` | function | Orders two strings by code point — SQLite's BINARY order — rather than by UTF-16 code unit. |
+| `DEFAULT_MIGRATIONS_TABLE` | const | Wrangler's `d1_migrations`. |
+| `SchemaHealth`, `SchemaHealthState`, `SchemaHealthOptions`, `SchemaHealthMonitorOptions`, `SchemaObject` | types | The report, its four states, the two option shapes, and one `sqlite_master` row. |
 
-The six UUID functions and their two types are re-exported from the sealed-internal `crypto` namespace, which has no
-subpath of its own — `storage/db` is where they are published.
+The six UUID functions and their two types are re-exported from the sealed-internal `crypto` namespace, which has no subpath of its own —
+`storage/db` is where they are published.
 
 ---
 
@@ -255,14 +281,11 @@ subpath of its own — `storage/db` is where they are published.
 
 ### Features
 
-- **Codec-aware.** A pluggable `{ encode, decode }` codec maps between the wire format (string or
-  `ArrayBuffer`) and your TypeScript type. Built-ins: `jsonCodec`, `textCodec`, `bytesCodec`.
-- **Typed end-to-end.** The generic `T` flows through `get`, `set`, `getWithMeta`, `getOrSet`, and
-  `list`.
-- **Key namespacing.** An optional `prefix` is applied on write and stripped on read, so a single
-  namespace can host several logical stores.
-- **Metadata + TTL support.** Attach arbitrary metadata, set per-entry TTL, or a store-wide
-  `defaultTtl`.
+- **Codec-aware.** A pluggable `{ encode, decode }` codec maps between the wire format (string or `ArrayBuffer`) and your TypeScript type.
+  Built-ins: `jsonCodec`, `textCodec`, `bytesCodec`.
+- **Typed end-to-end.** The generic `T` flows through `get`, `set`, `getWithMeta`, `getOrSet`, and `list`.
+- **Key namespacing.** An optional `prefix` is applied on write and stripped on read, so a single namespace can host several logical stores.
+- **Metadata + TTL support.** Attach arbitrary metadata, set per-entry TTL, or a store-wide `defaultTtl`.
 - **`Result`-wrapped** like every storage namespace.
 
 ### Usage
@@ -301,8 +324,7 @@ Wraps a raw `KVNamespace` with a typed `KVStore<T>`.
 | `defaultTtl` | `number` | _(none)_ | Fallback `expirationTtl` (seconds) when a write omits one |
 | `logger` | `Logger` | scoped default | Logs decode errors and cache misses |
 
-> Keys must not contain the reserved separator `||`; the store throws on such keys (it uses `||` to
-> join the prefix).
+> Keys must not contain the reserved separator `||`; the store throws on such keys (it uses `||` to join the prefix).
 
 The returned `KVStore<T>` exposes:
 
@@ -315,9 +337,8 @@ The returned `KVStore<T>` exposes:
 | `delete` | `delete(key)` | `void` |
 | `list` | `list<M>(options?)` | `{ keys: KVListEntry<M>[]; cursor?: string; complete: boolean }` |
 
-`KVSetOptions` controls writes: `{ ttl?: number; expiration?: number; metadata?: unknown }`.
-`ttl` is in seconds (KV enforces a 60-second platform minimum). `KVListOptions` is
-`{ prefix?: string; limit?: number; cursor?: string }`.
+`KVSetOptions` controls writes: `{ ttl?: number; expiration?: number; metadata?: unknown }`. `ttl` is in seconds (KV enforces a 60-second platform
+minimum). `KVListOptions` is `{ prefix?: string; limit?: number; cursor?: string }`.
 
 ```ts
 // Read-through cache: compute on miss, cache for 5 minutes.
@@ -340,8 +361,8 @@ bytesCodec(); // Uint8Array <-> ArrayBuffer — binary blobs
 | `textCodec()` | `"text"` | `string` | Raw strings |
 | `bytesCodec()` | `"arrayBuffer"` | `Uint8Array` | Binary data |
 
-A codec is `{ readonly type: KvValueType; encode(value): string | ArrayBuffer; decode(raw): T }`. The
-`type` selects which KV `get` overload the store calls, so a custom codec must declare it correctly.
+A codec is `{ readonly type: KvValueType; encode(value): string | ArrayBuffer; decode(raw): T }`. The `type` selects which KV `get` overload the
+store calls, so a custom codec must declare it correctly.
 
 ### Integration guide
 
@@ -361,12 +382,12 @@ const sessions = resolveKVStore<typeof c.env, Session>(c, { binding: (c) => c.en
 
 ### Security
 
-- KV is **eventually consistent and globally cached** — never use it as the source of truth for
-  values that must be strongly consistent (use D1 for those).
-- The `prefix` option isolates logical stores within one namespace but is **not** an access-control
-  boundary; gate sensitive reads/writes in the handler.
-- Treat decoded values as untrusted input — a malformed entry surfaces as `{ ok: false, error }` from
-  `get`; branch on it rather than assuming `data` is well-formed.
+- KV is **eventually consistent and globally cached** — never use it as the source of truth for values that must be strongly consistent (use D1 for
+  those).
+- The `prefix` option isolates logical stores within one namespace but is **not** an access-control boundary; gate sensitive reads/writes in the
+  handler.
+- Treat decoded values as untrusted input — a malformed entry surfaces as `{ ok: false, error }` from `get`; branch on it rather than assuming
+  `data` is well-formed.
 
 ### Exports
 
@@ -393,15 +414,12 @@ const sessions = resolveKVStore<typeof c.env, Session>(c, { binding: (c) => c.en
 
 ### Features
 
-- **Backend abstraction.** `ObjectStore` consumes an `ObjectStorageBackend`, not a raw bucket. Adapt
-  R2 with `r2Backend(bucket)`; the same store API works against an in-memory test backend.
-- **HTTP-ready serving.** `serveObject` returns a fully-formed `Response` with `ETag`,
-  `If-None-Match` (304), `Range`/`Content-Range` (206/416), content-type inference, and
-  `Content-Disposition` handling.
-- **Path-traversal safe.** `ObjectStore` rejects keys that start with `/` or contain `.` / `..`
-  segments.
-- **Signed URLs.** HMAC-SHA-256, time-limited, constant-time verified — for temporary delegated
-  access.
+- **Backend abstraction.** `ObjectStore` consumes an `ObjectStorageBackend`, not a raw bucket. Adapt R2 with `r2Backend(bucket)`; the same store API
+  works against an in-memory test backend.
+- **HTTP-ready serving.** `serveObject` returns a fully-formed `Response` with `ETag`, `If-None-Match` (304), `Range`/`Content-Range` (206/416),
+  content-type inference, and `Content-Disposition` handling.
+- **Path-traversal safe.** `ObjectStore` rejects keys that start with `/` or contain `.` / `..` segments.
+- **Signed URLs.** HMAC-SHA-256, time-limited, constant-time verified — for temporary delegated access.
 - **Content-type inference** from the key's file extension.
 - **`Result`-wrapped** store operations.
 
@@ -432,8 +450,7 @@ Wraps an `ObjectStorageBackend` with a typed `ObjectStore`.
 | --- | --- | --- |
 | `prefix` | `string` | Key namespace applied on write, stripped on read |
 
-**There is no `logger` option.** A store reports a fault through the `Result` it returns; the caller
-logs it with whatever logger it already holds.
+**There is no `logger` option.** A store reports a fault through the `Result` it returns; the caller logs it with whatever logger it already holds.
 
 The returned `ObjectStore`:
 
@@ -446,9 +463,8 @@ The returned `ObjectStore`:
 | `list` | `list(options?)` | `ListObjectsResult` |
 | `serveObject` | `serveObject(request, key, options?)` | `Response` — a rendered `200`/`206`/`304`/`404`/`416` |
 
-`StorePutOptions` carries `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`,
-`cacheControl`, and a `metadata` record. `StoreGetOptions` accepts a byte `range`. `StoreListOptions`
-accepts `prefix`, `limit`, `cursor`, and `delimiter`.
+`StorePutOptions` carries `contentType`, `contentEncoding`, `contentDisposition`, `contentLanguage`, `cacheControl`, and a `metadata` record.
+`StoreGetOptions` accepts a byte `range`. `StoreListOptions` accepts `prefix`, `limit`, `cursor`, and `delimiter`.
 
 #### `serveObject(backend, request, key, options?)`
 
@@ -462,9 +478,13 @@ Retrieves an object and returns a ready-to-return `Response`. It always resolves
 | `404` | Object absent |
 | `416` | Unsatisfiable / malformed `Range` |
 
-It sets `Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`, `Content-Length`, `Cache-Control` and `X-Content-Type-Options: nosniff`. With no `contentDisposition` option it falls back to the object's stored `Content-Disposition`, dropping one that carries a non-ASCII byte rather than throwing from `Headers.set`.
+It sets `Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`, `Content-Length`, `Cache-Control` and
+`X-Content-Type-Options: nosniff`. With no `contentDisposition` option it falls back to the object's stored `Content-Disposition`, dropping one that
+carries a non-ASCII byte rather than throwing from `Headers.set`.
 
-A satisfiable ranged read is **one round trip**, and a backend that cannot satisfy a range signals it by throwing `UnsatisfiableRangeError`. The round-trip guarantee, the bounds a `Range` is held to before it reaches the backend, and why `nosniff` is set unconditionally are [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §3b's.
+A satisfiable ranged read is **one round trip**, and a backend that cannot satisfy a range signals it by throwing `UnsatisfiableRangeError`. The
+round-trip guarantee, the bounds a `Range` is held to before it reaches the backend, and why `nosniff` is set unconditionally are
+[`STORAGE_BINDINGS.md`][sb-3b] §3b's.
 
 ```ts
 import { serveObject, r2Backend } from "@y-core/forge/storage/r2";
@@ -482,9 +502,8 @@ return serveObject(backend, c.request, key, { cacheControl: "public, max-age=360
 
 #### `r2Backend(bucket)` and the backend interface
 
-`r2Backend(bucket)` adapts a Cloudflare `R2Bucket` into an `ObjectStorageBackend` — the abstraction
-every R2 helper consumes. Pass its result to `createObjectStore` or `serveObject`. The backend is
-swappable: any value implementing `ObjectStorageBackend` (e.g. an in-memory test stub) works
+`r2Backend(bucket)` adapts a Cloudflare `R2Bucket` into an `ObjectStorageBackend` — the abstraction every R2 helper consumes. Pass its result to
+`createObjectStore` or `serveObject`. The backend is swappable: any value implementing `ObjectStorageBackend` (e.g. an in-memory test stub) works
 identically.
 
 ```ts
@@ -493,11 +512,9 @@ import { r2Backend, createObjectStore } from "@y-core/forge/storage/r2";
 const store = createObjectStore(r2Backend(c.env.ASSETS_BUCKET), { prefix: "uploads" });
 ```
 
-> **Security — uploads whose key a caller chooses.** `put` infers the content type from the key's
-> extension, so a caller who names their upload `x.html` has it stored as `text/html`. What that
-> risks and the three ways out are [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §3b's;
-> the third, unnamed there, is to pass an explicit `contentType` on `put` rather than letting the
-> key decide.
+> **Security — uploads whose key a caller chooses.** `put` infers the content type from the key's extension, so a caller who names their upload
+> `x.html` has it stored as `text/html`. What that risks and the three ways out are [`STORAGE_BINDINGS.md`][sb-3b] §3b's; the third, unnamed there,
+> is to pass an explicit `contentType` on `put` rather than letting the key decide.
 
 #### Content-type helpers
 
@@ -526,9 +543,8 @@ const store = resolveObjectStore(c, { binding: (c) => c.env.ASSETS_BUCKET });
 
 ### Advanced — signed URLs
 
-`createSignedObjectUrl` issues an HMAC-SHA-256-signed, time-limited URL for delegated GET access
-without exposing the bucket. The receiving route verifies it with `verifySignedObjectUrl` before
-serving.
+`createSignedObjectUrl` issues an HMAC-SHA-256-signed, time-limited URL for delegated GET access without exposing the bucket. The receiving route
+verifies it with `verifySignedObjectUrl` before serving.
 
 ```ts
 import { importSigningKey, createSignedObjectUrl, verifySignedObjectUrl, serveObject, r2Backend } from "@y-core/forge/storage/r2";
@@ -555,21 +571,17 @@ return serveObject(r2Backend(c.env.ASSETS_BUCKET), c.request, verdict.data);
 | `createSignedObjectUrl(key, baseUrl, objectKey, options?)` | `Promise<string>` | Appends `?key=`, `?exp=`, `?sig=`; `expiresInSeconds` defaults to `3600` |
 | `verifySignedObjectUrl(key, url)` | `Promise<SignedUrlVerdict>` | `Result<string, SignedUrlFailure>`: the object key, or why it was refused |
 
-The HMAC is computed over a length-prefixed payload (`${key.length}:${key}|${exp}`) so the `key`/`exp`
-boundary stays unambiguous even when the object key contains the `|` delimiter.
+The HMAC is computed over a length-prefixed payload (`${key.length}:${key}|${exp}`) so the `key`/`exp` boundary stays unambiguous even when the
+object key contains the `|` delimiter.
 
 ### Security
 
-- **Reject untrusted keys at the store, not after.** `ObjectStore` already throws on keys starting
-  with `/` or containing `.` / `..` segments. Do not bypass the store and call the backend directly
-  with user-supplied keys.
-- **Signing secrets come from a secret binding** (`c.env.SIGNING_SECRET`), never source code. Always
-  call `verifySignedObjectUrl` before serving from a signed-URL route — a missing or invalid
-  signature must fail closed (`403`).
-- **`Content-Disposition` is sanitized** — an RFC 5987 `filename*=UTF-8''…` parameter carrying the
-  exact name plus an ASCII `filename="…"` fallback, so a crafted object key cannot break out of the
-  quoted string. The fallback's exact folding rules are
-  [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §3b's.
+- **Reject untrusted keys at the store, not after.** `ObjectStore` already throws on keys starting with `/` or containing `.` / `..` segments. Do
+  not bypass the store and call the backend directly with user-supplied keys.
+- **Signing secrets come from a secret binding** (`c.env.SIGNING_SECRET`), never source code. Always call `verifySignedObjectUrl` before serving
+  from a signed-URL route — a missing or invalid signature must fail closed (`403`).
+- **`Content-Disposition` is sanitized** — an RFC 5987 `filename*=UTF-8''…` parameter carrying the exact name plus an ASCII `filename="…"` fallback,
+  so a crafted object key cannot break out of the quoted string. The fallback's exact folding rules are [`STORAGE_BINDINGS.md`][sb-3b] §3b's.
 
 ### Exports
 
@@ -625,20 +637,18 @@ app.use("*", validateR2Binding("ASSETS_BUCKET"));
 
 ### Cast-free platform bindings
 
-Each namespace publishes a structural contract — `D1DatabaseLike`, `KVNamespaceLike`, `R2BucketLike`
-and R2's object and list satellites — and each resolver is generic and constrained to the matching
-one. The compiler therefore **infers** the concrete binding type from your selector and **proves**
-it satisfies the contract, so no call site needs `as unknown as`:
+Each namespace publishes a structural contract — `D1DatabaseLike`, `KVNamespaceLike`, `R2BucketLike` and R2's object and list satellites — and each
+resolver is generic and constrained to the matching one. The compiler therefore **infers** the concrete binding type from your selector and
+**proves** it satisfies the contract, so no call site needs `as unknown as`:
 
 ```ts
 // `B` is inferred as Cloudflare's R2Bucket and proven to satisfy R2BucketLike.
 const store = resolveObjectStore(c, { binding: (c) => c.env.DOCUMENTS });
 ```
 
-The same contracts are what let an in-memory stub implementing only the consumed surface be handed
-to `r2Backend`, `createKVStore` or `createD1Client` in a test. Why the supertype is written to the
-consumed surface rather than mirroring the platform's is
-[`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §4c's.
+The same contracts are what let an in-memory stub implementing only the consumed surface be handed to `r2Backend`, `createKVStore` or
+`createD1Client` in a test. Why the supertype is written to the consumed surface rather than mirroring the platform's is
+[`STORAGE_BINDINGS.md`][sb-4c] §4c's.
 
 ### Local-dev degradation
 
@@ -652,28 +662,32 @@ const logStore = resolveKVStore(c, {
 });
 ```
 
-Which features may degrade and which must fail closed is
-[`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) §5a/§5b's — a
-security-critical binding keeps `required` at its default.
+Which features may degrade and which must fail closed is [`STORAGE_BINDINGS.md`][sb-5a] §5a/§5b's — a security-critical binding keeps `required` at
+its default.
 
 ### Cancellation is not threadable here
 
-**No storage binding forge wraps accepts an `AbortSignal`, so no client here takes one.** R2's `get`
-accepts `{ onlyIf, range }` and nothing else, and KV's and D1's methods accept no options at all.
-There is no signal to pass and none to honour, so a cancelled request does not stop storage I/O
+**No storage binding forge wraps accepts an `AbortSignal`, so no client here takes one.** R2's `get` accepts `{ onlyIf, range }` and nothing else,
+and KV's and D1's methods accept no options at all. There is no signal to pass and none to honour, so a cancelled request does not stop storage I/O
 already in flight — the platform decides when that work ends.
 
-What this leaves is the failure answer, not a retry: a binding fault is caught, logged, and failed
-closed as a `503` ([`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5c). That includes
-Cloudflare's `Network connection lost`. **No storage client retries**, because how many attempts a
-given call is worth is the consumer's decision, not this layer's.
+What this leaves is the failure answer, not a retry: a binding fault is caught, logged, and failed closed as a `503` ([`ERROR_HANDLING.md`][eh-5c]
+§5c). That includes Cloudflare's `Network connection lost`. **No storage client retries**, because how many attempts a given call is worth is the
+consumer's decision, not this layer's.
 
 ---
 
 ## See also
 
-- [`STORAGE_BINDINGS.md`](../../docs/STORAGE_BINDINGS.md) — the three clients,
-  the resolve/validate lifecycle (§4), the structural contracts (§4c), and the degradation policy
+- [`STORAGE_BINDINGS.md`][sb] — the three clients, the resolve/validate lifecycle (§4), the structural contracts (§4c), and the degradation policy
   (§5).
-- [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the `Result` primitive
-  every operation here returns, and the free `serveObject`'s exception to it.
+- [`ERROR_HANDLING.md`][eh] — the `Result` primitive every operation here returns, and the free `serveObject`'s exception to it.
+
+[eh]: ../../docs/ERROR_HANDLING.md
+[eh-5c]: ../../docs/ERROR_HANDLING.md#5c-infrastructure-errors--log-and-fail-closed
+[sb]: ../../docs/STORAGE_BINDINGS.md
+[sb-1e]: ../../docs/STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
+[sb-1g]: ../../docs/STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
+[sb-3b]: ../../docs/STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
+[sb-4c]: ../../docs/STORAGE_BINDINGS.md#4c-structural-contracts--cast-free-platform-bindings
+[sb-5a]: ../../docs/STORAGE_BINDINGS.md#5a-absent-bindings-in-local-dev

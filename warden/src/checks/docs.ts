@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
+import { githubSlug } from "../../../src/tooling/gate/checks/markdown-parse";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import type { ExportsMap } from "../../../src/tooling/gate/checks/types";
 import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
@@ -99,8 +100,11 @@ interface Section {
   line: number;
 }
 
-const INTER_DOC_CITATION = /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?\)?\s+§([0-9][A-Za-z0-9]*)((?:(?:,|\s+and|\s+or)\s+§[0-9][A-Za-z0-9]*)*)/g;
-const LINE_FINAL_DOC_LINK = /\]\([^()]*[A-Z_]+\.md\)`?\s*$/;
+// The tail is what closes the link around the document name — `)` inline, `][id]` by reference —
+// and neither is required, because a bare `X.md §N` in prose is a citation too.
+const INTER_DOC_CITATION =
+  /((?:[A-Za-z0-9_-]+\/)?[A-Z_]+\.md)`?(?:\]\[[^\]]+\]|\))?\s+§([0-9][A-Za-z0-9]*)((?:(?:,|\s+and|\s+or)\s+§[0-9][A-Za-z0-9]*)*)/g;
+const LINE_FINAL_DOC_LINK = /(?:\]\([^()]*[A-Z_]+\.md\)|\[[^\]]*[A-Z_]+\.md`?\]\[[^\]]+\])`?\s*$/;
 const LEADING_SECTION = /^\s*§[0-9][A-Za-z0-9]*/;
 const BARE_SECTION = /§([0-9][A-Za-z0-9]*)/g;
 const BACKTICKED_PATH = /`((?:src|config|\.claude)\/[^`]*)`/g;
@@ -110,6 +114,21 @@ const INLINE_CODE = /`[^`]*`/g;
 const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 
 const LIST_MARKER = /^ {0,3}(?:[-*+]|\d+[.)])\s/;
+const LINK_DEFINITION = /^ {0,3}\[([^\]]+)\]:[ \t]+(\S+)/;
+const REFERENCE_USE = /\]\[([^\]]+)\]/g;
+const INLINE_HREF = /\]\(([^)\s]+)\)/g;
+const ABSOLUTE_HREF = /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/)/;
+const ATX_HEADING = /^#{1,6}[ \t]+(.+?)[ \t]*$/;
+
+/** Every `[id]: destination` a document defines, keyed by the id a reference use writes. @public */
+export function linkDefinitions(lines: readonly string[]): Map<string, { destination: string; line: number }> {
+  const out = new Map<string, { destination: string; line: number }>();
+  for (let i = 0; i < lines.length; i++) {
+    const match = (lines[i] ?? "").match(LINK_DEFINITION);
+    if (match) out.set((match[1] ?? "").toLowerCase(), { destination: match[2] ?? "", line: i + 1 });
+  }
+  return out;
+}
 
 /** Strip fenced and indented code blocks, leaving the line count intact so reported line numbers
  *  stay true. Indentation is code only where CommonMark says so — after a blank line and outside a
@@ -486,12 +505,48 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     }
   }
 
+  const definitionCache = new Map<string, Map<string, { destination: string; line: number }>>();
+  const definitionsOf = (file: string): Map<string, { destination: string; line: number }> => {
+    const held = definitionCache.get(file);
+    if (held !== undefined) return held;
+    const built = linkDefinitions(stripFences(sources.get(file) ?? readFileSync(resolve(root, file), "utf-8")));
+    definitionCache.set(file, built);
+    return built;
+  };
+
+  // Every document path a line points at, whichever form it is written in. Under reference style the
+  // line carries an id and the destination sits in the definition block, so a check reading only the
+  // line sees no path at all.
+  const hrefsOn = (file: string, line: string): string[] => {
+    const out: string[] = [];
+    for (const match of line.matchAll(/\]\((\.{0,2}\/?[A-Za-z0-9._\-/]+\.md)(?:#[^)\s]*)?\)/g)) out.push(match[1] ?? "");
+    const definitions = definitionsOf(file);
+    for (const match of line.matchAll(REFERENCE_USE)) {
+      const destination = definitions.get((match[1] ?? "").toLowerCase())?.destination;
+      if (destination !== undefined) out.push(destination.split("#")[0] ?? "");
+    }
+    return out;
+  };
+
+  const headingCache = new Map<string, Set<string>>();
+  const slugsOf = (path: string): Set<string> => {
+    const held = headingCache.get(path);
+    if (held !== undefined) return held;
+    const slugs = new Set(
+      stripFences(readFileSync(path, "utf-8"))
+        .map((line) => line.match(ATX_HEADING)?.[1])
+        .filter((title) => title !== undefined)
+        .map((title) => githubSlug(title)),
+    );
+    headingCache.set(path, slugs);
+    return slugs;
+  };
+
   // Keys are `subdir/DOC.md` once the tree nests, but a citation may name either form. A same-line
   // link resolves it exactly; a bare basename is settled by where the citing file sits.
   const docKeys = [...sectionsByDoc.keys()];
   const resolveDocKey = (file: string, cited: string, line: string): { keys?: string[]; ambiguous?: string[] } => {
-    for (const match of line.matchAll(/\]\((\.{0,2}\/?[A-Za-z0-9._\-/]+\.md)\)/g)) {
-      const [, href = ""] = match;
+    for (const href of hrefsOn(file, line)) {
       if (href !== cited && !href.endsWith(`/${cited}`)) continue;
       const target = resolve(dirname(resolve(root, file)), href);
       for (const base of docRoots) {
@@ -555,6 +610,22 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
     const ownSections = new Set((parsed.get(file) ?? []).map((section) => section.number));
     const fileDir = dirname(resolve(root, file));
+    const definitions = definitionsOf(file);
+    const usedIds = new Set<string>();
+
+    // A path was resolved and its `#anchor` thrown away, so a link could name a real document at a
+    // heading that is not in it — the exact rot a per-section citation introduces at scale.
+    const targetFindings = (spelling: string, at: number): Finding[] => {
+      if (ABSOLUTE_HREF.test(spelling)) return [];
+      const hash = spelling.indexOf("#");
+      const path = hash === -1 ? spelling : spelling.slice(0, hash);
+      const anchor = hash === -1 ? undefined : spelling.slice(hash + 1);
+      const target = path === "" ? resolve(root, file) : resolve(fileDir, path);
+      if (!existsSync(target)) return [fail(`link target \`${path}\` does not exist`, { file, line: at })];
+      if (anchor === undefined || anchor === "" || !target.endsWith(".md")) return [];
+      if (slugsOf(target).has(anchor)) return [];
+      return [fail(`\`#${anchor}\` names no heading in \`${path === "" ? "this file" : path}\``, { file, line: at })];
+    };
 
     // A citation wrapped across a line break is one citation: the link ends a line and its §N opens
     // the next, so the pair is matched joined and the continuation's §N is not a bare token.
@@ -567,9 +638,14 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       const line = stripped[i];
       if (line === undefined) continue;
 
-      for (const match of line.matchAll(/\]\((\.{0,2}\/?[A-Za-z0-9._\-/]+\.md)(?:#[A-Za-z0-9-]+)?\)/g)) {
-        const [, href = ""] = match;
-        if (!existsSync(resolve(fileDir, href))) findings.push(fail(`link target \`${href}\` does not exist`, { file, line: i + 1 }));
+      for (const match of line.matchAll(INLINE_HREF)) findings.push(...targetFindings(match[1] ?? "", i + 1));
+
+      // Scanned with the code spans blanked: `theme[a][b]` in backticks is a property path, and
+      // reading it as a reference use reports an id nobody wrote.
+      for (const match of line.replace(INLINE_CODE, " ").matchAll(REFERENCE_USE)) {
+        const id = (match[1] ?? "").toLowerCase();
+        if (definitions.has(id)) usedIds.add(id);
+        else findings.push(fail(`\`[${id}]\` is used as a link but nothing defines it`, { file, line: i + 1 }));
       }
 
       const continuation = wrappedContinuations.has(i + 1) ? (stripped[i + 1] ?? "") : "";
@@ -607,6 +683,13 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
           findings.push(fail(`intra-document \`§${section}\` does not resolve to a section in this file`, { file, line: i + 1 }));
         }
       }
+    }
+
+    // An unused definition is silent rot: the path it names goes on being resolved, so every other
+    // check stays green while the link the definition was written for is gone.
+    for (const [id, definition] of definitions) {
+      if (usedIds.has(id)) findings.push(...targetFindings(definition.destination, definition.line));
+      else findings.push(fail(`link definition \`[${id}]\` is never used`, { file, line: definition.line }));
     }
 
     if (!isNumbered(file)) continue;

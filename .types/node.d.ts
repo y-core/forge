@@ -82,6 +82,7 @@ declare module "node:path" {
   export function resolve(...paths: string[]): string;
   export function dirname(path: string): string;
   export function join(...paths: string[]): string;
+  export function isAbsolute(path: string): boolean;
   export function basename(path: string, ext?: string): string;
   export function extname(path: string): string;
   export function relative(from: string, to: string): string;
@@ -100,22 +101,24 @@ declare module "node:fs" {
   export function readFileSync(path: string, encoding: "utf-8"): string;
   export function writeFileSync(path: string, data: string | Uint8Array): void;
   export function writeFileSync(path: string, data: string, encoding: "utf-8"): void;
-  // The options form, for a file that must be created with a restrictive mode.
-  export function writeFileSync(path: string, data: string, options: { encoding: "utf-8"; mode: number }): void;
+  // The options form, for a file that must be created with a restrictive mode, or only when absent.
+  export function writeFileSync(path: string, data: string, options: { encoding: "utf-8"; mode?: number; flag?: "wx" }): void;
   export function existsSync(path: string | URL): boolean;
   export function chmodSync(path: string, mode: number): void;
   export function utimesSync(path: string, atime: Date | number, mtime: Date | number): void;
   export interface Stats {
     mode: number;
     size: number;
+    mtimeMs: number;
     isDirectory(): boolean;
     isFile(): boolean;
   }
   export function statSync(path: string): Stats;
   export function realpathSync(path: string): string;
-  export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
+  export function mkdirSync(path: string, options?: { recursive?: boolean; mode?: number }): void;
   export function mkdtempSync(prefix: string): string;
   export function copyFileSync(src: string, dest: string): void;
+  export function cpSync(src: string, dest: string, options?: { recursive?: boolean }): void;
   export function renameSync(oldPath: string, newPath: string): void;
   export function symlinkSync(target: string, path: string): void;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
@@ -149,6 +152,7 @@ declare module "node:child_process" {
     stdio?: string | (string | number)[];
     env?: Record<string, string | undefined>;
     encoding?: string;
+    maxBuffer?: number;
   }
   interface SpawnSyncReturns {
     status: number | null;
@@ -156,6 +160,7 @@ declare module "node:child_process" {
     /** Present only when the child's output was captured and decoded — i.e. when `stdio` did not
      *  redirect it away and an `encoding` was given. */
     stdout?: string;
+    stderr?: string;
   }
   export function spawnSync(command: string, args?: string[], options?: SpawnSyncOptions): SpawnSyncReturns;
   interface SpawnOptions {
@@ -174,6 +179,15 @@ declare module "node:child_process" {
     unref(): void;
   }
   export function spawn(command: string, args?: string[], options?: SpawnOptions): ChildProcess;
+}
+
+// The in-memory stream a test hands `confirm` in place of a terminal.
+declare module "node:stream" {
+  export class PassThrough implements NodeStdioStream {
+    isTTY?: boolean;
+    write(data: string): boolean;
+    end(data?: string): void;
+  }
 }
 
 declare module "node:net" {

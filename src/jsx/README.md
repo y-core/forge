@@ -6,36 +6,29 @@ audience: consumer
 
 # `@y-core/forge/jsx`
 
-Forge's in-house server-side rendering (SSR) JSX runtime. It is **not** React — there is no virtual
-DOM, no hydration, and no client runtime. JSX trees are rendered straight to an HTML string on the
-server (a Cloudflare Worker), with security defaults baked into the renderer.
+Forge's in-house server-side rendering (SSR) JSX runtime. It is **not** React — there is no virtual DOM, no hydration, and no client runtime. JSX
+trees are rendered straight to an HTML string on the server (a Cloudflare Worker), with security defaults baked into the renderer.
 
 Two facts up front, because they are the most common source of import mistakes:
 
-1. **The JSX transform is wired through `tsconfig`, not a manual import.** You set
-   `"jsxImportSource": "@y-core/forge/jsx"` and the TypeScript compiler auto-imports
-   `@y-core/forge/jsx/jsx-runtime` for every `.tsx` file. Outside the renderer entry points
-   (below), you rarely import from the `jsx` namespace directly.
-2. **The renderer lives at `@y-core/forge/jsx`.** `renderPage` and `renderToString` are imported
-   from the `@y-core/forge/jsx` barrel. The former `@y-core/forge/render` subpath has been
-   removed — these symbols are now public only via `@y-core/forge/jsx`.
+1. **The JSX transform is wired through `tsconfig`, not a manual import.** You set `"jsxImportSource": "@y-core/forge/jsx"` and the TypeScript
+   compiler auto-imports `@y-core/forge/jsx/jsx-runtime` for every `.tsx` file. Outside the renderer entry points (below), you rarely import from
+   the `jsx` namespace directly.
+2. **The renderer lives at `@y-core/forge/jsx`.** `renderPage` and `renderToString` are imported from the `@y-core/forge/jsx` barrel. The former
+   `@y-core/forge/render` subpath has been removed — these symbols are now public only via `@y-core/forge/jsx`.
 
 ---
 
 ## Features
 
-- **Zero-runtime SSR** — JSX compiles to plain element objects and renders to an HTML string. Nothing
-  ships to the browser from this package.
-- **Async function components** — components may be `async` and `await` data; the renderer awaits them
-  and only enters the microtask queue when a subtree is actually asynchronous (synchronous subtrees
-  render without Promise overhead).
-- **Security defaults in the renderer** — HTML-escaping of text and attribute values, URL-attribute
-  scheme sanitization (blocks `javascript:` injection), and CSP-aligned dropping of inline `style`
-  attributes.
-- **Full HTML + SVG typing** — `IntrinsicElements` covers standard HTML, SVG, ARIA, and `hx-*` (htmx)
-  attributes, plus a catch-all for `data-*`.
-- **Drop-in transform compatibility** — supports the automatic JSX runtime, a dev runtime, and a
-  classic-mode `React.createElement` shim for esbuild's zero-config fallback.
+- **Zero-runtime SSR** — JSX compiles to plain element objects and renders to an HTML string. Nothing ships to the browser from this package.
+- **Async function components** — components may be `async` and `await` data; the renderer awaits them and only enters the microtask queue when a
+  subtree is actually asynchronous (synchronous subtrees render without Promise overhead).
+- **Security defaults in the renderer** — HTML-escaping of text and attribute values, URL-attribute scheme sanitization (blocks `javascript:`
+  injection), and CSP-aligned dropping of inline `style` attributes.
+- **Full HTML + SVG typing** — `IntrinsicElements` covers standard HTML, SVG, ARIA, and `hx-*` (htmx) attributes, plus a catch-all for `data-*`.
+- **Drop-in transform compatibility** — supports the automatic JSX runtime, a dev runtime, and a classic-mode `React.createElement` shim for
+  esbuild's zero-config fallback.
 
 ---
 
@@ -49,8 +42,8 @@ Point your `tsconfig.json` at the forge runtime:
 { "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "@y-core/forge/jsx" } }
 ```
 
-With `jsx: "react-jsx"`, the compiler auto-imports `@y-core/forge/jsx/jsx-runtime` in every file that
-uses JSX. You write components with no manual runtime import:
+With `jsx: "react-jsx"`, the compiler auto-imports `@y-core/forge/jsx/jsx-runtime` in every file that uses JSX. You write components with no manual
+runtime import:
 
 ```tsx
 function Greeting({ name }: { name: string }) {
@@ -62,8 +55,7 @@ function Greeting({ name }: { name: string }) {
 
 ### 2. Render a full page
 
-Use `renderPage` inside a page view function to produce a complete HTML `Response` (it prepends
-`<!DOCTYPE html>`):
+Use `renderPage` inside a page view function to produce a complete HTML `Response` (it prepends `<!DOCTYPE html>`):
 
 ```tsx
 import { renderPage } from "@y-core/forge/jsx";
@@ -88,8 +80,7 @@ export async function view(): Promise<Response> {
 
 ### 3. Render a fragment
 
-When you need the HTML string rather than a full-page `Response` (partial responses, embedding,
-htmx swaps), use `renderToString`:
+When you need the HTML string rather than a full-page `Response` (partial responses, embedding, htmx swaps), use `renderToString`:
 
 ```tsx
 import { renderToString } from "@y-core/forge/jsx";
@@ -100,16 +91,14 @@ const safe = await renderToString(<Greeting name='forge' />);
 
 ### 4. Enable the classic-mode shim (esbuild zero-config)
 
-If a build path falls back to esbuild's classic JSX (`React.createElement` / `React.Fragment`),
-import the register shim **once** at your application entry point. It installs a `React` global that
-resolves to forge's runtime:
+If a build path falls back to esbuild's classic JSX (`React.createElement` / `React.Fragment`), import the register shim **once** at your
+application entry point. It installs a `React` global that resolves to forge's runtime:
 
 ```ts
 import "@y-core/forge/jsx/register";
 ```
 
-You do not need this when `jsxImportSource` is configured for the automatic runtime — it is only for
-the classic fallback path.
+You do not need this when `jsxImportSource` is configured for the automatic runtime — it is only for the classic fallback path.
 
 ---
 
@@ -124,14 +113,13 @@ the classic fallback path.
 | `@y-core/forge/jsx/register` | `register.ts` | Classic-mode shim for esbuild's zero-config fallback. |
 | `@y-core/forge/jsx` | `mod.ts` | `renderPage` / `renderToString` — the public renderer (namespace barrel). |
 
-You import directly from `jsx-runtime`, `jsx-dev-runtime`, or `register` only in build configuration
-or app entry setup — never to call a function in component code.
+You import directly from `jsx-runtime`, `jsx-dev-runtime`, or `register` only in build configuration or app entry setup — never to call a function
+in component code.
 
 ### `renderPage(node, init?)`
 
-Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype. Import from
-`@y-core/forge/jsx`. Use it in `definePage` view functions, 404 handlers, and any handler that
-returns a complete HTML document.
+Renders a JSX tree to a full-page HTML `Response`, prepending the HTML5 doctype. Import from `@y-core/forge/jsx`. Use it in `definePage` view
+functions, 404 handlers, and any handler that returns a complete HTML document.
 
 ```ts
 function renderPage(node: JSXNode, init?: { status?: number; headers?: Record<string, string> }): Promise<Response>;
@@ -155,8 +143,7 @@ export async function notFound(): Promise<Response> {
 
 ### `renderToString(node)`
 
-Renders a JSX tree to a `SafeHtml` value (no doctype, no `Response` wrapper). Import from
-`@y-core/forge/jsx`.
+Renders a JSX tree to a `SafeHtml` value (no doctype, no `Response` wrapper). Import from `@y-core/forge/jsx`.
 
 ```ts
 function renderToString(node: unknown): Promise<SafeHtml>;
@@ -166,13 +153,13 @@ function renderToString(node: unknown): Promise<SafeHtml>;
 | --- | --- | --- |
 | `node` | `JSXNode` | The JSX tree to render. |
 
-Returns a `Promise<SafeHtml>` — a string branded as safe, already escaped. Use it for partial HTML
-responses or to compose markup that another `SafeHtml` template embeds.
+Returns a `Promise<SafeHtml>` — a string branded as safe, already escaped. Use it for partial HTML responses or to compose markup that another
+`SafeHtml` template embeds.
 
 ### `Fragment`
 
-Renders its children without a wrapper element. Use the shorthand `<>…</>` or `<Fragment>…</Fragment>`
-(the shorthand resolves to `Fragment` via the transform).
+Renders its children without a wrapper element. Use the shorthand `<>…</>` or `<Fragment>…</Fragment>` (the shorthand resolves to `Fragment` via the
+transform).
 
 ```tsx
 function Row() {
@@ -187,13 +174,12 @@ function Row() {
 
 ### Component types
 
-These types are available through the JSX transform configuration. You typically annotate component
-signatures with them rather than importing them directly in component code.
+These types are available through the JSX transform configuration. You typically annotate component signatures with them rather than importing them
+directly in component code.
 
 #### `FC<P>`
 
-Functional component type: receives props (plus an optional `children`) and returns a `JSXElement` or
-`null`.
+Functional component type: receives props (plus an optional `children`) and returns a `JSXElement` or `null`.
 
 ```tsx
 import type { FC } from "@y-core/forge/jsx";
@@ -218,9 +204,8 @@ function Card({ title, children }: PropsWithChildren<{ title: string }>) {
 
 #### `JSXNode`
 
-The union of every renderable value: `JSXElement`, `SafeHtml`, `string`, `number`, `boolean`, `null`,
-`undefined`, and arrays thereof. `false`, `true`, `null`, and `undefined` render to empty output —
-which makes conditional rendering with `&&` safe:
+The union of every renderable value: `JSXElement`, `SafeHtml`, `string`, `number`, `boolean`, `null`, `undefined`, and arrays thereof. `false`,
+`true`, `null`, and `undefined` render to empty output — which makes conditional rendering with `&&` safe:
 
 ```tsx
 {
@@ -230,9 +215,8 @@ which makes conditional rendering with `&&` safe:
 
 #### `JSXElement`
 
-The element object produced by the runtime, branded with a module-private symbol so that only
-`createElement` can produce a value `isValidElement` accepts — a `JSON.parse`'d object cannot. You
-rarely construct these by hand; the JSX transform produces them.
+The element object produced by the runtime, branded with a module-private symbol so that only `createElement` can produce a value `isValidElement`
+accepts — a `JSON.parse`'d object cannot. You rarely construct these by hand; the JSX transform produces them.
 
 ---
 
@@ -240,23 +224,19 @@ rarely construct these by hand; the JSX transform produces them.
 
 ### How JSX becomes HTML
 
-1. The TypeScript compiler (driven by `jsxImportSource`) rewrites JSX syntax into calls to `jsx` /
-   `jsxs` from `@y-core/forge/jsx/jsx-runtime` (or `jsxDEV` from the dev runtime). Each call delegates
-   to `createElement`, producing a `JSXElement` object: `{ type, props, key }` plus the runtime's
-   private symbol brand.
-2. `renderToString` (or `renderPage`) walks that tree. Function components are invoked with their
-   props; `Fragment` is detected by reference and its children are rendered without a wrapper;
-   intrinsic elements emit `<tag …>children</tag>`.
-3. The result is wrapped as `SafeHtml`. `renderPage` additionally prepends `<!DOCTYPE html>` and wraps
-   it in an HTML `Response`.
+1. The TypeScript compiler (driven by `jsxImportSource`) rewrites JSX syntax into calls to `jsx` / `jsxs` from `@y-core/forge/jsx/jsx-runtime` (or
+   `jsxDEV` from the dev runtime). Each call delegates to `createElement`, producing a `JSXElement` object: `{ type, props, key }` plus the
+   runtime's private symbol brand.
+2. `renderToString` (or `renderPage`) walks that tree. Function components are invoked with their props; `Fragment` is detected by reference and its
+   children are rendered without a wrapper; intrinsic elements emit `<tag …>children</tag>`.
+3. The result is wrapped as `SafeHtml`. `renderPage` additionally prepends `<!DOCTYPE html>` and wraps it in an HTML `Response`.
 
 ### Synchronous fast path with async escape hatch
 
-The renderer renders synchronously whenever it can. A subtree that contains no async components and no
-async children is joined into a string without ever entering the microtask queue. The moment a
-function component returns a thenable (or an async child appears), the renderer awaits it and the
-enclosing subtree resolves through a `Promise`. Async components are detected by duck-typed thenable
-check, so custom thenables (such as deferred islands) are awaited too.
+The renderer renders synchronously whenever it can. A subtree that contains no async components and no async children is joined into a string
+without ever entering the microtask queue. The moment a function component returns a thenable (or an async child appears), the renderer awaits it
+and the enclosing subtree resolves through a `Promise`. Async components are detected by duck-typed thenable check, so custom thenables (such as
+deferred islands) are awaited too.
 
 ```tsx
 async function User({ id }: { id: string }) {
@@ -279,16 +259,14 @@ The renderer is the security boundary for SSR output:
 | `aria-*` truthy values | Emitted as string `"true"` per the WAI-ARIA spec. |
 | Void elements (`br`, `img`, `input`, `hr`, …) | Emitted with no closing tag and no children. |
 
-Because inline `style` is dropped, move styling to classes (Tailwind/CSS) — a `style="…"` prop will
-not appear in the output even though it type-checks. Why the drop is the renderer's rather than the
-CSP's alone is [`UI_SSR_COMPONENTS.md`](../../docs/UI_SSR_COMPONENTS.md) §1a's; which schemes the URL
-pass admits, and why no `hx-*` attribute is covered by it, are
-[`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) §2d's.
+Because inline `style` is dropped, move styling to classes (Tailwind/CSS) — a `style="…"` prop will not appear in the output even though it
+type-checks. Why the drop is the renderer's rather than the CSP's alone is [`UI_SSR_COMPONENTS.md`][usc-1a] §1a's; which schemes the URL pass
+admits, and why no `hx-*` attribute is covered by it, are [`SECURITY_HARDENING.md`][sh-2d] §2d's.
 
 ### Embedding pre-rendered HTML
 
-A `SafeHtml` value passes through the renderer unescaped. Produce one with `rawHtml` from
-`@y-core/forge/http` only for content you have already vetted as safe — never wrap untrusted input.
+A `SafeHtml` value passes through the renderer unescaped. Produce one with `rawHtml` from `@y-core/forge/http` only for content you have already
+vetted as safe — never wrap untrusted input.
 
 ```tsx
 import { rawHtml } from "@y-core/forge/http";
@@ -306,19 +284,23 @@ function Icon({ markup }: { markup: SafeHtml }) {
 | Dev | `jsxDEV`, `Fragment` | Dev transform with `jsx: "react-jsxdev"`. |
 | Classic shim | `register` side-effect | esbuild zero-config fallback; installs a `React` global mapping `createElement`/`Fragment` to the forge runtime. |
 
-All three converge on the same `createElement` factory and the same `renderToString` walk — the choice
-of runtime affects only how the compiler emits element-construction calls, never the rendered output.
+All three converge on the same `createElement` factory and the same `renderToString` walk — the choice of runtime affects only how the compiler
+emits element-construction calls, never the rendered output.
 
 ---
 
 ## See also
 
-- [`@y-core/forge/http`](../http/README.md) — `htmlResponse`, `fragmentResponse`, and the `SafeHtml`
-  brand this renderer passes through unescaped.
-- [`@y-core/forge/ui/core`](../ui/README.md) — the SSR components built on this runtime.
-- [`UI_SSR_COMPONENTS.md`](../../docs/UI_SSR_COMPONENTS.md) — the component contract the renderer
-  serves, and the dropped-`style` ruling (§1a).
-- [`SECURITY_HARDENING.md`](../../docs/SECURITY_HARDENING.md) — automatic URL sanitization at render
-  time and its limits (§2d).
-- [`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) — the `html` tag and `escapeHtml`, for the raw
-  string paths outside this runtime (§3).
+- [`@y-core/forge/http`][http-readme] — `htmlResponse`, `fragmentResponse`, and the `SafeHtml` brand this renderer passes through unescaped.
+- [`@y-core/forge/ui/core`][ui-readme] — the SSR components built on this runtime.
+- [`UI_SSR_COMPONENTS.md`][usc] — the component contract the renderer serves, and the dropped-`style` ruling (§1a).
+- [`SECURITY_HARDENING.md`][sh] — automatic URL sanitization at render time and its limits (§2d).
+- [`ERROR_HANDLING.md`][eh] — the `html` tag and `escapeHtml`, for the raw string paths outside this runtime (§3).
+
+[eh]: ../../docs/ERROR_HANDLING.md
+[http-readme]: ../http/README.md
+[sh]: ../../docs/SECURITY_HARDENING.md
+[sh-2d]: ../../docs/SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization
+[ui-readme]: ../ui/README.md
+[usc]: ../../docs/UI_SSR_COMPONENTS.md
+[usc-1a]: ../../docs/UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes

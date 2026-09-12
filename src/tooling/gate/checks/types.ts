@@ -474,7 +474,12 @@ export interface LineLengthRule {
   level: "fail" | "warn";
   /** Path prefixes the rule applies to; absent, it applies everywhere. */
   scope?: readonly string[];
+  /** Line kinds the limit does not bind — a line whose width is not the author's to choose. */
+  exempt?: readonly LineLengthExemption[];
 }
+
+/** A line kind the wrap limit does not bind. @public */
+export type LineLengthExemption = "link" | "table" | "heading" | "fence";
 
 /** The house markdown conventions. Every key is optional, and every one accepts `"off"`. @public */
 export interface MarkdownRules {
@@ -489,8 +494,8 @@ export interface MarkdownRules {
   hardTabs?: "forbid" | "off";
   trailingWhitespace?: TrailingWhitespaceRule | "off";
   thematicBreak?: "---" | "***" | "___" | "off";
-  /** Reports reference-style links. Report-only. */
-  linkStyle?: "inline" | "off";
+  /** Which link form the corpus is written in — the other one is reported. Report-only. */
+  linkStyle?: "inline" | "reference" | "off";
   /** Reports a URL written without `<>` or a link. Report-only. */
   bareUrls?: "warn" | "fail" | "off";
   /** Reports a second level-1 heading. Report-only. */

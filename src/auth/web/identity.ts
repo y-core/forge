@@ -86,7 +86,8 @@ export function clearAuthSession(session: Session): void {
 /** Reads the identity `session` claims and confirms it against the store as of `at`, dropping the session's auth keys when the store refuses the id, the absolute lifetime has run out, or the account revoked its sessions; a store outage denies without clearing. @public */
 export async function resolveAuthIdentity(session: Session, users: Pick<UserStore, "findById">, at: number): Promise<AuthIdentity | null> {
   const userId = session.get(AUTH_SESSION_KEY);
-  // No clear on the anonymous path: `Session.unset` dirties even an absent key, so every anonymous GET would carry a `Set-Cookie`.
+  // No clear on the anonymous path: `Session.unset` dirties even an absent key, so under KV every
+  // anonymous GET would perform a real `kv.put` before returning an id the middleware then suppresses.
   if (typeof userId !== "string" || userId.length === 0) return null;
 
   // A session with no stamp predates this field, and there is no bound that could be checked

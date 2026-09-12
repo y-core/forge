@@ -55,6 +55,8 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "tooling/assets": { site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
   "tooling/cf": { "tooling/cli": "value", "tooling/term": "value", site: "value" },
   "tooling/cli": { "tooling/term": "value" },
+  // The fingerprint rules have one home in `storage/db`, so the CLI and a Worker judge a schema by the same spelling.
+  "tooling/db": { "storage/db": "value", "tooling/cf": "value", "tooling/cli": "value", "tooling/term": "value" },
   // Each fact has one home: the checks judge literals with the real `cn` and share
   // `ui/contracts/theme`'s OKLab conversion. The gate is the lower layer: it owns the changelog
   // and semver parsers and the barrel parser, and `tooling/release` builds its workflow on them.

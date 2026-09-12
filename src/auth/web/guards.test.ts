@@ -625,8 +625,7 @@ describe("createAuthGuards", () => {
     const signin = groups.find((group) => group.paths.includes("/auth/signin"));
     expect(signin?.origin).toBe(origin);
     expect(signin?.middleware).toBeUndefined();
-    // The ceremony POSTs a browser controller drives, which carry no identity for a guard to read.
-    expect(groups.find((group) => group.paths.includes("/auth/passkey/authenticate/begin"))?.origin).toBe(origin);
+    expect(groups.find((group) => group.paths.includes("/auth/signup"))?.origin).toBe(origin);
   });
 
   // The seam the group table exists to make possible: without it a consumer matches groups by path
@@ -643,12 +642,12 @@ describe("createAuthGuards", () => {
   // is for an origin allowlist — otherwise the sign-in POSTs would have nowhere to carry one.
   it("collects a guard-less group for a rate limit alone, with no allowlist configured", () => {
     const limit = { limiter: () => undefined, required: false };
-    const groups = createAuthGuards({ ...chain, rateLimit: { "auth.passkey": limit } });
-    const ceremony = groups.find((group) => group.paths.includes("/auth/passkey/authenticate/begin"));
+    const groups = createAuthGuards({ ...chain, rateLimit: { auth: limit } });
+    const unguarded = groups.find((group) => group.paths.includes("/auth/signin"));
 
-    expect(ceremony?.rateLimit).toBe(limit);
-    expect(ceremony?.origin).toBeUndefined();
-    expect(ceremony?.middleware).toBeUndefined();
+    expect(unguarded?.rateLimit).toBe(limit);
+    expect(unguarded?.origin).toBeUndefined();
+    expect(unguarded?.middleware).toBeUndefined();
   });
 
   it("leaves a group with no mutating leaf of its own unprotected, and a group with no direct leaf absent", () => {

@@ -2,6 +2,8 @@ const ESCAPE_MAP: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&g
 
 /** Escapes `&`, `<`, `>`, `"`, and `'` for safe HTML text embedding. @public */
 export function escapeHtml(str: string): string {
+  // Non-global test: a `/g` regex carries `lastIndex` across calls and would alternate its answer.
+  if (!/[&<>"']/.test(str)) return str;
   return str.replace(/[&<>"']/g, (ch) => ESCAPE_MAP[ch] ?? ch);
 }
 

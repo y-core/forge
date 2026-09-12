@@ -7,8 +7,9 @@ export default {
   sources: ["src", "docs", "warden", "README.md", "CLAUDE.md", "AGENTS.md"],
   // `.claude/` is written by `warden sync` from `warden/claude/`, which is checked instead — the
   // source owns the bytes, so formatting it is what keeps the copy conforming. `CHANGELOG.md` is
-  // the release tooling's.
-  exclude: ["CHANGELOG.md", ".claude", "tmp"],
+  // the release tooling's, and `warden/CATALOGUE.md` is `warden catalogue --write`'s: one bullet per
+  // document, whose width is the document's own frontmatter sentence and not an author's wrap.
+  exclude: ["CHANGELOG.md", "warden/CATALOGUE.md", ".claude", "tmp"],
   rules: {
     tables: "compact",
     bulletMarker: "-",
@@ -20,13 +21,13 @@ export default {
     hardTabs: "forbid",
     trailingWhitespace: { allowHardBreak: 2 },
     thematicBreak: "---",
-    linkStyle: "inline",
-    bareUrls: "warn",
+    linkStyle: "reference",
+    bareUrls: "fail",
     singleH1: true,
     blankLineAround: ["heading", "fence", "table", "list", "blockquote"],
-    // Off: the corpus wraps at 100 by habit but overruns it on 502 lines — many by a trailing link
-    // or a `<!-- rule:… -->` marker that cannot move — so the rule would print noise on every run
-    // rather than a signal. Turn it back on with `{ limit, level, scope }` once a tree holds the wrap.
-    lineLength: false,
+    // 148 is `.oxfmtrc.json`'s `printWidth`, so prose and TypeScript wrap at the same column and a
+    // document quoting code keeps both under one rule. The exemptions are the lines whose width is
+    // not the author's to choose.
+    lineLength: { limit: 148, level: "fail", exempt: ["link", "table", "heading", "fence"] },
   },
 } satisfies Omit<MarkdownCheckConfig, "root">;

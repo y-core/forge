@@ -1,4 +1,9 @@
-import type { AuthAlgorithm } from "./types";
+import type { AuthAlgorithm, AuthFactorKind } from "./types";
+
+// A primary factor must identify the visitor: `email-otp` does, because the visitor types the
+// address. A ceremony authenticating from nothing is not a sign-in this library will start.
+/** The factor kinds that identify the visitor, and so the only ones that may be offered as primary. @public */
+export const AUTH_IDENTIFYING_FACTORS = ["email-otp"] as const satisfies readonly AuthFactorKind[];
 
 // `-8` is omitted because advertising an algorithm this runtime may not be able to verify is
 // fail-open: the browser enrols an Ed25519 credential and the account is then locked out for good.
@@ -55,3 +60,12 @@ export const AUTH_PASSKEY_TTL_MIN_SECONDS = AUTH_KV_MIN_TTL_SECONDS;
 
 /** Longest ceremony lifetime a deployment may configure — a replayable challenge should not outlive an emailed code. @public */
 export const AUTH_PASSKEY_TTL_MAX_SECONDS = 600;
+
+// A credential id is base64url of at most 1023 bytes (WebAuthn L3 §5.8.3), so 1400 characters is
+// past every real one. Bounded and shaped before the store, since an id of any length and any
+// alphabet otherwise reaches `findByCredentialId` as a bind parameter.
+/** Longest credential id an assertion may present. @public */
+export const AUTH_PASSKEY_ASSERTION_ID_MAX = 1400;
+
+/** The alphabet a presented credential id must be drawn from. @public */
+export const AUTH_PASSKEY_ASSERTION_ID_SHAPE = /^[A-Za-z0-9_-]+$/;

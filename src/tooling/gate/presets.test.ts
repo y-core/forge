@@ -107,6 +107,32 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the db rows", () => {
+  it("emits the digests row in standard and the replay row in full, behind the installed runtime", () => {
+    const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:schema"));
+
+    expect(rows.map((step) => [step.label, step.tier])).toEqual([
+      ["db:schema:digests", "standard"],
+      ["db:schema", "full"],
+    ]);
+    expect(rows.at(-1)?.requires?.tool).toBe("workerd");
+  });
+
+  it("orders the db rows before the browser and workerd rows", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ db: true, browser: true, workerd: true })).slice(-4)).toEqual([
+      "db:schema:digests",
+      "db:schema",
+      "test:browser",
+      "test:workerd",
+    ]);
+  });
+
+  it("omits both rows for an app with no database", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("db:schema:digests");
+    expect(labelsOf(cloudflareWorkerSteps({ db: false }))).not.toContain("db:schema");
+  });
+});
+
 describe("cloudflareWorkerSteps() — the design rows", () => {
   it("emits three rows before test when no cssDir is given", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ design: { stylesheet: "src/assets/tailwind.css" } }));

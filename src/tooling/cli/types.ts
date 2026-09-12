@@ -83,7 +83,8 @@ export interface CliContext {
   width: number;
 }
 
-export type CliErrorKind = "unknown-flag" | "missing-value" | "invalid-args" | "missing-command";
+/** Why a command failed: a flag or argument problem, a missing handler, or a command this tool ran that failed. @public */
+export type CliErrorKind = "unknown-flag" | "missing-value" | "invalid-args" | "missing-command" | "external";
 
 /** Map of tool command → install hint, surfaced verbatim when the tool is missing. */
 export type ToolHints = Record<string, string>;
@@ -183,4 +184,28 @@ export interface ArgToken {
   value?: string;
   /** Whether `value` came from an `=` rather than the next element. */
   inline?: boolean;
+}
+
+/** What `confirm` asks, and where it asks it. @public */
+export interface ConfirmOptions {
+  /** The object of the action, completing `About to <verb> <what>`. */
+  what: string;
+  /** Names of the things affected, listed after a colon in the prompt and the refusal. */
+  detail?: string;
+  /** One sentence on why the action cannot be taken back. */
+  consequence: string;
+  /** The verb the prompt and the refusal use. Defaults to `proceed`. */
+  verb?: string;
+  /** `--yes`: skip the prompt entirely. */
+  yes?: boolean | undefined;
+  /** Stream the answer is read from. Defaults to `process.stdin`. */
+  input?: NodeStdioStream;
+  /** Stream the question is written to. Defaults to `process.stdout`. */
+  output?: NodeStdioStream;
+  /** Whether a prompt can be shown. Defaults to `input.isTTY`. */
+  interactive?: boolean;
+  /** Where the preamble lines go. Defaults to `console.log`. */
+  print?: (line: string) => void;
+  /** The error a `n` answer raises. */
+  cancelMessage?: string;
 }
