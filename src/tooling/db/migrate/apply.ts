@@ -2,24 +2,13 @@ import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
 import { confirmPrinter } from "../context";
-import { migrationsHome } from "../home";
-import { INVENTORY_SELECT, quoteSqlIdentifier, toSchemaObjects } from "../sql";
+import { refuseSchemaDrift, schemaDrift } from "../drift";
+import { INVENTORY_SELECT, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
-import type { ApplyPlan, Bookmark, DbIo, DbRunContext, Home, LintFinding, Migration, RecordedChecksum } from "../types";
-import { executeSql, migrationsApply, queryRows, queryRowsIfTable } from "../wrangler";
-import {
-  appliedMigrationName,
-  compareChecksums,
-  planRepair,
-  RECORDED_CHECKSUM_SELECT,
-  recordAppliedSql,
-  recordMetaSql,
-  repairSql,
-  SCHEMA_FINGERPRINT_KEY,
-  SCHEMA_META_SELECT,
-  toRecordedChecksums,
-  toSchemaMeta,
-} from "./checksum";
+import type { ApplyPlan, Bookmark, DbIo, DbRunContext, Home, LintFinding, Migration } from "../types";
+import { executeSql, queryRows, queryRowsIfTable } from "../wrangler";
+import { applyMigrations } from "./applier";
+import { certifyFingerprintSql, compareChecksums, RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "./checksum";
 import { ensureCompanionTables } from "./companions";
 import { migrationsDigest, readMigrations } from "./files";
 import { schemaFingerprint } from "./fingerprint";
@@ -75,16 +64,7 @@ function refuseEditedHistory(run: DbRunContext, mismatched: readonly string[]): 
   if (mismatched.length === 0) return;
   throw new CliError(
     "invalid-args",
-    `${run.home.database} (${run.config.target.place}) has applied migrations whose files were edited after they were applied:\n  ${mismatched.join("\n  ")}\nRestore each file from version control to the bytes forge_migrations recorded, or reset the database; forge will not apply over an edited history.`,
-  );
-}
-
-/** Refuses a schema that moved without a migration since the last apply recorded its fingerprint, unless the run allowed it or a repair explains it. */
-function refuseFingerprintDrift(run: DbRunContext, recorded: string | undefined, actual: string, allowDrift: boolean, repaired: boolean): void {
-  if (recorded === undefined || recorded === actual || allowDrift || repaired) return;
-  throw new CliError(
-    "invalid-args",
-    `${run.home.database} (${run.config.target.place}) schema fingerprint ${actual} is not the ${recorded} the last apply recorded — the schema was changed outside the migrations. Inspect with \`forge db migrate status\`, then pass --allow-drift to apply anyway; the apply re-records the fingerprint.`,
+    `${run.home.database} (${run.config.target.place}) has applied migrations whose files were edited after they were applied:\n  ${mismatched.join("\n  ")}\nRestore each file from version control to the bytes _forge_migrations recorded, or reset the database; forge will not apply over an edited history.`,
   );
 }
 
@@ -114,12 +94,11 @@ function checkStamps(run: DbRunContext, discovered: readonly Migration[], pendin
 export function readTargetFacts(io: DbIo, home: Home): TargetFacts {
   return {
     recorded: toRecordedChecksums(queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT) ?? []),
-    meta: toSchemaMeta(queryRowsIfTable(io, home, SCHEMA_META_SELECT) ?? []),
     inventory: toSchemaObjects(queryRows(io, home, INVENTORY_SELECT)),
   };
 }
 
-/** Repairs the record, checks the history against it, and applies every pending migration under a lock, leaving one write of checksums and schema facts. @public */
+/** Checks the history against what forge recorded and applies every pending migration under a lock, each with its own history row. @public */
 export async function runMigrate(run: DbRunContext, options: MigrateOptions): Promise<MigrateOutcome> {
   const { config, home, io } = run;
   const remote = isRemotePlace(config.target.place);
@@ -136,29 +115,15 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
   // `home.dir` and a lock under `.forge/scratch/` would exclude nothing. A dry run takes none.
   const release = options.dryRun ? () => {} : acquireApplyLock(io, home);
   try {
-    const rows = queryRowsIfTable(io, home, `SELECT name, applied_at FROM ${quoteSqlIdentifier(config.entry.migrationsTable)} ORDER BY id`);
-    const applied = (rows ?? []).map((row) => appliedMigrationName(row.name));
     const facts = readTargetFacts(io, home);
-
-    const repair = planRepair(applied, facts.recorded, discovered);
-    const repaired = repair.recordable.map((m) => m.name);
-    const appliedOnDisk = discovered.filter((m) => applied.includes(m.name));
-    const recordRepair = () => {
-      if (repair.recordable.length === 0) return;
-      executeSql(io, home, repairSql(repair.recordable, migrationsDigest(appliedOnDisk)));
-      say(`recorded ${repaired.length} applied without a forge checksum, from the file: ${repaired.join(", ")}`);
-    };
-    const recordedAfterRepair: RecordedChecksum[] = [
-      ...facts.recorded,
-      ...repair.recordable.map((m) => ({ appliedName: m.name, sha256: m.sha256 })),
-    ];
+    const applied = facts.recorded.map((record) => record.appliedName);
 
     const plan = planApply({ discovered, applied, ...(options.to === undefined ? {} : { to: options.to }) });
     if (plan.drift.length > 0) refuseDrift(run, plan.drift);
-    refuseEditedHistory(run, compareChecksums(applied, recordedAfterRepair, discovered).mismatched);
-    const recordedFingerprint = facts.meta[SCHEMA_FINGERPRINT_KEY];
-    const actualFingerprint = schemaFingerprint(facts.inventory, config.entry.migrationsTable);
-    refuseFingerprintDrift(run, recordedFingerprint, actualFingerprint, options.allowDrift, repair.recordable.length > 0);
+    refuseEditedHistory(run, compareChecksums(facts.recorded, discovered));
+    const drift = schemaDrift(facts.recorded, facts.inventory);
+    const actualFingerprint = drift.actual;
+    refuseSchemaDrift(run, drift, options.allowDrift, "pass --allow-drift to apply anyway; the apply certifies the fingerprint again.");
     checkStamps(run, discovered, plan.pending, new Set(applied));
 
     // Only the pending files are linted, so a rule added since an old apply cannot newly abort every
@@ -182,33 +147,31 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     }
 
     if (options.dryRun) {
-      if (repair.recordable.length > 0)
-        say(`would record ${repaired.length} applied without a forge checksum, from the file: ${repaired.join(", ")}`);
       const would =
         names.length === 0
           ? `${home.database} (${config.target.place}) is up to date`
           : `would apply ${names.length} to ${home.database} (${config.target.place}): ${names.join(", ")}`;
       say(would);
       if (options.rehearse && names.length > 0) say("--rehearse restores an artifact and applies to it, so a dry run does not rehearse");
-      return { applied: [], skipped, repaired, dryRun: true };
+      return { applied: [], skipped, dryRun: true };
     }
 
     if (plan.pending.length === 0) {
       ensureCompanionTables(io, home);
-      recordRepair();
-      const explained = options.allowDrift || repair.recordable.length > 0;
-      if (explained && recordedFingerprint !== undefined && recordedFingerprint !== actualFingerprint) {
-        executeSql(io, home, recordMetaSql({ migrationsDigest: migrationsDigest(appliedOnDisk), schemaFingerprint: actualFingerprint }));
-        say(`re-recorded the schema fingerprint as ${actualFingerprint}`);
+      if (options.allowDrift && drift.recorded !== actualFingerprint) {
+        // The fingerprint rides on the last applied row, so with none applied there is nothing to certify it on.
+        if (applied.length === 0)
+          say(`${actualFingerprint} was not certified — no migration is applied, and the fingerprint rides on the last one`);
+        else {
+          executeSql(io, home, certifyFingerprintSql(actualFingerprint));
+          say(`certified the schema fingerprint as ${actualFingerprint}`);
+        }
       }
       say(`${home.database} (${config.target.place}) is up to date — ${applied.length} migration(s) applied`);
-      return { applied: [], skipped, repaired, dryRun: false };
+      return { applied: [], skipped, dryRun: false };
     }
 
     await confirmApply(run, plan, remote && options.bookmark);
-
-    ensureCompanionTables(io, home);
-    recordRepair();
 
     let bookmark: Bookmark | undefined;
     try {
@@ -217,24 +180,14 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
         say(`undo: ${bookmark.restoreCommand}`);
       }
 
-      migrationsApply(io, migrationsHome(config, io, plan.pending, "migrate", home));
+      applyMigrations(run, home, plan.pending, { label: "migrate", record: true });
 
       const inventory = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-      const skippedNames = new Set(skipped);
-      const appliedNow = discovered.filter((m) => !skippedNames.has(m.name));
-      executeSql(
-        io,
-        home,
-        recordAppliedSql(plan.pending, {
-          migrationsDigest: migrationsDigest(appliedNow),
-          schemaFingerprint: schemaFingerprint(inventory, config.entry.migrationsTable),
-        }),
-      );
+      executeSql(io, home, certifyFingerprintSql(schemaFingerprint(inventory)));
 
       return {
         applied: names,
         skipped,
-        repaired,
         ...(bookmark === undefined ? {} : { bookmark }),
         ...(rehearsed === undefined ? {} : { rehearsed }),
         dryRun: false,

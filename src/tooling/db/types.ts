@@ -1,9 +1,10 @@
+import type { SchemaHealthState } from "../../storage/db/types";
 import { v } from "../../validation/mod";
 import type { WranglerConfig } from "../cf/types";
 import type { Colorize } from "../term/types";
 import type { ComposeStamp, MigrationOrigin } from "./schema/types";
 
-export type { SchemaObject } from "../../storage/db/types";
+export type { SchemaHealthState, SchemaObject } from "../../storage/db/types";
 
 /** Where a database lives: the app's own local state, a second local database, the deployed one, or its preview. @public */
 export type Place = "local" | "standby" | "remote" | "preview";
@@ -14,15 +15,12 @@ export interface DbTarget {
   readonly database: string | null;
 }
 
-/** The `d1_databases` entry a run acts on, with the migration fields wrangler reads from it. @public */
+/** The `d1_databases` entry a run acts on. @public */
 export interface D1Entry {
   readonly binding: string;
   readonly databaseName: string;
   readonly databaseId: string | null;
   readonly previewDatabaseId: string | null;
-  /** Absolute. */
-  readonly migrationsDir: string;
-  readonly migrationsTable: string;
 }
 
 /** Everything a verb needs to know about the app it runs in. @public */
@@ -81,9 +79,21 @@ export interface Home {
   readonly synthesized: boolean;
 }
 
+/** One body of SQL and the statement that records it, staged as a single file so a local load commits both or neither. @internal */
+export interface RecordedUnit {
+  /** The directory under `.forge/scratch/` the file is staged in. */
+  readonly label: string;
+  readonly name: string;
+  readonly sql: string;
+  /** The statement that records the unit, or null when the caller records nothing. */
+  readonly record: string | null;
+  /** Removes the staged file afterwards, which text carrying expanded environment values needs. */
+  readonly remove: boolean;
+}
+
 /** One migration file, identified by content as well as by name. @public */
 export interface Migration {
-  /** The file name without `.sql`, which is also the name wrangler records. */
+  /** The file name without `.sql`, which is also the name recorded in `_forge_migrations`. */
   readonly name: string;
   /** The leading number of `name`, e.g. `1` for `0001_init.sql`. */
   readonly version: number;
@@ -153,20 +163,22 @@ export interface ApplyPlan {
   readonly drift: readonly string[];
 }
 
-/** One `forge_migrations` row. @internal */
+/** One `_forge_migrations` row. @internal */
 export interface RecordedChecksum {
   readonly appliedName: string;
   readonly sha256: string;
+  /** Epoch milliseconds. */
+  readonly appliedAt: number;
+  /** The schema this migration left behind, or null when no apply certified one. */
+  readonly fingerprint: string | null;
 }
 
-/** Where recorded checksums and the files on disk disagree. @internal */
-export interface ChecksumComparison {
-  /** Applied and recorded, but the file now hashes differently. */
-  readonly mismatched: readonly string[];
-  /** Applied per the migrations table, but never recorded — applied by wrangler directly. */
-  readonly unrecorded: readonly string[];
-  /** Recorded, but no longer in the migrations table. */
-  readonly orphaned: readonly string[];
+/** How the schema stands against the fingerprint the last apply certified. @public */
+export interface SchemaDrift {
+  readonly state: SchemaHealthState;
+  /** The certified fingerprint, or null when no applied migration ever carried one. */
+  readonly recorded: string | null;
+  readonly actual: string;
 }
 
 /** One `pragma_table_info` row. @internal */
@@ -185,7 +197,7 @@ export type TableClass = "app" | "managed" | "system";
 /** One line of `db migrate status`. @internal */
 export interface StatusRow {
   readonly name: string;
-  readonly state: "applied" | "pending" | "mismatch" | "unrecorded" | "drift";
+  readonly state: "applied" | "pending" | "mismatch" | "drift";
   readonly appliedAt: string | null;
 }
 
@@ -195,10 +207,9 @@ export interface StatusReport {
   readonly database: string;
   readonly rows: readonly StatusRow[];
   readonly pending: number;
-  readonly checksums: ChecksumComparison;
+  readonly checksums: { readonly mismatched: readonly string[] };
   readonly drift: readonly string[];
   readonly fingerprint: { readonly recorded: string | null; readonly actual: string; readonly matches: boolean };
-  readonly digest: { readonly recorded: string | null; readonly onDisk: string };
 }
 
 /** One seed file: the directory it was declared under and its name are its identity, its hash is what decides whether it re-runs. @public */
@@ -221,7 +232,7 @@ export interface SeedFile {
   readonly sql: string;
 }
 
-/** One `forge_seed_history` row. @internal */
+/** One `_forge_seed_history` row. @internal */
 export interface SeedRecord {
   readonly source: string;
   readonly name: string;
@@ -264,7 +275,9 @@ export interface DbHostConfig {
   readonly schemas?: readonly string[];
   /** Every seeds directory, in run order. */
   readonly seeds?: readonly string[];
-  /** Where the composed snapshot lives. Defaults to `schema.snapshot.json` beside the migrations directory. */
+  /** Where the migrations live, relative to the root. Defaults to `migrations`. */
+  readonly migrations?: string;
+  /** Where the composed snapshot lives. Defaults to `schema.snapshot.json` under the root. */
   readonly snapshot?: string;
   /** Where backups go, relative to the root. Defaults to `.forge/backups`. */
   readonly backupsDir?: string;
@@ -274,6 +287,7 @@ export interface DbHostConfig {
 export const DbHostConfigSchema = v.strictObject({
   schemas: v.optional(v.array(v.string())),
   seeds: v.optional(v.array(v.string())),
+  migrations: v.optional(v.string()),
   snapshot: v.optional(v.string()),
   backupsDir: v.optional(v.string()),
 });
@@ -284,8 +298,6 @@ export const D1EntrySchema = v.looseObject({
   database_name: v.optional(v.string()),
   database_id: v.optional(v.string()),
   preview_database_id: v.optional(v.string()),
-  migrations_dir: v.optional(v.string()),
-  migrations_table: v.optional(v.string()),
 });
 
 /** One backup artifact directory's `manifest.json`. @public */
@@ -296,6 +308,8 @@ export interface BackupManifest {
   readonly dumper: { readonly tool: string; readonly version: string };
   readonly database: { readonly name: string; readonly id: string | null; readonly target: string; readonly persistPath: string | null };
   readonly schema: SchemaFacts;
+  /** How the source stood against its own certified fingerprint when this was taken; `mismatch` means every digest here describes a schema no migration built. */
+  readonly drift: SchemaHealthState;
   /** Every migration the artifact was taken with, whose SQL it embeds under `migrations/`. */
   readonly migrations: readonly { readonly name: string; readonly sha256: string }[];
   readonly tables: readonly { readonly name: string; readonly rows: number; readonly digest: string }[];
@@ -345,8 +359,6 @@ export interface SynthesizeOptions {
   database: string;
   /** Where the config is written. Local state lives under it unless `persistTo` says otherwise. */
   dir: string;
-  /** The migrations wrangler applies from this home; absolute. */
-  migrationsDir: string;
   /** Overrides the state directory, so a `--to` cut applies into the real database. */
   persistTo?: string | undefined;
 }

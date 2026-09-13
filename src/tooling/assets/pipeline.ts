@@ -1,16 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 
+import type { CacheControlInit } from "../../http/headers";
+import { CacheControl } from "../../http/headers";
 import { buildCursors } from "../../ui/assets/build/cursors";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
 import { buildFonts } from "./fonts";
-import { buildIcons } from "./icons";
+import { buildIcons, iconLinks, iconTarget } from "./icons";
 import { buildJS } from "./js";
 import { buildRasters } from "./rasters";
 import { buildSite } from "./site";
 import { buildSprites } from "./sprites";
-import type { AssetsTypesOutcome, BuildOptions, SpriteGroupResult } from "./types";
+import type { AssetsTypesOutcome, BuildOptions, IconsConfig, SpriteGroupResult } from "./types";
 import type { ResolvedConfig } from "./types";
 
 /** Runs every configured build step and writes the generated assets module; `minify` also enables content-hashed filenames. @public */
@@ -62,14 +64,15 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   }
 
   const outputPath = opts?.assetsPath ?? DEFAULT_ASSETS_PATH;
+  const spec = (): ModuleSpec => ({ manifest, spriteGroups, publicPrefix, icons: config.icons, cursorBakes });
   // esbuild resolves `@assets` while bundling, so the module must exist before `buildJS`.
-  await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath, cursorBakes);
+  await generateAssetsModule(spec(), outputPath);
 
   Object.assign(manifest, await buildJS(config.js.bundles, { outDir: publicDir, ...minifyOpts, hash: shouldHash }));
 
-  await generateAssetsModule(manifest, spriteGroups, publicPrefix, outputPath, cursorBakes);
+  await generateAssetsModule(spec(), outputPath);
 
-  emitHeaders(publicDir, publicPrefix, shouldHash);
+  emitHeaders(publicDir, publicPrefix, shouldHash, config.icons);
 }
 
 /** Where the generated assets module is written when no path is stated. @internal */
@@ -94,20 +97,36 @@ function toPascalCase(key: string): string {
     .join("");
 }
 
-function renderAssetsModule(
-  manifest: Record<string, string>,
-  spriteGroups: Record<string, SpriteGroupResult>,
-  publicPrefix: string,
-  cursorBakes?: Record<string, Record<string, string>>,
-  header: string = BUILD_HEADER,
-): string {
+interface ModuleSpec {
+  manifest: Record<string, string>;
+  spriteGroups: Record<string, SpriteGroupResult>;
+  publicPrefix: string;
+  icons: IconsConfig | null;
+  cursorBakes: Record<string, Record<string, string>> | undefined;
+  header?: string;
+}
+
+function renderAssetsModule(spec: ModuleSpec): string {
+  const { manifest, spriteGroups, publicPrefix, icons, cursorBakes, header = BUILD_HEADER } = spec;
   const dataEntries = Object.entries(manifest)
     .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`)
     .join("\n");
 
   const hasSprites = Object.keys(spriteGroups).length > 0;
 
-  let content: string;
+  const imports = [`import { createManifest } from "@y-core/forge/assets";`];
+  if (icons) imports.push(`import type { IconLink } from "@y-core/forge/assets";`);
+  if (hasSprites) imports.push(`import { createIcon } from "@y-core/forge/ui/core";`);
+
+  let content = `${header}
+${imports.join("\n")}
+
+const DATA: Record<string, string> = {
+${dataEntries}
+};
+
+export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
+`;
 
   if (hasSprites) {
     const groupBlocks = Object.entries(spriteGroups)
@@ -124,29 +143,14 @@ function renderAssetsModule(
       })
       .join("\n\n");
 
-    content = `${header}
-import { createManifest } from "@y-core/forge/assets";
-import { createIcon } from "@y-core/forge/ui/core";
+    content += `\n${groupBlocks}\n`;
+  }
 
-const DATA: Record<string, string> = {
-${dataEntries}
-};
-
-export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
-
-${groupBlocks}
-`;
-  } else {
-    content = `${header}
-import { createManifest } from "@y-core/forge/assets";
-import type { AssetsTypesOutcome, BuildOptions } from "./types";
-
-const DATA: Record<string, string> = {
-${dataEntries}
-};
-
-export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
-`;
+  if (icons) {
+    const linkEntries = iconLinks(icons)
+      .map((link) => `  ${JSON.stringify(link)},`)
+      .join("\n");
+    content += `\nexport const ICON_LINKS: ReadonlyArray<IconLink> = [\n${linkEntries}\n];\n`;
   }
 
   if (cursorBakes && Object.keys(cursorBakes).length > 0) {
@@ -170,15 +174,8 @@ function writeAssetsModule(outputPath: string, content: string): void {
   writeFileSync(outputPath, content);
 }
 
-async function generateAssetsModule(
-  manifest: Record<string, string>,
-  spriteGroups: Record<string, SpriteGroupResult>,
-  publicPrefix: string,
-  outputPath: string,
-  cursorBakes?: Record<string, Record<string, string>>,
-  header: string = BUILD_HEADER,
-): Promise<void> {
-  writeAssetsModule(outputPath, renderAssetsModule(manifest, spriteGroups, publicPrefix, cursorBakes, header));
+async function generateAssetsModule(spec: ModuleSpec, outputPath: string): Promise<void> {
+  writeAssetsModule(outputPath, renderAssetsModule(spec));
 }
 
 /** The emitted module with every value blanked — the shape `ASSET_PIPELINE.md` §4b holds the build and types artifacts to. @internal */
@@ -262,17 +259,50 @@ export async function generateAssetsTypes(config: ResolvedConfig, opts?: { asset
   }
 
   const outputPath = opts?.assetsPath ?? DEFAULT_ASSETS_PATH;
-  const content = renderAssetsModule(manifest, spriteGroups, config.paths.publicPrefix, cursorBakes, TYPES_HEADER);
+  const content = renderAssetsModule({
+    manifest,
+    spriteGroups,
+    publicPrefix: config.paths.publicPrefix,
+    icons: config.icons,
+    cursorBakes,
+    header: TYPES_HEADER,
+  });
   if (keepsExistingBuild(outputPath, content)) return "kept-build-artifact";
   writeAssetsModule(outputPath, content);
   return "written";
 }
 
-function emitHeaders(publicDir: string, publicPrefix: string, hashed: boolean): void {
+const YEAR = 31536000;
+const DAY = 86400;
+const WEEK = 604800;
+
+/** Icon filenames are stable across builds, so they are revalidated rather than pinned. @internal */
+const ICON_CACHE: CacheControlInit = { public: true, maxAge: DAY, staleWhileRevalidate: WEEK };
+
+/** The manifest is how an installed app learns its name, colours and icon set changed. @internal */
+const MANIFEST_CACHE: CacheControlInit = { public: true, maxAge: 0, mustRevalidate: true };
+
+/** A hashed name is a new URL, so the old one can be pinned for as long as a cache will hold it. @internal */
+const HASHED_CACHE: CacheControlInit = { public: true, maxAge: YEAR, immutable: true };
+
+function headerBlock(path: string, cache: CacheControlInit): string {
+  return `${path}\n  Cache-Control: ${new CacheControl(cache).toString()}\n`;
+}
+
+function emitHeaders(publicDir: string, publicPrefix: string, hashed: boolean, icons: IconsConfig | null): void {
   const headersPath = join(dirname(publicDir), "_headers");
-  const cacheControl = hashed ? "public, max-age=31536000, immutable" : "no-cache";
   // Same normalization `createManifest` applies, so the rule cannot disagree with the served URL.
   const base = publicPrefix.endsWith("/") ? publicPrefix.slice(0, -1) : publicPrefix;
-  const content = `${base}/*\n  Cache-Control: ${cacheControl}\n`;
-  writeFileSync(headersPath, content);
+  const blocks = [headerBlock(`${base}/*`, hashed ? HASHED_CACHE : { noCache: true })];
+
+  // One rule per icon rather than a prefix glob: `_headers` applies every matching rule and joins a
+  // header set twice with a comma, so an overlapping glob would merge the manifest's own
+  // `Cache-Control` into an unusable pair of values.
+  if (icons) {
+    for (const output of icons.outputs) {
+      blocks.push(headerBlock(iconTarget(icons, output).path, output.kind === "manifest" ? MANIFEST_CACHE : ICON_CACHE));
+    }
+  }
+
+  writeFileSync(headersPath, blocks.join("\n"));
 }

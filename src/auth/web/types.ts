@@ -1,3 +1,4 @@
+import type { RequestContext } from "@remix-run/fetch-router";
 import type { RouteMap } from "@remix-run/fetch-router/routes";
 import type { RequestMethod } from "@remix-run/fetch-router/routes";
 import type { Route } from "@remix-run/fetch-router/routes";
@@ -6,6 +7,7 @@ import type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import type { PageMeta } from "../../app/types";
 import type { AppContext } from "../../context/types";
+import type { CsrfSecretResolver } from "../../form/types";
 import type { FC } from "../../jsx/types";
 import type { JSXNode } from "../../jsx/types";
 import type { ForgeIcon } from "../../ui/core/types";
@@ -28,6 +30,7 @@ import type { AdminElevateViewProps } from "./views/types";
 import type { AdminUserEditViewProps } from "./views/types";
 import type { AdminUsersViewProps } from "./views/types";
 import type { AuthFactorsViewProps } from "./views/types";
+import type { AuthSignoutProps } from "./views/types";
 import type { EmailChangeViewProps } from "./views/types";
 import type { PasskeyEditViewProps } from "./views/types";
 import type { PasskeyEnrolViewProps } from "./views/types";
@@ -318,4 +321,26 @@ export interface AuthFactorOffering {
   readonly kinds: readonly AuthFactorKind[];
   /** The declared primary, absent only where the offered set has no factor that can be one. */
   readonly primary: AuthFactorKind | undefined;
+}
+
+/** Any request context: what a navbar renders off is the identity, never the bindings. @public */
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to navbar rendering
+export type AuthNavContext = RequestContext<any, any>;
+
+/** Options for `authNav`. @public */
+export interface AuthNavOptions {
+  /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */
+  readonly signoutPath: string;
+  /** The secret the `csrfProtection` guarding that path verifies with; the token is bound to the session, as that guard's is. */
+  readonly secret: CsrfSecretResolver;
+  /** Names the slot, for a `NavDefinition` that spells the sign-out slot differently. */
+  readonly slot?: string | undefined;
+  /** Composed onto the sign-out control, over the navbar-shaped defaults. */
+  readonly signout?: Omit<AuthSignoutProps, "action" | "csrfToken"> | undefined;
+}
+
+/** What a `Navbar` is given to show this request's viewer their own destinations. @public */
+export interface AuthNav {
+  readonly activeFilters: string[];
+  readonly slots: Record<string, JSXNode>;
 }

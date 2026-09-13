@@ -20,7 +20,7 @@ audience: consumer
 
 - §1 How a Migration Is Composed: the desired-state files, the one sequence the app composes, and the real SQLite in the loop
 - §2 The Desired-State File: where it is looked for, and a directory of files
-- §3 Ownership: which file declares which object, and what nothing declares
+- §3 Ownership: which file declares which object, what nothing declares, and how a drop names the file that declared it
 - §4 What Compose Emits: alter in place, or rebuild through a copy — why a rebuild takes every referencing table with it, a rebuild that depends on
   the rows warned, and a drop approved by digest, not by flag
 - §5 Renames: `--rename`, explicit and never inferred
@@ -73,12 +73,30 @@ same rule. There is no prefix rule, and no namespace.
 **Nothing exists in the database that a declaration did not put there, so there is no third category.** Every object the migrations build came from
 a composed migration, and a composed migration emits only what a desired file declares — `custom-ddl` is an **error**, so a custom migration carries
 data and never a table's shape ([`DATABASE_MANAGEMENT.md`][dm-5] §5). An object in the replay that no desired file declares is therefore a
-_deletion_ and nothing else: you removed it from the file, and compose drops it. There is no "unowned" set to warn about, no memory of past
-declarations to keep, and no rebuild that could take a stranger with it.
+_deletion_ and nothing else: compose drops it. There is no "unowned" set to exclude from the diff, and no rebuild that could take a stranger with
+it.
 
-**A declared name in a reserved space is refused at the door.** `forge_`, `sqlite_` and `_cf_` are forge's, SQLite's and the platform's, and the
-migrations table is the one the config names — a desired file declaring any of them is refused naming the file and the object, rather than composing
-to nothing because the model never carries it.
+**An object becomes undeclared two ways, and the second one says so by name.** You delete it from a file the host config still names — or the file
+itself leaves the host config's `schemas`: a library dropped from it, a path renamed, a file moved. The second edits no desired file at all, so the
+plan would otherwise propose dropping tables nobody touched with nothing saying why. `schema.snapshot.json` therefore remembers which names each
+declared file held (§6), and a dropped object whose declaring file has left `schemas` is printed with the plan, naming that file:
+
+```text
+posts, posts_user were declared by node_modules/@acme/blog/schema.sql, which config/db.ts no longer declares or whose file is absent — nothing declares them now
+```
+
+**The remembered names explain a drop; they never decide one.** The diff and the SQL are what they would be without them. What the reason does
+change is the `--allow-destructive` digest, which covers it (§4), so an approval of a deletion does not carry to the same drop arriving from a
+departed file. A file the snapshot holds that `schemas` does not name, and that owns none of this compose's drops, is said once, as a `warning:`
+line, on the compose that forgets it.
+
+**A declared name in a reserved space is refused at the door.** `_forge_`, `sqlite_` and `_cf_` are forge's, SQLite's and the platform's — a desired
+file declaring any of them is refused naming the file and the object, rather than composing to nothing because the model never carries it. There is
+no exception for a migrations table any more: forge's history lives under the `_forge_` prefix like everything else it owns
+([`DATABASE_MANAGEMENT.md`][dm-4] §4).
+
+The same prefix covers the `_forge_new_` tables a rebuild creates (§4), so one left behind by a rebuild that was interrupted mid-migration is
+invisible to the model: compose neither plans a drop for it nor counts it as a stranger. Drop it by hand — nothing here will mention it.
 
 A declared object may be written schema-qualified — `CREATE TABLE main.users` — and is read under its last segment, `users`, which is the name
 SQLite itself records. A `REFERENCES` clause takes a bare table name: SQLite rejects a qualified one outright, so none can reach the replay.
@@ -121,7 +139,8 @@ accepts; the rebuild's `DROP TABLE` deliberately has no `IF EXISTS`, since the t
 
 **A drop is refused until it is allowed.** A table drop or a column drop is destructive; compose prints the plan and stops with a twelve-character
 digest of the drop set, and `--allow-destructive <digest>` on the next run says that plan, and no other, was read: if the drop set has changed since
-— a schema edit, a snapshot change, a library upgrade — the digest does not match and compose refuses again with the current set. A `NOT NULL`
+— a schema edit, a snapshot change, a library upgrade — the digest does not match and compose refuses again with the current set. The digest covers
+the plan _and_ the reason lines §3 prints, so an approval carries to that plan for that cause and no other. A `NOT NULL`
 column with no `DEFAULT` on a table that already exists is refused outright, whichever route would add it — give it a default, or write the fill as
 a custom migration.
 
@@ -149,10 +168,11 @@ one digest per declared schema, keyed by the path the host config wrote, and it 
 declaration this SQL was composed from. Nothing reads it back out of the database.
 
 `schema.snapshot.json`, at the host config's `snapshot` position and checked in, is what the last compose saw, and it holds **only what cannot be
-recomputed**: a digest per declared schema, and a digest of the migrations by name. Two lines of fact and nothing else. It carries no model of the
-schema and no list of names — every object the migrations build comes from a declaration, so no record of a past declaration is needed, and both
-models a check compares are rebuilt from the files and the migrations on disk. The readable artifact is the composed migration, which is the SQL
-about to run. Every compose writes the snapshot, a no-change compose included.
+recomputed**: `desired`, a digest per declared schema; `declared`, the object names each of those files held, as written and sorted; and
+`migrationsDigest`, a digest of the migrations by name. It carries no model of the schema — both models a check compares are rebuilt from the files
+and the migrations on disk, and the readable artifact is the composed migration, which is the SQL about to run. `declared` is read for one purpose,
+attribution: naming the file that declared an object a later compose drops, when that file has left `schemas` (§3). Nothing decides a drop from it.
+Every compose rewrites the snapshot, a no-change compose included, so the record is always the last compose's and never a backlog.
 
 **Exclude it from the formatter.** It is generated, and `JSON.stringify(…, null, 2)` is not what a formatter that collapses short objects writes —
 left in the formatter's path, the two rewrite each other on alternate runs. `"ignorePatterns": ["**/*.snapshot.json"]` in `.oxfmtrc.json` is the
@@ -181,7 +201,7 @@ one on disk — the files before it include the other branch's. `forge db migrat
 - **Unapplied everywhere:** delete it and compose again. The recompose reads the merged history and proves the result on a replay, which is the only
   proof there is.
 - **Already applied on some target:** `forge db migrate compose --restamp <name>`. It rewrites the named migration's stamp line to the history
-  now on disk and nothing else. A migration's identity — the checksum `forge_migrations` holds, the migrations digest, every later baseline and the
+  now on disk and nothing else. A migration's identity — the checksum `_forge_migrations` holds, the migrations digest, every later baseline and the
   snapshot's digest — is its bytes with the stamp's JSON blanked, so a restamp moves no checksum and cascades to nothing. It makes no wrangler call,
   and it refuses a custom file, a file edited since it was composed, and a name not on disk. `--dry-run` prints what it would restamp and writes
   nothing.
@@ -210,6 +230,7 @@ pre-checked. The goal being settled first is a consistent dependency → dev →
 answer would take, and no task is filed for one until the local cycle is settled.
 
 [db-readme]: ../src/tooling/db/README.md
+[dm-4]: ./DATABASE_MANAGEMENT.md#4-the-companion-tables
 [dm-5]: ./DATABASE_MANAGEMENT.md#5-the-migration-lint-rules
 [dm-8]: ./DATABASE_MANAGEMENT.md#8-every-position-is-declared
 [namespaces-5g]: ./NAMESPACES.md#5g-tooling--where-a-developer-facing-tool-belongs

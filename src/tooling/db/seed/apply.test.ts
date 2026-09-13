@@ -3,9 +3,12 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
 import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
+import { schemaFingerprint } from "../migrate/fingerprint";
 import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../test-support";
 import type { FakeDbIo, SeedRecord } from "../types";
 
@@ -82,8 +85,8 @@ describe("db seed apply", () => {
       join(root, ".forge", "scratch", "seed", "seeds", "002_posts.sql"),
     ]);
     expect(loaded).toEqual([
-      `INSERT INTO users (email) VALUES ('admin@example.com');\nINSERT OR REPLACE INTO forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
-      `${POSTS}\nINSERT OR REPLACE INTO forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '002_posts', '${sha256(POSTS)}', 1789120800000);`,
+      `INSERT INTO users (email) VALUES ('admin@example.com');\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
+      `${POSTS}\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '002_posts', '${sha256(POSTS)}', 1789120800000);`,
     ]);
     expect([...io.files.keys()].filter((path) => path.includes("/.forge/scratch/seed/"))).toEqual([]);
     expect(sent(io, "--command").filter((command) => command.startsWith("INSERT"))).toEqual([]);
@@ -146,7 +149,7 @@ describe("db seed apply", () => {
     expect(cli.code).toBe(null);
     expect(sent(io, "--file")).toEqual([file]);
     expect(loaded).toEqual([
-      `INSERT INTO users (email) VALUES ('ada@example.com');\nINSERT OR REPLACE INTO forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
+      `INSERT INTO users (email) VALUES ('ada@example.com');\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
     ]);
     expect(io.files.has(file)).toBe(false);
   });
@@ -391,6 +394,54 @@ describe("db seed apply with a migration pending", () => {
   });
 });
 
+describe("db seed apply against a schema nothing certified", () => {
+  const USERS_SQL = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT";
+  const CERTIFIED = "f".repeat(64);
+
+  /** Puts a certified fingerprint on the history and an inventory that does not hash to it. */
+  function drifted(io: FakeDbIo): void {
+    io.rules.unshift(
+      {
+        match: (args) => (args.at(-1) ?? "") === RECORDED_CHECKSUM_SELECT,
+        reply: jsonRows([{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: CERTIFIED }]),
+      },
+      {
+        match: (args) => (args.at(-1) ?? "") === INVENTORY_SELECT,
+        reply: jsonRows([{ type: "table", name: "users", tbl_name: "users", sql: USERS_SQL }]),
+      },
+    );
+  }
+
+  it("refuses with nothing written, naming both fingerprints and what a seed cannot do about them", async () => {
+    const root = appRoot();
+    const io = seedIo(root, []);
+    drifted(io);
+    const cli = await run(io, ["seed", "apply", "--root", root]);
+
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain(
+      `app-db (local) schema fingerprint ${schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: USERS_SQL }])} is not the ${CERTIFIED} the last apply certified`,
+    );
+    expect(cli.err.join("\n")).toContain(
+      "pass --allow-drift to seed anyway; a seed certifies no fingerprint, so `forge db migrate` goes on refusing until an apply explains the schema.",
+    );
+    expect(sent(io, "--file")).toEqual([]);
+  });
+
+  it("seeds it under --allow-drift", async () => {
+    const root = appRoot();
+    const io = seedIo(root, []);
+    drifted(io);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--allow-drift"]);
+
+    expect(cli.code).toBe(null);
+    expect(sent(io, "--file")).toEqual([
+      join(root, ".forge", "scratch", "seed", "seeds", "001_users.sql"),
+      join(root, ".forge", "scratch", "seed", "seeds", "002_posts.sql"),
+    ]);
+  });
+});
+
 describe("db seed apply linting", () => {
   const BARE = "INSERT INTO tags (name) VALUES ('x');";
   const SAFE = "INSERT OR IGNORE INTO tags (name) VALUES ('y');";
@@ -503,7 +554,7 @@ describe("db seed status", () => {
     const io = seedIo(root, []);
     io.rules[1] = {
       match: (args) => argvHas(args, "execute", "--json", "--command"),
-      reply: { code: 1, stdout: "", stderr: "no such table: forge_seed_history" },
+      reply: { code: 1, stdout: "", stderr: "no such table: _forge_seed_history" },
     };
     const cli = await run(io, ["seed", "status", "--root", root, "--json"]);
 
@@ -517,7 +568,7 @@ describe("db seed reset", () => {
     const io = seedIo(root, []);
     const cli = await run(io, ["seed", "reset", "--root", root, "--yes"]);
 
-    expect(sent(io, "--command").filter((command) => command.startsWith("DELETE"))).toEqual(["DELETE FROM forge_seed_history;"]);
+    expect(sent(io, "--command").filter((command) => command.startsWith("DELETE"))).toEqual(["DELETE FROM _forge_seed_history;"]);
     expect(cli.out).toEqual(["seed history cleared — the rows the seeds wrote are untouched"]);
   });
 });

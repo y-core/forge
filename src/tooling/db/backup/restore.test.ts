@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
 import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { migrationsDigest } from "../migrate/files";
 import { toSchemaObjects } from "../sql";
 import { argvHas, describeTableReply, fakeDbIo, jsonRows, keyProbeAsks, keyProbeReply, minimalWranglerConfig, OK } from "../test-support";
@@ -16,8 +17,7 @@ import type { RestoreOptions, RestoreOutcome } from "./types";
 
 const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
-  { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-  { type: "table", name: "forge_migrations", tbl_name: "forge_migrations", sql: "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY)" },
+  { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
 ];
 
 const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
@@ -37,6 +37,7 @@ function declares(file: string, text: string): { file: string; bytes: number; sh
 function manifest(database: string, over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
+    drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
     dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },
@@ -139,7 +140,7 @@ describe("readBackupManifest", () => {
     const run = await context(root, io);
 
     expect(refusal(() => readBackupManifest(run, artifact)).message).toBe(
-      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION}`,
+      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
     );
   });
 
@@ -156,7 +157,7 @@ describe("readBackupManifest", () => {
 
     expect(refusal(() => readBackupManifest(run, artifact))).toEqual({
       kind: "invalid-args",
-      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION}\n  schema.digest is not a 64-character hex SHA-256`,
+      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself\n  schema.digest is not a 64-character hex SHA-256`,
     });
   });
 });
@@ -236,7 +237,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
 
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
       kind: "invalid-args",
-      message: "app-db already holds data (tasks 2, forge_migrations 2) — run `forge db reset` first; a restore adds rows and never removes them",
+      message: "app-db already holds data (tasks 2, _forge_migrations 2) — run `forge db reset` first; a restore adds rows and never removes them",
     });
     expect(io.logs).toEqual([]);
   });
@@ -250,12 +251,12 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
         [join(artifact, "data.sql")]: DATA_SQL,
         [join(artifact, "full.sql")]: FULL_SQL,
       },
-      { tasks: 0, forge_migrations: 2 },
+      { tasks: 0, _forge_migrations: 2 },
     );
     const run = await context(root, io);
 
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
-      "app-db already holds data (forge_migrations 2) — run `forge db reset` first; a restore adds rows and never removes them",
+      "app-db already holds data (_forge_migrations 2) — run `forge db reset` first; a restore adds rows and never removes them",
     );
     expect(io.calls.filter((call) => call.includes("--file"))).toEqual([]);
   });
@@ -291,18 +292,15 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const root = appRoot();
     const artifact = join(root, "artifact");
     const taken = "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);";
-    const sourceInventory = [
-      { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
-      { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-    ];
+    const sourceInventory = [{ type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" }];
     const io = fakeDatabase(
       {
         [join(artifact, "manifest.json")]: JSON.stringify(
           manifest("app-db", {
             schema: {
               migrations: ["0001_init"],
-              digest: sha256(appSchemaDigestInput(toSchemaObjects(sourceInventory), "d1_migrations")),
-              migrationsDigest: migrationsDigest([{ name: "0001_init", sql: taken }]),
+              digest: sha256(appSchemaDigestInput(toSchemaObjects(sourceInventory))),
+              migrationsDigest: migrationsDigest([{ name: "0001_init", sha256: sha256(taken) }]),
             },
             migrations: [{ name: "0001_init", sha256: sha256(taken) }],
             tables: [{ name: "tasks", rows: 0, digest: sha256("") }],
@@ -316,9 +314,9 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       // The restored target carries the companions the migrations route created, which the digest ignores.
       INVENTORY,
     );
-    io.rules.push({ match: (args) => argvHas(args, "migrations", "apply"), reply: OK }, { match: (args) => argvHas(args, "--file"), reply: OK });
+    io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
     io.rules.unshift({
-      match: (args) => argvHas(args, "execute", "--command") && (args.at(-1) ?? "").startsWith("SELECT name FROM"),
+      match: (args) => argvHas(args, "execute", "--command") && args.at(-1) === RECORDED_CHECKSUM_SELECT,
       reply: jsonRows([{ name: "0001_init" }]),
     });
     const run = await context(root, io);
@@ -349,17 +347,36 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    // The restore itself fails its digest checks against this hand-built manifest; what matters is
-    // which directory wrangler was pointed at, and it is the artifact's own.
+    // The restore fails its digest checks against this hand-built manifest; what matters is which
+    // file wrangler was pointed at, and it is the artifact's own.
     try {
       runRestore(run, { artifact, route: "migrations" });
-    } catch {
-      // The manifest is a fixture, not a real artifact's.
-    }
+    } catch {}
 
-    expect(io.files.get(join(root, ".forge", "scratch", "restore", "migrations", "0001_init.sql"))).toBe(taken);
-    const generated = JSON.parse(io.readText(join(root, ".forge", "scratch", "restore", "wrangler.jsonc")));
-    expect(generated.d1_databases[0].migrations_dir).toBe(join(root, ".forge", "scratch", "restore", "migrations"));
+    expect(io.files.get(join(root, ".forge", "scratch", "restore", "0001_init.sql"))).toBe(taken);
+  });
+
+  it("stages the replayed migration with no history row of its own, since data.sql already carries every one", async () => {
+    const root = appRoot();
+    const artifact = join(root, "artifact");
+    const taken = "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);";
+    const io = fakeDatabase(
+      {
+        [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { migrations: [{ name: "0001_init", sha256: sha256(taken) }] })),
+        [join(artifact, "data.sql")]: DATA_SQL,
+        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "migrations", "0001_init.sql")]: taken,
+      },
+      0,
+    );
+    const run = await context(root, io);
+
+    try {
+      runRestore(run, { artifact, route: "migrations" });
+    } catch {}
+
+    const staged = io.files.get(join(root, ".forge", "scratch", "restore", "0001_init.sql")) ?? "";
+    expect(staged.includes("INSERT INTO _forge_migrations")).toBe(false);
   });
 
   it("creates the companion tables before loading data.sql, which carries their rows", async () => {
@@ -375,7 +392,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       },
       0,
     );
-    io.rules.push({ match: (args) => argvHas(args, "migrations", "apply"), reply: OK });
+    io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
     const run = await context(root, io);
 
     try {
@@ -384,7 +401,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       // The manifest is a fixture, not a real artifact's.
     }
 
-    const created = io.calls.findIndex((call) => call.some((arg) => arg.includes("CREATE TABLE IF NOT EXISTS forge_migrations")));
+    const created = io.calls.findIndex((call) => call.some((arg) => arg.includes("CREATE TABLE IF NOT EXISTS _forge_migrations")));
     const loaded = io.calls.findIndex((call) => call.includes("--file") && call.includes(join(artifact, "data.sql")));
     expect(created).toBeGreaterThan(-1);
     expect(loaded).toBeGreaterThan(created);
@@ -425,7 +442,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
   it("re-runs the data-only check on the file it is about to load", async () => {
     const root = appRoot();
     const artifact = join(root, "artifact");
-    const data = `${DATA_SQL}INSERT INTO "d1_migrations" ("id") VALUES (1);\n`;
+    const data = `${DATA_SQL}INSERT INTO "sqlite_sequence" VALUES('tasks',1);\n`;
     const io = fakeDatabase(
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { artifacts: [declares("data.sql", data)] })),
@@ -436,7 +453,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const run = await context(root, io);
 
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
-      "data.sql is not what a data-only artifact must be:\n  line 2: d1_migrations is written by `wrangler d1 migrations apply`, and a row here collides with the one it just wrote",
+      "data.sql is not what a data-only artifact must be:\n  line 2: sqlite_sequence is the engine's and is restored only by the full-dump route, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name",
     );
     expect(io.calls).toEqual([]);
   });

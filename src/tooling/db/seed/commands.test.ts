@@ -24,7 +24,7 @@ function appRoot(): string {
 function seedIo(root: string, history: SeedRecord[] = []): FakeDbIo {
   const io = fakeDbIo({ [join(root, "seeds", "001_users.sql")]: USERS, [join(root, "seeds", "002_posts.sql")]: POSTS });
   io.rules.push({
-    match: (args) => argvHas(args, "execute", "--json", "--command") && (args.at(-1) ?? "").includes("forge_seed_history"),
+    match: (args) => argvHas(args, "execute", "--json", "--command") && (args.at(-1) ?? "").includes("_forge_seed_history"),
     reply: jsonRows(history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }))),
   });
   io.rules.push({ match: (args) => argvHas(args, "execute", "--json", "--command"), reply: jsonRows([]) });
@@ -75,6 +75,7 @@ describe("createSeedCommands", () => {
       "only",
       "rerun",
       "allow-pending",
+      "allow-drift",
       "allow-warnings",
       "no-bookmark",
     ]);

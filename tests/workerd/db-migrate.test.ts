@@ -34,8 +34,12 @@ beforeAll(async () => {
   server = await startDevServer({ config: CONFIG, readyPath: "/tables" });
 }, 240_000);
 
+// Symmetric with `beforeAll`, so the tables the last two cases create in the shared fixture database
+// leave with the run that made them rather than waiting on the next run's cleanup.
 afterAll(() => {
   server?.stop();
+  rmSync(join(FIXTURE, ".wrangler"), { recursive: true, force: true });
+  rmSync(join(FIXTURE, ".forge"), { recursive: true, force: true });
   rmSync(MIGRATIONS, { recursive: true, force: true });
   rmSync(join(FIXTURE, "schema.snapshot.json"), { force: true });
 });
@@ -45,19 +49,22 @@ function get<T>(path: string): Promise<T> {
 }
 
 describe("forge db migrate --target local against real D1", () => {
-  it("creates the auth tables and both companion tables", async () => {
+  it("creates the auth tables and both companion tables, and neither the wrangler history table nor the deleted meta table", async () => {
     const tables = await get<string[]>("/tables");
-    for (const name of ["auth_users", "auth_credentials", "forge_migrations", "forge_schema_meta", "d1_migrations"]) {
+    for (const name of ["auth_users", "auth_credentials", "_forge_migrations", "_forge_seed_history"]) {
       expect(tables.includes(name)).toBe(true);
+    }
+    for (const name of ["d1_migrations", "forge_migrations", "forge_schema_meta"]) {
+      expect(tables.includes(name)).toBe(false);
     }
   });
 
-  it("records the applied migration under its checksum, and the digest and fingerprint beside it", async () => {
-    const migrations = await get<{ applied_name: string; sha256: string }[]>("/migrations");
-    expect(migrations.map((m) => m.applied_name)).toEqual(["0001_init"]);
+  it("records the applied migration under its checksum, with the fingerprint it certified on the same row", async () => {
+    const migrations = await get<{ name: string; sha256: string; applied_at: number; fingerprint: string | null }[]>("/migrations");
+    expect(migrations.map((m) => m.name)).toEqual(["0001_init"]);
     expect(migrations[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
-    const meta = await get<Record<string, string>>("/meta");
-    expect(Object.keys(meta).sort()).toEqual(["migrations_digest", "schema_fingerprint"]);
+    expect(migrations[0]?.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(Number.isInteger(migrations[0]?.applied_at)).toBe(true);
   });
 
   it("is a no-op the second time, and status --check exits 0", () => {
@@ -68,7 +75,7 @@ describe("forge db migrate --target local against real D1", () => {
     expect(status.code).toBe(0);
   }, 60_000);
 
-  it("keeps status --check green across a stamp edit and a restamp, since the stamp is not part of the checksum", () => {
+  it("lets migrate through a stamp edit and a restamp, since a migration's sha256 is over stamp-blanked bytes", () => {
     const file = join(MIGRATIONS, "0001_init.sql");
     const composed = readFileSync(file, "utf-8");
     writeFileSync(
@@ -88,7 +95,11 @@ describe("forge db migrate --target local against real D1", () => {
     expect(status.stderr).toBe("");
     expect(status.code).toBe(0);
     expect(status.stdout.includes("mismatch")).toBe(false);
-  }, 60_000);
+
+    const migrate = forgeDb(["migrate", "--target", "local", "--yes"]);
+    expect(migrate.stderr.includes("edited after they were applied")).toBe(false);
+    expect(migrate.code).toBe(0);
+  }, 120_000);
 
   it("makes status --check exit 1 when an applied migration's file has been edited", () => {
     const tampered = mkdtempSync(join(tmpdir(), "forge-db-tampered-"));
@@ -120,7 +131,7 @@ describe("forge db migrate --target local against real D1", () => {
       expect(migrate.status).toBe(1);
       expect(
         migrate.stderr.includes(
-          "has applied migrations whose files were edited after they were applied:\n  0001_init\nRestore each file from version control to the bytes forge_migrations recorded, or reset the database; forge will not apply over an edited history.",
+          "has applied migrations whose files were edited after they were applied:\n  0001_init\nRestore each file from version control to the bytes _forge_migrations recorded, or reset the database; forge will not apply over an edited history.",
         ),
       ).toBe(true);
     } finally {
@@ -210,5 +221,73 @@ describe("forge db migrate --target local against real D1", () => {
     expect(stray.status).toBe(0);
     const health = await get<{ state: string }>("/schema-health");
     expect(health.state).toBe("mismatch");
+  }, 60_000);
+
+  it("lets D1's authorizer describe a table named with a leading underscore", () => {
+    const execute = (command: string, json: boolean) =>
+      spawnSync(
+        "bunx",
+        [
+          "wrangler",
+          "d1",
+          "execute",
+          "db-migrate-fixture",
+          "--local",
+          "--persist-to",
+          join(FIXTURE, ".wrangler", "state"),
+          ...(json ? ["--json"] : ["--yes"]),
+          "--command",
+          command,
+        ],
+        { cwd: FIXTURE, encoding: "utf-8" },
+      );
+    const created = execute(
+      "CREATE TABLE IF NOT EXISTS _forge_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, sha256 TEXT NOT NULL, applied_at INTEGER NOT NULL, fingerprint TEXT) STRICT;",
+      false,
+    );
+    expect(created.status).toBe(0);
+
+    const info = execute("SELECT name FROM pragma_table_info('_forge_migrations') ORDER BY cid", true);
+    expect(info.status).toBe(0);
+    const columns = (JSON.parse(info.stdout.slice(info.stdout.indexOf("["))) as { results: { name: string }[] }[])[0]?.results ?? [];
+    expect(columns.map((column) => column.name)).toEqual(["id", "name", "sha256", "applied_at", "fingerprint"]);
+
+    const model = execute(
+      "SELECT m.name AS tbl, x.name FROM sqlite_master m JOIN pragma_table_xinfo(m.name) x WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' ORDER BY m.name, x.cid",
+      true,
+    );
+    expect(model.status).toBe(0);
+    const rows = (JSON.parse(model.stdout.slice(model.stdout.indexOf("["))) as { results: { tbl: string }[] }[])[0]?.results ?? [];
+    expect(rows.some((row) => row.tbl === "_forge_migrations")).toBe(true);
+  }, 60_000);
+
+  it("filters _forge_migrations out of the model read and leaves a decoy named xforge_decoy in it", () => {
+    const execute = (command: string, json: boolean) =>
+      spawnSync(
+        "bunx",
+        [
+          "wrangler",
+          "d1",
+          "execute",
+          "db-migrate-fixture",
+          "--local",
+          "--persist-to",
+          join(FIXTURE, ".wrangler", "state"),
+          ...(json ? ["--json"] : ["--yes"]),
+          "--command",
+          command,
+        ],
+        { cwd: FIXTURE, encoding: "utf-8" },
+      );
+    expect(execute("CREATE TABLE IF NOT EXISTS xforge_decoy (id INTEGER PRIMARY KEY) STRICT;", false).status).toBe(0);
+
+    const read = execute(
+      "SELECT m.name AS tbl FROM sqlite_master m JOIN pragma_table_xinfo(m.name) x WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\' ORDER BY m.name, x.cid",
+      true,
+    );
+    expect(read.status).toBe(0);
+    const tables = (JSON.parse(read.stdout.slice(read.stdout.indexOf("["))) as { results: { tbl: string }[] }[])[0]?.results ?? [];
+    expect(tables.some((row) => row.tbl === "_forge_migrations")).toBe(false);
+    expect(tables.some((row) => row.tbl === "xforge_decoy")).toBe(true);
   }, 60_000);
 });

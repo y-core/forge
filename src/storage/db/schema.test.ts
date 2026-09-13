@@ -2,15 +2,12 @@ import { describe, expect, it } from "bun:test";
 
 import { bytesToHex, sha256 } from "../../crypto/mod";
 import {
-  DEFAULT_MIGRATIONS_TABLE,
+  compareCodePoints,
   INVENTORY_SELECT,
   isManagedObject,
   MANAGED_TABLE_PREFIXES,
-  MIGRATIONS_DIGEST_KEY,
-  SCHEMA_FINGERPRINT_KEY,
-  SCHEMA_META_SELECT,
+  RECORDED_FINGERPRINT_SELECT,
   schemaFingerprintInput,
-  toSchemaMeta,
   toSchemaObjects,
 } from "./schema";
 import type { SchemaObject } from "./types";
@@ -19,40 +16,43 @@ function object(type: string, name: string, sql: string | null = `CREATE ${type}
   return { type, name, tblName: name, sql };
 }
 
-describe("constants", () => {
-  it("spell the migrations table, the meta keys and the two statements exactly", () => {
-    expect(DEFAULT_MIGRATIONS_TABLE).toBe("d1_migrations");
-    expect(MIGRATIONS_DIGEST_KEY).toBe("migrations_digest");
-    expect(SCHEMA_FINGERPRINT_KEY).toBe("schema_fingerprint");
-    expect(SCHEMA_META_SELECT).toBe("SELECT key, value FROM forge_schema_meta");
-  });
-});
-
 describe("MANAGED_TABLE_PREFIXES", () => {
   it("names forge's, SQLite's and the platform's own tables", () => {
-    expect([...MANAGED_TABLE_PREFIXES]).toEqual(["forge_", "sqlite_", "_cf_"]);
+    expect([...MANAGED_TABLE_PREFIXES]).toEqual(["_forge_", "sqlite_", "_cf_"]);
   });
 });
 
 describe("isManagedObject()", () => {
-  const cases: [string, string, boolean][] = [
-    ["users", "d1_migrations", false],
-    ["forge_migrations", "d1_migrations", true],
-    ["sqlite_sequence", "d1_migrations", true],
-    ["_cf_METADATA", "d1_migrations", true],
-    ["d1_migrations", "d1_migrations", true],
-    ["d1_migrations", "app_migrations", false],
-    ["app_migrations", "app_migrations", true],
+  const cases: [string, boolean][] = [
+    ["users", false],
+    ["_forge_migrations", true],
+    ["sqlite_sequence", true],
+    ["_cf_METADATA", true],
+    ["d1_migrations", false],
   ];
 
-  for (const [name, table, expected] of cases) {
-    it(`says ${name} against ${table} is ${expected ? "managed" : "the app's"}`, () => {
-      expect(isManagedObject(name, table)).toBe(expected);
+  for (const [name, expected] of cases) {
+    it(`says ${name} is ${expected ? "managed" : "the app's"}`, () => {
+      expect(isManagedObject(name)).toBe(expected);
     });
   }
+});
 
-  it("defaults the migrations table to wrangler's", () => {
-    expect(isManagedObject("d1_migrations")).toBe(true);
+describe("compareCodePoints()", () => {
+  it("orders an astral character above every BMP one, which a UTF-16 code-unit compare does not", () => {
+    expect(compareCodePoints("\u{1F600}", "￿")).toBe(1);
+    expect(compareCodePoints("￿", "\u{1F600}")).toBe(-1);
+  });
+
+  it("orders an upper-case letter before a lower-case one, and a prefix before what extends it", () => {
+    expect(compareCodePoints("Z", "a")).toBe(-1);
+    expect(compareCodePoints("user", "users")).toBe(-1);
+    expect(compareCodePoints("users", "user")).toBe(1);
+  });
+
+  it("is zero for two equal strings, including two empty ones", () => {
+    expect(compareCodePoints("users", "users")).toBe(0);
+    expect(compareCodePoints("", "")).toBe(0);
   });
 });
 
@@ -83,23 +83,9 @@ describe("schemaFingerprintInput()", () => {
     expect(schemaFingerprintInput([astral, bmp])).toBe("table\t￿\t￿\tB\ntable\t\u{1F600}\t\u{1F600}\tS");
   });
 
-  it("excludes forge's, SQLite's, the platform's and the migrations table", () => {
-    const managed = [
-      object("table", "forge_migrations"),
-      object("table", "forge_schema_meta"),
-      object("table", "sqlite_sequence"),
-      object("table", "_cf_KV"),
-      object("table", "d1_migrations"),
-    ];
+  it("excludes forge's, SQLite's and the platform's own tables", () => {
+    const managed = [object("table", "_forge_migrations"), object("table", "sqlite_sequence"), object("table", "_cf_KV")];
     expect(schemaFingerprintInput([object("table", "users", "U"), ...managed])).toBe("table\tusers\tusers\tU");
-  });
-
-  it("excludes the migrations table the config names, not only wrangler's default", () => {
-    const objects = [object("table", "users", "U"), object("table", "app_migrations")];
-    expect(schemaFingerprintInput(objects, "app_migrations")).toBe("table\tusers\tusers\tU");
-    expect(schemaFingerprintInput(objects, "d1_migrations")).toBe(
-      "table\tapp_migrations\tapp_migrations\tCREATE table app_migrations\ntable\tusers\tusers\tU",
-    );
   });
 
   it("is empty for a database with nothing of the app's in it", () => {
@@ -127,6 +113,12 @@ describe("INVENTORY_SELECT", () => {
   });
 });
 
+describe("RECORDED_FINGERPRINT_SELECT", () => {
+  it("reads the newest certified fingerprint, skipping a row a part-applied batch left uncertified", () => {
+    expect(RECORDED_FINGERPRINT_SELECT).toBe("SELECT fingerprint FROM _forge_migrations WHERE fingerprint IS NOT NULL ORDER BY id DESC LIMIT 1");
+  });
+});
+
 describe("toSchemaObjects()", () => {
   it("renames tbl_name and keeps a null sql as null", () => {
     expect(toSchemaObjects([{ type: "table", name: "users", tbl_name: "users", sql: "CREATE TABLE users (id)" }])).toEqual([
@@ -139,17 +131,5 @@ describe("toSchemaObjects()", () => {
 
   it("is empty for no rows", () => {
     expect(toSchemaObjects([])).toEqual([]);
-  });
-});
-
-describe("toSchemaMeta()", () => {
-  it("collapses the key-value rows into a map", () => {
-    expect(
-      toSchemaMeta([
-        { key: "schema_fingerprint", value: "ff" },
-        { key: "migrations_digest", value: "dd" },
-      ]),
-    ).toEqual({ schema_fingerprint: "ff", migrations_digest: "dd" });
-    expect(toSchemaMeta([])).toEqual({});
   });
 });

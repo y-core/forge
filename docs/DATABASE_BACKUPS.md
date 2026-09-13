@@ -34,9 +34,9 @@ database does.
 | File | What it is | Restores by |
 | --- | --- | --- |
 | `schema.sql` | The schema alone, from `wrangler d1 export --no-data` | Nothing — it is the record of what the data was shaped by |
-| `data.sql` | Rows only, for the app's tables and forge's companions | `--route migrations`: replay `migrations/`, then load this |
-| `full.sql` | Schema, the migrations table's rows, then every row | `--route full`: load one self-contained file |
-| `migrations/` | Every migration the artifact was taken with, under its applied name | `--route migrations` applies exactly these |
+| `data.sql` | Rows only, for the app's tables and forge's companions — the migration history among them | `--route migrations`: replay `migrations/`, then load this |
+| `full.sql` | The schema, then every row `data.sql` carries | `--route full`: load one self-contained file |
+| `migrations/` | Every migration the artifact was taken with, under the name the history recorded | `--route migrations` applies exactly these |
 | `manifest.json` | What was read, what it hashes to, and what was proven | Read first by every restore |
 
 ---
@@ -46,9 +46,9 @@ database does.
 **Both routes are proven before the artifact is written.** Each is replayed into a throwaway database under `.forge/scratch/`, and three things are
 compared against the source: every row of every app table, every row of forge's companion tables, and a digest of the restored schema's app objects
 — a merge-join on the table's key, not a positional zip. Any of the three diverging fails the backup, before any manifest is written — so a
-directory holding one is a directory whose proof passed. The schema comparison covers app objects only, since `d1_migrations` and the `forge_*`
-companions are _created_ on route `migrations` rather than restored. `--no-verify` skips the proof and records in the manifest that nothing was
-proven, which `restore` repeats back on the way in.
+directory holding one is a directory whose proof passed. The schema comparison covers app objects only, since the `_forge_*` companion **tables**
+are created by forge on route `migrations` rather than declared by any migration — their **rows** are restored, and are compared like any others.
+`--no-verify` skips the proof and records in the manifest that nothing was proven, which `restore` repeats back on the way in.
 
 **A backup is a snapshot, and says so.** On a local target it holds the apply lock (`.forge/db-apply.lock`) for the whole run, so a concurrent
 `migrate` cannot write underneath the read, and a second verb refuses while it is held naming `backup`. `tables[].rows` is the number of rows the
@@ -62,7 +62,7 @@ table and both numbers — something outside forge wrote during the read. The in
 `--target remote` or `--target preview` takes no lock and no bookmark: the torn-read count above is the only concurrency guard, and a write during
 the read is refused the same way. Both routes are still proven, into a scratch under `.forge/scratch/` forced to `local` whatever the target —
 nothing in the proof reaches the deployed database. The manifest names the target and carries a warning saying restore is refused for it, which
-`restore` repeats on the way in; the artifact restores into `local`, `standby` or a rehearsal scratch ([`DATABASE_MANAGEMENT.md`][dm-6e] §6e). A
+`restore` repeats on the way in; the artifact restores into `local`, `standby` or a rehearsal scratch ([`DATABASE_MANAGEMENT.md`][dm-6f] §6f). A
 local `reset` selects the most recent verified artifact by database name alone, so a remote artifact of the same name can be the one it relies on —
 and its rows must still match, or it is refused as stale like any other.
 
@@ -74,12 +74,26 @@ and its rows must still match, or it is refused as stale like any other.
 name and hash, each of which must read back from `migrations/` hashing to what the manifest declares. The app owns every one of those files, so the
 migrations digest the manifest carries is the whole story. This is what makes an artifact restorable from a git checkout years later.
 
+**A replay records nothing, because the history rides in `data.sql`.** Every `_forge_migrations` row is an ordinary row of an ordinary table, so it
+is read, written and restored like any other — which makes the restore stricter than a rebuilt history could be. The rows come back with the source
+database's own `applied_at`, its certified `fingerprint`, and its explicit `id`, so `ORDER BY id DESC LIMIT 1` picks out the same last row on the
+restored database that it picked on the source, and the fingerprint the Worker reads is the one the source certified
+([`DATABASE_MANAGEMENT.md`][dm-4a] §4a). A replay that also recorded would collide with every one of those rows on the `name` index; it therefore
+applies the bodies and records nothing at all.
+
 The manifest binds the artifact to a schema three ways — the applied migration names, a digest of the app's own schema objects (the same set the
 proof compares; the managed tables are created, not restored), and the migrations digest — and a restore reports every one of them that disagrees
 with the app as it now stands. Every check a restore or a reset makes — the manifest, the artifact's files against their declared hashes, and a
 target that is empty across the app tables and forge's companions alike — runs before the confirmation is asked, so a refused verb never asks. A
 restore that ends with a table not matching its declared digest fails, and there is deliberately no repair path: discard the target and retry from
 an empty one.
+
+**The manifest records whether the source was the schema its own migrations built.** `drift` holds `match`, `mismatch`, `unrecorded` or
+`unavailable` — the state `forge db migrate status` reports, read at the instant the backup was taken. On `mismatch` the run says so on stderr and
+the artifact carries a warning a restore prints back, because every digest in the manifest describes the database **as found**: a backup of a
+drifted database is still worth having, and is exactly what to take before repairing one. What it may not do is pass that schema off as certified —
+the proof compares a restored copy against the source's own digest, so a drifted source proves clean, and `drift` is what says the proof was of the
+schema as found ([`DATABASE_MANAGEMENT.md`][dm-6e] §6e).
 
 **The manifest carries a digest of itself.** `selfDigest` is the SHA-256 of the manifest written with that one field blanked, and a restore refuses
 one whose bytes do not hash to it. It detects truncation, a swapped file and bit rot. **It does not detect tampering**: anyone who edits a manifest
@@ -136,12 +150,17 @@ At tens of thousands of rows this is seconds. At millions it is not the right to
 ## 6. Restore and Reset
 
 A restore loads into an empty database only: it adds rows and never removes them, so a target holding data is refused with the instruction to
-`forge db reset` first.
+`forge db reset` first. Empty means empty of forge's companion rows too — a target that already holds a migration history cannot take a data-only
+load over it.
 
 **A restore checks the whole artifact before it touches the target.** After the manifest is read and before anything is queried, every declared file
 is hashed against its `artifacts[].sha256` — a missing one is the same refusal — and the file the route will load is put back through the check that
 admitted it at backup time. A damaged artifact is refused with no row loaded, rather than discovered afterwards, where there is deliberately no
 repair path.
+
+**An artifact written by an earlier forge is refused by `formatVersion`, not misread.** The field is bumped whenever a manifest field changes
+meaning, and the refusal names both numbers and says to take the backup again. An artifact from before forge owned the migration history is one such
+— its `data.sql` carries no history rows and its `full.sql` carries wrangler's — and there is no converter, pre-1.0.
 
 `forge db reset` refuses a database holding rows unless a verified artifact still describes them — not "a backup exists". Every app table's count is
 compared against the manifest's `tables[].rows` first, refusing immediately and naming the table when one differs; only when every count agrees are
@@ -149,5 +168,7 @@ the rows read and each digest compared, which catches an update hiding behind an
 and `--allow-unbacked` skips all of it.
 
 [dm-3]: ./DATABASE_MANAGEMENT.md#3-the-undo-per-place
+[dm-4a]: ./DATABASE_MANAGEMENT.md#4a-_forge_migrations--the-migration-history
 [dm-5]: ./DATABASE_MANAGEMENT.md#5-the-migration-lint-rules
-[dm-6e]: ./DATABASE_MANAGEMENT.md#6e-rehearsing-against-real-rows
+[dm-6e]: ./DATABASE_MANAGEMENT.md#6e-who-else-holds-the-database-to-its-fingerprint
+[dm-6f]: ./DATABASE_MANAGEMENT.md#6f-rehearsing-against-real-rows

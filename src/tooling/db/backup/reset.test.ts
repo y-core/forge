@@ -25,8 +25,7 @@ const STATE = ["v3", "d1", "miniflare-D1DatabaseObject"];
 
 const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
-  { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-  { type: "table", name: "forge_migrations", tbl_name: "forge_migrations", sql: "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY)" },
+  { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
 ];
 
 const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
@@ -49,6 +48,7 @@ function tasksDigest(rows: readonly Record<string, unknown>[] = ROWS): string {
 function manifest(database: string, over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
+    drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
     dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },

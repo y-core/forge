@@ -13,7 +13,7 @@ export function twoTableRows() {
       { type: "index", name: "posts_user", tbl_name: "posts", sql: "CREATE INDEX posts_user ON posts (user_id)" },
       { type: "index", name: "sqlite_autoindex_users_1", tbl_name: "users", sql: null },
       { type: "table", name: "_cf_KV", tbl_name: "_cf_KV", sql: "CREATE TABLE _cf_KV (k TEXT)" },
-      { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER)" },
+      { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (id INTEGER)" },
       { type: "table", name: "posts", tbl_name: "posts", sql: POSTS },
       { type: "table", name: "users", tbl_name: "users", sql: USERS },
       {
@@ -82,6 +82,21 @@ describe("assembleSchemaModel()", () => {
     ]);
   });
 
+  it("drops _forge_migrations and keeps a decoy named xforge_decoy, which shares no prefix with it", () => {
+    const rows = {
+      ...twoTableRows(),
+      inventory: [
+        { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (id INTEGER)" },
+        { type: "table", name: "xforge_decoy", tbl_name: "xforge_decoy", sql: "CREATE TABLE xforge_decoy (id INTEGER)" },
+      ],
+      columns: [{ tbl: "xforge_decoy", cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 0, hidden: 0 }],
+      indexList: [],
+      indexColumns: [],
+      foreignKeys: [],
+    };
+    expect(assembleSchemaModel(rows).tables.map((table) => table.name)).toEqual(["xforge_decoy"]);
+  });
+
   it("refuses a virtual table", () => {
     const rows = twoTableRows();
     rows.inventory.push({ type: "table", name: "docs", tbl_name: "docs", sql: "CREATE VIRTUAL TABLE docs USING fts5(body)" });
@@ -95,15 +110,17 @@ describe("assembleSchemaModel()", () => {
   });
 });
 
+const OWN = "m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\'";
+
 describe("schemaModelSelects()", () => {
-  it("filters the engine's, the platform's and forge's tables inside the join, where D1's authorizer requires it", () => {
-    const selects = schemaModelSelects("my_migrations");
-    for (const select of Object.values(selects)) {
-      expect(select).toContain("m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\'");
-      expect(select).toContain("m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\'");
-      expect(select).toContain("m.name <> 'my_migrations'");
-    }
-    expect(selects.columns).toContain("pragma_table_xinfo(m.name)");
+  it("escapes every leading underscore, since '_forge\\_%' unescaped is a single-character wildcard matching xforge_decoy too", () => {
+    expect(schemaModelSelects()).toEqual({
+      inventory: `SELECT type, name, tbl_name, sql FROM sqlite_master m WHERE ${OWN} ORDER BY type, name`,
+      columns: `SELECT m.name AS tbl, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden FROM sqlite_master m JOIN pragma_table_xinfo(m.name) x WHERE m.type = 'table' AND ${OWN} ORDER BY m.name, x.cid`,
+      indexList: `SELECT m.name AS tbl, l.name AS idx, l."unique", l.partial FROM sqlite_master m JOIN pragma_index_list(m.name) l WHERE m.type = 'table' AND ${OWN} ORDER BY m.name, l.name`,
+      indexColumns: `SELECT m.name AS idx, i.seqno, i.name AS col FROM sqlite_master m JOIN pragma_index_info(m.name) i WHERE m.type = 'index' AND ${OWN} ORDER BY m.name, i.seqno`,
+      foreignKeys: `SELECT m.name AS tbl, f.id, f.seq, f."table" AS parent, f."from" AS "from", f."to" AS "to", f.on_update, f.on_delete FROM sqlite_master m JOIN pragma_foreign_key_list(m.name) f WHERE m.type = 'table' AND ${OWN} ORDER BY m.name, f.id, f.seq`,
+    });
   });
 });
 

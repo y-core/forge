@@ -15,6 +15,7 @@ import {
   csrfProtection,
   importCsrfKey,
   mintCsrf,
+  csrfMinter,
   csrfTokenCtx,
   csrfFieldCtx,
   csrfHeaderCtx,
@@ -291,6 +292,32 @@ authorizes. Throws if `path` is missing/empty, or if no minter is on the context
 | `context` | `RequestContext` | A context that ran through `csrfProtection`. |
 | `path` | `string` | The action path the minted token authorizes (e.g. `"/api/contact"`). |
 
+### Mint off a route the guard is not mounted on — `csrfMinter`
+
+```ts
+function csrfMinter(options: CsrfMinterOptions): (context: RequestContext, path: string) => Promise<string>;
+```
+
+`mintCsrf` reads the minter `csrfProtection` put on the context, so it can only mint under the subject policy of the guard that ran on **this**
+request. That is not always the policy the target path is verified with: shared chrome rendered on every page — a navbar's sign-out form, say —
+needs a token for a path whose guard is mounted on prefixes this request never took, and a subject-less token that guard would refuse.
+
+`csrfMinter` is that guard's minting half, wired directly. Pass the same `secret` and `subject` the `csrfProtection` guarding the path was given,
+and the two cannot disagree. The key ring is cached per `env` exactly as `csrfProtection` caches it, so a control on every page costs one key import
+per isolate rather than one per render.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `secret` | `CsrfSecretResolver` | The same secret the guard on the target path verifies with. |
+| `subject` | `(context) => string \| undefined` \| `false` | The guard's subject policy. `false` is the deliberate opt-out; a resolver returning `undefined` throws rather than mint a token that must be refused. |
+
+```ts
+const mintSignout = csrfMinter({ secret: (c) => importCsrfKey(config(c).csrf.secret), subject: (c) => sessionCtx.getOptional(c)?.id });
+const token = await mintSignout(context, "/auth/signout");
+```
+
+For the auth navbar this exists for, reach for `authNav` (`@y-core/forge/auth/web`) rather than wiring the minter yourself.
+
 ### CSRF token primitives — `importCsrfKey`, `importCsrfKeyRing`, `createCsrfToken`, `verifyCsrfToken`
 
 The lower-level primitives, used directly when you mint or verify tokens outside the middleware.
@@ -403,6 +430,7 @@ for it. A `verify(c, config)` that returns its own `signal` wins over the defaul
 | `CsrfKeyRing` | `{ activeKeyId, keys }` — active signing key plus all keys valid for verification. |
 | `CsrfSecretResolver` | `(context) => CryptoKey \| CsrfKeyRing \| Promise<…>`. |
 | `CsrfProtectionOptions` | `{ secret, tokenField?, headerName?, subject, maxBytes? }` — the `csrfProtection` middleware options (`subject` is required: resolver or `false`). |
+| `CsrfMinterOptions` | `{ secret, subject }` — `csrfProtection`'s minting half, for a path whose guard is mounted on routes this request did not take. |
 | `CsrfTokenOptions` | `{ kid?, subject? }` for `createCsrfToken`. |
 | `CsrfVerifyOptions` | `{ maxAgeMs?, subject? }` for `verifyCsrfToken`. |
 | `CsrfResult` | `GuardResult<…>` — `{ ok: true } \| { ok: false, error }`; the failure reason code is in `.error`. See Security below. |

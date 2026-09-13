@@ -19,6 +19,7 @@ export type {
   Migration,
   Place,
   RestoreRoute,
+  SchemaDrift,
   SchemaFacts,
   SchemaObject,
   Seed,
@@ -30,7 +31,7 @@ export type {
 
 export { runMigrate } from "./migrate/apply";
 export { lintMigration, lintMigrations } from "./migrate/lint";
-export type { MigrateOptions, MigrateOutcome, RehearsalOutcome, RepairPlan } from "./migrate/types";
+export type { MigrateOptions, MigrateOutcome, RehearsalOutcome } from "./migrate/types";
 
 export { runBackup } from "./backup/backup";
 export { executeReset, findVerifiedBackup, prepareReset } from "./backup/reset";

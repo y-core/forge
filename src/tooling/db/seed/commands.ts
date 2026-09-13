@@ -21,6 +21,7 @@ const applyFlags = {
     description: "Run a seed that already ran, including one whose file changed since — with `--only` to name it",
   },
   "allow-pending": { type: "boolean" as const, description: "Seed although a migration is pending, onto the older schema" },
+  "allow-drift": { type: "boolean" as const, description: "Seed although the schema was changed outside the migrations" },
   "allow-warnings": { type: "boolean" as const, description: "Seed a deployed database despite lint warnings, which otherwise abort" },
   "no-bookmark": { type: "boolean" as const, description: "Skip the Time Travel bookmark a deployed seed captures as its undo" },
 };
@@ -33,6 +34,7 @@ async function applySeeds(flags: ResolvedFlags<typeof applyFlags>, ctx: CliConte
     only: flags.only,
     rerun: Boolean(flags.rerun),
     allowPending: Boolean(flags["allow-pending"]),
+    allowDrift: Boolean(flags["allow-drift"]),
     allowWarnings: Boolean(flags["allow-warnings"]),
     bookmark: !flags["no-bookmark"],
   });

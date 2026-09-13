@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { CliError } from "../../cli/errors";
 import { sha256 } from "../digest";
 import { clearLocalState, synthesizeHome } from "../home";
+import { applyMigrations } from "../migrate/applier";
 import type { DbConfig, DbIo, DbRunContext, Home, Migration } from "../types";
-import { executeFile, migrationsApply, wranglerVersion } from "../wrangler";
+import { executeFile, wranglerVersion } from "../wrangler";
 import { readSchemaModel } from "./introspect";
 import { isSchemaModel } from "./snapshot";
 import { SCHEMA_MODEL_VERSION } from "./types";
@@ -20,14 +21,13 @@ function scratchDir(config: DbConfig, side: ScratchSide): string {
   return join(config.root, ".forge", "scratch", "compose", side);
 }
 
-/** A fresh, empty scratch database for one side, with its migrations directory pointed where the caller says. @internal */
-export function composeScratchHome(run: DbRunContext, side: ScratchSide, migrationsDir: string): Home {
+/** A fresh, empty scratch database for one side. @internal */
+export function composeScratchHome(run: DbRunContext, side: ScratchSide): Home {
   const config = localScratchConfig(run.config);
   const home = synthesizeHome(config, run.io, {
     label: `scratch:compose-${side}`,
     database: `${run.config.entry.databaseName}-compose-${side}`,
     dir: scratchDir(config, side),
-    migrationsDir,
   });
   clearLocalState(run.io, home);
   return home;
@@ -35,13 +35,9 @@ export function composeScratchHome(run: DbRunContext, side: ScratchSide, migrati
 
 /** Replays the merged migrations into an empty scratch database exactly as an apply would, naming the file that fails. @internal */
 export function replayBaseline(run: DbRunContext, migrations: readonly Migration[]): Home {
-  const migrationsDir = join(scratchDir(localScratchConfig(run.config), "baseline"), "migrations");
-  run.io.remove(migrationsDir);
-  run.io.mkdir(migrationsDir);
-  for (const migration of migrations) run.io.writeText(join(migrationsDir, `${migration.name}.sql`), migration.sql);
-  const home = composeScratchHome(run, "baseline", migrationsDir);
+  const home = composeScratchHome(run, "baseline");
   try {
-    migrationsApply(run.io, home);
+    applyMigrations(run, home, migrations, { label: join("compose", "baseline"), record: false });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new CliError("invalid-args", `the baseline replay failed — a migration on disk does not apply to an empty database:\n${detail}`);
@@ -55,7 +51,7 @@ export function loadDesired(run: DbRunContext, desired: readonly DesiredState[])
   const filesDir = join(dir, "files");
   run.io.remove(filesDir);
   run.io.mkdir(filesDir);
-  const home = composeScratchHome(run, "desired", join(dir, "migrations"));
+  const home = composeScratchHome(run, "desired");
   for (const state of desired) {
     const file = join(filesDir, `${state.source.replace(/[^A-Za-z0-9_-]+/g, "_")}.sql`);
     run.io.writeText(file, state.text);
@@ -114,7 +110,7 @@ export function scratchWranglerVersion(run: DbRunContext): string {
   return version;
 }
 
-/** Reads a scratch home's model with the app's migrations table filtered out. @internal */
+/** Reads a scratch home's model, with forge's own tables filtered out. @internal */
 export function readScratchModel(run: DbRunContext, home: Home): SchemaModel {
-  return readSchemaModel(run.io, home, run.config.entry.migrationsTable);
+  return readSchemaModel(run.io, home);
 }

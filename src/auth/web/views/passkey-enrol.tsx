@@ -6,7 +6,6 @@ import { Alert } from "../../../ui/core/alert";
 import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
-import { Form } from "../../../ui/core/form";
 import { Input } from "../../../ui/core/input";
 import { cn } from "../../../ui/core/utils/cn";
 import {
@@ -20,6 +19,7 @@ import {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../../passkey-contract";
+import { AuthSignout } from "./signout";
 import type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./types";
 
 // Hand-rendered rather than wrapped in `Resumable` — `UI_CLIENT_RUNTIME.md` §2a.
@@ -96,15 +96,9 @@ export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({
         </AuthPasskeyScope>
       </Card.Content>
       <Card.Footer>
-        {/* A form and not a link: `/signout` is POST-only, so the anchor this replaced could not
-            work at all — the route has no GET handler to answer it. */}
         <div class='flex max-w-prose flex-wrap items-baseline gap-1 text-sm text-pretty text-muted-foreground'>
           <span>Not now?</span>
-          <Form action={signoutPath} csrfToken={signoutCsrfToken} csrfHeader={csrfHeader}>
-            <Button type='submit' tone='neutral' appearance='ghost' size='sm' data-ref='passkey-signout'>
-              Sign out
-            </Button>
-          </Form>
+          <AuthSignout action={signoutPath} csrfToken={signoutCsrfToken} csrfHeader={csrfHeader} appearance='ghost' size='sm' />
           <span>and finish on a device you have to hand.</span>
         </div>
       </Card.Footer>

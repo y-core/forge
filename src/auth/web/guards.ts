@@ -42,15 +42,29 @@ function refuse(medium: AuthMedium | undefined, message: string, status: number,
   return medium === "json" ? jsonResponse({ error: message }, status) : html();
 }
 
+// Reused rather than re-resolved when it is already there: `resolveAuth` mounted globally — which an
+// app needs as soon as shared chrome varies by identity — would otherwise make every guarded request
+// read the user store twice for the same answer.
+/** The identity already on this request, or the one this request's session resolves to against the store. */
+async function establishIdentity<Bindings>(
+  context: Parameters<Middleware>[0],
+  options: Pick<AuthGuardOptions<Bindings>, "users" | "now">,
+): Promise<AuthIdentity | null> {
+  const established = authCtx.getOptional(context);
+  if (established !== undefined) return established;
+
+  const session = sessionCtx.getOptional(context);
+  if (session === undefined) throw new Error(NO_SESSION);
+
+  const users = await options.users(getAppContext<Bindings>(context));
+  return resolveAuthIdentity(session, users, options.now === undefined ? Date.now() : options.now());
+}
+
 /** Establishes the request's identity from the session, sending an anonymous request to sign-in. @public */
 export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGuardOptions<Bindings>): Middleware {
   const returnParam = options.returnParam ?? "next";
   return async (context, next) => {
-    const session = sessionCtx.getOptional(context);
-    if (session === undefined) throw new Error(NO_SESSION);
-
-    const users = await options.users(getAppContext<Bindings>(context));
-    const identity = await resolveAuthIdentity(session, users, options.now === undefined ? Date.now() : options.now());
+    const identity = await establishIdentity<Bindings>(context, options);
     if (identity === null) {
       return refuse(options.medium, NOT_SIGNED_IN, 401, () => {
         // Only a replayable method may be recorded as a return-to: the visitor arrives back by GET,
@@ -75,11 +89,7 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
 /** Establishes the request's identity when the session carries one, and admits an anonymous request unchanged. @public */
 export function resolveAuth<Bindings = Record<string, unknown>>(options: Pick<AuthGuardOptions<Bindings>, "users" | "now">): Middleware {
   return async (context, next) => {
-    const session = sessionCtx.getOptional(context);
-    if (session === undefined) throw new Error(NO_SESSION);
-
-    const users = await options.users(getAppContext<Bindings>(context));
-    const identity = await resolveAuthIdentity(session, users, options.now === undefined ? Date.now() : options.now());
+    const identity = await establishIdentity<Bindings>(context, options);
     if (identity !== null) authCtx.set(context, identity);
     return next();
   };

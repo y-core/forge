@@ -814,6 +814,44 @@ to.
 the next request rather than at the next sign-in. It also drops that session's auth keys, so reactivating the account revives none of the cookies
 issued before it; a store outage denies without clearing, since a blip must not sign everyone out.
 
+**The store is read once per request, however many guards run.** `requireAuth` reuses an identity already on `authCtx` rather than resolving again,
+so mounting `resolveAuth` globally — which an app needs the moment shared chrome varies by identity — costs the guarded routes nothing extra. A
+`requireAuth` mounted on its own still resolves for itself.
+
+### The navbar an identity decides — `authNav`
+
+```ts
+function authNav(options: AuthNavOptions): (context: AuthNavContext) => Promise<AuthNav>;
+```
+
+A navbar that shows a signed-in visitor different destinations from an anonymous one needs two things per request: the filter tokens the viewer
+holds, and a sign-out control carrying a token bound to their session. `authNav` returns both, shaped to spread straight onto `Navbar`:
+
+```tsx
+const nav = authNav({ signoutPath: paths.auth.signout(), secret: (c) => importCsrfKey(config(c).csrf.secret) });
+// …per request, in the layout:
+<Navbar config={primaryNav} resolveHref={resolveNavHref} icon={AppIcon} {...(await nav(context))} />;
+```
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `signoutPath` | `string` | The POST-only sign-out route, from `authPaths(...).auth.signout()`. |
+| `secret` | `CsrfSecretResolver` | The secret the `csrfProtection` guarding that path verifies with. |
+| `slot` | `string` | Names the slot, where the definition spells it something other than `AUTH_NAV_SIGNOUT_SLOT`. |
+| `signout` | `Omit<AuthSignoutProps, "action" \| "csrfToken">` | Composed over the navbar-shaped defaults on the control. |
+
+**`AUTH_NAV_FILTERS` is the vocabulary, and the consumer's definition is what spends it.** Mark each item with the tokens that may see it —
+`filters: [AUTH_NAV_FILTERS.anonymous]` on sign-in, `[AUTH_NAV_FILTERS.admin]` on an admin destination — and `activeFilters` does the rest. An
+administrator holds `signedIn` **and** `admin`, so an item marked for members does not vanish for them. Which items carry which tokens is the app's
+to decide; the tokens themselves are not, or two apps spell them differently and nothing can describe the pattern.
+
+**It is the identity that decides, never the session.** A session rides every request, anonymous ones included, so minting off the session would
+sign a sign-out token on every page render for a visitor with nothing to sign out of. An anonymous request gets `activeFilters` and an empty slot
+map, and no key is imported and no token signed. `authNav` returns a factory for the same reason: the key ring is cached across requests, so the
+control on every page costs one import per isolate.
+
+The identity is read from `authCtx`, so `resolveAuth` (or a `requireAuth`) must run before the render.
+
 **It enforces two more bounds on every request, and both are absolute.** A session is refused once `at - signedInAt >= AUTH_SESSION_MAX_MS` (seven
 days), measured from when it was established and never refreshed — a sliding window is one an attacker who took a session can keep alive forever.
 And it is refused when `signedInAt <= user.sessionsInvalidBefore`, which is how removing a passkey, removing the authenticator-app factor or
@@ -965,7 +1003,10 @@ carries a valid token, or the test asserts the wrong layer.
 | `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` | function | The four guard primitives, for pages a consumer routes themselves. |
 | `requireFreshStepUp` | function | Demands a step-up no older than `freshStepUpMaxAgeMs` on every state-changing request of a user who owes one. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` is the opt-out. |
 | `resolveAuth` | function | Establishes the identity when the session carries one and admits an anonymous request unchanged — what the verify group runs, since that page serves a sign-in and a step-up alike. |
-| `authCtx` | const | The context variable `requireAuth` writes the identity to and every later guard reads. |
+| `authCtx` | const | The context variable `requireAuth` and `resolveAuth` write the identity to and every later guard reads. |
+| `authNav(options)` | function | The `activeFilters` and `slots` a `Navbar` needs to show this request's viewer their own destinations, including the sign-out control and its session-bound token. Returns a per-request resolver, so the signing key is imported once per isolate. |
+| `AUTH_NAV_FILTERS` | const | The three filter tokens a nav item marks itself with — `anonymous`, `signedIn`, `admin`. |
+| `AUTH_NAV_SIGNOUT_SLOT` | const | The slot key `authNav` fills the sign-out control into. |
 | `resolveAuthIdentity(session, users, at)` | function | Re-reads the signed-in user, answering `null` for a missing or deactivated one, for a session past its absolute lifetime, for one carrying no established-at stamp, and for one established at or before the account's revocation barrier — and **writes**, dropping that session's auth keys in each of those cases. A store outage denies without clearing. |
 | `establishAuthSession(session, userId, at)` | function | Writes the identity and the established-at stamp, clears the step-up mark and the pending address, and regenerates the session id. |
 | `renewAuthSession(session, at)` | function | Re-stamps this session past a revocation barrier raised at `at`, so the request that raised one keeps its own session. No id rotation and no cleared step-up mark — the actor is not gaining privilege. |
@@ -992,17 +1033,19 @@ carries a valid token, or the test asserts the wrong layer.
 | `PasskeyListView`, `PasskeyEditView`, `TotpEnrolView`, `EmailChangeView` | component | The four self-service pages. |
 | `AdminUsersView`, `AdminUserEditView`, `AdminElevateView` | component | The user list, the edit page, and the elevation bootstrap. |
 | `AuthFactorsView`, `AuthFactorsTrigger` | component | One account's sign-in methods, and the button that fetches the panel in its own place. |
+| `AuthSignout` | component | The control that ends a session, for a navbar slot or a card footer. Sign-in and sign-up are pages an ordinary link reaches; sign-out is a POST carrying a token, so it is the one entry point a host would otherwise hand-roll. |
 | `AuthWebOptions`, `AuthWebPaths`, `AuthRequestServices`, `AuthIconName`, `AuthPageState` | types | What every loader and action needs, the three href maps, this request's services, the sprite names, and one render's refusal copy. |
 | `AuthPathMap`, `AuthEntryPaths`, `AuthAccountPaths`, `AuthAdminPaths` | types | What `authPaths` returns, and the three maps it is read through. |
 | `AuthRouteGroup`, `AuthGuardName`, `AuthMedium` | types | One entry of the group table, the six guard names, and the body a group answers with. |
 | `AuthGuardChainOptions`, `AuthGuardOptions`, `AuthEnrolmentGuardOptions`, `AuthRouteMaps` | types | What `createAuthGuards` and the primitives take — the step-up freshness window and `AuthGuardOptions.now` included. |
 | `AuthGuardResolver` | type | `(c) => T \| Promise<T>` — how a guard's user store and factor registry are built, per request, from the bindings that request carries. |
 | `AuthIdentity` | type | What `authCtx` carries — the user id, address, admin flag and step-up time. |
+| `AuthNav`, `AuthNavOptions`, `AuthNavContext` | types | What `authNav` answers with — the `activeFilters` and `slots` a `Navbar` takes — what it is wired from, and the request it reads the identity off. |
 | `AuthViews`, `AuthViewName`, `AuthViewProps`, `AuthPageOptions` | types | The override map, its page names, the props each name's view receives, and what one page render takes. `AuthViewName` is `keyof AuthViewProps`, so the two cannot drift. |
 | `AuthViewResolved`, `AuthViewRequest` | types | What `resolveAuthView` answers with, and what it is asked for — the name, the optional state, and the `guarded` claim. |
 | `AuthViewChrome` | type | The `class` and `level` every view accepts so a host page can place it. |
 | `AuthPasskeyContract` | type | Everything the browser controller reads off a ceremony's scope root. |
-| `SigninViewProps`, `SignupViewProps`, `VerifyViewProps`, `PasskeyEnrolViewProps`, `PasskeyListViewProps`, `PasskeyRow`, `PasskeyEditViewProps`, `TotpEnrolViewProps`, `TotpEnrolState`, `EmailChangeViewProps`, `AdminUsersViewProps`, `AdminUserEditViewProps`, `AdminElevateViewProps`, `AuthFactorsViewProps`, `AuthFactorsTriggerProps`, `AuthFactorRow`, `AuthFactorState` | types | The props of each shipped view — the contract an override is held to. |
+| `SigninViewProps`, `SignupViewProps`, `VerifyViewProps`, `PasskeyEnrolViewProps`, `PasskeyListViewProps`, `PasskeyRow`, `PasskeyEditViewProps`, `TotpEnrolViewProps`, `TotpEnrolState`, `EmailChangeViewProps`, `AdminUsersViewProps`, `AdminUserEditViewProps`, `AdminElevateViewProps`, `AuthFactorsViewProps`, `AuthFactorsTriggerProps`, `AuthSignoutProps`, `AuthFactorRow`, `AuthFactorState` | types | The props of each shipped view — the contract an override is held to. |
 
 ---
 

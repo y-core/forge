@@ -1,7 +1,0 @@
-{
-  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x'), (2, 'b@x');",
-  "custom": "CREATE INDEX users_email ON users (email);\n",
-  "composeRefused": "index users_email is in the migrations and in no declared schema, and rebuilding users would drop it",
-  "query": "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'users_email') AS users_email",
-  "rows": [{ "users": 2, "users_email": 1 }]
-}

@@ -1,1 +1,0 @@
-CREATE TABLE parent (id INTEGER PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) < 100)) STRICT;

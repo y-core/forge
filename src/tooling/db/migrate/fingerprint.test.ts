@@ -17,10 +17,4 @@ describe("schemaFingerprint()", () => {
       "8359743d2b2518c82a9856ec61e6821c385420a9cee8dd08edb8803618724054",
     );
   });
-
-  it("excludes the migrations table the config names", () => {
-    const objects = [object("table", "users", "U"), object("table", "app_migrations")];
-    expect(schemaFingerprint(objects, "app_migrations")).toBe(schemaFingerprint([object("table", "users", "U")]));
-    expect(schemaFingerprint(objects, "d1_migrations")).not.toBe(schemaFingerprint([object("table", "users", "U")]));
-  });
 });

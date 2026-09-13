@@ -1,10 +1,32 @@
 import { CliError } from "../../cli/errors";
 import { sqlIdentifierKey } from "./normalize";
-import type { OwnershipClaim, SchemaModel } from "./types";
+import type { DesiredState, OwnershipClaim, SchemaModel, SchemaSnapshot } from "./types";
 
 /** The names one declared schema owns, keyed as SQLite resolves a name: everything its text declares. @internal */
 export function ownedNames(claim: OwnershipClaim): Set<string> {
   return new Set((claim.declared ?? []).map((object) => sqlIdentifierKey(object.name)));
+}
+
+/** Each declared schema's object names as its file writes them, sorted — what the snapshot remembers so a later compose can name who declared a dropped object. @internal */
+export function declaredNamesBySource(claims: readonly OwnershipClaim[]): Record<string, string[]> {
+  const written = (claim: OwnershipClaim) => new Map((claim.declared ?? []).map((object) => [sqlIdentifierKey(object.name), object.name]));
+  return Object.fromEntries(claims.map((claim) => [claim.source, [...written(claim).values()].sort()]));
+}
+
+// These names explain a drop the diff already decided on; nothing here keeps an object out of the diff or refuses one.
+/** Each dropped object a source in the snapshot declared that `config/db.ts` does not declare now, sources in snapshot order. @internal */
+export function attributeDrops(
+  snapshot: SchemaSnapshot | null,
+  states: readonly DesiredState[],
+  dropped: readonly string[],
+): { source: string; objects: string[] }[] {
+  if (snapshot === null) return [];
+  const declaredNow = new Set(states.map((state) => state.source));
+  const gone = new Set(dropped.map((name) => sqlIdentifierKey(name)));
+  return Object.entries(snapshot.declared)
+    .filter(([source]) => !declaredNow.has(source))
+    .map(([source, names]) => ({ source, objects: names.filter((name) => gone.has(sqlIdentifierKey(name))).sort() }))
+    .filter((attribution) => attribution.objects.length > 0);
 }
 
 /** Refuses a name two declared schemas both hold, and an index or trigger on a table another file declares. @internal */

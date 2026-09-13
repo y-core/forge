@@ -77,6 +77,15 @@ export interface CsrfKeyRing {
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies per consumer
 export type CsrfSecretResolver = (c: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
 
+/** Options for `csrfMinter`, which are `csrfProtection`'s minting half. @public */
+export interface CsrfMinterOptions {
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+  secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+  /** Binds the token to a subject — pass the same resolver the `csrfProtection` guarding the path was given, or `false` where it opted out. */
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+  subject: ((context: RequestContext<any, any>) => string | undefined) | false;
+}
+
 /** Options for the `csrfProtection` middleware. @public */
 export interface CsrfProtectionOptions {
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies

@@ -6,6 +6,7 @@ import {
   describeSchemaDiff,
   destructivePlanDigest,
   diffSchemaModels,
+  droppedObjectNames,
   parseSchemaRename,
   refuseAddColumn,
   refuseDropColumn,
@@ -355,5 +356,53 @@ describe("destructivePlanDigest()", () => {
     expect(withCreate).not.toBe(one);
     expect(withIndex).not.toBe(one);
     expect(withIndex).not.toBe(withCreate);
+  });
+
+  it("changes with the causes and holds still without them, so an approval covers why the plan drops what it drops", () => {
+    const plan = planOf([DROP_AUDIT]);
+    const cause = "audit was declared by node_modules/acme/schema.sql";
+
+    expect(destructivePlanDigest(plan, [])).toBe(destructivePlanDigest(plan));
+    expect(destructivePlanDigest(plan, [cause])).toBe(destructivePlanDigest(plan, [cause]));
+    expect(destructivePlanDigest(plan, [cause])).not.toBe(destructivePlanDigest(plan));
+    expect(destructivePlanDigest(plan, [cause])).not.toBe(destructivePlanDigest(plan, [`${cause} — nothing declares it now`]));
+  });
+});
+
+describe("droppedObjectNames()", () => {
+  const NO_NAMED = { created: [], dropped: [], changed: [] };
+
+  it("is every dropped table, index, trigger and view, and no dropped column", () => {
+    const diff: SchemaDiff = {
+      tables: [
+        { kind: "drop", name: "audit" },
+        { kind: "create", name: "notes" },
+        { kind: "alter", name: "users", added: [], dropped: ["nickname"] },
+      ],
+      indexes: { ...NO_NAMED, dropped: ["audit_at"] },
+      triggers: { ...NO_NAMED, dropped: ["audit_ins"] },
+      views: { ...NO_NAMED, dropped: ["audit_recent"] },
+      destructive: [],
+      refusals: [],
+      dataDependent: [],
+      dropDependents: [],
+    };
+
+    expect(droppedObjectNames(diff)).toEqual(["audit", "audit_at", "audit_ins", "audit_recent"]);
+  });
+
+  it("is empty for a diff that drops nothing outright", () => {
+    expect(
+      droppedObjectNames({
+        tables: [{ kind: "create", name: "notes" }],
+        indexes: NO_NAMED,
+        triggers: NO_NAMED,
+        views: NO_NAMED,
+        destructive: [],
+        refusals: [],
+        dataDependent: [],
+        dropDependents: [],
+      }),
+    ).toEqual([]);
   });
 });

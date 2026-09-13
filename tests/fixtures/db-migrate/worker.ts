@@ -18,17 +18,15 @@ export default {
       return json(rows.results.map((row) => row.name));
     }
     if (url.pathname === "/migrations") {
-      const rows = await env.DB.prepare("SELECT applied_name, sha256 FROM forge_migrations ORDER BY applied_name").all<{
-        applied_name: string;
+      const rows = await env.DB.prepare("SELECT name, sha256, applied_at, fingerprint FROM _forge_migrations ORDER BY id").all<{
+        name: string;
         sha256: string;
+        applied_at: number;
+        fingerprint: string | null;
       }>();
       return json(rows.results);
     }
     if (url.pathname === "/schema-health") return json(await checkSchemaHealth(env.DB));
-    if (url.pathname === "/meta") {
-      const rows = await env.DB.prepare("SELECT key, value FROM forge_schema_meta ORDER BY key").all<{ key: string; value: string }>();
-      return json(Object.fromEntries(rows.results.map((row) => [row.key, row.value])));
-    }
     return new Response("not found", { status: 404 });
   },
 };

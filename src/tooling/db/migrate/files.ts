@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
+import { declaredMigrations } from "../declared";
 import { sha256 } from "../digest";
 import { parseMigrationHeader } from "../schema/header";
 import type { DbIo, DbRunContext, Migration, MigrationFile } from "../types";
@@ -47,12 +48,12 @@ export function migrationChecksum(sql: string): string {
 
 /** Every migration on disk, in apply order. @internal */
 export function readMigrations(run: DbRunContext): Migration[] {
-  return discoverMigrations(readMigrationFiles(run.io, run.config.entry.migrationsDir));
+  return discoverMigrations(readMigrationFiles(run.io, declaredMigrations(run).path));
 }
 
-/** SHA-256 over every migration's name and stamp-blanked bytes in order — what catches an applied migration whose file was edited. @internal */
-export function migrationsDigest(migrations: readonly Pick<Migration, "name" | "sql">[]): string {
-  return sha256(migrations.map((m) => `${m.name}.sql\0${parseMigrationHeader(m.sql).covered}`).join("\0\0"));
+/** SHA-256 over every migration's name and checksum in order — what catches an applied migration whose file was edited. @internal */
+export function migrationsDigest(migrations: readonly Pick<Migration, "name" | "sha256">[]): string {
+  return sha256(migrations.map((m) => `${m.name}\0${m.sha256}`).join("\0\0"));
 }
 
 /** The number the next migration takes: above every version already on disk. @internal */

@@ -39,7 +39,7 @@ export interface SchemaObject {
   readonly sql: string | null;
 }
 
-/** How the schema stands against the fingerprint `forge db migrate` recorded; `unavailable` means no `forge_schema_meta` table. @public */
+/** How the schema stands against the fingerprint `forge db migrate` certified; `unavailable` means no `_forge_migrations` table. @public */
 export type SchemaHealthState = "match" | "mismatch" | "unrecorded" | "unavailable";
 
 /** The schema health report: the state, and both fingerprints. @public */
@@ -49,13 +49,8 @@ export interface SchemaHealth {
   readonly actual: string | null;
 }
 
-/** Options for `checkSchemaHealth`; the migrations table defaults to wrangler's `d1_migrations`. @public */
-export interface SchemaHealthOptions {
-  migrationsTable?: string | undefined;
-}
-
 /** Options for `schemaHealthMonitor`: where the binding is, and which logger takes the record. @public */
-export interface SchemaHealthMonitorOptions<Bindings = Record<string, unknown>> extends SchemaHealthOptions {
+export interface SchemaHealthMonitorOptions<Bindings = Record<string, unknown>> {
   binding: (c: AppContext<Bindings>) => D1DatabaseLike | undefined;
   logger?: Logger | undefined;
 }

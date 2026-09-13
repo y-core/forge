@@ -95,10 +95,10 @@ export function describeTable(io: DbIo, home: Home, name: string): AppTable {
 }
 
 /** Every table the app owns, each with the key a paged read of it orders by. @internal */
-export function discoverAppTables(io: DbIo, home: Home, migrationsTable: string): AppTable[] {
+export function discoverAppTables(io: DbIo, home: Home): AppTable[] {
   const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
   return objects
-    .filter((object) => object.type === "table" && classifyTable(object.name, migrationsTable) === "app")
+    .filter((object) => object.type === "table" && classifyTable(object.name) === "app")
     .map((object) => describeTable(io, home, object.name));
 }
 

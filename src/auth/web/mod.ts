@@ -15,6 +15,8 @@ export {
 export type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthGuardResolver, AuthRouteMaps } from "./types";
 export { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment, resolveAuth } from "./guards";
 export type { AuthIdentity } from "./types";
+export type { AuthNav, AuthNavContext, AuthNavOptions } from "./types";
+export { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
 export {
   authCtx,
   AUTH_PENDING_SIGNIN_SESSION_KEY,
@@ -73,6 +75,8 @@ export type { EmailChangeViewProps } from "./views/types";
 export { EmailChangeView } from "./views/email-change";
 export type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./views/types";
 export { PasskeyEnrolView } from "./views/passkey-enrol";
+export type { AuthSignoutProps } from "./views/types";
+export { AuthSignout } from "./views/signout";
 export type { SigninViewProps } from "./views/types";
 export { SigninView } from "./views/signin";
 export type { SignupViewProps } from "./views/types";

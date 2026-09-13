@@ -26,14 +26,7 @@ function dbConfig(): DbConfig {
     configPath: "/app/wrangler.jsonc",
     config: wranglerConfig(),
     env: null,
-    entry: {
-      binding: "DB",
-      databaseName: "app-db",
-      databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      previewDatabaseId: null,
-      migrationsDir: MIGRATIONS,
-      migrationsTable: "d1_migrations",
-    },
+    entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place: "remote", database: "live" },
   };
 }
@@ -69,7 +62,7 @@ describe("localScratchConfig", () => {
 describe("composeScratchHome", () => {
   it("writes a synthesized config under the side's compose directory", () => {
     const { run, io } = context();
-    const home = composeScratchHome(run, "baseline", "/tmp/migrations");
+    const home = composeScratchHome(run, "baseline");
     expect(home.dir).toBe(`${COMPOSE}/baseline`);
     expect(home.configPath).toBe(`${COMPOSE}/baseline/wrangler.jsonc`);
     expect(home.database).toBe("app-db-compose-baseline");
@@ -81,50 +74,64 @@ describe("composeScratchHome", () => {
       binding: "DB",
       database_name: "app-db-compose-baseline",
       database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      migrations_dir: "/tmp/migrations",
-      migrations_table: "d1_migrations",
     });
   });
 
   it("removes the miniflare state directory under the home's persist path", () => {
     const state = `${COMPOSE}/desired/.wrangler/state/v3/d1/miniflare-D1DatabaseObject`;
     const { run, io } = context({ [`${state}/db.sqlite`]: "stale", "/app/keep.sql": "kept" });
-    composeScratchHome(run, "desired", "/tmp/migrations");
+    composeScratchHome(run, "desired");
     expect(io.exists(`${state}/db.sqlite`)).toBe(false);
     expect(io.exists("/app/keep.sql")).toBe(true);
   });
 });
 
 describe("replayBaseline", () => {
-  it("writes every migration to the baseline scratch and applies them", () => {
+  it("stages every migration's SQL in the baseline scratch and loads each with its own execute", () => {
     const { run, io } = context();
-    io.rules.push({ match: (a) => argvHas(a, "migrations", "apply"), reply: OK });
+    io.rules.push({ match: (a) => argvHas(a, "execute", "--file"), reply: OK });
     const home = replayBaseline(run, [
       migration("0001_init", "CREATE TABLE a (id INTEGER);"),
       migration("0002_next", "CREATE TABLE b (id INTEGER);"),
     ]);
-    expect(io.readText(`${COMPOSE}/baseline/migrations/0001_init.sql`)).toBe("CREATE TABLE a (id INTEGER);");
-    expect(io.readText(`${COMPOSE}/baseline/migrations/0002_next.sql`)).toBe("CREATE TABLE b (id INTEGER);");
+    expect(io.readText(`${COMPOSE}/baseline/0001_init.sql`)).toBe("CREATE TABLE a (id INTEGER);");
+    expect(io.readText(`${COMPOSE}/baseline/0002_next.sql`)).toBe("CREATE TABLE b (id INTEGER);");
     expect(io.calls).toEqual([
       [
         "wrangler",
         "d1",
-        "migrations",
-        "apply",
+        "execute",
         "app-db-compose-baseline",
         "-c",
         `${COMPOSE}/baseline/wrangler.jsonc`,
         "--local",
         "--persist-to",
         `${COMPOSE}/baseline/.wrangler/state`,
+        "--yes",
+        "--file",
+        `${COMPOSE}/baseline/0001_init.sql`,
+      ],
+      [
+        "wrangler",
+        "d1",
+        "execute",
+        "app-db-compose-baseline",
+        "-c",
+        `${COMPOSE}/baseline/wrangler.jsonc`,
+        "--local",
+        "--persist-to",
+        `${COMPOSE}/baseline/.wrangler/state`,
+        "--yes",
+        "--file",
+        `${COMPOSE}/baseline/0002_next.sql`,
       ],
     ]);
     expect(home.database).toBe("app-db-compose-baseline");
   });
 
-  it("wraps a failing apply in a CliError naming the replay", () => {
+  it("wraps a failing load in a CliError naming the replay", () => {
     const { run, io } = context();
-    io.rules.push({ match: (a) => argvHas(a, "migrations", "apply"), reply: { code: 1, stdout: "", stderr: 'near "CREAT": syntax error' } });
+    io.rules.push({ match: (a) => argvHas(a, "execute", "--file"), reply: { code: 1, stdout: "", stderr: 'near "CREAT": syntax error' } });
     let caught: unknown;
     try {
       replayBaseline(run, [migration("0001_init", "CREAT TABLE a;")]);

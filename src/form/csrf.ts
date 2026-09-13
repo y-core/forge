@@ -19,6 +19,7 @@ import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
 import type {
   CsrfKeyRing,
+  CsrfMinterOptions,
   CsrfProtectionOptions,
   CsrfResult,
   CsrfSecretResolver,
@@ -162,14 +163,12 @@ export async function mintCsrf(context: RequestContext<any, any>, path?: string)
 /** CSRF secret resolver type. @public */
 export type { CsrfSecretResolver };
 
-/** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
-export function csrfProtection(options: CsrfProtectionOptions): Middleware {
-  const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
-  const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
-
+/** Resolves the ring `secret` names, cached per `env` — a key import on every request is pure waste. */
+// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+function ringResolver(secret: CsrfSecretResolver): (context: RequestContext<any, any>) => Promise<CsrfKeyRing> {
   const ringCache = new WeakMap<object, CsrfKeyRing>();
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  const resolveRing = async (context: RequestContext<any, any>): Promise<CsrfKeyRing> => {
+  return async (context: RequestContext<any, any>): Promise<CsrfKeyRing> => {
     // oxlint-disable-next-line typescript/no-explicit-any -- env shape varies across apps and tests
     const envObj = (context as any).env;
     const cacheKey = envObj && typeof envObj === "object" ? (envObj as object) : null;
@@ -181,6 +180,45 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
     if (cacheKey) ringCache.set(cacheKey, ring);
     return ring;
   };
+}
+
+/** The ring's active key, or a throw naming the key id nothing in it answers to. */
+function activeCsrfKey(ring: CsrfKeyRing): CryptoKey {
+  const key = lookupKey(ring, ring.activeKeyId);
+  if (!key) throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
+  return key;
+}
+
+// For the token a page must carry for a path it is not on — a navbar's sign-out form, say, whose
+// route is guarded by a `csrfProtection` mounted on prefixes this request never took, so the minter
+// `mintCsrf` reads is either absent or bound under a different subject policy.
+/** Mints a token for a path this request is not on, under the subject policy that path's guard verifies with. @public */
+// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext<any, any>, path: string) => Promise<string> {
+  const resolveRing = ringResolver(options.secret);
+  const resolveSubject = options.subject === false ? null : options.subject;
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+  return async (context: RequestContext<any, any>, path: string): Promise<string> => {
+    if (!path) throw new Error("csrfMinter: a non-empty action path is required to mint a CSRF token");
+    const ring = await resolveRing(context);
+    const subject = resolveSubject ? resolveSubject(context) : undefined;
+    // A bound token nothing supplied a subject for would be minted only to be refused, so the
+    // wiring error is raised where it can be fixed rather than carried into the form.
+    if (resolveSubject && subject === undefined) {
+      throw new Error(
+        "csrfMinter: the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE the mint — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
+      );
+    }
+    return createCsrfToken(activeCsrfKey(ring), path, { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) });
+  };
+}
+
+/** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
+export function csrfProtection(options: CsrfProtectionOptions): Middleware {
+  const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
+  const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
+
+  const resolveRing = ringResolver(secret);
 
   // `null` where `subject: false` opted out, so "no resolver" and "the resolver returned nothing" stay distinguishable.
   const resolveSubject = options.subject === false ? null : options.subject;
@@ -198,10 +236,7 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   return async (context, next) => {
     const method = context.method.toUpperCase();
     const ring = await resolveRing(context);
-    const activeKey = lookupKey(ring, ring.activeKeyId);
-    if (!activeKey) {
-      throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
-    }
+    const activeKey = activeCsrfKey(ring);
     const subject = resolveSubject ? resolveSubject(context) : undefined;
     if (resolveSubject && subject === undefined) warnUnbound();
     const tokenOptions: CsrfTokenOptions = { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) };

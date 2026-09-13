@@ -2,15 +2,18 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { sha256 } from "../digest";
+import { schemaDrift } from "../drift";
 import { clearLocalState, scratchHome } from "../home";
+import { applyMigrations } from "../migrate/applier";
+import { RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "../migrate/checksum";
 import { COMPANION_TABLES, ensureCompanionTables } from "../migrate/companions";
-import { migrationsDigest, readMigrations } from "../migrate/files";
+import { discoverMigrations, migrationsDigest, readMigrationFiles, readMigrations } from "../migrate/files";
 import { acquireApplyLock } from "../migrate/lock";
 import { localScratchConfig } from "../schema/scratch";
-import { INVENTORY_SELECT, quoteSqlIdentifier, rowCountSelect, toSchemaObjects } from "../sql";
+import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbIo, DbRunContext, Home, RestoreRoute, SchemaFacts } from "../types";
-import { executeFile, exportSql, migrationsApply, queryOne, queryRows, queryRowsIfTable, wranglerVersion } from "../wrangler";
+import { executeFile, exportSql, queryOne, queryRows, queryRowsIfTable, wranglerVersion } from "../wrangler";
 import {
   appSchemaDigestInput,
   BACKUP_FORMAT_VERSION,
@@ -53,12 +56,17 @@ function tableInserts(source: SourceTable): string[] {
   }
 }
 
-function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute): void {
+function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute, name: string): void {
   if (route === "full") {
     executeFile(run.io, scratch, join(directory, "full.sql"));
     return;
   }
-  migrationsApply(run.io, scratch);
+  // `record: false`: `data.sql` carries the artifact's own `_forge_migrations` rows, with their
+  // original ids, `applied_at` and `fingerprint`, so recording here would collide with every one.
+  applyMigrations(run, scratch, discoverMigrations(readMigrationFiles(run.io, join(directory, "migrations"))), {
+    label: `restore-${name}`,
+    record: false,
+  });
   // The migrations build the app's tables and no companion: `data.sql` carries the companion rows,
   // so the tables holding them have to exist before it is loaded.
   ensureCompanionTables(run.io, scratch);
@@ -69,26 +77,19 @@ function restoreInto(run: DbRunContext, scratch: Home, directory: string, route:
 export function restoreScratch(run: DbRunContext, directory: string, name: string, route: RestoreRoute): Home {
   // Route `migrations` replays the artifact's own embedded copy, which is the property being proven.
   // The scratch is local whatever the run's target: a remote artifact is proven here, never there.
-  const scratch = scratchHome(localScratchConfig(run.config), run.io, name, `${run.home.database}-${name}`, join(directory, "migrations"));
+  const scratch = scratchHome(localScratchConfig(run.config), run.io, name, `${run.home.database}-${name}`);
   // A restore into a non-empty target is refused by design, and nothing in this tool removes a row.
   clearLocalState(run.io, scratch);
-  restoreInto(run, scratch, directory, route);
+  restoreInto(run, scratch, directory, route, name);
   return scratch;
 }
 
-function proveRoute(
-  run: DbRunContext,
-  directory: string,
-  route: RestoreRoute,
-  sources: readonly SourceTable[],
-  appDigest: string,
-  migrationsTable: string,
-): number {
+function proveRoute(run: DbRunContext, directory: string, route: RestoreRoute, sources: readonly SourceTable[], appDigest: string): number {
   const scratch = restoreScratch(run, directory, `verify-${route}`, route);
 
   let divergent = 0;
   run.io.log(`  route ${route}:`);
-  const restored = sha256(appSchemaDigestInput(toSchemaObjects(queryRows(run.io, scratch, INVENTORY_SELECT)), migrationsTable));
+  const restored = sha256(appSchemaDigestInput(toSchemaObjects(queryRows(run.io, scratch, INVENTORY_SELECT))));
   if (restored !== appDigest) {
     divergent += 1;
     run.io.log(`    ✗ schema — the app objects digest ${appDigest} at the source and ${restored} once restored`);
@@ -120,23 +121,30 @@ export function runBackup(run: DbRunContext, options: BackupOptions): BackupOutc
 
 function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
   const { io, home, config } = run;
-  const migrationsTable = config.entry.migrationsTable;
 
   const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-  const inventory = checkInventory(objects, migrationsTable);
+  const inventory = checkInventory(objects);
   if (inventory.length > 0) {
     throw new CliError("invalid-args", `${home.database} is not a database this tool can back up:\n  ${inventory.join("\n  ")}`);
   }
 
-  const appTables = discoverAppTables(io, home, migrationsTable);
+  const appTables = discoverAppTables(io, home);
   const companionNames = objects
     .filter((object) => object.type === "table" && COMPANION_TABLES.includes(object.name))
     .map((object) => object.name)
     .sort();
 
-  const recorded = queryRowsIfTable(io, home, `SELECT name FROM ${quoteSqlIdentifier(migrationsTable)} ORDER BY id`);
+  const recorded = queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
   const onDisk = readMigrations(run);
-  const appDigest = sha256(appSchemaDigestInput(objects, migrationsTable));
+  // Both reads are already in hand, so the state costs nothing. An artifact taken from a drifted
+  // database is still worth having — what it may not do is pass its own schema off as the certified one.
+  const drift = schemaDrift(recorded === null ? null : toRecordedChecksums(recorded), objects);
+  if (drift.state === "mismatch") {
+    io.log(
+      `! ${home.database} schema fingerprint ${drift.actual} is not the ${drift.recorded} the last apply certified — backing up the database as found`,
+    );
+  }
+  const appDigest = sha256(appSchemaDigestInput(objects));
   const schema: SchemaFacts = {
     migrations: (recorded ?? []).map((row) => String(row.name ?? "")),
     digest: appDigest,
@@ -145,7 +153,6 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
 
   const sources = appTables.map((table) => readWholeTable(io, home, table));
   const companions = companionNames.map((name) => readWholeTable(io, home, describeTable(io, home, name)));
-  const migrationSource = recorded === null ? null : readWholeTable(io, home, describeTable(io, home, migrationsTable));
   io.log(`read ✓ ${sources.reduce((total, source) => total + source.rows.length, 0)} rows across ${sources.length} tables`);
 
   const directory = join(resolveBackupsDir(run, options.out), formatBackupDirectory(home.database, io.now()));
@@ -157,11 +164,8 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
   const schemaSql = io.readText(join(directory, "schema.sql"));
 
   const rows = [...sources.flatMap(tableInserts), ...companions.flatMap(tableInserts)];
-  // The migrations table is restored by the full route only: `wrangler d1 migrations apply` writes
-  // those rows itself, and a second copy would collide with the one it just wrote.
-  const migrationRows = migrationSource === null ? [] : tableInserts(migrationSource);
   const dataSql = `${DATA_PREAMBLE}\n${rows.join("\n")}\n`;
-  const fullSql = `${schemaSql.endsWith("\n") ? schemaSql : `${schemaSql}\n`}${[...migrationRows, ...rows].join("\n")}\n`;
+  const fullSql = `${schemaSql.endsWith("\n") ? schemaSql : `${schemaSql}\n`}${rows.join("\n")}\n`;
   writeArtifactFile(io, join(directory, "data.sql"), dataSql);
   writeArtifactFile(io, join(directory, "full.sql"), fullSql);
 
@@ -187,9 +191,7 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
 
   const routes: readonly RestoreRoute[] = ["full", "migrations"];
   const proved = [...sources, ...companions];
-  const verified = options.verify
-    ? routes.map((route) => ({ route, divergent: proveRoute(run, directory, route, proved, appDigest, migrationsTable) }))
-    : [];
+  const verified = options.verify ? routes.map((route) => ({ route, divergent: proveRoute(run, directory, route, proved, appDigest) })) : [];
 
   // Counted after the reads and after the proof, which is the widest window a concurrent write can
   // be caught in: the manifest records the rows the artifact holds, and this says they are all of them.
@@ -217,6 +219,7 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
     dumper: { tool: "forge db backup (schema via wrangler d1 export --no-data)", version: wranglerVersion(io, home) },
     database: { name: home.database, id: config.entry.databaseId, target: config.target.place, persistPath: home.persistTo },
     schema,
+    drift: drift.state,
     migrations: onDisk.map((migration) => ({ name: migration.name, sha256: migration.sha256 })),
     tables: sources.map((source) => ({
       name: source.table.name,
@@ -229,6 +232,11 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
     }),
     warnings: [
       ...(options.verify ? [] : ["--no-verify: nothing in this artifact has been proven to rebuild"]),
+      ...(drift.state === "mismatch"
+        ? [
+            `taken from a schema no migration certified: the fingerprint is ${drift.actual} and the last apply certified ${drift.recorded} — every digest here describes the database as found, not as the migrations build it`,
+          ]
+        : []),
       ...(isRemotePlace(config.target.place)
         ? [
             `taken from ${config.target.place}: restore is refused for remote and preview — this artifact restores into local, standby, or a rehearsal scratch`,

@@ -1,1 +1,0 @@
-CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL CHECK (length(email) < 100)) STRICT;

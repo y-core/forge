@@ -4,17 +4,7 @@ import { CliError } from "../cli/errors";
 import { argvHas, fakeDbIo, jsonRows, OK } from "./test-support";
 import type { FakeDbIo } from "./types";
 import type { Home } from "./types";
-import {
-  executeFile,
-  executeSql,
-  exportSql,
-  migrationsApply,
-  queryOne,
-  queryRows,
-  queryRowsIfTable,
-  runWrangler,
-  wranglerVersion,
-} from "./wrangler";
+import { executeFile, executeSql, exportSql, queryOne, queryRows, queryRowsIfTable, runWrangler, wranglerVersion } from "./wrangler";
 
 function home(over: Partial<Home> = {}): Home {
   return {
@@ -293,19 +283,6 @@ describe("executeFile()", () => {
     expect(() => executeFile(io, home(), "/tmp/dump.sql")).toThrow(
       "loading /tmp/dump.sql against local (app-db) failed (exit 1):\nparse error at line 3",
     );
-  });
-});
-
-describe("migrationsApply()", () => {
-  it("applies against the home's place and returns what wrangler printed", () => {
-    const io = ioWith(() => true, { code: 0, stdout: "🌀 Applied 1 migration\n", stderr: "" });
-    expect(migrationsApply(io, REMOTE).stdout).toBe("🌀 Applied 1 migration\n");
-    expect(io.calls[0]).toEqual(["wrangler", "d1", "migrations", "apply", "app-db", "-c", "/app/wrangler.jsonc", "--remote"]);
-  });
-
-  it("throws with the exit code when an apply fails", () => {
-    const io = ioWith(() => true, { code: 1, stdout: "", stderr: "migration 0002 failed" });
-    expect(() => migrationsApply(io, home())).toThrow("migrations apply against local (app-db) failed (exit 1):\nmigration 0002 failed");
   });
 });
 

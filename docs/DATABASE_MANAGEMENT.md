@@ -7,9 +7,9 @@ audience: consumer
 # Database Management
 
 > Owns what `@y-core/forge/tooling/db` decides on a consumer's behalf through `forge db`: that migrations are forward-only and generated from a
-> declared schema, what the undo is for each of the four places a database can live, the three tables forge keeps beside the app's own, what the
-> migration linter refuses, what makes a seed idempotent, how a library's declared schema reaches an app without being copied into it, and what a
-> backup artifact must be for a restore to mean anything.
+> declared schema, what the undo is for each of the four places a database can live, the two tables forge keeps beside the app's own and the history
+> it owns outright, what the migration linter refuses, what makes a seed idempotent, how a library's declared schema reaches an app without being
+> copied into it, and what a backup artifact must be for a restore to mean anything.
 >
 > Defers to: [`SCHEMA_COMPOSITION.md`][sc] for how a declared schema becomes the migration this document applies — ownership, what compose emits,
 > the stamp and the snapshot; [`src/tooling/db/README.md`][db-readme] for the command tree, every flag and every export;
@@ -25,18 +25,18 @@ audience: consumer
 - §2 Targets and Homes: the `place[:database]` grammar, the four places, and where each one's state lives
 - §2a Standby — a Second Local Database: what it is for and why it is generated, not checked in
 - §3 The Undo, Per Place: a Time Travel bookmark on a deployed database, reset-and-restore locally, and a backup from any place
-- §4 The Companion Tables: the three tables forge keeps, and what each one catches
-- §4a forge_migrations — Per-Migration Checksums: an applied migration whose file changed
-- §4b forge_schema_meta — Digest and Fingerprint: a schema that moved without a migration
-- §4c forge_seed_history — What Has Been Seeded: a seed that already ran, and one that was edited since
+- §4 The Companion Tables: the two tables forge keeps, why their names begin `_forge_`, and that forge owns the migration history outright
+- §4a `_forge_migrations` — The Migration History: what each column holds, the three states status reports, and what a NULL fingerprint means
+- §4c `_forge_seed_history` — What Has Been Seeded: a seed that already ran, and one that was edited since
 - §5 The Migration Lint Rules: the eighteen rules, their levels, when a level aborts, and the compose warning that never does
 - §6 Applying: the lock, the `--to` cut, and the status gate
 - §6a The Apply Lock: one apply per home at a time
-- §6b Every Apply Goes Through a Synthesised Config: why a `--to` cut runs from a generated directory
 - §6c `status --check` Exit Conditions: exactly what makes the gate fail
-- §6d Repair, then Check: an unrecorded checksum is recorded from the file, then an edited history, a moved fingerprint and a mis-stamped migration
-  each refuse the apply
-- §6e Rehearsing Against Real Rows: the pending migrations applied to a copy restored from a backup, before the target is touched
+- §6d Check, then Apply: an edited history, a moved fingerprint and a mis-stamped migration each refuse the apply, and how the body and its history
+  row reach the database together
+- §6e Who Else Holds the Database to Its Fingerprint: the one drift read, what each verb does with it, and why `schema check`, `restore` and `reset`
+  are not on the list
+- §6f Rehearsing Against Real Rows: the pending migrations applied to a copy restored from a backup, before the target is touched
 - §7 The Seed Contract: keyed by directory and name, hashed over raw text, refused when it changed, off the deployed database without a places line,
   and guarded there like a migrate
 - §7a Migration or Seed: where a row belongs
@@ -67,7 +67,7 @@ Three consequences a consumer acts on:
 - **A migration that has been applied is never edited.** Its bytes are checksummed at apply time, and editing the file makes
   `forge db migrate status` report `mismatch` until the file is put back or the database is rebuilt (§4a).
 - **A migration is numbered above every migration already applied.** A pending file numbered below an applied one is refused before anything runs,
-  because wrangler would apply it out of order.
+  naming the file to renumber: applying it would land it after a migration composed against a history that did not include it.
 - **Anything destructive is a lint finding, not a matter of taste** (§5). `DROP COLUMN` in particular is a warning rather than an error only because
   there is a legitimate use of it, and never because the data comes back. Compose refuses to write a drop at all until
   `--allow-destructive <digest>` says the plan was read (`SCHEMA_COMPOSITION.md` §4).
@@ -119,11 +119,11 @@ point on demand — for now, or for `--timestamp <ISO 8601 or Unix timestamp>` �
 deployed apply with no undo recorded. A Time Travel restore discards every write since the point it returns to, so it asks before it acts unless
 `--yes` says otherwise.
 
-Before the bookmark, a `migrate` checks the database against its own record and refuses one whose schema moved since the last apply recorded its
-fingerprint — `--allow-drift` is the way past that refusal, and the apply then re-records the fingerprint (§6d).
+Before the bookmark, a `migrate` checks the database against its own record and refuses one whose schema moved since the last apply certified its
+fingerprint — `--allow-drift` is the way past that refusal, and the apply then certifies the fingerprint again (§6d).
 
 **The cheapest undo is not needing one:** `forge db migrate --rehearse` applies the pending migrations to a copy restored from a backup artifact
-first, so a migration that only fails on real rows fails on the copy (§6e).
+first, so a migration that only fails on real rows fails on the copy (§6f).
 
 **On `local` and `standby`, the undo is a verified backup and a reset.** Time Travel does not exist off Cloudflare, so the sequence is explicit:
 
@@ -147,64 +147,87 @@ Travel to read.
 
 ## 4. The Companion Tables
 
-Forge keeps three tables of its own beside the app's, each `STRICT`, each created on first use. Their names all begin `forge_`, which is what keeps
-them out of the schema fingerprint and marks them as the toolchain's rather than the app's.
+Forge keeps two tables of its own beside the app's, each `STRICT`, each created on first use.
 
 | Table | Holds | Catches |
 | --- | --- | --- |
-| `forge_migrations` | One checksum per applied migration, identified by its name | A migration edited after it was applied, and one applied without forge |
-| `forge_schema_meta` | `migrations_digest` and `schema_fingerprint` | A schema that changed without a migration |
-| `forge_seed_history` | One row per applied seed, identified by its directory and name | A seed that already ran, and one edited since it ran |
+| `_forge_migrations` | One row per applied migration: its name, its checksum, when it ran, and the schema fingerprint it certified | A migration edited after it was applied, and a schema that changed without one |
+| `_forge_seed_history` | One row per applied seed, identified by its directory and name | A seed that already ran, and one edited since it ran |
 
-### 4a. forge_migrations — Per-Migration Checksums
+**The names begin `_forge_`, matching the platform's own `_cf_*`.** A leading underscore is how D1 already marks a table as the platform's rather
+than the app's, so forge spells its own the same way and a reader needs one convention instead of two. The prefix is what keeps both tables out of
+the schema fingerprint (§4a), out of what compose reads as the app's schema (`SCHEMA_COMPOSITION.md` §3), and out of what a backup treats as an app
+table ([`DATABASE_BACKUPS.md`][db-4] §4).
 
-Wrangler's own migrations table records that a migration ran. It does not record what ran, so a file edited after the fact still reads as applied.
-`forge_migrations` records the SHA-256 of each migration's bytes as it is applied, and `forge db migrate status` compares the three sources — the
-migrations table, this table, and the files on disk — into four states a reader must act on:
+**Forge owns the migration history outright.** No verb runs `wrangler d1 migrations apply`, and wrangler's own `d1_migrations` table is never read,
+never written and never special-cased. Wrangler remains the transport and nothing more — `d1 execute`, `d1 export` and `d1 time-travel` are what
+every verb here spawns.
+
+That has one consequence worth acting on: a database carrying a `d1_migrations` table from a wrangler-managed past now reads as one of the **app's**
+own tables, because nothing gives that name special treatment any more. It enters the schema fingerprint, compose sees an object no declared schema
+declares and plans a drop for it, and a backup carries its rows. Drop it before bringing such a database under `forge db`.
+
+### 4a. `_forge_migrations` — The Migration History
+
+Forge writes the history row itself, in the same load as the migration body (§6d), so there is one record of what ran rather than two to reconcile.
+
+| Column | Holds |
+| --- | --- |
+| `id` | `INTEGER PRIMARY KEY`. Apply order, and the single column a backup's keyset read and `ORDER BY id DESC LIMIT 1` both need |
+| `name` | The file name without `.sql`. This is the identity, carried as a unique index rather than as the key |
+| `sha256` | SHA-256 of the file's bytes with its `forge:compose` stamp blanked, so a `--restamp` is not an edit |
+| `applied_at` | Epoch milliseconds. `STRICT` has no `TIMESTAMP`, so the instant is an `INTEGER` and every reader formats it |
+| `fingerprint` | The schema fingerprint this migration left behind, or `NULL` |
+
+**`id` is never `AUTOINCREMENT`.** A backup restores keys from the artifact, and an engine-allocated key would need `sqlite_sequence` carried with
+it — the same hazard the `autoincrement` lint rule refuses on an app table (§5). Forge's own table does not get to break the rule it enforces.
+
+**The identity is `name`, and it is a unique index rather than the primary key**, because a backup's keyset read orders by one column and a
+composite key offers none. It is also what makes a duplicate migration name a hard failure: two files of the same name fail at apply time on the
+index, as a raw SQLite unique-constraint error rather than a forge message. A compose-time rule would say it better and there is not one yet.
+
+**A `NULL` fingerprint is a fact, not a missing value:** the migration was applied, and no apply has certified the schema since. It is what a run
+that applied its last migration and then failed before certifying leaves behind, and `forge db migrate status` reports it — while still exiting zero
+on that clause, since nothing about the schema is known to be wrong (§6c).
+
+`forge db migrate status` compares this table against the files on disk into three states a reader must act on:
 
 | State | Means |
 | --- | --- |
-| `pending` | On disk, not in the migrations table |
-| `mismatch` | Applied and recorded, and the file now hashes differently |
-| `unrecorded` | In the migrations table with no forge checksum — applied by wrangler directly |
-| `drift` | In the migrations table, with no file on disk |
+| `pending` | On disk, with no history row |
+| `mismatch` | Applied, and the file now hashes differently |
+| `drift` | A history row with no file on disk |
 
 A `drift` row aborts an apply outright: forge will not apply over a history it cannot read. The refusal names each drifted migration; a file deleted
 rather than checked out is the common cause.
 
-**It is two columns, `applied_name` and `sha256`, and nothing else.** The applied name wrangler recorded is what joins the two tables and keeps the
-database self-describing in a fresh clone or a restored artifact, and it is the primary key, so the table carries no index of its own. Everything
-else a bookkeeping row might hold is already recorded by the other half: `d1_migrations` holds the name and the time it was applied, and repeating
-either here would be one fact in two places with nothing keeping them equal.
-
-A database written by a forge before this one carries the older five-column shape and has no upgrade path — pre-1.0 ships no shims. Re-create a
-local one; a deployed database in that state is out of scope.
-
-### 4b. forge_schema_meta — Digest and Fingerprint
-
-Two keys, written by every apply:
-
-- **`migrations_digest`** — SHA-256 over every applied migration's applied name and bytes, in order. It changes when the set of applied files
-  changes, and it is one of the three facts a backup artifact binds itself to ([`DATABASE_BACKUPS.md`][db-4] §4).
-- **`schema_fingerprint`** — SHA-256 over the app's own schema objects as `sqlite_master` declares them, sorted, with every object whose name is the
-  migrations table or begins `forge_`, `sqlite_` or `_cf_` excluded. Two databases built from the same migrations fingerprint the same, so a
-  fingerprint that has moved without a migration is DDL someone ran by hand.
-
-Only the fingerprint is checked by `status`, and only when one has been recorded — a database migrated before forge managed it has no recorded
-fingerprint and is reported rather than failed.
+**The schema fingerprint rides on the last row.** It is a SHA-256 over the app's own schema objects as `sqlite_master` declares them, sorted, with
+every object whose name begins `_forge_`, `sqlite_` or `_cf_` excluded. Two databases built from the same migrations fingerprint the same, so a
+fingerprint that moved without a migration is DDL someone ran by hand. Only an apply certifies one, with an `UPDATE` on the row `ORDER BY id DESC`
+selects — which is why a database with **zero** applied migrations can hold no fingerprint at all: there is no row for the `UPDATE` to land on, and
+the apply says so rather than reporting a certification that did not happen.
 
 The fingerprint rules — which objects count, how they sort, what one line spells — have one home, `src/storage/db/schema.ts`, which `tooling/db`
-imports and re-exports. A Worker reads the same clause through `checkSchemaHealth` in `storage/db` ([`STORAGE_BINDINGS.md`][sb-1f] §1f), so the CLI
-and the runtime cannot judge one schema two ways.
+imports. A Worker reads the same clause through `checkSchemaHealth` in `storage/db` ([`STORAGE_BINDINGS.md`][sb-1f] §1f), so the CLI and the runtime
+cannot judge one schema two ways.
 
-### 4c. forge_seed_history — What Has Been Seeded
+**The migrations digest is computed, never stored.** It is a SHA-256 over the ordered `(name, sha256)` pairs — derived from the rows above and from
+the files on disk alike, so there is no stored rollup that can drift from what it summarises. It is one of the three facts a backup artifact binds
+itself to ([`DATABASE_BACKUPS.md`][db-4] §4) and the key compose caches a replayed baseline under (`SCHEMA_COMPOSITION.md` §7).
+
+**Seed history stays a table of its own, rather than a `type` column here.** Migration history is forward-only and is the record that makes an
+edited-after-applied file detectable at all; seed history is deliberately deleted by `seed reset` (§4c). Merging them would put that `DELETE` one
+`WHERE` clause away from the integrity record, to save one table with single-digit rows.
+
+A database written by a forge before this one carries the older `forge_migrations`, `forge_schema_meta` and `forge_seed_history` tables and has no
+upgrade path — pre-1.0 ships no shims. Re-create a local one; a deployed database in that state is out of scope.
+
+### 4c. `_forge_seed_history` — What Has Been Seeded
 
 One row per seed: `source`, the directory that declared it, its name, the SHA-256 of its **raw** file text, and when it ran — keyed by `(source,
-name)` as a unique index over a synthetic `id`, because a backup's keyset read orders by one column. The contract it enforces is §7's.
+name)` as a unique index over a synthetic `id`, because a backup's keyset read orders by one column. The contract it enforces is §7's, and why it is
+not merged into the migration history is §4a's.
 
-**It stays a table of its own, rather than a `type` column on `forge_migrations`.** Migration history is forward-only and is the record that makes
-an edited-after-applied file detectable at all; this one is deliberately deleted by `seed reset`. Merging them would put that `DELETE` one `WHERE`
-clause away from the integrity record, to save one table with single-digit rows.
 `forge db seed reset` deletes every row here and nothing else — the rows the seeds themselves wrote stay where they are, and every seed simply runs
 again on the next apply.
 
@@ -224,7 +247,7 @@ literals and quoted identifiers are masked before matching, so a rule fires on c
 | `unbounded-delete` | error | `DELETE FROM` with no `WHERE` in the statement | It empties the table |
 | `virtual-table` | error | `CREATE VIRTUAL TABLE` | `wrangler d1 export` throws on a virtual table, leaving the database unbackupable |
 | `autoincrement` | error | `AUTOINCREMENT` | A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried with it ([`DATABASE_BACKUPS.md`][db-5] §5) |
-| `explicit-transaction` | error | A statement that is `BEGIN`, `COMMIT`, `ROLLBACK` or `END` | wrangler wraps each migration in its own transaction, and a nested one fails |
+| `explicit-transaction` | error | A statement that is `BEGIN`, `COMMIT`, `ROLLBACK` or `END` | The load of a migration is already one transaction (§6d), and a nested one fails |
 | `attach-database` | error | `ATTACH` or `DETACH` | D1 is one database |
 | `add-column-not-null-no-default` | error | `ADD COLUMN … NOT NULL` with no `DEFAULT` | SQLite refuses it outright |
 | `add-column-non-constant-default` | error | `ADD COLUMN` whose `DEFAULT` is `CURRENT_TIME`, `CURRENT_DATE`, `CURRENT_TIMESTAMP` or a parenthesised expression | SQLite refuses it |
@@ -253,6 +276,14 @@ aborting, and carried in the JSON outcome as `warnings`.
 
 ## 6. Applying
 
+`forge db migrate` applies every pending migration in name order, each as one load (§6d). Two rulings shape what a run covers:
+
+**`--to <NNNN|name>` cuts the pending set.** It names either a migration's number or its name, and a name matching nothing is refused with the list
+of what is on disk. The migrations left over are reported as left for a later run.
+
+**Only the pending files are linted.** A library migration that has been applied for a year must not newly abort every apply in every consuming app
+because a lint rule was added since.
+
 ### 6a. The Apply Lock
 
 An apply takes a lock at `<home>/.forge/db-apply.lock` holding the pid that took it and the time it was taken, and releases it however the run ends.
@@ -262,34 +293,23 @@ file aside, which is atomic, so of two takers only one gets it, and it checks wh
 fresh lock written in between is put back and the taker refuses. Without an OS lock the moment between that rename and the check is the only window
 left. The lock is per checkout: two machines applying to the same remote database are not excluded from each other.
 
-### 6b. Every Apply Goes Through a Synthesised Config
-
-**Every apply goes through a synthesised config, not just a cut one.** `--to` cuts the pending set, and wrangler applies whole directories. So an
-apply writes the pending set into `.forge/scratch/migrate/migrations/`, each file under the name it is applied as, alongside a generated wrangler
-config whose `--persist-to` — or `database_id`, for a deployed place — still points at the real database. Nothing about the app's checked-in config
-or its own migrations directory is touched, and no file is renamed on the way through.
-
-The apply lock (§6a) is still taken against the app's own home, never the synthesised one: the lock keys on the home's directory, and one under
-`.forge/scratch/` would exclude nothing.
-
-`--to <NNNN|name>` is then a filter on that list — it names either a migration's number or its name, and a name matching nothing is refused with the
-list of what is on disk. The migrations left over are reported as left for a later run.
-
-**Only the pending files are linted.** A library migration that has been applied for a year must not newly abort every apply in every consuming app
-because a lint rule was added since.
+The lock is taken against the app's own home, never against a generated one: it keys on the home's directory, and one under `.forge/scratch/` would
+exclude nothing.
 
 ### 6c. `status --check` Exit Conditions
 
 `forge db migrate status --check` exits non-zero when any of these holds, and zero otherwise:
 
 - a migration is `pending`;
-- any checksum comparison is non-empty — `mismatch`, `unrecorded` (applied without a forge checksum — the next `forge db migrate` records it from
-  the file), or `orphaned` (recorded by forge and absent from the migrations table);
+- a migration is `mismatch` — applied, and its file now hashes differently;
 - a migration is `drift` — applied, with no file on disk;
-- a `schema_fingerprint` is recorded and does not match the schema as it now stands.
+- a fingerprint is certified and does not match the schema as it now stands;
+- migrations are applied and no fingerprint was ever certified — the `NULL` case of §4a.
 
-A database with no recorded fingerprint passes on that clause, which is what lets a database forge did not migrate be brought under the gate without
-first rebuilding it.
+**The last clause and the line `status` prints about it say the same thing.** A reader is told that migrations are applied and nothing has certified
+a schema over them, and that the next apply certifies one; CI reads the exit code and nothing else, so a line asking for an apply under an exit
+meaning _nothing to do_ would be read by neither. It is where a database lands after a restore over the migrations route, and after an apply whose
+certifying write failed on its own — one `forge db migrate` clears it.
 
 A declared file edited and never composed is not this check's to catch — it is `forge db schema check`'s, which reads files, needs no database,
 and says which path moved (`SCHEMA_COMPOSITION.md` §6).
@@ -298,40 +318,66 @@ A Worker reads the fingerprint clause as a report, never as an exit code or a re
 no wrangler, no apply lock and no undo, so it cannot repair what it finds, and refusing to serve over a stray index would turn a warning into an
 outage. The repair is `forge db migrate`.
 
-### 6d. Repair, then Check
+### 6d. Check, then Apply
 
-`forge db migrate` reads the database's own record before it plans anything, and acts on it in two moves.
+`forge db migrate` reads `_forge_migrations` before it plans anything, and holds the database against it three ways. Each is a refusal that names
+its own repair:
 
-**The repair.** A migration the migrations table says was applied, with no `forge_migrations` row and a file on disk, is recorded from that file —
-one `INSERT OR REPLACE` per migration and the `migrations_digest` beside them, in one write, after the lock is taken. This is what a run that
-crashed between wrangler's apply and forge's record leaves behind, and what a database migrated before forge kept checksums looks like. The file's
-hash is the only evidence there is for what ran, and it is taken as such; the `schema_fingerprint` is never written by the repair, because only an
-apply can certify it — writing it here would make the next check pass on the rerun that should fail. An applied name with no file stays `drift` and
-is refused as before. The run reports `recorded N: …`, and a refusal after the repair leaves those rows in place: they are true facts.
-
-**The three checks**, each against the record as repaired, each a refusal that names its repair:
-
-1. **An edited history.** An applied migration whose file does not hash to what `forge_migrations` recorded. The hash covers the file with its
+1. **An edited history.** An applied migration whose file does not hash to the `sha256` its history row recorded. The hash covers the file with its
    `forge:compose` stamp blanked, so an edit to the stamp line alone — a `--restamp` — is not an edit. Restore the file from version control, or
    reset the database. There is no override.
-2. **A moved fingerprint.** A recorded `schema_fingerprint` that is not the fingerprint of the schema as it now stands — DDL run by hand since the
-   last apply. Inspect with `forge db migrate status`, then `--allow-drift` applies anyway and re-records the fingerprint — and with nothing
-   pending, re-records it on its own, so `status --check` is green again. A database with no recorded fingerprint passes, as under
-   `status --check`. A run that records a repair does not refuse the moved fingerprint — the repaired migrations are its explanation — and
-   re-records it, so a batch that failed part way is not refused forever on the rerun.
+2. **A moved fingerprint.** The newest certified fingerprint — the newest row whose `fingerprint` is not `NULL`, so the rows a part-applied batch
+   left uncertified are read past — is not the fingerprint of the schema as it now stands. Inspect with `forge db migrate status`, then
+   `--allow-drift` applies anyway and certifies the fingerprint again — and with nothing pending, certifies it on its own, so `status --check` is
+   green again. A database where no row ever certified one is not refused here; `status --check` reports it (§6c).
 3. **A mis-stamped migration.** A pending generated migration whose stamp's baseline is not the digest of the files before it on disk — composed
    against a different history, which a merge of two branches produces (`SCHEMA_COMPOSITION.md` §6). Compose again, or
    `forge db migrate compose --restamp <name>`. One already applied here only warns, and one past the `--to` cut is not checked.
 
-**`--dry-run` predicts all of it without writing.** It computes the repair and prints it as `would record`, evaluates the three checks against the
-would-be-repaired record, and reports what it would apply — so a dry run's refusal is exactly the real run's.
+**DDL run by hand is not the only thing that moves a fingerprint.** A batch that part-applied — a migration whose body committed while its history
+row did not — leaves the schema ahead of the last row that certified anything, and reads exactly like hand-run DDL, because at the database there is
+no difference between them. `--allow-drift` therefore carries both cases and the refusal names both: it is the flag for a schema someone changed,
+and it is also how a part-applied batch is resumed. Nothing distinguishes the two for you; read `forge db migrate status` and decide.
 
-**One write after the apply.** The checksums and both schema facts land in one `executeSql`, so a crash cannot leave the checksums recorded and the
-digest stale, or the reverse. It rests on wrangler sending a multi-statement `--command` as one batch — measured on local D1, unverified against
-`--remote`. A torn write there fails closed either way: missing rows are what the repair above rebuilds, and a stale fingerprint is the refusal that
-names `--allow-drift`.
+**`--dry-run` predicts all of it without writing.** It evaluates the three checks against the same record the real run reads, and reports what it
+would apply — so a dry run's refusal is exactly the real run's.
 
-### 6e. Rehearsing Against Real Rows
+**A migration's body and its history row reach the database together.** Each migration is staged under `.forge/scratch/migrate/` as one file — the
+migration's SQL, then the `INSERT INTO _forge_migrations` that records it — and loaded with `wrangler d1 execute --file`. Locally that file is one
+transaction, so the migration and its record commit together or neither does. Seeds take the same path with their own record statement (§7), which
+is why there is one apply mechanism here and not two.
+
+**Against `--remote` that file is not one transaction, and this is the one place a deployed apply can tear.** A deployed migration body can commit
+without the `INSERT` that records it. The rerun then sees the migration as pending and re-applies a body that has already run, failing on whatever
+it already created; the `INSERT` is a plain `INSERT` rather than an `INSERT OR REPLACE`, so nothing papers over the gap quietly. **The recovery is
+the bookmark the run printed** (§3): restore to it, then run again. There is no verb that reconstructs the missing row, and there deliberately is
+not one — a row written from the file alone would assert that the body ran, which is the very thing in doubt.
+
+**The fingerprint is certified after the batch, in a statement of its own.** A crash between the last migration and that `UPDATE` leaves the last
+history row with a `NULL` fingerprint — reported, not failed (§4a), and certified by the next apply.
+
+### 6e. Who Else Holds the Database to Its Fingerprint
+
+**The fingerprint is not `migrate`'s alone.** The comparison is one rule — read the newest certified fingerprint, hash the schema as it stands, say
+whether they agree — and every verb that opens the target reaches it through `readDrift`. What differs is what each verb does with the answer, which
+follows from what the verb does to the database:
+
+| Verb | On a mismatch | Why that and not the other |
+| --- | --- | --- |
+| `forge db migrate` | Refuses; `--allow-drift` applies anyway and certifies the fingerprint again | It is the verb that can explain the schema, so it is the one that insists |
+| `forge db seed` | Refuses; `--allow-drift` seeds anyway | A seed writes rows into whatever schema is there. Held before the lint, the confirmation and the first load, so a schema nothing explains stops the run with nothing written rather than halfway through the set — and `--allow-drift` certifies nothing, so `migrate` goes on refusing |
+| `forge db backup` | Says so, records the state in `manifest.json`, and takes the backup | An artifact of a drifted database is still worth having ([`DATABASE_BACKUPS.md`][db-4] §4) |
+
+**`forge db schema check` is not on that list, and stays off it.** It reads files and opens no database, which is what lets it run in a checkout, in
+a library repository with no database at all, and in a pre-merge job. A pipeline that wants both answers runs `forge db schema check` and
+`forge db migrate status --check`; the second is the one that reads a database (§6c).
+
+`restore` and `reset` are also absent, and for a different reason: neither compares against a live schema worth holding. A restore is refused unless
+the target holds no rows and rebuilds the schema itself from the artifact's migrations, then compares what it built against the manifest's digests
+(`DATABASE_BACKUPS.md` §6); a reset discards the database, under a guard — a verified artifact whose row digests still match — that is strictly
+stronger than a fingerprint. A refusal in either would be one nobody could act on.
+
+### 6f. Rehearsing Against Real Rows
 
 **`forge db migrate --rehearse` applies the pending migrations to a copy of real data first.** Every other check reads a schema and a replay holds
 no rows, so a statement that only fails on data — a `NOT NULL` over NULLs, a `UNIQUE` over duplicates — passes all of them and fails on the target.
@@ -342,6 +388,10 @@ refused, having no local scratch to restore into, and a dry run rehearses nothin
 this target has applied — one taken earlier or later is refused, naming the difference — so the rehearsal runs the pending files over the schema
 they will meet. Take a backup first.
 
+The scratch starts with the target's own history, because the artifact carries the `_forge_migrations` rows rather than rebuilding them
+([`DATABASE_BACKUPS.md`][db-4] §4). The pending migrations are then applied to it and recorded on top, exactly as they would be against the target,
+so a rehearsal that fails names the migration it stopped on by reading the same table an apply would.
+
 ---
 
 ## 7. The Seed Contract
@@ -349,8 +399,8 @@ they will meet. Take a backup first.
 A seed is a `.sql` file in one of the directories the host config's `seeds` names (§8), or in the one `--dir` names instead. Five rules make a seed
 run safely more than once:
 
-- **The directory and the name are the identity.** They key `forge_seed_history` together, so two directories may ship one name, and renaming a seed
-  — or the directory that declares it — makes it a new seed. `--only` takes `<dir>:<name>`, and refuses a bare name two directories both hold.
+- **The directory and the name are the identity.** They key `_forge_seed_history` together, so two directories may ship one name, and renaming a
+  seed — or the directory that declares it — makes it a new seed. `--only` takes `<dir>:<name>`, and refuses a bare name two directories both hold.
   `forge db seed reset --dir <dir>` forgets one directory's rows.
 - **The hash is over the raw file text**, before any variable is expanded. Running the same seed on a machine whose environment differs is therefore
   not a changed seed.
@@ -376,6 +426,10 @@ everywhere.
 **`seed apply` refuses a database with a migration pending.** A seed is written against the schema the migrations describe, and one landing on an
 older schema is either an error or a row in the wrong shape. Run `forge db migrate` first; `--allow-pending` seeds the older schema anyway. There is
 no `-- forge:requires` line naming a migration — the pending check already knows.
+
+**It refuses a schema that moved without one, too** (§6e). A certified fingerprint that is not the schema as it stands says the rows a seed is about
+to write are aimed at a shape nothing described; `--allow-drift` seeds it anyway. Both checks run before the lint, the confirmation and the first
+load, so a refusal leaves nothing written rather than stopping partway through the set.
 
 **A deployed `seed apply` carries the same three guards as `migrate`** (§3, §5): it confirms before the first seed unless `--yes` said so, it
 captures a Time Travel bookmark and prints the restore command as the undo (`--no-bookmark` skips it), and it refuses a lint warning until
@@ -423,19 +477,24 @@ export default {
 | --- | --- | --- |
 | `schemas` | Every desired-state file or directory, in load order | `[]` — nothing is implicit |
 | `seeds` | Every seeds directory, in run order | `[]` |
-| `snapshot` | Where the composed snapshot lives | `schema.snapshot.json` beside `migrations_dir` |
+| `migrations` | The one directory every migration is read from and composed into | `migrations` |
+| `snapshot` | Where the composed snapshot lives | `schema.snapshot.json` |
 | `backupsDir` | Where backups go | `.forge/backups` |
 
-The file itself is optional, and an app with none declares nothing: `compose` and `schema check` say so and name what to write. `migrations_dir`
-is not here — `wrangler.jsonc` owns it, and it is the one directory every migration runs from.
+**Every path is resolved against the root**, the `migrations` directory included, so the four of them read one way instead of three. An app that
+kept its migrations somewhere other than `migrations/` names it here; `migrations_dir` and `migrations_table` in a `d1_databases` entry are not read
+at all, and leaving them in `wrangler.jsonc` changes nothing. The snapshot's default moved with the base: it sits at the root beside `config/`
+unless `snapshot` says otherwise.
+
+The file itself is optional, and an app with none declares nothing: `compose` and `schema check` say so and name what to write.
 
 **There is no namespace.** Nothing is discovered from a `package.json`, so nothing needs a second name to be discovered _as_; a path names itself,
 and it is the name a refusal, the snapshot and `status` all use. Two files declaring one table name each other by path. The companion tables carry
-no namespace column either: `forge_migrations` is two columns and neither is one (§4a), and `forge_seed_history` records the declaring directory in
-`source` (§4c).
+no namespace column either: `_forge_migrations` is keyed on the migration's file name (§4a), and `_forge_seed_history` records the declaring
+directory in `source` (§4c).
 
 **A library publishes a desired state and no SQL that runs.** The app composes one migration sequence of its own from every declared schema
-([`SCHEMA_COMPOSITION.md`][sc-1] §1), and nothing is copied in or renamed on the way: what wrangler records is the file name the app wrote. A
+([`SCHEMA_COMPOSITION.md`][sc-1] §1), and nothing is copied in or renamed on the way: what forge records is the file name the app wrote. A
 library change that needs a backfill is documented in its CHANGELOG, and the consumer writes it as `forge db migrate compose --custom`.
 
 **`forge db schema check`** is the gate over the declared schemas (`SCHEMA_COMPOSITION.md` §6), and what the bare `forge db schema` runs. There is

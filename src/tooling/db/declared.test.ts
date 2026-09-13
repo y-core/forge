@@ -2,12 +2,10 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../cf/types";
 import { PLAIN } from "../term/color";
-import { declaredPath, declaredSchemas, declaredSeeds, snapshotPath } from "./declared";
+import { declaredMigrations, declaredPath, declaredSchemas, declaredSeeds, snapshotPath } from "./declared";
 import { appHome } from "./home";
 import { fakeDbIo } from "./test-support";
 import type { DbConfig, DbHostConfig, DbRunContext } from "./types";
-
-const MIGRATIONS = "/app/config/migrations";
 
 function dbConfig(): DbConfig {
   return {
@@ -19,14 +17,7 @@ function dbConfig(): DbConfig {
       d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }],
     } as WranglerConfig,
     env: null,
-    entry: {
-      binding: "DB",
-      databaseName: "app-db",
-      databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      previewDatabaseId: null,
-      migrationsDir: MIGRATIONS,
-      migrationsTable: "d1_migrations",
-    },
+    entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place: "local", database: null },
   };
 }
@@ -65,11 +56,28 @@ describe("declaredSeeds()", () => {
 });
 
 describe("snapshotPath()", () => {
-  it("defaults beside the migrations directory, which wrangler already declares", () => {
-    expect(snapshotPath(context())).toBe("/app/config/schema.snapshot.json");
+  it("defaults to schema.snapshot.json under the root", () => {
+    expect(snapshotPath(context())).toBe("/app/schema.snapshot.json");
   });
 
   it("takes the host config's own position when it names one", () => {
     expect(snapshotPath(context({ snapshot: "src/auth/schema.snapshot.json" }))).toBe("/app/src/auth/schema.snapshot.json");
+  });
+});
+
+describe("declaredMigrations()", () => {
+  it("defaults to migrations under the root when the host config names none", () => {
+    expect(declaredMigrations(context())).toEqual({ path: "/app/migrations", declared: "migrations" });
+  });
+
+  it("resolves a relative host value against the root", () => {
+    expect(declaredMigrations(context({ migrations: "db/migrations" }))).toEqual({ path: "/app/db/migrations", declared: "db/migrations" });
+  });
+
+  it("keeps an absolute host value unchanged", () => {
+    expect(declaredMigrations(context({ migrations: "/elsewhere/migrations" }))).toEqual({
+      path: "/elsewhere/migrations",
+      declared: "/elsewhere/migrations",
+    });
   });
 });

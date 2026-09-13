@@ -1,6 +1,5 @@
-import { dirname, isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 
-import { DEFAULT_MIGRATIONS_TABLE } from "../../storage/db/schema";
 import { v } from "../../validation/mod";
 import { loadWranglerConfig } from "../cf/config/parse";
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
@@ -8,11 +7,6 @@ import { CliError } from "../cli/errors";
 import { DATABASE_NAME, describeTargetGrammar, parseTarget, refuseRemote } from "./target";
 import { D1EntrySchema } from "./types";
 import type { D1Entry, DbConfig, DbConfigRequest } from "./types";
-
-/** Wrangler's default for `migrations_dir`. */
-export const DEFAULT_MIGRATIONS_DIR = "migrations";
-
-export { DEFAULT_MIGRATIONS_TABLE } from "../../storage/db/schema";
 
 /** Holds each entry to `D1EntrySchema`, naming the config, the block and the field of the first one that is not. */
 function checkD1Entries(entries: readonly D1DatabaseConfig[], configPath: string, block: string): D1DatabaseConfig[] {
@@ -63,8 +57,6 @@ export function selectD1Entry(entries: readonly D1DatabaseConfig[], db: string |
 
 /** Normalises one config entry into the shape every verb reads, with paths made absolute. */
 export function toD1Entry(entry: D1DatabaseConfig, configPath: string): D1Entry {
-  const base = dirname(configPath);
-  const dir = entry.migrations_dir ?? DEFAULT_MIGRATIONS_DIR;
   const databaseName = entry.database_name ?? entry.binding;
   // The name reaches `wrangler d1 execute <name>` as an argv positional and a backup directory name.
   if (!DATABASE_NAME.test(databaseName)) {
@@ -73,14 +65,7 @@ export function toD1Entry(entry: D1DatabaseConfig, configPath: string): D1Entry 
       `${configPath} declares database_name ${JSON.stringify(databaseName)} on binding ${entry.binding}, which is not a database name — 1 to 64 characters of letters, digits, underscore and hyphen, starting with a letter or a digit`,
     );
   }
-  return {
-    binding: entry.binding,
-    databaseName,
-    databaseId: entry.database_id ?? null,
-    previewDatabaseId: entry.preview_database_id ?? null,
-    migrationsDir: isAbsolute(dir) ? dir : resolve(base, dir),
-    migrationsTable: entry.migrations_table ?? DEFAULT_MIGRATIONS_TABLE,
-  };
+  return { binding: entry.binding, databaseName, databaseId: entry.database_id ?? null, previewDatabaseId: entry.preview_database_id ?? null };
 }
 
 /** Loads the wrangler config, picks the database and target, and refuses a remote place with no real id. @internal */

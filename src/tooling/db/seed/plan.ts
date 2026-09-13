@@ -66,5 +66,5 @@ function findSeed(seeds: readonly Seed[], only: string, place: Place | undefined
 /** The statement that records a seed as applied, replacing the row a re-run leaves behind. @internal */
 export function recordSeedSql(seed: Seed, appliedAtMs: number): string {
   const values = [seed.source, seed.name, seed.sha256].map(quoteSqlLiteral).join(", ");
-  return `INSERT OR REPLACE INTO forge_seed_history (source, name, sha256, applied_at) VALUES (${values}, ${quoteSqlLiteral(appliedAtMs)});`;
+  return `INSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES (${values}, ${quoteSqlLiteral(appliedAtMs)});`;
 }

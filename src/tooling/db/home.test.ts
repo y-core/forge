@@ -1,18 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
-import { appHome, clearLocalState, migrationsHome, resolveHome, scratchHome, standbyHome, synthesizeHome } from "./home";
+import { appHome, clearLocalState, resolveHome, scratchHome, standbyHome, synthesizeHome } from "./home";
 import { fakeDbIo } from "./test-support";
 import type { D1Entry, DbConfig } from "./types";
 
-const ENTRY: D1Entry = {
-  binding: "DB",
-  databaseName: "app-db",
-  databaseId: null,
-  previewDatabaseId: null,
-  migrationsDir: "/app/migrations",
-  migrationsTable: "d1_migrations",
-};
+const ENTRY: D1Entry = { binding: "DB", databaseName: "app-db", databaseId: null, previewDatabaseId: null };
 
 function dbConfig(over: Partial<DbConfig> = {}): DbConfig {
   return {
@@ -26,12 +19,7 @@ function dbConfig(over: Partial<DbConfig> = {}): DbConfig {
   };
 }
 
-const STANDBY_OPTIONS = {
-  label: "standby",
-  database: "app-db-standby",
-  dir: "/app/.forge/standby/app-db-standby",
-  migrationsDir: "/app/migrations",
-};
+const STANDBY_OPTIONS = { label: "standby", database: "app-db-standby", dir: "/app/.forge/standby/app-db-standby" };
 
 describe("appHome()", () => {
   it("runs in the config's directory and persists beside it", () => {
@@ -75,9 +63,7 @@ describe("synthesizeHome()", () => {
     {
       "binding": "DB",
       "database_name": "app-db-standby",
-      "database_id": "app-db-standby-local",
-      "migrations_dir": "/app/migrations",
-      "migrations_table": "d1_migrations"
+      "database_id": "app-db-standby-local"
     }
   ]
 }
@@ -105,9 +91,7 @@ describe("synthesizeHome()", () => {
     {
       "binding": "DB",
       "database_name": "app-db-standby",
-      "database_id": "app-db-standby-local",
-      "migrations_dir": "/app/migrations",
-      "migrations_table": "d1_migrations"
+      "database_id": "app-db-standby-local"
     }
   ]
 }
@@ -124,8 +108,6 @@ describe("synthesizeHome()", () => {
         database_name: "app-db-standby",
         database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
         preview_database_id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
-        migrations_dir: "/app/migrations",
-        migrations_table: "d1_migrations",
       },
     ]);
   });
@@ -156,7 +138,7 @@ describe("synthesizeHome()", () => {
 describe("standbyHome()", () => {
   it("names the database after the app's and puts it under .forge/standby", () => {
     const io = fakeDbIo();
-    const home = standbyHome(dbConfig({ target: { place: "standby", database: null } }), io, "/app/migrations");
+    const home = standbyHome(dbConfig({ target: { place: "standby", database: null } }), io);
     expect([home.label, home.database, home.dir, home.synthesized]).toEqual([
       "standby",
       "app-db-standby",
@@ -167,53 +149,21 @@ describe("standbyHome()", () => {
 
   it("honours the database the target names", () => {
     const io = fakeDbIo();
-    const home = standbyHome(dbConfig({ target: { place: "standby", database: "rehearsal" } }), io, "/app/migrations");
+    const home = standbyHome(dbConfig({ target: { place: "standby", database: "rehearsal" } }), io);
     expect([home.database, home.dir]).toEqual(["rehearsal", "/app/.forge/standby/rehearsal"]);
-  });
-
-  it("applies the app's own migrations dir, so the two databases run the same files", () => {
-    const io = fakeDbIo();
-    standbyHome(dbConfig({ target: { place: "standby", database: null } }), io, "/app/migrations");
-    expect(JSON.parse(io.readText("/app/.forge/standby/app-db-standby/wrangler.jsonc")).d1_databases[0].migrations_dir).toBe("/app/migrations");
   });
 });
 
 describe("scratchHome()", () => {
   it("labels itself with the run's name and lives under .forge/scratch", () => {
     const io = fakeDbIo();
-    const home = scratchHome(dbConfig(), io, "restore-check", "app-db-verify", "/app/migrations");
+    const home = scratchHome(dbConfig(), io, "restore-check", "app-db-verify");
     expect([home.label, home.database, home.dir, home.configPath]).toEqual([
       "scratch:restore-check",
       "app-db-verify",
       "/app/.forge/scratch/restore-check",
       "/app/.forge/scratch/restore-check/wrangler.jsonc",
     ]);
-  });
-});
-
-describe("migrationsHome()", () => {
-  it("writes each migration under its name and points the generated config at that directory", () => {
-    const io = fakeDbIo();
-    const config = dbConfig();
-    const migration = {
-      name: "0001_init",
-      version: 1,
-      path: "/pkg/0001_init.sql",
-      sha256: "aa",
-      sql: "CREATE TABLE t (a);",
-      origin: "custom" as const,
-      stamp: null,
-    };
-    const home = migrationsHome(config, io, [migration], "migrate", appHome(config));
-    expect(io.readText("/app/.forge/scratch/migrate/migrations/0001_init.sql")).toBe("CREATE TABLE t (a);");
-    expect(JSON.parse(io.readText(home.configPath)).d1_databases[0].migrations_dir).toBe("/app/.forge/scratch/migrate/migrations");
-    expect(home.database).toBe("app-db");
-  });
-
-  it("keeps the app's own state directory, so a merged apply reaches the real database", () => {
-    const io = fakeDbIo();
-    const config = dbConfig();
-    expect(migrationsHome(config, io, [], "migrate", appHome(config)).persistTo).toBe("/app/.wrangler/state");
   });
 });
 

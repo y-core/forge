@@ -50,7 +50,8 @@ function snapshotFile(desiredText: string, migrations: readonly { name: string; 
   return formatSchemaSnapshot(
     buildSchemaSnapshot({
       desired: { [LIB_DECLARED]: sha256(LIB_SCHEMA_TEXT), "schema.sql": sha256(desiredText) },
-      migrationsDigest: migrationsDigest(migrations),
+      declared: {},
+      migrationsDigest: migrationsDigest(migrations.map((m) => ({ name: m.name, sha256: sha256(m.sql) }))),
     }),
   );
 }

@@ -80,13 +80,6 @@ export function executeFile(io: DbIo, home: Home, file: string): void {
   if (run.code !== 0) throw failed(`loading ${file}`, home, run);
 }
 
-/** `wrangler d1 migrations apply`, which records each file in the migrations table as it goes. @internal */
-export function migrationsApply(io: DbIo, home: Home): Spawned {
-  const run = runWrangler(io, home, ["migrations", "apply", home.database, ...wranglerPlaceFlags(home)]);
-  if (run.code !== 0) throw failed("migrations apply", home, run);
-  return run;
-}
-
 /** `wrangler d1 export` against any place, the one command with no `--persist-to`: it resolves local state from the config's directory, so it is run there. @internal */
 export function exportSql(io: DbIo, home: Home, output: string, extra: readonly string[]): void {
   const placeFlags = home.place === "remote" ? ["--remote"] : home.place === "preview" ? ["--remote", "--preview"] : ["--local"];

@@ -138,13 +138,13 @@ describe("planSeeds() places", () => {
 describe("recordSeedSql()", () => {
   it("writes one INSERT OR REPLACE carrying the name, the hash and the instant", () => {
     expect(recordSeedSql(seeds[0] as Seed, 1757584800000)).toBe(
-      "INSERT OR REPLACE INTO forge_seed_history (source, name, sha256, applied_at) VALUES ('config/seeds', '001_a', 'aaa', 1757584800000);",
+      "INSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('config/seeds', '001_a', 'aaa', 1757584800000);",
     );
   });
 
   it("doubles a single quote in the name", () => {
     expect(recordSeedSql(seed("o'hara", "aaa"), 1)).toBe(
-      "INSERT OR REPLACE INTO forge_seed_history (source, name, sha256, applied_at) VALUES ('config/seeds', 'o''hara', 'aaa', 1);",
+      "INSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('config/seeds', 'o''hara', 'aaa', 1);",
     );
   });
 

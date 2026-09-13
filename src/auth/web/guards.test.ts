@@ -15,7 +15,7 @@ import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorContext, AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
 import type { AuthUser, UserStore } from "../types";
-import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment } from "./guards";
+import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment, resolveAuth } from "./guards";
 import { AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes, AUTH_ROUTE_GROUPS } from "./routes";
@@ -176,6 +176,80 @@ describe("requireAuth", () => {
 
   it("throws when no session middleware ran, rather than reading as a correct denial", async () => {
     const guard = requireAuth(guardOptions(fakeUsers([])));
+    const context = new RequestContext(new Request("http://localhost/account/passkeys"));
+    expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
+      "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",
+    );
+  });
+});
+
+/** A user store that answers as `fakeUsers` does and counts every lookup it was asked for. */
+function countingUsers(users: readonly AuthUser[]): Pick<UserStore, "findById"> & { readonly calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    findById: async (id) => {
+      calls.push(id);
+      return ok(users.find((user) => user.id === id) ?? null);
+    },
+  };
+}
+
+describe("resolveAuth", () => {
+  it("admits an anonymous request unchanged rather than refusing it", async () => {
+    const app = guardedApp([resolveAuth(guardOptions(fakeUsers([])))]);
+    const res = await app.request("/account/passkeys");
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("passkeys");
+  });
+
+  it("reads no user store for an anonymous request, whose session names nobody to look up", async () => {
+    const users = countingUsers([fakeAuthUser()]);
+    const app = guardedApp([resolveAuth(guardOptions(users))]);
+    await app.request("/account/passkeys");
+
+    expect(users.calls).toEqual([]);
+  });
+
+  it("establishes the identity, so a guard ordered after it authorises without its own lookup", async () => {
+    const app = guardedApp([resolveAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))), requireAdmin()], { userId: "u1" });
+    expect(await (await app.request("/admin/users")).text()).toBe("users");
+  });
+
+  // The whole point of the reuse: a globally mounted `resolveAuth` must not double every guarded
+  // route's cost, and one request asking the same question twice is what that would look like.
+  it("leaves a following `requireAuth` nothing to look up, so the store is read once per request", async () => {
+    const users = countingUsers([fakeAuthUser()]);
+    const app = guardedApp([resolveAuth(guardOptions(users)), requireAuth(guardOptions(users))], { userId: "u1" });
+    const res = await app.request("/account/passkeys");
+
+    expect(await res.text()).toBe("passkeys");
+    expect(users.calls).toEqual(["u1"]);
+  });
+
+  it("still lets `requireAuth` resolve for itself when it runs alone", async () => {
+    const users = countingUsers([fakeAuthUser()]);
+    const app = guardedApp([requireAuth(guardOptions(users))], { userId: "u1" });
+    const res = await app.request("/account/passkeys");
+
+    expect(await res.text()).toBe("passkeys");
+    expect(users.calls).toEqual(["u1"]);
+  });
+
+  // `resolveAuth` clears the session's auth keys on a refusal, so the identity key is gone by the
+  // time `requireAuth` looks — it refuses on an anonymous session rather than on a second lookup.
+  it("costs a following `requireAuth` no second lookup when it refuses the identity", async () => {
+    const users = countingUsers([fakeAuthUser({ deactivatedAt: 99 })]);
+    const app = guardedApp([resolveAuth(guardOptions(users)), requireAuth(guardOptions(users))], { userId: "u1" });
+    const res = await app.request("/account/passkeys");
+
+    expect(res.status).toBe(302);
+    expect(users.calls).toEqual(["u1"]);
+  });
+
+  it("throws when no session middleware ran, rather than reading as an anonymous request", () => {
+    const guard = resolveAuth(guardOptions(fakeUsers([])));
     const context = new RequestContext(new Request("http://localhost/account/passkeys"));
     expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
       "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",

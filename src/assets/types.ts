@@ -7,3 +7,11 @@ export interface Manifest {
 export interface SpriteRegistry {
   get(name: string): string;
 }
+
+/** One `<link>` an icon output contributes to the document head. @public */
+export interface IconLink {
+  rel: string;
+  href: string;
+  type?: string;
+  sizes?: string;
+}

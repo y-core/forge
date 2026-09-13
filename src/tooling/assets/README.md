@@ -35,6 +35,8 @@ See [`ASSET_PIPELINE.md`][ap-1] §1 and §2 for the authoritative architecture.
 - **SVG sprite sheets** — `buildSprites` normalises and sanitises source SVGs into `<symbol>` entries inside a single hidden `<svg>`, preserving
   root presentation attributes on a wrapping `<g>` and emitting per-symbol `viewBox` metadata.
 - **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`) into SVG, PNG, ICO, and a web-app `manifest.json`.
+  `icons.publicPrefix` puts them all under one directory, so a Worker's `run_worker_first` needs one `!` glob rather than one rule per filename;
+  `root: true` pins the single output that must stay at the origin root. `iconLinks` derives the head `<link>` set, emitted as `ICON_LINKS`.
 - **Font downloads** — `buildFonts` fetches remote fonts into the public directory, cached on disk.
 - **Robots and sitemap** — `buildSite` renders `robots.txt` and `sitemap.xml` into the asset-tree root from a [`@y-core/forge/site`][site-readme]
   config, so a crawler costs the Worker no invocation.
@@ -87,14 +89,16 @@ export default defineAssetsConfig({
   fonts: { downloads: [{ url: "https://fonts.example/inter.woff2", to: "fonts/inter.woff2" }] },
   icons: {
     src: "src/assets/favicon.svg",
-    outDir: "public/assets/icons",
+    outDir: "public",
+    publicPrefix: "/static",
     lightColor: "#111827",
     darkColor: "#f9fafb",
     app: { name: "My App", shortName: "App", backgroundColor: "#ffffff" },
     outputs: [
       { kind: "svg", file: "favicon.svg" },
+      { kind: "png", file: "apple-touch-icon.png", size: 180, rel: "apple-touch-icon" },
       { kind: "png", file: "icon-192.png", size: 192, manifest: true },
-      { kind: "ico", file: "favicon.ico", sizes: [16, 32, 48] },
+      { kind: "ico", file: "favicon.ico", sizes: [16, 32, 48], root: true },
       { kind: "manifest", file: "manifest.json" },
     ],
   },
@@ -192,7 +196,8 @@ when unconfigured.
 
 `CssBuild`: `{ tool: "tailwindcss"; input: string; output: string }`. `CopyEntry`: `{ from: string; to: string }`. `FontDownload`:
 `{ url: string; to: string }`. `RasterEntry`: `{ from: string; to: string; width?: number; height?: number }` — see [Rasters](#rasters).
-`IconOutput` is a discriminated union on `kind`: `"svg"`, `"png"` (`size`, optional `manifest`), `"ico"` (`sizes`), `"manifest"`. `SiteBuildConfig`:
+`IconOutput` is a discriminated union on `kind`: `"svg"`, `"png"` (`size`, optional `manifest` and `rel`), `"ico"` (`sizes`), `"manifest"`. Every
+variant takes an optional `root` — see [Icon placement](#icon-placement). `SiteBuildConfig`:
 `{ outDir: string; config: SiteConfig }` — `outDir` is the **asset-tree root**, not `publicDir`, because `robots.txt` and `sitemap.xml` are only
 meaningful at the origin root.
 
@@ -492,6 +497,41 @@ intrinsic ratio, so a non-square lockup is scaled rather than squashed. Outputs 
 `copy`, because a URL pasted into a mail client has to stay stable. `buildRasters` does not substitute `currentColor`, so give the source an
 explicit fill.
 
+### Icon placement
+
+`icons.outDir` is the **asset-tree root**. `icons.publicPrefix` puts the outputs in a directory beneath it and serves them from that path, so a
+Worker excludes them from `run_worker_first` with a single glob:
+
+```jsonc
+"run_worker_first": ["/*", "!/static/*", "!/favicon.ico"]
+```
+
+Two rules, and neither grows when the icon set does. `validate-asset-root` holds them to the config and asks for the directory rule rather than the
+filename. Without a prefix every output lands at the root and needs a rule of its own — correct, but it is the shape the check has to keep naming.
+
+`root: true` pins one output to the asset root. Keep `favicon.ico` there: a browser probes `/favicon.ico` whenever there is no HTML head to read —
+a PDF, image, JSON or download tab, and a platform-generated error page — as do unfurlers and feed readers that never parse HTML. Safari probes
+`/apple-touch-icon.png` on the same condition. Everything else is reached only through a tag you emit, so its path is yours to choose.
+
+A manifest served under a prefix is why `renderManifest` writes `start_url` and `scope` explicitly: both default to the manifest's own directory, so
+an installed app would otherwise launch into `/static/` rather than the site root. Its `icons[].src` entries carry the prefix for the same reason.
+
+`iconLinks(config)` derives the head links from `outputs`, and `buildAll`/`generateAssetsTypes` emit them as `ICON_LINKS` in the generated module —
+so the files, the Worker's bypass rules and the markup all come from one list. A `png` contributes a link only when it declares a `rel`; a
+`manifest: true` png is already declared by the web-app manifest.
+
+`emitHeaders` writes a `_headers` rule for each icon too. They are **not** given the `immutable` value `publicDir` gets: those filenames are
+content-hashed and these are not, so pinning one would strand a changed logo in a returning visitor's cache. Icons get
+`public, max-age=86400, stale-while-revalidate=604800`; the web-app manifest gets `public, max-age=0, must-revalidate`, because it is how an
+installed app discovers a changed name, colour or icon set.
+
+Every one of those values is built with `CacheControl` from [`@y-core/forge/http`][http-readme] rather than written as a string — the same typed
+builder a route uses for the header it sets at runtime, so the directives have one spelling across the build and the request path.
+
+The rules are emitted **per file rather than as a prefix glob**, and that is load-bearing: Cloudflare applies every `_headers` rule an incoming
+request matches and joins a header set twice with a comma, so a `/static/*` glob overlapping an exact manifest rule would produce one
+`Cache-Control` carrying both values.
+
 ### Content hashing and cache busting
 
 With hashing enabled, `buildCSS`/`buildJS`/`buildSprites` rename outputs to `<stem>.<8hex>.<ext>` using `hashFile` — a truncated SHA-256 of the
@@ -517,5 +557,6 @@ unrestricted.
 [ap-1]: ../../../docs/ASSET_PIPELINE.md#1-assets-config
 [assets-readme]: ../../assets/README.md
 [cli-readme]: ../cli/README.md
+[http-readme]: ../../http/README.md
 [site-readme]: ../../site/README.md
 [ui-readme]: ../../ui/README.md

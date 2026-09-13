@@ -9,19 +9,17 @@ const FIXTURE = join(FORGE, "tests", "fixtures", "db-compose");
 const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
 
 interface Case {
+  /** A second schema `config/db.ts` declares for the before state and no longer declares for the after one. */
+  lib?: string;
   seed: string;
   after?: string;
   /** Extra compose flags; the token `<digest>` is replaced with the digest the refusal printed. */
   args?: string[];
   refusedWithout?: string;
-  /** SQL for a `--custom` migration composed and applied over the seed, which declares what no schema.sql owns. */
-  custom?: string;
   /** When set, the after state must be refused with this text, and nothing downstream of the compose runs. */
   composeRefused?: string;
   expectSql?: string[];
   expectStdout?: string[];
-  /** When set, the second compose's stderr must hold each fragment rather than be empty. */
-  expectStderr?: string[];
   /** When set, the second compose must write no migration. */
   expectNoMigration?: boolean;
   /** When set, the second migrate must fail on the seeded rows with this text; the proof never sees them. */
@@ -61,8 +59,12 @@ function freshRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-compose-"));
   cpSync(join(FIXTURE, "wrangler.jsonc"), join(root, "wrangler.jsonc"));
   mkdirSync(join(root, "config"));
-  writeFileSync(join(root, "config", "db.ts"), 'export default { schemas: ["schema.sql"] };\n');
+  declare(root, ["schema.sql"]);
   return root;
+}
+
+function declare(root: string, schemas: readonly string[]): void {
+  writeFileSync(join(root, "config", "db.ts"), `export default { schemas: ${JSON.stringify(schemas)} };\n`);
 }
 
 const DIGEST = /--allow-destructive ([0-9a-f]{12})/;
@@ -99,20 +101,18 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
   const root = freshRoot();
   try {
     writeFileSync(join(root, "schema.sql"), readFileSync(join(dir, "before.sql")));
+    if (spec.lib !== undefined) {
+      writeFileSync(join(root, "lib.sql"), spec.lib);
+      declare(root, ["lib.sql", "schema.sql"]);
+    }
     const first = await forgeDb(root, ["migrate", "compose", "init"]);
     const firstWritten = existsSync(join(root, "migrations", "0001_init.sql"));
     const migratedFirst = await forgeDb(root, ["migrate", "--yes"]);
     await d1(root, spec.seed);
 
-    if (spec.custom !== undefined) {
-      await forgeDb(root, ["migrate", "compose", "extra", "--custom"]);
-      const file = join(root, "migrations", numbered(2, "extra"));
-      writeFileSync(file, `${readFileSync(file, "utf-8")}${spec.custom}`);
-      await forgeDb(root, ["migrate", "--yes"]);
-    }
-
-    const changeFile = join(root, "migrations", numbered(spec.custom === undefined ? 2 : 3, "change"));
+    const changeFile = join(root, "migrations", numbered(2, "change"));
     writeFileSync(join(root, "schema.sql"), readFileSync(join(dir, "after.sql")));
+    if (spec.lib !== undefined) declare(root, ["schema.sql"]);
     const refused = spec.refusedWithout === undefined ? null : await forgeDb(root, ["migrate", "compose", "change"]);
     const refusedWritten = existsSync(changeFile);
     const second = await forgeDb(root, ["migrate", "compose", "change", ...composeArgs(spec, refused)]);
@@ -139,7 +139,7 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
     const check = await forgeDb(root, ["schema", "check", "--replay"]);
     const status = await forgeDb(root, ["migrate", "status", "--check"]);
     const again = await forgeDb(root, ["migrate", "compose", "again", "--dry-run"]);
-    const againWritten = existsSync(join(root, "migrations", numbered(spec.custom === undefined ? 3 : 4, "again")));
+    const againWritten = existsSync(join(root, "migrations", numbered(3, "again")));
     const read = await rows(root, spec.query);
     return {
       first,
@@ -205,8 +205,7 @@ describe.each(cases)("compose case %s", (name) => {
       expect(o.refused?.stderr.includes(spec.refusedWithout)).toBe(true);
       expect(o.refusedWritten).toBe(false);
     }
-    if (spec.expectStderr === undefined) expect(o.second.stderr).toBe("");
-    else for (const fragment of spec.expectStderr) expect(o.second.stderr.includes(fragment)).toBe(true);
+    expect(o.second.stderr).toBe("");
     expect(o.second.code).toBe(0);
     if (spec.expectNoMigration === true) expect(o.written).toBe("");
     for (const fragment of spec.expectSql ?? []) expect(o.written.includes(fragment)).toBe(true);

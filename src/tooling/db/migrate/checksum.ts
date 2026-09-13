@@ -1,87 +1,37 @@
-import { MIGRATIONS_DIGEST_KEY, SCHEMA_FINGERPRINT_KEY } from "../../../storage/db/schema";
 import { quoteSqlLiteral } from "../sql";
-import type { ChecksumComparison, Migration, RecordedChecksum } from "../types";
-import type { RepairPlan } from "./types";
+import type { Migration, RecordedChecksum } from "../types";
 
-export { MIGRATIONS_DIGEST_KEY, SCHEMA_FINGERPRINT_KEY, SCHEMA_META_SELECT, toSchemaMeta } from "../../../storage/db/schema";
+/** Every migration forge recorded, in the order it applied them. @internal */
+export const RECORDED_CHECKSUM_SELECT = "SELECT name, sha256, applied_at, fingerprint FROM _forge_migrations ORDER BY id";
 
-/** Reads every recorded migration checksum. @internal */
-export const RECORDED_CHECKSUM_SELECT = "SELECT applied_name, sha256 FROM forge_migrations ORDER BY applied_name";
-
-/** The `INSERT OR REPLACE` statements that record one checksum per migration, one to a line. @internal */
-export function recordChecksumSql(migrations: readonly Migration[]): string {
-  return migrations
-    .map((m) => {
-      const values = [m.name, m.sha256].map(quoteSqlLiteral).join(", ");
-      return `INSERT OR REPLACE INTO forge_migrations (applied_name, sha256) VALUES (${values});`;
-    })
-    .join("\n");
+/** The statement that records one migration as applied, which a duplicate name is refused by. @internal */
+export function recordMigrationSql(migration: Migration, appliedAtMs: number): string {
+  const values = [migration.name, migration.sha256].map(quoteSqlLiteral).join(", ");
+  return `INSERT INTO _forge_migrations (name, sha256, applied_at) VALUES (${values}, ${quoteSqlLiteral(appliedAtMs)});`;
 }
 
-// `migrations_digest` is a rollup of the same bytes the `sha256` rows hold, kept because one
-// equality answers "is this database in step" where a set difference is what the rows answer.
-// `status` compares both against the files on disk, so a rollup that drifted from them is reported.
-/** The `INSERT OR REPLACE` statements that record the schema facts an apply leaves behind: the two digests. @internal */
-export function recordMetaSql(facts: { migrationsDigest: string; schemaFingerprint: string }): string {
-  const rows: (readonly [string, string])[] = [
-    [MIGRATIONS_DIGEST_KEY, facts.migrationsDigest],
-    [SCHEMA_FINGERPRINT_KEY, facts.schemaFingerprint],
-  ];
-  return rows
-    .map(([key, value]) => `INSERT OR REPLACE INTO forge_schema_meta (key, value) VALUES (${quoteSqlLiteral(key)}, ${quoteSqlLiteral(value)});`)
-    .join("\n");
-}
-
-/** The name wrangler recorded, without the `.sql` it keeps and forge does not. @internal */
-export function appliedMigrationName(recorded: unknown): string {
-  const name = String(recorded ?? "");
-  return name.endsWith(".sql") ? name.slice(0, -".sql".length) : name;
+/** The statement that certifies the schema the last applied migration produced. @internal */
+export function certifyFingerprintSql(fingerprint: string): string {
+  return `UPDATE _forge_migrations SET fingerprint = ${quoteSqlLiteral(fingerprint)} WHERE id = (SELECT id FROM _forge_migrations ORDER BY id DESC LIMIT 1);`;
 }
 
 /** Reads `RECORDED_CHECKSUM_SELECT` rows into recorded checksums. @internal */
 export function toRecordedChecksums(rows: readonly Record<string, unknown>[]): RecordedChecksum[] {
-  return rows.map((row) => ({ appliedName: String(row.applied_name ?? ""), sha256: String(row.sha256 ?? "") }));
+  return rows.map((row) => ({
+    appliedName: String(row.name ?? ""),
+    sha256: String(row.sha256 ?? ""),
+    appliedAt: Number(row.applied_at ?? 0),
+    fingerprint: row.fingerprint === null || row.fingerprint === undefined ? null : String(row.fingerprint),
+  }));
 }
 
-/** Compares what the migrations table says was applied against what forge recorded and what is on disk. @internal */
-export function compareChecksums(
-  applied: readonly string[],
-  recorded: readonly RecordedChecksum[],
-  discovered: readonly Migration[],
-): ChecksumComparison {
-  // `d1_migrations` knows only the applied name, so that is the column the two records join on.
-  const recordedByApplied = new Map(recorded.map((r) => [r.appliedName, r]));
+/** The newest fingerprint any recorded migration certified, skipping the rows a part-applied batch left uncertified. @internal */
+export function certifiedFingerprint(recorded: readonly RecordedChecksum[]): string | null {
+  return recorded.findLast((record) => record.fingerprint !== null)?.fingerprint ?? null;
+}
+
+/** The applied migrations whose file no longer hashes to what forge recorded when it ran. @internal */
+export function compareChecksums(recorded: readonly RecordedChecksum[], discovered: readonly Migration[]): string[] {
   const onDisk = new Map(discovered.map((m) => [m.name, m.sha256]));
-  const appliedNames = new Set(applied);
-  return {
-    mismatched: applied.filter((name) => {
-      const was = recordedByApplied.get(name)?.sha256;
-      const now = onDisk.get(name);
-      return was !== undefined && now !== undefined && was !== now;
-    }),
-    unrecorded: applied.filter((name) => !recordedByApplied.has(name)),
-    orphaned: recorded.map((r) => r.appliedName).filter((name) => !appliedNames.has(name)),
-  };
-}
-
-/** Which applied-but-unrecorded migrations a run can record from their files, and which have no file and stay drift. @internal */
-export function planRepair(applied: readonly string[], recorded: readonly RecordedChecksum[], discovered: readonly Migration[]): RepairPlan {
-  const onDisk = new Map(discovered.map((m) => [m.name, m]));
-  const recordable: Migration[] = [];
-  for (const name of compareChecksums(applied, recorded, discovered).unrecorded) {
-    const migration = onDisk.get(name);
-    if (migration !== undefined) recordable.push(migration);
-  }
-  return { recordable };
-}
-
-/** The one write that records repaired checksums and the migrations digest — never the fingerprint, which only an apply may certify. @internal */
-export function repairSql(recordable: readonly Migration[], migrationsDigestValue: string): string {
-  const digest = `INSERT OR REPLACE INTO forge_schema_meta (key, value) VALUES (${quoteSqlLiteral(MIGRATIONS_DIGEST_KEY)}, ${quoteSqlLiteral(migrationsDigestValue)});`;
-  return `${recordChecksumSql(recordable)}\n${digest}`;
-}
-
-/** The one write an apply leaves behind: every checksum and both schema facts, so a crash cannot part them. @internal */
-export function recordAppliedSql(migrations: readonly Migration[], facts: { migrationsDigest: string; schemaFingerprint: string }): string {
-  return `${recordChecksumSql(migrations)}\n${recordMetaSql(facts)}`;
+  return recorded.filter((r) => onDisk.has(r.appliedName) && onDisk.get(r.appliedName) !== r.sha256).map((r) => r.appliedName);
 }

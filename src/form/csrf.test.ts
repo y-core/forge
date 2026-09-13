@@ -1,9 +1,21 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
+import { RequestContext } from "@remix-run/fetch-router";
+
 import { Forge } from "../app/forge-app";
 import type { AppContext } from "../context/types";
 import { mapHandler } from "../testing/route";
-import { createCsrfToken, csrfMinterCtx, csrfProtection, csrfTokenCtx, importCsrfKey, importCsrfKeyRing, mintCsrf, verifyCsrfToken } from "./csrf";
+import {
+  createCsrfToken,
+  csrfMinter,
+  csrfMinterCtx,
+  csrfProtection,
+  csrfTokenCtx,
+  importCsrfKey,
+  importCsrfKeyRing,
+  mintCsrf,
+  verifyCsrfToken,
+} from "./csrf";
 import { csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
 import type { CsrfKeyRing } from "./types";
@@ -718,5 +730,89 @@ describe("importCsrfKeyRing()", () => {
     const ring = await importCsrfKeyRing(["aa".repeat(32), "bb".repeat(32)]);
     const kids = Object.keys(ring.keys);
     expect(kids[0]).not.toBe(kids[1]);
+  });
+});
+
+describe("csrfMinter()", () => {
+  const env = { CSRF_SECRET: HEX_SECRET };
+
+  /** A context carrying `env`, which is what the minter caches its key ring against. */
+  function minterContext(bindings: object = env): RequestContext {
+    const context = new RequestContext(new Request("http://localhost/"));
+    Object.assign(context, { env: bindings });
+    return context;
+  }
+
+  it("mints a token the guard for that path verifies, under the same subject", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const mint = csrfMinter({ secret: () => key, subject: () => "sess-1" });
+
+    const token = await mint(minterContext(), "/auth/signout");
+    expect(await verifyCsrfToken(key, token, "/auth/signout", { subject: "sess-1" })).toEqual({ ok: true });
+  });
+
+  it("binds the token to the subject, so another session's token is refused", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const mint = csrfMinter({ secret: () => key, subject: () => "sess-1" });
+
+    const token = await mint(minterContext(), "/auth/signout");
+    expect(await verifyCsrfToken(key, token, "/auth/signout", { subject: "sess-2" })).toEqual({ ok: false, error: "subject-mismatch" });
+  });
+
+  it("scopes the token to the path it was minted for, so it is refused on another", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const mint = csrfMinter({ secret: () => key, subject: false });
+
+    const token = await mint(minterContext(), "/auth/signout");
+    expect(await verifyCsrfToken(key, token, "/auth/signin")).toEqual({ ok: false, error: "path-mismatch" });
+  });
+
+  // The whole reason this is not `importCsrfKey` at the call site: a navbar mints on every page
+  // render, and a key import per render is work nothing asked for.
+  it("imports the key once per env, however many tokens are minted against it", async () => {
+    let imports = 0;
+    const mint = csrfMinter({
+      secret: async () => {
+        imports += 1;
+        return importCsrfKey(HEX_SECRET);
+      },
+      subject: false,
+    });
+
+    const context = minterContext();
+    await mint(context, "/auth/signout");
+    await mint(minterContext(env), "/auth/signout");
+    expect(imports).toBe(1);
+  });
+
+  it("re-imports for a different env, so one deployment's key never mints another's token", async () => {
+    let imports = 0;
+    const mint = csrfMinter({
+      secret: async () => {
+        imports += 1;
+        return importCsrfKey(HEX_SECRET);
+      },
+      subject: false,
+    });
+
+    await mint(minterContext({ CSRF_SECRET: HEX_SECRET }), "/auth/signout");
+    await mint(minterContext({ CSRF_SECRET: HEX_SECRET }), "/auth/signout");
+    expect(imports).toBe(2);
+  });
+
+  it("refuses an empty path rather than minting a token bound to nothing", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const mint = csrfMinter({ secret: () => key, subject: false });
+
+    await expect(mint(minterContext(), "")).rejects.toThrow("csrfMinter: a non-empty action path is required to mint a CSRF token");
+  });
+
+  it("throws when the subject resolver returns nothing, rather than minting a token that must be refused", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const mint = csrfMinter({ secret: () => key, subject: () => undefined });
+
+    await expect(mint(minterContext(), "/auth/signout")).rejects.toThrow(
+      "csrfMinter: the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE the mint — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
+    );
   });
 });

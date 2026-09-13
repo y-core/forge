@@ -124,9 +124,23 @@ manual barrel discipline that placement costs.
 
 ### 1f. Schema Health
 
-`checkSchemaHealth(db)` reads `forge_schema_meta.schema_fingerprint`, recomputes the fingerprint from `sqlite_master` under the same rules
-`forge db migrate status --check` applies, and reports one of four states: `match`, `mismatch`, `unrecorded` (no fingerprint row, as on a database
-forge did not migrate) and `unavailable` (no `forge_schema_meta` table at all). The report carries both fingerprints and nothing else.
+`checkSchemaHealth(db)` reads the `fingerprint` of the last `_forge_migrations` row, recomputes the fingerprint from `sqlite_master` under the same
+rules `forge db migrate status --check` applies, and reports one of four states. The report carries both fingerprints and nothing else.
+
+| State | When |
+| --- | --- |
+| `unavailable` | There is no `_forge_migrations` table — forge has never migrated this database |
+| `unrecorded` | The table is there with no rows, **or** its last row's `fingerprint` is `NULL` — applied, never certified |
+| `match` / `mismatch` | A fingerprint is certified, and it is or is not the schema as it now stands |
+
+**None of the three functions takes an options argument**: `checkSchemaHealth(db)`, `schemaHealthCheck(binding)` and
+`schemaHealthMonitor({ binding, logger? })` are the whole surface, and which table the history lives in is not configurable. There is no
+`SchemaHealthOptions` type and no `DEFAULT_MIGRATIONS_TABLE` constant.
+
+**The read is defined only against a `_forge_migrations` table.** A Worker pointed at a database forge has not migrated on a matching version reads
+`unavailable` on every request — a loud but truthful report, since the fingerprint it would compare against does not exist. The fix is a
+`forge db migrate` against that database; pre-1.0 ships no shim for an older companion-table layout
+([`DATABASE_MANAGEMENT.md`][dm-4a] §4a).
 
 **It writes nothing and gates nothing.** A Worker cannot repair a mismatch correctly: overwriting the fingerprint blesses the drift, applying
 migrations needs files, wrangler, the apply lock and the undo, and refusing to serve turns a stray `CREATE INDEX` into an outage. The repair is
@@ -135,8 +149,8 @@ migrations needs files, wrangler, the apply lock and the undo, and refusing to s
 Two surfaces build on the read:
 
 - `schemaHealthMonitor({ binding })` is middleware that observes once per isolate, keyed on the env object the way `validateBindings` is, and logs
-  one `d1.schema.health` record — `warn` on `mismatch`, `info` otherwise — with `{ state, recorded, actual }`. An absent binding logs
-  `d1.schema.health.skipped`, a thrown read logs `d1.schema.health.failed`; every path calls `next()`. **The observation is handed to
+  one `d1.schema.health` record — `warn` on `mismatch` and on `unavailable`, `info` otherwise — with `{ state, recorded, actual }`. An absent
+  binding logs `d1.schema.health.skipped`, a thrown read logs `d1.schema.health.failed`; every path calls `next()`. **The observation is handed to
   `executionCtx.waitUntil` and the request is never held for it**, so the record may land after the response — it gates nothing, and the first
   request of an isolate must not pay for two D1 reads and a hash. Read the log as "this isolate saw this", not as a fact about one request.
 - `schemaHealthCheck(binding)` is a `healthCheck` predicate that fails only on `mismatch`; `unrecorded` and `unavailable` pass, mirroring the
@@ -386,6 +400,7 @@ exist before the worker reaches a serving state.
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
 [cr-1a]: ../warden/canon/libs/CODE_RULES.md#1a-no-module-level-mutable-variables
 [dm]: ./DATABASE_MANAGEMENT.md
+[dm-4a]: ./DATABASE_MANAGEMENT.md#4a-_forge_migrations--the-migration-history
 [dm-6c]: ./DATABASE_MANAGEMENT.md#6c-status---check-exit-conditions
 [eh-1c]: ./ERROR_HANDLING.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw

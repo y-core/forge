@@ -66,22 +66,21 @@ describe("classifyTable()", () => {
     expect(["sqlite_autoindex_tasks_1", "_cf_METADATA", "sqlite_stat1"].map((name) => classifyTable(name))).toEqual(["system", "system", "system"]);
   });
 
-  it("classifies the sequence, the migrations table and forge's companions as managed", () => {
-    expect(["sqlite_sequence", "d1_migrations", "forge_migrations", "forge_seed_history"].map((name) => classifyTable(name))).toEqual([
-      "managed",
+  it("classifies the sequence and forge's own companions as managed", () => {
+    expect(["sqlite_sequence", "_forge_migrations", "_forge_seed_history"].map((name) => classifyTable(name))).toEqual([
       "managed",
       "managed",
       "managed",
     ]);
   });
 
-  it("takes the migrations table from the caller, so a renamed one is still managed", () => {
-    expect(classifyTable("app_migrations", "app_migrations")).toBe("managed");
-    expect(classifyTable("d1_migrations", "app_migrations")).toBe("app");
-  });
-
-  it("classifies anything else as the app's, so an unknown table errs toward being content", () => {
-    expect(["tasks", "some_table_nobody_declared"].map((name) => classifyTable(name))).toEqual(["app", "app"]);
+  it("classifies anything else as the app's, including wrangler's own migrations table and a bare forge_ name", () => {
+    expect(["tasks", "some_table_nobody_declared", "d1_migrations", "forge_migrations"].map((name) => classifyTable(name))).toEqual([
+      "app",
+      "app",
+      "app",
+      "app",
+    ]);
   });
 });
 
@@ -150,21 +149,15 @@ describe("checkInventory()", () => {
     ]);
   });
 
-  it("ignores managed and system tables, including the migrations table's own AUTOINCREMENT", () => {
+  it("ignores managed and system tables, including forge's own migrations table's AUTOINCREMENT", () => {
     const objects = [
       ...healthyInventory(),
-      {
-        type: "table",
-        name: "d1_migrations",
-        tblName: "d1_migrations",
-        sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TEXT)",
-      },
       { type: "table", name: "sqlite_sequence", tblName: "sqlite_sequence", sql: "CREATE TABLE sqlite_sequence(name,seq)" },
       {
         type: "table",
-        name: "forge_migrations",
-        tblName: "forge_migrations",
-        sql: "CREATE TABLE forge_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT)",
+        name: "_forge_migrations",
+        tblName: "_forge_migrations",
+        sql: "CREATE TABLE _forge_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT)",
       },
     ];
 
@@ -838,10 +831,20 @@ describe("checkFullArtifact()", () => {
     ]);
   });
 
-  it("reports a dump that never clears sqlite_sequence", () => {
+  it("reports a dump that carries sqlite_sequence rows and never clears the table", () => {
     expect(checkFullArtifact(FULL_DUMP.filter((line) => line !== CLEAR_SEQUENCE).join("\n"))).toEqual([
-      { line: 5, reason: "the dump never clears sqlite_sequence, so restoring it would append to whatever the target already had" },
+      {
+        line: 5,
+        reason:
+          "the dump carries 1 sqlite_sequence row(s) and never clears the table first, so restoring it would append to whatever the target already had",
+      },
     ]);
+  });
+
+  it("passes a dump from a database with no AUTOINCREMENT table, where sqlite_sequence does not exist", () => {
+    const dump = [PREAMBLE, "CREATE TABLE projects (uuid TEXT PRIMARY KEY);", `INSERT INTO "projects" VALUES('p');`];
+
+    expect(checkFullArtifact(dump.join("\n"))).toEqual([]);
   });
 
   it("reports a dump that clears sqlite_sequence twice", () => {
@@ -885,7 +888,6 @@ const DATA_DUMP = [PREAMBLE, `INSERT INTO "projects" VALUES('p','ledger',NULL,'2
 
 const SEQUENCE_REASON =
   "sqlite_sequence is the engine's and is restored only by the full-dump route, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name";
-const MIGRATIONS_REASON = "d1_migrations is written by `wrangler d1 migrations apply`, and a row here collides with the one it just wrote";
 
 describe("checkDataArtifact()", () => {
   it("passes an artifact holding only rows of the tables it may carry", () => {
@@ -898,22 +900,14 @@ describe("checkDataArtifact()", () => {
     ]);
   });
 
-  it("gives the two managed tables their own reason, even when the caller's allowlist names them", () => {
-    const dump = [
-      ...DATA_DUMP,
-      `INSERT INTO "d1_migrations" VALUES(1,'0001_init','2026-08-06');`,
-      `INSERT INTO "sqlite_sequence" VALUES('c',124);`,
-    ];
+  it("gives sqlite_sequence its own reason, even when the caller's allowlist names it", () => {
+    const dump = [...DATA_DUMP, `INSERT INTO "sqlite_sequence" VALUES('c',124);`];
 
-    expect(checkDataArtifact(dump.join("\n"), [...APP_TABLES, "d1_migrations", "sqlite_sequence"])).toEqual([
-      { line: 4, reason: MIGRATIONS_REASON },
-      { line: 5, reason: SEQUENCE_REASON },
-    ]);
+    expect(checkDataArtifact(dump.join("\n"), [...APP_TABLES, "sqlite_sequence"])).toEqual([{ line: 4, reason: SEQUENCE_REASON }]);
   });
 
   it("gives an unquoted insert the same reason as the quoted form", () => {
     const cases = [
-      { table: "d1_migrations", reason: MIGRATIONS_REASON },
       { table: "sqlite_sequence", reason: SEQUENCE_REASON },
       { table: "task_reviews", reason: "task_reviews is not one of the tables this artifact may carry" },
     ];
@@ -925,13 +919,13 @@ describe("checkDataArtifact()", () => {
 
   it("reads an INSERT the old prefix check would have walked past: lowercase, indented, and OR-qualified", () => {
     const slipped = [
-      `insert into "d1_migrations" VALUES(1);`,
-      `   INSERT INTO "d1_migrations" VALUES(1);`,
-      `INSERT OR REPLACE INTO "d1_migrations" VALUES(1);`,
-      `INSERT\tOR IGNORE\tINTO d1_migrations VALUES(1);`,
+      `insert into "sqlite_sequence" VALUES(1);`,
+      `   INSERT INTO "sqlite_sequence" VALUES(1);`,
+      `INSERT OR REPLACE INTO "sqlite_sequence" VALUES(1);`,
+      `INSERT\tOR IGNORE\tINTO sqlite_sequence VALUES(1);`,
     ];
     for (const line of slipped) {
-      expect(checkDataArtifact([...DATA_DUMP, line].join("\n"), APP_TABLES)).toEqual([{ line: 4, reason: MIGRATIONS_REASON }]);
+      expect(checkDataArtifact([...DATA_DUMP, line].join("\n"), APP_TABLES)).toEqual([{ line: 4, reason: SEQUENCE_REASON }]);
     }
   });
 
@@ -968,29 +962,29 @@ describe("checkDataArtifact()", () => {
 
   it("carries forge's companion tables when the caller allows them", () => {
     expect(
-      checkDataArtifact([...DATA_DUMP, `INSERT INTO "forge_migrations" VALUES('0001_init','ab');`].join("\n"), [...APP_TABLES, "forge_migrations"]),
+      checkDataArtifact([...DATA_DUMP, `INSERT INTO "_forge_migrations" VALUES('0001_init','ab');`].join("\n"), [
+        ...APP_TABLES,
+        "_forge_migrations",
+      ]),
     ).toEqual([]);
   });
 
-  it("reports a statement naming either managed table, on the line it appears", () => {
-    expect(checkDataArtifact([...DATA_DUMP, "UPDATE d1_migrations SET applied_at = '2026-08-06';"].join("\n"), APP_TABLES)).toEqual([
-      { line: 4, reason: MIGRATIONS_REASON },
-    ]);
+  it("reports a statement naming sqlite_sequence, on the line it appears", () => {
     expect(checkDataArtifact([...DATA_DUMP, "UPDATE sqlite_sequence SET seq = 124;"].join("\n"), APP_TABLES)).toEqual([
       { line: 4, reason: SEQUENCE_REASON },
     ]);
   });
 
-  it("leaves a data row alone whose own text names both managed tables and a removal statement", () => {
-    const prose = "the dump must clear sqlite_sequence, and d1_migrations is written by migrations apply; never DELETE FROM tasks;";
+  it("leaves a data row alone whose own text names the managed table and a removal statement", () => {
+    const prose = "the dump must clear sqlite_sequence; never DELETE FROM tasks;";
 
     expect(checkDataArtifact([...DATA_DUMP, `INSERT INTO "tasks" VALUES('t','${prose}');`].join("\n"), APP_TABLES)).toEqual([]);
   });
 
-  it("passes an artifact this module authored whose rows hold newlines and name both managed tables", () => {
+  it("passes an artifact this module authored whose rows hold newlines and name the managed table", () => {
     const rows = [
       { uuid: "t1", details: "the dump must clear sqlite_sequence\nbefore it inserts into it" },
-      { uuid: "t2", details: `d1_migrations is written by migrations apply\nnever DELETE FROM tasks;\r\npath C:${BACKSLASH_N}otes` },
+      { uuid: "t2", details: `never DELETE FROM tasks;\r\npath C:${BACKSLASH_N}otes` },
     ];
     const artifact = [PREAMBLE, ...rows.map((row) => insertStatement("tasks", ["uuid", "details"], row))].join("\n");
 
@@ -1015,6 +1009,7 @@ const ON_DISK: SchemaFacts = { migrations: ["0001_init", "0002_later"], digest: 
 
 const MANIFEST: BackupManifest = {
   formatVersion: BACKUP_FORMAT_VERSION,
+  drift: "match" as const,
   createdAt: "2026-08-06T09:07:05.123Z",
   label: null,
   dumper: { tool: "forge db backup", version: "4.105.0" },
@@ -1046,11 +1041,15 @@ describe("validateManifest()", () => {
   });
 
   it("refuses a formatVersion this tool does not write, including a missing one", () => {
-    expect(validateManifest(manifestJson({ formatVersion: 1 }))).toEqual([`formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION}`]);
+    expect(validateManifest(manifestJson({ formatVersion: 1 }))).toEqual([
+      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+    ]);
     const value = manifestJson();
     delete value.formatVersion;
 
-    expect(validateManifest(value)).toEqual([`formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION}`]);
+    expect(validateManifest(value)).toEqual([
+      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+    ]);
   });
 
   it("refuses a migrations list that is not a list of named, hashed migrations", () => {
@@ -1199,19 +1198,14 @@ describe("manifestSelfDigest()", () => {
 });
 
 describe("appSchemaDigestInput()", () => {
-  it("covers the app's own objects and neither the migrations table nor a companion", () => {
+  it("covers the app's own objects and neither the sequence nor forge's own companion tables", () => {
     const objects: SchemaObject[] = [
       { type: "table", name: "tasks", tblName: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY)" },
-      { type: "table", name: "d1_migrations", tblName: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-      {
-        type: "table",
-        name: "forge_migrations",
-        tblName: "forge_migrations",
-        sql: "CREATE TABLE forge_migrations (applied_name TEXT PRIMARY KEY)",
-      },
+      { type: "table", name: "sqlite_sequence", tblName: "sqlite_sequence", sql: "CREATE TABLE sqlite_sequence(name,seq)" },
+      { type: "table", name: "_forge_migrations", tblName: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (id INTEGER PRIMARY KEY)" },
     ];
 
-    expect(appSchemaDigestInput(objects, "d1_migrations")).toBe(schemaDigestInput(objects.slice(0, 1)));
+    expect(appSchemaDigestInput(objects)).toBe(schemaDigestInput(objects.slice(0, 1)));
   });
 });
 
@@ -1277,7 +1271,7 @@ const NO_ROWS: Readonly<Record<string, number>> = { projects: 0, epics: 0, tasks
 describe("checkRestoreTarget()", () => {
   it("passes route full against a database with no app table, managed tables notwithstanding", () => {
     const objects: SchemaObject[] = [
-      { type: "table", name: "d1_migrations", tblName: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER)" },
+      { type: "table", name: "_forge_migrations", tblName: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (id INTEGER)" },
     ];
 
     expect(checkRestoreTarget("full", objects, {}, APP_TABLES)).toEqual([]);
@@ -1309,17 +1303,6 @@ describe("checkRestoreTarget()", () => {
     expect(checkRestoreTarget("migrations", healthyInventory(), { ...NO_ROWS, tasks: 218, epics: 4 }, APP_TABLES)).toEqual([
       "epics already holds 4 row(s) — a restore adds rows and never removes them, so the target must be empty",
       "tasks already holds 218 row(s) — a restore adds rows and never removes them, so the target must be empty",
-    ]);
-  });
-
-  it("takes the migrations table from the caller, so a renamed one is not counted as content", () => {
-    const objects = [
-      appObject("tasks"),
-      { type: "table", name: "app_migrations", tblName: "app_migrations", sql: "CREATE TABLE app_migrations (id)" },
-    ];
-
-    expect(checkRestoreTarget("full", objects, {}, [], "app_migrations")).toEqual([
-      "the target already declares 1 app table(s) — route full loads a whole database and needs one with none: tasks",
     ]);
   });
 });

@@ -4,12 +4,12 @@ import { CliError } from "../../cli/errors";
 import { resolveBackupsDir, restoreScratch } from "../backup/backup";
 import { findVerifiedBackup } from "../backup/reset";
 import { readBackupManifest } from "../backup/restore";
-import { clearLocalState, migrationsHome } from "../home";
-import { quoteSqlIdentifier } from "../sql";
+import { clearLocalState } from "../home";
 import { isRemotePlace } from "../target";
 import type { DbRunContext, Home, Migration } from "../types";
-import { migrationsApply, queryRowsIfTable } from "../wrangler";
-import { appliedMigrationName } from "./checksum";
+import { queryRowsIfTable } from "../wrangler";
+import { applyMigrations } from "./applier";
+import { RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "./checksum";
 import type { RehearsalOutcome } from "./types";
 
 /** The artifact a rehearsal restores: the one named, else the most recent verified backup of this database. */
@@ -27,8 +27,8 @@ function selectArtifact(run: DbRunContext, artifact: string | undefined): string
 
 /** Which pending migration wrangler stopped on: the first one the rehearsal did not record. */
 function failedMigration(run: DbRunContext, home: Home, pending: readonly Migration[]): string | null {
-  const rows = queryRowsIfTable(run.io, home, `SELECT name FROM ${quoteSqlIdentifier(run.config.entry.migrationsTable)} ORDER BY id`);
-  const applied = new Set((rows ?? []).map((row) => appliedMigrationName(row.name)));
+  const recorded = toRecordedChecksums(queryRowsIfTable(run.io, home, RECORDED_CHECKSUM_SELECT) ?? []);
+  const applied = new Set(recorded.map((record) => record.appliedName));
   return pending.find((migration) => !applied.has(migration.name))?.name ?? null;
 }
 
@@ -51,7 +51,7 @@ export function rehearseMigrations(
   if (manifest.database.name !== run.home.database) {
     throw new CliError("invalid-args", `${directory} was taken from ${manifest.database.name} and this target is ${run.home.database}`);
   }
-  const takenNames = manifest.schema.migrations.map(appliedMigrationName);
+  const takenNames = manifest.schema.migrations;
   const taken = new Set(takenNames);
   const here = new Set(applied);
   const missing = applied.filter((name) => !taken.has(name));
@@ -66,7 +66,7 @@ export function rehearseMigrations(
 
   const scratch = restoreScratch(run, directory, "rehearse", "migrations");
   try {
-    migrationsApply(run.io, migrationsHome(run.config, run.io, pending, "rehearse-apply", scratch));
+    applyMigrations(run, scratch, pending, { label: "rehearse-apply", record: true });
   } catch (error) {
     const failed = failedMigration(run, scratch, pending);
     const detail = error instanceof Error ? error.message : String(error);

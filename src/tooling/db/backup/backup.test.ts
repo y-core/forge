@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
 import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
+import { schemaFingerprint } from "../migrate/fingerprint";
 import { toSchemaObjects } from "../sql";
 import {
   argvHas,
@@ -25,15 +27,14 @@ import { resolveBackupsDir, runBackup } from "./backup";
 const SCHEMA_SQL = [
   "PRAGMA defer_foreign_keys=TRUE;",
   "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);",
-  "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY, sha256 TEXT);",
+  "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY, sha256 TEXT);",
   "DELETE FROM sqlite_sequence;",
   "",
 ].join("\n");
 
 const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
-  { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-  { type: "table", name: "forge_migrations", tbl_name: "forge_migrations", sql: "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY)" },
+  { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
 ];
 
 const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
@@ -41,11 +42,7 @@ const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
     { cid: 0, name: "uuid", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
     { cid: 1, name: "lane", type: "TEXT", notnull: 1, dflt_value: "''", pk: 0 },
   ],
-  d1_migrations: [
-    { cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 1 },
-    { cid: 1, name: "name", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
-  ],
-  forge_migrations: [
+  _forge_migrations: [
     { cid: 0, name: "name", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
     { cid: 1, name: "sha256", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
   ],
@@ -56,8 +53,7 @@ const ROWS: Readonly<Record<string, Record<string, unknown>[]>> = {
     { uuid: "t1", lane: "todo" },
     { uuid: "t2", lane: "doing" },
   ],
-  d1_migrations: [{ id: 1, name: "0001_init" }],
-  forge_migrations: [{ name: "0001_init", sha256: "ab" }],
+  _forge_migrations: [{ name: "0001_init", sha256: "ab" }],
 };
 
 const DIRECTORY_NAME = "app-db-20260911T100000Z";
@@ -97,7 +93,6 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
       return OK;
     },
   });
-  io.rules.push({ match: (args) => argvHas(args, "migrations", "apply"), reply: OK });
   io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
   io.rules.push({
     match: (args) => argvHas(args, "execute", "--command"),
@@ -123,7 +118,7 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
         const table = count[1] ?? "";
         return jsonRows([{ rows: scratch ? (rows[table] ?? []).length : (over.counts?.[table] ?? (ROWS[table] ?? []).length) }]);
       }
-      if (statement.startsWith("SELECT name FROM")) return jsonRows((ROWS.d1_migrations ?? []).map((row) => ({ name: row.name })));
+      if (statement === RECORDED_CHECKSUM_SELECT) return jsonRows((rows._forge_migrations ?? []).map((row) => ({ name: row.name })));
       const from = /FROM "([^"]+)"/.exec(statement);
       const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
       const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
@@ -188,7 +183,30 @@ describe("runBackup", () => {
     });
     expect(outcome.manifest.tables.map((table) => ({ name: table.name, rows: table.rows }))).toEqual([{ name: "tasks", rows: 2 }]);
     expect(outcome.manifest.artifacts.map((artifact) => artifact.file)).toEqual(["full.sql", "data.sql", "schema.sql"]);
+    expect(outcome.manifest.drift).toBe("unrecorded");
     expect(JSON.parse(io.files.get(join(directory, "manifest.json")) ?? "{}")).toEqual(outcome.manifest);
+  });
+
+  it("says so and records it when the source schema is not the one its last apply certified", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    const certified = "f".repeat(64);
+    io.rules.unshift({
+      match: (args) => (args.at(-1) ?? "") === RECORDED_CHECKSUM_SELECT,
+      reply: jsonRows([{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: certified }]),
+    });
+    const outcome = runBackup(await context(root, io), { out: null, verify: false, label: null });
+    const actual = schemaFingerprint(toSchemaObjects(INVENTORY));
+
+    expect(outcome.manifest.drift).toBe("mismatch");
+    expect(io.logs[0]).toBe(
+      `! app-db schema fingerprint ${actual} is not the ${certified} the last apply certified — backing up the database as found`,
+    );
+    // Carried in the artifact too, so a restore reads it back: `prepareRestore` prints every warning.
+    expect(outcome.manifest.warnings).toEqual([
+      "--no-verify: nothing in this artifact has been proven to rebuild",
+      `taken from a schema no migration certified: the fingerprint is ${actual} and the last apply certified ${certified} — every digest here describes the database as found, not as the migrations build it`,
+    ]);
   });
 
   it("writes the artifact directory under out, resolved against the root", async () => {
@@ -349,8 +367,7 @@ describe("runBackup", () => {
     const io = fakeWrangler({
       scratchInventory: [
         { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT, note TEXT)" },
-        { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-        { type: "table", name: "forge_migrations", tbl_name: "forge_migrations", sql: "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY)" },
+        { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
       ],
     });
     const run = await context(root, io);
@@ -367,19 +384,19 @@ describe("runBackup", () => {
     const io = fakeWrangler();
     const outcome = runBackup(await context(root, io), { out: null, verify: false, label: null });
 
-    expect(outcome.manifest.schema.digest).toBe(sha256(appSchemaDigestInput(toSchemaObjects(INVENTORY), "d1_migrations")));
+    expect(outcome.manifest.schema.digest).toBe(sha256(appSchemaDigestInput(toSchemaObjects(INVENTORY))));
     expect(outcome.manifest.schema.digest).not.toBe(sha256(schemaDigestInput(toSchemaObjects(INVENTORY))));
   });
 
   it("proves the companion tables as well as the app's own", async () => {
     const root = appRoot();
-    const io = fakeWrangler({ scratchRows: { ...ROWS, forge_migrations: [{ name: "0001_init", sha256: "cd" }] } });
+    const io = fakeWrangler({ scratchRows: { ...ROWS, _forge_migrations: [{ name: "0001_init", sha256: "cd" }] } });
     const run = await context(root, io);
 
     expect(refusal(() => runBackup(run, { out: null, verify: true, label: null })).message).toBe(
       "route full left 1 divergence(s); route migrations left 1 divergence(s)",
     );
-    expect(io.logs.filter((line) => line.includes("✗ forge_migrations")).length).toBe(2);
+    expect(io.logs.filter((line) => line.includes("✗ _forge_migrations")).length).toBe(2);
   });
 
   it("holds the apply lock for the run, and gives it back", async () => {

@@ -6,7 +6,7 @@ export { buildCSS } from "./css";
 export { fetchURL } from "./download";
 export { buildFonts } from "./fonts";
 export { hashFile, hashString } from "./hash";
-export { buildIcons } from "./icons";
+export { buildIcons, iconLinks, iconTarget } from "./icons";
 export { buildJS } from "./js";
 export { safeJoin } from "./paths";
 export type { AssetsTypesOutcome, BuildOptions } from "./types";

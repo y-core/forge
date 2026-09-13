@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import type { DbRunContext, DeclaredPath } from "./types";
 
@@ -17,11 +17,16 @@ export function declaredSeeds(run: DbRunContext): DeclaredPath[] {
   return (run.host.seeds ?? []).map((declared) => declaredPath(run.config.root, declared));
 }
 
-/** Where the composed snapshot lives: the host config's `snapshot`, else `schema.snapshot.json` beside the migrations directory. @internal */
+/** Where the migrations live: the host config's `migrations`, else `migrations` under the root. @internal */
+export function declaredMigrations(run: DbRunContext): DeclaredPath {
+  return declaredPath(run.config.root, run.host.migrations ?? "migrations");
+}
+
+/** Where the composed snapshot lives: the host config's `snapshot`, else `schema.snapshot.json` under the root. @internal */
 export function snapshotPath(run: DbRunContext): string {
   const declared = run.host.snapshot;
   if (declared !== undefined) return declaredPath(run.config.root, declared).path;
-  return join(dirname(run.config.entry.migrationsDir), "schema.snapshot.json");
+  return join(run.config.root, "schema.snapshot.json");
 }
 
 /** What `compose` and `schema check` say when `config/db.ts` names no schema at all. @internal */

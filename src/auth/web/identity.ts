@@ -21,7 +21,7 @@ export const AUTH_STEP_UP_SESSION_KEY = "auth.stepUpAt";
 /** The session key an unfinished sign-in keeps the address it challenged under. @public */
 export const AUTH_PENDING_SIGNIN_SESSION_KEY = "auth.pendingSignin";
 
-/** Per-request accessor for the identity `requireAuth` establishes. @public */
+/** Per-request accessor for the identity `requireAuth` or `resolveAuth` establishes. @public */
 export const authCtx = contextVar<AuthIdentity>("auth.identity");
 
 /** The finite timestamp `session` holds under `key`, or `null` when it holds none. */

@@ -1,7 +1,0 @@
-{
-  "seed": "INSERT INTO parent (id, name) VALUES (1, 'a'), (2, 'b');",
-  "custom": "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES parent (id) ON DELETE CASCADE, note TEXT) STRICT;\nINSERT INTO parent (id, name) VALUES (3, 'c');\nINSERT INTO child (id, parent_id, note) VALUES (10, 3, 'x');\n",
-  "composeRefused": "table child is in the migrations and in no declared schema, and dropping parent would drop it",
-  "query": "SELECT (SELECT count(*) FROM parent) AS parent, (SELECT count(*) FROM child) AS child",
-  "rows": [{ "parent": 3, "child": 1 }]
-}

@@ -3,22 +3,27 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
 import { formatComposeHeader } from "../schema/header";
-import { OK, argvHas, bufferedIO, composed, fakeDbIo, jsonBatches, jsonRows, minimalWranglerConfig } from "../test-support";
+import { OK, argvHas, bufferedIO, composed, fakeDbIo, jsonRows, minimalWranglerConfig } from "../test-support";
 import type { DbHostConfig, FakeDbIo, Spawned } from "../types";
+import { RECORDED_CHECKSUM_SELECT } from "./checksum";
 import { migrationChecksum, migrationsDigest } from "./files";
 import { schemaFingerprint } from "./fingerprint";
 
 const NOW = new Date("2026-09-11T10:00:00Z");
 const INIT = composed("CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;");
 const GENERATED_INIT = `${formatComposeHeader({ desired: {}, baseline: migrationsDigest([]), forge: "test" }, INIT)}${INIT}`;
+const INVENTORY = [{ type: "table", name: "users", tbl_name: "users", sql: INIT }];
+const FINGERPRINT = schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: INIT }]);
 
-const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table" };
+const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table: _forge_migrations" };
 
-const isRead = (a: readonly string[]) => argvHas(a, "execute", "--json", "--command");
-const reads = (a: readonly string[], fragment: string) => isRead(a) && (a.at(-1) ?? "").includes(fragment);
+const isJsonQuery = (a: readonly string[]) => argvHas(a, "execute", "--json", "--command");
+const isRecordedSelect = (a: readonly string[]) => isJsonQuery(a) && (a.at(-1) ?? "") === RECORDED_CHECKSUM_SELECT;
+const isInventorySelect = (a: readonly string[]) => isJsonQuery(a) && (a.at(-1) ?? "") === INVENTORY_SELECT;
 
 /** A temp root with a real `wrangler.jsonc`, since the config is read from the filesystem either way. */
 function appRoot(): string {
@@ -38,7 +43,6 @@ function deployableRoot(): string {
         database_name: "app-db",
         database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
         preview_database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5b",
-        migrations_dir: "migrations",
       },
     ],
   });
@@ -46,27 +50,12 @@ function deployableRoot(): string {
   return root;
 }
 
-/** The rows a one-statement reply carries, empty for a `no such table` refusal. */
-function rowsOf(reply: Spawned): Record<string, unknown>[] {
-  if (reply.code !== 0) return [];
-  return (JSON.parse(reply.stdout) as { results: Record<string, unknown>[] }[])[0]?.results ?? [];
-}
-
-function wire(io: FakeDbIo, over: { applied?: Spawned; checksums?: Spawned; meta?: Spawned } = {}): void {
-  const inventory = [{ type: "table", name: "users", tbl_name: "users", sql: INIT }];
+function wire(io: FakeDbIo, over: { recorded?: Spawned } = {}): void {
   io.rules.push(
-    { match: (a) => reads(a, "pragma_table_info"), reply: jsonRows([{ name: "namespace" }, { name: "name" }]) },
-    { match: (a) => reads(a, 'FROM "d1_migrations"'), reply: over.applied ?? NO_TABLE },
-    // `migrate` reads the three facts in one batch once the companion tables are ensured.
-    {
-      match: (a) => reads(a, "FROM forge_migrations") && reads(a, "FROM forge_schema_meta"),
-      reply: jsonBatches([rowsOf(over.checksums ?? NO_TABLE), rowsOf(over.meta ?? NO_TABLE), inventory]),
-    },
-    { match: (a) => reads(a, "FROM forge_migrations"), reply: over.checksums ?? NO_TABLE },
-    { match: (a) => reads(a, "FROM forge_schema_meta"), reply: over.meta ?? NO_TABLE },
-    { match: (a) => reads(a, "sqlite_master"), reply: jsonRows(inventory) },
+    { match: isRecordedSelect, reply: over.recorded ?? NO_TABLE },
+    { match: isInventorySelect, reply: jsonRows(INVENTORY) },
     { match: (a) => argvHas(a, "execute", "--yes", "--command"), reply: OK },
-    { match: (a) => argvHas(a, "migrations", "apply"), reply: OK },
+    { match: (a) => argvHas(a, "execute", "--yes", "--file"), reply: OK },
   );
 }
 
@@ -120,14 +109,7 @@ describe("forge db migrate", () => {
     const result = await drive(io, ["migrate", "--root", root, "--yes", "--json"]);
 
     expect(result.out.length).toBe(1);
-    expect(JSON.parse(result.out[0] ?? "")).toEqual({
-      target: "local",
-      database: "app-db",
-      applied: ["0001_init"],
-      skipped: [],
-      repaired: [],
-      dryRun: false,
-    });
+    expect(JSON.parse(result.out[0] ?? "")).toEqual({ target: "local", database: "app-db", applied: ["0001_init"], skipped: [], dryRun: false });
   });
 
   it("changes nothing under --dry-run", async () => {
@@ -138,7 +120,7 @@ describe("forge db migrate", () => {
     const result = await drive(io, ["migrate", "--root", root, "--yes", "--dry-run"]);
 
     expect(result.out).toEqual(["would apply 1 to app-db (local): 0001_init"]);
-    expect(io.calls.some((call) => argvHas(call.slice(1), "migrations", "apply"))).toBe(false);
+    expect(io.calls.some((call) => argvHas(call.slice(1), "execute", "--yes", "--file"))).toBe(false);
   });
 
   it("reports what a --to cut left behind", async () => {
@@ -185,7 +167,7 @@ describe("forge db migrate", () => {
 
       expect(result.err).toEqual(["Error: --no-lint is local-only; on a deployed target use --allow-warnings to accept warnings."]);
       expect(result.code).toBe(1);
-      expect(io.calls.some((call) => argvHas(call.slice(1), "migrations", "apply"))).toBe(false);
+      expect(io.calls.some((call) => argvHas(call.slice(1), "execute", "--yes", "--file"))).toBe(false);
     }
   });
 });
@@ -260,15 +242,10 @@ describe("forge db migrate status", () => {
     expect(result.err).toEqual(["Error: app-db (local) is not in step with its migrations — see the report above."]);
   });
 
-  it("exits 0 under --check when every migration is applied, recorded and fingerprinted", async () => {
+  it("exits 0 under --check when every migration is applied and its fingerprint certified", async () => {
     const root = appRoot();
     const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
-    const fingerprint = schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: INIT }], "d1_migrations");
-    wire(io, {
-      applied: jsonRows([{ name: "0001_init", applied_at: "2026-01-01" }]),
-      checksums: jsonRows([{ name: "0001_init", applied_name: "0001_init", sha256: migrationChecksum(INIT) }]),
-      meta: jsonRows([{ key: "schema_fingerprint", value: fingerprint }]),
-    });
+    wire(io, { recorded: jsonRows([{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: FINGERPRINT }]) });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 
@@ -276,37 +253,24 @@ describe("forge db migrate status", () => {
     expect(result.err).toEqual([]);
   });
 
-  it("exits 1 under --check when the schema fingerprint has moved since it was recorded", async () => {
+  it("exits 1 under --check when the schema fingerprint has moved since it was certified", async () => {
     const root = appRoot();
     const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
-    wire(io, {
-      applied: jsonRows([{ name: "0001_init", applied_at: "2026-01-01" }]),
-      checksums: jsonRows([{ name: "0001_init", applied_name: "0001_init", sha256: migrationChecksum(INIT) }]),
-      meta: jsonRows([{ key: "schema_fingerprint", value: "ff" }]),
-    });
+    wire(io, { recorded: jsonRows([{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: "ff" }]) });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 
     expect(result.code).toBe(1);
   });
 
-  it("ignores a stale desired_digest row, which no longer wedges --check on a comment-only edit", async () => {
+  it("exits 1 under --check when an applied file was edited since", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT, [join(root, "schema.sql")]: INIT }, { now: NOW });
-    const fingerprint = schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: INIT }], "d1_migrations");
-    wire(io, {
-      applied: jsonRows([{ name: "0001_init", applied_at: "2026-01-01" }]),
-      checksums: jsonRows([{ name: "0001_init", applied_name: "0001_init", sha256: migrationChecksum(INIT) }]),
-      meta: jsonRows([
-        { key: "schema_fingerprint", value: fingerprint },
-        { key: "desired_digest:schema.sql", value: "a-digest-no-file-builds-any-more" },
-      ]),
-    });
+    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    wire(io, { recorded: jsonRows([{ name: "0001_init", sha256: "stale-hash", applied_at: 1, fingerprint: FINGERPRINT }]) });
 
-    const result = await drive(io, ["migrate", "status", "--root", root, "--check", "--json"]);
+    const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 
-    expect(result.code).toBe(null);
-    expect(JSON.parse(result.out[0] ?? "").desired).toBeUndefined();
+    expect(result.code).toBe(1);
   });
 
   it("prints the report as one JSON document under --json", async () => {

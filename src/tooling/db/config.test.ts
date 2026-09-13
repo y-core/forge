@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
-import { DEFAULT_MIGRATIONS_DIR, DEFAULT_MIGRATIONS_TABLE, resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry } from "./config";
+import { resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry } from "./config";
 import { minimalWranglerConfig } from "./test-support";
 
 const roots: string[] = [];
@@ -90,16 +90,8 @@ describe("sharedD1Databases()", () => {
 });
 
 describe("toD1Entry()", () => {
-  it("defaults the migrations dir and table, names the database after the binding, and nulls both ids", () => {
-    expect(toD1Entry({ binding: "DB" }, CONFIG_PATH)).toEqual({
-      binding: "DB",
-      databaseName: "DB",
-      databaseId: null,
-      previewDatabaseId: null,
-      migrationsDir: "/app/migrations",
-      migrationsTable: "d1_migrations",
-    });
-    expect([DEFAULT_MIGRATIONS_DIR, DEFAULT_MIGRATIONS_TABLE]).toEqual(["migrations", "d1_migrations"]);
+  it("names the database after the binding and nulls both ids when the config gives none", () => {
+    expect(toD1Entry({ binding: "DB" }, CONFIG_PATH)).toEqual({ binding: "DB", databaseName: "DB", databaseId: null, previewDatabaseId: null });
   });
 
   it("refuses a database_name that is not one, naming the config and the binding", () => {
@@ -112,9 +104,9 @@ describe("toD1Entry()", () => {
   });
 
   it("refuses a field of the wrong type by name, at the top level and inside an env block", () => {
-    const root = appRoot({ d1_databases: [{ binding: "DB", database_name: "app-db", migrations_dir: 5 }] });
+    const root = appRoot({ d1_databases: [{ binding: "DB", database_name: 5 }] });
     expect(() => resolveDbConfig({ root, config: "wrangler.jsonc", target: "local" })).toThrow(
-      `${join(root, "wrangler.jsonc")}: d1_databases[0].migrations_dir: Invalid type: Expected string but received 5`,
+      `${join(root, "wrangler.jsonc")}: d1_databases[0].database_name: Invalid type: Expected string but received 5`,
     );
 
     const scoped = appRoot({ env: { staging: { d1_databases: [{ binding: "DB", database_name: "app-db", database_id: 7 }] } } });
@@ -133,30 +125,12 @@ describe("toD1Entry()", () => {
     }
   });
 
-  it("resolves a relative migrations dir against the config's directory, not the process directory", () => {
-    expect(toD1Entry({ binding: "DB", migrations_dir: "db/migrations" }, "/app/config/wrangler.jsonc").migrationsDir).toBe(
-      "/app/config/db/migrations",
-    );
-    expect(toD1Entry({ binding: "DB", migrations_dir: "../shared/migrations" }, CONFIG_PATH).migrationsDir).toBe("/shared/migrations");
-  });
-
-  it("keeps an absolute migrations dir as written", () => {
-    expect(toD1Entry({ binding: "DB", migrations_dir: "/srv/migrations" }, CONFIG_PATH).migrationsDir).toBe("/srv/migrations");
-  });
-
-  it("carries both ids and a custom migrations table through", () => {
-    expect(
-      toD1Entry(
-        { binding: "DB", database_name: "app-db", database_id: "id-1", preview_database_id: "id-2", migrations_table: "forge_migrations" },
-        CONFIG_PATH,
-      ),
-    ).toEqual({
+  it("carries both database ids through", () => {
+    expect(toD1Entry({ binding: "DB", database_name: "app-db", database_id: "id-1", preview_database_id: "id-2" }, CONFIG_PATH)).toEqual({
       binding: "DB",
       databaseName: "app-db",
       databaseId: "id-1",
       previewDatabaseId: "id-2",
-      migrationsDir: "/app/migrations",
-      migrationsTable: "forge_migrations",
     });
   });
 });
@@ -170,14 +144,7 @@ describe("resolveDbConfig()", () => {
       configPath: join(root, "wrangler.jsonc"),
       env: null,
       target: { place: "local", database: null },
-      entry: {
-        binding: "DB",
-        databaseName: "app-db",
-        databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-        previewDatabaseId: null,
-        migrationsDir: join(root, "migrations"),
-        migrationsTable: "d1_migrations",
-      },
+      entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     });
   });
 

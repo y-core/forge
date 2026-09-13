@@ -99,14 +99,7 @@ function dbConfig(): DbConfig {
     configPath: `${ROOT}/wrangler.jsonc`,
     config: wranglerConfig(),
     env: null,
-    entry: {
-      binding: "DB",
-      databaseName: "app-db",
-      databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      previewDatabaseId: null,
-      migrationsDir: MIGRATIONS,
-      migrationsTable: "d1_migrations",
-    },
+    entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place: "local", database: null },
   };
 }
@@ -155,7 +148,6 @@ function wire(
   let proved = false;
   io.rules.push(
     { match: (a) => argvHas(a, "--version"), reply: { code: 0, stdout: "4.0.0\n", stderr: "" } },
-    { match: (a) => argvHas(a, "migrations", "apply"), reply: OK },
     {
       match: (a) => argvHas(a, "execute", "--file"),
       reply: (a) => {
@@ -216,25 +208,18 @@ describe("composeMigration()", () => {
     expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`]);
     const snapshot = JSON.parse(io.files.get(SNAPSHOT) ?? "{}");
     expect(snapshot.desired).toEqual({ "schema.sql": sha256(schemaText([USERS])) });
-    expect(snapshot.migrationsDigest).toBe(migrationsDigest([{ name: "0001_init", sql: INIT }]));
+    expect(snapshot.migrationsDigest).toBe(migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]));
   });
 
   it("refuses a declared object in a reserved space, naming the file, the object and the prefixes", () => {
-    const reserved: Shape = { name: "forge_audit", columns: [["id", "INTEGER PRIMARY KEY"]] };
+    const reserved: Shape = { name: "_forge_audit", columns: [["id", "INTEGER PRIMARY KEY"]] };
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, reserved]) });
 
     expect(() => composeMigration(run, OPTIONS)).toThrow(
-      "schema.sql declares table `forge_audit`\n`forge_`, `sqlite_`, `_cf_` are reserved for forge, SQLite and the platform, and `d1_migrations` is the migrations table — rename it, or drop it from the schema.",
+      "schema.sql declares table `_forge_audit`\n`_forge_`, `sqlite_`, `_cf_` are reserved for forge, SQLite and the platform — rename it, or drop it from the schema.",
     );
     expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
     expect(io.calls).toEqual([]);
-  });
-
-  it("refuses a declared object named as the migrations table itself", () => {
-    const clash: Shape = { name: "d1_migrations", columns: [["id", "INTEGER PRIMARY KEY"]] };
-    const { run } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([clash]) });
-
-    expect(() => composeMigration(run, OPTIONS)).toThrow("schema.sql declares table `d1_migrations`");
   });
 
   it("writes the numbered migration, its compose header and the snapshot for a created table", () => {
@@ -254,7 +239,7 @@ describe("composeMigration()", () => {
     expect(header.origin).toBe("generated");
     expect(header.stamp).toEqual({
       desired: { "schema.sql": sha256(desiredText) },
-      baseline: migrationsDigest([{ name: "0001_init", sql: INIT }]),
+      baseline: migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]),
       body: sha256(header.covered),
       forge: "unknown",
     });
@@ -263,8 +248,8 @@ describe("composeMigration()", () => {
     const snapshot = JSON.parse(io.files.get(SNAPSHOT) ?? "{}");
     expect(snapshot.migrationsDigest).toBe(
       migrationsDigest([
-        { name: "0001_init", sql: INIT },
-        { name: "0002_schema", sql: written },
+        { name: "0001_init", sha256: migrationChecksum(INIT) },
+        { name: "0002_schema", sha256: migrationChecksum(written) },
       ]),
     );
   });
@@ -445,6 +430,89 @@ describe("composeMigration() — the union of every declared schema", () => {
   });
 });
 
+describe("composeMigration() — a drop whose declaring file config/db.ts no longer names", () => {
+  const LIB = "node_modules/acme-lib/schema.sql";
+  const POSTS: Shape = {
+    name: "posts",
+    columns: [
+      ["id", "INTEGER PRIMARY KEY"],
+      ["title", "TEXT"],
+    ],
+  };
+  const DROPS_POSTS: SchemaDiff = {
+    tables: [{ kind: "drop", name: "posts" }],
+    indexes: NO_NAMED,
+    triggers: NO_NAMED,
+    views: NO_NAMED,
+    destructive: [],
+    refusals: [],
+    dataDependent: [],
+    dropDependents: [],
+  };
+  const CAUSE = `posts was declared by ${LIB}, which config/db.ts no longer declares or whose file is absent — nothing declares it now`;
+
+  const files = (declared: Record<string, string[]>): Record<string, string> => ({
+    [`${MIGRATIONS}/0001_init.sql`]: INIT,
+    [SCHEMA]: schemaText([USERS]),
+    [SNAPSHOT]: formatSchemaSnapshot(
+      buildSchemaSnapshot({
+        desired: { "schema.sql": sha256(schemaText([USERS])) },
+        declared,
+        migrationsDigest: migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]),
+      }),
+    ),
+  });
+  const DEPARTED = { [LIB]: ["posts"], "schema.sql": ["users"] };
+  const DELETED = { "schema.sql": ["users", "posts"] };
+
+  it("refuses the drop naming the file that declared it, and digests the plan with that reason", () => {
+    const { run, io, out } = context(files(DEPARTED));
+    wire(io, { baseline: [USERS, POSTS], desired: [USERS] });
+    const digest = destructivePlanDigest(DROPS_POSTS, [CAUSE]);
+
+    expect(() => composeMigration(run, OPTIONS)).toThrow(
+      `the change discards data:\n  posts: drops the table\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
+    );
+    expect(out).toEqual(["  drop table posts", CAUSE]);
+    expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+  });
+
+  it("digests the same drop differently when the file that declared it is still declared", () => {
+    const { run, io, out } = context(files(DELETED));
+    wire(io, { baseline: [USERS, POSTS], desired: [USERS] });
+    const digest = destructivePlanDigest(DROPS_POSTS);
+
+    expect(() => composeMigration(run, OPTIONS)).toThrow(`pass --allow-destructive ${digest} to compose exactly this plan.`);
+    expect(digest).not.toBe(destructivePlanDigest(DROPS_POSTS, [CAUSE]));
+    expect(out).toEqual(["  drop table posts"]);
+  });
+
+  it("composes the drop under that plan's digest, printing the reason, and remembers only the surviving file's names", () => {
+    const { run, io, out } = context(files(DEPARTED));
+    wire(io, { baseline: [USERS, POSTS], desired: [USERS], after: [USERS] });
+
+    const outcome = composeMigration(run, { ...OPTIONS, allowDestructive: destructivePlanDigest(DROPS_POSTS, [CAUSE]) });
+
+    expect(outcome.path).toBe(`${MIGRATIONS}/0002_schema.sql`);
+    expect(outcome.causes).toEqual([CAUSE]);
+    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  drop table posts", CAUSE]);
+    expect(JSON.parse(io.files.get(SNAPSHOT) ?? "{}").declared).toEqual({ "schema.sql": ["users"] });
+  });
+
+  it("says so once when the departed file declared nothing this compose drops", () => {
+    const { run, io, out } = context(files({ [LIB]: ["archived"], "schema.sql": ["users"] }));
+    wire(io, { baseline: [USERS], desired: [USERS] });
+
+    const outcome = composeMigration(run, OPTIONS);
+
+    const warning = `warning: ${LIB} is in ${SNAPSHOT} and config/db.ts no longer declares it`;
+    expect(outcome.causes).toEqual([]);
+    expect(outcome.warnings).toEqual([warning]);
+    expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`, warning]);
+    expect(JSON.parse(io.files.get(SNAPSHOT) ?? "{}").declared).toEqual({ "schema.sql": ["users"] });
+  });
+});
+
 describe("composeMigration() --restamp", () => {
   const NEXT_BODY = `PRAGMA defer_foreign_keys = true;\n\n${ddl(NOTES)};\n`;
   const THIRD_BODY = `PRAGMA defer_foreign_keys = true;\n\nCREATE TABLE tags (id INTEGER PRIMARY KEY) STRICT;\n`;
@@ -452,7 +520,7 @@ describe("composeMigration() --restamp", () => {
   const generated = (body: string, baseline: string) =>
     `${formatComposeHeader({ desired: { "schema.sql": "old" }, baseline, forge: "0.0.1" }, body)}${body}`;
   const snapshotText = (migrationsDigestValue: string) =>
-    formatSchemaSnapshot(buildSchemaSnapshot({ desired: { "schema.sql": "old" }, migrationsDigest: migrationsDigestValue }));
+    formatSchemaSnapshot(buildSchemaSnapshot({ desired: { "schema.sql": "old" }, declared: {}, migrationsDigest: migrationsDigestValue }));
   const restamp = (name: string, dryRun = false): ComposeOptions => ({ ...OPTIONS, restamp: name, dryRun });
 
   it("rewrites only the stamp line of the named migration, to the history now on disk, with no wrangler call", () => {
@@ -471,7 +539,7 @@ describe("composeMigration() --restamp", () => {
     expect(header.body).toBe(NEXT_BODY);
     expect(header.stamp).toEqual({
       desired: { "schema.sql": sha256(desiredText) },
-      baseline: migrationsDigest([{ name: "0001_init", sql: INIT }]),
+      baseline: migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]),
       body: sha256(header.covered),
       forge: "unknown",
     });
@@ -482,6 +550,7 @@ describe("composeMigration() --restamp", () => {
       snapshotPath: null,
       plan: ["restamped 0002_schema"],
       warnings: [],
+      causes: [],
       sql: written,
       dryRun: false,
     });
@@ -492,8 +561,8 @@ describe("composeMigration() --restamp", () => {
     const wrong = generated(NEXT_BODY, "wrong");
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_schema.sql`]: wrong, [SCHEMA]: desiredText });
     const before = migrationsDigest([
-      { name: "0001_init", sql: INIT },
-      { name: "0002_schema", sql: wrong },
+      { name: "0001_init", sha256: migrationChecksum(INIT) },
+      { name: "0002_schema", sha256: migrationChecksum(wrong) },
     ]);
 
     composeMigration(run, restamp("0002_schema"));
@@ -503,8 +572,8 @@ describe("composeMigration() --restamp", () => {
     expect(migrationChecksum(written)).toBe(migrationChecksum(wrong));
     expect(
       migrationsDigest([
-        { name: "0001_init", sql: INIT },
-        { name: "0002_schema", sql: written },
+        { name: "0001_init", sha256: migrationChecksum(INIT) },
+        { name: "0002_schema", sha256: migrationChecksum(written) },
       ]),
     ).toBe(before);
   });
@@ -543,7 +612,7 @@ describe("composeMigration() --restamp", () => {
     expect(io.files.get(SNAPSHOT)).toBe(snapshotText("stale"));
     expect(outcome.path).toBe(null);
     expect(outcome.dryRun).toBe(true);
-    expect(parseMigrationHeader(outcome.sql).stamp?.baseline).toBe(migrationsDigest([{ name: "0001_init", sql: INIT }]));
+    expect(parseMigrationHeader(outcome.sql).stamp?.baseline).toBe(migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]));
     expect(out).toEqual(["would have restamped 0002_schema"]);
   });
 

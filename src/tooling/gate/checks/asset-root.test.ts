@@ -53,7 +53,7 @@ describe("checkAssetRoot", () => {
     const result = await run();
     expect(result.ok).toBe(false);
     expect(result.findings.map((f) => f.message)).toEqual([
-      "`/sitemap.xml` is written to the asset root by `site` but `run_worker_first` does not exclude it",
+      "`/sitemap.xml` is written to the asset tree by `site` but `run_worker_first` does not exclude it",
     ]);
   });
 
@@ -62,8 +62,40 @@ describe("checkAssetRoot", () => {
     const result = await run();
     expect(result.ok).toBe(false);
     expect(result.findings.map((f) => f.message)).toEqual([
-      "`/favicon.svg` is written to the asset root by `icons.outputs` but `run_worker_first` does not exclude it",
+      "`/favicon.svg` is written to the asset tree by `icons.outputs` but `run_worker_first` does not exclude it",
     ]);
+  });
+
+  it("covers every prefixed icon output with one glob, naming only the root-pinned one", async () => {
+    writeConfigs(
+      `
+  icons: {
+    src: "icon.svg",
+    outDir: "public",
+    publicPrefix: "/static",
+    lightColor: "#000",
+    outputs: [
+      { kind: "svg", file: "favicon.svg" },
+      { kind: "manifest", file: "site.webmanifest" },
+      { kind: "ico", file: "favicon.ico", sizes: [16], root: true },
+    ],
+  },`,
+      ["/*", "!/static/*", "!/favicon.ico"],
+    );
+    const result = await run();
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("asks for the directory rule, not the filename, when a prefixed output is uncovered", async () => {
+    writeConfigs(
+      `
+  icons: { src: "icon.svg", outDir: "public", publicPrefix: "/static", lightColor: "#000", outputs: [{ kind: "svg", file: "favicon.svg" }] },`,
+      ["/*"],
+    );
+    const result = await run();
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => f.detail)).toEqual([['add "!/static/*" to assets.run_worker_first']]);
   });
 
   it("warns, without failing, on an exclusion no build step writes", async () => {

@@ -69,6 +69,20 @@ staged.
 `cwd` is the one field the config may not set — it comes from `--root`, or from the working directory. That keeps a config module portable: it
 describes the release, not where it happens.
 
+### Publish the packed tarball
+
+`forge release` commits and tags; it never pushes, and it never builds an artifact. Pushing the tag
+is what publishes, via `.github/workflows/release.yml`: the workflow re-runs the gate, packs the tag
+with `bun pm pack`, and attaches the result to a GitHub Release.
+
+```json
+{ 
+  "dependencies": { 
+    "@y-core/forge": "https://github.com/y-core/forge/releases/download/v0.1.12/y-core-forge-0.1.12.tgz" 
+  } 
+}
+```
+
 Running the command:
 
 ```bash

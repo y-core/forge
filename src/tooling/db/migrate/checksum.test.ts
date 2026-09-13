@@ -1,113 +1,99 @@
 import { describe, expect, it } from "bun:test";
 
-import type { Migration } from "../types";
-import { appliedMigrationName, compareChecksums, recordChecksumSql, recordMetaSql, toRecordedChecksums } from "./checksum";
+import type { Migration, RecordedChecksum } from "../types";
+import {
+  certifiedFingerprint,
+  certifyFingerprintSql,
+  compareChecksums,
+  RECORDED_CHECKSUM_SELECT,
+  recordMigrationSql,
+  toRecordedChecksums,
+} from "./checksum";
 
 function migration(name: string, sha256: string): Migration {
   const version = Number(name.slice(0, 4));
   return { name, version, path: `/m/${name}.sql`, sha256, sql: "", origin: "custom", stamp: null };
 }
 
-describe("recordChecksumSql()", () => {
-  it("writes one statement per migration, newline separated", () => {
-    expect(recordChecksumSql([migration("0001_init", "aa"), migration("0002_next", "bb")])).toBe(
-      [
-        "INSERT OR REPLACE INTO forge_migrations (applied_name, sha256) VALUES ('0001_init', 'aa');",
-        "INSERT OR REPLACE INTO forge_migrations (applied_name, sha256) VALUES ('0002_next', 'bb');",
-      ].join("\n"),
+function recorded(appliedName: string, sha256: string, fingerprint: string | null = null): RecordedChecksum {
+  return { appliedName, sha256, appliedAt: 0, fingerprint };
+}
+
+describe("RECORDED_CHECKSUM_SELECT", () => {
+  it("selects the four columns from _forge_migrations in insertion order", () => {
+    expect(RECORDED_CHECKSUM_SELECT).toBe("SELECT name, sha256, applied_at, fingerprint FROM _forge_migrations ORDER BY id");
+  });
+});
+
+describe("recordMigrationSql()", () => {
+  it("inserts the name, the hash and the applied time as a plain INSERT", () => {
+    expect(recordMigrationSql(migration("0001_init", "aa"), 1_700_000_000_000)).toBe(
+      "INSERT INTO _forge_migrations (name, sha256, applied_at) VALUES ('0001_init', 'aa', 1700000000000);",
     );
   });
 
   it("quotes a name that carries a single quote", () => {
-    expect(recordChecksumSql([migration("0001_it's", "aa")])).toBe(
-      "INSERT OR REPLACE INTO forge_migrations (applied_name, sha256) VALUES ('0001_it''s', 'aa');",
+    expect(recordMigrationSql(migration("0001_it's", "aa"), 0)).toBe(
+      "INSERT INTO _forge_migrations (name, sha256, applied_at) VALUES ('0001_it''s', 'aa', 0);",
     );
-  });
-
-  it("is empty for no migrations", () => {
-    expect(recordChecksumSql([])).toBe("");
   });
 });
 
-describe("recordMetaSql()", () => {
-  it("records the digest and the fingerprint under their two keys", () => {
-    expect(recordMetaSql({ migrationsDigest: "dd", schemaFingerprint: "ff" })).toBe(
-      [
-        "INSERT OR REPLACE INTO forge_schema_meta (key, value) VALUES ('migrations_digest', 'dd');",
-        "INSERT OR REPLACE INTO forge_schema_meta (key, value) VALUES ('schema_fingerprint', 'ff');",
-      ].join("\n"),
+describe("certifyFingerprintSql()", () => {
+  it("updates the fingerprint on the most recently inserted row", () => {
+    expect(certifyFingerprintSql("ff")).toBe(
+      "UPDATE _forge_migrations SET fingerprint = 'ff' WHERE id = (SELECT id FROM _forge_migrations ORDER BY id DESC LIMIT 1);",
     );
   });
 });
 
 describe("toRecordedChecksums()", () => {
-  it("reads the applied name and the hash out of the rows, which is the whole row", () => {
-    expect(toRecordedChecksums([{ applied_name: "0001_init", sha256: "aa" }])).toEqual([{ appliedName: "0001_init", sha256: "aa" }]);
+  it("reads name, hash, applied time and fingerprint out of a row", () => {
+    expect(toRecordedChecksums([{ name: "0001_init", sha256: "aa", applied_at: 5, fingerprint: "ff" }])).toEqual([
+      { appliedName: "0001_init", sha256: "aa", appliedAt: 5, fingerprint: "ff" },
+    ]);
+  });
+
+  it("reads a NULL fingerprint as null rather than the string 'null'", () => {
+    expect(toRecordedChecksums([{ name: "0001_init", sha256: "aa", applied_at: 5, fingerprint: null }])[0]?.fingerprint).toBeNull();
+  });
+
+  it("defaults every missing column for a malformed row", () => {
+    expect(toRecordedChecksums([{}])).toEqual([{ appliedName: "", sha256: "", appliedAt: 0, fingerprint: null }]);
+  });
+
+  it("is empty for no rows", () => {
     expect(toRecordedChecksums([])).toEqual([]);
+  });
+});
+
+describe("certifiedFingerprint()", () => {
+  it("skips the uncertified rows a part-applied batch left and returns the newest certified one", () => {
+    expect(certifiedFingerprint([recorded("0001_init", "a", "fp1"), recorded("0002_add", "b"), recorded("0003_add", "c")])).toBe("fp1");
+  });
+
+  it("prefers the newest of several certified rows", () => {
+    expect(certifiedFingerprint([recorded("0001_init", "a", "fp1"), recorded("0002_add", "b", "fp2")])).toBe("fp2");
+  });
+
+  it("is null when no row ever certified one, and when there are no rows", () => {
+    expect(certifiedFingerprint([recorded("0001_init", "a")])).toBe(null);
+    expect(certifiedFingerprint([])).toBe(null);
   });
 });
 
 describe("compareChecksums()", () => {
   const discovered = [migration("0001_init", "aa"), migration("0002_next", "bb")];
 
-  it("finds nothing wrong when every applied migration is recorded with the hash on disk", () => {
-    expect(
-      compareChecksums(
-        ["0001_init", "0002_next"],
-        [
-          { appliedName: "0001_init", sha256: "aa" },
-          { appliedName: "0002_next", sha256: "bb" },
-        ],
-        discovered,
-      ),
-    ).toEqual({ mismatched: [], unrecorded: [], orphaned: [] });
+  it("finds nothing wrong when every recorded hash matches the file on disk", () => {
+    expect(compareChecksums([recorded("0001_init", "aa"), recorded("0002_next", "bb")], discovered)).toEqual([]);
   });
 
   it("reports a file edited since it was applied as mismatched", () => {
-    expect(compareChecksums(["0001_init"], [{ appliedName: "0001_init", sha256: "was" }], discovered)).toEqual({
-      mismatched: ["0001_init"],
-      unrecorded: [],
-      orphaned: [],
-    });
-  });
-
-  it("reports an applied migration forge never recorded as unrecorded", () => {
-    expect(compareChecksums(["0001_init", "0002_next"], [{ appliedName: "0001_init", sha256: "aa" }], discovered)).toEqual({
-      mismatched: [],
-      unrecorded: ["0002_next"],
-      orphaned: [],
-    });
-  });
-
-  it("reports a recorded migration the migrations table no longer has as orphaned", () => {
-    expect(compareChecksums([], [{ appliedName: "0001_init", sha256: "aa" }], discovered)).toEqual({
-      mismatched: [],
-      unrecorded: [],
-      orphaned: ["0001_init"],
-    });
+    expect(compareChecksums([recorded("0001_init", "was")], discovered)).toEqual(["0001_init"]);
   });
 
   it("does not call a recorded migration mismatched when its file is gone from disk", () => {
-    expect(compareChecksums(["0009_gone"], [{ appliedName: "0009_gone", sha256: "zz" }], discovered)).toEqual({
-      mismatched: [],
-      unrecorded: [],
-      orphaned: [],
-    });
-  });
-});
-
-describe("compareChecksums() against the recorded rows", () => {
-  it("joins the two records through the applied name, which is all the migrations table knows", () => {
-    expect(compareChecksums(["0001_init"], [{ appliedName: "0001_init", sha256: "aa" }], [migration("0001_init", "aa")])).toEqual({
-      mismatched: [],
-      unrecorded: [],
-      orphaned: [],
-    });
-  });
-});
-
-describe("appliedMigrationName()", () => {
-  it("drops the .sql wrangler records and leaves a bare name alone", () => {
-    expect(["0001_init.sql", "0001_init", null].map(appliedMigrationName)).toEqual(["0001_init", "0001_init", ""]);
+    expect(compareChecksums([recorded("0009_gone", "zz")], discovered)).toEqual([]);
   });
 });

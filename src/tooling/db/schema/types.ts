@@ -192,6 +192,8 @@ export interface SchemaSnapshot {
   readonly version: number;
   /** Every declared schema it was written from, keyed as `config/db.ts` declared it. */
   readonly desired: Readonly<Record<string, string>>;
+  /** The object names each declared schema held, as written and sorted — read to name who declared a dropped object, and never to decide what is dropped. */
+  readonly declared: Readonly<Record<string, readonly string[]>>;
   /** Digest over the migrations as they stood after the compose. */
   readonly migrationsDigest: string;
 }
@@ -230,6 +232,8 @@ export interface ComposeOutcome {
   readonly plan: readonly string[];
   /** Each rebuild step whose success depends on the rows already there, printed with the plan and never aborting. */
   readonly warnings: readonly string[];
+  /** Each dropped object the plan can attribute to a file `config/db.ts` no longer declares, one line per file. */
+  readonly causes: readonly string[];
   readonly sql: string;
   readonly dryRun: boolean;
 }

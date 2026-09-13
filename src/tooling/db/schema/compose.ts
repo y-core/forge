@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
-import { declaredSchemas, NO_SCHEMAS, snapshotPath } from "../declared";
+import { declaredMigrations, declaredSchemas, NO_SCHEMAS, snapshotPath } from "../declared";
 import { sha256 } from "../digest";
 import { migrationChecksum, migrationFileName, migrationsDigest, nextMigrationNumber, readMigrations } from "../migrate/files";
 import { isManagedObject, MANAGED_TABLE_PREFIXES } from "../migrate/fingerprint";
@@ -9,28 +9,36 @@ import { formatLintFinding, lintMigration } from "../migrate/lint";
 import type { DbRunContext } from "../types";
 import { executeFile } from "../wrangler";
 import { readDesiredState } from "./desired";
-import { checkSchemaRenames, describeSchemaDiff, destructivePlanDigest, diffSchemaModels, parseSchemaRename, schemaDiffIsEmpty } from "./diff";
+import {
+  checkSchemaRenames,
+  describeSchemaDiff,
+  destructivePlanDigest,
+  diffSchemaModels,
+  droppedObjectNames,
+  parseSchemaRename,
+  schemaDiffIsEmpty,
+} from "./diff";
 import { emitMigrationSql } from "./emit";
 import { formatComposeHeader, formatCustomHeader, parseMigrationHeader } from "./header";
 import { describeSchemaDifference, readSchemaModel } from "./introspect";
 import { declaredObjectNames } from "./normalize";
-import { assignOwnership } from "./ownership";
+import { assignOwnership, attributeDrops, declaredNamesBySource } from "./ownership";
 import { cachedSchemaModel, forgeVersion, loadDesired, readScratchModel, replayBaseline, scratchModelKey, scratchWranglerVersion } from "./scratch";
 import { buildSchemaSnapshot, readSchemaSnapshot, writeSchemaSnapshot } from "./snapshot";
 import type { ComposeOptions, ComposeOutcome, DesiredState, OwnershipClaim, SchemaInputs, SchemaModel, SchemaRename } from "./types";
 
 /** Refuses a declared object named in the space forge, SQLite and the platform keep for themselves, which no model would carry. */
-function refuseReservedNames(claims: readonly OwnershipClaim[], migrationsTable: string): void {
+function refuseReservedNames(claims: readonly OwnershipClaim[]): void {
   const problems = claims.flatMap((claim) =>
     (claim.declared ?? [])
-      .filter((object) => isManagedObject(object.name, migrationsTable))
+      .filter((object) => isManagedObject(object.name))
       .map((object) => `${claim.source} declares ${object.type} \`${object.name}\``),
   );
   if (problems.length === 0) return;
   const reserved = MANAGED_TABLE_PREFIXES.map((prefix) => `\`${prefix}\``).join(", ");
   throw new CliError(
     "invalid-args",
-    `${problems.join("\n")}\n${reserved} are reserved for forge, SQLite and the platform, and \`${migrationsTable}\` is the migrations table — rename it, or drop it from the schema.`,
+    `${problems.join("\n")}\n${reserved} are reserved for forge, SQLite and the platform — rename it, or drop it from the schema.`,
   );
 }
 
@@ -43,7 +51,7 @@ export function readSchemaInputs(run: DbRunContext): SchemaInputs {
     const state = states.find((candidate) => candidate.source === source.declared) ?? null;
     return { source: source.declared, declared: state === null ? null : declaredObjectNames(state.text) };
   });
-  refuseReservedNames(claims, run.config.entry.migrationsTable);
+  refuseReservedNames(claims);
   return { migrations: readMigrations(run), schemas, states, snapshotPath: path, snapshot: readSchemaSnapshot(run.io, path), claims };
 }
 
@@ -67,7 +75,7 @@ export function desiredSchemaModel(run: DbRunContext, inputs: SchemaInputs, cach
 function writeCustom(run: DbRunContext, inputs: SchemaInputs, options: ComposeOptions): ComposeOutcome {
   if (options.name === undefined || options.name === "")
     throw new CliError("invalid-args", "a custom migration needs a name — `forge db migrate compose --custom <name>`");
-  const dir = run.config.entry.migrationsDir;
+  const dir = declaredMigrations(run).path;
   const file = migrationFileName(nextMigrationNumber(inputs.migrations), options.name);
   const path = join(dir, file);
   const sql = `${formatCustomHeader()}\n`;
@@ -75,7 +83,15 @@ function writeCustom(run: DbRunContext, inputs: SchemaInputs, options: ComposeOp
     run.io.mkdir(dir);
     run.io.writeText(path, sql);
   }
-  return { path: options.dryRun ? null : path, snapshotPath: null, plan: [`custom migration ${file}`], warnings: [], sql, dryRun: options.dryRun };
+  return {
+    path: options.dryRun ? null : path,
+    snapshotPath: null,
+    plan: [`custom migration ${file}`],
+    warnings: [],
+    causes: [],
+    sql,
+    dryRun: options.dryRun,
+  };
 }
 
 /** Rewrites one generated migration's stamp to the history now on disk; a checksum covers the file with the stamp blanked, so nothing else moves. */
@@ -116,11 +132,11 @@ function restampMigration(run: DbRunContext, inputs: SchemaInputs, name: string,
   const plan = [`restamped ${target.name}`];
   if (dryRun) {
     for (const line of plan) say(`would have ${line}`);
-    return { path: null, snapshotPath: null, plan, warnings: [], sql, dryRun: true };
+    return { path: null, snapshotPath: null, plan, warnings: [], causes: [], sql, dryRun: true };
   }
   run.io.writeText(target.path, sql);
   for (const line of plan) say(line);
-  return { path: target.path, snapshotPath: null, plan, warnings: [], sql, dryRun: false };
+  return { path: target.path, snapshotPath: null, plan, warnings: [], causes: [], sql, dryRun: false };
 }
 
 /** Applies the emitted SQL to a fresh replay and refuses to write it unless the result is the desired model; returns what the replay then holds. */
@@ -137,7 +153,7 @@ function proveEmitted(run: DbRunContext, inputs: SchemaInputs, sql: string, desi
       `the composed migration does not apply to the baseline — this is a forge bug, and the file was not written:\n${detail}`,
     );
   }
-  const model = readSchemaModel(run.io, home, run.config.entry.migrationsTable);
+  const model = readSchemaModel(run.io, home);
   const difference = describeSchemaDifference(model, desired, { left: "after the migration", right: "the declared schema" });
   if (difference.length > 0) {
     throw new CliError(
@@ -156,7 +172,7 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
   if (inputs.states.length === 0) throw new CliError("invalid-args", NO_SCHEMAS);
 
   const renames: SchemaRename[] = options.renames.map(parseSchemaRename);
-  const migrationsDir = run.config.entry.migrationsDir;
+  const migrationsDir = declaredMigrations(run).path;
 
   const baselineAll = baselineSchemaModel(run, inputs, options.cache);
   const desired = desiredSchemaModel(run, inputs, options.cache);
@@ -189,7 +205,7 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
       ),
     );
     executeFile(run.io, home, file);
-    baseline = readSchemaModel(run.io, home, run.config.entry.migrationsTable);
+    baseline = readSchemaModel(run.io, home);
   }
 
   const diff = diffSchemaModels(baseline, desired);
@@ -198,23 +214,45 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
   const say = (line: string) => {
     if (!run.json) run.print(line);
   };
-  const warnings = diff.dataDependent.map((line) => `warning: ${line}`);
+  const attributed = attributeDrops(inputs.snapshot, inputs.states, droppedObjectNames(diff));
+  const causes = attributed.map(
+    ({ source, objects }) =>
+      `${objects.join(", ")} ${objects.length === 1 ? "was" : "were"} declared by ${source}, which config/db.ts no longer declares or whose file is absent — nothing declares ${objects.length === 1 ? "it" : "them"} now`,
+  );
+  const forgotten = Object.keys(inputs.snapshot?.declared ?? {}).filter(
+    (source) => !inputs.states.some((state) => state.source === source) && !attributed.some((attribution) => attribution.source === source),
+  );
+  const warnings = [
+    ...diff.dataDependent.map((line) => `warning: ${line}`),
+    ...forgotten.map((source) => `warning: ${source} is in ${inputs.snapshotPath} and config/db.ts no longer declares it`),
+  ];
   const warn = (line: string) => (run.json ? run.io.log(line) : run.print(line));
 
   const digests = declaredDigests(inputs.states);
-  const snapshotOf = (digest: string) => buildSchemaSnapshot({ desired: digests, migrationsDigest: digest });
+  const declared = declaredNamesBySource(inputs.claims);
+  const snapshotOf = (digest: string) => buildSchemaSnapshot({ desired: digests, declared, migrationsDigest: digest });
 
   if (schemaDiffIsEmpty(diff) && renames.length === 0) {
     if (!options.dryRun) writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(inputs.migrations)));
     say(`no changes — ${migrationsDir} already produces every declared schema`);
-    return { path: null, snapshotPath: options.dryRun ? null : inputs.snapshotPath, plan: [], warnings: [], sql: "", dryRun: options.dryRun };
+    for (const line of warnings) warn(line);
+    return {
+      path: null,
+      snapshotPath: options.dryRun ? null : inputs.snapshotPath,
+      plan: [],
+      warnings,
+      causes: [],
+      sql: "",
+      dryRun: options.dryRun,
+    };
   }
 
   if (diff.destructive.length > 0) {
-    const digest = destructivePlanDigest(diff);
+    const digest = destructivePlanDigest(diff, causes);
     const lines = diff.destructive.join("\n  ");
     if (options.allowDestructive === undefined) {
       for (const line of plan) say(`  ${line}`);
+      for (const line of causes) say(line);
       throw new CliError(
         "invalid-args",
         `the change discards data:\n  ${lines}\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
@@ -222,6 +260,7 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
     }
     if (options.allowDestructive !== digest) {
       for (const line of plan) say(`  ${line}`);
+      for (const line of causes) say(line);
       throw new CliError(
         "invalid-args",
         `--allow-destructive ${options.allowDestructive} is not the plan you approved — the destructive set is now (${digest}):\n  ${lines}\nRead it again, then pass --allow-destructive ${digest}.`,
@@ -248,20 +287,22 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
   if (options.dryRun) {
     say(`would write ${path}:`);
     for (const line of plan) say(`  ${line}`);
+    for (const line of causes) say(line);
     for (const line of warnings) warn(line);
-    return { path: null, snapshotPath: null, plan, warnings, sql, dryRun: true };
+    return { path: null, snapshotPath: null, plan, warnings, causes, sql, dryRun: true };
   }
 
   const proven = proveEmitted(run, inputs, sql, desired);
 
   run.io.mkdir(migrationsDir);
   run.io.writeText(path, sql);
-  const next = [...inputs.migrations, { name: file.slice(0, -".sql".length), sql }];
+  const next = [...inputs.migrations, { name: file.slice(0, -".sql".length), sha256: migrationChecksum(sql) }];
   // The proof's replay is exactly the baseline the next compose or `--check --replay` will want, so it is cached under that key now.
   cachedSchemaModel(run, "baseline", scratchModelKey(scratchWranglerVersion(run), migrationsDigest(next)), false, () => proven);
   writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(next)));
   say(`wrote ${path}`);
   for (const line of plan) say(`  ${line}`);
+  for (const line of causes) say(line);
   for (const line of warnings) warn(line);
-  return { path, snapshotPath: inputs.snapshotPath, plan, warnings, sql, dryRun: false };
+  return { path, snapshotPath: inputs.snapshotPath, plan, warnings, causes, sql, dryRun: false };
 }

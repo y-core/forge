@@ -76,14 +76,7 @@ describe("timeTravelInfo()", () => {
       configPath: "/app/wrangler.jsonc",
       config: { name: "app", compatibility_date: "2026-01-01" } as WranglerConfig,
       env: "staging",
-      entry: {
-        binding: "DB",
-        databaseName: "app-db",
-        databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-        previewDatabaseId: null,
-        migrationsDir: "/app/migrations",
-        migrationsTable: "d1_migrations",
-      },
+      entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
       target: { place: "remote", database: null },
     };
     expect(timeTravelInfo(io, home({ env: "staging" }), undefined, config).restoreCommand).toBe(

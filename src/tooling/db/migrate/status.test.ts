@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { renderTable } from "../../cf/table";
 import { PLAIN } from "../../term/color";
-import type { ChecksumComparison, Migration, StatusReport } from "../types";
+import type { Migration, StatusReport } from "../types";
 import { migrationStatusExitCode, formatStatus, statusRows } from "./status";
 
 function migration(name: string): Migration {
@@ -10,7 +10,6 @@ function migration(name: string): Migration {
   return { name, version, path: `/m/${name}.sql`, sha256: `sha-${name}`, sql: "", origin: "custom", stamp: null };
 }
 
-const CLEAN: ChecksumComparison = { mismatched: [], unrecorded: [], orphaned: [] };
 const discovered = [migration("0001_init"), migration("0002_next")];
 
 function report(over: Partial<StatusReport> = {}): StatusReport {
@@ -19,54 +18,38 @@ function report(over: Partial<StatusReport> = {}): StatusReport {
     database: "app-db",
     rows: [],
     pending: 0,
-    checksums: CLEAN,
+    checksums: { mismatched: [] },
     drift: [],
     fingerprint: { recorded: "ff", actual: "ff", matches: true },
-    digest: { recorded: "dd", onDisk: "dd" },
     ...over,
   };
 }
 
 describe("statusRows()", () => {
   it("marks an applied migration applied, with the instant it went in", () => {
-    expect(statusRows({ discovered, applied: [{ name: "0001_init", appliedAt: "2026-01-01" }], checksums: CLEAN })).toEqual([
+    expect(statusRows({ discovered, applied: [{ name: "0001_init", appliedAt: "2026-01-01" }], mismatched: [] })).toEqual([
       { name: "0001_init", state: "applied", appliedAt: "2026-01-01" },
       { name: "0002_next", state: "pending", appliedAt: null },
     ]);
   });
 
   it("marks an edited file mismatch, in preference to applied", () => {
-    const checksums = { ...CLEAN, mismatched: ["0001_init"] };
-    expect(statusRows({ discovered, applied: [{ name: "0001_init", appliedAt: "t" }], checksums })[0]).toEqual({
+    expect(statusRows({ discovered, applied: [{ name: "0001_init", appliedAt: "t" }], mismatched: ["0001_init"] })[0]).toEqual({
       name: "0001_init",
       state: "mismatch",
       appliedAt: "t",
     });
   });
 
-  it("marks a migration forge never checksummed unrecorded", () => {
-    const checksums = { ...CLEAN, unrecorded: ["0001_init"] };
-    expect(statusRows({ discovered, applied: [{ name: "0001_init", appliedAt: "t" }], checksums })[0]).toEqual({
-      name: "0001_init",
-      state: "unrecorded",
-      appliedAt: "t",
-    });
-  });
-
-  it("prefers mismatch over unrecorded, because the file moving is the larger fact", () => {
-    const checksums = { mismatched: ["0001_init"], unrecorded: ["0001_init"], orphaned: [] };
-    expect(statusRows({ discovered, applied: [{ name: "0001_init", appliedAt: "t" }], checksums })[0]?.state).toBe("mismatch");
-  });
-
   it("appends an applied name with no file as drift, after the rows on disk", () => {
-    expect(statusRows({ discovered: [migration("0001_init")], applied: [{ name: "0009_gone", appliedAt: "t" }], checksums: CLEAN })).toEqual([
+    expect(statusRows({ discovered: [migration("0001_init")], applied: [{ name: "0009_gone", appliedAt: "t" }], mismatched: [] })).toEqual([
       { name: "0001_init", state: "pending", appliedAt: null },
       { name: "0009_gone", state: "drift", appliedAt: "t" },
     ]);
   });
 
   it("has no rows for an empty directory and an empty database", () => {
-    expect(statusRows({ discovered: [], applied: [], checksums: CLEAN })).toEqual([]);
+    expect(statusRows({ discovered: [], applied: [], mismatched: [] })).toEqual([]);
   });
 });
 
@@ -77,9 +60,7 @@ describe("migrationStatusExitCode()", () => {
 
   const failing: [string, Partial<StatusReport>][] = [
     ["a pending migration", { pending: 1 }],
-    ["a mismatched checksum", { checksums: { ...CLEAN, mismatched: ["0001_init"] } }],
-    ["an unrecorded migration", { checksums: { ...CLEAN, unrecorded: ["0001_init"] } }],
-    ["an orphaned checksum", { checksums: { ...CLEAN, orphaned: ["0001_init"] } }],
+    ["a mismatched checksum", { checksums: { mismatched: ["0001_init"] } }],
     ["drift", { drift: ["0009_gone"] }],
     ["a fingerprint that moved", { fingerprint: { recorded: "ff", actual: "gg", matches: false } }],
   ];
@@ -90,8 +71,14 @@ describe("migrationStatusExitCode()", () => {
     });
   }
 
-  it("is 0 when no fingerprint has been recorded yet, since there is nothing to disagree with", () => {
+  it("is 0 when nothing is applied and no fingerprint was ever certified, since there is nothing to disagree with", () => {
     expect(migrationStatusExitCode(report({ fingerprint: { recorded: null, actual: "gg", matches: false } }))).toBe(0);
+  });
+
+  it("is 1 when something is applied and no fingerprint was ever certified, which is what the note asks the reader to fix", () => {
+    const rows = [{ name: "0001_init", state: "applied" as const, appliedAt: "t" }];
+
+    expect(migrationStatusExitCode(report({ rows, fingerprint: { recorded: null, actual: "gg", matches: true } }))).toBe(1);
   });
 });
 
@@ -108,25 +95,33 @@ describe("formatStatus()", () => {
   });
 
   it("lists every anomaly under the table, in the order a reader would act on them", () => {
+    const rows = [{ name: "0001_init", state: "mismatch" as const, appliedAt: "t" }];
     const outcome = report({
+      rows,
       pending: 1,
-      checksums: { mismatched: ["0001_init"], unrecorded: ["0002_next"], orphaned: ["0000_old"] },
+      checksums: { mismatched: ["0001_init"] },
       drift: ["0009_gone"],
       fingerprint: { recorded: "ff", actual: "gg", matches: false },
     });
-    expect(formatStatus(outcome, PLAIN).split("\n").slice(2)).toEqual([
+    expect(formatStatus(outcome, PLAIN).split("\n").slice(-4)).toEqual([
       "1 pending — apply with `forge db migrate`",
       "edited since it was applied: 0001_init",
-      "applied without a forge checksum: 0002_next",
-      "recorded by forge but absent from the migrations table: 0000_old",
       "applied but no longer on disk: 0009_gone",
-      "schema fingerprint gg does not match the recorded ff",
+      "schema fingerprint gg does not match the certified ff",
     ]);
   });
 
-  it("says nothing about a fingerprint that was never recorded", () => {
+  it("says nothing about a fingerprint that was never recorded when nothing is applied", () => {
     const outcome = report({ fingerprint: { recorded: null, actual: "gg", matches: false } });
     expect(formatStatus(outcome, PLAIN).split("\n").slice(2)).toEqual(["up to date"]);
+  });
+
+  it("flags an applied row with no certified fingerprint", () => {
+    const rows = [{ name: "0001_init", state: "applied" as const, appliedAt: "t" }];
+    const outcome = report({ rows, fingerprint: { recorded: null, actual: "gg", matches: false } });
+    expect(formatStatus(outcome, PLAIN).split("\n").slice(-1)).toEqual([
+      "applied, but no schema fingerprint was ever certified — the next apply certifies one",
+    ]);
   });
 
   it("writes an absent applied instant as an empty cell", () => {

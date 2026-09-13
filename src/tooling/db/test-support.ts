@@ -173,7 +173,7 @@ export function minimalWranglerConfig(root: string, over: Record<string, unknown
   const config = {
     name: "app",
     compatibility_date: "2026-01-01",
-    d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "migrations" }],
+    d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }],
     ...over,
   };
   return { path: join(root, "wrangler.jsonc"), text: `${JSON.stringify(config, null, 2)}\n` };

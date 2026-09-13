@@ -14,7 +14,7 @@ const ROOT = "/app";
 const MIGRATIONS = `${ROOT}/config/migrations`;
 const SCHEMA = "config/schema.sql";
 const LIB = "node_modules/acme/schema.sql";
-const SNAPSHOT = `${ROOT}/config/schema.snapshot.json`;
+const SNAPSHOT = `${ROOT}/schema.snapshot.json`;
 const BASELINE_STATE = `${ROOT}/.forge/scratch/compose/baseline/.wrangler/state`;
 const DESIRED_STATE = `${ROOT}/.forge/scratch/compose/desired/.wrangler/state`;
 
@@ -64,7 +64,7 @@ function shapeRows(shapes: readonly Shape[]) {
 }
 
 function snapshotText(_shapes: readonly Shape[], fields: { desired: Record<string, string>; migrationsDigest: string }): string {
-  return formatSchemaSnapshot(buildSchemaSnapshot(fields));
+  return formatSchemaSnapshot(buildSchemaSnapshot({ ...fields, declared: {} }));
 }
 
 function dbConfig(): DbConfig {
@@ -73,14 +73,7 @@ function dbConfig(): DbConfig {
     configPath: `${ROOT}/wrangler.jsonc`,
     config: { name: "app", compatibility_date: "2026-01-01", d1_databases: [{ binding: "DB", database_name: "app-db" }] } as WranglerConfig,
     env: null,
-    entry: {
-      binding: "DB",
-      databaseName: "app-db",
-      databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      previewDatabaseId: null,
-      migrationsDir: MIGRATIONS,
-      migrationsTable: "d1_migrations",
-    },
+    entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place: "local", database: null },
   };
 }
@@ -88,7 +81,16 @@ function dbConfig(): DbConfig {
 function context(files: Record<string, string>, host: DbHostConfig = { schemas: [SCHEMA] }): { run: DbRunContext; io: FakeDbIo } {
   const io = fakeDbIo(files, { now: new Date("2026-09-11T10:00:00Z") });
   const config = dbConfig();
-  const run: DbRunContext = { config, home: appHome(config), io, host, json: false, yes: true, style: PLAIN, print: () => undefined };
+  const run: DbRunContext = {
+    config,
+    home: appHome(config),
+    io,
+    host: { migrations: "config/migrations", ...host },
+    json: false,
+    yes: true,
+    style: PLAIN,
+    print: () => undefined,
+  };
   return { run, io };
 }
 
@@ -102,7 +104,6 @@ function introspect(shapes: readonly Shape[]): (args: readonly string[]) => Spaw
 function wire(io: FakeDbIo, sides: { baseline: readonly Shape[]; desired: readonly Shape[] }): void {
   io.rules.push(
     { match: (a) => argvHas(a, "--version"), reply: { code: 0, stdout: "4.0.0\n", stderr: "" } },
-    { match: (a) => argvHas(a, "migrations", "apply"), reply: OK },
     { match: (a) => argvHas(a, "execute", "--file"), reply: OK },
     { match: (a) => argvHas(a, "--persist-to", BASELINE_STATE, "--json", "--command"), reply: introspect(sides.baseline) },
     { match: (a) => argvHas(a, "--persist-to", DESIRED_STATE, "--json", "--command"), reply: introspect(sides.desired) },
@@ -111,7 +112,7 @@ function wire(io: FakeDbIo, sides: { baseline: readonly Shape[]; desired: readon
 
 const DIGESTS: { desired: Record<string, string>; migrationsDigest: string } = {
   desired: { [SCHEMA]: sha256(schemaText([USERS])) },
-  migrationsDigest: migrationsDigest([{ name: "0001_init", sql: INIT }]),
+  migrationsDigest: migrationsDigest([{ name: "0001_init", sha256: sha256(INIT) }]),
 };
 
 const NO_REPLAY = { replay: false, cache: true };

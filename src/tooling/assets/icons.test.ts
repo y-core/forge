@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildIcons } from "./icons";
+import { buildIcons, iconLinks, iconTarget } from "./icons";
 import type { IconsConfig } from "./types";
 
 async function stubSharp(): Promise<{ inputs: string[] }> {
@@ -108,5 +108,90 @@ describe("buildIcons()", () => {
       rmSync(tmpDir, { recursive: true, force: true });
       mock.restore();
     }
+  });
+
+  it("writes a prefixed output under the prefix and a root-pinned one at the asset root", async () => {
+    await stubSharp();
+    const tmpDir = join(tmpdir(), `forge-icons-prefix-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const outDir = join(tmpDir, "public");
+    mkdirSync(tmpDir, { recursive: true });
+    try {
+      const srcPath = join(tmpDir, "icon.svg");
+      writeFileSync(srcPath, `<svg><path d="M0 0"/></svg>`);
+
+      const config: IconsConfig = {
+        src: srcPath,
+        outDir,
+        publicPrefix: "/static",
+        lightColor: "#000",
+        app: { name: "Demo", shortName: "Demo", backgroundColor: "#fff" },
+        outputs: [
+          { kind: "svg", file: "favicon.svg" },
+          { kind: "png", file: "icon-192.png", size: 192, manifest: true },
+          { kind: "ico", file: "favicon.ico", sizes: [16], root: true },
+          { kind: "manifest", file: "site.webmanifest" },
+        ],
+      };
+
+      await buildIcons(config);
+
+      expect(existsSync(join(outDir, "favicon.ico"))).toBe(true);
+      expect(existsSync(join(outDir, "static", "favicon.svg"))).toBe(true);
+
+      const manifest = JSON.parse(readFileSync(join(outDir, "static", "site.webmanifest"), "utf-8"));
+      expect(manifest.icons).toEqual([{ src: "/static/icon-192.png", sizes: "192x192", type: "image/png" }]);
+      expect(manifest.start_url).toBe("/");
+      expect(manifest.scope).toBe("/");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      mock.restore();
+    }
+  });
+});
+
+describe("iconTarget()", () => {
+  const base = { src: "icon.svg", outDir: "public", lightColor: "#000", outputs: [] };
+
+  it("serves from the asset root when no prefix is configured", () => {
+    expect(iconTarget(base, { kind: "svg", file: "favicon.svg" })).toEqual({ dir: "public", path: "/favicon.svg" });
+  });
+
+  it("normalises a prefix given without a leading slash or with a trailing one", () => {
+    expect(iconTarget({ ...base, publicPrefix: "static/" }, { kind: "svg", file: "favicon.svg" })).toEqual({
+      dir: "public/static",
+      path: "/static/favicon.svg",
+    });
+  });
+
+  it("pins a root output to the asset root even under a prefix", () => {
+    expect(iconTarget({ ...base, publicPrefix: "/static" }, { kind: "ico", file: "favicon.ico", sizes: [16], root: true })).toEqual({
+      dir: "public",
+      path: "/favicon.ico",
+    });
+  });
+});
+
+describe("iconLinks()", () => {
+  it("derives one head link per output that declares one, skipping a bare manifest png", () => {
+    const config: IconsConfig = {
+      src: "icon.svg",
+      outDir: "public",
+      publicPrefix: "/static",
+      lightColor: "#000",
+      outputs: [
+        { kind: "ico", file: "favicon.ico", sizes: [16, 32, 48], root: true },
+        { kind: "svg", file: "favicon.svg" },
+        { kind: "png", file: "apple-touch-icon.png", size: 180, rel: "apple-touch-icon" },
+        { kind: "png", file: "icon-192.png", size: 192, manifest: true },
+        { kind: "manifest", file: "site.webmanifest" },
+      ],
+    };
+
+    expect(iconLinks(config)).toEqual([
+      { rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { rel: "icon", href: "/static/favicon.svg", type: "image/svg+xml" },
+      { rel: "apple-touch-icon", href: "/static/apple-touch-icon.png" },
+      { rel: "manifest", href: "/static/site.webmanifest" },
+    ]);
   });
 });

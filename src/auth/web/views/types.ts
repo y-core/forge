@@ -1,3 +1,4 @@
+import type { ButtonProps } from "../../../ui/core/types";
 import type { ForgeIcon } from "../../../ui/core/types";
 import type { OtpLength } from "../../../ui/core/types";
 import type { TotpAppEnrolment } from "../../factors/types";
@@ -193,6 +194,25 @@ export type SignupViewProps = AuthViewChrome & {
   /** The factor the visitor enrols after confirming the address, absent when none is demanded. */
   readonly enrols?: AuthFactorKind | undefined;
   readonly icon: ForgeIcon<"alert">;
+};
+
+/** What the control that ends a session needs, and the knobs a host places it with. @public */
+export type AuthSignoutProps = {
+  /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */
+  readonly action: string;
+  /** The token authorising that POST; without one `csrfProtection` refuses it. */
+  readonly csrfToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
+  /** Overrides the button's own wording, for a host that names the action differently. */
+  readonly label?: string | undefined;
+  readonly tone?: ButtonProps["tone"];
+  readonly appearance?: ButtonProps["appearance"];
+  readonly size?: ButtonProps["size"];
+  /** Marks the button an item of the menu it sits in — what a navbar slot needs, and a card footer does not. */
+  readonly menuitem?: boolean | undefined;
+  /** Composed onto the button, not the form it submits: the form is a wrapper with no box of its own. */
+  readonly class?: string | undefined;
 };
 
 /** Which of the authenticator app's two page states is rendering; only the enrolling one carries the secret. @public */

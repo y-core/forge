@@ -9,8 +9,6 @@ import { fakeDbIo } from "../test-support";
 import type { DbConfig, DbHostConfig, DbRunContext, FakeDbIo } from "../types";
 import { readDesiredState } from "./desired";
 
-const MIGRATIONS = "/app/config/migrations";
-
 function dbConfig(): DbConfig {
   return {
     root: "/app",
@@ -21,14 +19,7 @@ function dbConfig(): DbConfig {
       d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }],
     } as WranglerConfig,
     env: null,
-    entry: {
-      binding: "DB",
-      databaseName: "app-db",
-      databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      previewDatabaseId: null,
-      migrationsDir: MIGRATIONS,
-      migrationsTable: "d1_migrations",
-    },
+    entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place: "local", database: null },
   };
 }

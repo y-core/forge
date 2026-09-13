@@ -2,14 +2,15 @@ import { join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { sha256 } from "../digest";
-import { migrationsHome } from "../home";
+import { applyMigrations } from "../migrate/applier";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { COMPANION_TABLES, ensureCompanionTables } from "../migrate/companions";
 import { migrationChecksum, migrationsDigest } from "../migrate/files";
 import { parseMigrationHeader } from "../schema/header";
-import { INVENTORY_SELECT, quoteSqlIdentifier, rowCountSelect, toSchemaObjects } from "../sql";
+import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbRunContext, Migration } from "../types";
-import { executeFile, migrationsApply, queryOne, queryRows, queryRowsIfTable } from "../wrangler";
+import { executeFile, queryOne, queryRows, queryRowsIfTable } from "../wrangler";
 import {
   appSchemaDigestInput,
   checkRestoreTarget,
@@ -71,7 +72,7 @@ function inspect(run: DbRunContext): RestoreTargetState {
   const counts: Record<string, number> = {};
   for (const object of objects) {
     if (object.type !== "table") continue;
-    const kind = classifyTable(object.name, run.config.entry.migrationsTable);
+    const kind = classifyTable(object.name);
     if (kind !== "app" && !(kind === "managed" && COMPANION_TABLES.includes(object.name))) continue;
     counts[object.name] = Number(queryOne(run.io, run.home, rowCountSelect(object.name)).rows ?? 0);
   }
@@ -122,26 +123,28 @@ export function prepareRestore(run: DbRunContext, options: RestoreOptions): Rest
 
 /** Loads a prepared restore into the target and checks the result against the manifest's own digests. @public */
 export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOutcome {
-  const { io, home, config } = run;
+  const { io, home } = run;
   const { artifact, manifest, expectedTables, before } = plan;
   if (plan.route === "full") {
-    const problems = checkRestoreTarget("full", before.objects, before.counts, expectedTables, config.entry.migrationsTable);
+    const problems = checkRestoreTarget("full", before.objects, before.counts, expectedTables);
     if (problems.length > 0) throw new CliError("invalid-args", `the target is not empty:\n  ${problems.join("\n  ")}`);
     executeFile(io, home, join(artifact, "full.sql"));
   } else {
-    migrationsApply(io, migrationsHome(config, io, plan.migrations, "restore", home));
+    // `record: false`: `data.sql` carries the artifact's own `_forge_migrations` rows, with their
+    // original ids, `applied_at` and `fingerprint`, so recording here would collide with every one.
+    applyMigrations(run, home, plan.migrations, { label: "restore", record: false });
     ensureCompanionTables(io, home);
     const after = inspect(run);
-    const problems = checkRestoreTarget("migrations", after.objects, after.counts, expectedTables, config.entry.migrationsTable);
+    const problems = checkRestoreTarget("migrations", after.objects, after.counts, expectedTables);
     if (problems.length > 0) throw new CliError("invalid-args", `the target is not ready for a data-only load:\n  ${problems.join("\n  ")}`);
     executeFile(io, home, join(artifact, "data.sql"));
   }
 
   const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-  const recorded = queryRowsIfTable(io, home, `SELECT name FROM ${quoteSqlIdentifier(config.entry.migrationsTable)} ORDER BY id`);
+  const recorded = queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
   const bindings = compareManifests(manifest, {
     migrations: (recorded ?? []).map((row) => String(row.name ?? "")),
-    digest: sha256(appSchemaDigestInput(objects, config.entry.migrationsTable)),
+    digest: sha256(appSchemaDigestInput(objects)),
     migrationsDigest: migrationsDigest(plan.migrations),
   });
 

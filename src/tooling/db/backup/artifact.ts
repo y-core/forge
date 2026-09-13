@@ -2,7 +2,6 @@ import { join } from "node:path";
 
 import { compareCodePoints } from "../../../storage/db/schema";
 import { CliError } from "../../cli/errors";
-import { DEFAULT_MIGRATIONS_TABLE } from "../config";
 import { sha256 } from "../digest";
 import { COMPANION_TABLES } from "../migrate/companions";
 import { splitSqlStatements } from "../migrate/lint";
@@ -11,14 +10,14 @@ import type { BackupManifest, ColumnInfo, DbIo, RestoreRoute, SchemaFacts, Schem
 import type { AppTable, ArtifactFault, CanonicalRow, ReadCursor } from "./types";
 
 /** Who owns a table: the app's own, the toolchain's, or the engine's. @internal */
-export function classifyTable(name: string, migrationsTable: string = DEFAULT_MIGRATIONS_TABLE): TableClass {
-  if (name === "sqlite_sequence" || name === migrationsTable || name.startsWith("forge_")) return "managed";
+export function classifyTable(name: string): TableClass {
+  if (name === "sqlite_sequence" || name.startsWith("_forge_")) return "managed";
   if (name.startsWith("sqlite_") || name.startsWith("_cf_")) return "system";
   return "app";
 }
 
-function appTableNames(objects: readonly SchemaObject[], migrationsTable: string): string[] {
-  return objects.filter((object) => object.type === "table" && classifyTable(object.name, migrationsTable) === "app").map((object) => object.name);
+function appTableNames(objects: readonly SchemaObject[]): string[] {
+  return objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app").map((object) => object.name);
 }
 
 /** Virtual tables by name — the pre-flight that turns wrangler's dumper throw into a message naming FTS5. @internal */
@@ -27,7 +26,7 @@ export function findVirtualTables(objects: readonly SchemaObject[]): readonly st
 }
 
 /** What this schema must still look like for a backup of it to mean anything, one problem per entry. @internal */
-export function checkInventory(objects: readonly SchemaObject[], migrationsTable: string = DEFAULT_MIGRATIONS_TABLE): readonly string[] {
+export function checkInventory(objects: readonly SchemaObject[]): readonly string[] {
   const problems: string[] = [];
   for (const name of findVirtualTables(objects)) {
     problems.push(
@@ -36,9 +35,7 @@ export function checkInventory(objects: readonly SchemaObject[], migrationsTable
   }
 
   const autoincrement = objects
-    .filter(
-      (object) => object.type === "table" && classifyTable(object.name, migrationsTable) === "app" && /\bAUTOINCREMENT\b/i.test(object.sql ?? ""),
-    )
+    .filter((object) => object.type === "table" && classifyTable(object.name) === "app" && /\bAUTOINCREMENT\b/i.test(object.sql ?? ""))
     .map((object) => object.name)
     .sort();
   if (autoincrement.length > 0) {
@@ -181,8 +178,8 @@ export function schemaDigestInput(objects: readonly SchemaObject[]): string {
 }
 
 /** The digest input for the app's own objects, so a proof compares what a restore rebuilds and not what it recreates. @internal */
-export function appSchemaDigestInput(objects: readonly SchemaObject[], migrationsTable: string = DEFAULT_MIGRATIONS_TABLE): string {
-  return schemaDigestInput(objects.filter((object) => classifyTable(object.name, migrationsTable) === "app"));
+export function appSchemaDigestInput(objects: readonly SchemaObject[]): string {
+  return schemaDigestInput(objects.filter((object) => classifyTable(object.name) === "app"));
 }
 
 /** Two canonical keys in the order `ORDER BY <key>` produced them: NULL, then numbers numerically, then text, then blobs. @internal */
@@ -361,21 +358,25 @@ export function checkFullArtifact(sql: string): readonly ArtifactFault[] {
 
   let lastCreateTable = 0;
   const clears: number[] = [];
+  const sequenceRows: number[] = [];
   for (const statement of splitSqlStatements(sql)) {
     const lead = statement.masked.search(/\S/);
     const number = sqlLineAt(sql, statement.offset + Math.max(lead, 0));
     if (/^\s*CREATE\s+TABLE\b/i.test(statement.masked)) lastCreateTable = number;
     if (/^\s*CREATE\s+VIRTUAL\s+TABLE\b/i.test(statement.masked))
       faults.push({ line: number, reason: "a virtual table cannot be dumped or restored" });
+    if (INSERT_LINE.test(statement.raw) && insertTarget(statement.raw) === "sqlite_sequence") sequenceRows.push(number);
     if (!new RegExp(`^\\s*(?:${ROW_REMOVAL.source})`, "i").test(statement.masked)) continue;
     if (statement.raw.includes("sqlite_sequence")) clears.push(number);
     else faults.push({ line: number, reason: `an unexpected row-removal statement in a dump: ${`${statement.raw.trim()};`.slice(0, 80)}` });
   }
 
-  if (clears.length === 0) {
+  // `sqlite_sequence` exists only where a table declares AUTOINCREMENT, and no forge table does, so a
+  // dump without it is the ordinary case. The hazard is rows carried with nothing to clear them first.
+  if (clears.length === 0 && sequenceRows.length > 0) {
     faults.push({
-      line: lines.length,
-      reason: "the dump never clears sqlite_sequence, so restoring it would append to whatever the target already had",
+      line: sequenceRows[0] ?? lines.length,
+      reason: `the dump carries ${sequenceRows.length} sqlite_sequence row(s) and never clears the table first, so restoring it would append to whatever the target already had`,
     });
   }
   if (clears.length > 1) {
@@ -390,8 +391,6 @@ export function checkFullArtifact(sql: string): readonly ArtifactFault[] {
 
 const SEQUENCE_FAULT =
   "sqlite_sequence is the engine's and is restored only by the full-dump route, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name";
-
-const MIGRATIONS_FAULT = "d1_migrations is written by `wrangler d1 migrations apply`, and a row here collides with the one it just wrote";
 
 /** Whether `data.sql` holds only rows of the tables it may carry, and declares nothing. @internal */
 export function checkDataArtifact(sql: string, appTables: readonly string[]): readonly ArtifactFault[] {
@@ -409,7 +408,6 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
       if (table === null) {
         faults.push({ line: number, reason: `an INSERT naming no table this scan can read: ${line.trim().slice(0, 80)}` });
       } else if (table === "sqlite_sequence") faults.push({ line: number, reason: SEQUENCE_FAULT });
-      else if (table === "d1_migrations") faults.push({ line: number, reason: MIGRATIONS_FAULT });
       else if (!allowed.has(table)) faults.push({ line: number, reason: `${table} is not one of the tables this artifact may carry` });
       continue;
     }
@@ -421,15 +419,16 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
     }
     if (isRowRemoval(line)) faults.push({ line: number, reason: `a data-only artifact removes nothing: ${line.trim().slice(0, 80)}` });
     if (/\bsqlite_sequence\b/.test(line)) faults.push({ line: number, reason: SEQUENCE_FAULT });
-    if (/\bd1_migrations\b/.test(line)) faults.push({ line: number, reason: MIGRATIONS_FAULT });
   }
   return faults;
 }
 
 /** Bumped when a manifest field changes meaning, so an old artifact is refused rather than misread. @internal */
-export const BACKUP_FORMAT_VERSION = 5;
+export const BACKUP_FORMAT_VERSION = 6;
 
 const SHA256 = /^[0-9a-f]{64}$/;
+
+const DRIFT_STATES: readonly string[] = ["match", "mismatch", "unrecorded", "unavailable"];
 
 const MANIFEST_MIGRATION_NAME = /^\d+_[^/\\\0]+$/;
 
@@ -453,7 +452,9 @@ export function validateManifest(value: unknown): readonly string[] {
   const manifest = value as Record<string, unknown>;
 
   if (manifest.formatVersion !== BACKUP_FORMAT_VERSION) {
-    problems.push(`formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION}`);
+    problems.push(
+      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+    );
   }
   if (typeof manifest.createdAt !== "string" || Number.isNaN(Date.parse(manifest.createdAt))) {
     problems.push("createdAt is not an ISO 8601 instant");
@@ -476,6 +477,10 @@ export function validateManifest(value: unknown): readonly string[] {
       const digest = record[field];
       if (typeof digest !== "string" || !SHA256.test(digest)) problems.push(`schema.${field} is not a 64-character hex SHA-256`);
     }
+  }
+
+  if (!DRIFT_STATES.includes(manifest.drift as string)) {
+    problems.push(`drift is ${JSON.stringify(manifest.drift)} and not one of ${DRIFT_STATES.join(", ")}`);
   }
 
   for (const field of ["tables", "artifacts", "warnings", "verified", "migrations"]) {
@@ -578,9 +583,8 @@ export function checkRestoreTarget(
   objects: readonly SchemaObject[],
   rows: Readonly<Record<string, number>>,
   expectedTables: readonly string[],
-  migrationsTable: string = DEFAULT_MIGRATIONS_TABLE,
 ): readonly string[] {
-  const tables = appTableNames(objects, migrationsTable);
+  const tables = appTableNames(objects);
   if (route === "full") {
     if (tables.length === 0) return [];
     return [

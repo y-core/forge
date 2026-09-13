@@ -101,8 +101,7 @@ describe("minimalWranglerConfig()", () => {
     {
       "binding": "DB",
       "database_name": "app-db",
-      "database_id": "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      "migrations_dir": "migrations"
+      "database_id": "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a"
     }
   ]
 }
@@ -115,7 +114,7 @@ describe("minimalWranglerConfig()", () => {
     expect(JSON.parse(text)).toEqual({
       name: "other",
       compatibility_date: "2026-01-01",
-      d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "migrations" }],
+      d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }],
       env: { staging: {} },
     });
   });

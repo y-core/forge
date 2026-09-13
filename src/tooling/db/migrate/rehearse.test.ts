@@ -8,6 +8,7 @@ import { sha256 } from "../digest";
 import { appHome } from "../home";
 import { argvHas, fakeDbIo, jsonRows, OK } from "../test-support";
 import type { BackupManifest, DbConfig, DbRunContext, FakeDbIo, Migration, Place, Spawned } from "../types";
+import { recordMigrationSql } from "./checksum";
 import { rehearseMigrations } from "./rehearse";
 
 const NOW = new Date("2026-09-11T10:00:00Z");
@@ -32,11 +33,12 @@ const PENDING: Migration[] = [
 function manifest(over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
+    drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
     dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },
     database: { name: "app-db", id: null, target: "local", persistPath: null },
-    schema: { migrations: ["0001_init.sql"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
+    schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
     migrations: [{ name: "0001_init", sha256: sha256(TAKEN) }],
     tables: [{ name: "users", rows: 218, digest: "c".repeat(64) }],
     artifacts: [],
@@ -57,14 +59,7 @@ function dbConfig(place: Place): DbConfig {
     configPath: `${ROOT}/wrangler.jsonc`,
     config: { name: "app", compatibility_date: "2026-01-01", d1_databases: [{ binding: "DB", database_name: "app-db" }] } as WranglerConfig,
     env: null,
-    entry: {
-      binding: "DB",
-      databaseName: "app-db",
-      databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-      previewDatabaseId: null,
-      migrationsDir: `${ROOT}/migrations`,
-      migrationsTable: "d1_migrations",
-    },
+    entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place, database: null },
   };
 }
@@ -87,7 +82,7 @@ function context(files: Record<string, string>, place: Place = "local"): { run: 
 function wire(io: FakeDbIo, options: { failApply?: boolean } = {}): void {
   io.rules.push(
     {
-      match: (a) => argvHas(a, "migrations", "apply"),
+      match: (a) => argvHas(a, "execute", "--yes", "--file"),
       reply: (a) =>
         options.failApply === true && a.some((arg) => arg.includes("rehearse-apply"))
           ? ({ code: 1, stdout: "", stderr: "NOT NULL constraint failed: users.email" } as Spawned)
@@ -113,7 +108,11 @@ describe("rehearseMigrations()", () => {
     wire(io);
 
     expect(rehearseMigrations(run, PENDING, undefined, APPLIED)).toEqual({ artifact: ARTIFACT, rows: 218, applied: ["0002_email_not_null"] });
-    expect(io.files.get(`${ROOT}/.forge/scratch/rehearse-apply/migrations/0002_email_not_null.sql`)).toBe(PENDING[0]?.sql);
+    const migration = PENDING[0];
+    if (migration === undefined) throw new Error("PENDING must not be empty");
+    expect(io.files.get(`${ROOT}/.forge/scratch/rehearse-apply/0002_email_not_null.sql`)).toBe(
+      `${migration.sql}\n${recordMigrationSql(migration, NOW.getTime())}`,
+    );
   });
 
   it("takes the artifact it is given, resolved against the root", () => {

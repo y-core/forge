@@ -52,7 +52,11 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },
   testing: { app: "type", form: "value", jsx: "value", logging: "value", "storage/db": "type", "storage/kv": "type", "storage/r2": "value" },
-  "tooling/assets": { site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
+  // `assets` at type only: `IconLink` is the shape of a value the generated module hands a view, so
+  // it is owned by the runtime namespace the view imports rather than by the build that emits it.
+  // `http` at value for `CacheControl` — the `_headers` rules are the same header the runtime sets,
+  // so they are built by the same typed builder rather than by a second spelling of the directives.
+  "tooling/assets": { assets: "type", http: "value", site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
   "tooling/cf": { "tooling/cli": "value", "tooling/term": "value", site: "value" },
   "tooling/cli": { "tooling/term": "value" },
   // The fingerprint rules have one home in `storage/db`, so the CLI and a Worker judge a schema by the same spelling.

@@ -113,7 +113,7 @@ export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPla
   const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
   const counts = new Map<string, number>();
   for (const object of objects) {
-    if (object.type !== "table" || classifyTable(object.name, config.entry.migrationsTable) !== "app") continue;
+    if (object.type !== "table" || classifyTable(object.name) !== "app") continue;
     counts.set(object.name, Number(queryOne(io, home, rowCountSelect(object.name)).rows ?? 0));
   }
   const rows = [...counts.values()].reduce((total, count) => total + count, 0);

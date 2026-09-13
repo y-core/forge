@@ -150,7 +150,7 @@ describe("PasskeyEnrolView and the step-up/enrolment distinction", () => {
 describe("PasskeyEnrolView sign-out", () => {
   it("submits the sign-out rather than linking it, since the route is POST-only", async () => {
     const html = await enrol();
-    expect(attrOf(html, 'data-ref="passkey-signout"', "type")).toBe("submit");
+    expect(attrOf(html, 'data-ref="signout"', "type")).toBe("submit");
     expect(tagOf(html, 'href="/auth/signout"')).toBe("");
   });
 

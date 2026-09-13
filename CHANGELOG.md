@@ -17,7 +17,127 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **Forge owns the migration history outright.** No verb runs `wrangler d1 migrations apply`, and
+  wrangler's `d1_migrations` table is never read or written. A migration's body and the row recording
+  it are staged into one file under `.forge/scratch/` and loaded with `wrangler d1 execute --file`,
+  so locally the two commit together or not at all. The two companion tables are renamed with a
+  leading underscore and `_forge_migrations` absorbs what `forge_schema_meta` held:
+
+  ```sql
+  CREATE TABLE _forge_migrations (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,          -- unique index; the identity
+    sha256 TEXT NOT NULL,        -- over stamp-blanked bytes
+    applied_at INTEGER NOT NULL, -- epoch milliseconds
+    fingerprint TEXT             -- the schema this migration left behind, NULL until an apply certifies it
+  ) STRICT;
+  ```
+
+  `forge_seed_history` is `_forge_seed_history`, unchanged in shape, and `forge_schema_meta` is
+  deleted with its `migrations_digest` and `schema_fingerprint` keys — the fingerprint now rides on
+  the migration that produced it, which is what makes "this schema came from this history" one read
+  rather than two. The managed-name prefix is `_forge_` rather than `forge_`, so a table an app
+  happens to have called `forge_anything` is now the **app's**, and so is a `d1_migrations` table
+  left behind by a wrangler-managed past: both are backed up, diffed and fingerprinted as the app's
+  own. **There is no upgrade path** — a database written by 0.1.11 reads as having zero applied
+  migrations here; re-create a local one, and a deployed database in that state is out of scope.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §4, §4a.
+- **`migrations_dir` and `migrations_table` are no longer read from `wrangler.jsonc`.** The
+  migrations directory is `DbHostConfig.migrations`, defaulting to `migrations` under the root, and
+  the snapshot defaults to `schema.snapshot.json` under the root rather than beside the migrations
+  directory. Nothing reads a migrations table name any more, because forge names its own.
+  `D1Entry.migrationsDir` and `D1Entry.migrationsTable` are removed, with
+  `DEFAULT_MIGRATIONS_DIR`, `DEFAULT_MIGRATIONS_TABLE`, `SynthesizeOptions.migrationsDir` and
+  `migrationsHome`.
+- **`checkSchemaHealth(db)` and `schemaHealthCheck(binding)` take no options.** The
+  `SchemaHealthOptions` type is removed, and `SchemaHealthMonitorOptions` no longer extends it — with
+  no wrangler table to exclude from the fingerprint there is nothing left to configure. The states
+  are unchanged; `unavailable` now means no `_forge_migrations` table.
+- **The repair path is gone.** An apply no longer records migrations that were applied without a
+  forge checksum, because nothing can apply one behind forge's back any more. `MigrateOutcome.repaired`,
+  `RepairPlan`, `planRepair`, `repairSql`, `recordChecksumSql`, `recordMetaSql`, `recordAppliedSql`
+  and `appliedMigrationName` are removed. `ChecksumComparison` goes with them: `compareChecksums`
+  returns the mismatched names, since `unrecorded` and `orphaned` described a disagreement between two
+  tables that is now one table. `forge db migrate status` drops the `unrecorded` row state and the
+  `digest` block of `StatusReport`, and reports a database that has applied migrations but never
+  certified a fingerprint.
+- **`BACKUP_FORMAT_VERSION` is `6`, and an artifact written by 0.1.11 is refused.** A `data.sql` now
+  carries the `_forge_migrations` rows with their original ids, `applied_at` and `fingerprint`, and
+  the migrations restore route replays the artifact's own migrations without recording them — the
+  history is restored, not rebuilt. `full.sql` no longer carries a separate migrations-table section.
+  Take the backups you rely on again. [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md).
+- **`forge db seed` refuses a schema that moved since the last apply certified it**, as `migrate`
+  already did, and takes the same `--allow-drift` past it. A seed writes rows into whatever schema is
+  there, so this is checked before the lint, the confirmation and the first load — a refusal leaves
+  nothing written rather than stopping halfway through the set. `--allow-drift` certifies nothing, so
+  `forge db migrate` goes on refusing until an apply explains the schema.
+- **`forge db migrate status --check` exits `1` on a database with applied migrations and no
+  certified fingerprint.** It printed a line saying so and exited `0`, which meant CI — which reads
+  the code and nothing else — saw nothing to do, while the line asked for an apply. That is where a
+  database lands after a restore over the migrations route, and after an apply whose certifying write
+  failed on its own; one `forge db migrate` clears it. **A green pipeline can turn red on an unchanged
+  database**: run `forge db migrate` against it once.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §6c.
+- **`manifest.json` carries `drift`**, one of `match`, `mismatch`, `unrecorded` or `unavailable` —
+  the state the source database was in when the backup was taken. `BACKUP_FORMAT_VERSION` stays `6`,
+  which is unreleased, so a manifest written by an earlier build of it is refused for the missing
+  field rather than misread. `forge db backup` also says so on stderr and carries a warning a restore
+  prints back, because every digest in the manifest describes the database **as found**: the proof
+  compares a restored copy against the source's own digest, so a drifted source proves clean.
+
+### Added
+
+- **One drift read, shared by every verb that opens the target.** `schemaDrift` compares the newest
+  certified fingerprint against the schema as it stands, `readDrift` reads both sides for a verb
+  holding neither, and `refuseSchemaDrift` is the one refusal, each verb passing the remedy it
+  offers. `migrate` refuses, `seed` refuses, `backup` records — the answer is one rule and what
+  differs is what each verb does with it, which follows from what the verb does to the database.
+  `SchemaDrift` is exported from `@y-core/forge/tooling/db`.
+  [`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §6e.
+
+  `forge db schema check` is deliberately not on that list: it reads files and opens no database,
+  which is what lets it run in a checkout, in a library repository with no database, and in a
+  pre-merge job. Pair it with `forge db migrate status --check` for the answer that needs one.
+  `restore` and `reset` are absent too — a restore rebuilds the schema from the artifact and compares
+  what it built, and a reset discards the database under a guard stronger than a fingerprint.
+
+- **A dropped object names the file that declared it.** An object becomes undeclared two ways: you
+  delete it from a `schema.sql`, or the file itself leaves `config/db.ts` — a library dropped from
+  `schemas`, a path renamed, a file moved. The second edits no schema file, so the plan used to
+  propose dropping tables nobody touched with nothing saying why. `schema.snapshot.json` now records
+  `declared: Record<path, name[]>` beside `desired`, and compose prints one line per departed file
+  with the plan, on the success path, under `--dry-run` and in the destructive refusal:
+
+  ```
+  posts, posts_user were declared by node_modules/@acme/blog/schema.sql, which config/db.ts no longer declares or whose file is absent — nothing declares them now
+  ```
+
+  Those lines are also hashed into the `--allow-destructive` digest, so an approval covers the drops
+  **and** the reason for them: the same drop set arriving from a departed file needs its own approval.
+  `destructivePlanDigest(diff, causes)` takes them, `droppedObjectNames(diff)` is the drop set they
+  are matched against, `declaredNamesBySource` and `attributeDrops` are in `ownership.ts`, and
+  `ComposeOutcome` gains `causes: readonly string[]`. A file in the snapshot that `config/db.ts` does
+  not name and that owns none of this compose's drops is said once, as a `warning:` line, on the
+  compose that forgets it. The names are read for attribution alone — the diff and the SQL are what
+  they would be without them. `SCHEMA_SNAPSHOT_VERSION` is `6`.
+  [`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §3, §6.
+
+### Fixed
+
+- **A migration or seed whose last statement omits its `;` no longer fails with a syntax error
+  naming neither cause.** The body is terminated before the history row is appended to it, rather
+  than the record being glued onto an unterminated statement. No lint rule demands the semicolon, and
+  the SQL is legal without it.
+- **A part-applied batch no longer reports a healthy schema.** `checkSchemaHealth` and the drift
+  refusal in `forge db migrate` read the newest fingerprint that was actually certified, skipping the
+  rows an interrupted batch left uncertified. Reading the newest row outright returned `NULL` there,
+  which reported `unrecorded` — and passed `schemaHealthCheck` — while an earlier certified
+  fingerprint no longer matched the live schema.
+- Four compose fixture cases asserting an "unowned object" warning the tool does not emit are
+  removed; their setup was refused by the `custom-ddl` lint rule, which took the whole
+  `tests/workerd/db-compose.test.ts` suite down with it.
 
 ---
 

@@ -71,6 +71,63 @@ describe("buildAll() — emitHeaders", () => {
     }
   });
 
+  it("gives each icon its own rule, and the manifest a revalidating one", async () => {
+    const tmpDir = join(tmpdir(), `forge-pipeline-headers-icons-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const publicDir = join(tmpDir, "public", "assets");
+    mkdirSync(publicDir, { recursive: true });
+
+    try {
+      const srcPath = join(tmpDir, "logo.svg");
+      writeFileSync(srcPath, `<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="currentColor"/></svg>`);
+
+      await buildAll(
+        {
+          paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
+          css: [],
+          js: { bundles: [] },
+          copy: [],
+          rasters: [],
+          sprites: {},
+          fonts: { downloads: [] },
+          icons: {
+            src: srcPath,
+            outDir: join(tmpDir, "public"),
+            publicPrefix: "/static",
+            lightColor: "#000",
+            app: { name: "Demo", shortName: "Demo", backgroundColor: "#fff" },
+            outputs: [
+              { kind: "svg", file: "favicon.svg" },
+              { kind: "ico", file: "favicon.ico", sizes: [16], root: true },
+              { kind: "manifest", file: "site.webmanifest" },
+            ],
+          },
+          cursors: null,
+          site: null,
+        },
+        { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+      );
+
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe(
+        [
+          "/assets/*",
+          "  Cache-Control: public, max-age=31536000, immutable",
+          "",
+          "/static/favicon.svg",
+          "  Cache-Control: public, max-age=86400, stale-while-revalidate=604800",
+          "",
+          "/favicon.ico",
+          "  Cache-Control: public, max-age=86400, stale-while-revalidate=604800",
+          "",
+          "/static/site.webmanifest",
+          "  Cache-Control: public, max-age=0, must-revalidate",
+          "",
+        ].join("\n"),
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("emits immutable for hashed (prod) builds", async () => {
     const tmpDir = join(tmpdir(), "forge-pipeline-emitHeaders-prod");
     const publicDir = join(tmpDir, "public", "assets");
@@ -547,6 +604,79 @@ describe("generateAssetsTypes() — glyph-name union", () => {
     await emitTypes("empty-meta", { ui: { target: "sprites/ui.svg", sources: [] } }, (source) => {
       expect(extractUnionLine(source, "UiIconName")).toBe("export type UiIconName = never;");
     });
+  });
+});
+
+describe("generateAssetsTypes() — ICON_LINKS", () => {
+  it("emits the head links from the icons config, with no sharp and no icon files on disk", async () => {
+    const tmpDir = join(tmpdir(), `forge-pipeline-icon-links-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const typesModule = join(tmpDir, "assets.ts");
+    mkdirSync(tmpDir, { recursive: true });
+
+    try {
+      const config = {
+        paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
+        css: [],
+        js: { bundles: [] },
+        copy: [],
+        rasters: [],
+        sprites: {},
+        fonts: { downloads: [] },
+        icons: {
+          src: join(tmpDir, "logo.svg"),
+          outDir: join(tmpDir, "public"),
+          publicPrefix: "/static",
+          lightColor: "#000",
+          outputs: [
+            { kind: "ico", file: "favicon.ico", sizes: [16, 32, 48], root: true },
+            { kind: "svg", file: "favicon.svg" },
+            { kind: "manifest", file: "site.webmanifest" },
+          ],
+        },
+        site: null,
+        cursors: null,
+      } satisfies ResolvedConfig;
+
+      await generateAssetsTypes(config, { assetsPath: typesModule });
+
+      const source = readFileSync(typesModule, "utf-8");
+      expect(source).toContain(`import type { IconLink } from "@y-core/forge/assets";`);
+      expect(source).toContain(`export const ICON_LINKS: ReadonlyArray<IconLink> = [`);
+      expect(source).toContain(`{"rel":"icon","href":"/favicon.ico","sizes":"16x16 32x32 48x48"},`);
+      expect(source).toContain(`{"rel":"icon","href":"/static/favicon.svg","type":"image/svg+xml"},`);
+      expect(source).toContain(`{"rel":"manifest","href":"/static/site.webmanifest"},`);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits no ICON_LINKS block and no IconLink import when the config declares no icons", async () => {
+    const tmpDir = join(tmpdir(), `forge-pipeline-no-icons-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const typesModule = join(tmpDir, "assets.ts");
+    mkdirSync(tmpDir, { recursive: true });
+
+    try {
+      const config = {
+        paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
+        css: [],
+        js: { bundles: [] },
+        copy: [],
+        rasters: [],
+        sprites: {},
+        fonts: { downloads: [] },
+        icons: null,
+        site: null,
+        cursors: null,
+      } satisfies ResolvedConfig;
+
+      await generateAssetsTypes(config, { assetsPath: typesModule });
+
+      const source = readFileSync(typesModule, "utf-8");
+      expect(source).not.toContain("ICON_LINKS");
+      expect(source).not.toContain("IconLink");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -214,7 +214,7 @@ const db = resolveD1Client(c, { binding: (c) => c.env.DB });
 
 #### Schema health
 
-A Worker can read whether the schema it serves is the one `forge db migrate` recorded, and report it. The report is read-only: nothing is written,
+A Worker can read whether the schema it serves is the one `forge db migrate` certified, and report it. The report is read-only: nothing is written,
 no request is gated, and the repair stays `forge db migrate` on the CLI.
 
 ```ts
@@ -228,8 +228,18 @@ app.use("*", schemaHealthMonitor({ binding: (c) => c.env.DB }));
 mapHandler(app, "GET", "/health", healthCheck({ schema: schemaHealthCheck((c) => c.env.DB) }));
 ```
 
-`checkSchemaHealth(db)` is the raw form, returning `{ state, recorded, actual }` where `state` is `match`, `mismatch`, `unrecorded` (no fingerprint
-row) or `unavailable` (no `forge_schema_meta` table at all).
+`checkSchemaHealth(db)` is the raw form. It reads the `fingerprint` of the last `_forge_migrations` row, recomputes the fingerprint from
+`sqlite_master`, and returns `{ state, recorded, actual }`:
+
+| `state` | When |
+| --- | --- |
+| `unavailable` | There is no `_forge_migrations` table — forge has never migrated this database |
+| `unrecorded` | The table is there with no rows, or its last row's `fingerprint` is `NULL` — applied, never certified |
+| `match` | A fingerprint is certified and the schema still hashes to it |
+| `mismatch` | A fingerprint is certified and the schema does not |
+
+`recorded` is `null` in the first two states; `actual` is `null` only in `unavailable`, where the schema was never read. There is no options
+argument on any of the three functions: which table the history lives in is not configurable.
 
 ### Security
 
@@ -263,12 +273,11 @@ row) or `unavailable` (no `forge_schema_meta` table at all).
 | `D1BatchResult` | type | One statement's outcome inside `batch`: `{ results, rowsWritten, lastRowId? }`, the same write count `execute` reports. |
 | `SqlFragment` | type | Branded `{ text, params }`. |
 | `D1BindingOptions` | type | `{ binding, required?, client? }` for `resolveD1Client`. |
-| `checkSchemaHealth(db, options?)` | function | Reads `forge_schema_meta` and `sqlite_master` and reports `{ state, recorded, actual }`; writes nothing. |
-| `schemaHealthCheck(binding, options?)` | function | A `healthCheck` predicate that is `false` only on `mismatch` or an absent binding. |
+| `checkSchemaHealth(db)` | function | Reads `_forge_migrations` and `sqlite_master` and reports `{ state, recorded, actual }`; writes nothing. |
+| `schemaHealthCheck(binding)` | function | A `healthCheck` predicate that is `false` only on `mismatch` or an absent binding. |
 | `schemaHealthMonitor(options)` | function | `Middleware` logging one `d1.schema.health` record per isolate, at `warn` on a mismatch; always calls `next()`. |
 | `compareCodePoints(a, b)` | function | Orders two strings by code point — SQLite's BINARY order — rather than by UTF-16 code unit. |
-| `DEFAULT_MIGRATIONS_TABLE` | const | Wrangler's `d1_migrations`. |
-| `SchemaHealth`, `SchemaHealthState`, `SchemaHealthOptions`, `SchemaHealthMonitorOptions`, `SchemaObject` | types | The report, its four states, the two option shapes, and one `sqlite_master` row. |
+| `SchemaHealth`, `SchemaHealthState`, `SchemaHealthMonitorOptions`, `SchemaObject` | types | The report, its four states, the monitor's options, and one `sqlite_master` row. |
 
 The six UUID functions and their two types are re-exported from the sealed-internal `crypto` namespace, which has no subpath of its own —
 `storage/db` is where they are published.

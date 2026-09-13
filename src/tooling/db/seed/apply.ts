@@ -5,22 +5,24 @@ import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
 import { confirmPrinter } from "../context";
 import { declaredPath, declaredSeeds } from "../declared";
-import { appliedMigrationName } from "../migrate/checksum";
+import { readDrift, refuseSchemaDrift } from "../drift";
+import { RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "../migrate/checksum";
 import { ensureCompanionTables } from "../migrate/companions";
 import { readMigrations } from "../migrate/files";
 import { formatLintFinding } from "../migrate/lint";
 import { acquireApplyLock } from "../migrate/lock";
 import { planApply } from "../migrate/plan";
-import { quoteSqlIdentifier, quoteSqlLiteral } from "../sql";
+import { applyRecordedSql } from "../recorded";
+import { quoteSqlLiteral } from "../sql";
 import { isRemotePlace } from "../target";
 import type { Bookmark, DbRunContext, LintFinding, Seed, SeedOutcome, SeedPlan, SeedRecord } from "../types";
-import { executeFile, executeSql, queryRowsIfTable } from "../wrangler";
+import { executeSql, queryRowsIfTable } from "../wrangler";
 import { discoverSeeds, expandSeedEnv } from "./files";
 import { lintSeed, lintSeeds } from "./lint";
 import { planSeeds, recordSeedSql } from "./plan";
 
 function readSeedHistory(run: DbRunContext): SeedRecord[] {
-  const rows = queryRowsIfTable(run.io, run.home, "SELECT source, name, sha256, applied_at FROM forge_seed_history ORDER BY source, name");
+  const rows = queryRowsIfTable(run.io, run.home, "SELECT source, name, sha256, applied_at FROM _forge_seed_history ORDER BY source, name");
   if (rows === null) return [];
   return rows.map((row) => ({
     source: String(row.source ?? ""),
@@ -37,8 +39,8 @@ export function readSeeds(run: DbRunContext, dir?: string | undefined): readonly
 }
 
 function refusePendingMigrations(run: DbRunContext): void {
-  const rows = queryRowsIfTable(run.io, run.home, `SELECT name FROM ${quoteSqlIdentifier(run.config.entry.migrationsTable)} ORDER BY id`) ?? [];
-  const plan = planApply({ discovered: readMigrations(run), applied: rows.map((row) => appliedMigrationName(row.name)) });
+  const recorded = toRecordedChecksums(queryRowsIfTable(run.io, run.home, RECORDED_CHECKSUM_SELECT) ?? []);
+  const plan = planApply({ discovered: readMigrations(run), applied: recorded.map((record) => record.appliedName) });
   if (plan.pending.length === 0) return;
   throw new CliError(
     "invalid-args",
@@ -90,11 +92,20 @@ export async function runSeedApply(
     only?: string | undefined;
     rerun: boolean;
     allowPending: boolean;
+    allowDrift: boolean;
     allowWarnings: boolean;
     bookmark: boolean;
   },
 ): Promise<SeedOutcome> {
   if (!options.allowPending) refusePendingMigrations(run);
+  // A seed writes rows into whatever schema is there. Held before the lint and the confirmation, so a
+  // schema nothing explains stops the run with nothing written rather than halfway through the set.
+  refuseSchemaDrift(
+    run,
+    readDrift(run.io, run.home),
+    options.allowDrift,
+    "pass --allow-drift to seed anyway; a seed certifies no fingerprint, so `forge db migrate` goes on refusing until an apply explains the schema.",
+  );
   const remote = isRemotePlace(run.config.target.place);
   const say = run.json ? (line: string) => run.io.log(line) : run.print;
   const seeds = readSeeds(run, options.dir);
@@ -122,16 +133,14 @@ export async function runSeedApply(
     }
 
     for (const seed of plan.apply) {
-      const scratch = join(run.config.root, ".forge", "scratch", "seed", seed.source.replace(/[^A-Za-z0-9_-]+/g, "_"));
-      const file = join(scratch, `${seed.name}.sql`);
-      run.io.mkdir(scratch);
-      run.io.writeText(file, `${expanded.get(seed) ?? seed.sql}\n${recordSeedSql(seed, run.io.now().getTime())}`);
-      try {
-        executeFile(run.io, run.home, file);
-      } finally {
+      applyRecordedSql(run, run.home, {
+        label: join("seed", seed.source.replace(/[^A-Za-z0-9_-]+/g, "_")),
+        name: seed.name,
+        sql: expanded.get(seed) ?? seed.sql,
+        record: recordSeedSql(seed, run.io.now().getTime()),
         // The expanded text holds whatever the environment held, so it does not outlive the load.
-        run.io.remove(file);
-      }
+        remove: true,
+      });
       applied.push(seedName(seed));
     }
   } catch (error) {
@@ -170,7 +179,7 @@ export function runSeedReset(run: DbRunContext, source?: string | undefined): vo
   try {
     ensureCompanionTables(run.io, run.home);
     const where = source === undefined ? "" : ` WHERE source = ${quoteSqlLiteral(source)}`;
-    executeSql(run.io, run.home, `DELETE FROM forge_seed_history${where};`);
+    executeSql(run.io, run.home, `DELETE FROM _forge_seed_history${where};`);
   } finally {
     release();
   }

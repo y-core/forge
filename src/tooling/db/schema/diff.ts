@@ -248,9 +248,19 @@ export function schemaDiffIsEmpty(diff: SchemaDiff): boolean {
   return diff.tables.length === 0 && named(diff.indexes) + named(diff.triggers) + named(diff.views) === 0;
 }
 
-/** Twelve hex characters naming one whole plan, so an approval is for exactly that plan and no other. @internal */
-export function destructivePlanDigest(diff: SchemaDiff): string {
-  return sha256(describeSchemaDiff(diff).join("\n")).slice(0, 12);
+/** Every object the diff drops outright, by name: tables, indexes, triggers and views, never a column. @internal */
+export function droppedObjectNames(diff: SchemaDiff): string[] {
+  return [
+    ...diff.tables.filter((change) => change.kind === "drop").map((change) => change.name),
+    ...diff.indexes.dropped,
+    ...diff.triggers.dropped,
+    ...diff.views.dropped,
+  ];
+}
+
+/** Twelve hex characters naming one whole plan and why it drops what it drops, so an approval is for exactly that plan and no other. @internal */
+export function destructivePlanDigest(diff: SchemaDiff, causes: readonly string[] = []): string {
+  return sha256([...describeSchemaDiff(diff), ...causes].join("\n")).slice(0, 12);
 }
 
 /** The diff as the lines a plan prints, one per change. @internal */

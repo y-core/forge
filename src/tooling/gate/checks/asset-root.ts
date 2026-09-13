@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { posix, relative, resolve } from "node:path";
 
 import { loadConfig } from "../../assets/config";
+import { iconTarget } from "../../assets/icons";
 import { SITE_OUTPUTS } from "../../assets/types";
 import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail, warn } from "../finding";
@@ -58,7 +59,8 @@ export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<Chec
     if (path !== null) emitted.set(path, step);
   };
 
-  for (const output of resolved.icons?.outputs ?? []) record(resolved.icons?.outDir ?? "", output.file, "icons.outputs");
+  const icons = resolved.icons;
+  if (icons) for (const output of icons.outputs) record(iconTarget(icons, output).dir, output.file, "icons.outputs");
   for (const file of resolved.site ? SITE_OUTPUTS : []) record(resolved.site?.outDir ?? "", file, "site");
 
   const rules = Array.isArray(assets.run_worker_first) ? assets.run_worker_first.filter((rule): rule is string => typeof rule === "string") : [];
@@ -73,10 +75,14 @@ export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<Chec
 
   for (const [path, step] of [...emitted].sort()) {
     if (excluded.has(path) || coveredByGlob(path)) continue;
+    // A file under a directory is asked for by that directory, so the rule set stops growing with
+    // the file set; only a root-level output is named one by one.
+    const dir = posix.dirname(path);
+    const rule = dir === "/" ? path : `${dir}/*`;
     findings.push(
-      fail(`\`${path}\` is written to the asset root by \`${step}\` but \`run_worker_first\` does not exclude it`, {
+      fail(`\`${path}\` is written to the asset tree by \`${step}\` but \`run_worker_first\` does not exclude it`, {
         file: workerConfig,
-        detail: [`add "!${path}" to assets.run_worker_first`],
+        detail: [`add "!${rule}" to assets.run_worker_first`],
       }),
     );
   }

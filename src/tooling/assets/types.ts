@@ -26,16 +26,26 @@ const JsBundleSchema = v.object({
   define: v.optional(v.record(v.string(), DefineValueSchema)),
 });
 
+// `root: true` pins an output to the asset root, where a browser with no HTML head to read probes
+// for it — a PDF, image, JSON or platform error-page tab, and every unfurler that never parses HTML.
 const IconOutputSchema = v.union([
-  v.object({ kind: v.literal("svg"), file: v.string() }),
-  v.object({ kind: v.literal("png"), file: v.string(), size: v.number(), manifest: v.optional(v.boolean()) }),
-  v.object({ kind: v.literal("ico"), file: v.string(), sizes: v.array(v.number()) }),
-  v.object({ kind: v.literal("manifest"), file: v.string() }),
+  v.object({ kind: v.literal("svg"), file: v.string(), root: v.optional(v.boolean()) }),
+  v.object({
+    kind: v.literal("png"),
+    file: v.string(),
+    size: v.number(),
+    manifest: v.optional(v.boolean()),
+    rel: v.optional(v.string()),
+    root: v.optional(v.boolean()),
+  }),
+  v.object({ kind: v.literal("ico"), file: v.string(), sizes: v.array(v.number()), root: v.optional(v.boolean()) }),
+  v.object({ kind: v.literal("manifest"), file: v.string(), root: v.optional(v.boolean()) }),
 ]);
 
 const IconsConfigSchema = v.object({
   src: v.string(),
   outDir: v.string(),
+  publicPrefix: v.optional(v.string()),
   lightColor: v.string(),
   darkColor: v.optional(v.string()),
   app: v.optional(v.object({ name: v.string(), shortName: v.string(), backgroundColor: v.string() })),

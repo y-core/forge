@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
 import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import {
   argvHas,
   bufferedIO,
@@ -24,15 +25,14 @@ import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./ar
 const SCHEMA_SQL = [
   "PRAGMA defer_foreign_keys=TRUE;",
   "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);",
-  "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY, sha256 TEXT);",
+  "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY, sha256 TEXT);",
   "DELETE FROM sqlite_sequence;",
   "",
 ].join("\n");
 
 const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
-  { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-  { type: "table", name: "forge_migrations", tbl_name: "forge_migrations", sql: "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY)" },
+  { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
 ];
 
 const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
@@ -40,11 +40,7 @@ const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
     { cid: 0, name: "uuid", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
     { cid: 1, name: "lane", type: "TEXT", notnull: 1, dflt_value: "''", pk: 0 },
   ],
-  d1_migrations: [
-    { cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 1 },
-    { cid: 1, name: "name", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
-  ],
-  forge_migrations: [
+  _forge_migrations: [
     { cid: 0, name: "name", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
     { cid: 1, name: "sha256", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
   ],
@@ -55,8 +51,7 @@ const ROWS: Readonly<Record<string, Record<string, unknown>[]>> = {
     { uuid: "t1", lane: "todo" },
     { uuid: "t2", lane: "a line\nand another" },
   ],
-  d1_migrations: [{ id: 1, name: "0001_init" }],
-  forge_migrations: [{ name: "0001_init", sha256: "ab" }],
+  _forge_migrations: [{ name: "0001_init", sha256: "ab" }],
 };
 
 /** A temp root holding a real `wrangler.jsonc`, which `resolveDbConfig` reads from the real filesystem. */
@@ -78,7 +73,6 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
       return OK;
     },
   });
-  io.rules.push({ match: (args) => argvHas(args, "migrations", "apply"), reply: OK });
   io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
   io.rules.push({
     match: (args) => argvHas(args, "execute", "--command"),
@@ -97,7 +91,7 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
       if (probe !== null) return keyProbeReply(rows[probe.table] ?? [], probe.column);
       const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
       if (count !== null) return jsonRows([{ rows: (rows[count[1] ?? ""] ?? []).length }]);
-      if (statement.startsWith("SELECT name FROM")) return jsonRows((rows.d1_migrations ?? []).map((row) => ({ name: row.name })));
+      if (statement === RECORDED_CHECKSUM_SELECT) return jsonRows((rows._forge_migrations ?? []).map((row) => ({ name: row.name })));
       const from = /FROM "([^"]+)"/.exec(statement);
       const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
       const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
@@ -167,7 +161,7 @@ describe("forge db backup", () => {
         "PRAGMA defer_foreign_keys=TRUE;",
         `INSERT INTO "tasks" ("uuid","lane") VALUES ('t1','todo');`,
         `INSERT INTO "tasks" ("uuid","lane") VALUES ('t2',replace('a line~~N~~and another','~~N~~',char(10)));`,
-        `INSERT INTO "forge_migrations" ("name","sha256") VALUES ('0001_init','ab');`,
+        `INSERT INTO "_forge_migrations" ("name","sha256") VALUES ('0001_init','ab');`,
         "",
       ].join("\n"),
     );
@@ -208,6 +202,7 @@ function written(manifest: BackupManifest): BackupManifest {
 
 const MANIFEST: BackupManifest = {
   formatVersion: BACKUP_FORMAT_VERSION,
+  drift: "match" as const,
   createdAt: "2026-09-11T10:00:00.000Z",
   label: null,
   dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },
@@ -257,7 +252,7 @@ describe("forge db restore", () => {
     const buffer = await runCli(io, ["restore", "--root", root, "--artifact", artifact, "--yes"]);
 
     expect(buffer.err).toEqual([
-      "Error: app-db already holds data (tasks 2, forge_migrations 1) — run `forge db reset` first; a restore adds rows and never removes them",
+      "Error: app-db already holds data (tasks 2, _forge_migrations 1) — run `forge db reset` first; a restore adds rows and never removes them",
     ]);
   });
 
@@ -271,7 +266,7 @@ describe("forge db restore", () => {
 
     expect(buffer.out).toEqual([]);
     expect(buffer.err).toEqual([
-      "Error: app-db already holds data (tasks 2, forge_migrations 1) — run `forge db reset` first; a restore adds rows and never removes them",
+      "Error: app-db already holds data (tasks 2, _forge_migrations 1) — run `forge db reset` first; a restore adds rows and never removes them",
     ]);
   });
 

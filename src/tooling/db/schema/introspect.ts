@@ -1,26 +1,20 @@
 import { CliError } from "../../cli/errors";
-import { DEFAULT_MIGRATIONS_TABLE } from "../config";
 import { isManagedObject } from "../migrate/fingerprint";
-import { quoteSqlLiteral } from "../sql";
 import type { DbIo, Home } from "../types";
 import { queryBatches } from "../wrangler";
 import { normalizeDdlText, splitCreateTableBody, sqlIdentifierKey } from "./normalize";
 import type { CreateTableParts, SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaModel, SchemaTable, SchemaTrigger, SchemaView } from "./types";
 
-// D1's authorizer refuses a pragma function on `sqlite_*` and `_cf_*`, so the join filters them out in SQL rather than after.
-function ownFilter(migrationsTable: string): string {
-  return `m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE 'forge\\_%' ESCAPE '\\' AND m.name <> ${quoteSqlLiteral(migrationsTable)}`;
+// D1's authorizer refuses a pragma function on `sqlite_*` and `_cf_*`, so the join filters them out
+// in SQL rather than after. Every leading underscore is escaped: unescaped it is LIKE's single-character
+// wildcard, and `'_forge\_%'` silently matches `xforge_anything` too.
+function ownFilter(): string {
+  return `m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\'`;
 }
 
 /** The five reads a model is built from, batched into one wrangler spawn however many tables there are. @internal */
-export function schemaModelSelects(migrationsTable: string = DEFAULT_MIGRATIONS_TABLE): {
-  inventory: string;
-  columns: string;
-  indexList: string;
-  indexColumns: string;
-  foreignKeys: string;
-} {
-  const own = ownFilter(migrationsTable);
+export function schemaModelSelects(): { inventory: string; columns: string; indexList: string; indexColumns: string; foreignKeys: string } {
+  const own = ownFilter();
   return {
     inventory: `SELECT type, name, tbl_name, sql FROM sqlite_master m WHERE ${own} ORDER BY type, name`,
     columns: `SELECT m.name AS tbl, x.cid, x.name, x.type, x."notnull", x.dflt_value, x.pk, x.hidden FROM sqlite_master m JOIN pragma_table_xinfo(m.name) x WHERE m.type = 'table' AND ${own} ORDER BY m.name, x.cid`,
@@ -80,19 +74,14 @@ function foreignKeysOf(rows: readonly Row[]): SchemaForeignKey[] {
 }
 
 /** Assembles a model from the five reads' rows, which a test can hand in without a database. @internal */
-export function assembleSchemaModel(
-  rows: {
-    inventory: readonly Row[];
-    columns: readonly Row[];
-    indexList: readonly Row[];
-    indexColumns: readonly Row[];
-    foreignKeys: readonly Row[];
-  },
-  migrationsTable: string = DEFAULT_MIGRATIONS_TABLE,
-): SchemaModel {
-  const inventory = rows.inventory.filter(
-    (row) => !isManagedObject(text(row, "name"), migrationsTable) && !isManagedObject(text(row, "tbl_name"), migrationsTable),
-  );
+export function assembleSchemaModel(rows: {
+  inventory: readonly Row[];
+  columns: readonly Row[];
+  indexList: readonly Row[];
+  indexColumns: readonly Row[];
+  foreignKeys: readonly Row[];
+}): SchemaModel {
+  const inventory = rows.inventory.filter((row) => !isManagedObject(text(row, "name")) && !isManagedObject(text(row, "tbl_name")));
   const virtual = inventory.find((row) => /^\s*CREATE\s+VIRTUAL\s+TABLE/i.test(text(row, "sql")));
   if (virtual !== undefined) {
     throw new CliError(
@@ -148,8 +137,8 @@ export function assembleSchemaModel(
 }
 
 /** Reads a home's schema into a model: the five reads in one wrangler spawn, however many objects there are. @internal */
-export function readSchemaModel(io: DbIo, home: Home, migrationsTable: string = DEFAULT_MIGRATIONS_TABLE): SchemaModel {
-  const selects = schemaModelSelects(migrationsTable);
+export function readSchemaModel(io: DbIo, home: Home): SchemaModel {
+  const selects = schemaModelSelects();
   const [inventory = [], columns = [], indexList = [], indexColumns = [], foreignKeys = []] = queryBatches(io, home, [
     selects.inventory,
     selects.columns,
@@ -157,7 +146,7 @@ export function readSchemaModel(io: DbIo, home: Home, migrationsTable: string = 
     selects.indexColumns,
     selects.foreignKeys,
   ]);
-  return assembleSchemaModel({ inventory, columns, indexList, indexColumns, foreignKeys }, migrationsTable);
+  return assembleSchemaModel({ inventory, columns, indexList, indexColumns, foreignKeys });
 }
 
 /** True when two tables declare the same shape: columns equal in order, the same constraint set, the same options. @internal */

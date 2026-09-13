@@ -1,25 +1,25 @@
-import type { Bookmark, ChecksumComparison, Migration, RecordedChecksum, SchemaObject } from "../types";
+import type { Bookmark, Migration, RecordedChecksum, SchemaObject } from "../types";
 
 /** What `planApply` compares: the merged migration set, the names the migrations table holds, and an optional cut. @internal */
 export interface ApplyPlanRequest {
   discovered: readonly Migration[];
-  /** Applied names recorded in the migrations table, as wrangler writes them. */
+  /** The names forge recorded as applied. */
   applied: readonly string[];
   /** A version number or a migration name: nothing ordered after it is applied. */
   to?: string | undefined;
 }
 
-/** What one applied migration's row in the migrations table says. @internal */
+/** What one applied migration's history row says. @internal */
 export interface AppliedMigration {
   readonly name: string;
   readonly appliedAt: string | null;
 }
 
-/** What `statusRows` reads: the files on disk, the migrations table, and where their checksums disagree. @internal */
+/** What `statusRows` reads: the files on disk, the history rows, and the names whose checksums disagree. @internal */
 export interface StatusRowsRequest {
   discovered: readonly Migration[];
   applied: readonly AppliedMigration[];
-  checksums: ChecksumComparison;
+  mismatched: readonly string[];
 }
 
 /** What one `forge db migrate` run was asked to do. @public */
@@ -50,22 +50,14 @@ export interface RehearsalOutcome {
 export interface MigrateOutcome {
   readonly applied: readonly string[];
   readonly skipped: readonly string[];
-  /** Applied before without a forge checksum, and recorded from the file by this run. */
-  readonly repaired: readonly string[];
   readonly bookmark?: Bookmark;
   /** What the rehearsal proved, when one was asked for. */
   readonly rehearsed?: RehearsalOutcome;
   readonly dryRun: boolean;
 }
 
-/** What the target database records about itself: forge's checksums, its schema facts, and the live inventory. @internal */
+/** What the target database records about itself: forge's history rows, and the live inventory. @internal */
 export interface TargetFacts {
   readonly recorded: readonly RecordedChecksum[];
-  readonly meta: Readonly<Record<string, string>>;
   readonly inventory: readonly SchemaObject[];
-}
-
-/** Which applied migrations a run can record from their files, and which have no file and stay drift. @public */
-export interface RepairPlan {
-  readonly recordable: readonly Migration[];
 }

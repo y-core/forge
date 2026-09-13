@@ -30,7 +30,7 @@ const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
   { type: "table", name: "notes", tbl_name: "notes", sql: "CREATE TABLE notes (body TEXT)" },
   { type: "table", name: "d1_migrations", tbl_name: "d1_migrations", sql: "CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY)" },
-  { type: "table", name: "forge_migrations", tbl_name: "forge_migrations", sql: "CREATE TABLE forge_migrations (name TEXT PRIMARY KEY)" },
+  { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
   { type: "index", name: "idx_tasks_lane", tbl_name: "tasks", sql: "CREATE INDEX idx_tasks_lane ON tasks (lane)" },
 ];
 
@@ -41,7 +41,7 @@ const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
   ],
   notes: [{ cid: 0, name: "body", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 }],
   d1_migrations: [{ cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 1 }],
-  forge_migrations: [{ cid: 0, name: "name", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 }],
+  _forge_migrations: [{ cid: 0, name: "name", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 }],
   auth_users: [
     { cid: 0, name: "id", type: "BLOB", notnull: 1, dflt_value: null, pk: 1 },
     { cid: 1, name: "email", type: "TEXT", notnull: 1, dflt_value: null, pk: 0 },
@@ -277,15 +277,12 @@ describe("keyCollation()", () => {
 });
 
 describe("discoverAppTables()", () => {
-  it("finds the app's own tables and skips the managed, system and non-table objects", () => {
-    expect(discoverAppTables(fakeDatabase(), HOME, "d1_migrations")).toEqual([
+  it("finds the app's own tables, including one named d1_migrations, and skips forge's own managed table and the index", () => {
+    expect(discoverAppTables(fakeDatabase(), HOME)).toEqual([
       { name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 },
       { name: "notes", key: "rowid", columns: ["body"], pageRows: 256 },
+      { name: "d1_migrations", key: "id", columns: ["id"], pageRows: 256 },
     ]);
-  });
-
-  it("treats the migrations table it is told about as managed, and the default one as the app's", () => {
-    expect(discoverAppTables(fakeDatabase(), HOME, "forge_migrations").map((table) => table.name)).toEqual(["tasks", "notes", "d1_migrations"]);
   });
 });
 

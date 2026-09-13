@@ -13,9 +13,9 @@ idempotently.
 Each verb is written once, with the flags that change what it does indented beneath it:
 
 ```bash
-forge db migrate apply [--dry-run]     # repair the checksum record, check it, apply every pending migration to --target
+forge db migrate apply [--dry-run]     # check the history, then apply every pending migration to --target
     --to 0004                          # stop after that migration, reporting the rest as left for a later run
-    --allow-drift                      # apply although the schema moved outside the migrations
+    --allow-drift                      # apply although the schema moved since the last apply certified it
     --rehearse [--artifact <dir>]      # apply to a copy restored from a verified backup first; --artifact implies it
     --no-lint / --allow-warnings       # skip the lint pass, or accept its warnings on a deployed target
 forge db migrate compose [name]  [--dry-run] # the next migration, from schema.sql, proven on a replay first
@@ -32,6 +32,7 @@ forge db lint [file…]                  # check migrations for SQL that is dest
 forge db seed apply                    # run every seed that has not run; a deployed run confirms and bookmarks
     --only <name> [--rerun]            # just this seed, and again although it ran or its file changed
     --allow-pending                    # seed the older schema, over a pending migration
+    --allow-drift                      # seed a schema that moved since the last apply certified it
     --allow-warnings / --no-bookmark   # as `migrate apply`
 forge db seed status [--check]         # pending, applied, and changed since it ran
 forge db seed reset                    # forget the seed history, keeping the rows
@@ -65,8 +66,8 @@ run with no terminal that did not pass `--yes`.
   scratch D1, diffs the result against every declared schema loaded together, proves the emitted SQL on that replay, and writes the next numbered
   file into the app's own directory with a stamp saying so. A drop is refused until `--allow-destructive <digest>` names the plan it printed; a
   rename is `--rename old:new`, never inferred.
-- **Forward-only migrations** with a per-file checksum, a digest of the applied set, a fingerprint of the schema they produced, all recorded in the
-  database itself.
+- **Forward-only migrations**, with the history forge's own rather than wrangler's: one `_forge_migrations` row per applied migration carrying its
+  checksum, when it ran, and the schema fingerprint it certified — written in the same load as the migration body.
 - **A lint pass before every apply** — eighteen rules over SQL that is destructive, unbounded, unbackupable, or that D1 refuses, errors aborting any
   apply and warnings aborting a deployed one.
 - **An undo per place** — a D1 Time Travel bookmark captured before every deployed apply, and backup-plus-reset locally.
@@ -76,7 +77,8 @@ run with no terminal that did not pass `--yes`.
   places with `-- forge:places`, and refused when the file changed after it ran or a migration is still pending.
 - **Nothing is discovered** — the host config names every schema file and every seeds directory by path, so an installed package contributes no DDL
   unless the app asked for it. A library publishes desired state and no SQL that runs; `schema.snapshot.json` records a digest per declared file, so
-  an upgraded one fails `schema check` by path until its migration has been composed and reviewed.
+  an upgraded one fails `schema check` by path until its migration has been composed and reviewed, and the names each file declared, so a drop that
+  followed the file leaving `config/db.ts` names the file that declared it.
 - **One I/O port** — every filesystem touch and every `wrangler` spawn goes through `DbIo`, so a test drives the whole surface against an in-memory
   fake.
 
@@ -107,8 +109,8 @@ forge db migrate --db ANALYTICS               # the same, by binding
 names the standby database itself, which defaults to `<database>-standby`, and `--db` picks the entry.
 
 **`standby` is generated, not checked in.** Forge writes a wrangler config for it under `.forge/standby/<database>/` with its own `--persist-to`, so
-nothing a standby run does can reach the local database's state. The same mechanism backs `--to` and the backup verification, which build throwaway
-homes under `.forge/scratch/`.
+nothing a standby run does can reach the local database's state. The same mechanism backs compose and the backup verification, which build throwaway
+homes under `.forge/scratch/`. `--to` needs none of it: it filters the pending set and the apply runs against the real home.
 
 ---
 
@@ -149,30 +151,26 @@ into a local scratch, and writes a manifest naming the target with a warning tha
 
 ## The companion tables
 
-Forge keeps three `STRICT` tables of its own, created on first use. They sit outside the schema fingerprint because their names begin `forge_`.
+Forge keeps two `STRICT` tables of its own, created on first use. They sit outside the schema fingerprint because their names begin `_forge_`,
+matching the platform's own `_cf_*`.
 
 | Table | Columns | What it is for |
 | --- | --- | --- |
-| `forge_migrations` | `applied_name`, `sha256` | One checksum per applied migration, so an edited file is visible in `db migrate status` |
-| `forge_schema_meta` | `key`, `value` | `migrations_digest` and `schema_fingerprint`, written by every apply |
-| `forge_seed_history` | `id`, `source`, `name`, `sha256`, `applied_at` | One row per applied seed, which is what makes a seed run once |
+| `_forge_migrations` | `id`, `name`, `sha256`, `applied_at`, `fingerprint` | The migration history: what ran, when, and the schema it certified |
+| `_forge_seed_history` | `id`, `source`, `name`, `sha256`, `applied_at` | One row per applied seed, which is what makes a seed run once |
 
-**`forge_migrations` is two columns because `d1_migrations` is the other half.** Wrangler's own table
-records _that_ a name was applied and when; this one records the bytes, which is the whole of what
-that table cannot say. `applied_name` joins the two and is the primary key, so the table needs no
-index of its own. `migrations_digest` is a rollup of the same bytes, kept because one equality
-answers "is this database in step" where a set difference is what the rows answer.
+**`_forge_migrations` is the whole history — there is no wrangler half.** No verb runs
+`wrangler d1 migrations apply`, and `d1_migrations` is never read or written. `name` is the identity,
+carried as a unique index rather than as the key, because a backup's keyset read orders by one column;
+`applied_at` is epoch milliseconds, since `STRICT` has no `TIMESTAMP`; and `fingerprint` is `NULL`
+until an apply certifies one. The `id` is a plain `INTEGER PRIMARY KEY` and never `AUTOINCREMENT`.
 
-**`forge_seed_history` keys on the declared seeds directory and the file name**, carried as a unique
-index over `source` and `name` rather than as the primary key: a backup's keyset read orders by one
-column, so the key has to be single. `source` is what `seed reset --dir` filters on.
+**`_forge_seed_history` keys on the declared seeds directory and the file name**, carried as a unique
+index over `source` and `name` for the same keyset reason. `source` is what `seed reset --dir` filters
+on.
 
-The two are separate tables and stay separate: migration history is forward-only and is the record
-that makes an edited-after-applied file detectable, while seed history is deliberately deleted by
-`seed reset`. One table with a type column would put that `DELETE` one `WHERE` clause away from the
-integrity record.
-
-What each one catches, and the four states `db migrate status` reports, are [`DATABASE_MANAGEMENT.md`][dm-4] §4.
+What each one catches, the three states `db migrate status` reports, and why seed history is not a
+column on the migration history are [`DATABASE_MANAGEMENT.md`][dm-4] §4.
 
 ---
 
@@ -227,12 +225,15 @@ INSERT OR IGNORE INTO users (email, role) VALUES ('${ADMIN_EMAIL:-admin@example.
 forge db seed                          # every seed that has not run
     --only admin [--rerun]             # just this one, and again whether its file changed or not
     --allow-pending                    # seed the older schema, over a pending migration
+    --allow-drift                      # seed a schema that moved since the last apply certified it
 forge db seed status --check           # exit 1 while a seed would run or has changed
 ```
 
-A seed whose file changed since it ran is reported and refused, and so is a database with a migration pending; `--rerun` is the way past the first,
-`--allow-pending` past the second. A deployed `seed apply` confirms, captures a Time Travel bookmark, and refuses lint warnings without
-`--allow-warnings`, as `migrate` does. `forge db seed reset` clears the history table and touches no row a seed wrote.
+A seed whose file changed since it ran is reported and refused, and so is a database with a migration pending, and so is one whose schema moved
+since the last apply certified it. `--rerun` is the way past the first, `--allow-pending` the second, `--allow-drift` the third. All three are
+checked before the lint, the confirmation and the first load, so a refusal leaves nothing written. A deployed `seed apply` confirms, captures a Time
+Travel bookmark, and refuses lint warnings without `--allow-warnings`, as `migrate` does. `forge db seed reset` clears the history table and touches
+no row a seed wrote.
 
 ### Host config
 
@@ -245,14 +246,16 @@ export default {
   // Loaded in this order, so a file with a FOREIGN KEY comes after the file declaring its target.
   schemas: ["node_modules/@acme/auth/schema.sql", "config/schema.sql"],
   seeds: ["config/seeds"],
+  migrations: "migrations",
   snapshot: "config/schema.snapshot.json",
   backupsDir: ".forge/backups",
 } satisfies DbHostConfig;
 ```
 
-Every field is optional and every one is a path relative to the root. An entry in `schemas` may be a file or a directory of `.sql` files; nothing is
-read that is not named here, including a library's. `snapshot` defaults to `schema.snapshot.json` beside the migrations directory, which
-`wrangler.jsonc` already declares.
+Every field is optional and every one is a path relative to the root — `migrations` included, which defaults to `migrations` and is the one
+directory every migration is read from and composed into. An entry in `schemas` may be a file or a directory of `.sql` files; nothing is read that
+is not named here, including a library's. `snapshot` defaults to `schema.snapshot.json` at the root. `migrations_dir` and `migrations_table` in a
+`d1_databases` entry are not read at all.
 
 ### Driving it from your own CLI
 
@@ -279,8 +282,8 @@ filesystem or spawns `wrangler`.
 The barrel publishes the command factory, the run context, and one entry point per verb, in the order the table follows: `bookmark`, `commands`,
 `context`, then `migrate/`, `backup/`, `seed/` and `schema/`. The engine beneath them — `home`, `io`, `sql`, `target`, `wrangler` and the rest of
 each directory — is `@internal`: the gate and the tests reach it by file, and a consumer drives a verb through its `run*`, `prepare*` or `execute*`
-function with the run context `resolveDbContext` resolves. The migrations-table default, the inventory read, the `forge_schema_meta` keys and the
-fingerprint rules are `@y-core/forge/storage/db`'s, so a Worker judges a schema by the same spelling the CLI does.
+function with the run context `resolveDbContext` resolves. The inventory read, the last-fingerprint read and the fingerprint rules are
+`@y-core/forge/storage/db`'s, so a Worker judges a schema by the same spelling the CLI does.
 
 ### Exports
 
@@ -291,7 +294,7 @@ fingerprint rules are `@y-core/forge/storage/db`'s, so a Worker judges a schema 
 | `createDbCommands` | `createDbCommands(overrides: DbContextOverrides = {}): CommandBase` | The `forge db` command tree: migrate, lint, schema, backup, restore, reset, seed and bookmark. |
 | `resolveDbContext` | `resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, overrides: DbContextOverrides = {}): Promise<DbRunContext>` | Resolves the shared flags into a run context. |
 | `confirmPrinter` | `confirmPrinter(run: DbRunContext): (line: string) => void` | Where a confirmation prints: stderr under `--json`, so stdout stays the one JSON document, and stdout otherwise. |
-| `runMigrate` | `runMigrate(run: DbRunContext, options: MigrateOptions): Promise<MigrateOutcome>` | Repairs the record, checks the history against it, and applies every pending migration under a lock, leaving one write of checksums and schema facts. |
+| `runMigrate` | `runMigrate(run: DbRunContext, options: MigrateOptions): Promise<MigrateOutcome>` | Checks the history against what forge recorded and applies every pending migration under a lock, each with its own history row. |
 | `lintMigration` | `lintMigration(file: string, sql: string): LintFinding[]` | Checks one migration's SQL against every rule, reporting the line each finding sits on. |
 | `lintMigrations` | `lintMigrations(migrations: readonly Migration[]): LintFinding[]` | Checks every discovered migration, naming each finding by the file it came from. |
 | `runBackup` | `runBackup(run: DbRunContext, options: BackupOptions): BackupOutcome` | Writes a verified backup artifact directory, proving by both restore routes unless `verify` is false. |
@@ -304,13 +307,13 @@ fingerprint rules are `@y-core/forge/storage/db`'s, so a Worker judges a schema 
 | `readSeeds` | `readSeeds(run: DbRunContext, dir?: string \| undefined): readonly Seed[]` | Every seed on disk: each declared directory's, in the order `config/db.ts` names them, with `--dir` overriding the lot. |
 | `lintSeeds` | `lintSeeds(seeds: readonly Seed[]): LintFinding[]` | Checks every seed, naming each finding by the file it came from. |
 | `checkSchema` | `checkSchema(run: DbRunContext, options: { replay: boolean; cache: boolean }): SchemaCheckReport` | Holds every declared schema and the migrations against the snapshot: by digest always, by replay when asked. |
-| `composeMigration` | `composeMigration(run: DbRunContext, options: ComposeOptions): ComposeOutcome` | Composes the next migration from every declared schema, proving it against a replay of the migrations before writing it; a rebuild that depends on the rows already there is warned in `warnings`. |
+| `composeMigration` | `composeMigration(run: DbRunContext, options: ComposeOptions): ComposeOutcome` | Composes the next migration from every declared schema, proving it against a replay of the migrations before writing it; a rebuild that depends on the rows already there is warned in `warnings`, and a drop whose declaring file `config/db.ts` no longer names is attributed in `causes`. |
 
 **Types:** the run — `Place`, `DbTarget`, `D1Entry`, `DbConfig`, `DbHostConfig`, `DbContextOverrides`, `DbRunContext`, `Home`, `Spawned`, `DbIo`,
 `SharedDbFlags`, `Bookmark`.
 
-**Types:** migrations — `Migration`, `MigrationOrigin`, `ComposeStamp`, `ApplyPlan`, `RepairPlan`, `MigrateOptions`, `MigrateOutcome`,
-`RehearsalOutcome`, `LintRule`, `LintLevel`, `LintFinding`, `SchemaObject`, `SchemaFacts`.
+**Types:** migrations — `Migration`, `MigrationOrigin`, `ComposeStamp`, `ApplyPlan`, `MigrateOptions`, `MigrateOutcome`, `RehearsalOutcome`,
+`LintRule`, `LintLevel`, `LintFinding`, `SchemaObject`, `SchemaFacts`, `SchemaDrift`.
 
 **Types:** backup, restore and reset — `BackupManifest`, `BackupOptions`, `BackupOutcome`, `RestoreRoute`, `RestoreOptions`, `RestoreOutcome`,
 `RestorePlan`, `RestoreTargetState`, `ResetOptions`, `ResetOutcome`, `ResetPlan`.

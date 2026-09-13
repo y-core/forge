@@ -3,7 +3,7 @@ import type { DbIo } from "../types";
 import type { SchemaModel, SchemaSnapshot } from "./types";
 
 /** Bumped when the snapshot's fields change, so one written under another shape is recomposed rather than misread. @internal */
-export const SCHEMA_SNAPSHOT_VERSION = 5;
+export const SCHEMA_SNAPSHOT_VERSION = 6;
 
 /** True when parsed JSON carries the four object lists a schema model is, which a half-written scratch cache may not. @internal */
 export function isSchemaModel(value: unknown): value is SchemaModel {
@@ -30,10 +30,16 @@ export function readSchemaSnapshot(io: DbIo, path: string): SchemaSnapshot | nul
       `${path} was written under snapshot version ${String(parsed.version)}, and this forge reads ${SCHEMA_SNAPSHOT_VERSION} — delete it and compose again`,
     );
   }
-  if (typeof parsed.desired !== "object" || parsed.desired === null || typeof parsed.migrationsDigest !== "string") {
+  if (
+    typeof parsed.desired !== "object" ||
+    parsed.desired === null ||
+    typeof parsed.declared !== "object" ||
+    parsed.declared === null ||
+    typeof parsed.migrationsDigest !== "string"
+  ) {
     throw new CliError("invalid-args", `${path} is missing a field a snapshot carries — delete it and compose again`);
   }
-  return { version: parsed.version, desired: parsed.desired, migrationsDigest: parsed.migrationsDigest };
+  return { version: parsed.version, desired: parsed.desired, declared: parsed.declared, migrationsDigest: parsed.migrationsDigest };
 }
 
 /** The snapshot's one spelling: two-space JSON and a trailing newline. @internal */
@@ -49,6 +55,10 @@ export function writeSchemaSnapshot(io: DbIo, path: string, snapshot: SchemaSnap
 }
 
 /** A snapshot from its parts, versioned. @internal */
-export function buildSchemaSnapshot(fields: { desired: Readonly<Record<string, string>>; migrationsDigest: string }): SchemaSnapshot {
+export function buildSchemaSnapshot(fields: {
+  desired: Readonly<Record<string, string>>;
+  declared: Readonly<Record<string, readonly string[]>>;
+  migrationsDigest: string;
+}): SchemaSnapshot {
   return { version: SCHEMA_SNAPSHOT_VERSION, ...fields };
 }

@@ -1,13 +1,52 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
+import type { IconLink } from "../../assets/types";
 import type { IconOutput, IconsConfig } from "./types";
+
+function normalisePrefix(prefix: string | undefined): string {
+  if (prefix === undefined || prefix === "" || prefix === "/") return "";
+  const leading = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  return leading.endsWith("/") ? leading.slice(0, -1) : leading;
+}
+
+/** Where an icon output is written and the URL path it is served from, given the config's prefix. @public */
+export function iconTarget(config: IconsConfig, output: IconOutput): { dir: string; path: string } {
+  const prefix = output.root ? "" : normalisePrefix(config.publicPrefix);
+  return { dir: `${config.outDir}${prefix}`, path: `${prefix}/${output.file}` };
+}
+
+/** The head links a configured icon set needs, so the markup and the files derive from one list. @public */
+export function iconLinks(config: IconsConfig): IconLink[] {
+  const links: IconLink[] = [];
+  for (const output of config.outputs) {
+    const { path: href } = iconTarget(config, output);
+    switch (output.kind) {
+      case "svg":
+        links.push({ rel: "icon", href, type: "image/svg+xml" });
+        break;
+      case "ico":
+        links.push({ rel: "icon", href, sizes: output.sizes.map((size) => `${size}x${size}`).join(" ") });
+        break;
+      // A manifest png is declared by the manifest, so only an explicit `rel` earns a link of its own.
+      case "png":
+        if (output.rel) links.push({ rel: output.rel, href });
+        break;
+      case "manifest":
+        links.push({ rel: "manifest", href });
+        break;
+    }
+  }
+  return links;
+}
 
 /** Writes every configured icon output, loading the optional `sharp` dependency on demand. @public */
 export async function buildIcons(config: IconsConfig): Promise<void> {
   // Dynamic import keeps sharp optional — callers without icons skip it entirely
   const { default: sharp } = await import("sharp");
   const src = readFileSync(config.src, "utf-8");
-  mkdirSync(config.outDir, { recursive: true });
+  for (const dir of new Set(config.outputs.map((output) => iconTarget(config, output).dir))) {
+    mkdirSync(dir, { recursive: true });
+  }
 
   const darkRule = config.darkColor ? `@media(prefers-color-scheme:dark){path{fill:${config.darkColor}}}` : "";
   const faviconSvg = src.replace("<path", `<style>path{fill:${config.lightColor}}${darkRule}</style><path`);
@@ -28,7 +67,7 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   const manifestPngs = config.outputs.filter((o): o is Extract<IconOutput, { kind: "png" }> => o.kind === "png" && !!o.manifest);
 
   for (const o of config.outputs) {
-    const dest = `${config.outDir}/${o.file}`;
+    const dest = `${iconTarget(config, o).dir}/${o.file}`;
     switch (o.kind) {
       case "svg":
         writeFileSync(dest, faviconSvg);
@@ -47,7 +86,7 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   }
 }
 
-function renderManifest(config: IconsConfig, pngs: Array<{ file: string; size: number }>): string {
+function renderManifest(config: IconsConfig, pngs: Array<Extract<IconOutput, { kind: "png" }>>): string {
   return JSON.stringify(
     {
       name: config.app?.name ?? "",
@@ -55,7 +94,11 @@ function renderManifest(config: IconsConfig, pngs: Array<{ file: string; size: n
       theme_color: config.lightColor,
       background_color: config.app?.backgroundColor ?? "",
       display: "standalone",
-      icons: pngs.map(({ file, size }) => ({ src: `/${file}`, sizes: `${size}x${size}`, type: "image/png" })),
+      // Both default to the manifest's own directory, so a manifest served under a prefix would
+      // otherwise launch an installed app into that prefix rather than the site root.
+      start_url: "/",
+      scope: "/",
+      icons: pngs.map((png) => ({ src: iconTarget(config, png).path, sizes: `${png.size}x${png.size}`, type: "image/png" })),
     },
     null,
     2,

@@ -4,17 +4,15 @@ import { addCommand, createCommand } from "../../cli/command";
 import { CliError } from "../../cli/errors";
 import type { CliContext, CommandBase, ResolvedFlags } from "../../cli/types";
 import { resolveDbContext, sharedDbFlags } from "../context";
+import { schemaDrift } from "../drift";
 import { composeMigration } from "../schema/compose";
 import { readSeeds } from "../seed/apply";
 import { lintSeeds } from "../seed/lint";
-import { quoteSqlIdentifier } from "../sql";
 import { formatTarget } from "../target";
 import type { DbContextOverrides, DbRunContext, LintFinding, SharedDbFlags, StatusReport } from "../types";
-import { queryRowsIfTable } from "../wrangler";
 import { readTargetFacts, runMigrate } from "./apply";
-import { appliedMigrationName, compareChecksums, MIGRATIONS_DIGEST_KEY, SCHEMA_FINGERPRINT_KEY } from "./checksum";
-import { migrationsDigest, readMigrations } from "./files";
-import { schemaFingerprint } from "./fingerprint";
+import { compareChecksums } from "./checksum";
+import { readMigrations } from "./files";
 import { formatLintFinding, lintMigration, lintMigrations } from "./lint";
 import { migrationStatusExitCode, formatStatus, statusRows } from "./status";
 
@@ -64,7 +62,6 @@ async function applyMigrations(
   if (outcome.rehearsed !== undefined) {
     run.print(`rehearsed on ${outcome.rehearsed.rows} row(s) from ${outcome.rehearsed.artifact}`);
   }
-  if (outcome.repaired.length > 0) run.print(`repaired ${outcome.repaired.length}: ${outcome.repaired.join(", ")}`);
   if (outcome.applied.length > 0) run.print(`applied ${outcome.applied.length}: ${outcome.applied.join(", ")}`);
   if (outcome.skipped.length > 0) run.print(`left for a later run: ${outcome.skipped.join(", ")}`);
 }
@@ -131,31 +128,21 @@ function createComposeCommand(overrides: DbContextOverrides): CommandBase {
 function readStatusReport(run: DbRunContext): StatusReport {
   const { config, home, io } = run;
   const discovered = readMigrations(run);
-  const rows = queryRowsIfTable(io, home, `SELECT name, applied_at FROM ${quoteSqlIdentifier(config.entry.migrationsTable)} ORDER BY id`) ?? [];
-  const applied = rows.map((row) => ({
-    name: appliedMigrationName(row.name),
-    appliedAt: row.applied_at === null || row.applied_at === undefined ? null : String(row.applied_at),
-  }));
-  const { recorded, meta, inventory } = readTargetFacts(io, home);
-  const actual = schemaFingerprint(inventory, config.entry.migrationsTable);
+  const { recorded, inventory } = readTargetFacts(io, home);
+  const drift = schemaDrift(recorded, inventory);
 
-  const checksums = compareChecksums(
-    applied.map((a) => a.name),
-    recorded,
-    discovered,
-  );
-  const all = statusRows({ discovered, applied, checksums });
-  const recordedFingerprint = meta[SCHEMA_FINGERPRINT_KEY] ?? null;
+  const applied = recorded.map((record) => ({ name: record.appliedName, appliedAt: new Date(record.appliedAt).toISOString() }));
+  const mismatched = compareChecksums(recorded, discovered);
+  const all = statusRows({ discovered, applied, mismatched });
 
   return {
     target: formatTarget(config.target),
     database: home.database,
     rows: all,
     pending: all.filter((row) => row.state === "pending").length,
-    checksums,
+    checksums: { mismatched },
     drift: all.filter((row) => row.state === "drift").map((row) => row.name),
-    fingerprint: { recorded: recordedFingerprint, actual, matches: recordedFingerprint === null || recordedFingerprint === actual },
-    digest: { recorded: meta[MIGRATIONS_DIGEST_KEY] ?? null, onDisk: migrationsDigest(discovered) },
+    fingerprint: { recorded: drift.recorded, actual: drift.actual, matches: drift.state !== "mismatch" },
   };
 }
 
