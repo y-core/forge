@@ -33,7 +33,6 @@ test-results/
 .ripgreprc
 .idea
 .vscode
-.claude/commands
 .claude/hooks
 .claude/launch.json
 .claude/routines

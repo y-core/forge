@@ -17,7 +17,31 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **The packed tarball a consumer installs is now published on every `v*` tag.**
+  `.github/workflows/release.yml` re-runs the gate, packs the tag with `bun pm pack`, and attaches
+  the result to a GitHub Release. `forge release` is unchanged — it still commits and tags without
+  pushing, so the tag arriving at the remote is what publishes. A consumer moves from a `codeload`
+  URL to the released asset, which matters because `codeload` serves a git snapshot honouring no
+  manifest: it ships `tests/`, `config/` and `tsconfig.json` along with everything else, while the
+  asset is `bun pm pack` output and `files` in `package.json` alone decides its contents.
+  [`src/tooling/release/README.md`](src/tooling/release/README.md).
+
+- **`src/tooling/dev/sync.ts` overwrites a consumer's installed forge with a local checkout.** Run
+  from the consumer, it packs the sibling checkout exactly as publishing would and extracts it over
+  `node_modules/@y-core/forge`, so working on forge and an application together no longer needs the
+  consumer pinned to a `file:` dependency. The result deliberately disagrees with the consumer's
+  lockfile, which is why it is never wired to `postinstall`: a plain `bun i` restores the pinned tag.
+
+### Fixed
+
+- **The gate no longer fails on a fresh clone.** `.claude/commands` was gitignored while
+  `.gitattributes` recorded that those trees stay committed, so `warden sync --check` found
+  `c-review.md` and `c-unreview.md` missing from any checkout other than one whose working tree
+  already held them. The ignore rule is removed and the files are tracked, matching
+  `.claude/agents/`. Nothing but a clean checkout could surface this, which is why it survived until
+  a release workflow ran the gate on one.
 
 ---
 
