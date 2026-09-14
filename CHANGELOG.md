@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.14] — 2026-09-14
+
 ### Fixed
 
 - **The gate no longer needs `sharp` installed.** Six cases across `rasters.test.ts` and
@@ -6512,6 +6518,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.14]: https://github.com/y-core/forge/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/y-core/forge/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/y-core/forge/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/y-core/forge/compare/v0.1.10...v0.1.11
