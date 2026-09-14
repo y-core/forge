@@ -1,4 +1,4 @@
-import { describe, expect, it, spyOn } from "bun:test";
+import { describe, expect, it, mock, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -190,6 +190,23 @@ describe("buildAll() — emitHeaders", () => {
 
 describe("buildAll() — rasters", () => {
   it("writes a configured raster under publicDir and still emits the immutable header on a hashed build", async () => {
+    // Stubbed rather than rasterized for real: `sharp` is an optional peer, so a test that loads it
+    // passes or fails on whether the platform happens to have it. What belongs here is that the
+    // pipeline reaches the rasterizer with the configured width and still writes `_headers`.
+    const resizes: Record<string, number>[] = [];
+    await mock.module("sharp", () => ({
+      default: () => ({
+        resize: (resize: Record<string, number>) => ({
+          png: () => ({
+            toFile: async (dest: string) => {
+              resizes.push(resize);
+              writeFileSync(dest, "PNG");
+            },
+            toBuffer: async () => new TextEncoder().encode("PNG"),
+          }),
+        }),
+      }),
+    }));
     const tmpDir = join(tmpdir(), `forge-pipeline-rasters-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const publicDir = join(tmpDir, "public", "assets");
     mkdirSync(publicDir, { recursive: true });
@@ -219,10 +236,7 @@ describe("buildAll() — rasters", () => {
 
       const dest = join(publicDir, "email", "logo@2x.png");
       expect(existsSync(dest)).toBe(true);
-      const bytes = readFileSync(dest);
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      expect(view.getUint32(16)).toBe(360);
-      expect(view.getUint32(20)).toBe(109);
+      expect(resizes).toEqual([{ width: 360 }]);
 
       expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe("/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n");
     } finally {

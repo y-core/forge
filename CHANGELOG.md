@@ -17,7 +17,22 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **The gate no longer needs `sharp` installed.** Six cases across `rasters.test.ts` and
+  `pipeline.test.ts` rasterized for real, so they passed wherever the optional peer happened to be
+  present and failed on an x64 CI runner, where the dynamic import threw before any assertion ran.
+  They now stub `sharp`, as `icons.test.ts` already did.
+
+  The assertions got stricter rather than weaker. `buildRasters` derives no dimension itself — it
+  omits the unset key and lets sharp infer the ratio — so asserting the emitted PNG's pixel
+  dimensions tested sharp's arithmetic, and could not distinguish omitting `height` from passing
+  `height: undefined`, which are different instructions. The tests now assert the resize forge
+  actually requests, and that an empty raster list never loads sharp at all, which is what keeps the
+  peer optional. `sharp` stays an optional peer; nothing about a consumer's install changes.
+
+- **`actions/checkout` moved to `v7`**, clearing the Node 20 deprecation warning on the release
+  workflow.
 
 ---
 
