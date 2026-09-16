@@ -1,4 +1,5 @@
 import type { AssetsFetcher } from "../app/types";
+import { ROWS_WRITTEN_GUARD } from "../storage/db/sql";
 import type { D1DatabaseLike, D1PreparedStatement, D1Result } from "../storage/db/types";
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";
 import { UnsatisfiableRangeError } from "../storage/r2/errors";
@@ -297,6 +298,9 @@ export function fakeR2(seed?: Record<string, string>): R2BucketLike {
   return impl as unknown as R2BucketLike;
 }
 
+/** The statements a real `changes()` counts — the signal `requireRowsWritten()` rests on. */
+const D1_WRITE = /^\s*(insert|update|delete|replace)\b/i;
+
 interface FakeD1Statement extends D1PreparedStatement {
   readonly sql: string;
   readonly params: unknown[];
@@ -350,13 +354,19 @@ export function fakeD1(
   return {
     calls,
     prepare: (sql: string): D1PreparedStatement => statement(sql, []),
-    batch: async <T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> =>
-      statements.map((s) => {
+    batch: async <T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> => {
+      // `changes()` reports on the last *write*, so a guard behind a non-write reads straight through
+      // it — and with no write behind it at all there is nothing for the guard to fail on.
+      let changed: number | undefined;
+      return statements.map((s) => {
         const fs = s as FakeD1Statement;
         failIfInjected(fs.sql, fs.params);
+        if (fs.sql === ROWS_WRITTEN_GUARD && changed === 0) throw new Error("D1_ERROR: integer overflow");
         const written = options?.rowsWritten?.(fs.sql, fs.params) ?? 0;
+        if (D1_WRITE.test(fs.sql)) changed = written;
         return { results: query(fs.sql, fs.params) as T[], success: true, meta: { duration: 0, rows_written: written, changes: written } };
-      }),
+      });
+    },
     exec: async (sql: string): Promise<{ count: number; duration: number }> => {
       failIfInjected(sql, []);
       return { count: 0, duration: 0 };

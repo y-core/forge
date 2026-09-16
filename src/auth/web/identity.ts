@@ -43,9 +43,8 @@ export function establishAuthSession(session: Session, userId: string, at: numbe
   session.regenerateId(true);
 }
 
-// Paired with `UserStore.revokeSessions`: the barrier refuses every session established at or before
-// it, which includes the one that raised it. Re-stamping past the barrier keeps the actor signed in
-// without rotating the id or clearing the step-up mark they may have just satisfied.
+// `UserStore.revokeSessions` raises a barrier refusing every session established at or before it,
+// the one that raised it included, so the actor's own stamp is moved past it.
 /** Moves `session` past a revocation barrier raised at `at`, so a caller's own session survives it. @public */
 export function renewAuthSession(session: Session, at: number): void {
   session.set(AUTH_SIGNED_IN_SESSION_KEY, at + 1);
@@ -83,7 +82,7 @@ export function clearAuthSession(session: Session): void {
   session.regenerateId(true);
 }
 
-/** Reads the identity `session` claims and confirms it against the store as of `at`, dropping the session's auth keys when the store refuses the id, the absolute lifetime has run out, or the account revoked its sessions; a store outage denies without clearing. @public */
+/** Reads the identity `session` claims and confirms it against the store as of `at`. @public */
 export async function resolveAuthIdentity(session: Session, users: Pick<UserStore, "findById">, at: number): Promise<AuthIdentity | null> {
   const userId = session.get(AUTH_SESSION_KEY);
   // No clear on the anonymous path: `Session.unset` dirties even an absent key, so under KV every
@@ -103,10 +102,8 @@ export async function resolveAuthIdentity(session: Session, users: Pick<UserStor
   // It leaves the session alone, though — clearing on a blip would sign every user out of it.
   if (!found.ok) return null;
 
-  // Revoke, or reactivating the account revives every cookie issued before it. The barrier is the
-  // same test: removing a passkey or moving an address raises it, and every session established at
-  // or before it — including the ones this request cannot see — dies on its own next request. No
-  // rotation on any of these — the session is being emptied, not gaining privilege.
+  // Without this, reactivating an account revives every cookie issued before it, and the barrier
+  // reaches the sessions this request cannot see only on their own next request.
   const invalidBefore = found.data?.sessionsInvalidBefore ?? null;
   if (found.data === null || found.data.deactivatedAt !== null || (invalidBefore !== null && signedInAt <= invalidBefore)) {
     revokeAuthSession(session);

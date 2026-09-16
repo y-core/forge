@@ -237,17 +237,19 @@ export interface MetaOptions {
 export interface MiddlewareGuardGroup<Bindings = Record<string, unknown>> {
   /** Path patterns, as accepted by `app.use`, the group applies to. */
   paths: readonly string[];
-  /** Origin/Referer verification for state-changing routes. */
+  /** Origin/Referer verification policy for state-changing routes. */
   origin?: OriginProtectionOptions<Bindings>;
-  /** Cloudflare rate-limit binding enforcement. */
+  /** Cloudflare rate-limit binding enforcement policy. */
   rateLimit?: RateLimitOptions<Bindings>;
-  /** Prebuilt guards, registered after `origin` and `rateLimit`. */
-  middleware?: Middleware[];
+  /** Prebuilt guards, chained after the middleware `origin` and `rateLimit` build into. */
+  guards?: Middleware[];
 }
 
 /** Declarative input to `applyMiddlewareChain`. @public */
 export interface MiddlewareChainOptions<Bindings = Record<string, unknown>> {
-  /** Adds `requestId()` first in the chain. */
+  /** Registered on `"*"` ahead of everything, including `requestId` — for tracing that must wrap the whole chain. */
+  before?: Middleware[];
+  /** Adds `requestId()` first in the chain, after `before`. */
   requestId?: boolean;
   /** Trust Cloudflare-injected request headers; only safe when the Worker is known to run behind Cloudflare. */
   trustCfHeaders?: boolean;
@@ -259,6 +261,8 @@ export interface MiddlewareChainOptions<Bindings = Record<string, unknown>> {
   bindings?: v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>;
   /** Prebuilt session middleware. */
   session?: Middleware;
+  /** Registered on `"*"` after `session` and before the guard groups — where anything reading the session, such as `csrfProtection`, belongs. */
+  globals?: Middleware[];
   /** Per-path guard groups, registered after the global chain. */
   guards?: MiddlewareGuardGroup<Bindings>[];
 }

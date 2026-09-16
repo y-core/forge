@@ -10,10 +10,7 @@ import { callTool, knowledgeTools } from "./tools";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
-/** The methods that answer from the corpus, and so must see it as it is now rather than as it was
- *  when the server started. `tools/list` is one of them because `knowledge_search`'s description
- *  names the documents this index holds. The rest — `initialize`, `ping`, the resource lists —
- *  describe the server itself and cannot go stale. */
+/** The methods that answer from the corpus, and so must see it as it stands now. */
 const SERVES_CONTENT = new Set(["tools/call", "resources/read", "tools/list"]);
 
 /** A minimal readable/writable pair, so `serve` can be driven by a test as well as by stdio. @public */
@@ -22,12 +19,7 @@ export interface Transport {
   write(line: string): void;
 }
 
-/** Answers one request. Exported so a test can drive the protocol without a process.
- *
- *  A content-serving method refreshes first. The server holds one index for the life of the session
- *  while an agent edits the very documents it indexes, so the alternative is answering every
- *  question from the corpus as it stood at startup — silently, and indistinguishably from a correct
- *  answer. @public */
+/** Answers one request, refreshing the index first where the method serves content. @public */
 export function handle(knowledge: Knowledge, method: string, params: Record<string, unknown>, id: string | number | null): RpcResponse | undefined {
   if (SERVES_CONTENT.has(method)) knowledge.refresh();
 
@@ -72,15 +64,10 @@ export function handle(knowledge: Knowledge, method: string, params: Record<stri
   }
 }
 
-/** Runs the protocol loop over `transport`.
- *
- *  **stdout carries protocol and nothing else**, and that is defended three ways because one is not
- *  enough: `console.log` and `console.info` are reassigned to `console.error` here, as the first
- *  statement; warden's own logging writes to stderr rather than through `scopeLogger`, which does
- *  not; and a unit test drives this loop with an in-memory pair asserting every stdout line parses
- *  as JSON-RPC. One stray `console.log` from any module in the import graph corrupts the stream and
- *  the host reports it as a protocol error with no clue where it came from. @public */
+/** Runs the protocol loop over `transport`. @public */
 export async function serve(transport: Transport, knowledge: Knowledge): Promise<void> {
+  // stdout carries JSON-RPC and nothing else: one stray `console.log` anywhere in the import graph
+  // corrupts the stream, and the host reports it as a protocol error naming no source.
   console.log = console.error;
   console.info = console.error;
 
@@ -99,7 +86,6 @@ export async function serve(transport: Transport, knowledge: Knowledge): Promise
       const id = request.id ?? null;
       try {
         const response = handle(knowledge, request.method, request.params ?? {}, id);
-        // A notification is answered with silence, which is what the protocol requires.
         if (response !== undefined && request.id !== undefined) transport.write(encode(response));
       } catch (error) {
         if (request.id !== undefined) transport.write(encode(err(id, RPC_ERRORS.internal, error instanceof Error ? error.message : String(error))));

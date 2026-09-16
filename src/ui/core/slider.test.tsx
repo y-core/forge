@@ -1,95 +1,116 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { SLIDER_SCOPE } from "../contracts/slider-contract";
 import { Slider, sanitizeRangeValue } from "./slider";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
+
+const INPUT = 'data-slot="slider"';
+const BARE = { "data-slot": "slider", type: "range", "data-size": "md" };
+
+function readoutOf(html: string): string {
+  return /<output[^>]*>([^<]*)<\/output>/.exec(html)?.[1] ?? "";
+}
 
 describe("Slider", () => {
-  it("renders a bare range input by default", async () => {
-    expect(await render(<Slider min={0} max={10} step={1} value={4} />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" min="0" max="10" step="1" value="4">',
+  it("renders the whole control exactly, caller class merged last and a forwarded value escaped", async () => {
+    expect(await render(<Slider min={0} max={10} step={1} value={4} class='extra-class' data-note="R&D's" />)).toBe(
+      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none' +
+        ' rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm extra-class" min="0" max="10" step="1" value="4"' +
+        ' data-note="R&amp;D&#39;s">',
     );
   });
 
-  it("wraps the input with a seeded output when output is set", async () => {
-    expect(await render(<Slider min={0} max={10} value={4} output />)).toBe(
-      `<div data-slot="slider-wrapper" data-scope="${SLIDER_SCOPE}" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" min="0" max="10" value="4"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">4</output></div>`,
-    );
+  it("is a bare range input until something asks for more, carrying no wrapper and no readout", async () => {
+    const html = await render(<Slider />);
+
+    expect(attrsOf(html)).toEqual(BARE);
+    expect(readoutOf(html)).toBe("");
   });
 
-  it("spreads delegation attributes onto the input", async () => {
-    expect(await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-ref='opacity-slider' />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="setOpacity" data-setting="opacity" data-ref="opacity-slider">',
-    );
+  it("spreads delegation attributes onto the input, which is the element the browser fires on", async () => {
+    expect(attrsOf(await render(<Slider data-on-input='setOpacity' data-setting='opacity' data-ref='opacity-slider' />))).toEqual({
+      ...BARE,
+      "data-on-input": "setOpacity",
+      "data-setting": "opacity",
+      "data-ref": "opacity-slider",
+    });
   });
 
-  it("passes the disabled attribute through", async () => {
-    expect(await render(<Slider disabled />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" disabled>',
-    );
-    expect(await render(<Slider />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm">',
-    );
+  it("passes disabled through as the boolean attribute, so the browser refuses the drag itself", async () => {
+    expect(attrsOf(await render(<Slider disabled />))).toEqual({ ...BARE, disabled: "" });
   });
 
-  it("merges a custom class with the base classes", async () => {
-    expect(await render(<Slider class='extra-class' />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm extra-class">',
-    );
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Slider class='extra-class' />)).at(-1)).toBe("extra-class");
   });
 
-  it("wires field id and name from the descriptor", async () => {
-    expect(await render(<Slider field={{ name: "opacity" }} />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" id="field-opacity" name="opacity">',
-    );
+  it("wires the field's id and name onto the control, so a label and a form post both find it", async () => {
+    expect(attrsOf(await render(<Slider field={{ name: "opacity" }} />))).toEqual({ ...BARE, id: "field-opacity", name: "opacity" });
   });
 
-  it("adds aria-invalid and aria-describedby when the field is invalid", async () => {
-    expect(await render(<Slider field={{ name: "opacity", invalid: true }} />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" id="field-opacity" name="opacity" aria-describedby="field-opacity-error" aria-invalid="true">',
-    );
+  it("points an invalid field's control at the error that explains it", async () => {
+    expect(attrsOf(await render(<Slider field={{ name: "opacity", invalid: true }} />))).toEqual({
+      ...BARE,
+      id: "field-opacity",
+      name: "opacity",
+      "aria-describedby": "field-opacity-error",
+      "aria-invalid": "true",
+    });
   });
 
-  it("horizontal orientation (default) uses the standard horizontal base classes", async () => {
-    expect(await render(<Slider min={0} max={10} value={5} />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" min="0" max="10" value="5">',
-    );
+  it("turns the track on its side rather than layering a second orientation over it", async () => {
+    expect(variantClasses(await render(<Slider orientation='vertical' />), await render(<Slider />))).toEqual({
+      added: ["[writing-mode:vertical-lr]", "[direction:rtl]", "h-22", "w-8"],
+      dropped: ["w-full", "h-control-md"],
+    });
   });
 
-  it("vertical orientation adds writing-mode and direction classes to the slider", async () => {
-    expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid appearance-none rounded-full bg-transparent focus-ring cursor-pointer text-sm [writing-mode:vertical-lr] [direction:rtl] h-22 w-8" min="0" max="10" value="5">',
-    );
+  it("pairs the control with a scoped wrapper and a readout seeded to the value the browser settles on", async () => {
+    const html = await render(<Slider min={0} max={10} value={4} output />);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "slider-wrapper", "data-scope": "slider" });
+    expect(attrOf(html, "data-on-input", INPUT)).toBe("sync");
+    expect(readoutOf(html)).toBe("4");
   });
 
-  it("vertical orientation with output wraps in a flex-col container", async () => {
-    expect(await render(<Slider min={0} max={10} value={5} orientation='vertical' output />)).toBe(
-      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 flex-col items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid appearance-none rounded-full bg-transparent focus-ring cursor-pointer text-sm [writing-mode:vertical-lr] [direction:rtl] h-22 w-8" data-on-input="sync" min="0" max="10" value="5"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">5</output></div>',
-    );
+  it("stacks the readout under a vertical track instead of beside it", async () => {
+    expect(variantClasses(await render(<Slider orientation='vertical' output />), await render(<Slider output />))).toEqual({
+      added: ["flex-col"],
+      dropped: [],
+    });
   });
 
-  it("clamps the output readout to max while leaving the value attribute intact", async () => {
-    expect(await render(<Slider min={0} max={100} value={150} output />)).toBe(
-      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" min="0" max="100" value="150"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>',
-    );
+  it("clamps the readout to max while leaving the value attribute the caller wrote intact", async () => {
+    const html = await render(<Slider min={0} max={100} value={150} output />);
+
+    expect(readoutOf(html)).toBe("100");
+    expect(attrOf(html, "value", INPUT)).toBe("150");
   });
 
-  it("renders the range default in the readout for an array value the browser cannot parse", async () => {
-    expect(await render(<Slider value={["a", "b"]} output />)).toBe(
-      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" value="a,b"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">50</output></div>',
-    );
+  it("reads out the range default for a value the browser cannot parse, rather than echoing it", async () => {
+    const html = await render(<Slider value={["a", "b"]} output />);
+
+    expect(readoutOf(html)).toBe("50");
+    expect(attrOf(html, "value", INPUT)).toBe("a,b");
   });
 
-  it("leaves an out-of-range value untouched when no output is requested", async () => {
-    expect(await render(<Slider min={0} max={100} value={150} />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" min="0" max="100" value="150">',
-    );
+  it("leaves an out-of-range value untouched when no readout is asked for", async () => {
+    expect(attrsOf(await render(<Slider min={0} max={100} value={150} />))).toEqual({ ...BARE, min: "0", max: "100", value: "150" });
   });
 
-  it("composes field wiring with a sanitized readout", async () => {
-    expect(await render(<Slider field={{ name: "opacity" }} min={0} max={100} value={150} output />)).toBe(
-      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-on-input="sync" min="0" max="100" value="150" id="field-opacity" name="opacity"><output data-slot="slider-output" class="text-sm text-muted-foreground tabular-nums">100</output></div>',
-    );
+  it("composes field wiring with a sanitized readout, neither displacing the other", async () => {
+    const html = await render(<Slider field={{ name: "opacity" }} min={0} max={100} value={150} output />);
+
+    expect(attrsOf(html, INPUT)).toEqual({
+      ...BARE,
+      "data-on-input": "sync",
+      min: "0",
+      max: "100",
+      value: "150",
+      id: "field-opacity",
+      name: "opacity",
+    });
+    expect(readoutOf(html)).toBe("100");
   });
 });
 
@@ -227,33 +248,28 @@ describe("sanitizeRangeValue", () => {
 });
 
 describe("Slider — size, invalid and busy", () => {
-  it("stamps data-size=md and the md field size by default", async () => {
-    expect(await render(<Slider />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm">',
-    );
+  it("names the size it was given on the attribute a stylesheet and a reader both key on", async () => {
+    expect([attrsOf(await render(<Slider size='sm' />)), attrsOf(await render(<Slider size='lg' />))]).toEqual([
+      { ...BARE, "data-size": "sm" },
+      { ...BARE, "data-size": "lg" },
+    ]);
   });
 
-  it("size='sm' stamps data-size=sm and the sm field size", async () => {
-    expect(await render(<Slider size='sm' />)).toBe(
-      '<input data-slot="slider" type="range" data-size="sm" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-sm text-sm">',
-    );
+  it("swaps the control height for the size rather than painting two of them", async () => {
+    expect([
+      variantClasses(await render(<Slider size='sm' />), await render(<Slider />)),
+      variantClasses(await render(<Slider size='lg' />), await render(<Slider />)),
+    ]).toEqual([
+      { added: ["h-control-sm"], dropped: ["h-control-md"] },
+      { added: ["h-control-lg", "text-base"], dropped: ["h-control-md", "text-sm"] },
+    ]);
   });
 
-  it("size='lg' stamps data-size=lg and the lg field size", async () => {
-    expect(await render(<Slider size='lg' />)).toBe(
-      '<input data-slot="slider" type="range" data-size="lg" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-lg text-base">',
-    );
+  it("stamps invalidity for a stylesheet and announces it for a screen reader, in that one pass", async () => {
+    expect(attrsOf(await render(<Slider invalid />))).toEqual({ ...BARE, "data-invalid": "", "aria-invalid": "true" });
   });
 
-  it("invalid stamps data-invalid beside aria-invalid", async () => {
-    expect(await render(<Slider invalid />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-invalid="" aria-invalid="true">',
-    );
-  });
-
-  it("busy stamps data-busy beside aria-busy", async () => {
-    expect(await render(<Slider busy />)).toBe(
-      '<input data-slot="slider" type="range" data-size="md" class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm" data-busy="" aria-busy="true">',
-    );
+  it("stamps busyness for a stylesheet and announces it for a screen reader, in that one pass", async () => {
+    expect(attrsOf(await render(<Slider busy />))).toEqual({ ...BARE, "data-busy": "", "aria-busy": "true" });
   });
 });

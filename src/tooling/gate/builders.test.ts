@@ -139,6 +139,15 @@ describe("builders — the tool steps", () => {
     expect(testStep({ sources: ["tests/unit/", "tests/seam/"] }).cmd).toEqual(["bun", "test", "tests/unit/", "tests/seam/"]);
   });
 
+  it("takes a label, so a suite split into sets gets one row per set", () => {
+    expect(testStep({ label: "test:seam", sources: ["tests/seam/"] }).label).toBe("test:seam");
+  });
+
+  it("stays the test row when no label is named", () => {
+    expect(testStep().label).toBe("test");
+    expect(testStep({ sources: ["tests/"] }).label).toBe("test");
+  });
+
   it("gives the suite steps a wider tail than the tool steps, so late noise cannot bury a failure", () => {
     expect(testStep().tail).toBe(120);
     expect(browserStep().tail).toBe(120);

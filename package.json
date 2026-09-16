@@ -98,6 +98,7 @@
       "types": "./src/auth/mod.ts",
       "import": "./src/auth/mod.ts"
     },
+    "./auth/schema.sql": "./src/auth/schema.sql",
     "./auth/client": {
       "types": "./src/auth/client/mod.ts",
       "import": "./src/auth/client/mod.ts"

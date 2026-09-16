@@ -43,8 +43,7 @@ export function mountInputFormat(root: HTMLElement): () => void {
     el.value = next;
 
     // A sanitising input type — `type="number"` above all — silently refuses a value carrying
-    // separators, so the write is read back and the controller retires rather than fighting the
-    // setter on every blur.
+    // separators, so the write is read back rather than fought on every blur.
     if (el.value !== next) {
       console.warn("[input-format] this control's type refuses a formatted value; formatting is disabled for it");
       dispose();

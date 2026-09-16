@@ -1,9 +1,8 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 
-// No generated colour reaches the browser as markup: forge ships `style-src 'self'` with no style
-// nonce, and `render-to-string.ts` drops inline-style attributes — the swatches are painted through
-// CSSOM by the eager `customise` scope instead.
+// forge ships `style-src 'self'` with no style nonce and `render-to-string.ts` drops inline-style
+// attributes, so the swatches are painted through CSSOM by the eager `customise` scope.
 
 import type { AppContext } from "../../context/types";
 import type { FC, JSXNode } from "../../jsx/types";
@@ -109,18 +108,16 @@ const LeverRow: FC<{ dials: readonly Dial[]; values: DialValues }> = ({ dials, v
   );
 };
 
-// The `custom` option is always rendered rather than only when the dials sit between presets: it is
-// what the client selects the moment a slider moves off one, and an option that is not there cannot
-// be selected. `disabled` keeps it out of the reader's own choices — it names a state, not a destination.
+// The `custom` option is always rendered: the client selects it the moment a slider moves off a
+// preset, and an option that is not there cannot be selected.
 /** The four shipped schemes, as a starting point to pick from — applied the moment one is chosen. */
 const PresetPicker: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, icon }) => {
   const current = matchPreset(dials);
   return (
     <div class='w-64 space-y-1.5'>
       <Label for={fieldId(PRESET_PARAM)}>Theme preset</Label>
-      {/* Deliberately not a bound control. Which preset the dials name is *derived*, so it is painted
-          from `matchPreset` and never stored — a signal behind it would have to be written from the
-          repaint effect, which the reactive rule forbids. As an input it commands, via the action. */}
+      {/* Not a bound control: which preset the dials name is derived, and a signal behind it would
+          have to be written from the repaint effect, which the reactive rule forbids. */}
       <Select data-on-change={PRESET_ACTION} data-preset-picker='' field={{ name: PRESET_PARAM }} icon={icon}>
         <Select.Option value={PRESET_CUSTOM} disabled {...(current === undefined ? { selected: true } : {})}>
           custom
@@ -202,8 +199,6 @@ const BANDS = STEP_SEGMENTS.map((segment, i) => {
   return { ...segment, from, to: from + segment.span - 1 };
 });
 
-// Module-local, and named apart from `sections.tsx`'s `@public` `PreviewSection`: two exports of one
-// name in one namespace is the collision, and only one of them is public.
 const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
   <Band id='preview' title='Scales'>
     <p class='text-sm text-muted-foreground'>
@@ -233,9 +228,8 @@ const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
             ))}
           </tr>
         </thead>
-        {/* The label rides its own `<tbody>`, a sibling of the row's — so every
-            `[data-scale-row] tr:first-child` selector still names a swatch row — and `table-fixed`
-            keeps its `colspan` from touching the column widths the swatches align to. */}
+        {/* The label rides its own `<tbody>`, so every `[data-scale-row] tr:first-child` selector
+            still names a swatch row and its `colspan` leaves the column widths alone. */}
         {SCALE_ROWS.map((row, i) => (
           <>
             <tbody>

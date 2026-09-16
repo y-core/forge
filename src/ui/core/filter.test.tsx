@@ -3,111 +3,148 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import type { Appearance, Size } from "../contracts/types";
-import { buttonVariants } from "./button";
+import { Button } from "./button";
 import { Filter } from "./filter";
+import { attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
 
-const ROOT_CLASS = "group/filter m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0";
+type ItemProps = Parameters<typeof Filter.Item>[0];
+type ResetProps = Parameters<typeof Filter.Reset>[0];
+type ButtonProps = Parameters<typeof Button>[0];
 
-const ITEM_STATE =
-  "cursor-pointer has-[:checked]:border-primary group-has-[:checked]/filter:not-has-[:checked]:hidden " +
-  "has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary";
-
-const RESET_STATE = "hidden group-has-[:checked]/filter:inline-flex";
-
-function itemClass(size: Size = "sm", appearance: Appearance = "ghost", extra = ""): string {
-  return buttonVariants({ tone: "neutral", appearance, size, class: `${ITEM_STATE}${extra}` }).replaceAll("&", "&amp;");
-}
-
-function resetClass(size: Size = "sm", extra = ""): string {
-  return buttonVariants({ tone: "neutral", appearance: "ghost", size, shape: "circle", class: `${RESET_STATE}${extra}` }).replaceAll("&", "&amp;");
-}
+const item = (props: Omit<Partial<ItemProps>, "name" | "value"> = {}) =>
+  render(
+    <Filter.Item name='f' value='a' {...props}>
+      A
+    </Filter.Item>,
+  );
+const reset = (props: ResetProps = {}) => render(<Filter.Reset {...props} />);
+const chip = (props: ButtonProps = {}) => render(<Button tone='neutral' appearance='ghost' size='sm' {...props} />);
+const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1]);
+const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 
 describe("Filter", () => {
-  it("root is its own form, so the reset button has a form owner without nesting", async () => {
-    expect(await render(<Filter aria-label='Category' />)).toBe(`<form data-slot="filter" class="${ROOT_CLASS}" aria-label="Category"></form>`);
-  });
-
-  it("nested renders a fieldset for a filter inside the consumer's form, merging a caller class last and escaping forwarded values", async () => {
-    expect(await render(<Filter nested class='w-40' id='x' data-slot='facets' data-note='a&b' />)).toBe(
-      `<fieldset data-slot="filter facets" class="${ROOT_CLASS} w-40" id="x" data-note="a&amp;b"></fieldset>`,
+  it("renders the nested fieldset exactly — the filter inside a consumer's own form — with forwarded values escaped", async () => {
+    expect(await render(<Filter nested class='w-40' id='x' data-slot='facets' data-note={`R&D's <x>`} />)).toBe(
+      '<fieldset data-slot="filter facets" class="group/filter m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 w-40"' +
+        ' id="x" data-note="R&amp;D&#39;s &lt;x&gt;"></fieldset>',
     );
   });
 
-  it("an item is a chip-painted label over a visually hidden radio, hidden by the first group-has-[:checked] variant in the repo once a sibling is chosen", async () => {
-    expect(
-      await render(
-        <Filter.Item name='f' value='a'>
-          A
-        </Filter.Item>,
-      ),
-    ).toBe(
-      `<label data-slot="filter-item" class="${itemClass()}"><input data-slot="filter-input" type="radio" name="f" value="a" class="sr-only">A</label>`,
-    );
+  it("is its own form by default, so the reset button has a form owner without nesting one", async () => {
+    const html = await render(<Filter aria-label='Category' />);
+
+    expect(tagOf(html).startsWith("<form ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "filter", "aria-label": "Category" });
+  });
+
+  it("an item is a label wrapping a visually hidden radio, so the chip itself is the hit target", async () => {
+    const html = await item();
+
+    expect(tagOf(html).startsWith("<label ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "filter-item" });
+    expect(attrsOf(html, 'data-slot="filter-input"')).toEqual({ "data-slot": "filter-input", type: "radio", name: "f", value: "a" });
+    expect(classesOf(html, 'data-slot="filter-input"')).toEqual(["sr-only"]);
+  });
+
+  it("paints the chip as a ghost button plus the rules that hide the unchosen and light the chosen", async () => {
+    expect(variantClasses(await item(), await chip())).toEqual({
+      added: [
+        "cursor-pointer",
+        "has-[:checked]:border-primary",
+        "group-has-[:checked]/filter:not-has-[:checked]:hidden",
+        "has-[:checked]:bg-primary",
+        "has-[:checked]:text-primary-foreground",
+        "has-[:checked]:hover:bg-primary",
+      ],
+      dropped: [],
+    });
   });
 
   it("checked stamps the native attribute, which is the state the reset restores", async () => {
-    expect(
-      await render(
+    expect(attrsOf(await item({ checked: true }), 'data-slot="filter-input"')).toEqual({
+      "data-slot": "filter-input",
+      type: "radio",
+      name: "f",
+      value: "a",
+      checked: "",
+    });
+  });
+
+  it("moves the chip along the button's own size and appearance scales rather than a second one", async () => {
+    expect(variantClasses(await item({ size: "md", appearance: "soft" }), await item())).toEqual(
+      variantClasses(await chip({ size: "md", appearance: "soft" }), await chip()),
+    );
+  });
+
+  it("merges a caller class last and lands forwarded attributes on the radio, escaped", async () => {
+    const html = await render(
+      <Filter.Item name='f' value='a' class='p-99' data-slot='chip' disabled data-note='a&b'>
+        {`R&D's`}
+      </Filter.Item>,
+    );
+
+    expect(classesOf(html).at(-1)).toBe("p-99");
+    expect(attrsOf(html, 'data-slot="filter-input chip"')).toEqual({
+      "data-slot": "filter-input chip",
+      type: "radio",
+      name: "f",
+      value: "a",
+      disabled: "",
+      "data-note": "a&amp;b",
+    });
+    expect(textNodes(html)).toEqual(["R&amp;D&#39;s"]);
+  });
+
+  it("the reset is a native type=reset, named by an sr-only Clear beside a glyph no screen reader reads", async () => {
+    const html = await reset();
+
+    expect(attrsOf(html)).toEqual({ type: "reset", "data-slot": "filter-reset" });
+    expect(textNodes(html)).toEqual(["Clear", "×"]);
+    expect(attrsOf(html, 'aria-hidden="true"')).toEqual({ "aria-hidden": "true" });
+  });
+
+  it("keeps the reset out of the way until something is chosen, evicting the button's own display", async () => {
+    expect(variantClasses(await reset(), await chip({ shape: "circle" }))).toEqual({
+      added: ["hidden", "group-has-[:checked]/filter:inline-flex"],
+      dropped: ["inline-flex"],
+    });
+  });
+
+  it("sizes the reset on the button's own scale", async () => {
+    expect(variantClasses(await reset({ size: "lg" }), await reset())).toEqual(
+      variantClasses(await chip({ size: "lg", shape: "circle" }), await chip({ shape: "circle" })),
+    );
+  });
+
+  it("an aria-label on the reset replaces the sr-only text rather than doubling it", async () => {
+    const html = await reset({ "aria-label": `R&D's`, class: "p-99", "data-slot": "x", "data-note": "a&b" });
+
+    expect(attrsOf(html)).toEqual({ type: "reset", "data-slot": "filter-reset x", "aria-label": "R&amp;D&#39;s", "data-note": "a&amp;b" });
+    expect(textNodes(html)).toEqual(["×"]);
+    expect(classesOf(html).at(-1)).toBe("p-99");
+  });
+
+  it("caller children replace the reset's default content entirely", async () => {
+    const html = await reset({ children: "Clear" });
+
+    expect(textNodes(html)).toEqual(["Clear"]);
+    expect(attrsOf(html, 'aria-hidden="true"')).toEqual({});
+  });
+
+  it("composes the reset and its items as siblings inside the one form", async () => {
+    const html = await render(
+      <Filter>
+        <Filter.Reset />
         <Filter.Item name='f' value='a' checked>
           A
-        </Filter.Item>,
-      ),
-    ).toBe(
-      `<label data-slot="filter-item" class="${itemClass()}"><input data-slot="filter-input" type="radio" name="f" value="a" class="sr-only" checked>A</label>`,
+        </Filter.Item>
+        <Filter.Item name='f' value='b'>
+          B
+        </Filter.Item>
+      </Filter>,
     );
-  });
 
-  it("size and appearance repaint the chip; a caller class merges last and forwarded attributes land on the radio, escaped", async () => {
-    expect(
-      await render(
-        <Filter.Item name='f' value='a' size='md' appearance='soft' class='p-99' data-slot='chip' disabled data-note='a&b'>
-          {`R&D's`}
-        </Filter.Item>,
-      ),
-    ).toBe(
-      `<label data-slot="filter-item" class="${itemClass("md", "soft", " p-99")}">` +
-        `<input data-slot="filter-input chip" type="radio" name="f" value="a" class="sr-only" disabled data-note="a&amp;b">R&amp;D&#39;s</label>`,
-    );
-  });
-
-  it("the reset is a type=reset circle shown by group-has-[:checked], named by an sr-only Clear beside a hidden glyph", async () => {
-    expect(await render(<Filter.Reset />)).toBe(
-      `<button type="reset" data-slot="filter-reset" class="${resetClass()}"><span class="sr-only">Clear</span><span aria-hidden="true">×</span></button>`,
-    );
-  });
-
-  it("an aria-label on the reset replaces the sr-only text; size, class and forwarded attributes apply", async () => {
-    expect(await render(<Filter.Reset aria-label={`R&D's`} size='lg' class='p-99' data-slot='x' data-note='a&b' />)).toBe(
-      `<button type="reset" data-slot="filter-reset x" aria-label="R&amp;D&#39;s" class="${resetClass("lg", " p-99")}" data-note="a&amp;b"><span aria-hidden="true">×</span></button>`,
-    );
-  });
-
-  it("caller children replace the reset's default content", async () => {
-    expect(await render(<Filter.Reset>Clear</Filter.Reset>)).toBe(
-      `<button type="reset" data-slot="filter-reset" class="${resetClass()}">Clear</button>`,
-    );
-  });
-
-  it("composes reset and items inside the form", async () => {
-    expect(
-      await render(
-        <Filter>
-          <Filter.Reset />
-          <Filter.Item name='f' value='a' checked>
-            A
-          </Filter.Item>
-          <Filter.Item name='f' value='b'>
-            B
-          </Filter.Item>
-        </Filter>,
-      ),
-    ).toBe(
-      `<form data-slot="filter" class="${ROOT_CLASS}">` +
-        `<button type="reset" data-slot="filter-reset" class="${resetClass()}"><span class="sr-only">Clear</span><span aria-hidden="true">×</span></button>` +
-        `<label data-slot="filter-item" class="${itemClass()}"><input data-slot="filter-input" type="radio" name="f" value="a" class="sr-only" checked>A</label>` +
-        `<label data-slot="filter-item" class="${itemClass()}"><input data-slot="filter-input" type="radio" name="f" value="b" class="sr-only">B</label>` +
-        `</form>`,
-    );
+    expect(slotsOf(html)).toEqual(["filter", "filter-reset", "filter-item", "filter-input", "filter-item", "filter-input"]);
+    expect(textNodes(html)).toEqual(["Clear", "×", "A", "B"]);
   });
 });

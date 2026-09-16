@@ -2,95 +2,78 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Card } from "./card";
+import { attrsOf, classesOf } from "./test-support";
+
+const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1]);
+const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 
 describe("Card", () => {
-  it("renders root card classes", async () => {
-    expect(await render(<Card>content</Card>)).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm">content</div>',
-    );
-  });
-
-  it("renders Card.Header with title, description, and action slots", async () => {
+  it("renders the whole surface exactly, forwarded attributes escaped", async () => {
     expect(
       await render(
-        <Card>
-          <Card.Header>
-            <Card.Title>Title</Card.Title>
-            <Card.Description>Description</Card.Description>
-            <Card.Action>Action</Card.Action>
-          </Card.Header>
-        </Card>,
-      ),
-    ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5"><div data-slot="card-title" class="col-start-1 leading-none font-semibold text-card-foreground">Title</div><div data-slot="card-description" class="col-start-1 text-sm text-muted-foreground">Description</div><div data-slot="card-action" class="col-start-2 row-span-2 row-start-1 self-start justify-self-end">Action</div></div></div>',
-    );
-  });
-
-  it("renders Card.Content with padding", async () => {
-    expect(
-      await render(
-        <Card>
-          <Card.Content>Body</Card.Content>
-        </Card>,
-      ),
-    ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-content" class="px-6 py-5">Body</div></div>',
-    );
-  });
-
-  it("renders Card.Footer with border-t and padding", async () => {
-    expect(
-      await render(
-        <Card>
-          <Card.Footer>Footer</Card.Footer>
-        </Card>,
-      ),
-    ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-footer" class="flex items-center gap-2 border-t border-border px-6 py-4">Footer</div></div>',
-    );
-  });
-
-  it("renders all sub-components in document order", async () => {
-    expect(
-      await render(
-        <Card>
-          <Card.Header>Head</Card.Header>
-          <Card.Content>Body</Card.Content>
-          <Card.Footer>Foot</Card.Footer>
-        </Card>,
-      ),
-    ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm"><div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5">Head</div><div data-slot="card-content" class="px-6 py-5">Body</div><div data-slot="card-footer" class="flex items-center gap-2 border-t border-border px-6 py-4">Foot</div></div>',
-    );
-  });
-
-  it("merges a custom class on the root element", async () => {
-    expect(await render(<Card class='extra'>content</Card>)).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm extra">content</div>',
-    );
-  });
-
-  it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
-    expect(
-      await render(
-        <Card id='c1' data-testid='card' data-note='a&b'>
+        <Card id='c1' data-testid='card' data-note={`R&D's <x>`}>
           content
         </Card>,
       ),
     ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm" id="c1" data-testid="card" data-note="a&amp;b">content</div>',
+      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm" id="c1"' +
+        ' data-testid="card" data-note="R&amp;D&#39;s &lt;x&gt;">content</div>',
     );
   });
 
-  it("forwards id and aria-* attributes on sub-parts", async () => {
-    expect(
-      await render(
-        <Card.Header id='h1' aria-label='header region'>
-          head
-        </Card.Header>,
-      ),
-    ).toBe(
-      '<div data-slot="card-header" class="grid auto-rows-min grid-cols-[1fr_auto] items-start gap-1.5 border-b border-border px-6 py-5" id="h1" aria-label="header region">head</div>',
+  it("wraps its children in one slotted surface and nothing else", async () => {
+    const html = await render(<Card>content</Card>);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "card" });
+    expect(textNodes(html)).toEqual(["content"]);
+  });
+
+  it("keeps the description under the title and leaves the header's second track to the action", async () => {
+    const html = await render(
+      <Card>
+        <Card.Header>
+          <Card.Title>Title</Card.Title>
+          <Card.Description>Description</Card.Description>
+          <Card.Action>Action</Card.Action>
+        </Card.Header>
+      </Card>,
     );
+
+    expect(slotsOf(html)).toEqual(["card", "card-header", "card-title", "card-description", "card-action"]);
+    expect(textNodes(html)).toEqual(["Title", "Description", "Action"]);
+    expect(
+      ["card-title", "card-description", "card-action"].map((slot) =>
+        classesOf(html, `data-slot="${slot}"`).filter((token) => token.startsWith("col-start-")),
+      ),
+    ).toEqual([["col-start-1"], ["col-start-1"], ["col-start-2"]]);
+  });
+
+  it("renders header, content and footer as siblings in document order", async () => {
+    const html = await render(
+      <Card>
+        <Card.Header>Head</Card.Header>
+        <Card.Content>Body</Card.Content>
+        <Card.Footer>Foot</Card.Footer>
+      </Card>,
+    );
+
+    expect(slotsOf(html)).toEqual(["card", "card-header", "card-content", "card-footer"]);
+    expect(textNodes(html)).toEqual(["Head", "Body", "Foot"]);
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Card class='extra'>content</Card>)).at(-1)).toBe("extra");
+  });
+
+  it("forwards id and aria-* attributes onto a sub-part rather than onto the surface", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Card.Header id='h1' aria-label='header region'>
+            head
+          </Card.Header>,
+        ),
+      ),
+    ).toEqual({ "data-slot": "card-header", id: "h1", "aria-label": "header region" });
   });
 });

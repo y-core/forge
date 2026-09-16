@@ -62,9 +62,8 @@ const TableFooter: FC<JSX.IntrinsicElements["tfoot"]> = ({ class: cls, children,
   </tfoot>
 );
 
-// `aria-selected` is tri-state on purpose: absent means the table is not selectable at all, so it is
-// emitted — `"false"` included — exactly when the caller passed `selected`. The tint alone is a
-// `forge-ui-not-color-alone` failure, and `forced-colors` overrides the tint outright.
+// `aria-selected` is tri-state: absent means the table is not selectable at all, so it is emitted —
+// `"false"` included — exactly when the caller passed `selected`.
 const TableRow: FC<TableRowProps> = ({ tone, selected, class: cls, children, "data-slot": inherited, ...rest }) => (
   <tr
     data-slot={slotToken("table-row", inherited)}

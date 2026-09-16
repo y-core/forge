@@ -10,6 +10,9 @@ const SUBSTRING_MATCHERS = new Set(["toContain", "toMatch"]);
 /** Derivations that yield a list, whose `toContain` is exact membership rather than a substring. */
 const LIST_METHODS = new Set(["split", "map", "filter", "flatMap", "concat", "matchAll"]);
 
+/** Fixture helpers whose declared return is a list, reached by import so no annotation is in the file. */
+const LIST_HELPERS = ["classesOf"];
+
 /** A function whose body is judged for the renderer it calls. */
 interface FunctionNode extends AstNode {
   id?: AstNode | undefined;
@@ -40,7 +43,7 @@ function isFunction(node: AstNode | null | undefined): boolean {
 // The subject is what the value *is*, not what was touched on the way: `classOf(out).split(" ")` is
 // a list even though a renderer's markup is three nodes down inside it.
 /** Whether the value `node` evaluates to is a list rather than a string to match inside. `lists`
- *  names the same-file bindings already known to hold or return one. */
+ *  names the bindings already known to hold or return one — the file's own, and the fixture helpers. */
 function producesList(node: AstNode | null | undefined, lists: ReadonlySet<string>): boolean {
   const value = unwrap(node);
   if (value == null) return false;
@@ -152,7 +155,7 @@ export const exactMarkupAssertion: LintRule = {
   },
   create(context) {
     const names: MarkupNames = { functions: new Set(), values: new Set() };
-    const lists = new Set<string>();
+    const lists = new Set<string>(LIST_HELPERS);
     const bindings: Binding[] = [];
     const candidates: Candidate[] = [];
 

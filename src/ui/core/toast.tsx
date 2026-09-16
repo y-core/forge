@@ -36,11 +36,8 @@ const positionClasses: Record<ToastPosition, string> = {
   "bottom-right": "bottom-4 right-4 items-end",
 };
 
-// The container is the page's one toast live region, and the individual toasts deliberately are not:
-// a live region nested in a live region has undefined announcement behaviour, and of the two only
-// this one can announce an *insertion* — `FlashOob` swaps a toast in here after load, and a
-// `role="status"` element that did not exist when the region was read is announced by nothing.
-// A `Toast` therefore has to be rendered inside a `Toast.Container` to be heard at all.
+// Only the container is a live region: nesting one inside another has undefined announcement
+// behaviour, and only the container announces a toast inserted after load.
 const ToastContainer: FC<ToastContainerProps> = ({
   position = "bottom-right",
   label = "Notifications",

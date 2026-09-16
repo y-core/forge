@@ -27,7 +27,7 @@ audience: consumer
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
 - §3b Exact Match — Never Substring Matching: why `toContain` is banned
-- §3c Render Once, Assert Once: the single enforced shape
+- §3c Render Once, Assert Once: the single enforced shape, and the one whole-element assertion a component file keeps
 - §3d Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees: the deletion check
 - §3e forge/exact-markup-assertion — The Enforced Form: what the rule catches, what it cannot, and the suppression
 - §4 Fakes Over Mocks: implement the interface, add no libraries
@@ -257,6 +257,13 @@ it("renders the exact button markup", async () => {
 **Do not call the private `jsx` render path, do not render twice to assert two fragments, and do not fall back to `toContain` / `toMatch`.** A
 single entity-aware `toBe` on the full output is the only accepted shape.
 
+**One whole-element assertion per `ui/core` component test file, and it is the HTML-escaping case.** Every other case in the file reads back only
+the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/ui/core/test-support.ts`.
+The escaping case is the one that has to see the whole string, because entity encoding is a property of the output as a whole and §3a is what it
+holds the output to; a second whole-markup assertion in the same file buys no coverage and turns every unrelated class or slot change into a
+multi-file diff. §3e enforces the half of this a rule can see — that a substring assertion never stands in for either shape — but which case earns
+the whole-element `toBe` is a convention, not a lint.
+
 ### 3d. Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees
 
 See [`TESTING.md`][testing-3d] §3d for the delete-the-mechanism check, the two failure shapes it catches, and the rule that a mechanism is pinned
@@ -344,7 +351,7 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 | Body size under / over, both `Content-Length` and streaming | `src/form/parse-form-data.test.ts`, `src/app/action.test.ts` |
 | Content-Type valid / invalid → 415 | `src/security/content-type.test.ts` |
 | Log-viewer access allow / deny → 403 | `src/logging/show/route.test.tsx` |
-| Auth middleware valid / expired session | **N/A** — no `auth` namespace exists yet ([`NAMESPACES.md`][namespaces-5a] §5a); add with that namespace |
+| Auth middleware valid / expired session | `src/auth/web/guards.test.ts` (anonymous redirect, deactivated user, store unavailable, admin and step-up refusals), `src/auth/web/identity.test.ts` (absolute lifetime, revocation barrier, missing established-at stamp) |
 
 **`isHxRequest` has no row.** It is a routing hint, not a security boundary, so there is no guard middleware to test — see [`HTMX.md`][htmx-7] §7.
 
@@ -392,6 +399,12 @@ fails on deploy. So `fakeKV.put` throws below the 60-second `expirationTtl` floo
 `UnsatisfiableRangeError` for a range lying **wholly** outside the object while still clamping an overrun — which is exactly what R2 does, and the
 distinction is the point — and `fakeD1.first(column)` rejects a column the row does not carry rather than returning `undefined` against a declared
 `T | null`. **Do not "fix" a fake back to permissiveness** when a test fails against one of these; the test is telling you what production would do.
+
+**`fakeD1.batch` evaluates a `requireRowsWritten()` guard** rather than returning success for every statement it is handed. A guard behind a write
+that reported no row rolls the batch back with the error a real D1 raises, so the client's own rewording is what a test sees
+([`STORAGE_BINDINGS.md`][sb-1g] §1g). Supply the row count through `fakeD1(responder, { rowsWritten })` for a batch that should commit — the default
+is zero, and a guarded batch left on the default is meant to fail. A guard behind a _non-write_ stays inert, mirroring a real `changes()`, which
+reads through to the last write; [`STORAGE_BINDINGS.md`][sb-1g] §1g calls that shape a bug, and the fake does not diagnose it.
 
 The TTL _floor_ is a different thing from the TTL _expiry_: the floor is a constant and refuses the write, the expiry needs a clock and hides the
 value.
@@ -458,8 +471,8 @@ two runs would then share a file; one recursive remove is the whole cleanup.
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [namespaces-3c]: NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
-[namespaces-5a]: ./NAMESPACES.md#5a-security--transport-layer-hardening-only
 [nd-1c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1c-what-the-export-gate-proves
+[sb-1g]: ./STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
 [sb-2c]: ./STORAGE_BINDINGS.md#2c-kvstore-operations
 [sot-2a]: ./SOURCE_OF_TRUTH.md#2a-package-and-configuration-facts
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules

@@ -16,10 +16,8 @@ function syncInvokers(popup: HTMLElement, open: boolean): void {
 /** Keeps every invoker's `aria-expanded` in step with `popup`'s open state, returning a disposer. */
 export function mountExpandedState(popup: HTMLElement): () => void {
   const onToggle = (event: Event) => syncInvokers(popup, (event as Event & { newState?: string }).newState === "open");
-  // Both events, for two different reasons. The Popover API fires them for every open and close path
-  // — invoker command, Escape, light dismiss and `hidePopover()` alike — so no route leaves the
-  // attribute stale; but `toggle` is queued a task later, and `beforetoggle` is what updates the
-  // attribute within the same event as the click that caused it.
+  // Both events: `toggle` is queued a task later, so `beforetoggle` is what updates the attribute
+  // within the same event as the click that caused it.
   popup.addEventListener("beforetoggle", onToggle);
   popup.addEventListener("toggle", onToggle);
   return () => {

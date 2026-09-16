@@ -1299,6 +1299,7 @@ var dataSlotBeforeSpread = {
 var SEED_RENDERER = /^render(?:[A-Z]\w*)?$/;
 var SUBSTRING_MATCHERS = /* @__PURE__ */ new Set(["toContain", "toMatch"]);
 var LIST_METHODS = /* @__PURE__ */ new Set(["split", "map", "filter", "flatMap", "concat", "matchAll"]);
+var LIST_HELPERS = ["classesOf"];
 var nameOf = (node) => node?.type === "Identifier" ? node.name : void 0;
 function memberName(node) {
   if (node?.type !== "MemberExpression" || node.computed === true) return void 0;
@@ -1385,7 +1386,7 @@ var exactMarkupAssertion = {
   },
   create(context) {
     const names = { functions: /* @__PURE__ */ new Set(), values: /* @__PURE__ */ new Set() };
-    const lists = /* @__PURE__ */ new Set();
+    const lists = new Set(LIST_HELPERS);
     const bindings = [];
     const candidates = [];
     const addCandidate = (node) => {

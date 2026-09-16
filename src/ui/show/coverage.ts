@@ -10,11 +10,9 @@ export const PAGE_WIDE = "*";
 const MISSING_FILE = "src/ui/show/coverage-missing.ts";
 const COMPONENTS_FILE = "src/ui/show/components.tsx";
 
-/** Every catalog section body, keyed by its id.
- *
- * A section's body runs to its own matching `</section>`, not to the next `<section>`: the catalog
- * nests bands (`sections.tsx`'s six inside the HTMX band), and slicing at the next opening tag cut
- * a parent's body off at its first child — silently under-reporting everything after it. @internal */
+// Bands nest, so a body runs to its own matching `</section>`: slicing at the next opening tag
+// would cut a parent's body off at its first child.
+/** Every catalog section body, keyed by its id. @internal */
 export function sectionBodies(html: string): Map<string, string> {
   const bodies = new Map<string, string>();
   const tags = [...html.matchAll(SECTION_TAG)];
@@ -68,9 +66,8 @@ export function coverageReport({ html, sectionIds, demos }: CoverageReportOption
   const covered: string[] = [];
   const uncovered: string[] = [];
 
-  // The whole page, for the shell's own components: `FlashContainer` is mounted once per page and
-  // is deliberately not inside a section, so section-scoping it would report a gap that is a
-  // property of the contract rather than of the catalog.
+  // `FlashContainer` is mounted once per page and sits outside every section, so section-scoping it
+  // would report a gap that is a property of the contract rather than of the catalog.
   const wholePage = html.join("");
 
   for (const demo of demos) {
@@ -735,8 +732,7 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
     section: "chrome-navbar",
     where: "ChromeNavbarSection",
     // Navbar carries its placement in the pin classes rather than in a `data-` attribute, so the
-    // marker reads the one token unique to each — every other token in the string is shared with
-    // at least one sibling placement.
+    // marker reads the one token unique to each placement.
     axes: [
       { axis: "placement", value: "bottom", marker: { kind: "class", token: "md:bottom-0" } },
       { axis: "placement", value: "right", marker: { kind: "class", token: "md:right-0" } },

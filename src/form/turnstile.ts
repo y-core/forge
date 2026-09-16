@@ -4,11 +4,8 @@ import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-// Cloudflare's published testing secrets — always-passes, always-fails, token-already-spent. Under
-// one of them siteverify answers a fixed `hostname` whatever origin the widget ran on, so comparing
-// it refuses every local submission. Half of the lock on the relaxation below: the other half is a
-// `DevAllowance` granting `turnstileTestingSecrets`, which only a development entry can mint, so
-// neither half alone relaxes a deployment.
+// Under one of Cloudflare's published testing secrets siteverify answers a fixed `hostname` whatever
+// origin the widget ran on; relaxing the hostname check needs a `DevAllowance` grant as well.
 const TESTING_SECRETS: ReadonlySet<string> = new Set([
   "1x0000000000000000000000000000000AA",
   "2x0000000000000000000000000000000AA",

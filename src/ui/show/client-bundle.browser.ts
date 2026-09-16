@@ -14,9 +14,8 @@ declare global {
   }
 }
 
-// The point of this spec: *only* the show bundle, exactly what a consumer following the README
-// imports. `showcase.browser.ts` loads all three bundles by hand, which masked the missing
-// transitive imports entirely.
+// Only the show bundle, exactly what a consumer following the README imports — `showcase.browser.ts`
+// loads all three by hand, which masks a missing transitive import.
 const icon = createIcon("/sprite.svg");
 
 const SHOW_ONLY = { expose: { forgeResume: "./ui/client/resume", forgeShowClient: "./ui/show/client" } };

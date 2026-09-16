@@ -21,9 +21,8 @@ export const ACCENT_RAMP: Readonly<Record<Mode, Ramp>> = {
     chroma: [0.007, 0.042, 0.087, 0.159, 0.241, 0.346, 0.448, 0.575, 1, 1, 0.883, 0.439],
   },
   dark: {
-    // Step 9 is bounded on both sides: below by step 8's 0.5021, which it must stay above for the
-    // ramp to ascend; above by the 4.5:1 floor `--primary-foreground` holds against `--gray-12`,
-    // which 0.5075 clears by 0.09 at the worst of the four dials.
+    // Step 9 is bounded below by step 8's 0.5021, for the ramp to ascend, and above by the 4.5:1
+    // floor `--primary-foreground` holds against `--gray-12`.
     lightness: [0.1909, 0.2094, 0.2716, 0.3185, 0.3625, 0.4033, 0.4491, 0.5021, 0.5075, 0.5653, 0.7759, 0.9108],
     chroma: [0.129, 0.158, 0.369, 0.495, 0.546, 0.582, 0.629, 0.715, 1, 0.92, 0.596, 0.224],
   },

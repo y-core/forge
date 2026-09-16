@@ -2,59 +2,41 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Progress } from "./progress";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("Progress", () => {
-  it("renders a <progress> element with data-slot=progress", async () => {
-    expect(await render(<Progress />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full appearance-none rounded-selector bg-border"></progress>',
+  it("renders the whole bar exactly, the label and forwarded attributes escaped", async () => {
+    expect(await render(<Progress value={50} max={100} label={`R&D's`} id='p1' data-note='a&b' />)).toBe(
+      '<progress data-slot="progress" data-orientation="horizontal" aria-label="R&amp;D&#39;s"' +
+        ' class="h-2 w-full appearance-none rounded-selector bg-border" value="50" max="100" id="p1" data-note="a&amp;b"></progress>',
     );
   });
 
-  it("renders value and max attributes", async () => {
-    expect(await render(<Progress value={50} max={100} />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full appearance-none rounded-selector bg-border" value="50" max="100"></progress>',
-    );
+  it("is a native progress element that names its orientation, and stays nameless when nobody named it", async () => {
+    expect(await render(<Progress />)).toStartWith("<progress ");
+    expect(attrsOf(await render(<Progress />))).toEqual({ "data-slot": "progress", "data-orientation": "horizontal" });
   });
 
-  it("renders aria-label from the label convenience prop", async () => {
-    expect(await render(<Progress label='Upload progress' />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" aria-label="Upload progress" class="h-2 w-full appearance-none rounded-selector bg-border"></progress>',
-    );
+  it("names the bar from the label convenience prop, so a caller need not know the ARIA attribute", async () => {
+    expect(attrOf(await render(<Progress label='Upload progress' />), "aria-label")).toBe("Upload progress");
   });
 
-  it("renders aria-label directly when provided", async () => {
-    expect(await render(<Progress aria-label='Direct label' />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" aria-label="Direct label" class="h-2 w-full appearance-none rounded-selector bg-border"></progress>',
-    );
+  it("lets an explicit aria-label win over the convenience prop, which is the more specific instruction", async () => {
+    expect(attrOf(await render(<Progress aria-label='Explicit' label='Ignored' />), "aria-label")).toBe("Explicit");
   });
 
-  it("prefers explicit aria-label over label prop", async () => {
-    expect(await render(<Progress aria-label='Explicit' label='Ignored' />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" aria-label="Explicit" class="h-2 w-full appearance-none rounded-selector bg-border"></progress>',
-    );
+  it("says it runs vertically on the attribute a stylesheet and a reader both key on", async () => {
+    expect(attrsOf(await render(<Progress orientation='vertical' />))).toEqual({ "data-slot": "progress", "data-orientation": "vertical" });
   });
 
-  it("includes base styling classes", async () => {
-    expect(await render(<Progress />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full appearance-none rounded-selector bg-border"></progress>',
-    );
+  it("turns the bar on its side and fills it from the bottom, which nothing but the classes says", async () => {
+    expect(variantClasses(await render(<Progress orientation='vertical' />), await render(<Progress />))).toEqual({
+      added: ["h-full", "w-2", "[direction:rtl]", "[writing-mode:vertical-lr]"],
+      dropped: ["h-2", "w-full"],
+    });
   });
 
-  it("merges a custom class", async () => {
-    expect(await render(<Progress class='my-progress' />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full appearance-none rounded-selector bg-border my-progress"></progress>',
-    );
-  });
-
-  it("defaults to horizontal orientation with data-orientation and h-2 w-full", async () => {
-    expect(await render(<Progress />)).toBe(
-      '<progress data-slot="progress" data-orientation="horizontal" class="h-2 w-full appearance-none rounded-selector bg-border"></progress>',
-    );
-  });
-
-  it("vertical orientation stamps data-orientation and flips to h-full w-2", async () => {
-    expect(await render(<Progress orientation='vertical' />)).toBe(
-      '<progress data-slot="progress" data-orientation="vertical" class="h-full w-2 [direction:rtl] [writing-mode:vertical-lr] appearance-none rounded-selector bg-border"></progress>',
-    );
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Progress class='my-progress' />)).at(-1)).toBe("my-progress");
   });
 });

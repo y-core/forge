@@ -6,11 +6,8 @@ import { fieldAttr } from "../server/field-attr";
 /** A `ui/core` component and the statics hung off it. @internal */
 type Compound<P, S> = ((props: P) => JSXElement | null) & S;
 
-// A bound wrapper is a *new* function, so it starts with none of the core component's statics and
-// `.Label` / `.Description` / `.Error` come back `undefined` unless something puts them there. That
-// cannot be left to the caller: `NAMESPACES.md` §5b forbids importing the core twin alongside the
-// bound one, so a forgotten static has no workaround at the call site at all. Copying them here is
-// what makes the gap structurally impossible rather than fixed in whichever file last noticed it.
+// A bound wrapper is a *new* function, so it carries none of the core component's statics — and
+// `NAMESPACES.md` §5b forbids importing the core twin beside it, so the call site has no workaround.
 function carry<F extends object, S extends object, O extends object>(wrapper: F, Core: S, overrides: O): F & Omit<S, keyof O> & O {
   // Read off `Core`, which is never mutated — so an override named after a core static wraps the
   // original rather than itself, and an `Item` that re-entered would never terminate.

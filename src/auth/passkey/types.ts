@@ -49,7 +49,8 @@ export type PasskeyAuthenticationReason =
   | "challenge-not-found"
   | "session-mismatch"
   | "sign-count-reused"
-  | "unrecognised";
+  | "unrecognised"
+  | "unsupported-algorithm";
 
 /** The assertion response of a finished ceremony, base64url as the browser's JSON carries it. @public */
 export interface PasskeyAssertionResponse {
@@ -79,6 +80,8 @@ export interface PasskeyAuthenticationVerifyOptions {
   readonly credentials: CredentialStore;
   readonly users: UserStore;
   readonly requireUserVerification?: boolean;
+  /** The COSE algorithms an assertion may be signed with, judged off the stored key; defaults to `AUTH_SUPPORTED_ALGORITHMS`. */
+  readonly algorithms?: readonly AuthAlgorithm[];
 }
 
 /** What a passed authentication ceremony establishes, with the counter and flags it presented. @public */

@@ -124,7 +124,7 @@ async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
 }
 
 // Held to the schema the rename path holds a label to, so one field cannot be bounded on one route
-// and unbounded on another. A missing nickname is a name the visitor declined to give, not a refusal.
+// and unbounded on another.
 /** The enrolment nickname, or the refusal an over-long one earns. */
 function readEnrolmentNickname(presented: unknown): Result<string | null, undefined> {
   if (presented === undefined || presented === null) return ok(null);
@@ -287,9 +287,8 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
       const at = authNow(options);
-      // Both branches land on the same marked page whatever happened, because whether a code was
-      // actually issued is precisely what a visitor may not learn: only a real account can be inside
-      // the reissue window, so reporting that would bin an address list the sign-in flow refuses to.
+      // Whether a code was actually issued is what a visitor may not learn: only a real account can
+      // be inside the reissue window, so reporting it would bin an address list.
       const resent = `${options.paths.auth.verify.show()}?${AUTH_RESENT_PARAM}`;
       const demand = await resolveAuthVerifyDemand(c, services);
       const detour = authVerifyDetour(c, options, demand);
@@ -607,6 +606,11 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       let outcome: AdminUserOutcome = "changed";
       const wantsAdmin = parsed.data.role === "admin";
       if (wantsAdmin !== found.data.isAdmin) {
+        // Dropping your own role locks you out of the console mid-request, and the last-admin guard
+        // admits it wherever a second admin exists.
+        if (!wantsAdmin && viewer?.userId === found.data.id) {
+          return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
+        }
         const written = wantsAdmin ? await services.admin.elevate(id, at) : await services.admin.demote(id, at);
         if (!written.ok) return unavailable();
         outcome = written.data;

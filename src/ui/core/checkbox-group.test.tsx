@@ -4,48 +4,71 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { CheckboxGroup } from "./checkbox-group";
+import { attrOf, attrsOf, variantClasses } from "./test-support";
+
+const INPUT = 'data-slot="checkbox-group-input"';
+const DESCRIPTION = 'data-slot="field-description"';
+const ERROR = 'data-slot="field-error"';
+
+const ROOT = { "data-slot": "checkbox-group", "data-size": "md", "data-orientation": "vertical" };
+const ITEM = { type: "checkbox", "data-slot": "checkbox-group-input" };
 
 function idsAndRefs(html: string): string[] {
   return [...html.matchAll(/(?:^|\s)(?:id|for|aria-describedby)="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").split(" "));
 }
 
+describe("CheckboxGroup", () => {
+  it("renders the whole item exactly, its label text and a forwarded value escaped", async () => {
+    expect(
+      await render(
+        <CheckboxGroup.Item name='toppings' value='cheese' data-note="R&D's">
+          {`Cheese & "extra" <x>`}
+        </CheckboxGroup.Item>,
+      ),
+    ).toBe(
+      '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox"' +
+        ' data-slot="checkbox-group-input" id="field-toppings-cheese" name="toppings" value="cheese" class="state-busy state-disabled' +
+        ' shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
+        ' data-note="R&amp;D&#39;s">Cheese &amp; &quot;extra&quot; &lt;x&gt;</label>',
+    );
+  });
+});
+
 describe("CheckboxGroup — aria-describedby names only what renders", () => {
   it("a group with no description emits no aria-describedby at all", async () => {
     expect(
-      await render(
-        <CheckboxGroup name='toppings'>
-          <CheckboxGroup.Item name='toppings' value='cheese'>
-            Cheese
-          </CheckboxGroup.Item>
-        </CheckboxGroup>,
+      attrsOf(
+        await render(
+          <CheckboxGroup name='toppings'>
+            <CheckboxGroup.Item name='toppings' value='cheese'>
+              Cheese
+            </CheckboxGroup.Item>
+          </CheckboxGroup>,
+        ),
       ),
-    ).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-toppings-cheese" name="toppings" value="cheese" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cheese</label></fieldset>',
-    );
+    ).toEqual(ROOT);
   });
 
   it("a declared description wires the IDREF, and the description element carries that id", async () => {
-    expect(
-      await render(
-        <CheckboxGroup name='toppings' description>
-          <CheckboxGroup.Description name='toppings'>Pick as many as you like.</CheckboxGroup.Description>
-        </CheckboxGroup>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-description" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-toppings-description">Pick as many as you like.</p></fieldset>',
+    const html = await render(
+      <CheckboxGroup name='toppings' description>
+        <CheckboxGroup.Description name='toppings'>Pick as many as you like.</CheckboxGroup.Description>
+      </CheckboxGroup>,
     );
+
+    expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-toppings-description" });
+    expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description", id: "field-toppings-description" });
   });
 
-  it("an invalid group with no description names the error alone", async () => {
-    expect(
-      await render(
-        <CheckboxGroup name='toppings' invalid>
-          <CheckboxGroup.Error name='toppings'>Pick at least one.</CheckboxGroup.Error>
-        </CheckboxGroup>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
+  it("an invalid group with no description names the error alone, and the error announces itself", async () => {
+    const html = await render(
+      <CheckboxGroup name='toppings' invalid>
+        <CheckboxGroup.Error name='toppings'>Pick at least one.</CheckboxGroup.Error>
+      </CheckboxGroup>,
     );
+
+    expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-toppings-error", "data-invalid": "" });
+    expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-toppings-error", role: "alert" });
   });
 
   it("an invalid group with a description names both, description first", async () => {
@@ -56,27 +79,25 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
       </CheckboxGroup>,
     );
 
-    expect(html).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-toppings-description field-toppings-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-toppings-description">Pick as many as you like.</p><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-toppings-error" role="alert">Pick at least one.</p></fieldset>',
-    );
-    const ids = idsAndRefs(html);
-    expect(ids).toEqual(["field-toppings-description", "field-toppings-error", "field-toppings-description", "field-toppings-error"]);
+    expect(attrOf(html, "aria-describedby")).toBe("field-toppings-description field-toppings-error");
+    expect(idsAndRefs(html)).toEqual(["field-toppings-description", "field-toppings-error", "field-toppings-description", "field-toppings-error"]);
   });
 });
 
 describe("CheckboxGroup — a name must be a single id token", () => {
   it("an item value containing a space declares no id, while the value itself passes through verbatim", async () => {
     expect(
-      await render(
-        <CheckboxGroup name='pets'>
-          <CheckboxGroup.Item name='pets' value='a b'>
-            A B
-          </CheckboxGroup.Item>
-        </CheckboxGroup>,
+      attrsOf(
+        await render(
+          <CheckboxGroup name='pets'>
+            <CheckboxGroup.Item name='pets' value='a b'>
+              A B
+            </CheckboxGroup.Item>
+          </CheckboxGroup>,
+        ),
+        INPUT,
       ),
-    ).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="pets" value="a b" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">A B</label></fieldset>',
-    );
+    ).toEqual({ ...ITEM, name: "pets", value: "a b" });
   });
 
   it("a group name containing a space suppresses its items' ids too", async () => {
@@ -88,9 +109,7 @@ describe("CheckboxGroup — a name must be a single id token", () => {
       </CheckboxGroup>,
     );
 
-    expect(html).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="fav pet" value="cat" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cat</label></fieldset>',
-    );
+    expect(attrsOf(html, INPUT)).toEqual({ ...ITEM, name: "fav pet", value: "cat" });
     expect(idsAndRefs(html)).toEqual([]);
   });
 
@@ -103,9 +122,7 @@ describe("CheckboxGroup — a name must be a single id token", () => {
       </CheckboxGroup>,
     );
 
-    expect(html).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" name="toppings" value="cheese" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cheese</label></fieldset>',
-    );
+    expect(attrsOf(html, INPUT)).toEqual({ ...ITEM, name: "toppings", value: "cheese" });
     expect(idsAndRefs(html)).toEqual([]);
   });
 
@@ -125,15 +142,14 @@ describe("CheckboxGroup — a name must be a single id token", () => {
   });
 
   it("a group name containing a space emits no aria-describedby, and its description no id", async () => {
-    expect(
-      await render(
-        <CheckboxGroup name='fav pet' description>
-          <CheckboxGroup.Description name='fav pet'>Pick one.</CheckboxGroup.Description>
-        </CheckboxGroup>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
+    const html = await render(
+      <CheckboxGroup name='fav pet' description>
+        <CheckboxGroup.Description name='fav pet'>Pick one.</CheckboxGroup.Description>
+      </CheckboxGroup>,
     );
+
+    expect(attrsOf(html)).toEqual(ROOT);
+    expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description" });
   });
 });
 
@@ -188,51 +204,51 @@ describe("CheckboxGroup — two same-named groups on one page", () => {
 });
 
 describe("CheckboxGroup — size, invalid and busy", () => {
-  it("stamps data-size=md on the root by default", async () => {
-    expect(await render(<CheckboxGroup name='c' />)).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
+  it("names the size it was given on the attribute a stylesheet and a reader both key on", async () => {
+    expect([
+      attrsOf(await render(<CheckboxGroup name='c' />)),
+      attrsOf(await render(<CheckboxGroup name='c' size='sm' />)),
+      attrsOf(await render(<CheckboxGroup name='c' size='lg' />)),
+    ]).toEqual([ROOT, { ...ROOT, "data-size": "sm" }, { ...ROOT, "data-size": "lg" }]);
   });
 
-  it("size='sm' stamps data-size=sm on the root", async () => {
-    expect(await render(<CheckboxGroup name='c' size='sm' />)).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="sm" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
+  it("stamps invalidity for a stylesheet but keeps aria-invalid off, which the group role forbids", async () => {
+    expect(attrsOf(await render(<CheckboxGroup name='c' invalid />))).toEqual({ ...ROOT, "aria-describedby": "field-c-error", "data-invalid": "" });
   });
 
-  it("size='lg' stamps data-size=lg on the root", async () => {
-    expect(await render(<CheckboxGroup name='c' size='lg' />)).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="lg" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
-  });
-
-  it("invalid stamps data-invalid on the root, and no aria-invalid, which the group role forbids", async () => {
-    expect(await render(<CheckboxGroup name='c' invalid />)).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-c-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
-  });
-
-  it("busy stamps data-busy on the root, and no aria-busy, which the group role forbids", async () => {
-    expect(await render(<CheckboxGroup name='c' busy />)).toBe(
-      '<fieldset data-slot="checkbox-group" data-size="md" data-busy="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
+  it("stamps busyness for a stylesheet but keeps aria-busy off, which the group role forbids", async () => {
+    expect(attrsOf(await render(<CheckboxGroup name='c' busy />))).toEqual({ ...ROOT, "data-busy": "" });
   });
 
   it("a caller's own aria attribute survives the state spread", async () => {
-    expect(await render(<CheckboxGroup name='c' invalid aria-label='Plan' />)).toBe(
-      '<fieldset data-slot="checkbox-group" aria-describedby="field-c-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col" aria-label="Plan"></fieldset>',
-    );
+    expect(attrsOf(await render(<CheckboxGroup name='c' invalid aria-label='Plan' />))).toEqual({
+      ...ROOT,
+      "aria-describedby": "field-c-error",
+      "data-invalid": "",
+      "aria-label": "Plan",
+    });
   });
 
-  it("an Item sizes its own box", async () => {
-    expect(await render(<CheckboxGroup.Item name='c' value='a' size='lg' />)).toBe(
-      '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-c-a" name="c" value="a" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-5"></label>',
-    );
+  it("an Item sizes its own box rather than inheriting the group's", async () => {
+    expect(
+      variantClasses(
+        await render(<CheckboxGroup.Item name='c' value='a' size='lg' />),
+        await render(<CheckboxGroup.Item name='c' value='a' />),
+        INPUT,
+      ),
+    ).toEqual({ added: ["size-5"], dropped: ["size-4"] });
   });
 
-  it("an Item carries its own invalid and busy state", async () => {
-    expect(await render(<CheckboxGroup.Item name='c' value='a' invalid busy />)).toBe(
-      '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox" data-slot="checkbox-group-input" id="field-c-a" name="c" value="a" class="state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4" data-invalid="" data-busy="" aria-invalid="true" aria-busy="true"></label>',
-    );
+  it("an Item carries its own invalid and busy state, where the role does allow the aria", async () => {
+    expect(attrsOf(await render(<CheckboxGroup.Item name='c' value='a' invalid busy />), INPUT)).toEqual({
+      ...ITEM,
+      id: "field-c-a",
+      name: "c",
+      value: "a",
+      "data-invalid": "",
+      "data-busy": "",
+      "aria-invalid": "true",
+      "aria-busy": "true",
+    });
   });
 });

@@ -100,18 +100,15 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
   }
 
   // The advance is the replay guard: `advanceCounter` writes only above the last accepted step, so
-  // presenting one code twice inside its own window changes no row and is refused the second time.
-  // It is also what clears the spent guesses outright; short of that only the lockout window
-  // elapsing reopens the budget, and then at a count of one.
+  // one code presented twice inside its own window changes no row and is refused the second time.
   async function acceptCode(
     userId: string,
     presented: string,
     at: number,
     admits: (factor: AuthFactor) => boolean,
   ): Promise<Result<{ factor: AuthFactor; counter: number }, AuthFactorReason>> {
-    // One statement finds the row and spends the guess against it, so no read sits between the two
-    // and the guess is spent before the comparison, never after: a guess that costs nothing until it
-    // is wrong is a guess an attacker can make as fast as the network allows.
+    // One statement finds the row and spends the guess against it, so the guess is spent before the
+    // comparison: a guess that costs nothing until it is wrong can be made as fast as the network.
     const spent = await options.factors.countAttempt(userId, "totp-app", maxAttempts, at, lockoutMs);
     if (!spent.ok) return err("unavailable");
     // The one statement collapses "no such factor" into "budget spent", so a second read tells them
@@ -166,18 +163,14 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     if (!existing.ok) return err("unavailable");
     if (existing.data?.confirmedAt != null) return err("already-enrolled");
 
-    // The defect this closes: this rebuilt the row unconditionally, so re-rendering the enrol page —
-    // which a mistyped code does — handed back a *different* secret from the one the visitor had
-    // just stored in their authenticator, and the ceremony could never be finished.
     if (existing.data?.secret) {
       const held = await openTotpSecret(options.keys, userId, existing.data.secret);
       if (held) return enrolmentOf(userId, held, at);
     }
 
     if (existing.data) {
-      // Only reached when the stored secret will not open, which is a rotated key and not an
-      // abandoned ceremony: without this a user could never enrol again, which is the lockout an
-      // unconfirmed enrolment must not be able to cause.
+      // Only reached when the stored secret will not open, which is a rotated key rather than an
+      // abandoned ceremony: without this the user could never enrol again.
       const removed = await options.factors.remove(existing.data.id, userId);
       if (!removed.ok) return err("unavailable");
     }

@@ -4,33 +4,24 @@ import { dirname, join } from "node:path";
 
 import { INDEXER_VERSION, SCHEMA, SCHEMA_VERSION } from "./schema";
 
-/** Where a developer's working index lives — under `.forge/`, which is a consumer-side build
- *  artifact and already gitignored. @public */
+/** Where a developer's working index lives, under `.forge/`. @public */
 export function indexPath(root: string): string {
   return join(root, ".forge", "warden", "index.sqlite");
 }
 
-/** Where the gate builds its own. A separate file, so a developer's working index — stale, or
- *  built from an edit in progress — can never change a verdict. @public */
+/** Where the gate builds its own, separate so a developer's working index cannot change a verdict. @public */
 export function gateIndexPath(root: string): string {
   return join(root, ".forge", "warden", "gate.sqlite");
 }
 
-/** Opens a database at `path`, creating the schema when it is new and replacing it when its shape
- *  has changed. `:memory:` is honoured.
- *
- *  **A `SCHEMA_VERSION` bump has to reach the tables, not just the rows.** `build` empties and
- *  refills; it never alters a column, so an index written by an older schema would keep its old
- *  shape forever and fail the first insert naming a new column. The index is a derived artifact
- *  under `.forge/` and rebuilds in well under a second, so it is dropped and recreated rather than
- *  migrated. @public */
+/** Opens a database at `path`, creating the schema when it is new and replacing it when its shape has changed. @public */
 export function openDatabase(path: string): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true });
   db.run("PRAGMA journal_mode = WAL");
   db.run("PRAGMA foreign_keys = ON");
-  // WAL lets a reader and a writer coexist but not two writers, and a build takes about 150 ms —
-  // so a `warden index` racing the server's `refresh()` should wait rather than serve a stale index.
+  // WAL lets a reader and a writer coexist but not two writers, so a `warden index` racing the
+  // server's `refresh()` waits rather than failing.
   db.run("PRAGMA busy_timeout = 5000");
 
   const tables = db.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").all();

@@ -83,8 +83,16 @@ describe("createPasskeyRegistrationOptions", () => {
       timeout: 300_000,
       attestation: "none",
       excludeCredentials: [],
-      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+      authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
     });
+  });
+
+  it("demands user verification by default, and honours a consumer's own setting", async () => {
+    const byDefault = await createPasskeyRegistrationOptions(ceremony(), SUBJECT);
+    expect(byDefault.ok && byDefault.data.authenticatorSelection.userVerification).toBe("required");
+
+    const relaxed = await createPasskeyRegistrationOptions(ceremony({ userVerification: "discouraged" }), SUBJECT);
+    expect(relaxed.ok && relaxed.data.authenticatorSelection.userVerification).toBe("discouraged");
   });
 
   it("advertises exactly [-7, -257] by default", async () => {
@@ -160,9 +168,19 @@ describe("createPasskeyRequestOptions", () => {
       rpId: "example.test",
       challenge: built.data.challenge,
       timeout: 300_000,
-      userVerification: "preferred",
+      userVerification: "required",
       allowCredentials: [],
     });
+  });
+
+  // The verifier demands user verification by default, so a ceremony that only preferred it would
+  // build assertions the browser accepts and `verifyPasskeyAuthentication` then refuses.
+  it("demands user verification by default, and honours a consumer's own setting", async () => {
+    const byDefault = await createPasskeyRequestOptions(ceremony(), { sessionId: SESSION, userId: USER_ID });
+    expect(byDefault.ok && byDefault.data.userVerification).toBe("required");
+
+    const relaxed = await createPasskeyRequestOptions(ceremony({ userVerification: "discouraged" }), { sessionId: SESSION, userId: USER_ID });
+    expect(relaxed.ok && relaxed.data.userVerification).toBe("discouraged");
   });
 
   it("allows exactly the user's credentials when a user is named", async () => {

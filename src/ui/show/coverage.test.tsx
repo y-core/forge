@@ -21,8 +21,7 @@ import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 import type { CoverageReport } from "./types";
 
 // A real sprite binding, not a null stub: a component returning `null` renders no `<use href>`, so
-// no glyph marker in the manifest could ever match, and every icon-dependent axis was unmeasurable
-// by construction. The seven glyphs are the set `showcase.browser.ts` already binds.
+// no glyph marker in the manifest could match and every icon-dependent axis would be unmeasurable.
 const icon = createIcon("/sprite.svg", {
   "icon-spinner": "0 0 24 24",
   "icon-chevron-down": "0 0 24 24",

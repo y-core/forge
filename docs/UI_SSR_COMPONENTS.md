@@ -146,7 +146,9 @@ commands against a `popover="auto"` popup; the client adds only what ARIA's menu
 open menu beneath it. `Accordion` is not a composite — each item is its own disclosure and tab stop, as a native `<details>` list is.
 
 **An overlay whose behaviour is wholly the platform's stamps no scope.** `Dialog`, `Popover`, `Accordion` and `Collapsible` ship neither scope nor
-controller. `Menu` and `Tooltip` stamp one because they add a keyboard layer, and it is eager by necessity rather than taste
+controller — with one exception, `Dialog`'s `openModal`: a modal has no markup spelling at all, so `showModal()` has to run on resume, and that prop
+alone stamps the dialog scope and an eager controller. It also suppresses `open`, which would otherwise render the dialog non-modal and make that
+`showModal()` throw. `Menu` and `Tooltip` stamp one because they add a keyboard layer, and it is eager by necessity rather than taste
 ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
 
 **A server may only stamp what it can keep true.** Placement is decided at render and fixed for the element's life, so it is stamped; **open state
@@ -315,6 +317,10 @@ sub-component rather than the root and it stamps an extra `data-value`, which th
 
 **No bound control stamps a `data-on-*` action**, `bindControls` listening once on the scope root instead, so a bound-control scope must be
 `eager: true` — which [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c already requires of any markup carrying no `data-on-*` action of its own.
+
+**`Toggle` has no resumable scope of its own, and deliberately so.** It is a native checkbox whose `:checked` the CSS keys on, so there is no state
+for a controller to maintain and no bespoke runtime to keep in step with `ToggleGroup`'s — which does have one, for the roving focus a checkbox
+group lacks.
 
 **The name collision with `ui/core` is intentional and must not be renamed.** [`NAMESPACES.md`][namespaces-5b] §5b owns the resulting rule: a module
 imports a given control name from exactly one of the two barrels, never both.

@@ -17,17 +17,12 @@ import type { AuthStoreResult } from "../types";
 interface FactorServiceBase<kind extends AuthFactorKind = AuthFactorKind> {
   readonly kind: kind;
   readonly capabilities: AuthFactorCapabilities;
-  // The one place the lifetime lives, so a flow reporting an expiry before it has a challenge to
-  // read cannot report a number the factor does not enforce. An upper bound where a factor's
-  // challenge ends on a clock of its own — a TOTP step ends where the step ends.
+  // On the contract so that a caller reporting an expiry, a width or a period cannot state a number
+  // the factor does not enforce.
   /** How long a challenge this factor issues lasts, in milliseconds. */
   readonly challengeTtlMs: number;
-  // For the same reason the lifetime is here: a page presenting this factor must not be able to ask
-  // for a width the factor will refuse, and the width is the factor's own configuration.
   /** How many digits the code this factor asks for has, or `null` for a factor answered by a ceremony. */
   readonly codeDigits: number | null;
-  // Same reason as the width, and unreachable from the registry until now: an enrolment page telling
-  // a visitor "every 30 seconds" was stating a number only the `otpauth://` URI actually carried.
   /** How long one code stays current, in seconds, or `null` for a factor whose code is not on a clock. */
   readonly codePeriodSeconds: number | null;
   readonly reissueAfterMs: number | null;

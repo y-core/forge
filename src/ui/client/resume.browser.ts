@@ -868,9 +868,8 @@ test.describe("resume — installing listeners and resuming a tree are two jobs"
 });
 
 test.describe("resume — disposal on a remove-only htmx swap", () => {
-  // `sweepDetached` runs only from `ensureResumed`, so a swap that removes scoped markup and
-  // introduces none never reached it. `active` is a strong Map and its closures hold live
-  // document-level listeners, so the scope's teardown was simply never run.
+  // Detached scopes are otherwise swept only from `ensureResumed`, so a swap that removes scoped
+  // markup and introduces none would leave live document-level listeners behind.
   test("htmx removing a scope runs its disposer, and the document listener stops firing", async ({ page }) => {
     await mount(page, `<div id="host"><div data-scope="demo"><span id="inner">x</span></div></div>`, HTMX_EXPOSE);
 

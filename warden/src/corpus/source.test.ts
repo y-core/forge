@@ -25,9 +25,8 @@ describe("weightOf()", () => {
     expect(weightOf("project", "README.md")).toBe(0.9);
   });
 
-  // Measured, not asserted. At 1.1 the library's routing document took top-1 from
-  // `canon:APP_ARCHITECTURE.md §5a` and cost three golden queries across the consumer
-  // repositories; 0.9 is the highest weight at which none of them moves.
+  // Swept, not chosen: 0.9 is the highest weight at which no golden entry in any consuming
+  // repository moves.
   it("sits a dependency document below this repository's own docs, and its README below both", () => {
     expect(weightOf("dependency", "forge/UI_CLASS_COMPOSITION.md")).toBe(0.9);
     expect(weightOf("dependency", "forge/src/ui/README.md")).toBe(0.65);

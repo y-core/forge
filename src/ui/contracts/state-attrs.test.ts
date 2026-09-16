@@ -171,8 +171,7 @@ describe("state-attribute conformance", () => {
 });
 
 // `forge/a11y-aria-beside-data` hand-lists these because `tooling/lint` is a leaf that may not
-// import `ui` (NAMESPACES.md §3c). This is where the two lists are held together, so a seventh
-// presence flag fails here rather than going unenforced in the linter.
+// import `ui` (NAMESPACES.md §3c), so this is where the two lists are held together.
 describe("the presence hooks the lint rule forbids by hand", () => {
   const EVERY_STATE: Required<StateAttrsProps> = {
     pressed: true,

@@ -43,9 +43,8 @@ const toNumber = (raw: number | undefined, fallback: number): number => (raw !==
 
 const clamp = (n: number, low: number, high: number): number => Math.min(Math.max(n, low), high);
 
-// The state is computed here rather than left to the engine because no browser exposes it to CSS in
-// a form both of them agree on, and the fill's colour is the whole reading. The clamping order is
-// HTML's own, so the band this names is the band the element itself is in.
+// Computed here rather than left to the engine: no browser exposes the band to CSS in a form they
+// all agree on, and the clamping order below is HTML's own.
 /** Which band the value falls in, by HTML's meter algorithm — the fill colour follows it. @internal */
 export function meterState(attrs: Pick<MeterTrackProps, "value" | "min" | "max" | "low" | "high" | "optimum">): MeterState {
   const min = toNumber(attrs.min, 0);

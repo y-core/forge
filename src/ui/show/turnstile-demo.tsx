@@ -246,9 +246,8 @@ const PlaygroundSection: FC<{ data: TurnstileDemoOptions; paths: ShowcasePaths; 
   </CatalogPanel>
 );
 
-// `load='focus'` on the first three, against the eager default: three eager widgets would issue
-// three challenges to anyone who scrolls past. The field is not decoration either — under
-// `load='focus'` the script waits on a `focusin` within the enclosing form.
+// `load='focus'` on the first three: three eager widgets would issue three challenges to anyone who
+// scrolls past, and the script waits on a `focusin` within the enclosing form.
 const VariantsSection: FC = () => (
   <CatalogPanel
     id='turnstile-variants'
@@ -270,11 +269,8 @@ const VariantsSection: FC = () => (
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='flexible' load='focus' />
         <Button type='submit'>Submit</Button>
       </Form>
-      {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a native
-        form has no request to hold; `interaction-only` is the pairing Cloudflare documents for it.
-        The eager `load` default is deliberate here, unlike the three demos above: the point of
-        `challenge='submit'` is a widget up from page load, holding its own space, with only the
-        challenge waiting for the press. */}
+      {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a
+        native form has no request to hold; `interaction-only` is Cloudflare's documented pairing. */}
       <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
         <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} challenge='submit' appearance='interaction-only' />
@@ -335,9 +331,8 @@ const ResilienceSection: FC = () => (
   </CatalogPanel>
 );
 
-// Partial, and keyed by every failure this page can actually reach: the one it cannot — a customer-data
-// mismatch, which needs an `expectedCData` the showcase never sets — spells a `data-*` name in source
-// that `state-attrs.test.ts` would read as an undeclared state attribute.
+// The customer-data mismatch is left out: spelling it would put a `data-*` name in source that
+// `state-attrs.test.ts` reads as an undeclared state attribute.
 const VERDICT_COPY: Partial<Record<TurnstileFailure, string>> = {
   "missing-token": "No token reached the server — the widget never ran, or its hidden field was stripped.",
   "verification-failed": "Cloudflare refused the token. On the always-blocks key this is the expected answer.",

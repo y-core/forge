@@ -29,18 +29,7 @@ function invalidTable(steps: readonly Step[]): string | undefined {
   return undefined;
 }
 
-/**
- * Resolves which steps to run in `mode`, optionally narrowed by an `--only` list.
- *
- * An **empty array is the flag's absence**, not a request for nothing: that is what a repeatable
- * flag resolves to when it was never given, and reading it as "select no steps" would refuse every
- * unscoped run.
- *
- * **Order is tier-stable:** within a tier the table's declared order holds, and across tiers the
- * cheaper tier runs first — so a full-tier row declared early cannot make a full run pay minutes for
- * a browser before a standard row that was going to fail in under a second.
- * @public
- */
+/** Resolves which steps to run in `mode`, cheaper tier first and declared order within a tier, optionally narrowed by an `--only` list. @public */
 export function selectSteps(steps: readonly Step[], opts: { mode: GateMode; only?: readonly string[] }): Selection {
   const malformed = invalidTable(steps);
   if (malformed !== undefined) return { ok: false, error: malformed };

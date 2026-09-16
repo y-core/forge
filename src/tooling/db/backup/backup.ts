@@ -59,9 +59,8 @@ function tableInserts(source: SourceTable): string[] {
 
 function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute, name: string): void {
   if (route === "full") {
-    // Both files open with the same `PRAGMA defer_foreign_keys=TRUE;`, so the second repeats it — D1
-    // accepts that pragma without honouring it either time, which is why the order below is what carries
-    // the foreign keys instead.
+    // D1 accepts `PRAGMA defer_foreign_keys=TRUE` without honouring it, so the order below is what
+    // carries the foreign keys instead.
     executeFile(run.io, scratch, join(directory, "schema.sql"));
     executeFile(run.io, scratch, join(directory, "data.sql"));
     return;

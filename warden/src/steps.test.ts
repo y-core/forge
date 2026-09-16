@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { isCheckStep } from "../../src/tooling/gate/steps";
-import { changelogStep, designStep, docsStep, readmeExportsStep } from "./steps";
+import { libraryDocsDir } from "./corpus/dependency";
+import { GOLDEN, NEGATIVE } from "./gate/golden";
+import { changelogStep, designStep, docsStep, readmeExportsStep, wardenAppSteps, wardenQueriesStep } from "./steps";
 
 const EXPORTS = { ".": "./src/mod.ts" };
 
@@ -44,5 +46,47 @@ describe("warden steps", () => {
 
   it("defers the walk until the runner calls it, so building a table touches no disk", () => {
     expect(() => docsStep({ root: "/nowhere/forge-no-such-root", packageName: "@scope/pkg", exports: EXPORTS })).not.toThrow();
+  });
+});
+
+describe("wardenQueriesStep()", () => {
+  it("carries the shipped sets where the caller states none", () => {
+    const step = wardenQueriesStep({ root: "/nowhere", kind: "libs" });
+
+    expect(step.golden).toBe(GOLDEN);
+    expect(step.negative).toBe(NEGATIVE);
+  });
+
+  it("carries the caller's own sets where it states them", () => {
+    const queries = [{ query: "where do tests live", expect: "canon:TESTING.md#2a", dimension: "placement" }] as const;
+
+    const step = wardenQueriesStep({ root: "/nowhere", kind: "apps", queries, negative: ["how do I file my taxes"] });
+
+    expect(step.golden).toBe(queries);
+    expect(step.negative).toEqual(["how do I file my taxes"]);
+  });
+});
+
+describe("wardenAppSteps()", () => {
+  const options = {
+    root: "/nowhere/forge-no-such-root",
+    packageName: "forge-starter",
+    queries: [{ query: "where do tests live", expect: "canon:TESTING.md#2a", dimension: "placement" }] as const,
+    citableDirs: ["node_modules/@y-core/forge/warden/canon/shared"],
+  };
+
+  it("appends the four rows a consuming application takes, in order", () => {
+    expect(wardenAppSteps(options).map((step) => step.label)).toEqual(["validate-docs", "warden:index", "warden:queries", "warden:duplicates"]);
+  });
+
+  it("appends nothing to `citableDirs` where there is no installed library", () => {
+    // Run inside the library, `libraryDocsDir` is `undefined` — the same condition under which the
+    // three index rows serve no dependency corpus — so a consumer's list reaches the check as given.
+    expect(libraryDocsDir(options.root)).toBeUndefined();
+  });
+
+  it("builds check steps, and touches no disk doing it", () => {
+    expect(() => wardenAppSteps(options).every((step) => isCheckStep(step))).not.toThrow();
+    expect(wardenAppSteps(options).every((step) => isCheckStep(step))).toBe(true);
   });
 });

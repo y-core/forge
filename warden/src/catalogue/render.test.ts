@@ -72,9 +72,8 @@ describe("renderCatalogue() — the corpus a row is filed under", () => {
     expect(served).toContain("- `forge/UI_CLASS_COMPOSITION.md` — forge/UI_CLASS_COMPOSITION.md: How the library composes class strings.");
   });
 
-  // The committed `warden/CATALOGUE.md` is forge's own inventory of the fleet canon, and is safe
-  // only because this defaults to canon alone. A dependency row reaching it would fail every
-  // consumer's catalogue-drift check for a file none of them wrote.
+  // A dependency row reaching the committed `warden/CATALOGUE.md` would fail every consumer's
+  // catalogue-drift check for a file none of them wrote.
   it("keeps the committed file canon-only, whatever else the index holds", () => {
     expect(rendered).not.toContain("forge/UI_CLASS_COMPOSITION.md");
     expect(rendered).not.toContain("docs/NAMESPACES.md");

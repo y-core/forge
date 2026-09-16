@@ -2,8 +2,7 @@ import { reporter } from "../report.ts";
 import type { AstNode, JsxAttributeNode, LintRule } from "../types.ts";
 
 // Hand-listed rather than imported: this namespace is a leaf and may not reach into `ui`
-// (NAMESPACES.md §3c). `src/ui/contracts/state-attrs.test.ts` holds the two lists together, so a
-// seventh presence flag fails there rather than going unchecked here.
+// (NAMESPACES.md §3c). `src/ui/contracts/state-attrs.test.ts` holds the two lists together.
 /** The state flags `stateAttrs` emits as a bare presence hook, minus their `data-` prefix. */
 export const PRESENCE_STATES: readonly string[] = ["pressed", "checked", "selected", "disabled", "invalid", "busy"];
 

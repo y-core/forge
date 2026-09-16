@@ -1,154 +1,166 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
 import { NumberField } from "./number-field";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
+
+const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, "");
+const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]+)"/g)].map((match) => match[1]);
 
 describe("NumberField", () => {
-  it("renders the root row with the scope the controller resumes on", async () => {
-    expect(await render(<NumberField />)).toBe(
-      `<div data-slot="number-field" data-scope="${NUMBER_FIELD_SCOPE}" class="inline-flex items-center gap-1"></div>`,
-    );
-  });
-
-  it("merges a caller class onto the root base", async () => {
-    expect(await render(<NumberField class='w-full' />)).toBe(
-      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1 w-full"></div>',
-    );
-  });
-
-  it("keeps its own slot token ahead of one handed down through props", async () => {
-    expect(await render(<NumberField data-slot='quantity' />)).toBe(
-      '<div data-slot="number-field quantity" data-scope="number-field" class="inline-flex items-center gap-1"></div>',
-    );
-  });
-
-  it("escapes arbitrary data-* and aria-* values spread onto the root", async () => {
+  it("renders the whole root exactly, with spread data-* and aria-* values escaped", async () => {
     expect(await render(<NumberField data-note={`R&D's "count" <n>`} aria-label={`R&D's count`} />)).toBe(
-      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1" data-note="R&amp;D&#39;s &quot;count&quot; &lt;n&gt;" aria-label="R&amp;D&#39;s count"></div>',
+      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1" ' +
+        'data-note="R&amp;D&#39;s &quot;count&quot; &lt;n&gt;" aria-label="R&amp;D&#39;s count"></div>',
     );
+  });
+
+  it("carries the scope the controller resumes on, under its own slot token", async () => {
+    expect(attrsOf(await render(<NumberField />))).toEqual({ "data-slot": "number-field", "data-scope": "number-field" });
+  });
+
+  it("appends a caller class after its own and keeps its slot token ahead of an inherited one", async () => {
+    expect(classesOf(await render(<NumberField class='w-full' />)).at(-1)).toBe("w-full");
+    expect(attrOf(await render(<NumberField data-slot='quantity' />), "data-slot")).toBe("number-field quantity");
+  });
+
+  it("orders the steppers around the input they drive, in one tree", async () => {
+    expect(
+      slotsOf(
+        await render(
+          <NumberField>
+            <NumberField.Decrement />
+            <NumberField.Input name='count' value='1' min='0' max='10' />
+            <NumberField.Increment />
+          </NumberField>,
+        ),
+      ),
+    ).toEqual(["number-field", "number-field-decrement", "number-field-input", "number-field-increment"]);
   });
 
   it("keeps aria-readonly off the steppers even when the input beside them is readonly", async () => {
-    expect(
-      await render(
-        <NumberField>
-          <NumberField.Decrement />
-          <NumberField.Input name='count' value='1' readonly />
-          <NumberField.Increment />
-        </NumberField>,
-      ),
-    ).toBe(
-      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1"><button type="button" data-slot="number-field-decrement" aria-label="Decrement" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">\u2212</button><input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm" name="count" value="1" readonly><button type="button" data-slot="number-field-increment" aria-label="Increment" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">+</button></div>',
+    const html = await render(
+      <NumberField>
+        <NumberField.Decrement />
+        <NumberField.Input name='count' value='1' readonly />
+        <NumberField.Increment />
+      </NumberField>,
     );
-  });
 
-  it("renders the whole compound in one tree", async () => {
-    expect(
-      await render(
-        <NumberField>
-          <NumberField.Decrement />
-          <NumberField.Input name='count' value='1' min='0' max='10' />
-          <NumberField.Increment />
-        </NumberField>,
-      ),
-    ).toBe(
-      '<div data-slot="number-field" data-scope="number-field" class="inline-flex items-center gap-1"><button type="button" data-slot="number-field-decrement" aria-label="Decrement" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">\u2212</button><input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm" name="count" value="1" min="0" max="10"><button type="button" data-slot="number-field-increment" aria-label="Increment" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">+</button></div>',
-    );
+    expect(attrsOf(html, 'data-slot="number-field-input"')).toEqual({
+      type: "number",
+      "data-slot": "number-field-input",
+      "data-size": "md",
+      name: "count",
+      value: "1",
+      readonly: "",
+    });
+    expect([attrsOf(html, 'data-slot="number-field-decrement"'), attrsOf(html, 'data-slot="number-field-increment"')]).toEqual([
+      { type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement" },
+      { type: "button", "data-slot": "number-field-increment", "aria-label": "Increment" },
+    ]);
   });
 });
 
 describe("NumberField.Input", () => {
-  it("renders a native number input and nothing more", async () => {
-    expect(await render(<NumberField.Input />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm">',
-    );
+  it("is a native number input at the md size, and claims nothing it was not given", async () => {
+    expect(attrsOf(await render(<NumberField.Input />))).toEqual({ type: "number", "data-slot": "number-field-input", "data-size": "md" });
   });
 
   it("passes the platform's own range attributes straight through", async () => {
-    expect(await render(<NumberField.Input name='count' value='3' min='0' max='10' step='2' required />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm" name="count" value="3" min="0" max="10" step="2" required>',
-    );
+    expect(attrsOf(await render(<NumberField.Input name='count' value='3' min='0' max='10' step='2' required />))).toEqual({
+      type: "number",
+      "data-slot": "number-field-input",
+      "data-size": "md",
+      name: "count",
+      value: "3",
+      min: "0",
+      max: "10",
+      step: "2",
+      required: "",
+    });
   });
 
-  it("merges a caller class and appends an inherited slot token", async () => {
-    expect(await render(<NumberField.Input class='w-32' data-slot='quantity-input' />)).toBe(
-      '<input type="number" data-slot="number-field-input quantity-input" data-size="md" class="state-busy state-disabled field-chrome text-end tabular-nums focus-ring state-invalid h-control-md text-sm w-32">',
-    );
+  it("lets a caller's width evict its own rather than sit beside it, and appends an inherited slot token", async () => {
+    const html = await render(<NumberField.Input class='w-32' data-slot='quantity-input' />);
+
+    expect(variantClasses(html, await render(<NumberField.Input />))).toEqual({ added: ["w-32"], dropped: ["w-20"] });
+    expect(attrOf(html, "data-slot")).toBe("number-field-input quantity-input");
+  });
+
+  it("stamps the size it was given and swaps the control height it comes with", async () => {
+    const sizes = ["sm", "lg"] as const;
+    const md = await render(<NumberField.Input />);
+    const rendered = await Promise.all(sizes.map((size) => render(<NumberField.Input size={size} />)));
+
+    expect(rendered.map((html) => attrOf(html, "data-size"))).toEqual([...sizes]);
+    expect(rendered.map((html) => variantClasses(html, md))).toEqual([
+      { added: ["h-control-sm"], dropped: ["h-control-md"] },
+      { added: ["h-control-lg", "text-base"], dropped: ["h-control-md", "text-sm"] },
+    ]);
+  });
+
+  it("stamps data-invalid beside aria-invalid, so CSS and a screen reader read the same state", async () => {
+    expect(attrsOf(await render(<NumberField.Input invalid />))).toEqual({
+      type: "number",
+      "data-slot": "number-field-input",
+      "data-size": "md",
+      "data-invalid": "",
+      "aria-invalid": "true",
+    });
+  });
+
+  it("stamps data-busy beside aria-busy, so CSS and a screen reader read the same state", async () => {
+    expect(attrsOf(await render(<NumberField.Input busy />))).toEqual({
+      type: "number",
+      "data-slot": "number-field-input",
+      "data-size": "md",
+      "data-busy": "",
+      "aria-busy": "true",
+    });
+  });
+
+  it("keeps state-invalid when the caller supplies a ring, which once shared its conflict group", async () => {
+    expect(variantClasses(await render(<NumberField.Input class='ring-primary' />), await render(<NumberField.Input />))).toEqual({
+      added: ["ring-primary"],
+      dropped: [],
+    });
   });
 });
 
 describe("NumberField.Decrement", () => {
-  it("defaults to a minus-sign glyph behind an explicit label", async () => {
-    expect(await render(<NumberField.Decrement />)).toBe(
-      '<button type="button" data-slot="number-field-decrement" aria-label="Decrement" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">\u2212</button>',
-    );
+  it("defaults to a minus-sign glyph behind an explicit label, since the glyph names nothing", async () => {
+    const html = await render(<NumberField.Decrement />);
+
+    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement" });
+    expect(textOf(html)).toBe("−");
   });
 
   it("takes caller children in place of the glyph, and passes disabled through", async () => {
-    expect(await render(<NumberField.Decrement disabled>Less</NumberField.Decrement>)).toBe(
-      '<button type="button" data-slot="number-field-decrement" aria-label="Decrement" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled" disabled>Less</button>',
-    );
+    const html = await render(<NumberField.Decrement disabled>Less</NumberField.Decrement>);
+
+    expect(textOf(html)).toBe("Less");
+    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement", disabled: "" });
   });
 
-  it("lets a caller replace the default label in place, and override the conflicting size utility", async () => {
-    expect(await render(<NumberField.Decrement aria-label={`Fewer R&D's`} class='size-6' data-slot='quantity-down' />)).toBe(
-      '<button type="button" data-slot="number-field-decrement quantity-down" aria-label="Fewer R&amp;D&#39;s" class="inline-flex items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled size-6">\u2212</button>',
-    );
+  it("lets a caller replace the label in place and override the size utility it conflicts with", async () => {
+    const html = await render(<NumberField.Decrement aria-label={`Fewer R&D's`} class='size-6' data-slot='quantity-down' />);
+
+    expect(attrOf(html, "aria-label")).toBe("Fewer R&amp;D&#39;s");
+    expect(attrOf(html, "data-slot")).toBe("number-field-decrement quantity-down");
+    expect(variantClasses(html, await render(<NumberField.Decrement />))).toEqual({ added: ["size-6"], dropped: ["size-8"] });
   });
 });
 
 describe("NumberField.Increment", () => {
-  it("defaults to a plus glyph behind an explicit label", async () => {
-    expect(await render(<NumberField.Increment />)).toBe(
-      '<button type="button" data-slot="number-field-increment" aria-label="Increment" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">+</button>',
-    );
+  it("defaults to a plus glyph behind an explicit label, since the glyph names nothing", async () => {
+    const html = await render(<NumberField.Increment />);
+
+    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-increment", "aria-label": "Increment" });
+    expect(textOf(html)).toBe("+");
   });
 
   it("takes caller children in place of the glyph and escapes them", async () => {
-    expect(await render(<NumberField.Increment>{`R&D's <up>`}</NumberField.Increment>)).toBe(
-      '<button type="button" data-slot="number-field-increment" aria-label="Increment" class="inline-flex size-8 items-center justify-center rounded-field border border-input bg-background cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled">R&amp;D&#39;s &lt;up&gt;</button>',
-    );
-  });
-});
-
-describe("NumberField.Input — size, invalid and busy", () => {
-  it("stamps data-size=md and the md field size by default", async () => {
-    expect(await render(<NumberField.Input />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm">',
-    );
-  });
-
-  it("size='sm' stamps data-size=sm and the sm field size", async () => {
-    expect(await render(<NumberField.Input size='sm' />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="sm" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-sm text-sm">',
-    );
-  });
-
-  it("size='lg' stamps data-size=lg and the lg field size", async () => {
-    expect(await render(<NumberField.Input size='lg' />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="lg" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-lg text-base">',
-    );
-  });
-
-  it("invalid stamps data-invalid beside aria-invalid", async () => {
-    expect(await render(<NumberField.Input invalid />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm" data-invalid="" aria-invalid="true">',
-    );
-  });
-
-  it("busy stamps data-busy beside aria-busy", async () => {
-    expect(await render(<NumberField.Input busy />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm" data-busy="" aria-busy="true">',
-    );
-  });
-
-  // `state-invalid` sets `border-color` *and* `--tw-ring-color`, so before it had a group key of
-  // its own it shared `ring-*`'s slot and a caller's ring silently deleted it — leaving a control
-  // that announced `aria-invalid` while looking valid.
-  it("keeps state-invalid when the caller supplies a ring of their own", async () => {
-    expect(await render(<NumberField.Input class='ring-primary' />)).toBe(
-      '<input type="number" data-slot="number-field-input" data-size="md" class="state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm ring-primary">',
-    );
+    expect(textOf(await render(<NumberField.Increment>{`R&D's <up>`}</NumberField.Increment>))).toBe("R&amp;D&#39;s &lt;up&gt;");
   });
 });

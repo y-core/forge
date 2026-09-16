@@ -19,10 +19,7 @@ function isFileInput(el: ControlElement): boolean {
   return el.tagName === "INPUT" && (el as ControlElement & HTMLInputElement).type === "file";
 }
 
-/** Reads a control as the type the signal it drives already holds.
- *
- * Inference from the current value is what lets a button group express a boolean, a number or a
- * multi-select, which the pressed-state-in-the-DOM design could not. @internal */
+/** Reads a control as the type the signal it drives already holds. @internal */
 export function readControl(el: ControlElement, current: unknown): unknown {
   const tagged = el.dataset.value;
   if (Array.isArray(current)) {
@@ -30,9 +27,8 @@ export function readControl(el: ControlElement, current: unknown): unknown {
     // to flip, so without this the signal never moves at all.
     if (isMultiSelect(el)) return [...el.selectedOptions].map((option) => option.value);
     if (tagged === undefined) return current;
-    // A real checkbox already carries the answer; reading it rather than flipping membership is what
-    // makes this idempotent, and it has to be — one interaction on an input fires `input`, `change`
-    // *and* `click`, so a flip would run three times and land back where it started.
+    // Read, not flipped, because one interaction fires `input`, `change` *and* `click`: a flip would
+    // run three times and land back where it started.
     const next = typeof el.checked === "boolean" ? el.checked : !current.includes(tagged);
     if (!next) return current.filter((entry) => entry !== tagged);
     return current.includes(tagged) ? current : [...current, tagged];
@@ -52,10 +48,9 @@ export function isChosen(item: ControlElement, value: unknown): boolean {
   return String(value) === tagged;
 }
 
-/** Paints one control from the signal, skipping a write that would not change it.
- *
- * The differs-check is load-bearing rather than an optimisation: assigning `value` mid-drag resets a
- * range input's interaction, so a paint that agrees with the DOM has to be a no-op. @internal */
+/** Paints one control from the signal, skipping a write that would not change it. @internal */
+// The differs-check is not an optimisation: assigning `value` mid-drag resets a range input's
+// interaction, so a paint that agrees with the DOM has to be a no-op.
 export function paintControl(el: ControlElement, value: unknown): void {
   if (el.dataset.value !== undefined) {
     const chosen = isChosen(el, value);
@@ -74,8 +69,7 @@ export function paintControl(el: ControlElement, value: unknown): void {
     return;
   }
   // The `value` setter on a file input throws `InvalidStateError` for anything but `""`, and `effect`
-  // rethrows on its first run — which would abort `bindControls`' `.map()` and leave every sibling
-  // control in the scope unbound.
+  // rethrows on its first run, which would leave every sibling control in the scope unbound.
   if (isFileInput(el)) return;
   if (typeof value === "number") {
     // NaN is what `readControl` reports for a cleared or unparseable numeric field (`""`, `-`).
@@ -124,10 +118,8 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
   // own signal moved. The signal is the state and the DOM is a paint of it, so nothing is read back.
   const disposers = (Object.keys(signals) as Array<keyof T>).map((field) => effect(() => paintField(field, signals[field].value)));
 
-  // A native form reset reverts every control to its server-rendered value without firing `input` or
-  // `change`, so nothing above would notice — and a bound widget would sit contradicting the signal
-  // that is meant to be the state. A microtask, not a timer: the reset algorithm runs synchronously
-  // after the event is dispatched, so the queue drains at the end of that same task.
+  // A native form reset reverts every control without firing `input` or `change`, so nothing above
+  // notices; the reset algorithm runs synchronously after dispatch, so a microtask suffices.
   const onReset = (event: Event) => {
     const form = event.target as Node | null;
     if (!form || !contains(form, root)) return;

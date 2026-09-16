@@ -21,8 +21,7 @@ type SliderProps = Omit<JSX.IntrinsicElements["input"], "children" | "size" | "t
   busy?: boolean | undefined;
 };
 
-/** HTML's "valid floating-point number": no leading `+`, no surrounding whitespace, no bare
- *  trailing `.` — but a leading `.` is fine. */
+/** HTML's "valid floating-point number": no leading `+`, no whitespace, no bare trailing `.`. */
 const VALID_FLOAT = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
 function toNumber(raw: string | number | readonly string[] | undefined): number | undefined {
@@ -64,10 +63,8 @@ export function sanitizeRangeValue(attrs: Pick<JSX.IntrinsicElements["input"], "
   return String(snapped);
 }
 
-// The input's box is the hit target, not the track: the track and thumb are painted by the
-// `::-webkit-slider-runnable-track` / `::-moz-range-track` rules in `forge-ui.css`.
-// `cursor-pointer` travels in its own `cn` argument, never beside `state-busy`: the recipe paints
-// `cursor: progress` conditionally, and one literal holding both is a conflict the sorter resolves.
+// The track and thumb are painted by the `::-webkit-slider-runnable-track` / `::-moz-range-track`
+// rules in `forge-ui.css`, and `cursor-pointer` stays out of the `state-busy` literal it conflicts with.
 const SLIDER_BASE = "state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring";
 const SLIDER_VERTICAL = "[writing-mode:vertical-lr] [direction:rtl] h-22 w-8";
 

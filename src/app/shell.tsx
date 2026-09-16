@@ -58,7 +58,6 @@ export async function renderShell(
 ): Promise<Response> {
   const shell = shellCtx.getOptional(c) ?? BARE_SHELL;
   // A mount only renders from a routed handler, where `env` and `config` are already on the context,
-  // so the narrowing is the router's promise rather than a check this seam repeats — and a unit test
-  // that renders one page directly is trusted with the same claim instead of building a whole app.
+  // so the narrowing is the router's promise rather than a check this seam repeats.
   return renderPage(await shell(c as unknown as AppContext<never>, content, slot), init);
 }

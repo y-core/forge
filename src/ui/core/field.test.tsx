@@ -1,20 +1,26 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import {
-  FIELD_LABEL_CLASSES,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-  fieldControlProps,
-  fieldDescribedBy,
-  fieldDescriptionId,
-  fieldErrorId,
-  fieldId,
-} from "./field";
+import { FieldDescription, FieldError, FieldLabel, fieldControlProps, fieldDescribedBy, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { FormField } from "./field-layout";
 import { Field } from "./field-stack";
 import { Input } from "./input";
+import { attrOf, attrsOf, variantClasses } from "./test-support";
+
+const ROOT = 'data-slot="field"';
+const LABEL = 'data-slot="field-label"';
+const DESCRIPTION = 'data-slot="field-description"';
+const INPUT = 'data-slot="input"';
+
+const CONTROL = { "data-slot": "input", "data-size": "md" };
+
+function slotsOf(html: string): string[] {
+  return [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1] ?? "");
+}
+
+function contentOf(html: string, tag: string): string {
+  return new RegExp(`<${tag}[^>]*>(.*)</${tag}>`).exec(html)?.[1] ?? "";
+}
 
 describe("fieldId helpers", () => {
   it("fieldId returns field-{name}", () => {
@@ -44,129 +50,150 @@ describe("fieldId helpers", () => {
 });
 
 describe("Field primitives", () => {
-  it("wires Field.Label to the control id via explicit name prop", async () => {
-    expect(
-      await render(
-        <FormField name='email'>
-          <FormField.Label name='email'>Email address</FormField.Label>
-          <FormField.Content>
-            <Input field={{ name: "email" }} />
-          </FormField.Content>
-        </FormField>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email address</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email"></div></fieldset>',
+  it("renders the whole field element exactly, its own class entities and a forwarded value escaped", async () => {
+    expect(await render(<FormField name='email' data-note={`R&D's <x>`} />)).toBe(
+      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text' +
+        ' flex-col [&amp;&gt;*]:w-full" data-note="R&amp;D&#39;s &lt;x&gt;"></fieldset>',
     );
+  });
+
+  it("wires Field.Label to the control id via explicit name prop", async () => {
+    const html = await render(
+      <FormField name='email'>
+        <FormField.Label name='email'>Email address</FormField.Label>
+        <FormField.Content>
+          <Input field={{ name: "email" }} />
+        </FormField.Content>
+      </FormField>,
+    );
+
+    expect([attrOf(html, "for", LABEL), attrOf(html, "id", INPUT)]).toEqual(["field-email", "field-email"]);
+    expect(slotsOf(html)).toEqual(["field", "field-label", "field-content", "input"]);
   });
 
   it("adds data-invalid to the field and aria-invalid to the control", async () => {
-    expect(
-      await render(
-        <FormField name='email' invalid>
-          <FormField.Label name='email'>Email</FormField.Label>
-          <FormField.Content>
-            <Input field={{ name: "email", invalid: true }} />
-            <FormField.Error name='email'>Email is required.</FormField.Error>
-          </FormField.Content>
-        </FormField>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-email">Email</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email" aria-describedby="field-email-error" aria-invalid="true"><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-email-error" role="alert">Email is required.</p></div></fieldset>',
+    const html = await render(
+      <FormField name='email' invalid>
+        <FormField.Label name='email'>Email</FormField.Label>
+        <FormField.Content>
+          <Input field={{ name: "email", invalid: true }} />
+          <FormField.Error name='email'>Email is required.</FormField.Error>
+        </FormField.Content>
+      </FormField>,
     );
+
+    expect(attrsOf(html, ROOT)).toEqual({ "data-slot": "field", "data-invalid": "", "data-orientation": "vertical" });
+    expect(attrsOf(html, INPUT)).toEqual({
+      ...CONTROL,
+      id: "field-email",
+      name: "email",
+      "aria-describedby": "field-email-error",
+      "aria-invalid": "true",
+    });
   });
 
   it("wires description and error ids into aria-describedby", async () => {
-    expect(
-      await render(
-        <FormField name='message' invalid>
-          <FormField.Label name='message'>Message</FormField.Label>
-          <FormField.Content>
-            <Input field={{ name: "message", invalid: true, description: true }} />
-            <FormField.Description name='message'>Minimum 15 characters</FormField.Description>
-            <FormField.Error name='message'>Required</FormField.Error>
-          </FormField.Content>
-        </FormField>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-message">Message</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-message" name="message" aria-describedby="field-message-description field-message-error" aria-invalid="true"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-message-description">Minimum 15 characters</p><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-message-error" role="alert">Required</p></div></fieldset>',
+    const html = await render(
+      <FormField name='message' invalid>
+        <FormField.Label name='message'>Message</FormField.Label>
+        <FormField.Content>
+          <Input field={{ name: "message", invalid: true, description: true }} />
+          <FormField.Description name='message'>Minimum 15 characters</FormField.Description>
+          <FormField.Error name='message'>Required</FormField.Error>
+        </FormField.Content>
+      </FormField>,
     );
+
+    expect(attrOf(html, "aria-describedby", INPUT)).toBe("field-message-description field-message-error");
+    expect(declaredIds(html)).toEqual(["field-message", "field-message-description", "field-message-error"]);
   });
 
-  it("inherits disabled state on the control", async () => {
-    expect(
-      await render(
-        <FormField name='name' disabled>
+  it("inherits disabled state on the control, so the browser refuses the input itself", async () => {
+    const html = await render(
+      <FormField name='name' disabled>
+        <FormField.Label name='name'>Name</FormField.Label>
+        <FormField.Content>
+          <Input field={{ name: "name", disabled: true }} />
+        </FormField.Content>
+      </FormField>,
+    );
+
+    expect(attrsOf(html, ROOT)).toEqual({ disabled: "", "data-slot": "field", "data-disabled": "", "data-orientation": "vertical" });
+    expect(attrsOf(html, INPUT)).toEqual({ ...CONTROL, id: "field-name", name: "name", disabled: "" });
+  });
+
+  it("preserves explicit control props over field defaults, appending its own IDREF rather than replacing", async () => {
+    const html = await render(
+      <FormField name='name' invalid>
+        <FormField.Label name='name'>Name</FormField.Label>
+        <FormField.Content>
+          <Input id='custom-id' aria-describedby='custom-help' aria-invalid='false' field={{ name: "name", invalid: true }} />
+        </FormField.Content>
+      </FormField>,
+    );
+
+    expect(attrsOf(html, INPUT)).toEqual({
+      ...CONTROL,
+      id: "custom-id",
+      "aria-describedby": "custom-help field-name-error",
+      "aria-invalid": "false",
+      name: "name",
+    });
+  });
+
+  it("nests a whole field inside Field.Group, which is the element the container query keys on", async () => {
+    const html = await render(
+      <FormField.Group>
+        <FormField name='name'>
           <FormField.Label name='name'>Name</FormField.Label>
           <FormField.Content>
-            <Input field={{ name: "name", disabled: true }} />
+            <Input field={{ name: "name" }} />
           </FormField.Content>
-        </FormField>,
-      ),
-    ).toBe(
-      '<fieldset disabled data-slot="field" data-disabled="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-name" name="name" disabled></div></fieldset>',
+        </FormField>
+      </FormField.Group>,
     );
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "field-group" });
+    expect(slotsOf(html)).toEqual(["field-group", "field", "field-label", "field-content", "input"]);
   });
 
-  it("preserves explicit control props over field defaults", async () => {
-    expect(
-      await render(
-        <FormField name='name' invalid>
-          <FormField.Label name='name'>Name</FormField.Label>
+  it("renders Field.Set and Field.Legend with explicit slots, the legend naming the set", async () => {
+    const html = await render(
+      <FormField.Set>
+        <FormField.Legend>Contact details</FormField.Legend>
+      </FormField.Set>,
+    );
+
+    expect(slotsOf(html)).toEqual(["field-set", "field-legend"]);
+    expect(attrsOf(html, 'data-slot="field-legend"')).toEqual({ "data-slot": "field-legend", "data-as": "legend" });
+    expect(contentOf(html, "legend")).toBe("Contact details");
+  });
+
+  it("renders Field.Title and Field.Separator with explicit slots, the separator carrying its own content", async () => {
+    const html = await render(
+      <FormField.Group>
+        <FormField name='name'>
+          <FormField.Title>Name</FormField.Title>
           <FormField.Content>
-            <Input id='custom-id' aria-describedby='custom-help' aria-invalid='false' field={{ name: "name", invalid: true }} />
+            <Input field={{ name: "name" }} />
           </FormField.Content>
-        </FormField>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="field" data-invalid="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="custom-id" aria-describedby="custom-help field-name-error" aria-invalid="false" name="name"></div></fieldset>',
+        </FormField>
+        <FormField.Separator>or</FormField.Separator>
+      </FormField.Group>,
     );
-  });
 
-  it("renders Field.Group with stack classes", async () => {
-    expect(
-      await render(
-        <FormField.Group>
-          <FormField name='name'>
-            <FormField.Label name='name'>Name</FormField.Label>
-            <FormField.Content>
-              <Input field={{ name: "name" }} />
-            </FormField.Content>
-          </FormField>
-        </FormField.Group>,
-      ),
-    ).toBe(
-      '<div data-slot="field-group" class="@container/field-group flex w-full flex-col gap-6"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><label data-slot="field-label" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50" for="field-name">Name</label><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-name" name="name"></div></fieldset></div>',
-    );
-  });
-
-  it("renders Field.Set and Field.Legend with explicit slots", async () => {
-    expect(
-      await render(
-        <FormField.Set>
-          <FormField.Legend>Contact details</FormField.Legend>
-        </FormField.Set>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="field-set" class="flex flex-col gap-6"><legend data-slot="field-legend" data-as="legend" class="mb-3 font-medium text-base text-foreground">Contact details</legend></fieldset>',
-    );
-  });
-
-  it("renders Field.Title and Field.Separator with explicit slots", async () => {
-    expect(
-      await render(
-        <FormField.Group>
-          <FormField name='name'>
-            <FormField.Title>Name</FormField.Title>
-            <FormField.Content>
-              <Input field={{ name: "name" }} />
-            </FormField.Content>
-          </FormField>
-          <FormField.Separator>or</FormField.Separator>
-        </FormField.Group>,
-      ),
-    ).toBe(
-      '<div data-slot="field-group" class="@container/field-group flex w-full flex-col gap-6"><fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><div data-slot="field-title" class="flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50">Name</div><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-name" name="name"></div></fieldset><div data-content="true" data-slot="field-separator" class="relative h-5 text-sm"><hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border absolute inset-0 top-1/2"><span data-slot="field-separator-content" class="relative mx-auto block w-fit bg-background px-2 text-muted-foreground">or</span></div></div>',
-    );
+    expect(slotsOf(html)).toEqual([
+      "field-group",
+      "field",
+      "field-title",
+      "field-content",
+      "input",
+      "field-separator",
+      "separator",
+      "field-separator-content",
+    ]);
+    expect(attrsOf(html, 'data-slot="field-separator"')).toEqual({ "data-content": "true", "data-slot": "field-separator" });
+    expect(contentOf(html, "span")).toBe("or");
   });
 });
 
@@ -176,36 +203,40 @@ function idsAndRefs(html: string): string[] {
 
 describe("Field ids — aria-describedby names only what renders", () => {
   it("a control with no description emits no aria-describedby at all", async () => {
-    expect(await render(<Input field={{ name: "email" }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email">',
-    );
+    expect(attrsOf(await render(<Input field={{ name: "email" }} />))).toEqual({ ...CONTROL, id: "field-email", name: "email" });
   });
 
   it("a declared description wires the IDREF, and the description element carries that id", async () => {
-    expect(
-      await render(
-        <FormField name='email'>
-          <FormField.Content>
-            <Input field={{ name: "email", description: true }} />
-            <FormField.Description name='email'>We never share it.</FormField.Description>
-          </FormField.Content>
-        </FormField>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"><div data-slot="field-content" class="flex flex-1 flex-col gap-1.5 leading-snug"><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email" aria-describedby="field-email-description"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-email-description">We never share it.</p></div></fieldset>',
+    const html = await render(
+      <FormField name='email'>
+        <FormField.Content>
+          <Input field={{ name: "email", description: true }} />
+          <FormField.Description name='email'>We never share it.</FormField.Description>
+        </FormField.Content>
+      </FormField>,
     );
+
+    expect(attrOf(html, "aria-describedby", INPUT)).toBe("field-email-description");
+    expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description", id: "field-email-description" });
   });
 
   it("an invalid field with no description names the error alone", async () => {
-    expect(await render(<Input field={{ name: "email", invalid: true }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email" aria-describedby="field-email-error" aria-invalid="true">',
-    );
+    expect(attrsOf(await render(<Input field={{ name: "email", invalid: true }} />))).toEqual({
+      ...CONTROL,
+      id: "field-email",
+      name: "email",
+      "aria-describedby": "field-email-error",
+      "aria-invalid": "true",
+    });
   });
 
   it("a caller's own aria-describedby survives when the field adds nothing", async () => {
-    expect(await render(<Input aria-describedby='custom-help' field={{ name: "email" }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" aria-describedby="custom-help" id="field-email" name="email">',
-    );
+    expect(attrsOf(await render(<Input aria-describedby='custom-help' field={{ name: "email" }} />))).toEqual({
+      ...CONTROL,
+      "aria-describedby": "custom-help",
+      id: "field-email",
+      name: "email",
+    });
   });
 });
 
@@ -376,28 +407,23 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a control with a blank name renders no id, and its name attribute passes through as given", async () => {
-    expect(await render(<Input field={{ name: "" }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" name="">',
-    );
+    expect(attrsOf(await render(<Input field={{ name: "" }} />))).toEqual({ ...CONTROL, name: "" });
   });
 
   it("aria-invalid still rides on a blank-named control, because invalidity is not an IDREF", async () => {
-    expect(await render(<Input field={{ name: "", description: true, invalid: true }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" name="" aria-invalid="true">',
-    );
+    expect(attrsOf(await render(<Input field={{ name: "", description: true, invalid: true }} />))).toEqual({
+      ...CONTROL,
+      name: "",
+      "aria-invalid": "true",
+    });
   });
 
-  it("FieldDescription renders no id for a blank name", async () => {
-    expect(await render(<FieldDescription name=''>hi</FieldDescription>)).toBe(
-      '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">hi</p>',
-    );
-  });
-
-  it("FieldLabel renders no for, and FieldError no id, for a blank name", async () => {
-    expect([await render(<FieldLabel name=''>hi</FieldLabel>), await render(<FieldError name=''>bad</FieldError>)]).toEqual([
-      `<label data-slot="field-label" class="${FIELD_LABEL_CLASSES}">hi</label>`,
-      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" role="alert">bad</p>',
-    ]);
+  it("FieldLabel renders no for, and FieldDescription and FieldError no id, for a blank name", async () => {
+    expect([
+      attrsOf(await render(<FieldLabel name=''>hi</FieldLabel>)),
+      attrsOf(await render(<FieldDescription name=''>hi</FieldDescription>)),
+      attrsOf(await render(<FieldError name=''>bad</FieldError>)),
+    ]).toEqual([{ "data-slot": "field-label" }, { "data-slot": "field-description" }, { "data-slot": "field-error", role: "alert" }]);
   });
 
   it("a whole blank-named field declares and references no id at all", async () => {
@@ -422,8 +448,8 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("an empty caller aria-describedby leaves no leading space on the rendered attribute", async () => {
-    expect(await render(<Input aria-describedby='' field={{ name: "email", description: true }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" aria-describedby="field-email-description" id="field-email" name="email">',
+    expect(attrOf(await render(<Input aria-describedby='' field={{ name: "email", description: true }} />), "aria-describedby")).toBe(
+      "field-email-description",
     );
   });
 });
@@ -479,9 +505,10 @@ describe("Field ids — a name or scope must be a single id token", () => {
   it("a non-breaking space is a legal id character, so it derives and the two halves agree", async () => {
     const describedBy = fieldDescribedBy(`a${NBSP}b`, { description: true });
 
-    expect(await render(<FieldDescription name={`a${NBSP}b`}>Work address</FieldDescription>)).toBe(
-      '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-a\u00a0b-description">Work address</p>',
-    );
+    expect(attrsOf(await render(<FieldDescription name={`a${NBSP}b`}>Work address</FieldDescription>))).toEqual({
+      "data-slot": "field-description",
+      id: `field-a${NBSP}b-description`,
+    });
     expect(describedBy).toBe(`field-a${NBSP}b-description`);
   });
 
@@ -503,54 +530,64 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("a control named with a space renders no id, and its name attribute passes through as given", async () => {
-    expect(await render(<Input field={{ name: "first name" }} />)).toBe(
-      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" name="first name">',
-    );
+    expect(attrsOf(await render(<Input field={{ name: "first name" }} />))).toEqual({ ...CONTROL, name: "first name" });
   });
 
   it("FieldLabel renders no for, and FieldDescription and FieldError no id, for a name with a space", async () => {
     expect([
-      await render(<FieldLabel name='first name'>Name</FieldLabel>),
-      await render(<FieldDescription name='first name'>Work address</FieldDescription>),
-      await render(<FieldError name='first name'>Required</FieldError>),
-    ]).toEqual([
-      `<label data-slot="field-label" class="${FIELD_LABEL_CLASSES}">Name</label>`,
-      '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Work address</p>',
-      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" role="alert">Required</p>',
-    ]);
+      attrsOf(await render(<FieldLabel name='first name'>Name</FieldLabel>)),
+      attrsOf(await render(<FieldDescription name='first name'>Work address</FieldDescription>)),
+      attrsOf(await render(<FieldError name='first name'>Required</FieldError>)),
+    ]).toEqual([{ "data-slot": "field-label" }, { "data-slot": "field-description" }, { "data-slot": "field-error", role: "alert" }]);
   });
 });
 
 describe("Field — arbitrary attribute pass-through", () => {
   it("forwards data-* attributes to the root with escaped values", async () => {
-    expect(
-      await render(
-        <Field label='Email' data-test-hook='email-field' data-note='a&b'>
-          <Input field={{ name: "email" }} />
-        </Field>,
-      ),
-    ).toBe(
-      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1" data-test-hook="email-field" data-note="a&amp;b"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">Email</span><input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" id="field-email" name="email"></div>',
+    const html = await render(
+      <Field label='Email' data-test-hook='email-field' data-note='a&b'>
+        <Input field={{ name: "email" }} />
+      </Field>,
     );
+
+    expect(attrsOf(html)).toEqual({
+      "data-slot": "field-stack",
+      "data-orientation": "vertical",
+      "data-test-hook": "email-field",
+      "data-note": "a&amp;b",
+    });
+    expect(slotsOf(html)).toEqual(["field-stack", "field-stack-label", "input"]);
   });
 });
 
 describe("FormField — orientation and responsive", () => {
   it("lays out vertically by default and stamps no data-responsive", async () => {
-    expect(await render(<FormField name='email' />)).toBe(
-      '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full"></fieldset>',
-    );
+    expect(attrsOf(await render(<FormField name='email' />))).toEqual({ "data-slot": "field", "data-orientation": "vertical" });
   });
 
-  it("orientation='horizontal' stamps the horizontal axis and its row layout", async () => {
-    expect(await render(<FormField name='email' orientation='horizontal' />)).toBe(
-      '<fieldset data-slot="field" data-orientation="horizontal" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-row items-start [&amp;&gt;[data-slot~=field-content]]:flex-1 [&amp;&gt;[data-slot~=field-label]]:flex-auto"></fieldset>',
-    );
+  it("orientation='horizontal' stamps the horizontal axis and swaps the column layout for a row", async () => {
+    const html = await render(<FormField name='email' orientation='horizontal' />);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "field", "data-orientation": "horizontal" });
+    expect(variantClasses(html, await render(<FormField name='email' />))).toEqual({
+      added: ["flex-row", "items-start", "[&amp;&gt;[data-slot~=field-content]]:flex-1", "[&amp;&gt;[data-slot~=field-label]]:flex-auto"],
+      dropped: ["flex-col", "[&amp;&gt;*]:w-full"],
+    });
   });
 
   it("responsive stamps data-responsive and layers the container-query row on the vertical layout", async () => {
-    expect(await render(<FormField name='email' responsive />)).toBe(
-      '<fieldset data-slot="field" data-responsive="" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text flex-col [&amp;&gt;*]:w-full @md/field-group:flex-row @md/field-group:items-start @md/field-group:[&amp;&gt;*]:w-auto @md/field-group:[&amp;&gt;[data-slot~=field-content]]:flex-1 @md/field-group:[&amp;&gt;[data-slot~=field-label]]:flex-auto"></fieldset>',
-    );
+    const html = await render(<FormField name='email' responsive />);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "field", "data-responsive": "", "data-orientation": "vertical" });
+    expect(variantClasses(html, await render(<FormField name='email' />))).toEqual({
+      added: [
+        "@md/field-group:flex-row",
+        "@md/field-group:items-start",
+        "@md/field-group:[&amp;&gt;*]:w-auto",
+        "@md/field-group:[&amp;&gt;[data-slot~=field-content]]:flex-1",
+        "@md/field-group:[&amp;&gt;[data-slot~=field-label]]:flex-auto",
+      ],
+      dropped: [],
+    });
   });
 });

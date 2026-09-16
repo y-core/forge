@@ -5,102 +5,93 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Accordion } from "./accordion";
 import { createIcon } from "./icon";
+import { attrsOf, classesOf, tagOf } from "./test-support";
 
 const icon = createIcon("/sprite.svg");
 const narrowIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-phone": "0 0 24 24" });
 
-const TRIGGER_CLS =
-  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40";
-
-const CHEVRON =
-  '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
-
-const leadGlyph = (name: string) =>
-  `<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground" aria-hidden="true"><use href="/sprite.svg#icon-${name}"></use></svg>`;
+const spriteRefs = (html: string) => [...html.matchAll(/<use href="([^"]*)"/g)].map((match) => match[1]);
+const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 
 describe("Accordion", () => {
-  it("renders the root with data-slot=accordion", async () => {
-    expect(await render(<Accordion>content</Accordion>)).toBe('<div data-slot="accordion" class="flex flex-col">content</div>');
-  });
-
-  it("merges a custom class on the root", async () => {
-    expect(await render(<Accordion class='my-accordion'>content</Accordion>)).toBe(
-      '<div data-slot="accordion" class="flex flex-col my-accordion">content</div>',
-    );
-  });
-
-  it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
+  it("renders the whole root exactly, forwarded attributes escaped", async () => {
     expect(
       await render(
-        <Accordion id='acc1' data-testid='accordion' data-note='a&b'>
+        <Accordion id='acc1' data-testid='accordion' data-note={`R&D's <x>`}>
           content
         </Accordion>,
       ),
-    ).toBe('<div data-slot="accordion" class="flex flex-col" id="acc1" data-testid="accordion" data-note="a&amp;b">content</div>');
+    ).toBe('<div data-slot="accordion" class="flex flex-col" id="acc1" data-testid="accordion" data-note="R&amp;D&#39;s &lt;x&gt;">content</div>');
   });
 
-  it("forwards id and data-* attributes on the trigger summary", async () => {
+  it("stacks its items in a column, carrying nothing but its slot", async () => {
+    const html = await render(<Accordion>content</Accordion>);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "accordion" });
+    expect(textNodes(html)).toEqual(["content"]);
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Accordion class='my-accordion'>content</Accordion>)).at(-1)).toBe("my-accordion");
+  });
+
+  it("forwards attributes onto the trigger summary rather than swallowing them", async () => {
+    const html = await render(
+      <Accordion.Trigger icon={icon} id='trg1' data-testid='trigger'>
+        Section
+      </Accordion.Trigger>,
+    );
+
+    expect(tagOf(html).startsWith("<summary ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "accordion-trigger", id: "trg1", "data-testid": "trigger" });
+  });
+
+  it("forwards attributes onto the content, escaped", async () => {
     expect(
-      await render(
-        <Accordion.Trigger icon={icon} id='trg1' data-testid='trigger'>
-          Section
-        </Accordion.Trigger>,
+      attrsOf(
+        await render(
+          <Accordion.Content id='cnt1' data-note='a&b'>
+            Body
+          </Accordion.Content>,
+        ),
       ),
-    ).toBe(
-      '<summary data-slot="accordion-trigger" class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40" id="trg1" data-testid="trigger"><span class="flex-1 ps-1">Section</span><svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg></summary>',
-    );
+    ).toEqual({ "data-slot": "accordion-content", id: "cnt1", "data-note": "a&amp;b" });
   });
 
-  it("forwards id and data-* attributes on the content", async () => {
-    expect(
-      await render(
-        <Accordion.Content id='cnt1' data-note='a&b'>
-          Body
-        </Accordion.Content>,
-      ),
-    ).toBe('<div data-slot="accordion-content" class="px-1 pt-1 pb-3" id="cnt1" data-note="a&amp;b">Body</div>');
+  it("renders a closed item, which is a details element carrying no open attribute", async () => {
+    const html = await render(<Accordion.Item>Body</Accordion.Item>);
+
+    expect(tagOf(html).startsWith("<details ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "accordion-item" });
   });
 
-  it("renders a closed item carrying only its slot and class", async () => {
-    expect(await render(<Accordion.Item>Body</Accordion.Item>)).toBe(
-      '<details data-slot="accordion-item" class="group/accordion-item border-b border-border last:border-b-0">Body</details>',
-    );
-  });
-
-  it("emits the native open attribute for an open item", async () => {
-    expect(await render(<Accordion.Item open>Body</Accordion.Item>)).toBe(
-      '<details data-slot="accordion-item" open class="group/accordion-item border-b border-border last:border-b-0">Body</details>',
-    );
+  it("emits the native open attribute for an open item, which is what actually holds it open", async () => {
+    expect(attrsOf(await render(<Accordion.Item open>Body</Accordion.Item>))).toEqual({ "data-slot": "accordion-item", open: "" });
   });
 });
 
 describe("Accordion.Trigger glyph typing", () => {
-  it("accepts a sheet narrowed to iconName plus its own chevron-down, uncast", async () => {
-    expect(
-      await render(
-        <Accordion.Trigger icon={narrowIcon} iconName='phone'>
-          Section
-        </Accordion.Trigger>,
-      ),
-    ).toBe(
-      `<summary data-slot="accordion-trigger" class="${TRIGGER_CLS}">${leadGlyph("phone")}` +
-        `<span class="flex-1 ps-1">Section</span>${CHEVRON}</summary>`,
+  it("accepts a sheet narrowed to iconName plus its own chevron-down, uncast, and leads with that glyph", async () => {
+    const html = await render(
+      <Accordion.Trigger icon={narrowIcon} iconName='phone'>
+        Section
+      </Accordion.Trigger>,
     );
+
+    expect(spriteRefs(html)).toEqual(["/sprite.svg#icon-phone", "/sprite.svg#icon-chevron-down"]);
+    expect(textNodes(html)).toEqual(["Section"]);
   });
 
   it("rejects an iconName outside the sheet the trigger is parameterised with", async () => {
-    expect(
-      await render(
-        <Accordion.Trigger<"phone">
-          icon={narrowIcon}
-          // @ts-expect-error — "printer" is not a glyph in the narrowed sheet
-          iconName='printer'>
-          Section
-        </Accordion.Trigger>,
-      ),
-    ).toBe(
-      `<summary data-slot="accordion-trigger" class="${TRIGGER_CLS}">${leadGlyph("printer")}` +
-        `<span class="flex-1 ps-1">Section</span>${CHEVRON}</summary>`,
+    const html = await render(
+      <Accordion.Trigger<"phone">
+        icon={narrowIcon}
+        // @ts-expect-error — "printer" is not a glyph in the narrowed sheet
+        iconName='printer'>
+        Section
+      </Accordion.Trigger>,
     );
+
+    expect(spriteRefs(html)).toEqual(["/sprite.svg#icon-printer", "/sprite.svg#icon-chevron-down"]);
   });
 });

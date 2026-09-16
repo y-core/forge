@@ -28,6 +28,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §3b Exact Match — Never Substring Matching: why `toContain` is banned on markup
 - §3c Render Once, Assert Once: the single enforced shape
 - §3d Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees: the deletion check
+- §3e Assert the Contract, Not the Implementation Restated: the copied-literal check
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Why Fakes Over Mocks: the comparison, and the no-mock-library rule
@@ -203,6 +204,41 @@ up also never runs. Both halves in one assertion is the cheapest form: `expect(t
 This does not weaken §1c's rule that a browser case asserts DOM state rather than a call count. What is counted here is the **platform's** own
 invocation, which _is_ the mechanism; §1c bans substituting a count of calls into the test's own fixture for the DOM state a controller was supposed
 to produce.
+
+### 3e. Assert the Contract, Not the Implementation Restated
+
+**A literal copied from the source under test is not an expected value.** This is the case §3d cannot reach. A transcription goes red the moment the
+source changes, so it is never vacuous by the deletion check's measure — it merely records that two files agree with each other, which is a fact
+about the repository rather than about the software. The rule §2 states for a configuration file is the same rule: a test that can only restate its
+subject back to itself proves nothing, whether the subject is a config or a constant inside a module.
+
+Three shapes, all common:
+
+- **A transcribed constant map.** A frozen array or lookup table read out of the module and asserted back, entry by entry, often with further cases
+  derivable from the first. Test what _reads_ the table: the behaviour its entries were chosen to produce.
+- **A registration list.** The command or middleware roster copied into the test as an array of names in order. Assert dispatch instead — drive the
+  real entry point and pin what it did. Asserting an _identity_ rather than a spelling is what stops two copies of a name drifting apart.
+- **A class string hoisted out of a recipe.** A style literal lifted from the source, or out of rendered output, and reassembled in the expected
+  value. A token rename then fails the test while changing nothing a reader can see, and a stylesheet carrying no rule for that class fails nothing
+  at all.
+
+**The operational test: if this test and the source under test were edited together by the same rename, would anything go red?** If no, the test
+pins agreement between two files, not behaviour.
+
+This does not weaken §3a–§3c. An exact assertion on the markup a renderer emitted **is** the contract — the whole string, written out in the test
+where a reader can see the entity encoding. What this section refuses is the derived form: a class constant imported or transcribed from the source
+and recomposed into the expectation, so both sides move together and neither is ever checked against an outcome.
+
+**An expected value has to come from somewhere other than the source.** In descending order of strength: a published standard's test vectors, which
+make transcription structurally impossible; a table generated from the domain rule rather than from the branches; a real dependency's own answer — a
+query plan from a real database, a DOM state after a real event in a real browser; and the observable outcome of a request, asserted whole.
+
+**Where a constant genuinely is the contract, write it as a literal rather than importing it.** A test that reads the value back out of the module
+under test cannot fail when that value changes, which is the whole point of pinning it. The reverse holds for a value this repository does not own:
+import it, so a dependency's change surfaces as a failure rather than as silent disagreement.
+
+**Negative space is evidence.** A refusal that asserts status and body _and_ that nothing downstream ran — no statement issued, no row written, no
+outbound call made — pins what the refusal cost, which no restatement of the guard's own constants can.
 
 ---
 

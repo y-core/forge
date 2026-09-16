@@ -73,6 +73,17 @@ const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`);
 notably anything `JSON.parse` returns — is rejected and gets bound as a parameter rather than spliced into the statement text. Duck-typing this
 guard was a SQL-injection path.
 
+**The brand cannot see the one shape that still needs judgement: an identifier carried as text.** A bind parameter is a _value_ position, so
+interpolating a column into `ORDER BY ${column}` yields `ORDER BY ?`, which does not name a column at all — and calling the tag directly
+(`sql(["ORDER BY " + column] as unknown as TemplateStringsArray)`) types as a `SqlFragment` at every call site downstream. Where a caller chooses a
+column, a sort direction or a table, map their input onto one of a fixed set of literal fragments and fail closed on anything else; never assemble a
+fragment around the name they sent.
+
+```ts
+const ORDER = { name: sql`ORDER BY name`, created: sql`ORDER BY created_at DESC` } as const;
+const order = ORDER[input] ?? ORDER.name;
+```
+
 ### 1c. resolveD1Client — From the Request Context
 
 `resolveD1Client` reads the binding out of the request context via a caller-supplied selector and builds the typed client, so a binding reference is

@@ -74,7 +74,7 @@ export async function verifyPasskeyRegistration(
 
   const authData = await verifyAuthData(attestation.data.authData, {
     rpId: options.rpId,
-    requireUserVerification: options.requireUserVerification ?? false,
+    requireUserVerification: options.requireUserVerification ?? true,
     requireAttestedCredential: true,
   });
   if (!authData.ok) return err(authData.error);

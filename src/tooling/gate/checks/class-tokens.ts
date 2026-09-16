@@ -66,10 +66,8 @@ function longestOverlap(utility: string, declared: ReadonlySet<string>): string 
   return best;
 }
 
-// A near miss, not any unknown token: a literal also holds words that were never classes, so only a
-// token the design system nearly declares is reportable. The dash walk alone could not reach a forge
-// `@utility` — all nine are `<family>-<word>` and no family is itself declared, so `state-invalidd`
-// went unreported while the summary claimed every class string resolves to CSS.
+// A near miss, not any unknown token: a literal also holds words that were never classes. The dash walk
+// alone cannot reach a forge `@utility` — all are `<family>-<word>` and no family is itself declared.
 function nearMiss(utility: string, declared: ReadonlySet<string>): string | undefined {
   for (let i = utility.length - 1; i > 0; i -= 1) {
     if (utility[i] !== "-") continue;
@@ -133,7 +131,6 @@ export async function checkClassTokens(config: ClassTokensCheckConfig): Promise<
 
   const findings = files.flatMap((file) => unknownTokens(file, contents.get(file) as string, (token) => known.has(token), declared));
   // Not "every class string resolves to CSS": a token the design system nowhere nearly declares is
-  // dropped as prose, and an all-unknown literal is skipped entirely. What this check catches is the
-  // near miss — a token one edit away from a utility that exists.
+  // dropped as prose, and an all-unknown literal is skipped entirely.
   return checkResult(findings, `${candidates.length} distinct tokens over ${files.length} files: no class token near-misses a real utility`);
 }

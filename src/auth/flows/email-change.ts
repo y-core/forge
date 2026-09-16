@@ -74,9 +74,8 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
     if (!changed.ok) return err(changed.error.code === "conflict" ? "unrecognised" : changed.error);
     if (!changed.data) return err("unrecognised");
 
-    // The address is the account's identity, so a session established under the old one must not
-    // outlive the move — including sessions on devices this request cannot see. The confirmation
-    // link is answered from whatever browser opened it, so every session goes, this one included.
+    // The address is the account's identity, so no session established under the old one may outlive
+    // the move — including the sessions on devices this request cannot see.
     const revoked = await options.users.revokeSessions(userId, at);
     if (!revoked.ok) return err(revoked.error);
 
@@ -96,16 +95,12 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
       const address = email.trim();
       if (normalizeEmail(address) === found.data.emailKey) return err("unchanged");
 
-      // The new address is never looked up here: answering "already registered" is the same
-      // enumeration answer the sign-in flow refuses to give. The unique index refuses it at confirm.
-      // An unverified address has proved nothing, so there the new one is the only address to ask.
+      // An unverified address has proved nothing, so the new one is the only mailbox worth asking;
+      // looking it up here would answer "already registered", the enumeration sign-in refuses.
       if (found.data.emailVerifiedAt === null) return ok(await forward(userId, address, at));
 
-      // The first link goes to the address the account already holds, so the move is authorised by
-      // whoever owns that mailbox rather than by whoever holds the session — without which a stolen
-      // cookie moves the account to the thief's inbox and locks the owner out of the primary factor.
-      // Answering it only forwards a second link to the new address, which is the one that proves
-      // the new mailbox is read: a row is never marked verified on an address that answered nothing.
+      // The first link goes to the address the account already holds, so a stolen cookie cannot move
+      // the account to the thief's inbox; answering it only forwards a second link to the new one.
       const token = await mint("approve", userId, address, at);
       const expiresAt = at + ttlMs;
       options.defer(deliver(found.data.email, token, expiresAt));

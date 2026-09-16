@@ -77,9 +77,8 @@ interface RecordedUse {
 
 function fakeCredentials(row: AuthCredential | null) {
   const uses: RecordedUse[] = [];
-  // The read answers from the row as it was, and the write from the row as it is. That is the
-  // difference the store's conditional statement exists to cover: two requests may both read the
-  // same stale counter, and only one of them may write.
+  // The read answers from the row as it was and the write from the row as it is: two requests may
+  // both read the same stale counter, and only one of them may write.
   let stored = row;
   const store: CredentialStore = {
     listByUser: () => Promise.resolve(ok(row ? [row] : [])),
@@ -142,8 +141,8 @@ function verifyOptions(
 const base = () => ({ rpId: RP_ID, origin: ORIGIN, challenge: CHALLENGE, credentialId: CREDENTIAL_ID });
 
 describe("verifyPasskeyAuthentication — a signature per algorithm", () => {
-  it("accepts an assertion signed over `authenticatorData ‖ SHA-256(clientDataJSON)` for -7, -8 and -257", async () => {
-    for (const algorithm of [-7, -8, -257] as const) {
+  it("accepts an assertion signed over `authenticatorData ‖ SHA-256(clientDataJSON)` for -7 and -257", async () => {
+    for (const algorithm of [-7, -257] as const) {
       const key = keyFor(algorithm);
       const credentials = fakeCredentials(credentialRow({ publicKey: key.cosePublicKey, algorithm, signCount: 4 }));
       const assertion = await fakePasskeyAssertion({ ...base(), key, signCount: 5 });
@@ -155,6 +154,53 @@ describe("verifyPasskeyAuthentication — a signature per algorithm", () => {
       expect(`${algorithm}: ${outcome.ok ? "accepted" : outcome.error}`).toBe(`${algorithm}: accepted`);
       expect(credentials.uses).toEqual([{ id: CREDENTIAL_ROW_ID, signCount: 5, backedUp: false, at: AT }]);
     }
+  });
+
+  // `signature.ts` can verify Ed25519 but `AUTH_SUPPORTED_ALGORITHMS` does not advertise it, and
+  // both doors judge against that set: no algorithm is enrollable by one and admissible by the other.
+  it("refuses an Ed25519 assertion the default allowlist never advertised, and admits it once opted into", async () => {
+    const key = keyFor(-8);
+    const row = credentialRow({ publicKey: key.cosePublicKey, algorithm: -8, signCount: 4 });
+    const assert = async (overrides: Partial<PasskeyAuthenticationVerifyOptions>) => {
+      const credentials = fakeCredentials(row);
+      const assertion = await fakePasskeyAssertion({ ...base(), key, signCount: 5 });
+      return verifyPasskeyAuthentication(
+        verifyOptions(fakeChallenges().store, credentials.store, fakeUsers([userRow()]), overrides),
+        { sessionId: SESSION_ID, credential: assertion },
+        AT,
+      );
+    };
+
+    expect(await assert({})).toEqual({ ok: false, error: "unsupported-algorithm" });
+    expect((await assert({ algorithms: [-7, -8, -257] })).ok).toBe(true);
+  });
+
+  it("refuses a stored credential whose algorithm sits outside a narrowed allowlist", async () => {
+    const key = keyFor(-257);
+    const credentials = fakeCredentials(credentialRow({ publicKey: key.cosePublicKey, algorithm: -257, signCount: 4 }));
+    const assertion = await fakePasskeyAssertion({ ...base(), key, signCount: 5 });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(fakeChallenges().store, credentials.store, fakeUsers([userRow()]), { algorithms: [-7] }),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome).toEqual({ ok: false, error: "unsupported-algorithm" });
+    expect(credentials.uses).toEqual([]);
+  });
+
+  // The blob is what verifies the signature; the column is only a label on it. A row where the two
+  // disagree is refused rather than judged by whichever the check happened to read.
+  it("refuses a credential whose algorithm column disagrees with its stored key", async () => {
+    const key = keyFor(-7);
+    const credentials = fakeCredentials(credentialRow({ publicKey: key.cosePublicKey, algorithm: -257, signCount: 4 }));
+    const assertion = await fakePasskeyAssertion({ ...base(), key, signCount: 5 });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(fakeChallenges().store, credentials.store, fakeUsers([userRow()])),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome).toEqual({ ok: false, error: "unsupported-algorithm" });
+    expect(credentials.uses).toEqual([]);
   });
 
   it("refuses a signature made over anything other than that concatenation", async () => {
@@ -228,9 +274,8 @@ describe("verifyPasskeyAuthentication — the sign count", () => {
     }
   });
 
-  // Both takes succeed because KV's `take` is a read followed by a delete, so a captured assertion
-  // resubmitted inside the consistency window reaches the counter check against the same stale row.
-  // The second write is what has to refuse, and it can only refuse in the statement.
+  // KV's `take` is a read followed by a delete, so a captured assertion resubmitted inside the
+  // consistency window reaches the counter check against the same stale row.
   it("refuses a captured assertion replayed against the same stored row, leaving the counter as the first use left it", async () => {
     const credentials = fakeCredentials(credentialRow({ signCount: 41 }));
     const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), signCount: 42 });
@@ -247,8 +292,7 @@ describe("verifyPasskeyAuthentication — the sign count", () => {
     expect(credentials.current()?.signCount).toBe(42);
   });
 
-  // The statement's other `ok(false)`: the row is gone rather than advanced. It is deliberately
-  // folded into the same reason, so the collapse is pinned here rather than left incidental.
+  // The statement's other `ok(false)`: the row is gone rather than advanced, folded into one reason.
   it("answers a credential deleted between the read and the write with the same reason", async () => {
     const present = fakeCredentials(credentialRow({ signCount: 41 }));
     const deleted = fakeCredentials(null);
@@ -318,8 +362,7 @@ describe("verifyPasskeyAuthentication — the backup flags", () => {
 
 describe("verifyPasskeyAuthentication — resolving the user", () => {
   // A discoverable sign-in is one where nothing but the authenticator's handle says whose account
-  // this is. An assertion without one has not answered the question the ceremony asked, and admitting
-  // it fell back to whichever account the credential row happened to name.
+  // this is, so admitting an assertion without one falls back to whichever account the row names.
   it("refuses a discoverable assertion that carries no user handle", async () => {
     const discoverable = fakeChallenges({ challenge: CHALLENGE, sessionId: SESSION_ID });
     const credentials = fakeCredentials(credentialRow({ signCount: 1 }));
@@ -493,6 +536,27 @@ describe("verifyPasskeyAuthentication — the ceremony bindings", () => {
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "user-not-verified" });
+  });
+
+  // The default posture, not a configured one: a deployment that says nothing gets the safe answer.
+  it("refuses a presence-only assertion when the deployment configured nothing", async () => {
+    const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), flags: PASSKEY_FLAG.up, signCount: 2 });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(fakeChallenges().store, fakeCredentials(credentialRow()).store, fakeUsers([userRow()])),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome).toEqual({ ok: false, error: "user-not-verified" });
+  });
+
+  it("admits a presence-only assertion only where verification is explicitly waived", async () => {
+    const assertion = await fakePasskeyAssertion({ ...base(), key: keyFor(-7), flags: PASSKEY_FLAG.up, signCount: 2 });
+    const outcome = await verifyPasskeyAuthentication(
+      verifyOptions(fakeChallenges().store, fakeCredentials(credentialRow()).store, fakeUsers([userRow()]), { requireUserVerification: false }),
+      { sessionId: SESSION_ID, credential: assertion },
+      AT,
+    );
+    expect(outcome.ok).toBe(true);
   });
 
   it("drops the challenge on the failure path, so a retry with it cannot pass", async () => {

@@ -73,9 +73,8 @@ test.describe("Switch — the checked paint reaches both halves of the control",
   });
 });
 
-// The thumb rests at the inline *start* and travels to the inline *end*. Written physically —
-// `left-0.5` plus `translate-x-*` — that geometry mirrors under `dir="rtl"`: the thumb sat at the
-// end and travelled back to the start, which reads as a switch that is on when it is off.
+// The thumb rests at the inline start and travels to the inline end; written physically, that
+// geometry mirrors under `dir="rtl"` and reads as a switch that is on when it is off.
 test.describe("Switch — the thumb follows the reader's direction", () => {
   async function thumbTravel(page: Page, dir: "ltr" | "rtl"): Promise<{ restsAtStart: boolean; travelsTowardEnd: boolean }> {
     const html = await markup();

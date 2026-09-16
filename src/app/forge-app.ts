@@ -151,8 +151,6 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
     // Twice deliberately: the inner boundary keeps an error response flowing back out through guards
     // that queue `set-cookie` after `next()`; the outer one catches a guard's own throw.
-    // Inside `dispatchMatches`, so a no-match flows back out through `applyHeaders` and both
-    // boundary depths exactly as a matched route does.
     const defaultHandler: RequestHandler = (context) => {
       const c = getAppContext<Bindings>(context);
       return this.notFound(c, c.config);

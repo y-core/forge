@@ -4,8 +4,7 @@ import { mountRovingFocus } from "./composite";
 import { activeElement, asElement, closestAcross, contains, elementById, isRtl, ownerDocument } from "./dom";
 import type { MenuOptions } from "./types";
 
-/** The row that opens a nested panel, and the panel itself. Token-list matching (`~=`) because an
- * `asChild` composition can leave more than one slot name on the same element. */
+/** The row that opens a nested panel, and the panel itself. */
 const SUBMENU_TRIGGER_SELECTOR = '[data-slot~="menu-submenu-trigger"]';
 const MENU_POPUP_SELECTOR = '[data-slot~="menu-popup"]';
 
@@ -61,9 +60,8 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
 
   const onKeyDown = (event: Event) => {
     const keyEvent = event as KeyboardEvent;
-    // `keydown` bubbles from an open submenu to the panel containing it; bailing on
-    // `defaultPrevented` and calling `preventDefault` on every consumed key is what keeps both
-    // controllers from acting on one press.
+    // `keydown` bubbles from an open submenu to the panel containing it, so bailing on
+    // `defaultPrevented` is what keeps both controllers from acting on one press.
     if (keyEvent.defaultPrevented) return;
     if (keyEvent.ctrlKey || keyEvent.metaKey || keyEvent.altKey) return;
     const { key } = keyEvent;
@@ -76,10 +74,8 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
       const row = closestAcross<HTMLElement>(activeElement(popup), SUBMENU_TRIGGER_SELECTOR);
       if (!row || !contains(popup, row)) return;
       keyEvent.preventDefault();
-      // The row's command is `toggle-popover`, so an already-open submenu must not be clicked again:
-      // ARIA specifies this key as open-and-enter, never as close. Resolved from the row because an
-      // id reference resolves in the tree that declares it, which may be a shadow root this parent
-      // panel is not in.
+      // The row's command is `toggle-popover`, and ARIA specifies this key as open-and-enter, never
+      // as close, so an already-open submenu must not be clicked again.
       const target = elementById(row, row.getAttribute("commandfor") ?? "");
       if (target?.matches(":popover-open")) return;
       row.click();

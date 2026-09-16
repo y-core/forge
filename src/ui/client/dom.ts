@@ -77,9 +77,8 @@ export function queryAcross<E extends Element>(root: Element | Document | Docume
   for (let i = 0; i < trees.length; i += 1) {
     const tree = trees[i];
     if (!tree) continue;
-    // Matching is left to one native query rather than an `el.matches()` per element: the `*` walk
-    // survives only because no selector can ask for "has a shadow root", and its body is now a
-    // single property read. `paintControl` runs this per field paint, i.e. per pointermove frame.
+    // One native query rather than an `el.matches()` per element: `paintControl` runs this per field
+    // paint, i.e. per pointermove frame. The `*` walk survives only for shadow-root discovery.
     for (const el of tree.querySelectorAll<E>(selector)) found.push(el);
     for (const el of tree.querySelectorAll<HTMLElement>("*")) {
       if (el.shadowRoot) trees.push(el.shadowRoot);
@@ -98,11 +97,9 @@ export function elementById(node: Node, id: string): HTMLElement | null {
   return ownerDocument(node).getElementById(id);
 }
 
-/** The `localStorage` of `win`'s realm, or `null` when reading it is not allowed.
- *
- * `typeof win.localStorage` is not the test: in Safari's private mode, and on any opaque origin, the
- * property is present and every `getItem` throws `SecurityError`. Only a real access answers, so this
- * performs one and reports rather than letting the throw reach a caller that cannot act on it. @public */
+/** The `localStorage` of `win`'s realm, or `null` when reading it is not allowed. @public */
+// Probed by a real access: in Safari's private mode, and on any opaque origin, the property is
+// present and every `getItem` throws `SecurityError`.
 export function safeStorage(win: Window): Storage | null {
   try {
     const storage = win.localStorage;

@@ -314,6 +314,9 @@ and the rename link resolves to a page that shows the credential rather than a f
 [`AUTH_MOUNTING.md`][am-1] §1 — and nothing is mounted until you fill it. The OTP and TOTP counters bound one code's life and say nothing about how
 often a caller may ask across identities, so outbound email is triggerable by anyone until you attach a limit.
 
+**No mutation is held across a re-authentication.** When `requireFreshStepUp` refuses a state-changing request, the visitor steps up, lands on the
+settled page and repeats the action — forge keeps no pending write to replay for them.
+
 **The email-change link is burned before the address is written.** A store failure between the two spends the link and changes nothing, so the
 visitor asks for another — the deliberate side to fail on, since burning after the write leaves a window in which one link applies the same change
 twice.

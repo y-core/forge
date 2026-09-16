@@ -33,8 +33,6 @@ const EXPOSE = {
   },
 };
 
-/** The token layer: the scale, then the mapping onto it. Both hops, or nothing resolves. */
-
 // The harness runs no Tailwind build, so a case reading a computed colour must supply the rule it
 // reads. The tokens are not restated: resolving them through the shipped sheets is the hop under test.
 const UTILITY_STYLE = `<style>
@@ -145,9 +143,8 @@ test.describe("the customiser's levers", () => {
     expect(expected.gray.light.solid[10]).toBe("#53667e");
   });
 
-  // The painter writes one `light-dark()` per property and no longer watches `<html>`'s class list,
-  // so this is what proves the browser selects the branch — and that `light-dark()` accepts the
-  // nested `var()` an `--accent-contrast` carries.
+  // The painter writes one `light-dark()` per property and never watches `<html>`'s class list, so
+  // the browser is what selects the branch — through the nested `var()` an `--accent-contrast` carries.
   test("follow the dark class without the painter noticing it changed", async ({ page }) => {
     await mountCustomise(page);
     expect(await paintedToken(page, "--gray-11")).toBe("#646464");
@@ -396,9 +393,8 @@ test.describe("the customiser's levers", () => {
   });
 });
 
-// `schemeCss` rebuilds the whole stylesheet text, so the two writes below are deferred to one frame
-// rather than run per input. `drag()` settles by design, so the pre-frame state is observable only
-// from inside the task that dispatched the event — hence the inlined dispatch.
+// The two writes below are deferred to one frame, so the pre-frame state is observable only from
+// inside the task that dispatched the event — hence the inlined dispatch rather than `drag()`.
 test.describe("the customiser's text output", () => {
   // The share URL is built from `location.pathname`, and the harness mounts the markup on the
   // origin root rather than on the route the loader was handed.
@@ -468,8 +464,6 @@ test.describe("the customiser's text output", () => {
   });
 });
 
-// The whole point of the accent rows: one accent dial has to move an accent swatch, an accent hex
-// and an accent ratio, and leave the gray family alone. A shared painter would fail the last clause.
 test.describe("the customiser's accent family", () => {
   test("move a swatch, a hex and a ratio together, and no gray hex at all", async ({ page }) => {
     await mountCustomise(page);

@@ -52,9 +52,8 @@ const CarouselRoot: FC<CarouselRootProps> = ({ snap = "start", label, stripLabel
   </div>
 );
 
-// A dot is a real fragment link, so the browser scrolls the *document* to the slide as well as the
-// strip — a page with fixed chrome above the carousel needs `scroll-margin-top` here to say where the
-// slide lands. Forge ships none: the offset is the app's chrome, not the component's.
+// A dot is a real fragment link, so the browser scrolls the document as well as the strip — a page
+// with fixed chrome above the carousel has to supply its own `scroll-margin-top` here.
 const CarouselItem: FC<CarouselItemProps> = ({ snap = "start", label, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     data-slot={slotToken("carousel-item", inherited)}
@@ -68,9 +67,8 @@ const CarouselItem: FC<CarouselItemProps> = ({ snap = "start", label, class: cls
   </div>
 );
 
-// `current` is a public `number`, so a caller can hand over an index no slide has. Left unclamped it
-// marks no dot at all, and the controller then has no selected paint to lift off the row — the one
-// failure mode in this component that said nothing. Exactly one dot is always marked.
+// `current` is a public `number`, so an out-of-range index left unclamped would mark no dot at all
+// and leave the controller no selected paint to lift off the row.
 function currentIndex(current: number, count: number): number {
   if (!Number.isFinite(current) || count === 0) return 0;
   return Math.min(Math.max(Math.trunc(current), 0), count - 1);

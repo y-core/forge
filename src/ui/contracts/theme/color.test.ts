@@ -260,9 +260,8 @@ describe("buildScale", () => {
     expect(relativeLuminance(built[8] ?? "")).toBeLessThan(relativeLuminance(indigo[8] ?? ""));
   });
 
-  // A mode-identical solid was the hazard, not a dependency: `--accent-contrast` is
-  // `light-dark(--gray-1, --gray-12)` and never reads step 9, so one colour served both a light and a
-  // dark foreground, and dark — the side with the darker foreground — had the smaller headroom.
+  // `--accent-contrast` is `light-dark(--gray-1, --gray-12)` and never reads step 9, so a
+  // mode-identical solid would serve both foregrounds and leave dark the smaller headroom.
   it("gives the accent solid a darker step 9 in dark than in light, which is what buys dark its headroom", () => {
     const dials = { hue: 267, chroma: 0.195 };
     const light = buildScale(ACCENT_RAMP.light, dials)[8];
@@ -341,9 +340,8 @@ describe("a per-mode contrast side", () => {
   });
 });
 
-// `--accent-contrast` is `--gray-1` in light but the darker `--gray-12` in dark, so the dark side has
-// the smaller headroom at any given step 9. A high-chroma green once pushed it under the floor; the
-// dark ramp's step 9 is lowered to 0.5075 to buy back the margin, so both modes now clear 4.5.
+// `--accent-contrast` is `--gray-1` in light but the darker `--gray-12` in dark, so the dark side
+// has the smaller headroom at any given step 9.
 describe("the accent dials against the --primary-foreground floor", () => {
   const pair = scalePairs().find((row) => row.token === "--primary-foreground");
   if (pair === undefined) throw new Error("--primary-foreground is not a scale pair");

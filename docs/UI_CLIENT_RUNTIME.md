@@ -264,7 +264,8 @@ rather than re-implemented.
 
 **Its scope is eager, and that is forced by the markup**: the steppers carry no `data-on-*` action, so a lazy scope would have nothing to resume it
 and the buttons would sit inert. The same reasoning makes `toolbar`, `menu`, `tabs` and `tooltip` eager — every one is setup-only. `Dialog`,
-`Popover`, `Accordion` and `Collapsible` stamp no scope at all, because the platform does the whole job ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h).
+`Popover`, `Accordion` and `Collapsible` stamp no scope at all, because the platform does the whole job — except a `Dialog` given `openModal`, whose
+scope exists solely to call `showModal()` on resume, the one opening markup cannot express ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h).
 
 ### 2i. `openPopoverAt` — Coordinate Placement
 
@@ -436,6 +437,12 @@ lazily-resumed scope belongs to no call's set and would otherwise outlive the li
 and the loop continues, so later scopes still resume and a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_
 on malformed `data-state` rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` produced a
 scope whose every signal was missing.
+
+**`disposeScopesIn` exists because a removal is not a resume.** Detached scopes are otherwise swept only as something else resumes, so an htmx swap
+that removes scoped markup and introduces none never reaches the sweep — and `active` is a strong `Map` whose retained closures hold live
+document-level listeners (`drawer.ts`'s `keydown`, `bind.ts`'s `reset`, the navbar filter channel). That is a leak rather than untidiness, so the
+disposer is taken from htmx's per-element `cleanUpElement` hook, which costs no scan of `active` and needs no `isConnected` check — the element is
+still connected at cleanup time.
 
 **The delegated event vocabulary is `click`, `input`, `change`, `submit`. There is no `keydown`, by decision.** Composite controllers own `keydown`
 at their **own widget root**, where arrow keys and typeahead belong: a page-level keydown delegation would have to decide, for every keystroke,

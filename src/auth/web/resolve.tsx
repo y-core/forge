@@ -49,8 +49,7 @@ export function notFound(): Response {
 }
 
 // `authCtx` and nothing else: a page's data is read for whoever a guard established, so a route that
-// ran neither `requireAuth` nor `resolveAuth` resolves nobody rather than reading an identity off the
-// session the guards were meant to judge. The verify group runs `resolveAuth` for exactly this reason.
+// ran neither guard resolves nobody rather than reading the session the guards were meant to judge.
 /** Who this request is, as the guards established it. @internal */
 export function resolveAuthViewer<Bindings>(c: AppContext<Bindings>): AuthIdentity | null {
   return authCtx.getOptional(c) ?? null;
@@ -72,12 +71,6 @@ async function resolveFallbackFactors(services: AuthRequestServices, userId: str
   return kinds;
 }
 
-// The page serves two ceremonies that look alike: the second half of a sign-in, and a step-up owed
-// by a session that is already signed in. Which one it is follows from whether there is an identity,
-// which the `["auth","verify"]` group's `resolve-auth` guard establishes.
-//
-// With two step-up factors offered the first in `offered` order is the one demanded — forge renders
-// no chooser, so a deployment picks the factor its visitors get by the order it offers them in.
 /** What the verify page is presenting, read off the request rather than off a query parameter. @internal */
 export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>, services: AuthRequestServices): Promise<AuthVerifyDemand> {
   const identity = resolveAuthViewer(c);
@@ -98,10 +91,8 @@ export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>,
   return { factor: service.kind, digits: service.codeDigits, identity, owed: "step-up", kinds: [] };
 }
 
-// The verify page is legitimate for exactly two things: a step-up an established session owes, and
-// the second half of a sign-in. For anything else `signin.stepUp` refuses — it excludes the primary
-// factor by design — so rendering the code field would build a form nothing can accept, and a
-// visitor owing an enrolment would read a correct code as "that did not match", forever.
+// `signin.stepUp` excludes the primary factor, so rendering the code field for anything but an owed
+// step-up builds a form nothing accepts: a visitor would read a correct code as "that did not match".
 /** Where an established identity that owes no step-up belongs instead, or `null` when the page stands. @internal */
 export function authVerifyDetour<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, demand: AuthVerifyDemand): Response | null {
   if (demand.owed === null || demand.owed === "step-up") return null;
@@ -148,9 +139,7 @@ async function resolveSignin<Bindings>(
   });
 }
 
-// Read off the registry rather than assumed, so the page describes the deployment a visitor is
-// looking at. `mandatoryForRoles` deliberately does not count: a sign-up has no identity, so no
-// roles. An implicit factor is never an enrolment — offering it is the enrolment.
+// `mandatoryForRoles` cannot count towards this: a sign-up has no identity, so it has no roles.
 /** The factor a new account is asked to enrol once the address is confirmed, or `undefined` for none. */
 function signupEnrols(services: AuthRequestServices): AuthFactorKind | undefined {
   return services.factors.seconds.find((offer) => offer.requirement === "mandatory" && offer.service.enrolment === "explicit")?.service.kind;
@@ -559,8 +548,7 @@ async function resolveAdminElevate<Bindings>(
 }
 
 // A mapped table rather than a `switch`: TypeScript does not narrow a generic return type from a
-// parameter discriminant, so every branch of a switch would need a cast — thirteen unchecked casts
-// across CSRF-bearing props.
+// parameter discriminant, so every branch of a switch would need an unchecked cast.
 /** The props-builder behind each page name. @internal */
 export const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<Name> } = {
   signin: resolveSignin,

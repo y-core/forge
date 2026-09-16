@@ -8,33 +8,7 @@ import { dependencyWeightOf, librarySources } from "./dependency";
 
 const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
 
-/** Retrieval weight by path. Derived rather than declared: a frontmatter field stating the same
- *  thing could drift from where the document actually lives, and this cannot.
- *
- *  **Canon sits above `docs/` deliberately, and the margin is small on purpose.** The canon states
- *  the rule and `docs/` states this repository's answer to it, so where both match, the rule leads.
- *  Inverting it was measured rather than argued: it moves a repository-specific question up about
- *  three ranks and costs the golden set five, because most queries want the rule. The weight is also
- *  a weaker lever than it looks — a scoped search finds a `docs/` section far higher than an
- *  unscoped one does, and that is the ~1,000 competing chunks, not this multiplier.
- *
- *  **The 0.9 README weight was re-examined after the duplication sweep and left alone.** The premise
- *  for raising it was that a README chunk no longer competes with the doc it copied; the measurement
- *  did not support acting on it. The noise the sweep was meant to clear — heading stubs at ranks 2-4
- *  of "how many comments am I allowed to write" — is mostly `src/ui/design/` routing tables at 1.0
- *  and 1.3, which a README weight does not reach, and raising 0.9 would lift the one README stub
- *  among them rather than sink it. The floor margin widened on its own (0.392/0.308 before the sweep,
- *  0.390/0.271 after), which is the sweep's real effect. The sweep itself is no longer a manual one:
- *  `warden:duplicates` measures it every run, so a later re-examination starts from that step's
- *  output rather than from this paragraph.
- *
- *  **Dropping the READMEs from the corpus is no longer free, and used to look it.** They are 464 of
- *  1,294 searchable chunks, and removing all of them moved MRR 0.874 → 0.878 — invisible to the
- *  gate, while still surfacing in top-5 for real queries and supplying two of the five loudest
- *  negative-set peaks. Ten `reference` golden queries now hold one README chunk each at rank 1, so
- *  the same removal is ten failures rather than a rounding error. That is the point of them: the
- *  next person weighing this paragraph's 0.9 against deleting the bucket entirely gets an answer
- *  from the gate instead of from a measurement that could not see what it was measuring. @public */
+/** Retrieval weight by path, derived from where a document lives rather than declared in it. @public */
 export function weightOf(corpus: Corpus, path: string): number {
   if (corpus === "canon") return 1.3;
   if (corpus === "dependency") return dependencyWeightOf(path);
@@ -44,8 +18,7 @@ export function weightOf(corpus: Corpus, path: string): number {
   return 0.9;
 }
 
-/** The canon documents of the trees a repository of `kind` is subject to — `shared` and its own.
- *  The apps corpus is not law in a library, and indexing it would return two hits per shared rule. @public */
+/** The canon documents of the trees a repository of `kind` is subject to — `shared` and its own. @public */
 export function canonSources(kind: Tree, canonRoot = CANON_ROOT): SourceDoc[] {
   const trees = CANON_TREES.filter((tree) => tree === "shared" || tree === kind);
   return trees.flatMap((tree) =>
@@ -56,13 +29,7 @@ export function canonSources(kind: Tree, canonRoot = CANON_ROOT): SourceDoc[] {
   );
 }
 
-/** The repository's own indexable documents: `docs/`, the design corpus, every source README, and warden's own.
- *
- *  **The root README is indexed in a library and not in an application.** A library's README is prose a
- *  ruling can live in — five of forge's own READMEs own their namespace's rulings outright — so indexing it is
- *  deliberate. An application's root README is a human-facing entry point with no frontmatter, so it
- *  reaches `knowledge://catalogue` as an empty gloss, and a map entry that describes itself to nobody is
- *  worse than an absent one. @public */
+/** The repository's own indexable documents: `docs/`, the design corpus, every source README, and warden's own. @public */
 export function localSources(root: string, kind: Tree, docsDir = "docs"): SourceDoc[] {
   const paths = [
     ...collectFiles(root, docsDir, (name) => name.endsWith(".md")),
@@ -76,10 +43,7 @@ export function localSources(root: string, kind: Tree, docsDir = "docs"): Source
     .map((path) => ({ corpus: "project" as const, path, file: resolve(root, path), weight: weightOf("project", path) }));
 }
 
-/** Every document one index covers, canon first, each path posix-spelled so an id is host-independent.
- *
- *  `dependencyRoot` defaults to undefined and nothing supplies it by default: the installed
- *  library's documents are served only where a repository has asked for them. @public */
+/** Every document one index covers, canon first, each path posix-spelled so an id is host-independent. @public */
 export function discover(root: string, kind: Tree, options: { canonRoot?: string; docsDir?: string; dependencyRoot?: string } = {}): SourceDoc[] {
   const canon = canonSources(kind, options.canonRoot ?? CANON_ROOT);
   const local = localSources(root, kind, options.docsDir ?? "docs");

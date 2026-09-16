@@ -63,10 +63,8 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
         tokenField: turnstileField,
       });
       if (!verification.ok) {
-        // Logged on every trip, not only on an outage: the refusal a tripped guard renders is
-        // deliberately a validation refusal naming the first declared field, so without this line a
-        // CAPTCHA that cannot pass in a given environment is indistinguishable — from the outside and
-        // from the logs — from a form whose first field is simply wrong.
+        // The refusal is deliberately a validation refusal naming the first declared field, so this
+        // line is the only thing separating an unpassable CAPTCHA from a wrong first field.
         logger.warn("Submission refused by a bot guard", { guard: "turnstile", reason: verification.error });
         return err(
           def.onBotDetected

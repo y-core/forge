@@ -40,8 +40,7 @@ import { fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./test-suppor
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 
 // This file is the mount AUTH_MOUNTING.md §1 describes, written out with no ellipsis and no free
-// variable, so the documented wiring is held to the real signatures by the compiler rather than by
-// review. When a seam here changes, this fails — which is the point.
+// variable, so the documented wiring is held to the real signatures by the compiler.
 
 /** Exactly the bindings a Worker mounting auth declares. */
 interface MountEnv extends Record<string, unknown> {
@@ -102,6 +101,11 @@ function mount(): Forge<MountEnv> {
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
     session: createAnonymousSession<MountEnv>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+    // `globals`, never `before`: the resolver reads the session, which the chain publishes ahead of
+    // this slot and not ahead of that one.
+    globals: [
+      csrfProtection({ secret: (c) => importCsrfKey((c as AppContext<MountEnv>).env.CSRF_SECRET), subject: (c) => sessionCtx.getOptional(c)?.id }),
+    ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
       auth: {
@@ -120,12 +124,6 @@ function mount(): Forge<MountEnv> {
       origin: { allowedOrigins: ["http://localhost"] },
     }),
   });
-
-  // After the chain, never before it: the resolver reads the session, which the chain publishes.
-  app.use(
-    "*",
-    csrfProtection({ secret: (c) => importCsrfKey((c as AppContext<MountEnv>).env.CSRF_SECRET), subject: (c) => sessionCtx.getOptional(c)?.id }),
-  );
 
   registerAuth(app, authMap, options);
   registerAccount(app, accountMap, options);
@@ -157,8 +155,8 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     expect(res.headers.get("location")).toBe("/auth/signin?next=%2Faccount%2Fpasskeys");
   });
 
-  // The defect this ordering exists to prevent: on a fresh profile the GET wrote no cookie, so the
-  // POST arrived with a new anonymous id and the token's subject could never match.
+  // The GET is what writes the cookie: without it the POST arrives with a new anonymous id, and the
+  // token's subject can never match.
   it("lets an anonymous visitor on a fresh profile complete the sign-up POST", async () => {
     const app = mount();
     const bindings = env();
@@ -191,8 +189,8 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     expect(res.status).toBe(403);
   });
 
-  // The guards used to capture their stores at bootstrap, which on a Worker is before any `env`
-  // exists at all. These are the assertions that they read the bindings of the request instead.
+  // A store captured at bootstrap is captured before any `env` exists, so these are the assertions
+  // that the guards read the bindings of the request instead.
   it("builds the guard's user store from the bindings of the request being guarded", async () => {
     const app = mount();
     const first = env([{ id: ADA, email: "ada@example.com" }]);
@@ -210,9 +208,8 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
   });
 });
 
-// Everything below drives the shipped second-factor configuration through the mount rather than
-// asserting a unit. The falsifier: no test here sets `authCtx`. An identity on `/auth/verify` can
-// only come from the guard chain, which is exactly what the regression it guards did not produce.
+// The falsifier for everything below: no test here sets `authCtx`, so an identity on `/auth/verify`
+// can only have come from the guard chain.
 
 const CODE = "123456";
 
@@ -375,6 +372,9 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
     session: createAnonymousSession<MountEnv>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+    globals: [
+      csrfProtection({ secret: (c) => importCsrfKey((c as AppContext<MountEnv>).env.CSRF_SECRET), subject: (c) => sessionCtx.getOptional(c)?.id }),
+    ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
       auth: { users: () => users, signinPath: paths.auth.signin() },
@@ -387,10 +387,6 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
       origin: { allowedOrigins: ["http://localhost"] },
     }),
   });
-  app.use(
-    "*",
-    csrfProtection({ secret: (c) => importCsrfKey((c as AppContext<MountEnv>).env.CSRF_SECRET), subject: (c) => sessionCtx.getOptional(c)?.id }),
-  );
 
   registerAuth(app, authMap, flowOptions);
   registerAccount(app, accountMap, flowOptions);

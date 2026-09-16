@@ -1,10 +1,7 @@
 import type { Session } from "@remix-run/session";
 
-// An id that escaped the request has to be honoured on the next one — but only when the value the
-// client already holds would not reproduce it. For a storage whose cookie value *is* the id, a
-// restored session reproduces it for free, and dirtying on every read of `.id` re-wrote an unchanged
-// record to storage on every request that read it, which the documented CSRF wiring does. For a
-// storage whose cookie value is an opaque blob the ids never match, so nothing about it changes.
+// An id that escaped the request must be honoured on the next one, but where the cookie value *is*
+// the id a restored session reproduces it for free — dirtying then re-writes an unchanged record.
 /** Wraps a session so reading its id marks it dirty, unless `cookieValue` would already reproduce that id. @internal */
 export function trackSessionId(session: Session, cookieValue: string | null): Session {
   let observed = false;

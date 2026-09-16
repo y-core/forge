@@ -64,7 +64,7 @@ warden show --zed            # write the Zed user settings to stdout, to merge b
 complete tree or the one that was already there.
 
 A sync deletes each of those directories wholesale. A repository-local agent or skill added since the last sync is lost — keep one outside them.
-`.claude/commands/` is neither written nor deleted: a repository's own slash commands are its own.
+Nothing else under `.claude/` is touched, written or deleted.
 
 ### Reading the corpus
 
@@ -133,6 +133,7 @@ The gate checks warden owns, each a pure function from a config to a result, plu
 | `DocsCheckConfig` | type | What `checkDocs` needs: the root, the package name, the exports map, and the extra directories to hold. |
 | `DocKind` | type | Which canon tree a directory's documents are read as — `shared`, `libs` or `apps`. |
 | `ExtraDir` | type | One directory outside `docs/` to hold, with the kind its citations resolve against, and whether its documents are numbered governing prose. |
+| `CitableDir` | type | One citable directory and the prefix its documents are cited under, for a tree whose own directory name is not that prefix. |
 | `FrontmatterRule` | type | One extra frontmatter key a directory's documents must carry, and the values it may take. |
 | `linkDefinitions` | function | Every `[id]: destination` a document defines, which is where a reference-style citation keeps its path. |
 | `parseSections` | function | A document's numbered sections, with the line each opens on. |
@@ -170,6 +171,8 @@ developer types.
 | `wardenStep` | function | `warden:index` — rebuilds the knowledge index and asserts what retrieval depends on. Its `catalogue` option is opt-in and belongs to the canon's home repository alone. |
 | `wardenQueriesStep` | function | `warden:queries` — the golden retrieval set against a freshly built index. |
 | `duplicatesStep` | function | `warden:duplicates` — two sections saying the same thing, which the single-home rule forbids. |
+| `wardenAppSteps` | function | The four rows above that every consuming application appends, as one spread — `cloudflareWorkerSteps()` cannot emit them, because it lives under `src/` where nothing may import warden. |
+| `WardenAppStepOptions` | type | What an application states to take those four rows: its root, its package name, its golden set, the citable trees, and the `docs/` it keeps if it keeps one. |
 
 ## `@y-core/forge/warden/knowledge`
 

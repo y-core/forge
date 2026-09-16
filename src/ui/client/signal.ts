@@ -63,9 +63,8 @@ function flush(): void {
   // Flush-scoped by construction, so there is nothing to reset — and the budget measures one drain's
   // real work per node rather than the size of the graph it ran through.
   const runs = new Map<EffectNode, number>();
-  // One node at a time, re-reading `pending` after each run rather than draining a snapshot: a
-  // node enqueued mid-run must be able to run before the nodes queued behind it are re-checked,
-  // which is what collapses a chain to one run of its shared reader.
+  // One node at a time, re-reading `pending` rather than draining a snapshot: a node enqueued mid-run
+  // must run before the nodes behind it are re-checked, which collapses a chain to one run.
   try {
     while (pending.size > 0) {
       const node = pending.values().next().value as EffectNode;
@@ -90,12 +89,7 @@ function flush(): void {
   }
 }
 
-/** Refuses a write from inside a reactive computation.
- *
- * This is what makes "an effect runs exactly once per settled state" a guarantee rather than a
- * discipline. Ordering by read-depth cannot fix the double run: the offending edge is a *write*
- * edge, invisible to the read graph and unknowable until the write happens. With no writes there is
- * no edge. Derive with `computed`, command from the `on` handler, and defer with `queueMicrotask`. */
+/** Refuses a write from inside a reactive computation. */
 function refuseReactiveWrite(): never {
   throw new Error(
     "signal: a signal was written while an effect or computed was running — effects paint, commands belong in the handler that caused them",
@@ -172,8 +166,7 @@ export function computed<T>(fn: () => T): ReadonlySignal<T> {
     disposed: false,
     computing: false,
     refresh() {
-      // Reading a computed from its own body is unbounded recursion once evaluation is pull-based,
-      // where the eager model reached the run cap instead.
+      // Pull-based evaluation makes reading a computed from its own body unbounded recursion.
       if (node.computing) throw new Error("signal: a computed read its own value — the graph is cyclic");
       if (evaluated && !stale(node)) return;
       node.computing = true;

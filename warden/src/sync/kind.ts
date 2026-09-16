@@ -4,16 +4,14 @@ import { resolve } from "node:path";
 import { CliError } from "../../../src/tooling/cli/errors";
 import type { Kind } from "../types";
 
-/** Reads the declared tree from a parsed manifest. `governance.kind` is honoured for one release so
- *  a repository mid-migration is not bricked. @public */
+/** Reads the declared tree from a parsed manifest, `governance.kind` included. @public */
 export function readKind(manifest: unknown): Kind | undefined {
   const pkg = manifest as { warden?: { kind?: unknown }; governance?: { kind?: unknown } } | null;
   const declared = pkg?.warden?.kind ?? pkg?.governance?.kind;
   return declared === "libs" || declared === "apps" ? declared : undefined;
 }
 
-/** A manifest that will not parse is the caller's file and the caller's fix, so it is reported as
- *  one rather than raised as a bare `SyntaxError` from inside a resolution. */
+/** The parsed manifest, a parse failure reported against the file rather than raised as a `SyntaxError`. */
 function parseManifest(file: string): unknown {
   try {
     return JSON.parse(readFileSync(file, "utf-8"));
@@ -25,15 +23,7 @@ function parseManifest(file: string): unknown {
 /** Where a resolved kind came from — `default` is the absence of any declaration. @public */
 export type KindSource = "flag" | "manifest" | "default";
 
-/** Resolves the tree this repository clones, from `--kind` or the manifest, and says which.
- *
- *  **`libs` is declared; `apps` is what everything else is.** There are a handful of libraries and
- *  potentially hundreds of applications, so the common case is the one that needs no configuration
- *  and the rare one announces itself. An absent key, an absent `warden` object and an absent
- *  `package.json` are all the same answer, which is why no repository is required to carry the key.
- *
- *  An *invalid* `--kind` still throws: that is a typo the caller wants told about, not an
- *  omission. @public */
+/** Resolves the tree this repository clones, from `--kind` or the manifest, and says which. @public */
 export function resolveKindSource(root: string, explicit?: string): { kind: Kind; source: KindSource } {
   if (explicit === "libs" || explicit === "apps") return { kind: explicit, source: "flag" };
   if (explicit !== undefined && explicit !== "") {

@@ -63,8 +63,6 @@ export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
 export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
   /** Built per request, for the same reason the user store is: the registry is assembled from Worker bindings. */
   readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve">>;
-  // Keyed by kind because the demand is: a deployment offering the authenticator app owes a page an
-  // enrolment can be completed on, and a single path sends every owed kind to whichever one it names.
   /** Where a user who still owes an enrolment is sent, by the kind they owe — spell it `authEnrolmentPaths(paths.auth)`. */
   readonly enrolmentPaths: Partial<Record<AuthFactorKind, string>>;
   /** Where a user who owes a step-up is sent — read off `authPaths`. */
@@ -73,8 +71,6 @@ export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
   readonly settledPath: string;
   /** How long a completed step-up satisfies a later demand, in milliseconds. Omit to last the session. */
   readonly stepUpMaxAgeMs?: number;
-  // Separate from `stepUpMaxAgeMs` because they answer different questions: that one is how long a
-  // session stays signed in, this one is how recently the visitor proved they are still there.
   /** How recent a step-up a state-changing request must carry, in milliseconds. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` and `requireFreshStepUp` demands nothing. */
   readonly freshStepUpMaxAgeMs?: number | null;
   /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
@@ -101,9 +97,6 @@ export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   // declares no edge to `security`, and the direct import fails `validate-namespace-graph`.
   /** Origin/Referer allowlist for every group carrying a mutating leaf; forge cannot pick your origins, so without it none is mounted. */
   readonly origin?: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
-  // Keyed by the group's own dotted path rather than attached to `AuthRouteGroup`, so the group
-  // table stays the one description of what a group *is* and a consumer never restates it. A window
-  // right for the sign-in POST is wrong for the admin console, so this is per group and not global.
   /** Rate limits per group, keyed by `path.join(".")` — `"auth"`, `"auth.verify"`, `"account"`. Forge picks no numbers. */
   readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>>>;
 }
@@ -235,9 +228,6 @@ export interface AuthVerifyDemand {
   readonly digits: number | null;
   /** The signed-in identity owing a step-up, or `null` when this is the second half of a sign-in. */
   readonly identity: AuthIdentity | null;
-  // What an established identity actually owes, which is not always a step-up. Rendering the code
-  // field for anything else builds a form the submit cannot accept: `signin.stepUp` refuses the
-  // primary factor by design, so a page that fell back to it asks for a code nothing will verify.
   /** What the resolution demanded of an established identity; `null` when there is no identity to demand of. */
   readonly owed: "step-up" | "enrolment" | "none" | "unknown" | null;
   /** The kinds an owed enrolment may be completed with, empty unless `owed` is `enrolment`. */
@@ -314,8 +304,6 @@ export interface AuthFactorChoices {
   readonly enrollable: readonly AuthFactorKind[];
 }
 
-// Every offered set names its primary, and the namings render differently, so the choice is crossed
-// rather than defaulted — a set with nothing primary-capable names none and is refused.
 /** One offered set together with the primary it is declared with. @internal */
 export interface AuthFactorOffering {
   readonly kinds: readonly AuthFactorKind[];

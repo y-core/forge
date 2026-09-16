@@ -296,14 +296,16 @@ vs route-scoped composite), see `src/security/README.md`.
 
 `requestId(options?)` generates a unique ID per request, sets the `X-Request-Id` response header, and stores the value in `requestIdCtx`.
 
-**Register at the top of the middleware stack** so all downstream middleware and handlers can read it. Read it with `requestIdCtx.getOptional(c)`.
+**Register at the top of the middleware stack** so all downstream middleware and handlers can read it — the position
+[`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e gives it, and `applyMiddlewareChain` puts it there. Read it with `requestIdCtx.getOptional(c)`.
 
 The inbound `CF-Ray` header is ignored unless `trustCfHeaders` is set — see §5c.
 
 ### 5b. Logging Integration
 
 `requestLogger` reads `requestIdCtx` to correlate log entries across a request's lifetime. **Because `requestId()` runs first, the logger always
-finds the ID already set** — see [`STRUCTURED_LOGGING.md`][sl-3c] §3c for the ordering rule.
+finds the ID already set** — the chain order is [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e's; what the logger does with the id is
+[`STRUCTURED_LOGGING.md`][sl-3c] §3c's.
 
 ### 5c. Cloudflare Header Trust Boundary — `trustCfHeaders`
 
@@ -364,6 +366,7 @@ namespace, and why identity is application-layer.
 [iv]: ./INPUT_VALIDATION.md
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
 [ram-3d]: ./ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
+[ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [sb-3b]: ./STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
 [sl-3c]: ./STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger
 [wp-4e]: ../warden/canon/apps/WORKERS_PLATFORM.md#4e-development-transport-posture

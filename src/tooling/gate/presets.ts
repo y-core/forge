@@ -4,6 +4,7 @@ import {
   browserStep,
   classOrderStep,
   classTokensStep,
+  contrastStep,
   cssTokensStep,
   dbSchemaStep,
   devBoundaryStep,
@@ -14,6 +15,7 @@ import {
   lintStep,
   markdownStep,
   modernCssStep,
+  ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -61,6 +63,12 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));
 
+  // Opt-in, unlike `forgeChecks`: a library's `.tsx` compiles under a *consumer's* tsconfig, so the
+  // pragma rides on each file, where an application's compiles under its own and states it once.
+  if (options.jsx !== undefined) {
+    steps.push(jsxStep({ root, ...options.jsx }));
+  }
+
   // Opt-in: `markdownStep` reads the prose oxfmt is told to ignore, so an app that takes it must add
   // `"**/*.md"` to its `.oxfmtrc.json` `ignorePatterns` — otherwise two tools own the same bytes.
   if (options.markdown !== undefined) {
@@ -77,9 +85,8 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push({ label: "warden", tail: 20, cmd: ["warden", "sync", "--check"], fix: ["warden", "sync"] });
   }
 
-  // Opt-in: an app that uses forge for routing but not `ui/*` gets no rows and needs no
-  // `tailwindcss` peer. `sources` is the design default rather than the table's, because
-  // `classOrderStep` reads every `.tsx` including specs, whose literals are deliberately conflicting.
+  // Opt-in: an app using forge for routing but not `ui/*` needs no `tailwindcss` peer. `sources` is the
+  // design's own default, because `classOrderStep` reads every `.tsx` including specs, whose literals conflict deliberately.
   const design = options.design;
   if (design !== undefined) {
     const designSources = design.sources ?? ["src/"];
@@ -93,7 +100,25 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     }
   }
 
-  steps.push(testStep({ sources: tests }));
+  // A suite split by the question each set answers needs a label apiece, which is what `testSets`
+  // supplies; without it the single `test` row stands.
+  if (options.testSets === undefined) {
+    steps.push(testStep({ sources: tests }));
+  } else {
+    for (const set of options.testSets) steps.push(testStep({ label: set.label, sources: set.sources }));
+  }
+
+  // Opt-in, because the rule it holds is a repository's own: which directories are browser-only, and
+  // which basename is allowed to cross from the server side.
+  if (options.ssrBoundary !== undefined) {
+    steps.push(ssrBoundaryStep({ root, ...options.ssrBoundary }));
+  }
+
+  // Opt-in: the audit refuses to report a green gate that measured nothing, so it needs the pairs a
+  // repository actually draws.
+  if (options.contrast !== undefined) {
+    steps.push(contrastStep({ root, ...options.contrast }));
+  }
 
   // Both halves of the coupling have to be present to compare them: the assets config names what is
   // written to the asset root, the wrangler config names what the Worker is kept out of.
@@ -103,12 +128,11 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   // Only the wrangler config is read here, so this row needs no assets half of the coupling.
   if (options.workerConfig !== undefined) {
-    steps.push(exposureStep({ root, workerConfig: options.workerConfig }));
+    steps.push(exposureStep({ root, workerConfig: options.workerConfig, ...options.exposure }));
   }
 
-  // Default-on, and the one row here an app cannot opt out of: the forbidden specifiers are read
-  // from forge's own installed manifest, so the check needs no configuration to know that
-  // `@y-core/forge/testing` in a deployed bundle loses every write it is handed.
+  // Default-on and not opt-out: the forbidden specifiers are read from forge's own installed manifest,
+  // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
   steps.push(
     devBoundaryStep(
       { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] },
@@ -124,9 +148,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   return steps;
 }
 
-/** The baseline table for a library published under an `exports` map, in execution order.
- *  The documentation and changelog rows are warden's — add `docsStep` and `changelogStep` from
- *  `@y-core/forge/warden` to this table; they cannot be emitted here without `src` importing warden. @public */
+/** The baseline table for a library published under an `exports` map, in execution order. @public */
 export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
   const { root, pkg } = options;
   const derived = { root, packageName: pkg.name, exports: pkg.exports };

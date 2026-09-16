@@ -68,8 +68,7 @@ test.describe("Tooltip — WCAG 2.1 SC 1.4.13 Hoverable", () => {
 });
 
 // `mount`'s `css` option goes through `page.addStyleTag`, which is itself script — unusable in the
-// very mode these tests exist to cover. Inlined instead, which is also closer to what a no-script
-// reader actually receives.
+// very mode these tests cover, so the rules are inlined.
 const INLINE_CSS = readFileSync(fileURLToPath(new URL("../assets/css/forge-ui.css", import.meta.url)), "utf-8");
 
 async function mountWithoutScript(page: Page): Promise<void> {

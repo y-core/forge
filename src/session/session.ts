@@ -31,9 +31,8 @@ export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie 
     const value = saved ?? (cookieValue !== null && cookieValue !== "" ? cookieValue : null);
     if (value === null) return res;
 
-    // HMAC is deterministic, so an unchanged payload re-signs to the bytes the client holds unless
-    // the signing secret moved. The payload therefore decides on its own, and the signature is worth
-    // computing only to tell a current secret from a retired one — which cannot arise off rotation.
+    // HMAC is deterministic, so an unchanged payload re-signs to the bytes the client holds unless the
+    // signing secret moved — which cannot arise off rotation, so the payload decides on its own.
     const unchanged = !reissue && value === cookieValue;
     if (unchanged && !rotating) return res;
 

@@ -47,6 +47,7 @@ a namespace to open it.
 | `@y-core/forge/auth` | Identity — credentials, factors & stores (domain only) | [src/auth/README.md][auth-readme] |
 | `@y-core/forge/auth/client` | Browser island for the passkey ceremony scope (side-effect) | [src/auth/README.md][auth-readme] |
 | `@y-core/forge/auth/web` | Auth routes, paths, guards, form schemas & the page render seam | [src/auth/README.md][auth-readme] |
+| `@y-core/forge/auth/schema.sql` | The identity tables' desired state, for a consumer's `config/db.ts` | [src/auth/README.md][auth-readme] |
 | `@y-core/forge/tooling/assets` | Asset config, build pipeline & `forge assets` | [src/tooling/assets/README.md][tooling-assets-readme] |
 | `@y-core/forge/tooling/cli` | CLI command framework | [src/tooling/cli/README.md][cli-readme] |
 | `@y-core/forge/tooling/gate` | Verification gate — steps, presets & checks (Node/Bun only) | [src/tooling/gate/README.md][gate-readme] |

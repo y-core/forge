@@ -8,8 +8,7 @@ const DEFAULT_QUERY =
 /** The panel inside the disclosure: its first element child that is not the backdrop. */
 const DEFAULT_PANEL_SELECTOR = ":scope > div:not([data-slot~='navbar-backdrop'])";
 
-/** The trap's own candidate list. Deliberately the ordinary interactive elements and nothing else —
- *  forge has no focus-trap utility to defer to, and a wider list is a wider surface to get wrong. */
+/** The trap's own candidate list: the ordinary interactive elements and nothing else. */
 const FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
 
@@ -21,8 +20,7 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   const found = options.element ?? (options.selector ? ownerDocument(options.within).querySelector(options.selector) : null);
   const el = found as HTMLDetailsElement | null;
   // Duck-typed rather than `instanceof HTMLDetailsElement`, which is false for an element from
-  // another realm, and which would also reject a disclosure a consumer implemented some other way.
-  // The call named a target and it did not resolve, which is a property of the call site: it throws.
+  // another realm and rejects a disclosure a consumer implemented some other way.
   if (!el || typeof el.open !== "boolean") {
     const named = options.element !== undefined ? "the given `element`" : `\`${options.selector ?? "(none)"}\``;
     throw new Error(`mountNavDrawer: ${named} did not resolve to a disclosure with an \`open\` property`);
@@ -53,9 +51,8 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
 
   const focusables = (): HTMLElement[] => (panel === null ? [] : [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => !n.hidden));
 
-  // The summary is a sibling of the panel, not inside it, and it draws the visible close glyph above
-  // the open drawer. Trapping the panel alone leaves that control outside the cycle, which is a
-  // keyboard trap for a reader who does not know Escape (WCAG 2.1.2).
+  // The summary draws the visible close glyph but is a sibling of the panel, so trapping the panel
+  // alone leaves it outside the cycle — a keyboard trap under WCAG 2.1.2.
   const trapped = (): HTMLElement[] => (summary === null ? focusables() : [summary, ...focusables()]);
 
   let lockedOverflow: string | null = null;

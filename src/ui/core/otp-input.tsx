@@ -17,9 +17,8 @@ type OtpInputProps = Omit<JSX.IntrinsicElements["input"], "size" | "type" | "max
   busy?: boolean | undefined;
 };
 
-// Two elements, because one cannot be both: the cell grid must end where the field's border does,
-// and the editor has to run `--otp-pad` past that end to hold the caret after the last glyph's own
-// letter-spacing. The frame paints the grid and clips; the editor overhangs it, unseen.
+// Two elements because the cell grid must end at the field's border while the editor runs `--otp-pad`
+// past it, to hold the caret after the last glyph's own letter-spacing.
 const FRAME = "state-disabled state-invalid focus-ring otp-cells inline-flex overflow-clip rounded-field border-field border-input bg-background";
 const EDITOR = "state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums";
 

@@ -3,9 +3,8 @@ import type { STATE_ATTRS } from "./state-attrs";
 import type { APPEARANCES } from "./vocabulary";
 import type { PRESENTATION_ATTRS } from "./vocabulary";
 import type { TONES } from "./vocabulary";
-// Each control gets two fields, not one: a second instance in a different state is what shows the
-// binding is per-field rather than per-component, and it is where `controlsReadout`'s empty and
-// off branches are actually rendered.
+// Two fields per control, not one: the second instance is what shows the binding is per-field
+// rather than per-component.
 /** The signal fields the bound-control band renders and resumes. @internal */
 export interface ControlsDemoState {
   text: string;

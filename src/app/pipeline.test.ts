@@ -160,9 +160,6 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
     expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
   });
 
-  // The refusal a tripped guard renders is deliberately indistinguishable from a validation refusal,
-  // so the log line is the only thing that tells an operator a CAPTCHA cannot pass in this
-  // environment rather than that the first field was simply wrong.
   it("logs every tripped turnstile guard with its reason, not only an unreachable siteverify", async () => {
     const app = makeApp(
       defineAction({

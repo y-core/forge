@@ -1,10 +1,13 @@
 import type { ValidationResult } from "../../result/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
+import type { ContrastCheckConfig } from "./checks/types";
 import type { DeferredFinding } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
+import type { ExposureCheckConfig } from "./checks/types";
 import type { ExportsMap } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
+import type { SsrBoundaryCheckConfig } from "./checks/types";
 import type { GATE_MODES } from "./steps";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
@@ -113,16 +116,21 @@ export interface CloudflareWorkerDesignOptions {
 export interface CloudflareWorkerStepOptions {
   /** Directories linted and type-checked. Defaults to `["src/", "tests/"]`. */
   sources?: readonly string[];
-  /** Test paths passed to `bun test`. Defaults to `["tests/"]`. */
+  /** Test paths passed to `bun test`. Defaults to `["tests/"]`. Ignored when `testSets` is set. */
   tests?: readonly string[];
+  /** Several labelled `bun test` rows in place of the single `test` row, for a suite split by the
+   *  question each set answers. */
+  testSets?: readonly { label: string; sources: readonly string[] }[];
   /** Asset config path; omit to skip the asset-types step entirely. */
   assetConfig?: string;
   /** Where the asset-types emitter writes. Defaults to `.forge/assets.ts`. */
   assetOut?: string;
   /** Whether to emit the two `wrangler types` steps. Defaults to `true`. */
   wranglerTypes?: boolean;
-  /** `--config` for the bindings invocation; the runtime invocation takes none. */
+  /** `--config` for the bindings invocation; the runtime invocation takes none. Also the config the exposure row reads. */
   workerConfig?: string;
+  /** How the exposure row judges each deployment; omit to take `require: "stated"`. Read only when `workerConfig` is set. */
+  exposure?: Omit<ExposureCheckConfig, "root" | "workerConfig">;
   /** Whether to check the synced `.claude/` trees against the installed corpus. Defaults to `false`. */
   warden?: boolean;
   /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
@@ -133,6 +141,14 @@ export interface CloudflareWorkerStepOptions {
   browser?: boolean;
   /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
   workerd?: boolean;
+  /** Omit to emit no JSX-pragma row: an application states `jsxImportSource` once in its own
+   *  tsconfig, where a library's files each have to carry it. */
+  jsx?: Omit<Partial<JsxCheckConfig>, "root">;
+  /** Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. */
+  ssrBoundary?: Omit<SsrBoundaryCheckConfig, "root">;
+  /** Omit to emit no contrast row: the audit fails a run that measured no pairs, so it needs the
+   *  ones this repository actually draws. */
+  contrast?: Omit<ContrastCheckConfig, "root">;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
   design?: CloudflareWorkerDesignOptions;
   /** The markdown conventions to hold prose to; omit to emit no row. An app that takes it must also

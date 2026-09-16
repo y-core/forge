@@ -25,8 +25,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   const hide = () => schedule(false, hideDelay);
 
   // WCAG 2.1 SC 1.4.13 (Hoverable): the pointer must be able to travel onto the tooltip without
-  // dismissing it, or long and selectable content is unreachable. `schedule` clears the pending
-  // timer, so the hide armed by leaving the trigger is cancelled by entering the content.
+  // dismissing it, so entering the content cancels the hide armed by leaving the trigger.
   const onPointerEnter = () => show();
 
   // A tap fires `pointerleave` the moment the finger lifts, which would close the tooltip in the

@@ -25,14 +25,9 @@ export const LEAF: readonly string[] = [
 
 /** Every declared cross-namespace edge: source → target → whether it survives type erasure. */
 export const EDGES: Record<string, Record<string, EdgeKind>> = {
-  // `jsx` is the shell's: `app` owns where a document shell is registered and resolved, and a shell
-  // renders JSX. Nothing in `jsx` names `app`, so the edge closes no cycle.
   app: { config: "value", dev: "type", form: "value", http: "value", jsx: "value", logging: "value", security: "value" },
   auth: { "storage/db": "value" },
-  // `auth` here is the passkey contract — pure data both tiers read — and nothing else.
   "auth/client": { auth: "value", http: "value", "ui/client": "value" },
-  // One-way by construction: `auth` never names `auth/web`, and `validateNoMutualValuePairs` is what
-  // holds it that way.
   "auth/web": {
     app: "value",
     auth: "value",
@@ -43,34 +38,20 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     session: "value",
     "ui/core": "value",
   },
-  // Type-only, and the one edge out of `form`: the allowance is the shape of a token a dev entry
-  // mints, so the option naming it is erased at emit and `form` ships as leaf code still.
   form: { dev: "type" },
   jsx: { http: "value" },
-  // Type-only on purpose: `storage/kv → logging` is the runtime edge, so a value import here would
-  // close a real cycle.
   logging: { "storage/kv": "type" },
   "logging/show": { app: "value", "html/htmx": "value", http: "value", jsx: "value", logging: "value", "ui/contracts": "type", "ui/core": "value" },
   security: { dev: "type", logging: "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },
-  testing: { app: "type", form: "value", jsx: "value", logging: "value", "storage/db": "type", "storage/kv": "type", "storage/r2": "value" },
-  // `assets` at type only: `IconLink` is the shape of a value the generated module hands a view, so
-  // it is owned by the runtime namespace the view imports rather than by the build that emits it.
-  // `http` at value for `CacheControl` — the `_headers` rules are the same header the runtime sets,
-  // so they are built by the same typed builder rather than by a second spelling of the directives.
+  testing: { app: "type", form: "value", jsx: "value", logging: "value", "storage/db": "value", "storage/kv": "type", "storage/r2": "value" },
   "tooling/assets": { assets: "type", http: "value", site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
   "tooling/cf": { "tooling/cli": "value", "tooling/term": "value", site: "value" },
   "tooling/cli": { "tooling/term": "value" },
-  // The fingerprint rules have one home in `storage/db`, so the CLI and a Worker judge a schema by the same spelling.
   "tooling/db": { "storage/db": "value", "tooling/cf": "value", "tooling/cli": "value", "tooling/term": "value" },
-  // Each fact has one home: the checks judge literals with the real `cn` and share
-  // `ui/contracts/theme`'s OKLab conversion. The gate is the lower layer: it owns the changelog
-  // and semver parsers and the barrel parser, and `tooling/release` builds its workflow on them.
   "tooling/gate": {
     "tooling/assets": "value",
-    // Type-only: the Worker config shape has one home, and the dev-boundary check reads `main` out
-    // of the same declaration `tooling/cf` writes.
     "tooling/cf": "type",
     "tooling/cli": "value",
     "tooling/lint": "value",
@@ -79,8 +60,6 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "ui/core": "value",
   },
   "tooling/release": { "tooling/cli": "value", "tooling/gate": "value", "tooling/term": "value" },
-  // Type-only back to `tooling/assets`: the config shapes these builders read are owned there,
-  // while `tooling/assets` names `ui/assets/build` at value — only one direction survives emit.
   "ui/assets/build": { "tooling/assets": "type", "ui/assets": "value", "ui/contracts/theme": "value" },
   "ui/chrome": { jsx: "type", "ui/client": "value", "ui/contracts": "value", "ui/core": "value", "ui/server": "value" },
   "ui/client": { "ui/contracts": "value" },
@@ -93,6 +72,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "html/htmx": "value",
     http: "value",
     jsx: "value",
+    security: "value",
     "ui/chrome": "value",
     "ui/client": "value",
     "ui/contracts": "value",

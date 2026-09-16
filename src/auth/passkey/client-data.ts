@@ -49,8 +49,7 @@ export function verifyClientData(bytes: Uint8Array<ArrayBuffer>, expected: Clien
   if (data.crossOrigin === true) return err("cross-origin");
 
   // WebAuthn L3 §5.8.1 defines `topOrigin` only for a cross-origin ceremony, so one present without
-  // `crossOrigin: true` is a client misreporting itself — and reporting it at all is the same claim
-  // the line above refuses. Ignoring it would let that claim through unjudged.
+  // `crossOrigin: true` is a client misreporting itself.
   if (data.topOrigin !== undefined) return err("top-origin");
 
   return ok(data);

@@ -8,7 +8,8 @@ import type { CommandBase } from "../../../src/tooling/cli/types";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { duplicatePairs } from "../gate/duplicates";
-import { GOLDEN, type GoldenQuery, NEGATIVE } from "../gate/golden";
+import type { GoldenQuery } from "../gate/golden";
+import { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf } from "../gate/step-sets";
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import { packageNameOf, resolveRepoRoot } from "../paths";
@@ -19,6 +20,7 @@ import { MARGIN, search } from "../search/search";
 import { resolveKind } from "../sync/kind";
 import type { Tree } from "../types";
 import { canonVersion } from "../version";
+import { KIND_FLAG, ROOT_FLAG } from "./flags";
 
 /** What one probe measures. @public */
 export interface ProbeOptions extends DependencyOptions {
@@ -30,8 +32,7 @@ export interface ProbeOptions extends DependencyOptions {
   docsDir?: string;
 }
 
-/** How deep the refusal measurement looks — the pool `search` itself scores for coverage, so the
- *  reported figure is the whole of what the floor refused rather than the top of it. */
+/** How deep the refusal measurement looks, matching the pool `search` scores for coverage. */
 const POOL = 60;
 
 const TOP_N = 5;
@@ -40,14 +41,10 @@ function pad(value: string, width: number): string {
   return value.length >= width ? value : `${value}${" ".repeat(width - value.length)}`;
 }
 
-/** Builds the corpus into a scratch database and reports every figure a stage's abort list names.
- *
- *  **Read-only, and deliberately its own index.** It measures what the corpus would answer now, so
- *  it must never write the developer's working index or the gate's — a probe run between two edits
- *  would otherwise decide a later verdict. @public */
+/** Builds the corpus into a scratch database and reports every figure a stage's abort list names. @public */
 export function probe(options: ProbeOptions): string {
-  const golden = options.golden ?? GOLDEN;
-  const negative = options.negative ?? NEGATIVE;
+  const golden = options.golden ?? [];
+  const negative = options.negative ?? [];
   const dependencyRoot = dependencyRootOf(options, options.root);
   const sources = discover(options.root, options.kind, {
     ...(options.canonRoot === undefined ? {} : { canonRoot: options.canonRoot }),
@@ -56,8 +53,7 @@ export function probe(options: ProbeOptions): string {
   });
   if (sources.length === 0) throw new CliError("invalid-args", "discovery found no document to index — the corpus roots are wrong");
 
-  // The table this repository's tree earns, exactly as `openIndex` and the gate resolve it: a probe
-  // measured against every bridge in the file would not be measuring what anything serves.
+  // The table this repository's tree earns, exactly as `openIndex` and the gate resolve it.
   const aliases = aliasesFor(options.kind);
   const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "warden-probe-")), "probe.sqlite"));
   const lines: string[] = [];
@@ -87,9 +83,8 @@ export function probe(options: ProbeOptions): string {
       if (first !== undefined) topOne.add(first.id.split("#")[0] ?? first.id);
       const rank = hits.findIndex((hit) => hit.id === entry.expect);
       const found = hits[rank];
-      // Uncapped, like the refusal figure below and for the same reason: `hits` has already had
-      // `FLOOR` applied, so a thinnest read off it can never report the sub-floor region the margin
-      // exists to measure — and a hit that fell out would read as the floor gaining room.
+      // Uncapped: `hits` has already had `FLOOR` applied, so a thinnest read off it can never
+      // report the sub-floor region the margin exists to measure.
       const carried = search(db, entry.query, { aliases, limit: POOL, floor: 0 }).find((hit) => hit.id === entry.expect)?.coverage ?? 0;
       if (carried < thinnest) {
         thinnest = carried;
@@ -125,9 +120,8 @@ export function probe(options: ProbeOptions): string {
       "",
     );
 
-    // The load-bearing list. `ABSENT_PENALTY` means a negative query can only cross the floor after
-    // one of its terms stops being unknown to the corpus, so a `df` moving off zero is the single
-    // channel by which enlarging the corpus makes a refusal fail.
+    // `ABSENT_PENALTY` means a negative query can only cross the floor once one of its terms stops
+    // being unknown, so a `df` moving off zero is the one channel by which a refusal fails.
     lines.push("## negative term df");
     const vocabulary = new Set(negative.flatMap((query) => terms(query)));
     for (const term of [...vocabulary].sort()) lines.push(`${pad(String(documentFrequency(db, term)), 6)}${term}`);
@@ -135,16 +129,11 @@ export function probe(options: ProbeOptions): string {
 
     lines.push("## top-1");
     for (const id of [...topOne].sort()) lines.push(id);
-    // The same assertion `checkGoldenQueries` hard-fails on, reported rather than thrown: enlarging
-    // the corpus steals a top-1 long before it costs a golden rank, and this is where that shows.
     for (const row of db.query<{ path: string }>("SELECT path FROM source WHERE corpus = 'canon' ORDER BY path").all()) {
       if (!topOne.has(`canon:${row.path}`)) lines.push(`UNREACHED canon:${row.path}`);
     }
     lines.push("");
 
-    // What a reader is shown when a hit has no gloss, which is 37% of the searchable corpus.
-    // `rules` is the highest-weighted column in the index and has never been rendered anywhere, so
-    // this is the only place its real values can be read before a screen is set against them.
     lines.push("## rules");
     const glossless = db
       .query<{ id: string; rules: string }>("SELECT id, rules FROM chunk WHERE searchable = 1 AND gloss = '' AND rules <> '' ORDER BY id")
@@ -175,19 +164,33 @@ export function probe(options: ProbeOptions): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** The golden and negative sets a module exports, or the shipped pair when it exports neither. */
-async function setsOf(module: string | undefined, root: string): Promise<{ golden?: readonly GoldenQuery[]; negative?: readonly string[] }> {
-  const file = module === undefined ? resolve(root, "config/golden.ts") : resolve(module);
+/** The sets a probe measures, read off the repository's step table — or off an explicit module; raises where it finds neither. @public */
+export async function probeSetsOf(
+  module: string | undefined,
+  root: string,
+): Promise<{ golden: readonly GoldenQuery[]; negative: readonly string[] }> {
+  const file = module === undefined ? resolve(root, "config/steps.ts") : resolve(module);
   const loaded: unknown = await import(file).catch((error: unknown) => {
-    if (module === undefined) return undefined;
-    throw new CliError("invalid-args", `cannot load the golden set from \`${file}\` — ${error instanceof Error ? error.message : String(error)}`);
+    throw new CliError("invalid-args", `cannot load \`${file}\` — ${error instanceof Error ? error.message : String(error)}`);
   });
-  if (loaded === undefined) return {};
-  const exports = loaded as { GOLDEN?: readonly GoldenQuery[]; NEGATIVE?: readonly string[] };
-  return {
-    ...(exports.GOLDEN === undefined ? {} : { golden: exports.GOLDEN }),
-    ...(exports.NEGATIVE === undefined ? {} : { negative: exports.NEGATIVE }),
-  };
+
+  if (module !== undefined) {
+    const exports = loaded as { GOLDEN?: readonly GoldenQuery[]; NEGATIVE?: readonly string[] };
+    if (exports.GOLDEN === undefined)
+      throw new CliError("invalid-args", `\`${file}\` exports no GOLDEN — name a module that does, or drop --golden`);
+    return { golden: exports.GOLDEN, negative: exports.NEGATIVE ?? [] };
+  }
+
+  const steps = stepsOf(loaded);
+  if (steps === undefined)
+    throw new CliError("invalid-args", `\`${file}\` exports no step table as \`default\` or \`STEPS\` — pass --golden=<module exporting GOLDEN>`);
+  const sets = goldenSetsOf(steps);
+  if (sets === undefined)
+    throw new CliError(
+      "invalid-args",
+      `\`${file}\` declares no \`${GOLDEN_STEP_LABEL}\` row — add one, or pass --golden=<module exporting GOLDEN>`,
+    );
+  return sets;
 }
 
 /** Builds the `warden probe` command — the diffable measurement one stage is judged against. @public */
@@ -198,14 +201,14 @@ export function createProbeCommand(parent: CommandBase): void {
       name: "probe",
       description: "Measure retrieval over a scratch index and print one diffable block",
       flags: {
-        root: { type: "string", description: "Repository root (default: derived from warden's install path)" },
-        kind: { type: "string", description: "Select the canon tree (libs|apps), overriding package.json's `warden.kind`" },
-        golden: { type: "string", description: "Module exporting GOLDEN and NEGATIVE (default: `config/golden.ts` when present)" },
+        root: ROOT_FLAG,
+        kind: KIND_FLAG,
+        golden: { type: "string", description: "Module exporting GOLDEN and NEGATIVE (default: the `warden:queries` row of `config/steps.ts`)" },
         dependency: { type: "boolean", description: "Also index the installed library's consumer-facing documents" },
       },
       run: async (_args, flags) => {
         const root = resolveRepoRoot(flags.root);
-        const sets = await setsOf(flags.golden, root);
+        const sets = await probeSetsOf(flags.golden, root);
         process.stdout.write(probe({ root, kind: resolveKind(root, flags.kind), ...sets, dependency: flags.dependency === true }));
       },
     }),

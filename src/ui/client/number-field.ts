@@ -29,10 +29,8 @@ export function mountNumberField(root: HTMLElement): () => void {
   reflect();
   root.addEventListener("click", onClick);
 
-  // The app can disable the input at any time, and there is no event for it — only observation keeps
-  // the steppers honest past the first paint. Resolved from the element's own realm, like every
-  // other platform object this namespace reaches for: an iframe has its own constructor, and a
-  // realm without one degrades to the paint already done above rather than throwing.
+  // The app can disable the input at any time and there is no event for it, so only observation
+  // keeps the steppers honest; resolved from the element's own realm, which an iframe has its own of.
   const Observer = (ownerWindow(root) as { MutationObserver?: typeof MutationObserver }).MutationObserver;
   const observer = input && Observer ? new Observer(reflect) : null;
   observer?.observe(input as HTMLInputElement, { attributeFilter: ["disabled", "readonly"] });

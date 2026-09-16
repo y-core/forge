@@ -223,6 +223,11 @@ function started, or only the headline one?_ ([`WORKERS_PLATFORM.md`][wp-2c] §2
 **Test sufficiency — the deletion check.** For each new test, _if the mechanism it names were deleted, would it still pass?_ A negative case that
 omits several things at once passes as soon as any guard fires ([`TESTING.md`][testing-5b] §5b).
 
+**Test derivation — the copied-literal check.** For each new test, _where did the expected value come from?_ Read the expectation beside the source
+it covers: a constant map transcribed entry by entry, a registration list copied as an array of names, or a class string hoisted out of a recipe
+pins agreement between two files rather than behaviour, and passes the deletion check while doing it. The question that decides it is whether the
+same rename applied to both files would turn anything red ([`TESTING.md`][testing-3e] §3e).
+
 **Name reachability.** Read each new export. _Could a reader who knows the domain but not this codebase name this symbol from the question it
 answers — and conversely, does the name carry a word that earns nothing?_ ([`CODE_RULES.md`][cr-7] §7.)
 
@@ -316,6 +321,7 @@ reviewer reads both.
 [testing-2c]: ./TESTING.md#2c-the-minimum-environment-fixture
 [testing-2d]: ./TESTING.md#2d-optional-bindings-are-deliberately-absent
 [testing-3a]: ./TESTING.md#3a-exact-match--never-substring-matching-on-markup
+[testing-3e]: ./TESTING.md#3e-assert-the-contract-not-the-implementation-restated
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
 [testing-5b]: ./TESTING.md#5b-one-test-per-rejection-path
 [testing-6]: ./TESTING.md#6-the-verification-gate

@@ -229,10 +229,20 @@ describe("createPasskeyFactor — the user-verification posture", () => {
     const assertion = request.ok ? (request.data.options as { userVerification: string }) : undefined;
     expect(`${registration?.authenticatorSelection.userVerification} ${assertion?.userVerification}`).toBe("required required");
   });
+
+  // The primitives' default is a deployment-wide setting a consumer may lower, and a step-up must
+  // not follow it down — so what is asserted is that the key is named, not what it is set to.
+  it("names `userVerification` in the ceremony it builds rather than inheriting whatever the default is", async () => {
+    const scene = world();
+    const enrolment = await build(scene).beginEnrolment(USER_ID, AT);
+    const request = await build(scene).createChallenge(USER_ID, AT);
+    const registration = enrolment.ok ? (enrolment.data.options as { authenticatorSelection: Record<string, unknown> }) : undefined;
+    const assertion = request.ok ? (request.data.options as Record<string, unknown>) : undefined;
+    expect(Object.hasOwn(registration?.authenticatorSelection ?? {}, "userVerification")).toBe(true);
+    expect(Object.hasOwn(assertion ?? {}, "userVerification")).toBe(true);
+  });
 });
 
-// `readAssertion` on the deleted discoverable endpoint was the only place holding a presented
-// credential id to a length and an alphabet; the step-up path checked it was a string and no more.
 describe("createPasskeyFactor — the credential id an assertion may present", () => {
   async function verifying(id: string) {
     const scene = world();

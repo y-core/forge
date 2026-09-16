@@ -39,10 +39,8 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
     select(root, tab);
   };
 
-  // The tab is an `<a href="#panel">` so that it works with no script; once this controller is live
-  // the fragment must not be followed, or every activation would push a history entry and scroll the
-  // panel into view. Registered separately from `onActivate` because automatic activation rides
-  // `focusin` and would otherwise never see the click at all.
+  // The tab is an `<a href="#panel">` so it works with no script, but once this controller is live
+  // the fragment must not be followed: it would push a history entry and scroll the panel into view.
   const onClick = (event: Event) => {
     const tab = closestAcross(eventTarget(event) as Node | null, TAB_SELECTOR);
     if (tab && list.contains(tab)) event.preventDefault();

@@ -16,11 +16,8 @@ export function redactSigninReason(reason: AuthSigninReason): AuthSigninNotice {
   return "unrecognised";
 }
 
-// The primary path answers one refusal for every reason a challenge can fail, because the true
-// reason is itself the membership answer: a known-but-throttled address answering `too-many-attempts`
-// where an unknown one answers `unrecognised` is the enumeration oracle `request` already refuses,
-// and `redactSigninReason` renders those two as different notices. `stepUp` keeps the true reason —
-// there the caller is already identified, so a throttle tells an attacker nothing they do not have.
+// A known-but-throttled address answering `too-many-attempts` where an unknown one answers
+// `unrecognised` is an enumeration oracle; `stepUp` keeps the true reason, being already identified.
 function redactMembership(reason: AuthSigninReason): AuthSigninReason {
   return reason === "too-many-attempts" || reason === "too-soon" ? "unrecognised" : reason;
 }
@@ -54,9 +51,8 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
       // Nothing about the address is read before this returns, and both branches hand one promise to
       // the same deferral, so a registered address and an unknown one differ in neither shape nor time.
       options.defer(issue(email, at));
-      // Read off the factor that will issue the code rather than off a knob of this flow's own: the
-      // page must not be able to promise a lifetime the factor does not enforce. It is a property
-      // known at construction, so reading it costs nothing the deferral exists to avoid.
+      // The factor's own lifetime, known at construction, so reading it costs none of the time the
+      // deferral above exists to hide.
       return { kind: options.factors.primary.kind, expiresAt: at + options.factors.primary.challengeTtlMs };
     },
 

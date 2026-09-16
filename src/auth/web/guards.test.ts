@@ -645,7 +645,7 @@ describe("createAuthGuards", () => {
   // one actually mounted satisfied too. This is the check that cannot be satisfied by the wrong value.
   it("fails the request when the app mounted no session middleware ahead of the chain, rather than admitting it", async () => {
     const app = new Forge(nullLogger);
-    for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.middleware ?? []));
+    for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "GET", "/account/passkeys", () => new Response("passkeys"));
 
     const res = await app.request("/account/passkeys");
@@ -674,7 +674,7 @@ describe("createAuthGuards", () => {
   it("hands each group its own medium down, so the JSON ceremony refuses in JSON while an HTML group still redirects", async () => {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.middleware ?? []));
+    for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "POST", "/auth/enrol/passkey/register/finish", () => new Response("finished"));
     mapHandler(app, "GET", "/account/passkeys", () => new Response("passkeys"));
 
@@ -698,7 +698,7 @@ describe("createAuthGuards", () => {
     const groups = createAuthGuards({ ...chain, origin });
     const signin = groups.find((group) => group.paths.includes("/auth/signin"));
     expect(signin?.origin).toBe(origin);
-    expect(signin?.middleware).toBeUndefined();
+    expect(signin?.guards).toBeUndefined();
     expect(groups.find((group) => group.paths.includes("/auth/signup"))?.origin).toBe(origin);
   });
 
@@ -721,7 +721,7 @@ describe("createAuthGuards", () => {
 
     expect(unguarded?.rateLimit).toBe(limit);
     expect(unguarded?.origin).toBeUndefined();
-    expect(unguarded?.middleware).toBeUndefined();
+    expect(unguarded?.guards).toBeUndefined();
   });
 
   it("leaves a group with no mutating leaf of its own unprotected, and a group with no direct leaf absent", () => {
@@ -744,7 +744,7 @@ describe("createAuthGuards", () => {
     app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
     for (const group of createAuthGuards({ ...chain, origin })) {
       if (group.origin) app.use([...group.paths], originProtection(group.origin));
-      if (group.middleware) app.use([...group.paths], ...group.middleware);
+      if (group.guards) app.use([...group.paths], ...group.guards);
     }
     mapHandler(app, "POST", "/auth/signin", () => new Response("signed in"));
     mapHandler(app, "GET", "/auth/signin", () => new Response("sign-in page"));

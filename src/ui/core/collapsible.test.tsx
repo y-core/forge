@@ -3,113 +3,111 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { Collapsible } from "./collapsible";
 import { createIcon } from "./icon";
+import { attrOf, attrsOf, classesOf, tagOf } from "./test-support";
 
 const icon = createIcon("/sprite.svg");
-
-const TRIGGER_BASE =
-  "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium select-none focus-ring hover:bg-muted/40";
-
-const CHEVRON =
-  '<svg data-slot="icon" viewBox="0 0 24 24" class="size-4 shrink-0 text-muted-foreground group-open/collapsible-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200" aria-hidden="true"><use href="/sprite.svg#icon-chevron-down"></use></svg>';
+const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1]);
+const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 
 describe("Collapsible", () => {
-  it("renders a closed details carrying only its slot and class", async () => {
-    expect(await render(<Collapsible />)).toBe('<details data-slot="collapsible" class="group/collapsible-item"></details>');
-  });
-
-  it("stamps the platform `open` attribute and the open half of the pair together", async () => {
-    expect(await render(<Collapsible open />)).toBe('<details data-slot="collapsible" open class="group/collapsible-item"></details>');
-  });
-
-  it("treats an explicit open={false} exactly as the default", async () => {
-    expect(await render(<Collapsible open={false} />)).toBe('<details data-slot="collapsible" class="group/collapsible-item"></details>');
-  });
-
-  it("merges a caller class onto the group base", async () => {
-    expect(await render(<Collapsible class='rounded-md border' />)).toBe(
-      '<details data-slot="collapsible" class="group/collapsible-item rounded-md border"></details>',
-    );
-  });
-
-  it("keeps its own slot token ahead of one handed down through props", async () => {
-    expect(await render(<Collapsible data-slot='filters' />)).toBe(
-      '<details data-slot="collapsible filters" class="group/collapsible-item"></details>',
-    );
-  });
-
-  it("escapes arbitrary data-* and aria-* values spread onto the root", async () => {
+  it("renders the whole disclosure exactly, with arbitrary data-* and aria-* values escaped", async () => {
     expect(await render(<Collapsible data-note={`R&D's "advanced" <opts>`} aria-label={`R&D's options`} />)).toBe(
       '<details data-slot="collapsible" class="group/collapsible-item" data-note="R&amp;D&#39;s &quot;advanced&quot; &lt;opts&gt;" aria-label="R&amp;D&#39;s options"></details>',
     );
   });
 
-  it("renders the whole compound in one tree", async () => {
-    expect(
-      await render(
-        <Collapsible open>
-          <Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>
-          <Collapsible.Content>Nothing here yet.</Collapsible.Content>
-        </Collapsible>,
-      ),
-    ).toBe(
-      '<details data-slot="collapsible" open class="group/collapsible-item">' +
-        `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>` +
-        '<div data-slot="collapsible-content" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div></details>',
+  it("stays closed unless it was told to open, carrying nothing but its slot", async () => {
+    expect(attrsOf(await render(<Collapsible />))).toEqual({ "data-slot": "collapsible" });
+  });
+
+  it("stamps the platform `open` attribute, which is what actually holds it open", async () => {
+    expect(attrsOf(await render(<Collapsible open />))).toEqual({ "data-slot": "collapsible", open: "" });
+  });
+
+  it("treats an explicit open={false} exactly as the default", async () => {
+    expect(await render(<Collapsible open={false} />)).toBe(await render(<Collapsible />));
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Collapsible class='rounded-md border' />)).slice(-2)).toEqual(["rounded-md", "border"]);
+  });
+
+  it("keeps its own slot token ahead of one handed down through props", async () => {
+    expect(attrOf(await render(<Collapsible data-slot='filters' />), "data-slot")).toBe("collapsible filters");
+  });
+
+  it("nests the trigger and the panel as siblings of the one details element", async () => {
+    const html = await render(
+      <Collapsible open>
+        <Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>
+        <Collapsible.Content>Nothing here yet.</Collapsible.Content>
+      </Collapsible>,
     );
+
+    expect(slotsOf(html)).toEqual(["collapsible", "collapsible-trigger", "icon", "collapsible-content"]);
+    expect(textNodes(html)).toEqual(["Advanced", "Nothing here yet."]);
   });
 });
 
 describe("Collapsible.Trigger", () => {
-  it("renders a summary with the trigger base classes, the label slot and the chevron", async () => {
-    expect(await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>)).toBe(
-      `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>`,
-    );
+  it("renders a summary, which is what makes the disclosure work without script", async () => {
+    const html = await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>);
+
+    expect(tagOf(html).startsWith("<summary ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "collapsible-trigger" });
+  });
+
+  it("puts the chevron after the label rather than before it", async () => {
+    const html = await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>);
+
+    expect(slotsOf(html)).toEqual(["collapsible-trigger", "icon"]);
+    expect(textNodes(html)).toEqual(["Advanced"]);
   });
 
   it("merges a caller class and appends an inherited slot token", async () => {
-    expect(
-      await render(
-        <Collapsible.Trigger icon={icon} class='justify-between' data-slot='filters-trigger'>
-          Advanced
-        </Collapsible.Trigger>,
-      ),
-    ).toBe(
-      `<summary data-slot="collapsible-trigger filters-trigger" class="${TRIGGER_BASE} justify-between">` +
-        `<span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>`,
+    const html = await render(
+      <Collapsible.Trigger icon={icon} class='justify-between' data-slot='filters-trigger'>
+        Advanced
+      </Collapsible.Trigger>,
     );
+
+    expect(attrOf(html, "data-slot")).toBe("collapsible-trigger filters-trigger");
+    expect(classesOf(html).at(-1)).toBe("justify-between");
   });
 
   it("accepts a sheet narrowed to the glyphs it renders, uncast", async () => {
     const narrowIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-plus": "0 0 24 24" });
+
     expect(await render(<Collapsible.Trigger icon={narrowIcon}>Advanced</Collapsible.Trigger>)).toBe(
-      `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}"><span class="flex-1 ps-1">Advanced</span>${CHEVRON}</summary>`,
+      await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>),
     );
   });
 
   it("escapes the label without disturbing the chevron beside it", async () => {
-    expect(await render(<Collapsible.Trigger icon={icon}>{`R&D's <options>`}</Collapsible.Trigger>)).toBe(
-      `<summary data-slot="collapsible-trigger" class="${TRIGGER_BASE}">` +
-        `<span class="flex-1 ps-1">R&amp;D&#39;s &lt;options&gt;</span>${CHEVRON}</summary>`,
-    );
+    const html = await render(<Collapsible.Trigger icon={icon}>{`R&D's <options>`}</Collapsible.Trigger>);
+
+    expect(textNodes(html)).toEqual(["R&amp;D&#39;s &lt;options&gt;"]);
+    expect(slotsOf(html)).toEqual(["collapsible-trigger", "icon"]);
   });
 });
 
 describe("Collapsible.Content", () => {
-  it("renders the panel div with its base classes", async () => {
-    expect(await render(<Collapsible.Content>Nothing here yet.</Collapsible.Content>)).toBe(
-      '<div data-slot="collapsible-content" class="px-1 pb-2 text-sm text-muted-foreground">Nothing here yet.</div>',
-    );
+  it("renders the panel as a plain div carrying only its slot", async () => {
+    const html = await render(<Collapsible.Content>Nothing here yet.</Collapsible.Content>);
+
+    expect(tagOf(html).startsWith("<div ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "collapsible-content" });
   });
 
   it("merges a caller class, appends an inherited slot token, and escapes children", async () => {
-    expect(
-      await render(
-        <Collapsible.Content class='pt-1' data-slot='filters-panel'>
-          {`R&D's <options>`}
-        </Collapsible.Content>,
-      ),
-    ).toBe(
-      '<div data-slot="collapsible-content filters-panel" class="px-1 pb-2 text-sm text-muted-foreground pt-1">R&amp;D&#39;s &lt;options&gt;</div>',
+    const html = await render(
+      <Collapsible.Content class='pt-1' data-slot='filters-panel'>
+        {`R&D's <options>`}
+      </Collapsible.Content>,
     );
+
+    expect(attrOf(html, "data-slot")).toBe("collapsible-content filters-panel");
+    expect(classesOf(html).at(-1)).toBe("pt-1");
+    expect(textNodes(html)).toEqual(["R&amp;D&#39;s &lt;options&gt;"]);
   });
 });

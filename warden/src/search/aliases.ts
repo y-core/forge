@@ -3,30 +3,8 @@ import type { Tree } from "../types";
 /** A bridge table: each term a reader might type, mapped to the terms the corpus files it under. @public */
 export type AliasTable = ReadonlyMap<string, readonly string[]>;
 
-/** Paraphrase bridges every repository earns, whatever tree it is subject to.
- *
- *  **Curated because the corpus cannot supply this, not merely because a provider would be
- *  inconvenient.** The convenience argument is weak — Random Indexing over these chunks is local,
- *  offline and deterministic, so it costs no provider and no network either. It was built and
- *  measured anyway: it recovers 36 of these pairs at top-25, and fails hardest on the entries that
- *  matter most. `put` comes back as the HTTP verb, `home` as the home page, `live` as the ARIA
- *  region. That is structural, not a tuning miss. A governing document states rules and never asks
- *  questions, so the corpus holds only the words a rule is written in; what this table supplies is
- *  the mapping from the words a reader asks in onto those, and that mapping is not in the text to be
- *  learned from it. The six bridges the measurement did propose cost a golden query and gained
- *  nothing.
- *
- *  Each entry is OR-ed in at low weight and never replaces the reader's own terms, so a precise
- *  query is never diluted by one. `warden:queries` warns on a bridge reaching no chunk: a dead
- *  target is OR-ed into every query that triggers it and would never announce itself. @public */
+/** Paraphrase bridges every repository earns, whatever tree it is subject to. @public */
 export const SHARED: AliasTable = new Map([
-  // Placement. "Where does this go?" is the highest-stakes question asked of this corpus — the
-  // answer decides which namespace code lands in — and it was the one lexical retrieval served
-  // worst, because the sections that answer it are titled after the namespace rather than after
-  // the asking. These reach the growth rules and the classification sections by the words those
-  // sections are filed under. `warden:queries` now reports the worst rank and thinnest coverage per
-  // question type every run, and placement leads the rollup rather than trailing it — which is what
-  // these bridges bought, and is the thing that goes first if one is deleted.
   ["put", ["growth", "namespace", "belongs"]],
   ["belong", ["growth", "namespace"]],
   ["belongs", ["growth", "namespace"]],
@@ -41,34 +19,16 @@ export const SHARED: AliasTable = new Map([
   ["crash", ["error", "boundary", "fail-closed"]],
   ["500", ["error", "boundary"]],
   ["error", ["Result", "taxonomy"]],
-  // `no-PII` occurs once in the whole canon, in a frontmatter description, which is never indexed —
-  // so the bridge was dead in every repository including the one that wrote it. The rule states
-  // itself as `PII`, which is the term a chunk actually carries.
   ["logging", ["channel", "PII"]],
   ["log", ["channel"]],
-  // A reader typing `pii` already matches the term the rule is written in — the tokenizer folds
-  // case — so the only bridge worth having is to what the rule asks for instead.
   ["pii", ["redaction"]],
   ["secret", ["binding", "env", "PII"]],
-  // `key` reaches `credential` and deliberately not `secret`: `secret` is also the placement
-  // question's word — "where does API key rotation belong" — and bridging onto it put the rule
-  // about an agent's own output above the namespace that owns the key's lifecycle.
+  // `key` reaches `credential` and never `secret`: `secret` is also the placement question's word,
+  // so bridging onto it displaces the namespace that owns a key's lifecycle.
   ["key", ["credential"]],
   ["credential", ["secret"]],
-  // The agent's own conduct, which `AGENT_WORKFLOW.md` §6 and §7 state in the corpus's words and a
-  // reader asks in their own. `believe` is what a reader types; the rule is written as `evidence`
-  // and `trusted`. `finding` is the reader's word for what an agent emits, and the rule about not
-  // writing a secret's value is filed under `output` and `report` — which also lifts the section on
-  // how a finding is written above the documents that merely mention one.
-  //
-  // `key → secret` is still not the bridge, and was re-measured after these: it costs
-  // `where does API key rotation belong` its rank, exactly as the note above records, because
-  // `secret` is also the placement question's word.
   ["believe", ["evidence", "trusted"]],
   ["finding", ["output", "report"]],
-  // `origin-guard` is a hyphenated spelling no document writes: the middleware is `originGuard` and
-  // the rule is about the request's `origin`. One token the tokenizer keeps whole, spelled as the
-  // prose spells it.
   ["auth", ["session", "csrf", "origin"]],
   ["login", ["session", "auth"]],
   ["permission", ["guard", "middleware"]],
@@ -77,8 +37,6 @@ export const SHARED: AliasTable = new Map([
   ["bot", ["turnstile"]],
   ["cors", ["origin", "transport"]],
   ["header", ["headers", "security", "csp"]],
-  // `script-src` is a directive inside a policy, and only the library's own security documents
-  // spell it; the rule everywhere else is filed under the policy.
   ["nonce", ["csp"]],
   ["style", ["class", "cn", "utility"]],
   ["css", ["utility", "layer", "token"]],
@@ -106,13 +64,7 @@ export const SHARED: AliasTable = new Map([
   ["gate", ["verify", "step", "check"]],
 ]);
 
-/** Bridges whose targets are the library's own vocabulary — its exports, its namespaces, and the
- *  classification only a library makes.
- *
- *  **Split out because the same table was loaded everywhere and half of it reached nothing.** A
- *  bridge is OR-ed into every query that triggers its term, so one aimed at `definePage` in a
- *  repository with no `definePage` is pure noise on a real question, and `warden:queries` warned
- *  about it in a consumer where nobody could act on the warning: the table is the library's file. @public */
+/** Bridges whose targets are the library's own vocabulary — its exports, its namespaces, and its classification. @public */
 export const LIBS: AliasTable = new Map([
   ["belong", ["classification"]],
   ["belongs", ["classification"]],
@@ -133,17 +85,10 @@ export const LIBS: AliasTable = new Map([
   ["lint", ["oxlint"]],
 ]);
 
-/** Bridges an application's corpus earns and a library's does not.
- *
- *  **Deliberately empty, and kept as a declared slot rather than an omission.** Every apps-tree
- *  bridge measured so far reaches a term the shared canon also carries, so it belongs above; this
- *  is where the first one that does not will go, and its absence is a measurement rather than an
- *  oversight. @public */
+/** Bridges an application's corpus earns and a library's does not. @public */
 export const APPS: AliasTable = new Map<string, readonly string[]>([]);
 
-/** The bridges a repository of `kind` is served — the shared table plus its own tree's.
- *
- *  A term may be bridged by both, so the two are merged rather than one shadowing the other. @public */
+/** The bridges a repository of `kind` is served — the shared table plus its own tree's. @public */
 export function aliasesFor(kind: Tree): AliasTable {
   const merged = new Map<string, readonly string[]>(SHARED);
   for (const [term, targets] of kind === "libs" ? LIBS : kind === "apps" ? APPS : new Map()) {
@@ -152,8 +97,7 @@ export function aliasesFor(kind: Tree): AliasTable {
   return merged;
 }
 
-/** Every bridge in the file, whatever tree it belongs to — the default for a caller that names no
- *  tree, and the union a test holds the tables against. @public */
+/** Every bridge in the file, whatever tree it belongs to. @public */
 export const ALIASES: AliasTable = (() => {
   const merged = new Map<string, readonly string[]>(SHARED);
   for (const table of [LIBS, APPS]) {

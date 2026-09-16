@@ -191,8 +191,7 @@ export function structuralSignature(module: string): string {
 
 const DATA_OPENING = "const DATA: Record<string, string> = {";
 
-/** What an emitted assets module declares: whether it is the types-only artifact, and the path each
- *  logical name maps to — `null` when the module carries no `DATA` block at all. @internal */
+/** Reads an emitted assets module's types-only flag and logical-name mapping, `null` when it has no `DATA` block. @internal */
 export function readEmittedManifest(module: string): { typesOnly: boolean; data: Record<string, string> | null } {
   const typesOnly = module.startsWith(TYPES_HEADER);
   const start = module.indexOf(DATA_OPENING);
@@ -295,9 +294,8 @@ function emitHeaders(publicDir: string, publicPrefix: string, hashed: boolean, i
   const base = publicPrefix.endsWith("/") ? publicPrefix.slice(0, -1) : publicPrefix;
   const blocks = [headerBlock(`${base}/*`, hashed ? HASHED_CACHE : { noCache: true })];
 
-  // One rule per icon rather than a prefix glob: `_headers` applies every matching rule and joins a
-  // header set twice with a comma, so an overlapping glob would merge the manifest's own
-  // `Cache-Control` into an unusable pair of values.
+  // `_headers` applies every matching rule and comma-joins a header set twice, so a prefix glob here
+  // would merge the manifest's own `Cache-Control` into an unusable pair of values.
   if (icons) {
     for (const output of icons.outputs) {
       blocks.push(headerBlock(iconTarget(icons, output).path, output.kind === "manifest" ? MANIFEST_CACHE : ICON_CACHE));

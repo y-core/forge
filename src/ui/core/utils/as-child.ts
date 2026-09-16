@@ -31,13 +31,11 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
 
   return cloneElement(children, {
     ...options.props,
-    // The caller's `type` wins when they stated one, then the child's own, then `"button"`. A
-    // compound that defaults `type` before it gets here can never take the child's branch, so a
-    // child's `type="submit"` was overwritten and the form it sat in stopped submitting.
+    // The caller's `type` wins, then the child's own, then `"button"`: a compound that defaults
+    // `type` before this point would overwrite a child's `type="submit"`.
     ...(isButton ? definedEntries({ disabled: options.disabled, type: options.type ?? children.props.type ?? "button" }) : {}),
-    // `disabled` is a button-only attribute, and `rest` carries it through on the compounds that do
-    // not destructure it out — so without this an `<a>` came out `<a disabled aria-disabled="true">`,
-    // with an attribute the platform ignores sitting beside the one that does the work.
+    // `disabled` is button-only, and `rest` carries it through on compounds that do not destructure
+    // it out, so an `<a>` would come out `<a disabled aria-disabled="true">`.
     ...(!isButton ? { disabled: undefined, ...(options.disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}) } : {}),
     ...(present(options.prefix) || present(options.suffix)
       ? { children: [options.prefix ?? null, children.props.children, options.suffix ?? null] }

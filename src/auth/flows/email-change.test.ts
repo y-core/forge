@@ -147,8 +147,7 @@ function tokenOf(sent: readonly AuthMessage[]): string {
 
 describe("createEmailChangeFlow — requesting", () => {
   // The move is authorised by whoever owns the address the account already holds, not by whoever
-  // holds the session: without this a stolen cookie moves the account to the thief's own inbox and
-  // locks the owner out of the primary factor for good.
+  // holds the session: otherwise a stolen cookie moves the account to the thief's own inbox.
   it("mails the confirmation link to the address the account already holds, off the caller's clock", async () => {
     const built = scene();
     // Delivery is still hanging here, and `request` has already answered: the send is deferred work
@@ -212,8 +211,6 @@ describe("createEmailChangeFlow — confirming", () => {
     return tokenOf(built.mail.sent.slice(1));
   }
 
-  // The defect this closes: the old address answered, and the row was stamped verified on a new
-  // address that had answered nothing — a verified primary factor nobody had proved they could read.
   it("forwards an approved change to the new address, and moves the row only when that address answers", async () => {
     const built = scene();
     const approve = await requested(built, "New@Example.com");

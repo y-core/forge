@@ -72,6 +72,12 @@ that a reader can tell it from a namespace that lost its row.
 
 **Asset rows are entries whose target is not a module**, and they carry two rules a barrel row does not.
 
+**A non-module file a consumer must name by path is published too, or the facade has a hole in it.**
+`@y-core/forge/auth/schema.sql` is the standing case: a consumer composing its database names forge's identity
+tables in its own load order, ahead of its own DDL, and the only alternative to a subpath is a
+literal reach into `node_modules/@y-core/forge/src/` — which is the one thing a facade exists to
+make unnecessary, and which no rename inside forge would then survive.
+
 **Their `exports` value is a plain string, not a `{types, import}` object.** Tailwind's CSS resolver runs `conditionNames: ["style"]`, so neither
 `types` nor `import` matches and an object entry is unreachable from `@import` however correct it looks.
 
@@ -90,9 +96,10 @@ shape and send a reader to a resolution error.
 
 | Export Path | Source | Key Exports |
 | --- | --- | --- |
-| `@y-core/forge/app` | `src/app/mod.ts` | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
+| `@y-core/forge/app` | `src/app/mod.ts` | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`, `buildGuardChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
 | `@y-core/forge/assets` | `src/assets/mod.ts` | `createManifest`, `createSpriteRegistry` — runtime lookups only; the build-time surface is `./tooling/assets` |
 | `@y-core/forge/auth` | `src/auth/mod.ts` | `resolveAuthServices`, `AUTH_SUPPORTED_ALGORITHMS`, `normalizeEmail`, `AuthStoreError`; types `AuthAlgorithm`, `AuthKeyRing`, `AuthOptions`, `AuthSecretResolver`, `AuthServices`, `AuthUser` — the identity domain, which produces no `Response` and touches no `Session` (§5h) |
+| `@y-core/forge/auth/schema.sql` | `src/auth/schema.sql` | No runtime: the identity tables' desired state, named in a consumer's `schemas` load order ahead of its own — see §3a |
 | `@y-core/forge/auth/client` | `src/auth/client/mod.ts` | No value exports — a side-effect barrel registering the passkey ceremony scope; the controller lives beside it in `src/auth/client/`, and the contract it reads is `auth`'s `PASSKEY_*` data (§5h) |
 | `@y-core/forge/auth/web` | `src/auth/web/mod.ts` | `authRoutes`, `accountRoutes`, `adminRoutes`, `authPaths` and `AUTH_ROUTE_GROUPS`; the guards `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` and `createAuthGuards`, with `authCtx`, `resolveAuthIdentity` — which reads, and clears the session's auth keys when the store refuses the id — and the session writers `establishAuthSession` / `markAuthStepUp` / `clearAuthSession`; the form schemas and `renderAuthPage` — the mountable web layer over the `auth` domain, one-way (§5h) |
 | `@y-core/forge/tooling/assets` | `src/tooling/assets/mod.ts` | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`; `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`; and `createAssetsCommands`, the `forge assets` subtree. The pipeline and the CLI face that drives it are one namespace |

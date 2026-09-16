@@ -1,8 +1,3 @@
-/** The markdown check's pure half: text → document, document → findings, document → text. No disk,
- *  no root, no path — every policy decision lives in `validateMarkdown`, and every rewrite in
- *  `renderMarkdown`, so the two halves of the dev loop are assertable from a string.
- */
-
 import { fail, warn } from "../finding";
 import type { Finding } from "../types";
 import type {
@@ -62,14 +57,10 @@ const BARE_URL = /https?:\/\/\S/;
 const INLINE_DOC_LINK = /\]\([^)]*\.md(?:#[^)]*)?\)/;
 const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 
-/** GitHub's heading anchor for `heading`, so a `#fragment` can be checked against the live title.
- *
- *  Deliberately `github-slugger`'s rule and not a tidier one: punctuation is dropped in place and the
- *  hyphen runs that leaves are kept, because `Renderers — the `http` one` anchors at
- *  `renderers--the-http-one` in a browser and a slug that collapsed the pair would name nothing.
- *  Inline links are flattened first — a heading is slugged as it renders, not as it is written.
- *  @public */
+/** GitHub's heading anchor for `heading`, so a `#fragment` can be checked against the live title. @public */
 export function githubSlug(heading: string): string {
+  // `github-slugger`'s rule exactly: punctuation drops in place and the hyphen runs that leaves are
+  // kept, because a browser anchors `Renderers — the http one` at `renderers--the-http-one`.
   return heading
     .replace(INLINE_LINK, "$1")
     .trim()
@@ -410,8 +401,7 @@ function isLiteral(kind: MarkdownLineKind | undefined): boolean {
   return kind === "fence" || kind === "frontmatter" || kind === "indented-code";
 }
 
-/** The line rewrites, applied in the order the fixer applies them, so the check and the fixer
- *  cannot disagree about what a clean line looks like. */
+/** The line rewrites, applied in the order the fixer applies them. */
 function rewriteLine(line: string, kind: MarkdownLineKind, rules: ResolvedMarkdownRules): string {
   let out = line;
   if (rules.hardTabs === "forbid") out = out.replace(/\t/g, "  ");
@@ -437,8 +427,7 @@ function inScope(file: string, scope: readonly string[] | undefined): boolean {
   return scope.some((prefix) => file === prefix || file.startsWith(`${prefix}/`));
 }
 
-/** The prose of a line with its code spans dropped — a regex or a property path inside backticks is
- *  data, and reading it as markdown is how `theme[a][b]` becomes a reference-style link. */
+/** The prose of a line with its code spans dropped, so a backticked regex or property path is not read as markdown. */
 function prose(text: string): string {
   let out = "";
   mapOutsideCode(text, (part) => {
@@ -469,9 +458,7 @@ function missingBlankLines(doc: MarkdownDoc, kinds: readonly BlockSpan["kind"][]
   return out;
 }
 
-/** Where a reference-style document keeps its definitions: one sorted block, at the foot, one blank
- *  line off the prose. Scattered definitions are how a file ends up with two of an id and no reader
- *  able to see it. */
+/** Where a reference-style document keeps its definitions: one sorted block, at the foot, one blank line off the prose. */
 function validateDefinitions(file: string, doc: MarkdownDoc, fenceLines: ReadonlySet<number>): Finding[] {
   const defined: { line: number; id: string }[] = [];
   for (const [index, line] of doc.lines.entries()) {
@@ -607,9 +594,7 @@ export function validateMarkdown(file: string, doc: MarkdownDoc, rules: Markdown
   return findings;
 }
 
-/** The mechanical half of the rules applied to `doc`'s text. Idempotent: rendering a rendered
- *  document returns it unchanged. Reports nothing — a rule a fixer cannot apply is `validateMarkdown`'s
- *  to raise. @public */
+/** The mechanical half of the rules applied to `doc`'s text, idempotently and reporting nothing. @public */
 export function renderMarkdown(doc: MarkdownDoc, rules: MarkdownRules = {}): string {
   const resolved = resolveMarkdownRules(rules);
   const out = [...doc.lines];

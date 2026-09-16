@@ -13,12 +13,7 @@ export interface ChangedFile {
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 const NEW_PATH = /^\+\+\+ (?:b\/)?(.+)$/;
 
-/** Parses a `--unified=0` diff into the changed line ranges of each surviving file.
- *
- *  A deleted file is skipped: `+++ /dev/null` names no new side, and a range on it would resolve
- *  against a document the index no longer holds. A zero-length hunk — `@@ -210,5 +209,0 @@`, which
- *  is what a pure deletion produces — is kept as the single line it sits at, because deleting a rule
- *  out of a section is exactly the change this tool exists to report. @public */
+/** Parses a `--unified=0` diff into the changed line ranges of each surviving file. @public */
 export function parseDiff(text: string): ChangedFile[] {
   const files = new Map<string, { start: number; end: number }[]>();
   let current: string | undefined;
@@ -42,12 +37,11 @@ export function parseDiff(text: string): ChangedFile[] {
   return [...files].map(([path, ranges]) => ({ path, ranges }));
 }
 
-/** Every markdown file `ref` changed, with its changed line ranges.
- *
- *  `stdio` pipes stderr separately rather than interleaving it: a `warning: LF will be replaced by
- *  CRLF` line landing mid-hunk is corruption the parser would eat silently. @public */
+/** Every markdown file `ref` changed, with its changed line ranges. @public */
 export function changed(root: string, ref: string, paths: readonly string[] = ["*.md"]): ChangedFile[] {
   const run = (args: string[]): string => {
+    // stderr is piped separately, never interleaved: a `warning: LF will be replaced by CRLF` line
+    // landing mid-hunk is corruption the parser would eat silently.
     try {
       return execFileSync("git", args, { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }) as string;
     } catch {

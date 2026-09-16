@@ -73,9 +73,8 @@ test.describe("forced colors — author-painted controls keep a visible on/off s
     expect(await bg(page, "#field-r-off")).toBe(canvas);
   });
 
-  // A `Filter` hides every unchosen chip, so the chosen fill is never compared against a neighbour:
-  // what forced colors takes away here is the chip's `focus-ring`, a `box-shadow`, which does not
-  // paint at all — the restored outline is the whole point of the entry.
+  // What forced colors takes away here is the chip's `focus-ring`, a `box-shadow`, which does not
+  // paint at all under it — so the restored outline is what this measures.
   test("a chosen Filter chip paints Highlight and a focused one gets an outline back", async ({ page }) => {
     const html = await render(
       Filter({
@@ -96,8 +95,7 @@ test.describe("forced colors — author-painted controls keep a visible on/off s
   });
 
   // `getComputedStyle` cannot read a range input's vendor pseudo-elements, so the slider is checked
-  // at the CSSOM: the forced-colors block must carry a Highlight thumb and a Canvas track, and the
-  // media must be active.
+  // at the CSSOM instead.
   test("a slider thumb is declared Highlight against a Canvas track under the active media", async ({ page }) => {
     await forced(page, await render(Slider({ id: "s", value: 5 })));
 

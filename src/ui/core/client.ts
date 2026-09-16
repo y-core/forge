@@ -105,9 +105,10 @@ registerScope<SliderAction>(SLIDER_SCOPE, {
 registerScope(DIALOG_SCOPE, {
   eager: true,
   setup: ({ root }) => {
-    // `showModal()` is the only spelling of a modal dialog: the `open` attribute always yields a
-    // non-modal one, so an SSR-open modal has to be opened here or not at all.
-    if (root.hasAttribute(DIALOG_OPEN_MODAL_ATTR)) (root as HTMLDialogElement).showModal?.();
+    // The `open` attribute always yields a non-modal dialog, so an SSR-open modal has to be opened
+    // here — and `showModal()` throws `InvalidStateError` on one already open.
+    const dialog = root as HTMLDialogElement;
+    if (root.hasAttribute(DIALOG_OPEN_MODAL_ATTR) && !dialog.open) dialog.showModal?.();
   },
 });
 

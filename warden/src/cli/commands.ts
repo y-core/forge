@@ -6,11 +6,10 @@ import { check } from "../sync/check";
 import { resolveKindSource } from "../sync/kind";
 import { seed, seedFiles } from "../sync/seed";
 import { sync, syncTrees } from "../sync/sync";
+import { ROOT_FLAG } from "./flags";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
 import { DEFAULT_ARCH, placeNatives } from "./natives";
 import { show, SUBJECTS, type Subject } from "./show";
-
-const ROOT_FLAG = { type: "string", description: "Repository root (default: derived from warden's install path)" } as const;
 
 /** Builds the `warden` command tree. @public */
 export function createWardenCommands(): CommandBase {
@@ -32,8 +31,7 @@ export function createWardenCommands(): CommandBase {
         const { kind, source } = resolveKindSource(repo, flags.kind);
         const trees = syncTrees(CLAUDE_ROOT, kind);
         // A sync replaces `.claude/agents/` wholesale, so a libs repository that dropped its
-        // declaration would be given the apps definitions with nothing said. Naming the default
-        // makes that visible without refusing a repository that is legitimately undeclared.
+        // declaration would silently be given the apps definitions; naming the default shows it.
         if (source === "default") {
           console.log('note      no `warden.kind` in package.json — defaulting to apps; declare `"warden": { "kind": "libs" }` for a library');
         }

@@ -124,9 +124,8 @@ describe("impact()", () => {
     db.close();
   });
 
-  // A dependency document lives under `node_modules` and can never be "changed" by a diff in this
-  // repository — `repoRelative` maps a changed path against this root and never matches one. That is
-  // correct; the test exists so a refactor cannot start emitting `../../node_modules/…` ids.
+  // `repoRelative` maps a changed path against this root and never matches one under
+  // `node_modules`; this exists so a refactor cannot start emitting `../../node_modules/…` ids.
   it("never names an installed library's document, whatever a diff touched", () => {
     const { root, db, sources } = fixture(files);
     const library = join(mkdtempSync(join(tmpdir(), "warden-impact-library-")), "UI.md");

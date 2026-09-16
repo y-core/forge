@@ -42,8 +42,7 @@ afterEach(() => {
   globalThis.setTimeout = origSetTimeout;
 });
 
-/** A `<dialog>` whose `showModal` is countable. A realm without it is the `?.` branch, so the method
- *  is present only when the fixture asks for it. */
+/** A `<dialog>` whose `showModal` is countable, and absent when the fixture asks for the `?.` branch. */
 class FakeDialog extends FakeElement {
   modalOpens = 0;
 
@@ -133,9 +132,8 @@ describe("alert scope", () => {
     expect(state).toBeDefined();
   });
 
-  // Drives the registered handler through a real click and the delegated runtime, rather than
-  // calling `root.remove()` by hand: the old spelling passed whether or not `client.ts` registered
-  // a `dismiss` action at all, which is the one thing this test exists to prove.
+  // Driven through a real click and the delegated runtime: calling `root.remove()` by hand passes
+  // whether or not `client.ts` registered a `dismiss` action at all.
   it("removes the alert when its dismiss button is clicked", () => {
     const { doc, el } = fakeTree();
     const root = el("DIV", { "data-scope": ALERT_SCOPE, id: "alert" });

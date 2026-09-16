@@ -2,100 +2,105 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Meter, meterState } from "./meter";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
 
-const ROOT_BASE = "flex w-full max-w-sm flex-col gap-1";
+const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Meter", () => {
-  it("renders the root wrapper with its slot token and base classes", async () => {
-    expect(await render(<Meter />)).toBe(`<div data-slot="meter" class="${ROOT_BASE}"></div>`);
+  it("renders the whole wrapper exactly, every forwarded value escaped", async () => {
+    expect(await render(<Meter data-note={`R&D's "top" <5%`} aria-label={`R&D's quota`} />)).toBe(
+      '<div data-slot="meter" class="flex w-full max-w-sm flex-col gap-1" data-note="R&amp;D&#39;s &quot;top&quot; &lt;5%" aria-label="R&amp;D&#39;s quota"></div>',
+    );
   });
 
-  it("merges a caller class onto the root base", async () => {
-    expect(await render(<Meter class='my-meter' />)).toBe(`<div data-slot="meter" class="${ROOT_BASE} my-meter"></div>`);
+  it("names itself on the slot token a stylesheet and a controller both key on", async () => {
+    expect(attrsOf(await render(<Meter />))).toEqual({ "data-slot": "meter" });
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Meter class='my-meter' />)).at(-1)).toBe("my-meter");
   });
 
   it("keeps its own slot token ahead of one handed down through props", async () => {
-    expect(await render(<Meter data-slot='quota-meter' />)).toBe(`<div data-slot="meter quota-meter" class="${ROOT_BASE}"></div>`);
+    expect(attrOf(await render(<Meter data-slot='quota-meter' />), "data-slot")).toBe("meter quota-meter");
   });
 
   it("treats an empty inherited token as none rather than emitting a trailing space", async () => {
-    expect(await render(<Meter data-slot='' />)).toBe(`<div data-slot="meter" class="${ROOT_BASE}"></div>`);
+    expect(attrOf(await render(<Meter data-slot='' />), "data-slot")).toBe("meter");
   });
 
-  it("escapes arbitrary data-* and aria-* values spread onto the root", async () => {
-    expect(await render(<Meter data-note={`R&D's "top" <5%`} aria-label={`R&D's quota`} />)).toBe(
-      `<div data-slot="meter" class="${ROOT_BASE}" data-note="R&amp;D&#39;s &quot;top&quot; &lt;5%" aria-label="R&amp;D&#39;s quota"></div>`,
+  it("nests the label, the track and the readout inside the root, in the order they were given", async () => {
+    const html = await render(
+      <Meter>
+        <Meter.Label for='disk'>Disk usage</Meter.Label>
+        <Meter.Track id='disk' value={0.72} low={0.3} high={0.8} optimum={0.2} />
+        <Meter.Value>72%</Meter.Value>
+      </Meter>,
     );
-  });
 
-  it("renders the whole compound in one tree", async () => {
-    expect(
-      await render(
-        <Meter>
-          <Meter.Label for='disk'>Disk usage</Meter.Label>
-          <Meter.Track id='disk' value={0.72} low={0.3} high={0.8} optimum={0.2} />
-          <Meter.Value>72%</Meter.Value>
-        </Meter>,
-      ),
-    ).toBe(
-      `<div data-slot="meter" class="${ROOT_BASE}">` +
-        '<label data-slot="meter-label" for="disk" class="text-sm font-medium text-foreground">Disk usage</label>' +
-        '<meter data-slot="meter-track" data-state="suboptimum" class="h-2 w-full rounded-selector bg-border" id="disk" value="0.72" low="0.3" high="0.8" optimum="0.2"></meter>' +
-        '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">72%</span>' +
-        "</div>",
-    );
+    expect([...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1])).toEqual(["meter", "meter-label", "meter-track", "meter-value"]);
   });
 });
 
 describe("Meter.Label", () => {
-  it("renders a real label bound to the measurement it describes", async () => {
-    expect(await render(<Meter.Label for='disk'>Disk usage</Meter.Label>)).toBe(
-      '<label data-slot="meter-label" for="disk" class="text-sm font-medium text-foreground">Disk usage</label>',
-    );
+  it("is a real label bound to the measurement it describes", async () => {
+    const html = await render(<Meter.Label for='disk'>Disk usage</Meter.Label>);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "meter-label", for: "disk" });
+    expect(contentOf(html)).toBe("Disk usage");
   });
 
-  it("merges a caller class and appends an inherited slot token", async () => {
-    expect(
-      await render(
-        <Meter.Label for='disk' class='uppercase' data-slot='field-label'>
-          Disk usage
-        </Meter.Label>,
-      ),
-    ).toBe('<label data-slot="meter-label field-label" for="disk" class="text-sm font-medium text-foreground uppercase">Disk usage</label>');
+  it("appends a caller class last and an inherited slot token after its own", async () => {
+    const html = await render(
+      <Meter.Label for='disk' class='uppercase' data-slot='field-label'>
+        Disk usage
+      </Meter.Label>,
+    );
+
+    expect(classesOf(html).at(-1)).toBe("uppercase");
+    expect(attrOf(html, "data-slot")).toBe("meter-label field-label");
   });
 });
 
 describe("Meter.Track", () => {
-  it("renders a native meter carrying the value", async () => {
-    expect(await render(<Meter.Track value={0.5} />)).toBe(
-      '<meter data-slot="meter-track" data-state="optimum" class="h-2 w-full rounded-selector bg-border" value="0.5"></meter>',
-    );
+  it("is the platform's own meter element, carrying the value and the band computed from it", async () => {
+    const html = await render(<Meter.Track value={0.5} />);
+
+    expect(tagOf(html).startsWith("<meter ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "meter-track", "data-state": "optimum", value: "0.5" });
   });
 
   it("passes the platform's own threshold attributes straight through", async () => {
-    expect(await render(<Meter.Track value={0.72} min={0} max={1} low={0.3} high={0.8} optimum={0.2} />)).toBe(
-      '<meter data-slot="meter-track" data-state="suboptimum" class="h-2 w-full rounded-selector bg-border" value="0.72" min="0" max="1" low="0.3" high="0.8" optimum="0.2"></meter>',
-    );
+    expect(attrsOf(await render(<Meter.Track value={0.72} min={0} max={1} low={0.3} high={0.8} optimum={0.2} />))).toEqual({
+      "data-slot": "meter-track",
+      "data-state": "suboptimum",
+      value: "0.72",
+      min: "0",
+      max: "1",
+      low: "0.3",
+      high: "0.8",
+      optimum: "0.2",
+    });
   });
 
-  it("merges a caller class and appends an inherited slot token", async () => {
-    expect(await render(<Meter.Track value={0.5} class='h-3' data-slot='quota-track' />)).toBe(
-      '<meter data-slot="meter-track quota-track" data-state="optimum" class="w-full rounded-selector bg-border h-3" value="0.5"></meter>',
-    );
+  it("lets a caller height evict its own rather than stacking a second one", async () => {
+    const html = await render(<Meter.Track value={0.5} class='h-3' data-slot='quota-track' />);
+
+    expect(variantClasses(html, await render(<Meter.Track value={0.5} />))).toEqual({ added: ["h-3"], dropped: ["h-2"] });
+    expect(attrOf(html, "data-slot")).toBe("meter-track quota-track");
   });
 });
 
 describe("Meter.Value", () => {
-  it("renders the readout span with its base classes", async () => {
-    expect(await render(<Meter.Value>72%</Meter.Value>)).toBe(
-      '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">72%</span>',
-    );
+  it("is a readout span carrying the text it was given", async () => {
+    const html = await render(<Meter.Value>72%</Meter.Value>);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "meter-value" });
+    expect(contentOf(html)).toBe("72%");
   });
 
   it("escapes interpolated children", async () => {
-    expect(await render(<Meter.Value>{`>72% of R&D's quota`}</Meter.Value>)).toBe(
-      '<span data-slot="meter-value" class="text-sm text-muted-foreground tabular-nums">&gt;72% of R&amp;D&#39;s quota</span>',
-    );
+    expect(contentOf(await render(<Meter.Value>{`>72% of R&D's quota`}</Meter.Value>))).toBe("&gt;72% of R&amp;D&#39;s quota");
   });
 });
 
@@ -108,8 +113,7 @@ describe("meterState — HTML's own banding, which decides the fill colour", () 
   });
 
   // HTML's `GetGaugeRegion` puts `value <= low` in the low region and `value >= high` in the high
-  // one, so a value sitting exactly on a threshold belongs to that threshold's band, not between the
-  // two. Strict comparisons put both boundaries in "medium" and read one band too optimistic.
+  // one, so strict comparisons would read both boundaries one band too optimistic.
   it("puts a value sitting exactly on a threshold in that threshold's own band", () => {
     expect(meterState({ value: 0.3, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("optimum");
     expect(meterState({ value: 0.8, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("poor");

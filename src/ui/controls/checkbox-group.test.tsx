@@ -38,9 +38,8 @@ describe("controls/CheckboxGroup", () => {
     );
   });
 
-  // Every static the core compound publishes, from `ui/controls` alone: `NAMESPACES.md` §5b
-  // forbids importing the core twin beside the bound one, so a static the wrapper drops has no
-  // workaround at the call site — it is simply `undefined`.
+  // `NAMESPACES.md` §5b forbids importing the core twin beside the bound one, so a static the
+  // wrapper drops has no workaround at the call site.
   it("publishes the full README-documented compound, not only .Item", async () => {
     expect(
       await render(

@@ -334,8 +334,7 @@ describe("cn — the @utility recipes", () => {
   });
 
   // A state recipe paints nothing until its own selector matches, so no unconditional utility can
-  // conflict with it. Before the generator gave the five their own slot, `state-invalid` shared
-  // `--tw-ring-color` with every `ring-*` and a caller's ring silently deleted the invalid styling.
+  // conflict with it — which is why the five carry a slot of their own.
   it("keeps a state recipe beside any caller utility, in either order", () => {
     expect(cn("state-invalid", "ring-primary")).toBe("state-invalid ring-primary");
     expect(cn("ring-primary", "state-invalid")).toBe("ring-primary state-invalid");

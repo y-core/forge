@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
-import { isCheckStep } from "./steps";
+import { isCheckStep, selectSteps } from "./steps";
 import type { Step } from "./types";
 
 function labelsOf(steps: readonly Step[]): string[] {
@@ -195,6 +195,92 @@ describe("cloudflareWorkerSteps() — the db rows", () => {
   it("omits both rows for an app with no database", () => {
     expect(labelsOf(cloudflareWorkerSteps())).not.toContain("db:schema:digests");
     expect(labelsOf(cloudflareWorkerSteps({ db: false }))).not.toContain("db:schema");
+  });
+});
+
+describe("cloudflareWorkerSteps() — the test rows", () => {
+  it("emits one row per set, in declared order, where the single test row stood", () => {
+    const labels = labelsOf(
+      cloudflareWorkerSteps({
+        testSets: [
+          { label: "test:unit", sources: ["tests/unit/"] },
+          { label: "test:seam", sources: ["tests/seam/"] },
+        ],
+      }),
+    );
+
+    expect(labels).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "lint:types",
+      "test:unit",
+      "test:seam",
+      "validate-dev-boundary",
+    ]);
+  });
+
+  it("ignores tests when testSets is given, so one option cannot silently shadow the other's paths", () => {
+    const steps = cloudflareWorkerSteps({ tests: ["tests/"], testSets: [{ label: "test:unit", sources: ["tests/unit/"] }] });
+
+    expect(steps.find((step) => step.label === "test:unit")?.cmd).toEqual(["bun", "test", "tests/unit/"]);
+    expect(labelsOf(steps)).not.toContain("test");
+  });
+
+  // An empty array is a table with no suite in it. Nothing here refuses that — `selectSteps` does,
+  // and only for a run narrowed to a label the table no longer carries.
+  it("emits no test row at all for an empty testSets", () => {
+    const steps = cloudflareWorkerSteps({ testSets: [] });
+
+    expect(labelsOf(steps).filter((label) => label.startsWith("test"))).toEqual([]);
+    expect(selectSteps(steps, { mode: "fast", only: ["test"] })).toMatchObject({ ok: false });
+  });
+
+  it("leaves a label colliding with another row to selectSteps, which refuses the whole table", () => {
+    const steps = cloudflareWorkerSteps({ testSets: [{ label: "lint", sources: ["tests/unit/"] }] });
+    const selection = selectSteps(steps, { mode: "fast" });
+
+    expect(selection.ok).toBe(false);
+    expect(selection.ok ? "" : selection.error).toContain("Duplicate step label: lint");
+  });
+});
+
+describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
+  const SSR = { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"] };
+  const CONTRAST = { cssDir: "src/assets", tokenFiles: ["src/assets/tokens.css"], mappingFile: "src/assets/theme.css", pairs: [], criteria: {} };
+
+  it("puts validate-jsx after format, where a file-granular row runs before the slow lint", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ jsx: {} }));
+
+    expect(labels.indexOf("validate-jsx")).toBe(labels.indexOf("format") + 1);
+    expect(labels.indexOf("validate-jsx")).toBeLessThan(labels.indexOf("lint:types"));
+  });
+
+  it("puts validate-ssr-boundary and validate-contrast after the test rows, in that order", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR, contrast: CONTRAST }));
+
+    expect(labels).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "lint:types",
+      "test",
+      "validate-ssr-boundary",
+      "validate-contrast",
+      "validate-dev-boundary",
+    ]);
+  });
+
+  it("omits all three rows for an app that configures none of them", () => {
+    const labels = labelsOf(cloudflareWorkerSteps());
+
+    expect(labels).not.toContain("validate-jsx");
+    expect(labels).not.toContain("validate-ssr-boundary");
+    expect(labels).not.toContain("validate-contrast");
   });
 });
 

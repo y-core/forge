@@ -20,31 +20,13 @@ export interface DuplicateCheckConfig extends DependencyOptions {
   threshold?: number;
 }
 
-/** How many words one shingle spans. Five is long enough that a shared clause is shared prose rather
- *  than shared vocabulary, and short enough to survive a rewritten sentence around it. */
+/** How many words one shingle spans. */
 const WIDTH = 5;
 
-/** The Jaccard overlap at which two sections are reported as saying the same thing twice.
- *
- *  **Calibrated, not chosen.** The first run reported seven pairs from 0.290 to 0.625 and every one
- *  was a real second home, resolved by making `docs/` cite the canon section it had been restating.
- *  Below them the highest legitimate pair measures 0.250 — `docs/TESTING.md` §3c stating the
- *  render-once rule in this repository's own vocabulary, short enough that one shared clause
- *  dominates it — and the lowest pair the sweep removed measured 0.290. This sits between them, so
- *  the corpus now clears it with the whole distribution below 0.28 and the next restatement to grow
- *  past a legitimate one fires.
- *
- *  The `warden:duplicates` gate step reports the pair count and the highest score every run, so the
- *  distribution is watched rather than assumed — move this only with that summary in hand, and only
- *  after reading the pairs the move would silence.
- *
- *  The method is CBM's clone detection; its own 0.95 is over AST node-type trigrams and does not
- *  transfer to prose, where two sections stating one rule share far less of their wording than two
- *  copies of a function share of their structure. */
+/** The Jaccard overlap at which two sections are reported as saying the same thing twice. */
 const THRESHOLD = 0.28;
 
-/** How many pairs are reported. A first run over a corpus that has never been swept is long, and a
- *  finding list nobody reads is worth less than a count. */
+/** How many pairs are reported. */
 const CAP = 20;
 
 interface Section {
@@ -69,10 +51,7 @@ export interface DuplicatePair {
   klass: number;
 }
 
-/** Every pair at or above the threshold, classified and ordered exactly as the check reports them.
- *
- *  The measurement surface `warden probe` reads: a summary line carries the count and the highest
- *  score, and neither says which classes moved when the corpus grows. @public */
+/** Every pair at or above the threshold, classified and ordered exactly as the check reports them. @public */
 export function duplicatePairs(config: DuplicateCheckConfig): DuplicatePair[] {
   const dependencyRoot = dependencyRootOf(config, config.root);
   const sources = discover(config.root, config.kind, {
@@ -87,12 +66,7 @@ export function duplicatePairs(config: DuplicateCheckConfig): DuplicatePair[] {
     .sort((left, right) => left.klass - right.klass || right.score - left.score || (left.a < right.a ? -1 : 1));
 }
 
-/** Reports two sections that say the same thing, which the single-home rule forbids.
- *
- *  Works off a corpus parse rather than the index: `search_body` lives only in the FTS table and in
- *  memory, never in a column this could read back. Every finding is a warning — a specialisation
- *  legitimately restates the rule it narrows, so a pair above the threshold is evidence to read,
- *  not a build to stop. @public */
+/** Reports two sections that say the same thing, which the single-home rule forbids. @public */
 export function checkDuplicates(config: DuplicateCheckConfig): CheckResult {
   const threshold = config.threshold ?? THRESHOLD;
   const dependencyRoot = dependencyRootOf(config, config.root);
@@ -126,8 +100,7 @@ export function checkDuplicates(config: DuplicateCheckConfig): CheckResult {
   );
 }
 
-/** Every searchable chunk as a set of hashed word shingles. An organising stub is skipped: it has no
- *  prose of its own, so anything it shares is its children's. */
+/** Every searchable chunk as a set of hashed word shingles. */
 function shingle(sources: Parameters<typeof load>[0]): Section[] {
   const sections: Section[] = [];
   for (const entry of load(sources)) {
@@ -144,9 +117,7 @@ function shingle(sources: Parameters<typeof load>[0]): Section[] {
   return sections;
 }
 
-/** Exact Jaccard over every pair sharing at least one shingle. The inverted index is what makes that
- *  affordable: at this corpus size the candidate set is small enough that the estimate a MinHash
- *  sketch would buy is a worse answer than the real number. */
+/** Exact Jaccard over every pair sharing at least one shingle, through an inverted index. */
 function score(sections: readonly Section[], threshold: number): { pairs: Pair[]; highest: number } {
   const postings = new Map<number, number[]>();
   sections.forEach((section, index) => {
@@ -177,23 +148,14 @@ function score(sections: readonly Section[], threshold: number): { pairs: Pair[]
   return { pairs, highest };
 }
 
-/** Which class a pair belongs to, lowest first. The two the single-home rule is actually about lead:
- *  a `docs/` section against the canon rule it should be citing, then a README against the document
- *  it should be pointing at.
- *
- *  **A dependency-against-project pair is its own class, and it is last.** It is not a single-home
- *  violation at all — the library states a rule about itself and the consumer restates the part
- *  that binds their own code, which is what a consumer's document is for. Without a class of its
- *  own it would sort as `2` alongside the real findings and, at a corpus this size, push them past
- *  the reporting cap. It is tested before the README class rather than after, because the library
- *  serves its namespace READMEs too — a library README is a README, so the README class would have
- *  claimed the pair first and filled the cap with exactly the advisory pairs this class exists to
- *  sink. */
+/** Which class a pair belongs to, lowest first. */
 function klass(pair: Pair, docsDir: string): number {
   const corpora = [pair.a.corpus, pair.b.corpus];
   const canon = corpora.filter((corpus) => corpus === "canon").length;
   const docs = [pair.a, pair.b].filter((section) => section.path.startsWith(`${docsDir}/`)).length;
   if (canon === 1 && docs === 1) return 0;
+  // Tested before the README class: the library serves READMEs too, so that class would otherwise
+  // claim an advisory pair first and fill the reporting cap with it.
   if (corpora.includes("dependency")) return 3;
   const readmes = [pair.a, pair.b].filter((section) => section.path.endsWith("README.md")).length;
   return readmes === 1 ? 1 : 2;

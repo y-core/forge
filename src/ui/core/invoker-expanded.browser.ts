@@ -32,9 +32,8 @@ const MENU = () =>
   );
 
 test.describe("popover invokers expose their expanded state", () => {
-  // The measurement the fix was decided on. `command`/`commandfor` is specified to map to
-  // `aria-expanded`, but no engine ships it reliably — this records what the engine under test
-  // actually does, so the explicit stamping below is never mistaken for belt-and-braces.
+  // `command`/`commandfor` is specified to map to `aria-expanded`, but no engine ships it reliably,
+  // so this records what the engine under test actually does.
   test("the platform does not supply the mapping for a bare commandfor invoker", async ({ page }) => {
     await mount(page, '<button type="button" command="toggle-popover" commandfor="p">Open</button><div id="p" popover="auto">Panel</div>');
 

@@ -508,6 +508,66 @@ describe("checkDocs() — a citable root this repository does not own", () => {
   });
 });
 
+describe("checkDocs() — a citable root cited under a prefix that is not its directory name", () => {
+  const library = (rows: string) => ({
+    "docs/SUITES.md": doc("Suites", rows),
+    "CLAUDE.md": index("- [`SUITES.md`](docs/SUITES.md): the suites"),
+    "node_modules/forge/docs/HTMX.md": doc("HTMX", "Body."),
+  });
+  const runLibrary = (root: string) =>
+    checkDocs({
+      root,
+      packageName: "forge-starter",
+      exports: {},
+      decisionsDir: "docs",
+      citableDirs: [{ dir: "node_modules/forge/docs", as: "forge" }],
+    });
+
+  it("resolves a citation spelled under the prefix", () => {
+    const root = fixtureRoot(library("See forge/HTMX.md §1."));
+
+    expect(runLibrary(root).findings.map((finding) => finding.message)).toEqual([]);
+  });
+
+  it("fails a citation naming a section the library document does not have", () => {
+    const root = fixtureRoot(library("See forge/HTMX.md §9."));
+
+    expect(runLibrary(root).findings.map((finding) => finding.message)).toEqual([
+      "`forge/HTMX.md §9` does not resolve to a section in that document",
+    ]);
+  });
+
+  it("resolves a same-line link into the aliased tree", () => {
+    const root = fixtureRoot(library("See [`HTMX.md`](../node_modules/forge/docs/HTMX.md) §1."));
+
+    expect(runLibrary(root).findings.map((finding) => finding.message)).toEqual([]);
+  });
+
+  it("keys a plain-string entry by its own directory name, unchanged", () => {
+    const root = fixtureRoot({
+      "docs/SUITES.md": doc("Suites", "See [`TESTING.md`](../warden/canon/libs/TESTING.md) §1."),
+      "CLAUDE.md": index("- [`SUITES.md`](docs/SUITES.md): the suites"),
+      "warden/canon/libs/TESTING.md": doc("Testing", "Body."),
+    });
+
+    expect(
+      checkDocs({ root, packageName: "@y-core/forge", exports: {}, decisionsDir: "docs", citableDirs: ["warden/canon/libs"] }).findings.map(
+        (finding) => finding.message,
+      ),
+    ).toEqual([]);
+  });
+
+  it("prefers this repository's own document for a bare basename the library also carries", () => {
+    const root = fixtureRoot({
+      "docs/HTMX.md": doc("HTMX", "It also names HTMX.md §1."),
+      "CLAUDE.md": index("- [`HTMX.md`](docs/HTMX.md): the htmx rules"),
+      "node_modules/forge/docs/HTMX.md": docWithSub("HTMX", "Body."),
+    });
+
+    expect(runLibrary(root).findings.map((finding) => finding.message)).toEqual([]);
+  });
+});
+
 describe("checkDocs() — which canon tree a bare citation means", () => {
   const trees = (body: Record<string, string>) => ({
     "docs/SUITES.md": doc("Suites", "Body."),

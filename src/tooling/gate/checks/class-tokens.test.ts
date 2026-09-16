@@ -57,9 +57,6 @@ describe("stringLiterals", () => {
 describe("unknownTokens", () => {
   const oracle = fake(["rounded-sm", "text-(--tone-text)", "flex"], ["focus-ring-outset", "rounded", "text", "flex"]);
 
-  // The dash walk alone reached none of forge's nine `@utility` names: each is `<family>-<word>` and
-  // no family is itself declared, so a typo in one was silently dropped while the summary claimed
-  // every class string resolved to CSS.
   it("reports a character appended to a forge `@utility`, which no dash prefix could reach", () => {
     const forge = fake(["flex", "rounded-sm"], ["state-invalid", "flex", "rounded"]);
     const source = 'const BASE = "flex rounded-sm state-invalidd";';

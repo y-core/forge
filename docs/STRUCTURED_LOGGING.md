@@ -9,7 +9,7 @@ audience: consumer
 > Owns the logging namespace: the channel contract, the request logger, KV log storage, the `logging/show` viewer, and the no-PII rule. Owns the
 > canonical channel-selection pattern (§2d). The export list and every signature are owned by `src/logging/mod.ts` and `src/logging/README.md`.
 >
-> Defers to: [`ROUTING_AND_MIDDLEWARE.md`][ram-3a] §3a for middleware ordering; [`SECURITY_HARDENING.md`][sh-5b] §5b for request-id correlation;
+> Defers to: [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e for middleware ordering; [`SECURITY_HARDENING.md`][sh-5b] §5b for request-id correlation;
 > [`STORAGE_BINDINGS.md`][sb-5] §5 for absent-binding policy.
 
 ---
@@ -158,6 +158,9 @@ per-request for env-dependent selection (§2d); `bindings` adds extra fields to 
 `requestId()` middleware MUST run before `requestLogger` in the middleware chain so the `bindings` callback can read the already-set request ID from
 context. If ordered incorrectly, `requestId` will be undefined in every log record.
 
+`applyMiddlewareChain` produces that order, along with the rest of the chain's — see [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e, which is where the
+whole order is stated. A hand-written chain owes the same two lines:
+
     app.use("*", requestId())
     app.use("*", requestLogger<AppEnv>({ ... }))
 
@@ -256,7 +259,7 @@ channels and wrappers that implement redaction are §2 above.
 
 [boundaries-4]: ../warden/canon/libs/BOUNDARIES.md#4-no-pii-in-logs
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
-[ram-3a]: ./ROUTING_AND_MIDDLEWARE.md#3a-global-vs-route-level-middleware
+[ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [ram-6]: ./ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sb-5]: ./STORAGE_BINDINGS.md#5-dev-degradation
 [sh-5b]: ./SECURITY_HARDENING.md#5b-logging-integration

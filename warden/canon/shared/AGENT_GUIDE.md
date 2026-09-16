@@ -30,7 +30,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 - §5 Cross-Reference Format: how documents point at each other
 - §5a Inter-Document Links: reference-style links, defined once, anchored on the cited section
 - §5b Intra-Document Section References: the `§N` shorthand
-- §5c The Agent Roster Is Reconciled Both Ways: no document register, but every agent named exists
+- §5c The Agent Roster Is Reconciled Both Ways: no document register, but every agent named exists, and the review skill is named
 - §5d Crossing the Governance Boundary: which direction a link may run
 - §6 Document Size and Scope: what belongs in a governing document at all
 - §6a Size Targets and the Split-or-Cut Threshold: 200–600 target, 800 hard fail
@@ -235,6 +235,11 @@ introduces the agents that route work to it, so an agent named with no definitio
 named is one no reader is told exists. `warden sync --check` reconciles the names in `CLAUDE.md` against `.claude/agents/` in both directions. It
 measures existence only: what an agent _does_ stays convention, enforced by the agent obeying its own stated boundaries.
 
+**A code review starts at the `warden-review` skill, and `CLAUDE.md` says so.** The skill is the entry point that reaches `CODE_REVIEW.md` through
+the index — the blocking invariants, the tiered detection commands, the severity calibration — and holds a finding to the shape that document sets.
+It ships to `.claude/skills/` by the same sync that writes the roster, so it is present in every repository and named in none of them unless
+`CLAUDE.md` names it. A review begun without it is a review against whatever the reviewing agent happened to remember.
+
 ### 5d. Crossing the Governance Boundary
 
 **Links run one way: implementation may cite governance; governance never cites implementation.** A governance document is byte-identical across
@@ -364,6 +369,13 @@ of a good row are worth stating, because both are routinely got wrong:
   naming an entry point and sending half of its readers to the wrong place.
 - **A row may name a _data_ file as authoritative over prose.** Where a config declares a graph, a table, or a set, the governing document cites it
   and enumerates none of it — a second copy of a list is indistinguishable from an amendment the moment the two disagree.
+
+**A repository that keeps no `docs/` at all states the register's absence and why, in `CLAUDE.md`.** A repository whose position is that it holds no
+governing prose of its own has nowhere to put the register, and growing a `docs/` for one file would contradict the position. What it owes the
+reader instead is the substitution: which mechanism answers "who owns this fact" in place of the table — ordinarily that there is exactly one copy
+to find, so `rg` answers it. For the same reason, any local ruling the canon requires be written in `docs/` is carried instead by whichever of two
+homes fits it: a budgeted comment at the code it governs, or a `CLAUDE.md` line where the ruling is about the repository rather than about one file
+(§6d, §10). Stating the absence is what makes it a decision rather than an omission.
 
 ---
 

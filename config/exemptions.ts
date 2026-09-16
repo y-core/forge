@@ -1,18 +1,11 @@
 /** The gate's exemptions — every escape a check offers, each with the reason it exists. */
 
-// `src/crypto/mod.ts` is a barrel of `@internal` symbols only: the namespace is reached through the
-// namespaces that wrap it, never imported by a consumer, so it is deliberately unpublished.
 /** Barrels intentionally absent from the exports map. */
 export const SEALED_INTERNAL: readonly string[] = ["src/crypto/mod.ts"];
 
-// Not `@source`-scanned either, and for the same reason: half the corpus's samples are
-// counter-examples quoting the exact tokens and classes it teaches against, so a check that reads
-// every literal would report the corpus for teaching.
 /** The design corpus, excluded from every check that judges class literals. */
 export const DESIGN_CORPUS_EXCLUDED = "!src/ui/design";
 
-// Each pins `cn`'s own resolution or the class-order check's own detection, so its fixtures are
-// deliberately self-conflicting literals — the very input the rule forbids everywhere else.
 /** Specs whose fixtures must stay self-conflicting, excluded from the class-order check. */
 export const CN_FIXTURE_SPECS: readonly string[] = [
   "!src/tooling/gate/checks/class-order.test.ts",
@@ -21,14 +14,9 @@ export const CN_FIXTURE_SPECS: readonly string[] = [
   "!src/ui/core/form.test.tsx",
 ];
 
-// Empty, and expected to stay so: a subpath under a `client` segment is derived browser-only, and
-// the check fails an entry that only restates the convention. This is for one that is browser-only
-// under another name.
 /** Subpaths withheld from the runtime import beyond the ones the `client` segment derives. */
 export const BROWSER_ONLY: readonly string[] = [];
 
-// A `types.ts` and a `bin.ts` need no entry: the co-location check derives both from the filename
-// and re-checks the claim, failing either one that grows a callable export.
 /** Modules exempt from needing a co-located test, each mapped to why. */
 export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/bind-contract.ts", "its one function is covered where it is used, by `client/bind-display.test.ts`"],
@@ -62,7 +50,7 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/tooling/lint/data/design-scale.ts", "generated from the stylesheet, and `designScaleStep` holds it against the source"],
   ["src/form/constants.ts", "declared data — the parsers that read the constants are tested"],
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
-  ["src/auth/web/resolve.golden.ts", "the recorded render of every auth page — test data, and `resolve.test.tsx` is what reads it"],
+  ["warden/src/cli/flags.ts", "declared flag tables — the command tree that shares them is dispatched in `commands.test.ts`"],
   ["src/testing/workerd.ts", "test infrastructure — `tests/workerd/`'s specs are what exercise it, in the `full` tier"],
   ["src/testing/node.d.ts", "a declaration file — it defines nothing to run, and `typecheck` is what holds it against `workerd.ts`"],
 ]);

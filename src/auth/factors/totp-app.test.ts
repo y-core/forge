@@ -186,9 +186,6 @@ describe("createTotpAppFactor — enrolment", () => {
     expect(factor(spy).confirmedAt).toBeNull();
   });
 
-  // The defect this closes: `beginEnrolment` rebuilt the row unconditionally, so re-rendering the
-  // enrol page — which a mistyped code does — offered a *different* secret from the one the visitor
-  // had just stored in their authenticator, and the ceremony could never be finished.
   it("re-offers the unconfirmed row's own secret, so a re-render does not rotate it", async () => {
     const spy = fakeFactors();
     const first = await enrolled(spy);
@@ -227,8 +224,6 @@ describe("createTotpAppFactor — enrolment", () => {
 });
 
 describe("createTotpAppFactor — the attempt ceiling", () => {
-  // The defect this closes: a wrong code cost nothing, so a six-digit space was brute-forceable at
-  // the speed of the network while the account's other factor stood by.
   it("spends a guess on every wrong code, and refuses the correct one once the budget is gone", async () => {
     const spy = fakeFactors();
     const secret = await confirmed(spy);

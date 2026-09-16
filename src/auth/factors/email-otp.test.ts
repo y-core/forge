@@ -20,9 +20,8 @@ function recordingNotifier(): AuthNotifier & { sent: AuthMessage[] } {
   return { sent, send: (message) => Promise.resolve(sent.push(message)).then(() => ({ ok: true as const, data: undefined })) };
 }
 
-// The contract as the adapter's statements answer it: every method decides in one uninterrupted
-// step, with no `await` between reading a counter and writing it. A store that resolved a promise
-// mid-decision would let two callers past the same count, which is the thing under test here.
+// The contract as the adapter's statements answer it: a store that resolved a promise mid-decision
+// would let two callers past the same count, which is the thing under test here.
 /** A nonce store with the one property that matters here: the first `markConsumed` wins. */
 function memoryNonces(): NonceStore {
   const seen = new Set<string>();
@@ -126,8 +125,6 @@ describe("createEmailOtpFactor — issuing", () => {
     expect((await factor.createChallenge(USER_ID, NOW + COOLDOWN_MS)).ok).toBe(true);
   });
 
-  // The defect this replaces: three unauthenticated posts naming an address spent that identity's
-  // whole daily budget, and where email-OTP is the primary factor that is a day without an account.
   it("never leaves an identity without a code for longer than the cooldown, however many were requested", async () => {
     const { factor, notifier } = await harness({ cooldownMs: COOLDOWN_MS });
     for (const attacker of [NOW, NOW + COOLDOWN_MS, NOW + 2 * COOLDOWN_MS]) await factor.createChallenge(USER_ID, attacker);
@@ -152,9 +149,8 @@ describe("createEmailOtpFactor — issuing", () => {
     expect((await factor.createChallenge(other, NOW)).ok).toBe(true);
   });
 
-  // The cooldown is claimed before the mail so that what is bounded is what is *sent*. The defect
-  // this closes is the other half: a failed send left the claim standing, so the identity had spent
-  // a cooldown and held a code nobody could read, and could not ask again until it ran out.
+  // The cooldown is claimed before the mail, so what is bounded is what is *sent*; a failed send
+  // that left the claim standing would hold the identity to a code nobody could read.
   it("gives the cooldown back when delivery fails, so a second issue is not refused as too-soon", async () => {
     const failing: AuthNotifier = { send: () => Promise.resolve({ ok: false, error: new AuthStoreError("unavailable", "notify.send") }) };
     const { factor, state } = await harness({ notifier: failing, cooldownMs: COOLDOWN_MS });
@@ -233,8 +229,6 @@ describe("createEmailOtpFactor — verifying", () => {
     expect(outcomes).toEqual(["1: unrecognised", "2: unrecognised", "3: unrecognised", "4: too-many-attempts"]);
   });
 
-  // The defect this proves closed: the count was read, compared and written back, so every guess
-  // arriving inside one another's round trip compared against the same zero.
   it("spends exactly the attempt budget under parallel guesses, however many arrive at once", async () => {
     const { factor, notifier } = await harness({ maxAttempts: 3 });
     await factor.createChallenge(USER_ID, NOW);

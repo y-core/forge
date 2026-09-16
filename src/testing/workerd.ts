@@ -82,16 +82,14 @@ export async function startDevServer(options: DevServerOptions = {}): Promise<De
   if (options.entry !== undefined) args.push(options.entry);
   if (options.config !== undefined) args.push("--config", options.config);
   // `--local-protocol http` is stated, never defaulted: wrangler documents http as the default but
-  // serves https once it detects it is running under an agent, and the fixture's own probe — and
-  // every case's `fetch` — then meets a TLS handshake on a plain socket and never sees the server.
+  // serves https once it detects it runs under an agent, and every `fetch` then meets a TLS handshake.
   args.push("--env-file", envFile, "--port", String(port), "--ip", "127.0.0.1", "--local-protocol", "http");
 
   // Resolved through the package, never a path relative to this file: in a consumer this module sits
   // under `node_modules/@y-core/forge/`, whose sibling `node_modules` holds no wrangler.
   const cli = fileURLToPath(new URL("./bin/wrangler.js", import.meta.resolve("wrangler/package.json")));
-  // `detached`: wrangler spawns workerd and esbuild as its own children, and killing the CLI alone
-  // orphans them. Its own process group makes the whole tree one signal target.
-  // `node`, never `process.execPath`: under `bun test` that is the bun binary, which wrangler refuses.
+  // `detached`: wrangler spawns workerd and esbuild as children, so its own process group is what
+  // makes the tree one signal target. `node`, never `process.execPath`: under `bun test` that is bun.
   const child = spawn("node", [cli, ...args], {
     stdio: options.capture === true ? ["ignore", "pipe", "pipe"] : "ignore",
     detached: true,

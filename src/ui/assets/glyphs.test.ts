@@ -26,9 +26,8 @@ describe("FORGE_UI_ICON_NAMES", () => {
     expect(Object.keys(FORGE_UI_SPRITE_FILES)).toEqual(["core", "theme"]);
   });
 
-  // The whole point of declaring them here: `sprites.ts` reaches `node:path` at module scope, and
-  // `esbuild --platform=neutral` resolves before it tree-shakes, so a consumer bundling only the
-  // names could not build. A node import creeping back into this module reintroduces that.
+  // `sprites.ts` reaches `node:path` at module scope, and `esbuild --platform=neutral` resolves
+  // before it tree-shakes, so a consumer bundling only the names could not build.
   it("is reachable from a module that imports nothing from node", () => {
     expect(/from "node:/.test(readFileSync(fileURLToPath(new URL("./glyphs.ts", import.meta.url)), "utf-8"))).toBe(false);
   });

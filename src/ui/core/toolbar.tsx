@@ -44,12 +44,8 @@ interface ToolbarSeparatorProps extends Omit<JSX.IntrinsicElements["hr"], "child
 
 const ROOT_BASE = "flex items-center gap-1";
 
-// The roving-tab-stop marker is deliberately *not* derived from `pressed`. It marks the one item holding
-// the roving tab stop, and a toolbar may have several pressed items at once — `composite.ts` takes the
-// first match and silently ignores the rest, so Bold and Italic both pressed handed the tab stop to
-// Bold and left the app no way to override it. No default is stamped either: `initialIndex` already
-// falls back to the first enabled item when nothing is marked, so the app's own marker is the only
-// writer (`design/reference/09-interaction.md` tells apps to set it explicitly).
+// The roving-tab-stop marker is not derived from `pressed` and carries no default: several items may
+// be pressed, and `initialIndex` already falls back to the first enabled one when nothing is marked.
 function itemAttrs(pressed: boolean | undefined): Record<string, string> {
   return { [TOOLBAR_ITEM_ATTR]: "", ...(pressed === undefined ? {} : { "aria-pressed": String(pressed), ...stateAttrs({ pressed }) }) };
 }

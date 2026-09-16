@@ -12,8 +12,7 @@ describe("headingTrail()", () => {
   });
 
   // Stripping the whole segment would render `~http. http › ~exports. Exports` and its `~app.`
-  // sibling as two identical `Exports` lines, and the trail carries the raw slug rather than the
-  // uniquified one, so nothing downstream would tell them apart either.
+  // sibling as two identical `Exports` lines, the trail carrying the raw slug not the unique one.
   it("keeps the parent's title, which is the only thing separating two `Exports` trails", () => {
     expect(headingTrail("~http. http › ~exports. Exports")).toBe("http › Exports");
     expect(headingTrail("~app. app › ~exports. Exports")).toBe("app › Exports");
@@ -37,9 +36,8 @@ describe("excerptOf()", () => {
     );
   });
 
-  // Every value under five words in `warden probe`'s `## rules` block is a bag of emphasised words
-  // rather than a clause, because `ruleClauses` joins each `**bold**` run with a space and filters
-  // nothing. Rejecting one costs nothing: the prose arm is behind it.
+  // `ruleClauses` joins each `**bold**` run with a space and filters nothing, so a value under five
+  // words is a bag of emphasised words rather than a clause.
   it("refuses a rules value too short to be a clause, and cuts the prose instead", () => {
     expect(excerptOf({ ...EMPTY, rules: "Returns Throws", body: "The accessor returns a header value." }, "accessor")).toBe(
       "The accessor returns a header value",

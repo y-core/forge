@@ -90,8 +90,8 @@ One file owns each such value, and it is named in the source-of-truth register (
 - **`resolve*`** names a **request-time accessor** that reads a binding or a value off the context and fails closed when it is absent.
 - **`define*`** names a **declarative configuration object** consumed by a builder.
 
-A library corpus refines these verbs against its own layering — `NAMESPACE_DESIGN.md` §4a owns the value-constructor exception class and the
-suffix rules that sit beside it.
+A library corpus refines these verbs against its own layering — [`NAMESPACE_DESIGN.md`][nd-4a] §4a owns the value-constructor exception class and
+the suffix rules that sit beside it.
 
 **A class holding configuration exposes a `create*` factory rather than a public constructor.** Where a class is unavoidable, pair a
 `private constructor` with a `static create`. The rule targets _configuration holders_ — objects that would otherwise expose partially-initialised
@@ -300,7 +300,7 @@ early-exiting.
 exact and cost one lookup. Nothing supplies the symbol itself. A question arrives as words — _where is the retry delay computed_ — and the only
 index from those words to the code is the words already in the code.
 
-This is the division of labour `CLAUDE.md` _Code Intelligence_ states, seen from the other end: **discovery is name-shaped, understanding is
+This is the division of labour `AGENT_WORKFLOW.md` §2 states, seen from the other end: **discovery is name-shaped, understanding is
 tool-shaped.** §7 governs the first half only. A symbol whose name carries no word from its domain is unreachable by the question that should find
 it, and stays unreachable until someone happens on it while reading something else.
 
@@ -352,3 +352,5 @@ function grantAccess(grant: { userId: UserId; resourceId: ResourceId; role: Role
 
 The compiler is the one reviewer that cannot be skipped, and this is the cheapest class of bug to hand it. Distinct from §3, which governs
 _untrusted_ input arriving at a boundary: §7d governs _internal_ signatures, where the values are already trusted and the whole risk is positional.
+
+[nd-4a]: ../libs/NAMESPACE_DESIGN.md#4a-factory-and-accessor-verbs

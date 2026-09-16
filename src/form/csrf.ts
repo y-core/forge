@@ -189,9 +189,6 @@ function activeCsrfKey(ring: CsrfKeyRing): CryptoKey {
   return key;
 }
 
-// For the token a page must carry for a path it is not on — a navbar's sign-out form, say, whose
-// route is guarded by a `csrfProtection` mounted on prefixes this request never took, so the minter
-// `mintCsrf` reads is either absent or bound under a different subject policy.
 /** Mints a token for a path this request is not on, under the subject policy that path's guard verifies with. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
 export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext<any, any>, path: string) => Promise<string> {

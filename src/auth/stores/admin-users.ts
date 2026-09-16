@@ -6,9 +6,7 @@ import { normalizeEmail } from "./email";
 import { adminRefusal, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
 import type { UserRow } from "./types";
 
-// Prefix-anchored, so the unique index on `email_key` answers the search. A leading `%` made every
-// search a full scan of the table. The product consequence is stated where a consumer reads it:
-// a substring in the middle of an address no longer matches.
+// Prefix-anchored, so the unique index on `email_key` answers the search rather than a full scan.
 /** Turns a search term into a prefix `LIKE` pattern, escaping the two wildcards a caller's text may carry. */
 function likeTerm(query: string): string {
   return `${normalizeEmail(query).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;

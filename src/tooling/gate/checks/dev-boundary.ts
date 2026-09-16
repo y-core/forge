@@ -28,9 +28,8 @@ function isDevOnly(file: string, devOnlyDirs: readonly string[]): boolean {
   return devOnlyDirs.some((dir) => file === dir || file.startsWith(`${dir}/`));
 }
 
-// `resolveSpecifier` strips the extension, because the graph check it serves only needs the
-// directory. A finding has to name a file, so the extension — and the `mod.ts` a directory
-// specifier means — is put back.
+// `resolveSpecifier` strips the extension, because the graph check it serves needs only the directory.
+// A finding has to name a file, so the extension — and the `mod.ts` a directory specifier means — is put back.
 function resolveModuleFile(root: string, modulePath: string): string | null {
   const candidates = [...MODULE_EXTENSIONS.map((ext) => `${modulePath}${ext}`), ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/mod${ext}`)];
   return candidates.find((candidate) => existsSync(resolve(root, candidate))) ?? null;

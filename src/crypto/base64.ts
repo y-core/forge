@@ -16,8 +16,7 @@ export function base64Encode(data: Uint8Array | ArrayBuffer): string {
 /** Decodes a standard-alphabet base64 string, answering `null` rather than throwing. @internal */
 export function base64DecodeOrNull(str: string): Uint8Array<ArrayBuffer> | null {
   // Strict on purpose, and never via `base64urlDecode`: that one remaps `-`/`_` and re-pads, so a
-  // string this must reject would decode to different bytes — on the cookie path, a live session
-  // verifying wrong. Only the byte loop is shared with it; none of the alphabet handling is.
+  // string this must reject would decode to different bytes — on the cookie path, a session verifying wrong.
   try {
     return bytesFromBinary(atob(str));
   } catch {

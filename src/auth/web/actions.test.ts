@@ -195,8 +195,6 @@ describe("createVerifyActions on the second half of a sign-in", () => {
     expect(res.headers.get("location")).toBe("/auth/verify");
   });
 
-  // The defect this closes: the schema was a fixed six digits, so `createEmailOtpFactor({ digits: 8 })`
-  // — a supported, construction-validated configuration — made the page answer 422 to every correct code.
   it("parses the code at the width the presented factor asks for, not at a constant", async () => {
     const wide = { ...fakeFactorService("email-otp"), codeDigits: 8 };
     const options = optionsWith({
@@ -206,7 +204,7 @@ describe("createVerifyActions on the second half of a sign-in", () => {
     const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
 
     expect((await app.request("/auth/verify", formBody({ code: "12345678" }))).status).toBe(303);
-    // And the six-digit code the old schema was the only one to accept is now the wrong shape.
+    // A six-digit code is the wrong shape for this factor, however correct it looks.
     expect((await app.request("/auth/verify", formBody({ code: "123456" }))).status).toBe(422);
   });
 
@@ -249,10 +247,8 @@ describe("createVerifyActions on a step-up", () => {
     }),
   };
 
-  // The dead end this detour exists to close: a signed-in session that never finished enrolling was
-  // shown the code field, because the demand fell back to the primary factor when `resolve` said
-  // `enrolment-required`. `signin.stepUp` excludes the primary factor, so a correct freshly emailed
-  // code came back as "That did not match" every time, with no way through the page.
+  // `signin.stepUp` excludes the primary factor, so showing the code field to a session owing an
+  // enrolment is a dead end: every correct code comes back as "That did not match".
   it("sends a signed-in session owing an enrolment to the page that can clear it, rather than asking for a code", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
@@ -442,8 +438,6 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
     expect(scene.credentials.rows.map((row) => row.label)).toEqual([HOSTILE_TEXT]);
   });
 
-  // The defect this closes: the enrolment name reached `credentials.create` on a trim alone, while
-  // the rename path ran the same field through a 64-character cap.
   it("refuses a nickname past the cap the rename path holds the same field to", async () => {
     const scene = enrolling();
     const res = await scene.finish("n".repeat(65));
@@ -458,8 +452,6 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
   });
 });
 
-// Three JSON endpoints read `request.json()` with no bound at all, so a client could hand a Worker
-// as much body as it cared to allocate.
 describe("the ceremony endpoints cap what they read", () => {
   const oversized = JSON.stringify({ credential: { id: "c", padding: "x".repeat(AUTH_CEREMONY_MAX_BYTES) } });
   const CEREMONY_PATH = "/auth/enrol/passkey/register/finish";
@@ -569,8 +561,7 @@ describe("createPasskeyManageActions", () => {
     expect(res.status).toBe(404);
   });
 
-  // The same withdrawal the passkey pages answer 404 for, against a credential this visitor owns —
-  // the rejected option was "404 only while the visitor holds nothing", which this row would pass.
+  // The same withdrawal the passkey pages answer 404 for, against a credential this visitor owns.
   const withdrawn = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: fakeAuthCredentialStore([credential]) });
 
   it("changes nothing and answers 404 to a rename when the deployment offers no passkey factor", async () => {
@@ -704,9 +695,8 @@ describe("createAdminUserActions", () => {
     expect(res.headers.get("location")).toBe("/admin/users");
   });
 
-  // The defect this closes: no admin-service method takes the acting administrator's id, so with two
-  // admins in a deployment the last-admin guard admitted an administrator locking out their own
-  // account. Unlike that guard this needs no in-statement race protection: the actor is fixed here.
+  // No admin-service method takes the acting administrator's id, so with two admins the last-admin
+  // guard admits one of them locking out their own account.
   it("refuses an administrator deactivating their own account, writing nothing", async () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
     const admin = fakeAdminUserService([self]);
@@ -716,6 +706,41 @@ describe("createAdminUserActions", () => {
     const res = await app.request("/admin/users/u9", formBody({ role: "admin", status: "deactivated" }, "PATCH"));
     expect(res.status).toBe(409);
     expect((await admin.view("u9")).ok).toBe(true);
+  });
+
+  it("refuses an administrator demoting their own account, writing nothing", async () => {
+    const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
+    let demoteCalls = 0;
+    const admin = fakeAdminUserService([self], {
+      demote: async () => {
+        demoteCalls += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u9", formBody({ role: "member", status: "active" }, "PATCH"));
+    expect(res.status).toBe(409);
+    expect(demoteCalls).toBe(0);
+  });
+
+  it("still lets an administrator demote somebody else", async () => {
+    const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
+    const other = fakeAuthUser({ id: "u2", email: "ada@example.com", isAdmin: true });
+    const demoted: string[] = [];
+    const admin = fakeAdminUserService([self, other], {
+      demote: async (id) => {
+        demoted.push(id);
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u2", formBody({ role: "member", status: "active" }, "PATCH"));
+    expect(res.status).toBe(200);
+    expect(demoted).toEqual(["u2"]);
   });
 
   it("refuses an administrator deleting their own account, which is not even reversible", async () => {

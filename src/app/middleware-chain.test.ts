@@ -7,7 +7,7 @@ import { requestIdCtx } from "../security/request-id";
 import { mapHandler } from "../testing/route";
 import { v } from "../validation/mod";
 import { Forge } from "./forge-app";
-import { applyMiddlewareChain } from "./middleware-chain";
+import { applyMiddlewareChain, buildGuardChain } from "./middleware-chain";
 
 function probe(label: string, order: string[]): Middleware {
   return async (_context, next) => {
@@ -38,7 +38,7 @@ describe("applyMiddlewareChain — canonical order", () => {
         nonceWasSet = getNonce(context) !== "";
         return next();
       },
-      guards: [{ paths: ["/guarded"], middleware: [probe("guard", order)] }],
+      guards: [{ paths: ["/guarded"], guards: [probe("guard", order)] }],
     });
     mapHandler(app, "GET", "/guarded", () => {
       order.push("handler");
@@ -58,7 +58,7 @@ describe("applyMiddlewareChain — canonical order", () => {
     applyMiddlewareChain(app, {
       securityHeaders: {},
       session: probe("session", order),
-      guards: [{ paths: ["/guarded"], middleware: [probe("guard", order)] }],
+      guards: [{ paths: ["/guarded"], guards: [probe("guard", order)] }],
     });
     mapHandler(app, "GET", "/open", () => {
       order.push("handler");
@@ -150,7 +150,7 @@ describe("applyMiddlewareChain — canonical order", () => {
     applyMiddlewareChain(app, {
       securityHeaders: {},
       trustCfHeaders: true,
-      guards: [{ paths: ["/api/*", "/api/users"], rateLimit: { limiter: (c) => c.env.LIMITER }, middleware: [probe("guard", order)] }],
+      guards: [{ paths: ["/api/*", "/api/users"], rateLimit: { limiter: (c) => c.env.LIMITER }, guards: [probe("guard", order)] }],
     });
     mapHandler(app, "GET", "/api/users", () => new Response("ok"));
 
@@ -174,7 +174,7 @@ describe("applyMiddlewareChain — canonical order", () => {
   it("fires a multi-path group on every path it names and on none it does not", async () => {
     const order: string[] = [];
     const app = new Forge();
-    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: ["/api/*", "/admin/settings"], middleware: [probe("guard", order)] }] });
+    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: ["/api/*", "/admin/settings"], guards: [probe("guard", order)] }] });
     mapHandler(app, "GET", "/api/users", () => new Response("ok"));
     mapHandler(app, "GET", "/admin/settings", () => new Response("ok"));
     mapHandler(app, "GET", "/public", () => new Response("ok"));
@@ -188,7 +188,7 @@ describe("applyMiddlewareChain — canonical order", () => {
   it("registers nothing for a group with no paths", async () => {
     const order: string[] = [];
     const app = new Forge();
-    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: [], middleware: [probe("guard", order)] }] });
+    applyMiddlewareChain(app, { securityHeaders: {}, guards: [{ paths: [], guards: [probe("guard", order)] }] });
     mapHandler(app, "GET", "/anything", () => new Response("ok"));
 
     const res = await app.request("/anything");
@@ -226,6 +226,47 @@ describe("applyMiddlewareChain — canonical order", () => {
     expect(capturedId).toBe("ray-abc-IAD");
   });
 
+  it("runs `before` ahead of requestId, and `globals` after session and before the first guard group", async () => {
+    const order: string[] = [];
+    let requestIdAtBefore: string | undefined;
+    const app = new Forge();
+    applyMiddlewareChain(app, {
+      before: [
+        async (context, next) => {
+          order.push("before");
+          requestIdAtBefore = requestIdCtx.getOptional(context);
+          return next();
+        },
+      ],
+      securityHeaders: {},
+      session: probe("session", order),
+      globals: [probe("global", order)],
+      guards: [{ paths: ["/guarded"], guards: [probe("guard", order)] }],
+    });
+    mapHandler(app, "GET", "/guarded", () => {
+      order.push("handler");
+      return new Response("ok");
+    });
+
+    const res = await app.request("/guarded");
+    expect(res.status).toBe(200);
+    expect(order).toEqual(["before", "session", "global", "guard", "handler"]);
+    expect(requestIdAtBefore).toBe(undefined);
+  });
+
+  it("registers no `before` or `globals` middleware when neither is given", async () => {
+    const order: string[] = [];
+    const app = new Forge();
+    applyMiddlewareChain(app, { securityHeaders: {}, session: probe("session", order) });
+    mapHandler(app, "GET", "/", () => {
+      order.push("handler");
+      return new Response("ok");
+    });
+
+    await app.request("/");
+    expect(order).toEqual(["session", "handler"]);
+  });
+
   it("ignores a spoofed CF-Ray by default in requestId", async () => {
     let capturedId: string | undefined;
     const app = new Forge();
@@ -241,5 +282,52 @@ describe("applyMiddlewareChain — canonical order", () => {
     await app.request("/", { headers: { "CF-Ray": "ray-abc-IAD" } });
     expect(capturedId).not.toBe("ray-abc-IAD");
     expect(capturedId).not.toBe(undefined);
+  });
+});
+
+describe("buildGuardChain", () => {
+  /** Runs `chain` on one request through a bare app, collecting what each element contributes. */
+  async function runChain(chain: Middleware[], init?: RequestInit, env?: object): Promise<Response> {
+    const app = new Forge();
+    app.use("*", ...chain);
+    mapHandler(app, "POST", "/guarded", () => new Response("handled"));
+    return app.request("/guarded", { method: "POST", ...init }, env as never);
+  }
+
+  it("orders the chain origin → rateLimit → guards", async () => {
+    const order: string[] = [];
+    const chain = buildGuardChain<{ LIMITER: { limit(o: { key: string }): Promise<{ success: boolean }> } }>(
+      {
+        paths: ["/guarded"],
+        origin: { allowedOrigins: ["https://example.com"] },
+        rateLimit: { limiter: (c) => c.env.LIMITER },
+        guards: [probe("guard", order)],
+      },
+      { trustCfHeaders: true },
+    );
+
+    expect(chain).toHaveLength(3);
+    const rejected = await runChain(chain as Middleware[], { headers: { origin: "https://evil.example.net" } });
+    expect(rejected.status).toBe(403);
+    expect(order).toEqual([]);
+  });
+
+  it("omits each absent part, leaving an empty chain for a policy-less group", () => {
+    const order: string[] = [];
+    expect(buildGuardChain({ paths: ["/x"] })).toEqual([]);
+    expect(buildGuardChain({ paths: ["/x"], guards: [probe("guard", order)] })).toHaveLength(1);
+    expect(buildGuardChain({ paths: ["/x"], origin: { allowedOrigins: ["https://example.com"] } })).toHaveLength(1);
+  });
+
+  it("threads trustCfHeaders into the rate limit it builds", async () => {
+    const group = { paths: ["/guarded"], rateLimit: { limiter: (c: { env: { LIMITER: unknown } }) => c.env.LIMITER } };
+    const env = { LIMITER: { limit: async () => ({ success: true }) } };
+    const headers = { "CF-Connecting-IP": "203.0.113.7" };
+
+    const trusting = await runChain(buildGuardChain(group as never, { trustCfHeaders: true }), { headers }, env);
+    expect(trusting.status).toBe(200);
+
+    const distrusting = await runChain(buildGuardChain(group as never), { headers }, env);
+    expect(distrusting.status).toBe(503);
   });
 });

@@ -46,8 +46,6 @@ export const AUTH_VIEWS: { readonly [Name in AuthViewName]: FC<AuthViewProps[Nam
   adminElevate: AdminElevateView,
 };
 
-// Forge owns the copy on these pages already — each view renders its own `<h1>` — so it owns the
-// title that names the same page in a tab.
 /** The document title forge's default shell gives each page. */
 const AUTH_PAGE_TITLES: Readonly<Record<AuthViewName, string>> = {
   signin: "Sign in",
@@ -68,9 +66,8 @@ const AUTH_PAGE_TITLES: Readonly<Record<AuthViewName, string>> = {
   adminElevate: "Elevate",
 };
 
-// Every auth page carries an identity, a pending sign-in or a list of a deployment's accounts, and
-// none of them may sit in a shared cache or come back off the back button after a sign-out. Merged
-// rather than forced, as `applyResponseHeaders` does: a caller stating its own caching keeps it.
+// No auth page may sit in a shared cache or come back off the back button after a sign-out; merged
+// rather than forced, so a caller stating its own caching keeps it.
 /** The page's headers with `Cache-Control: no-store` supplied where the caller named none. */
 function withNoStore(headers: Record<string, string> | undefined): Record<string, string> {
   if (headers === undefined) return { "cache-control": "no-store" };

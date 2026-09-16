@@ -23,10 +23,8 @@ type SwitchProps = Omit<JSX.IntrinsicElements["input"], "size" | "type"> & {
 const SWITCH_TRACK = cn(
   "relative shrink-0 rounded-selector bg-track peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 motion-safe:transition-colors",
 );
-// Logical `start-0.5`, not physical `left-0.5`: under `dir="rtl"` the thumb must still rest at the
-// inline start and travel to the inline end, which the physical pair mirrored the wrong way round.
-// The travel is `translate-x-*`, which is physical whatever the writing mode, so it gets an `rtl:`
-// twin rather than a logical spelling — there is none.
+// Logical `start-0.5`, so the thumb still rests at the inline start under `dir="rtl"`; the travel is
+// `translate-x-*`, physical in every writing mode, so it takes an `rtl:` twin instead.
 const SWITCH_THUMB = "absolute start-0.5 top-0.5 rounded-selector bg-background motion-safe:transition-transform";
 
 const TRACK_SIZE = { sm: "h-4 w-7", md: "h-5 w-9", lg: "h-6 w-11" } as const;

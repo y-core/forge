@@ -5,9 +5,8 @@ import { queryBatches } from "../wrangler";
 import { normalizeDdlText, splitCreateTableBody, sqlIdentifierKey } from "./normalize";
 import type { CreateTableParts, SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaModel, SchemaTable, SchemaTrigger, SchemaView } from "./types";
 
-// D1's authorizer refuses a pragma function on `sqlite_*` and `_cf_*`, so the join filters them out
-// in SQL rather than after. Every leading underscore is escaped: unescaped it is LIKE's single-character
-// wildcard, and `'_forge\_%'` silently matches `xforge_anything` too.
+// D1's authorizer refuses a pragma function on `sqlite_*` and `_cf_*`, so the join filters them in SQL.
+// Every leading underscore is escaped: unescaped it is LIKE's single-character wildcard.
 function ownFilter(): string {
   return `m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\'`;
 }

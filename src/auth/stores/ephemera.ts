@@ -17,9 +17,8 @@ export function ephemeralExpiry(ttlSeconds: number): number {
   return Date.now() + Math.ceil(ttlSeconds) * 1000;
 }
 
-// KV expired a key on its own; SQLite keeps it. Every read holds a row against the clock, so a dead
-// row is already inert — this only reclaims the space, and a deployment that never calls it is
-// slower rather than wrong.
+// SQLite keeps an expired row where KV dropped it, but every read holds a row against the clock —
+// so a dead row is already inert and this only reclaims the space.
 /** Deletes the challenge and nonce rows that expired at or before `at`. Call it from a scheduled handler. @public */
 export async function purgeAuthEphemera(db: D1Client, at: number): Promise<AuthStoreResult<void>> {
   const outcome = await db.batch([

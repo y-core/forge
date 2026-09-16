@@ -56,9 +56,8 @@ export function bindAttr<T extends Record<string, unknown>>(root: HTMLElement, s
     if (signal === undefined) return undefined;
     return effect(() => {
       const value = signal.value;
-      // `false`, `null` and `undefined` all remove the attribute, so one binding expresses a boolean
-      // attribute (`hidden`, `disabled`) as naturally as a valued one. `true` writes the empty
-      // string, which is how HTML spells a present boolean.
+      // `false`, `null` and `undefined` all remove the attribute, and `true` writes the empty
+      // string, which is how HTML spells a present boolean attribute.
       if (value === false || value === null || value === undefined) el.removeAttribute(parsed.attribute);
       else el.setAttribute(parsed.attribute, value === true ? "" : String(value));
     });

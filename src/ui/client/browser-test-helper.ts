@@ -7,16 +7,11 @@ import { build } from "esbuild";
 
 import type { MountOptions } from "./types";
 
-/** Specifiers resolve from `src/`, not from this file or the calling spec — a spec in `ui/core/` and
- * one in `ui/client/` then name the same module the same way. */
+/** The root every bundled specifier resolves from, so a spec in any directory names a module the same way. */
 const SRC_ROOT = new URL("../../", import.meta.url).pathname;
 
-// playwright 1.62 declares `reducedMotion`, `forcedColors` and `contrast` in `types/test.d.ts` but
-// builds none of them into `_combinedContextOptions` (`playwright/lib/index.js`), so
-// `test.use({ reducedMotion: "reduce" })` type-checks and emulates nothing — a spec written against
-// the reduced-motion branch of `forge-ui.css` would silently exercise the no-preference one. These
-// re-declare the three as real options and apply them per page, the one form that does reach the
-// browser. A spec that needs any of them must take `test` from here, not from `@playwright/test`.
+// playwright 1.62 declares `reducedMotion`, `forcedColors` and `contrast` but builds none of them
+// into `_combinedContextOptions`, so `test.use()` type-checks and emulates nothing.
 /** `@playwright/test`'s `test`, with the media options playwright leaves unimplemented reinstated. */
 export const test = playwrightTest.extend<{
   reducedMotion: "reduce" | "no-preference" | null;
@@ -36,8 +31,7 @@ export const test = playwrightTest.extend<{
 
 const bundles = new Map<string, Promise<string>>();
 
-/** Bundles every requested module into one IIFE — separate bundles would each get their own copy of
- * `signal.ts`, so a signal written through one would be invisible to an effect in the other. */
+/** Bundles every requested module into one IIFE, so they share a single copy of `signal.ts`. */
 function bundleModules(expose: Record<string, string>): Promise<string> {
   const entries = Object.entries(expose).sort(([a], [b]) => a.localeCompare(b));
   const key = JSON.stringify(entries);
@@ -89,11 +83,8 @@ export function paintedToken(page: Page, property: string): Promise<string> {
   return paintedHex(page, `var(${property})`);
 }
 
-// Two conversions a spec must not do for itself. A token's *computed* value is the substituted text
-// — `light-dark()` resolves at used-value time — so it has to be painted before it is a colour at
-// all; and a non-legacy colour serializes in its own space, so a computed `oklch()` is not
-// comparable to an `rgb()`. The canvas answers with the bytes the browser actually paints, which is
-// the same `#rrggbb` the scheme generator produces.
+// Painted through a canvas because `light-dark()` resolves at used-value time and a non-legacy
+// colour serializes in its own space, so a computed `oklch()` is comparable to nothing.
 /** The `#rrggbb` a CSS colour value paints as — `"var(--gray-11)"`, an `oklch()`, a hex. */
 export function paintedHex(page: Page, value: string): Promise<string> {
   return page.evaluate((color) => {
@@ -126,8 +117,9 @@ const ORIGIN = "http://forge.test/";
 /** The same host over https, which is what makes the page a secure context. @internal */
 export const SECURE_ORIGIN = "https://forge.test/";
 
-/** Puts the page on a real origin before any markup lands: `setContent` alone leaves the document on
- * `about:blank`, whose opaque origin makes any `localStorage` read throw `SecurityError`. */
+/** Puts the page on a real origin before any markup lands. */
+// `setContent` alone leaves the document on `about:blank`, whose opaque origin makes any
+// `localStorage` read throw `SecurityError`.
 async function givePageAnOrigin(page: Page, origin: string): Promise<void> {
   if (page.url().startsWith(origin)) return;
   await page.route(`${origin}**`, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><html><body></body></html>" }));

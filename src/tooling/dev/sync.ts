@@ -1,17 +1,3 @@
-/** Overwrites a consumer's installed forge with this checkout, for local development only.
- *
- *  A consumer pins forge to a published tag, which is the shape CI and every other consumer get.
- *  Working on forge and the application together needs the opposite, so this packs the checkout as
- *  `bun publish` would — honouring `files`, so no `.git`, no `node_modules`, no tests — and
- *  extracts it over the consumer's `node_modules/@y-core/forge`.
- *
- *  The result deliberately disagrees with the consumer's lockfile. That is the point, and it is why
- *  this is never wired to `postinstall`: a plain `bun i` restores the pinned tag, and the override
- *  has to be asked for again.
- *
- *  Run from the consumer, which is the root it resolves against.
- */
-
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -134,7 +134,7 @@ pre-built step, whose label is its `--only` token:
 | `exportsStep` | `validate-exports` | `checkExports` | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable; and no escape entry restates the `client` convention or names a subpath that is gone |
 | `namespaceGraphStep` | `validate-namespace-graph` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
 | `assetRootStep` | `validate-asset-root` | `checkAssetRoot` | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions |
-| `exposureStep` | `validate-exposure` | `checkExposure` | The Worker config states `workers_dev`, `preview_urls` and `routes` — intent, not a particular value |
+| `exposureStep` | `validate-exposure` | `checkExposure` | Every deployment the Worker config describes — the top level and each `env.*` block, never read through wrangler's merge — states `workers_dev`, `preview_urls` and its routing key. Statedness by default; `require: "unroutable"` additionally demands the value that keeps the Worker off the public internet (`workers_dev: false`, `preview_urls: false`, `routes: []` and no singular `route`). Either routing spelling settles the control, and stating both fails — wrangler accepts exactly one |
 | `assetManifestStep` | `validate-asset-manifest` | `checkAssetManifest` | Every path the emitted assets manifest maps to exists under `publicDir` |
 | `coLocationStep` | `validate-co-location` | `checkCoLocation` | Every source module has a test beside it, so deleting one is loud — bar a `types.ts` or `bin.ts`, each held to declaring nothing callable |
 | `buildTimeBoundaryStep` | `validate-build-time-boundary` | `checkBuildTimeBoundary` | No module outside a build-time directory imports one at value |
@@ -160,6 +160,11 @@ pre-built step, whose label is its `--only` token:
 
 The tool steps carry no check: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep` (`lint:types`) and
 `testStep` (`test`) spawn `tsc`, `oxlint`, `oxfmt` and `bun test`.
+
+**`docsStep`, `readmeExportsStep`, `changelogStep` and `designStep` are warden's, not this namespace's.** They come from
+`@y-core/forge/warden/steps`, alongside `wardenStep`, `wardenQueriesStep` and `duplicatesStep`, and a consumer appends the set it needs through
+`wardenAppSteps`. `cloudflareWorkerSteps` cannot emit any of them: it lives under `src/`, and nothing there may import warden. A table wanting both
+concatenates the two.
 
 **`browserStep` spawns `playwright test` — the installed binary off `binDir`, whose shebang is node.** Not `bunx`, which installs from the registry
 when it resolves nothing locally; and not under bun, because a dev server playwright spawns itself binds there where the browser cannot reach it in
@@ -440,12 +445,17 @@ reading it as "select no steps" would refuse every unscoped run.
 
 #### `cloudflareWorkerSteps(options?)`
 
-The step table every Cloudflare Worker app in this fleet shares, in declared order: `types:cf-runtime` → `types:cf-bindings` → `types:assets` →
-`validate-asset-manifest` → `typecheck` → `lint` → `format` → (`validate-markdown`) → `lint:types` → (`warden`) → (`validate-modern-css` →
-`validate-class-order` → `validate-class-tokens` → `validate-css-tokens`) → `test` → (`validate-asset-root`) → (`validate-exposure`) →
-`validate-dev-boundary` → (`db:schema:digests` → `db:schema`) → (`test:browser`) → (`test:workerd`). Generation leads judgement, so a stale
-generated type surfaces as a type error. Execution order is the tier-stable one — cheaper tier first, declared order within a tier — so the
-`full`-tier rows run last however the table was written.
+The step table every Cloudflare Worker app in this fleet shares, in declared order: `types:cf-runtime` → `types:cf-bindings` → (`types:assets` →
+`validate-asset-manifest`) → `typecheck` → `lint` → `format` → (`validate-jsx`) → (`validate-markdown`) → `lint:types` → (`warden`) →
+(`validate-modern-css` → `validate-class-order` → `validate-class-tokens` → `validate-css-tokens`) → `test` (or one row per `testSets` entry) →
+(`validate-ssr-boundary`) → (`validate-contrast`) → (`validate-asset-root`) → (`validate-exposure`) → `validate-dev-boundary` →
+(`db:schema:digests` → `db:schema`) → (`test:browser`) → (`test:workerd`). Generation leads judgement, so a stale generated type surfaces as a type
+error. Execution order is the tier-stable one — cheaper tier first, declared order within a tier — so the `full`-tier rows run last however the
+table was written.
+
+**`testSets` replaces the single `test` row with one row per question a suite answers** — unit, seam, end-to-end — each with its own paths. A label
+is the `--only` token and the name reported on failure, so every set names itself: `selectSteps` refuses a table holding a duplicate label. Without
+`testSets` the one `test` row stands, and `tests` supplies its paths.
 
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's own installed manifest
 (`forge.devOnly` in `package.json`), so an app that configures nothing still fails on a deployed module importing `@y-core/forge/testing` — whose
@@ -468,15 +478,21 @@ invocation only — runtime types do not depend on the wrangler config.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `sources` | `readonly string[]` | `["src/", "tests/"]` | Directories linted, formatted and type-checked. |
-| `tests` | `readonly string[]` | `["tests/"]` | Test paths passed to `bun test`. |
+| `tests` | `readonly string[]` | `["tests/"]` | Test paths passed to `bun test`. Ignored when `testSets` is set. |
+| `testSets` | `readonly { label: string; sources: readonly string[] }[]?` | — | Several labelled `bun test` rows in place of the single `test` row, for a suite split by the question each set answers. |
 | `assetConfig` | `string?` | — | Asset config path. Omit to skip the `types:assets` step entirely. |
 | `assetOut` | `string` | `.forge/assets.ts` | Where the asset-types emitter writes. |
 | `wranglerTypes` | `boolean` | `true` | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
-| `workerConfig` | `string?` | — | `--config` for the bindings invocation, and the config `validate-exposure` and `validate-dev-boundary` read. |
+| `workerConfig` | `string?` | — | `--config` for the bindings invocation, and the config `validate-exposure` — the row `exposure` configures — and `validate-dev-boundary` read. |
+| `exposure` | `Omit<ExposureCheckConfig, "root" \| "workerConfig">?` | — | How the exposure row judges each deployment; omit to take `require: "stated"`. Read only when `workerConfig` is set. |
 | `warden` | `boolean` | `false` | Add the `warden sync --check` step. Opt-in: it needs the cloned `.claude/` trees. |
 | `root` | `string` | `process.cwd()` | Application root, needed by the asset-root and design checks. |
 | `db` | `boolean` | `false` | Add the two `forge db schema check` rows: `db:schema:digests` in `standard`, `db:schema` (a real replay) in `full`. |
 | `browser` | `boolean` | `false` | Add the `full`-tier `test:browser` step, last in the table. |
+| `workerd` | `boolean` | `false` | Add the `full`-tier `test:workerd` step. |
+| `jsx` | `Omit<Partial<JsxCheckConfig>, "root">?` | — | Omit to emit no JSX-pragma row: an application states `jsxImportSource` once in its own tsconfig, where a library's files each have to carry it. |
+| `ssrBoundary` | `Omit<SsrBoundaryCheckConfig, "root">?` | — | Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. |
+| `contrast` | `Omit<ContrastCheckConfig, "root">?` | — | Omit to emit no contrast row: the audit fails a run that measured no pairs, so it needs the ones this repository actually draws. |
 | `design` | `CloudflareWorkerDesignOptions?` | — | Add the design rows. Omit for an app that does not use `ui/*`. |
 | `markdown` | `Omit<MarkdownCheckConfig, "root">?` | — | Add the `validate-markdown` row. Requires ignoring markdown in `.oxfmtrc.json`. |
 

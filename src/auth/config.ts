@@ -62,8 +62,7 @@ export const AUTH_PASSKEY_TTL_MIN_SECONDS = AUTH_KV_MIN_TTL_SECONDS;
 export const AUTH_PASSKEY_TTL_MAX_SECONDS = 600;
 
 // A credential id is base64url of at most 1023 bytes (WebAuthn L3 §5.8.3), so 1400 characters is
-// past every real one. Bounded and shaped before the store, since an id of any length and any
-// alphabet otherwise reaches `findByCredentialId` as a bind parameter.
+// past every real one; unbounded, an id of any length reaches `findByCredentialId` as a parameter.
 /** Longest credential id an assertion may present. @public */
 export const AUTH_PASSKEY_ASSERTION_ID_MAX = 1400;
 

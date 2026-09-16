@@ -61,10 +61,9 @@ async function addVirtualAuthenticator(page: Page): Promise<void> {
   });
 }
 
-/** Serves the two ceremony endpoints, recording each request so the spec can read the tokens back.
- *
- * Registered *after* `mount`, never before: playwright matches routes newest-first, so the origin
- * catch-all `mount` installs would otherwise answer both endpoints with the empty fixture page. */
+// Registered *after* `mount`: playwright matches routes newest-first, so the origin catch-all
+// `mount` installs would otherwise answer both endpoints with the empty fixture page.
+/** Serves the two ceremony endpoints, recording each request so the spec can read the tokens back. */
 async function routeCeremony(page: Page, options: { verifyStatus?: number } = {}): Promise<Array<{ url: string; token: string | null }>> {
   const seen: Array<{ url: string; token: string | null }> = [];
 
@@ -117,9 +116,8 @@ test.describe("passkey controller — a real ceremony against a virtual authenti
 
     await page.click(`[data-ref='${PASSKEY.trigger}']`);
 
-    // The navigation *is* the success signal, and it tears the page down — so it is what this test
-    // waits on. The success outcome event fires just before it, and is asserted under `bun test`
-    // where no navigation can race it.
+    // The navigation *is* the success signal and it tears the page down, so it is what this test
+    // waits on; the outcome event that fires just before it is asserted under `bun test` instead.
     await page.waitForURL("**/account/passkeys");
     expect(seen).toEqual([
       { url: OPTIONS_PATH, token: OPTIONS_TOKEN },

@@ -42,9 +42,8 @@ function refuse(medium: AuthMedium | undefined, message: string, status: number,
   return medium === "json" ? jsonResponse({ error: message }, status) : html();
 }
 
-// Reused rather than re-resolved when it is already there: `resolveAuth` mounted globally — which an
-// app needs as soon as shared chrome varies by identity — would otherwise make every guarded request
-// read the user store twice for the same answer.
+// Reused rather than re-resolved: with `resolveAuth` mounted globally, every guarded request would
+// otherwise read the user store twice for the same answer.
 /** The identity already on this request, or the one this request's session resolves to against the store. */
 async function establishIdentity<Bindings>(
   context: Parameters<Middleware>[0],
@@ -82,10 +81,6 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
   };
 }
 
-// The verify page is one route serving two ceremonies — the second half of a sign-in, and a step-up
-// a signed-in session owes — and only the identity tells them apart. `requireAuth` cannot run there
-// (an anonymous visitor must reach it), and reading the session inside the page instead would put an
-// identity on a request no guard has judged.
 /** Establishes the request's identity when the session carries one, and admits an anonymous request unchanged. @public */
 export function resolveAuth<Bindings = Record<string, unknown>>(options: Pick<AuthGuardOptions<Bindings>, "users" | "now">): Middleware {
   return async (context, next) => {
@@ -178,8 +173,7 @@ async function resolveAuthDemand<Bindings>(
 }
 
 // A throw and not a redirect: a kind nothing can be enrolled on has no page to send anyone to, so
-// redirecting is the loop this exists to prevent. `authEnrolmentPaths` covers every kind forge can
-// enrol, which is why the ordinary mount cannot reach this.
+// redirecting is the loop this exists to prevent.
 /** Where a request owing one of `kinds` goes to clear it, or a throw naming the option that omits it. */
 function enrolmentTarget<Bindings>(options: AuthEnrolmentGuardOptions<Bindings>, kinds: readonly AuthFactorKind[]): string {
   const target = authEnrolTarget(options.enrolmentPaths, kinds);
@@ -255,8 +249,6 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
     if (stepUpHolds(identity.stepUpAt, maxAgeMs)) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
-    // The visitor lands on the settled page afterwards and repeats the action, which is the honest
-    // account of what happened — forge keeps no pending mutation across a re-authentication.
     return refuse(options.medium, STEP_UP_STALE, 403, () => redirect(options.stepUpPath, 303));
   };
 }
@@ -317,9 +309,6 @@ function guardMiddleware<Bindings>(
   return requireEnrolment({ ...options.enrolment, medium });
 }
 
-// Session middleware is the caller's to mount, ahead of these groups. It is not taken as an option:
-// an option can only be checked for presence, which a middleware other than the one actually mounted
-// satisfies just as well — the check that holds is `requireAuth`'s own, against the live request.
 /** The guard stack the group table declares for every group, plus the configured origin protection on every group that mutates and any rate limit named for it. @public */
 export function createAuthGuards<Bindings = Record<string, unknown>>(options: AuthGuardChainOptions<Bindings>): MiddlewareGuardGroup<Bindings>[] {
   const groups: MiddlewareGuardGroup<Bindings>[] = [];
@@ -341,8 +330,8 @@ export function createAuthGuards<Bindings = Record<string, unknown>>(options: Au
     if (group.guards.length === 0 && origin === undefined && rateLimit === undefined) continue;
 
     const paths = [...new Set(routes.map((leaf) => leaf.pattern.source))];
-    const middleware = group.guards.map((name) => guardMiddleware(name, options, group.medium));
-    groups.push({ paths, ...(origin && { origin }), ...(rateLimit && { rateLimit }), ...(middleware.length > 0 && { middleware }) });
+    const guards = group.guards.map((name) => guardMiddleware(name, options, group.medium));
+    groups.push({ paths, ...(origin && { origin }), ...(rateLimit && { rateLimit }), ...(guards.length > 0 && { guards }) });
   }
   return groups;
 }

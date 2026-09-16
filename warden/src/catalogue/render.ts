@@ -34,9 +34,7 @@ const LOCAL_TITLE = "This repository — its own documents";
 
 const DEPENDENCY_TITLE = "The installed library — advisory, and about the library rather than this repository";
 
-/** The heading each corpus groups under in the served catalogue. Keyed rather than conditional: a
- *  `row.corpus === "project" ? … : …` put every corpus that was not `project` under the fleet
- *  canon's heading, which is the first thing an agent reads. */
+/** The heading each corpus groups under in the served catalogue. */
 const GROUPS: Record<string, string> = { project: LOCAL_TITLE, dependency: DEPENDENCY_TITLE };
 
 /** What a rendered catalogue covers. @public */
@@ -45,21 +43,7 @@ export interface CatalogueScope {
   local?: boolean;
 }
 
-/** Renders the catalogue, canon-only by default.
- *
- *  **The committed file is canon-only, and the served resource is not.** The local half varies per
- *  repository, so a committed file carrying it would change for reasons the fleet does not share —
- *  while a consumer reading the resource is asking what governs _it_, and canon alone answers half
- *  the question. The default keeps `warden catalogue --write` byte-stable; the MCP resource asks
- *  for both.
- *
- *  Nothing here changes when prose changes without the document set changing — no counts, no
- *  timestamps, no version string — so a drift check reports a real change and never a heartbeat.
- *
- *  **Only the committed file names a tree, and `renderCanon` is what writes it.** It is forge's own
- *  inventory, and forge houses all three trees on disk; a consumer's index holds `shared` plus its
- *  own kind, so the distinction is one it could not act on and the served resource groups the canon
- *  whole. @public */
+/** Renders the catalogue, canon-only by default. @public */
 export function renderCatalogue(db: Database, scope: CatalogueScope = {}): string {
   const local = scope.local === true;
   const where = local ? "" : " WHERE corpus = 'canon'";
@@ -78,13 +62,7 @@ export function renderCatalogue(db: Database, scope: CatalogueScope = {}): strin
   return `${sections.join("\n")}\n`;
 }
 
-/** The committed catalogue, read off the canon on disk rather than out of an index.
- *
- *  **An index holds `shared` plus one kind, and the committed file is the fleet's whole inventory.**
- *  The tree selection is per-repository by design — the apps corpus is not law in a library — so a
- *  catalogue rendered from the built index could never carry the tree its repository is not subject
- *  to, and the header's claim to cover the fleet canon would be false in whichever repository
- *  committed it. Walking the canon root is what makes the claim true. @public */
+/** The committed catalogue, read off the canon on disk rather than out of an index. @public */
 export function renderCanon(canonRoot = CANON_ROOT): string {
   const sections: string[] = [header("canon")];
   for (const tree of ["apps", "libs", "shared"] as Tree[]) {

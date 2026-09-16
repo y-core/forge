@@ -424,8 +424,7 @@ test.describe("Navbar — the drawer at phone width", () => {
     await page.click(TOGGLE);
     expect(await isDrawerOpen(page)).toBe(true);
     // Same wait as the two trap tests above: the open handler moves focus into the panel a task
-    // later, so taking the last item before it lands lets it steal focus back to "Home" — Tab then
-    // reaches the second link and Enter follows it, leaving the drawer open with nothing to say why.
+    // later, so taking the last item before it lands lets it steal focus back to "Home".
     await expect.poll(() => focusedText(page)).toBe("Home");
 
     await focusLastPanelItem(page);

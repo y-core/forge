@@ -72,15 +72,12 @@ const TAB_BASE = cn(
     "state-disabled aria-selected:bg-accent aria-selected:text-accent-foreground",
 );
 
-// An `<a href="#panel">`, not a `<button>`: the fragment is what makes a tab set operable with no
-// script at all — the browser navigates, and the `:target` rules in `forge-ui.css` reveal the panel.
-// `mountTabs` then intercepts the click and takes over, so the fragment is a fallback and not the
-// mechanism.
+// An `<a href="#panel">`, not a `<button>`: the fragment keeps a tab set operable with no script,
+// through the `:target` rules in `forge-ui.css` that `mountTabs` then takes over from.
 const Tab: FC<TabProps> = ({ for: panelId, selected = false, disabled = false, class: cls, children, "data-slot": inherited, ...rest }) => (
   <a
     // A disabled tab renders no `href`: with the controller absent, the `:target` fallback in
-    // `forge-ui.css` would reveal its panel and hide the selected one, so the prop's promise held
-    // only once `data-tabs-mounted` was stamped.
+    // `forge-ui.css` would reveal its panel and hide the selected one.
     {...(disabled ? {} : { href: `#${panelId}` })}
     role='tab'
     data-slot={slotToken("tab", inherited)}

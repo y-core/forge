@@ -126,6 +126,10 @@ describe("exact-markup-assertion", () => {
     expect(runRule(exactMarkupAssertion, program(rendered(), helper, assertion(call("sectionIds", identifier("out")), "toContain")))).toEqual([]);
   });
 
+  it("leaves a `toContain` on an imported fixture helper known by name to return a list alone", () => {
+    expect(runRule(exactMarkupAssertion, program(rendered(), assertion(call("classesOf", identifier("out")), "toContain")))).toEqual([]);
+  });
+
   it("still reports a helper that returns markup rather than a list", () => {
     const helper = fnDeclaration("section", other("BlockStatement", returnStatement(call("render", literal("<b />")))));
 

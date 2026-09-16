@@ -72,11 +72,8 @@ export function createFactorStore(db: D1Client): FactorStore {
     async countAttempt(userId, kind, maxAttempts, at, lockoutMs) {
       const owner = uuidKey(userId);
       if (!owner) return ok(null);
-      // Keyed on the owner and the kind, not on a row id a caller had to `find` first: the guess is
-      // spent by the same statement that locates the row and hands it back, so a read cannot sit
-      // between the two. N parallel guesses then spend N of the budget rather than each comparing
-      // against a count none of them has written yet. A refused guess writes nothing, so `updated_at`
-      // is when the cap was hit and the window runs from there.
+      // The guess is spent by the same statement that locates the row, so no read sits between the
+      // two and N parallel guesses spend N of the budget rather than one apiece.
       const lockedUntil = at - lockoutMs;
       const outcome = await db.queryOne<FactorRow>(
         sql`UPDATE auth_factors

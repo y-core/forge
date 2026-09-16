@@ -35,15 +35,12 @@ export function mountCarouselDots(options: CarouselDotsOptions): () => void {
         return null;
       }
 
-      // The selected look is baked into utility classes by `Pagination.Item`'s variants, so both
-      // spellings are lifted off the server-rendered row rather than restated here — a theme, a size or
-      // a caller class changes them, and this controller must not be the second place they are written.
+      // `Pagination.Item`'s variants bake the selected look into utility classes, so both spellings
+      // are lifted off the server-rendered row rather than written a second time here.
       const on = entries.find((entry) => entry.link.hasAttribute(STATE_ATTRS.selected))?.link.getAttribute("class");
       const off = entries.find((entry) => !entry.link.hasAttribute(STATE_ATTRS.selected))?.link.getAttribute("class");
-      // Without a marked dot there is no `on` string to lift, so every class write below is skipped while
-      // the attributes still move — the row settles unselected forever, and silently, which is the one
-      // failure mode here that said nothing. `Carousel.Dots` clamps `current`, so this reports markup it
-      // did not render, exactly as the two checks above do.
+      // `Carousel.Dots` clamps `current`, so a row with no marked dot is markup this controller did
+      // not render: it reports rather than settling unselected forever and silently.
       if (on === undefined || on === null) {
         console.warn(
           `[carousel-dots] no dot carries ${STATE_ATTRS.selected}, so the selected paint cannot be read off the row; the dots will not be marked`,

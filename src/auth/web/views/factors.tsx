@@ -34,8 +34,7 @@ const STATE_BADGE: Readonly<Record<AuthFactorRow["state"], { readonly tone: "suc
 };
 
 // A link and not a `type='button'`: htmx swaps the panel in place where it is running, and where it
-// is not the same href is a page of its own, because the route renders a whole document off a
-// request carrying no `HX-Request`.
+// is not the same href is a page of its own.
 /** The control that fetches the panel, replacing itself with what comes back. @public */
 export const AuthFactorsTrigger: FC<AuthFactorsTriggerProps> = ({ loadPath, label, class: cls }) => (
   <Button asChild tone='neutral' appearance='outline' size='sm' class={cn("self-start", cls)}>
@@ -82,9 +81,8 @@ const AuthFactorItem: FC<{ row: AuthFactorRow; manage: string | undefined }> = (
   );
 };
 
-// Design Read: whoever may read this account — its holder, or an administrator looking at it —
-// checking what can sign it in; the one action is managing a factor, which only the holder is
-// offered; failure is a store that is down, which the resolver answers with rather than this view.
+// Design Read: the account's holder or an administrator, checking what can sign it in; the one action
+// is managing a factor, offered only to the holder; failure is a down store, which the resolver answers.
 /** One account's sign-in methods and registered passkeys, identical whoever is reading them. @public */
 export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, manage, icon: AppIcon, class: cls, level }) => {
   const own = level ?? 2;

@@ -25,12 +25,14 @@ beforeAll(async () => {
   rmSync(join(FIXTURE, ".forge"), { recursive: true, force: true });
   rmSync(MIGRATIONS, { recursive: true, force: true });
   rmSync(join(FIXTURE, "schema.snapshot.json"), { force: true });
+  // Exit status first: it carries the command's own error, where the output assertion reports only
+  // that a string is absent and throws the diagnostic away.
   const compose = forgeDb(["migrate", "compose", "init"]);
+  expect(compose.code, `compose init failed\n${compose.stdout}\n${compose.stderr}`).toBe(0);
   expect(`${compose.stdout}\n${compose.stderr}`.includes("create table auth_users")).toBe(true);
-  expect(compose.code).toBe(0);
   const migrate = forgeDb(["migrate", "--target", "local", "--yes"]);
+  expect(migrate.code, `migrate failed\n${migrate.stdout}\n${migrate.stderr}`).toBe(0);
   expect(`${migrate.stdout}\n${migrate.stderr}`.includes("0001_init")).toBe(true);
-  expect(migrate.code).toBe(0);
   server = await startDevServer({ config: CONFIG, readyPath: "/tables" });
 }, 240_000);
 

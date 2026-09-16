@@ -277,9 +277,7 @@ describe("mountCarouselDots — the two fixes the shared resolver brings", () =>
 });
 
 describe("mountCarouselDots — a row the server marked no dot on", () => {
-  // `Carousel.Dots` takes `current` as an unclamped public `number`, so `current={-1}` used to mark
-  // no dot at all: `on` came back `undefined`, every class write was skipped while `mark` still ran,
-  // and the row settled unselected forever without a word. The two adjacent failures both warn.
+  // `Carousel.Dots` clamps `current`, so an unmarked row is markup this controller did not render.
   it("warns and mounts nothing rather than driving a row it cannot paint", () => {
     const f = fixture(3, -1);
     const warnings: string[] = [];

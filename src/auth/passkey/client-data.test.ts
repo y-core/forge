@@ -112,9 +112,8 @@ describe("verifyClientData — cross-origin", () => {
     expect(verifyClientData(clientData({ crossOrigin: true }), EXPECTED)).toEqual({ ok: false, error: "cross-origin" });
   });
 
-  // The defect this closes: `parseClientData` kept only the fields it knew, so a reported
-  // `topOrigin` was dropped before anything could judge it — reporting one is the same claim
-  // `crossOrigin: true` makes, and it went through unrefused.
+  // Reporting a `topOrigin` is the same claim `crossOrigin: true` makes, so a parse that dropped it
+  // would leave that claim unjudged.
   it("refuses a reported topOrigin rather than dropping it unread", () => {
     expect(verifyClientData(clientData({ topOrigin: "https://embedder.test" }), EXPECTED)).toEqual({ ok: false, error: "top-origin" });
     expect(verifyClientData(clientData({ crossOrigin: true, topOrigin: "https://embedder.test" }), EXPECTED)).toEqual({

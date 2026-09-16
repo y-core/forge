@@ -54,8 +54,7 @@ async function processHtmx(page: Page): Promise<void> {
 }
 
 // htmx inserts a swapped fragment immediately but binds its `hx-*` listeners one settle tick later,
-// so post-swap DOM state is readable while the markup is still inert — a case interacting after a
-// swap waits on this counter, never on the state the swap wrote.
+// so a case interacting after a swap must wait on this counter, not on the state the swap wrote.
 async function observeHtmxSettles(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.showcaseHtmxSettles = 0;
@@ -80,9 +79,8 @@ const icon = createIcon("/sprite.svg", {
   "icon-upload": "0 0 24 24",
 });
 
-// Read as painted colours, not as declaration text: a scheme declares each step once with
-// `light-dark()`, which resolves at used-value time, so `getPropertyValue` on a token returns the
-// same unresolved function in both modes and would measure nothing.
+// A scheme declares each step once with `light-dark()`, which resolves at used-value time, so
+// `getPropertyValue` on a token returns the same unresolved function in both modes.
 /** The two tokens the theme cases read back, as the mode-resolved colour a reader actually sees. */
 const TOKENS = { light: { background: "#f9f9f9", ring: "#646464" }, dark: { background: "#111111", ring: "#b4b4b4" } } as const;
 
@@ -108,8 +106,6 @@ const GEOMETRY_STYLE = `<style>
   [class~="has-[[data-slot~=navbar]:not([open])]:w-auto"]:has([data-slot~="navbar"]:not([open])) { width: auto }
   [class~="has-[[data-slot~=navbar]:not([open])]:self-start"]:has([data-slot~="navbar"]:not([open])) { align-self: flex-start }
 </style>`;
-
-/** The token layer: the scale, then the mapping that points a semantic name at a step. */
 
 /** forge's own rules — the ones no `class=` can express, and the only place dialog positioning lives. */
 const COMPONENT_CSS = "./ui/assets/css/forge-ui.css";
@@ -371,8 +367,6 @@ test.describe("the showcase's inline-validation demo", () => {
 const TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 // The demo forms carry no scope of the showcase's own: `<Turnstile>` stamps `data-scope="turnstile"`
 // on itself, so the widget is what resumes and the enclosing form is found from there.
-// A CSS selector, not the scope name — `TURNSTILE_SCOPE` is the contract export, and reusing that
-// spelling here shadowed what it means.
 const TURNSTILE_FORM = "form:has([data-scope='turnstile'])";
 const TURNSTILE_FIELD = `${TURNSTILE_FORM} input[name='turnstile-email']`;
 /** The bands' focus-loaded fields, in the order the page renders them. */
@@ -400,9 +394,8 @@ const FAKE_TURNSTILE_SCRIPT = `
 
 let turnstileScriptRequests = 0;
 
-// Every case, not only the Turnstile ones: the playground and the submit-mode demo both render
-// eagerly, so any case that mounts the Turnstile page injects the script tag and would otherwise
-// reach the real endpoint.
+// The playground and the submit-mode demo both render eagerly, so any case that mounts the
+// Turnstile page injects the script tag and would otherwise reach Cloudflare's real endpoint.
 test.beforeEach(async ({ page }) => {
   turnstileScriptRequests = 0;
   // A URL predicate: the controller injects `?render=explicit`, which an exact URL would miss.
@@ -460,8 +453,6 @@ test.describe("the showcase's Turnstile page", () => {
       await page.focus(`form:has([data-scope='turnstile']) input[name='${name}']`);
     }
 
-    // One render per form: the controller used to widen its lookup to the document and resolve every
-    // scope to the first widget.
     await expect
       .poll(() => renderSignatures(page))
       .toEqual(["compact/render", "flexible/render", "normal/execute", "normal/render", "normal/render", "normal/render"]);
@@ -745,8 +736,6 @@ test.describe("the table of contents as a column", () => {
     });
 
     await expect.poll(marked).toEqual(["#menu"]);
-    // The spy's scope wraps the trailing rail alone, and its selector is fragments only — the page
-    // rail it used to sweep up by accident is now out of reach twice over.
     expect(await page.evaluate((selector) => document.querySelectorAll(selector).length, `${PAGES_NAV} a[aria-current]`)).toBe(0);
   });
 });
@@ -946,9 +935,8 @@ test.describe("the showcase's chrome band", () => {
   });
 });
 
-// The non-modal dialog is rendered `open`, so it is on screen from first paint. Its positioning is
-// `forge-ui.css` §6's alone — the UA makes every open dialog `position: absolute`, and an unscoped
-// gutter rule floated this one over the whole page.
+// The UA makes every open dialog `position: absolute`, so an unscoped gutter rule floats the
+// non-modal one over the whole page.
 test.describe("the showcase's dialog band", () => {
   const INLINE = "#show-dialog-inline";
 
@@ -1015,16 +1003,13 @@ test.describe("the showcase's lazy band", () => {
     await expect.poll(() => page.locator(`${LAZY_PANEL} li`).count()).toBe(LAZY_PANEL_ROWS.length);
   });
 
-  // The prose says a rejected load is retried; this is the anchor that makes it true. Each rejection
-  // reaches `onError`, which is the only channel a caller learns an attempt failed on at all.
   test("retries the failing anchor to the attempt limit, then loads it", async ({ page }) => {
     await mountShowcase(page, "runtime");
 
     expect(await page.textContent(LAZY_RETRY_STATUS)).toBe(LAZY_RETRY_PENDING);
 
-    // Re-scrolled on every poll: `lazy()` retries by re-observing, and the *other* panel's payload
-    // lands between attempts and grows the page — an anchor pushed below the fold would never see a
-    // second intersection, and the retry would stall rather than fail.
+    // `lazy()` retries by re-observing, and the other panel's payload grows the page between
+    // attempts — an anchor pushed below the fold would never see a second intersection.
     const status = async () => {
       await page.locator(LAZY_RETRY_PANEL).scrollIntoViewIfNeeded();
       return page.textContent(LAZY_RETRY_STATUS);

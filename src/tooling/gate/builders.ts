@@ -1,7 +1,3 @@
-/** Pre-built steps for the checks forge ships, so a project names the ones it wants instead of
- *  writing a spawnable file per check. Labels are fixed: they are the `--only` tokens.
- */
-
 import { checkAssetManifest } from "./checks/asset-manifest";
 import { checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
@@ -62,8 +58,7 @@ function prerequisite(
   return resolved === undefined ? {} : { requires: resolved };
 }
 
-/** Wraps a check function as a step, applying the tier and prerequisite an option table overrides.
- *  Published so a check living outside this namespace builds its step the same way. @public */
+/** Wraps a check function as a step, applying the tier and prerequisite an option table overrides. @public */
 export function checkStep(
   label: string,
   run: CheckStep["run"],
@@ -117,8 +112,10 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
 }
 
 /** `bun test` over `sources`, or the whole project when none are named. @public */
-export function testStep(options: SourceStepOptions = {}): CommandStep {
-  return { label: "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier) };
+export function testStep(options: SourceStepOptions & { label?: string } = {}): CommandStep {
+  // `label` is a parameter because a suite split by the question each set answers needs one row per
+  // set, and `selectSteps` refuses a duplicate label.
+  return { label: options.label ?? "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier) };
 }
 
 /** `playwright test` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
@@ -129,17 +126,11 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
     // step table can be read for which steps run in which mode without opening this file.
     ...tier(options.tier, "full"),
     tail: 120,
-    // The installed binary off `binDir`, like every other command step — never `bunx`, which falls
-    // back to installing from the registry when it resolves nothing. Its shebang is node, which is
-    // what this step needs: under bun a dev server playwright spawns itself binds where the browser
-    // cannot reach it in a sandbox, and `@y-core/forge/tooling/gate/chromium` is prebuilt so
-    // nothing forces bun on a config either.
+    // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
+    // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
     cmd: ["playwright", "test"],
     // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
-    // present, so probing it would pass vacuously and let every spec fail at launch. The remedy names
-    // both routes because the reader is, by definition, outside a devbox container — every image there
-    // bakes Chromium, so the probe cannot fail in one. A direct command, not a package script, so
-    // nothing has to be defined for it to work.
+    // present, so probing it would pass vacuously and let every spec fail at launch.
     ...prerequisite(options.requires, {
       tool: "chromium",
       probe: hasChromium,
@@ -199,7 +190,7 @@ export function assetRootStep(config: AssetRootCheckConfig, options: StepOptions
   return checkStep("validate-asset-root", () => checkAssetRoot(config), options);
 }
 
-/** Fails on any Worker config key whose default runs toward exposure being unstated. @public */
+/** Fails on any Worker config key whose default runs toward exposure being unstated, in the top level and every `env.*` block; requiring a *value* rather than statedness is opt-in via `require`. @public */
 export function exposureStep(config: ExposureCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-exposure", () => checkExposure(config), options);
 }
@@ -214,9 +205,7 @@ export function coLocationStep(config: CoLocationCheckConfig, options: StepOptio
   return checkStep("validate-co-location", () => checkCoLocation(config), options);
 }
 
-/** Checks that no server-rendered file imports the browser-only runtime. Runs in every mode: the
- *  namespace graph declares this edge once for a whole namespace, so only a file-granular check can
- *  tell the one registration entry point apart from a component that would throw in a Worker. @public */
+/** Checks that no server-rendered file imports the browser-only runtime. @public */
 export function ssrBoundaryStep(config: SsrBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-ssr-boundary", () => checkSsrBoundary(config), options);
 }
@@ -241,8 +230,7 @@ export function jsxStep(config: JsxCheckConfig, options: StepOptions = {}): Chec
   return checkStep("validate-jsx", () => checkJsx(config), options);
 }
 
-/** The dependency every design-system step shares — `tailwindcss` is an optional peer, skipped below
- *  the `full` tier and failed by it. */
+/** The dependency every design-system step shares — `tailwindcss` is an optional peer. */
 const tailwindRequired = (): StepRequirement => ({ tool: "tailwindcss", probe: hasTailwind, hint: "run `bun add -d tailwindcss`" });
 
 /** The dependency every bundle-drift step shares — `esbuild` is an optional peer. */
@@ -255,29 +243,22 @@ export function contrastStep(config: ContrastCheckConfig, options: StepOptions =
   return checkStep("validate-contrast", () => checkContrast(config), options, defaults);
 }
 
-/** Regenerates `cn`'s conflict table from the design system and fails on any drift from the committed
- *  copy. @public */
+/** Regenerates `cn`'s conflict table from the design system and fails on any drift from the committed copy. @public */
 export function classGroupsStep(config: ClassGroupsCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-class-groups", () => checkClassGroups(config), options, { requires: tailwindRequired() });
 }
 
-/** Regenerates the design-scale data forge's oxlint plugin reads and fails on any drift from the
- *  committed copy. Separate from `classGroupsStep`: the two files drift independently, and a reader
- *  has to be told which one did. @public */
+/** Regenerates the design-scale data forge's oxlint plugin reads and fails on any drift from the committed copy. @public */
 export function designScaleStep(config: DesignScaleCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-design-scale", () => checkDesignScale(config), options, { requires: tailwindRequired() });
 }
 
-/** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source.
- *  A consumer loads that bundle rather than the source, because node refuses to strip types under
- *  `node_modules`. @public */
+/** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source. @public */
 export function lintPluginStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-lint-plugin", () => checkBundle(config), options, { requires: esbuildRequired() });
 }
 
-/** Rebuilds the committed chromium-resolution bundle and fails on any drift from its TypeScript
- *  source. A `playwright.config.ts` loads that bundle under node, which refuses to strip types
- *  under `node_modules`. @public */
+/** Rebuilds the committed chromium-resolution bundle and fails on any drift from its TypeScript source. @public */
 export function chromiumBundleStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-chromium-bundle", () => checkBundle(config), options, { requires: esbuildRequired() });
 }

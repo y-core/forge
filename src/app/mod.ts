@@ -10,7 +10,7 @@ export type { HandlerFactory } from "./types";
 export { createHandlerFactory } from "./handler-factory";
 export { healthCheck } from "./health";
 export type { MiddlewareChainOptions, MiddlewareGuardGroup } from "./types";
-export { applyMiddlewareChain } from "./middleware-chain";
+export { applyMiddlewareChain, buildGuardChain } from "./middleware-chain";
 export type { MetaOptions, MetaTag, OgType, PageMeta, RobotsDirective } from "./types";
 export { mergeMeta, metaTags } from "./meta";
 export { definePage } from "./page";

@@ -24,9 +24,8 @@ function repo(prefix: string): string {
   return root;
 }
 
-// `negative: []` and `aliases` by default so each case states its own; the shipped set and the
-// shipped table are written against the real corpus and would be measuring nothing — or warning on
-// all 139 bridges — against this three-document fixture.
+// `negative: []` and `aliases` by default so each case states its own: the shipped set and table
+// are written against the real corpus and measure nothing against a three-document fixture.
 const config = (root: string) => ({
   root,
   kind: "libs" as const,

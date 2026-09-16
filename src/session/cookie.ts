@@ -95,8 +95,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
   }
   const { secrets, sameSite, ...rest } = options;
   // `secure` is hardcoded, not an option: development is https at every hop, so it is correct there
-  // by construction (`WORKERS_PLATFORM.md` §4e). An option to relax it only ever shipped a session
-  // cookie readable in transit, from a mistyped env check that nothing else would have reported.
+  // by construction (`WORKERS_PLATFORM.md` §4e), and relaxing it ships a cookie readable in transit.
   const defaults: CookieAttributes = { path: "/", ...rest, sameSite: sameSite ?? "Lax", httpOnly: true, secure: true };
 
   // The secrets are fixed at construction, so the imported keys are too — upstream re-imported one

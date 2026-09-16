@@ -8,9 +8,8 @@ import type { CopyTarget, Dial, DialValues, GeneratedTheme, LiveRatio, SchemePre
 /** Resumable-scope name the customiser's lever panel stamps. @public */
 export const CUSTOMISE_SCOPE = "customise";
 
-// A second scope rather than a wider one: `runAction` walks to the nearest `[data-scope]`, so a copy
-// button outside `CUSTOMISE_SCOPE` would fire nothing — and widening that scope over the page would
-// hand `bindControls` every control in the compositions band.
+// A second scope rather than a wider one: `runAction` walks to the nearest `[data-scope]`, so a
+// copy button outside `CUSTOMISE_SCOPE` would fire nothing.
 /** Resumable-scope name the customiser's output block stamps, so a copy button has a scope to act in. @public */
 export const COPY_SCOPE = "customise-copy";
 

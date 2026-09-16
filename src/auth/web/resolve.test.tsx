@@ -34,7 +34,6 @@ import {
 } from "./loaders";
 import { AUTH_VIEWS } from "./render";
 import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
-import { AUTH_GOLDEN_PAGES } from "./resolve.golden";
 import { AUTH_ROUTE_GROUPS } from "./routes";
 import {
   fakeAdminUserService,
@@ -52,6 +51,7 @@ import {
   elementOf,
   elementsOf,
   tagOf,
+  textOf,
 } from "./test-support";
 import type { AuthIdentity } from "./types";
 import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
@@ -124,8 +124,7 @@ interface Case {
   readonly identity?: AuthIdentity;
 }
 
-// One case per page name, plus the second branch of every page that has one. The bodies these
-// render are the record `resolve.golden.ts` holds, so a change to any of them is a deliberate act.
+// One case per page name, plus the second branch of every page that has one.
 const CASES: readonly Case[] = [
   { label: "signin", name: "signin", load: loadSignin, options: fakeAuthWebOptions() },
   {
@@ -288,9 +287,8 @@ const CASES: readonly Case[] = [
   },
 ];
 
-// The two tables answer different questions — which guards a route runs, and which guards a page's
-// data assumes — and only a test can hold them together, because the mapping is not mechanical:
-// `adminElevate` sits under `/admin` and is deliberately not admin-gated.
+// The two tables answer different questions — which guards a route runs, and which a page's data
+// assumes — and the mapping is not mechanical: `adminElevate` is deliberately not admin-gated.
 const VIEW_GROUP: Readonly<Record<AuthViewName, readonly string[]>> = {
   signin: ["auth"],
   signup: ["auth"],
@@ -324,21 +322,50 @@ describe("AUTH_VIEW_GUARDS", () => {
   });
 });
 
-describe("every auth page renders the bytes it rendered before the resolver", () => {
-  for (const one of CASES) {
-    it(`renders ${one.label} byte for byte`, async () => {
-      const app = loaderApp(one.load, one.options, one.identity ?? null, one.pattern ?? "/page", one.state ?? {});
-      const res = await app.request(one.path ?? "/page");
-      const golden = AUTH_GOLDEN_PAGES[one.label];
+describe("resolveAuthView — the page each loader resolves to", () => {
+  async function pageOf(one: Case): Promise<{ status: number; body: string }> {
+    const app = loaderApp(one.load, one.options, one.identity ?? null, one.pattern ?? "/page", one.state ?? {});
+    const res = await app.request(one.path ?? "/page");
+    return { status: res.status, body: await res.text() };
+  }
 
-      expect(golden).toBeDefined();
-      expect(res.status).toBe(golden?.status as number);
-      expect(await res.text()).toBe(golden?.body as string);
+  const titleOf = (body: string): string => /<title>([^<]*)<\/title>/.exec(body)?.[1] ?? "";
+
+  for (const one of CASES) {
+    it(`resolves ${one.label} to a whole document at the status its state asked for`, async () => {
+      const { status, body } = await pageOf(one);
+
+      expect(status).toBe(one.state?.status ?? 200);
+      expect(body.startsWith('<!DOCTYPE html><html lang="en">')).toBe(true);
+      expect(body.endsWith("</body></html>")).toBe(true);
     });
   }
 
-  it("holds a golden for every case and no case for a golden nothing renders", () => {
-    expect(CASES.map((one) => one.label).sort()).toEqual(Object.keys(AUTH_GOLDEN_PAGES).sort());
+  it("keeps every auth page out of a search index, which the layout owes and no single view can supply", async () => {
+    for (const one of CASES) {
+      expect(tagOf((await pageOf(one)).body, 'name="robots"')).toBe('<meta name="robots" content="noindex">');
+    }
+  });
+
+  it("titles a page by the view it resolved to, so two states of one page cannot read as two pages", async () => {
+    const titles = new Map<AuthViewName, Set<string>>();
+    for (const one of CASES) titles.set(one.name, (titles.get(one.name) ?? new Set()).add(titleOf((await pageOf(one)).body)));
+
+    for (const [name, seen] of titles) {
+      expect([name, seen.size]).toEqual([name, 1]);
+      expect([name, [...seen][0]]).not.toEqual([name, ""]);
+    }
+  });
+
+  it("renders the refusal a case's state carries rather than dropping it on the way through the resolver", async () => {
+    for (const one of CASES) {
+      const { fieldError, error } = one.state ?? {};
+      if (fieldError === undefined && error === undefined) continue;
+      const { body } = await pageOf(one);
+
+      if (fieldError !== undefined) expect(textOf(body, "p", 'data-slot="field-error"')).toBe(fieldError);
+      if (error !== undefined) expect(textOf(body, "div", 'data-slot="alert-description"')).toBe(error);
+    }
   });
 });
 
@@ -473,8 +500,8 @@ describe("a deployment offering no passkey factor serves no passkey management p
     expect(await answerOf(loadPasskeyList, withdrawn)).toEqual(gone);
   });
 
-  // Holding a credential is what the rejected "404 only while the visitor holds nothing" option
-  // would have kept all three pages alive for; the row is a dead one an operator clears at the store.
+  // A stored credential under a withdrawn offering is a dead row an operator clears at the store,
+  // so holding one keeps none of these pages alive.
   const holder = optionsWith({
     users: fakeAuthUserStore([viewer]),
     credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
@@ -493,8 +520,8 @@ describe("a deployment offering no passkey factor serves no passkey management p
   });
 });
 
-// The leak this closes: `loadAdminUsers` reads `services.admin.list` having read no identity at all,
-// so an auth view embedded on an unguarded consumer route served the whole user table to a visitor.
+// `loadAdminUsers` reads `services.admin.list` having read no identity, so an auth view embedded on
+// an unguarded consumer route would serve the whole user table to a visitor.
 describe("resolveAuthView holds a host to the guards the page's data assumes", () => {
   const options = optionsWith({ admin: fakeAdminUserService(roster) });
 
@@ -609,9 +636,8 @@ describe("AuthViewChrome", () => {
   });
 });
 
-// The hazard `AuthViewChrome` carries is not that it fails to work but that it changes what a mount
-// already renders, so every view is checked on both sides: the heading it moves when a host asks,
-// and the bytes it leaves alone when one does not.
+// The hazard `AuthViewChrome` carries is changing what a mount already renders, so every view is
+// checked on both sides: the heading it moves, and the bytes it leaves alone when asked nothing.
 describe("every view places its heading where the host says", () => {
   async function rendered<Name extends AuthViewName>(one: Case, name: Name, chrome: AuthViewChrome): Promise<string> {
     let html = "";

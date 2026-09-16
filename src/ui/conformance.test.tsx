@@ -40,8 +40,7 @@ interface Participant {
   readonly props?: Record<string, unknown>;
   /** The first `data-slot` token on the element that receives forwarded props. */
   readonly slot: string;
-  /** The first `data-slot` token on the element that receives the caller's `class`, when it differs
-   *  from the one that receives forwarded props. Every entry needs a `split` reason beside it. */
+  /** The first `data-slot` token on the element that receives the caller's `class`, when it is not the forwarding element. */
   readonly classSlot?: string;
   /** Why this component's class target and prop target are two different elements. */
   readonly split?: string;
@@ -126,8 +125,7 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
   Turnstile: { props: { siteKey: "sk" }, slot: "turnstile" },
 };
 
-/** The bound tier renders its `ui/core` twin, so each entry repeats that twin's targets and adds the
- *  props the wrapper requires: `bind` on a bound control, the core fixture props on a bound compound. */
+/** The bound tier's entries: each `ui/core` twin's targets, plus the props its wrapper requires. */
 const CONTROL_PARTICIPANTS: Record<string, Participant> = {
   CheckboxGroup: { props: { name: "cg" }, slot: "checkbox-group", stateAttr: "data-orientation" },
   FileInput: { props: { bind: BIND_FIELD }, slot: "file-input" },
@@ -228,9 +226,7 @@ async function renderProbe(key: string, participant: Participant, extra: Record<
   );
 }
 
-/** Every boolean state prop, set true. A component only emits the six presence hooks when the
- *  corresponding prop is true, so a sweep over a default render reaches none of them — which is how
- *  the six attributes the contract exists for were the ones it never saw. */
+/** Every boolean state prop, set true, so the six presence hooks are reached. */
 const STATEFUL_PROPS = { pressed: true, checked: true, selected: true, disabled: true, invalid: true, busy: true };
 
 const FORWARDING = KEYS.filter((key) => !participantOf(key)?.noForward);
@@ -313,16 +309,13 @@ describe("ui conformance — the sweep is derived from the barrels", () => {
       }
     }
 
-    // Asserted in this direction and not the other: filtering the rendered attributes down to the
-    // declared set before comparing makes the comparison unfalsifiable, which is how undeclared
-    // names came to ship past a test whose stated purpose was to stop them.
+    // Asserted in this direction: filtering the rendered attributes down to the declared set before
+    // comparing would make the comparison unfalsifiable.
     expect([...offenders].sort()).toEqual([]);
   });
 
-  // `forge/data-slot-before-spread` enforces the *ordering* of a slot attribute against the
-  // forwarded props, never its *placement* on the element tree, so an inner-element token is outside
-  // what it can see. Naming each split here is the record; teaching a class-order check about
-  // element identity would be a second, weaker copy of this sweep.
+  // `forge/data-slot-before-spread` enforces a slot attribute's *ordering* against the forwarded
+  // props, never its *placement* on the element tree, so no lint rule can see a split.
   it("gives a reason for every component whose class target and prop target differ", () => {
     const undeclared = KEYS.filter((key) => participantOf(key)?.classSlot !== undefined && !participantOf(key)?.split);
     expect(undeclared).toEqual([]);
@@ -367,8 +360,7 @@ const FOREIGN_APPEARANCE: Record<string, string> = {
   "core/turnstile.tsx": "Cloudflare's widget render modes (`always` / `execute` / `interaction-only`) pass through verbatim",
 };
 
-/** The seven ratified presentational prop names, and the type each must resolve to. An allowlist,
- *  because a denylist of one name (`variant`) is defeated by every synonym nobody thought of. */
+/** The seven ratified presentational prop names, and the type each must resolve to. */
 const RATIFIED: Record<string, RegExp> = {
   tone: /Tone\b|ButtonProps\["tone"\]/,
   // A `*Appearance` / `*Size` alias is an `Extract<>` narrowing of the ratified union, not a second
@@ -381,8 +373,7 @@ const RATIFIED: Record<string, RegExp> = {
   busy: /\bboolean\b/,
 };
 
-/** Presentational-sounding prop names that are not the ratified axes and never may be. `kind` is
- *  absent deliberately: it is the discriminant tag on `ToolbarAction`'s union, not an axis. */
+/** Presentational-sounding prop names that are not the ratified axes and never may be. */
 const BANNED_PROP_NAMES = ["variant", "intent", "colour", "emphasis", "look"];
 
 describe("ui conformance — the prop vocabulary (UI_SSR_COMPONENTS.md §1m)", () => {
@@ -395,8 +386,8 @@ describe("ui conformance — the prop vocabulary (UI_SSR_COMPONENTS.md §1m)", (
     expect(offenders).toEqual([]);
   });
 
-  // An allowlist, not a scan of the declaration *text*: every alias defeated the old orientation
-  // check, because they all declared `orientation?: XOrientation` and the check looked for a shape.
+  // An allowlist, not a scan of the declaration text: an alias declares `orientation?: XOrientation`
+  // and so defeats any check looking for the union's shape.
   it("types every ratified prop on the union its name is ratified for", () => {
     const exempt: Record<string, Record<string, string>> = { size: FOREIGN_SIZE, appearance: FOREIGN_APPEARANCE };
     const offenders = Object.entries(sources).flatMap(([file, source]) =>
@@ -477,9 +468,8 @@ describe("ui conformance — the five contracts", () => {
     ).toEqual(expected(FORWARDING, "forwarded / no-style"));
   });
 
-  // Both sides derived from `STATE_PARTICIPANTS` proved only that the input equals itself. The
-  // expectation now states the caller's value literally, so a change to the table cannot silently
-  // rewrite what this demands.
+  // The expectation states the caller's value literally, so a change to `STATE_PARTICIPANTS` cannot
+  // silently rewrite what this demands.
   it("lets a caller's explicit state attribute beat the one the component computed", () => {
     const resolved = Object.entries(STATE_PARTICIPANTS).map(([key, attr]) => {
       const el = elementBySlot(OVERRIDDEN[key] as string, participantOf(key)?.slot as string);

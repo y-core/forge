@@ -6,9 +6,8 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser-test-helper";
 import { ScrollArea } from "./scroll-area";
 
-// The test page loads no Tailwind, so without a bound root nothing overflows and every case below passes
-// vacuously. `max-h-[inherit]` on the viewport is stubbed alongside `h-full` because the two together are
-// what bind the scrolling element under either kind of root.
+// The test page loads no Tailwind, so without these stubs nothing overflows and every case below
+// passes vacuously.
 const VIEWPORT_STYLE = "[data-slot~='scroll-area-viewport'] { height: 100%; max-height: inherit; overflow: auto; }";
 
 // A root sized by `h-*`: the height is definite, so `h-full` alone already binds the viewport.

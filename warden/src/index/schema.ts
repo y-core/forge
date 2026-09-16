@@ -1,20 +1,12 @@
-/** The index schema, and the two versions that invalidate it. */
-
-/** Bumped whenever the tables change shape. A mismatch rebuilds rather than migrates: the index is
- *  a derived artifact under `.forge/`, never committed, and a full build is under a second. @public */
+/** Bumped whenever the tables change shape, a mismatch rebuilding rather than migrating. @public */
 export const SCHEMA_VERSION = "4";
 
 /** Bumped whenever chunking, glossing or weighting changes what the same documents would produce. @public */
 export const INDEXER_VERSION = "9";
 
-/** `tokenchars` is the highest-leverage knob here: without `-_/.§` the tokenizer splits
- *  `Result<T,E>`, `ui/core`, `forge-ui-focus-ring`, `@y-core/forge/ui/show` and `§5c` into pieces,
- *  and every one of those is a query a reader actually types.
- *
- *  `porter` wraps it because a reader asks "when do I throw instead of **returning** a Result" and
- *  the section is titled "**Return** Result" — without stemming those are different terms, and the
- *  exact answer ranked twelfth. The wrapper stems only what `unicode61` hands it, so `§5c` and
- *  `ui/core` survive intact. @public */
+// Without `-_/.§` in `tokenchars` the tokenizer splits `ui/core`, `Result<T,E>` and `§5c` into
+// pieces; `porter` wraps it so `returning` and `Return` are one term.
+/** The FTS5 tokenizer chain. @public */
 export const TOKENIZE = "porter unicode61 remove_diacritics 2 tokenchars '-_/.§'";
 
 /** The full DDL, run inside one transaction on a fresh database. @public */
@@ -80,10 +72,5 @@ CREATE VIRTUAL TABLE chunk_fts USING fts5(
 );
 `;
 
-/** Column weights for `bm25()`, in the FTS5 column order.
- *
- *  `rules` leads because a bolded clause is where a governing document states its rule; `title`
- *  next because a reader who names a section usually means it; `gloss` next because it is the
- *  corpus's own one-line summary; `search_body` last because length normalisation already rewards
- *  a short section and prose repeats itself. @public */
+/** Column weights for `bm25()`, in the FTS5 column order. @public */
 export const COLUMN_WEIGHTS = [8, 4, 6, 10, 1] as const;

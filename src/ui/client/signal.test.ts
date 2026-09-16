@@ -259,9 +259,8 @@ describe("the effects-paint rule", () => {
     expect(() => derived.value).toThrow(WRITE_REFUSED);
   });
 
-  // The shape the doc claimed topological ordering would fix. It would not: `mid` and `leaf` are
-  // plain signals at read-depth 0, so E1, E2 and E3 all sit at depth 1 and ordering changes nothing.
-  // The offending edge is the *write*, which the read graph cannot see. Banning it is the only route.
+  // Topological ordering cannot fix this shape: every effect sits at read-depth 1, and the offending
+  // edge is the *write*, which the read graph cannot see.
   it("throws on the E1-writes-mid / E2-reads-mid / E3-writes-leaf shape", () => {
     const root = createSignal(0);
     const mid = createSignal(0);

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { probe } from "./probe";
+import { probe, probeSetsOf } from "./probe";
 
 function doc(gloss: string, body: string): string {
   return `---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: ${gloss}\n\n## 1. One\n\n${body}\n`;
@@ -75,5 +75,54 @@ describe("probe()", () => {
     const root = repo("warden-probe-empty-", [["package.json", "{}"]]);
 
     expect(() => probe({ root, kind: "libs", canonRoot: join(root, "warden/canon") })).toThrow("discovery found no document to index");
+  });
+});
+
+const QUERY = `{ query: "comment budget", expect: "canon:CODE_RULES.md#1", dimension: "prohibition" }`;
+const PARSED = { query: "comment budget", expect: "canon:CODE_RULES.md#1", dimension: "prohibition" };
+
+/** A step table exporting one row under `label`, carrying the sets when `sets` is given. */
+function table(label: string, sets: boolean): string {
+  const carried = sets ? `, golden: [${QUERY}], negative: ["taxes"]` : "";
+  return `export default [{ label: ${JSON.stringify(label)}, run: () => ({ ok: true, findings: [] })${carried} }];\n`;
+}
+
+describe("probeSetsOf()", () => {
+  it("reads the sets off the step table's golden row", async () => {
+    const root = repo("warden-sets-table-", [["config/steps.ts", table("warden:queries", true)]]);
+
+    expect(await probeSetsOf(undefined, root)).toEqual({ golden: [PARSED], negative: ["taxes"] });
+  });
+
+  it("names the fix when the step table will not load", async () => {
+    const root = repo("warden-sets-missing-", [["package.json", "{}"]]);
+
+    await expect(probeSetsOf(undefined, root)).rejects.toThrow("cannot load");
+  });
+
+  it("names the fix when the module exports no step table", async () => {
+    const root = repo("warden-sets-notable-", [["config/steps.ts", "export const GOLDEN = [];\n"]]);
+
+    await expect(probeSetsOf(undefined, root)).rejects.toThrow("exports no step table");
+  });
+
+  it("names the fix when the table declares no golden row", async () => {
+    const root = repo("warden-sets-norow-", [["config/steps.ts", table("lint", false)]]);
+
+    await expect(probeSetsOf(undefined, root)).rejects.toThrow("declares no `warden:queries` row");
+  });
+
+  // Never a silent fall-through to the shipped pair: that is what let a renamed set be reported as a
+  // corpus regression rather than as a missing file.
+  it("requires an explicit module to export GOLDEN", async () => {
+    const root = repo("warden-sets-explicit-", [["config/warden.ts", "export const NEGATIVE = [];\n"]]);
+
+    await expect(probeSetsOf(join(root, "config/warden.ts"), root)).rejects.toThrow("exports no GOLDEN");
+  });
+
+  it("takes an explicit module's sets, defaulting its negative set to empty", async () => {
+    const root = repo("warden-sets-golden-", [["config/warden.ts", `export const GOLDEN = [${QUERY}];\n`]]);
+
+    expect(await probeSetsOf(join(root, "config/warden.ts"), root)).toEqual({ golden: [PARSED], negative: [] });
   });
 });

@@ -1,13 +1,5 @@
-// Ambient declarations for the node surface `src/testing/workerd.ts` reaches, shipped so a
-// consumer can put its workerd suite in a type program whose `types` array is empty.
-//
-// Not `@types/node`: that declares the whole runtime into global scope, and a Worker program that
-// sees node's globals typechecks code that cannot run in a Worker. What is here is only what the
-// dev-server helper spawns with — six `node:*` modules, plus the two globals a module declaration
-// cannot express, `Buffer` and `process`.
-//
-// Reference it from the test-side file that reaches the helper, never from the `types` array:
-//   /// <reference types="@y-core/forge/testing/node" />
+// Ambient declarations for the node surface `src/testing/workerd.ts` reaches. Not `@types/node`:
+// that declares node's globals into scope, so a Worker program typechecks code that cannot run.
 
 // Node's Buffer extends Uint8Array; declared only as far as decoding a captured stdout chunk needs.
 declare interface Buffer extends Uint8Array {

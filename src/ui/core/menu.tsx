@@ -111,9 +111,8 @@ const MenuPopup: FC<MenuPopupProps> = ({
   </div>
 );
 
-// One emission for both tiers: `menuItemAttrs` is published for rows an app builds in the browser,
-// and having the SSR rows spend it is what stops the two drifting — the client-built row used to
-// emit only the ARIA half of the checked state.
+// `menuItemAttrs` is published for rows an app builds in the browser; spending it here too is what
+// keeps the SSR and client tiers from drifting.
 const rowAttrs = (options: MenuItemAttrsOptions, own: string, inherited: unknown): Record<string, string> => ({
   ...menuItemAttrs(options),
   "data-slot": slotToken(own, inherited),

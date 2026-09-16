@@ -21,9 +21,8 @@ export const MENU_ITEM_CLASS =
   "state-disabled";
 
 /** The `aria-checked` and delegated-action attributes a checkable row carries; empty for a plain row. */
-// `data-checked` beside `aria-checked` and never without it: `STATE_ATTRIBUTES.md` §1b names this
-// function as the reason one exists, and a client-built row that emitted only the ARIA half styled
-// nothing the CSS hooks paint from.
+// `data-checked` beside `aria-checked` and never without it (`STATE_ATTRIBUTES.md` §1b): a row
+// emitting only the ARIA half styles nothing the CSS hooks paint from.
 function checkableAttrs(role: MenuItemAttrsOptions["role"], checked: boolean): Record<string, string> {
   if (role !== "menuitemcheckbox" && role !== "menuitemradio") return {};
   return { "aria-checked": String(checked), ...stateAttrs({ checked }), "data-on-click": role === "menuitemcheckbox" ? "check" : "select" };

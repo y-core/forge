@@ -9,6 +9,8 @@ import type { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
 import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
+import { requireFormContentType } from "../../security/content-type";
+import { crossOriginProtection } from "../../security/cop";
 import { v } from "../../validation/validation";
 import { ShowcaseContent, SHOWCASE_PAGES } from "./components";
 import { CustomiseContent, loadCustomise } from "./customise";
@@ -129,6 +131,10 @@ export function registerShowcase<Bindings extends object, Config>(
     chrome: contentPage("chrome"),
     theme,
   };
+
+  // The showcase mounts outside whatever prefixes a consumer guards, so the one state-changing
+  // route here carries its own guards rather than inheriting them, and both fail closed.
+  app.use(uiRoutes.api.turnstileVerify.href(), crossOriginProtection(), requireFormContentType());
 
   app.map(uiRoutes, createController(uiRoutes, { actions }));
   app.map(

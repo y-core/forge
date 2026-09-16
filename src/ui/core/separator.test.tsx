@@ -2,41 +2,31 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Separator } from "./separator";
+import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("Separator", () => {
-  it("renders an <hr> element", async () => {
-    expect(await render(<Separator />)).toBe('<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border">');
-  });
-
-  it("defaults to horizontal with h-px and w-full classes", async () => {
-    expect(await render(<Separator />)).toBe('<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border">');
-  });
-
-  it("renders vertical classes when orientation=vertical", async () => {
-    expect(await render(<Separator orientation='vertical' />)).toBe(
-      '<hr data-slot="separator" aria-orientation="vertical" class="h-auto w-px self-stretch border-0 bg-border">',
-    );
-  });
-
-  it("sets aria-orientation=horizontal by default", async () => {
-    expect(await render(<Separator />)).toBe('<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border">');
-  });
-
-  it("sets aria-orientation=vertical when specified", async () => {
-    expect(await render(<Separator orientation='vertical' />)).toBe(
-      '<hr data-slot="separator" aria-orientation="vertical" class="h-auto w-px self-stretch border-0 bg-border">',
-    );
-  });
-
-  it("merges a custom class with the base classes", async () => {
-    expect(await render(<Separator class='my-sep' />)).toBe(
-      '<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border my-sep">',
-    );
-  });
-
-  it("forwards id and data-* attributes and keeps aria-orientation", async () => {
+  it("renders the whole rule exactly, forwarded attributes escaped", async () => {
     expect(await render(<Separator id='sep1' data-testid='sep' data-note='a&b' />)).toBe(
       '<hr data-slot="separator" aria-orientation="horizontal" class="h-px w-full border-0 bg-border" id="sep1" data-testid="sep" data-note="a&amp;b">',
     );
+  });
+
+  it("announces its orientation, so a screen reader is not left to infer it from a border", async () => {
+    expect(attrsOf(await render(<Separator />))).toEqual({ "data-slot": "separator", "aria-orientation": "horizontal" });
+  });
+
+  it("announces the vertical orientation when it is asked for one", async () => {
+    expect(attrsOf(await render(<Separator orientation='vertical' />))).toEqual({ "data-slot": "separator", "aria-orientation": "vertical" });
+  });
+
+  it("turns the rule on its side rather than drawing a second one across it", async () => {
+    expect(variantClasses(await render(<Separator orientation='vertical' />), await render(<Separator />))).toEqual({
+      added: ["h-auto", "w-px", "self-stretch"],
+      dropped: ["h-px", "w-full"],
+    });
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Separator class='my-sep' />)).at(-1)).toBe("my-sep");
   });
 });

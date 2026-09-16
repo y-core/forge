@@ -9,8 +9,7 @@ import { TOOLTIP_MOUNTED_ATTR } from "./toggle-contract";
 import { TOOLBAR_ITEM_ATTR } from "./toolbar-contract";
 
 // Read by tests only: a runtime reference would retain the whole table in every bundle that spreads
-// a hook, the cost `state-attrs.ts` documents. The five `contracts/theme/` names are literal because
-// `ui/contracts` is LEAF and may not import its own subnamespace; the spec holds them to it.
+// a hook. The five `contracts/theme/` names are literal because `ui/contracts` is LEAF.
 /** Every `data-*` name that addresses structure or wires a controller, with the reason it exists. @internal */
 export const WIRING_ATTRS: Record<string, string> = {
   "data-slot": "the addressable-element token itself",

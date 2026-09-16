@@ -11,8 +11,7 @@ const RFC_4226_SECRET = utf8Encode("12345678901234567890");
 const RFC_4226_CODES: readonly string[] = ["755224", "287082", "359152", "969429", "338314", "254676", "287922", "162583", "399871", "520489"];
 
 // RFC 6238 Appendix B uses a *different* secret per variant, each the ASCII digits repeated to the
-// hash's block size. Reusing the SHA-1 secret for all three yields a table that passes for the
-// wrong reason: HMAC pads a short key, so the wrong-length secret still produces a stable code.
+// hash's block size; HMAC pads a short key, so reusing the SHA-1 secret would pass for the wrong reason.
 /** RFC 6238 Appendix B, one secret per hash variant. */
 const RFC_6238_SECRETS: Readonly<Record<HotpHash, Uint8Array<ArrayBuffer>>> = {
   "SHA-1": utf8Encode("12345678901234567890"),

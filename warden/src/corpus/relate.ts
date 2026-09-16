@@ -11,12 +11,7 @@ const CITATION = new RegExp(`((?:[A-Za-z0-9_-]+/)?[A-Z_]+\\.md)${LINK_CLOSE}\\s+
 // prose writes one and resolves to the document otherwise.
 const DEFERRED_DOC = new RegExp(`\\b((?:[A-Za-z0-9_-]+/)?[A-Z_]+\\.md)${LINK_CLOSE}(?:\\s+§([0-9][A-Za-z0-9]*))?`, "g");
 
-/** The `[tree/]DOC.md` spelling a reference id names, or the link text where nothing defines it.
- *
- *  **Under reference style the path is not on the citing line at all.** The link text is a bare
- *  basename, and a bare basename is exactly the spelling every tree of the canon shares — so a
- *  citation that used to resolve through its href resolves to the citing repository's own file
- *  instead. Reading the destination out of the definition puts the disambiguating path back. */
+/** The `[tree/]DOC.md` spelling a reference id names, or the link text where nothing defines it. */
 function spellingOf(text: string, id: string | undefined, definitions: ReadonlyMap<string, string>): string {
   const destination = id === undefined ? undefined : definitions.get(id.toLowerCase());
   if (destination === undefined) return text;
@@ -33,31 +28,7 @@ const DOCS_PREFIX = "docs/";
 /** What a cited `[tree/]DOC.md` spelling named. @public */
 export type Resolution = { kind: "resolved"; id: string } | { kind: "ambiguous"; ids: readonly string[] } | { kind: "none" };
 
-/** Resolves a cited `[tree/]DOC.md` spelling, saying which of the three things happened.
- *
- *  **`resolveDoc` returned `undefined` for both "names nothing" and "names three things", and the
- *  two are different defects.** One is a typo or a renamed document; the other is a citation that
- *  needs a path. Both were dropped in silence, since an unresolved edge only warns and the warning
- *  says the same thing about either.
- *
- *  `from` breaks the tie through an ordered list of tiers. A repository names documents the canon
- *  also names, so `TESTING.md` matches twice almost everywhere; the citing document's own tree
- *  settles a citation between siblings. **The corpus tiers are what make a cross-tree citation
- *  resolve at all**: a `shared` rule citing `libs/ERROR_HANDLING.md` has no same-tree candidate, and
- *  without preferring its own corpus next it lands back among every match. Canon prose means canon
- *  prose, whichever tree carries it.
- *
- *  **`dependency` is last, deliberately.** A bare `TESTING.md` in a consumer's own document never
- *  means the installed library's copy — the reader wrote it about their own repository, and the
- *  library's is the one spelling they would have had to reach for on purpose.
- *
- *  **A citation in a library document never names the consumer's file.** The library cannot know
- *  what documents the repository it is installed into carries, so a `docs/X.md` spelling there names
- *  the library's own copy or the shared canon and nothing else — and the consumer routinely has a
- *  same-named `docs/X.md`, which matched exactly and won before any tier ran. The prefix is there
- *  because a namespace README cites across directories through a relative href
- *  (`../../docs/X.md`), so the captured spelling arrives qualified where a `docs/` document citing
- *  a sibling writes the bare name; stripping it once is what lets `forge/X.md` match. @public */
+/** Resolves a cited `[tree/]DOC.md` spelling, saying which of the three things happened. @public */
 export function resolveCitation(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): Resolution {
   const pool = from?.corpus === "dependency" ? sources.filter((doc) => LIBRARY_CORPORA.includes(doc.corpus)) : sources;
   const find = (spelling: string) =>
@@ -75,9 +46,8 @@ export function resolveCitation(cited: string, sources: readonly SourceDoc[], fr
   if (from !== undefined) {
     tiers.push((doc) => doc.corpus === from.corpus && doc.tree === from.tree);
     tiers.push((doc) => doc.corpus === from.corpus);
-    // Only where the citing document's own corpus offers no candidate at all. Once it offers
-    // several, another corpus is a different document rather than a narrower reading of the same
-    // one — and a canon rule quietly resolved to a repository's own file is worse than a warning.
+    // Only where the citing document's own corpus offers no candidate: once it offers several,
+    // another corpus is a different document rather than a narrower reading of the same one.
     if (!matches.some((doc) => doc.corpus === from.corpus)) {
       for (const corpus of CORPORA) tiers.push((doc) => doc.corpus === corpus);
     }
@@ -91,17 +61,14 @@ export function resolveCitation(cited: string, sources: readonly SourceDoc[], fr
   return { kind: "ambiguous", ids: matches.map((doc) => sourceId(doc.corpus, doc.path)).sort() };
 }
 
-/** The source id a cited spelling names, or `undefined` when it names none or more than one.
- *
- *  The thin wrapper every caller that has nothing to do with an ambiguity still wants. @public */
+/** The source id a cited spelling names, or `undefined` when it names none or more than one. @public */
 export function resolveDoc(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): string | undefined {
   const resolution = resolveCitation(cited, sources, from);
   return resolution.kind === "resolved" ? resolution.id : undefined;
 }
 
-// The clause, not the header. A deferral wraps across lines and ends at the blank quote line, so the
-// scan has to be a slice rather than the one matching line — but scanning the whole header made
-// every document the *Owns* paragraph mentions in passing into an edge nobody declared.
+// A deferral wraps across lines and ends at the blank quote line, so the scan is that slice — never
+// the whole header, whose *Owns* paragraph mentions documents it declares no edge to.
 function deferralOf(header: string): string | undefined {
   const lines = header.split("\n");
   const start = lines.findIndex((line) => DEFERS.test(line));
@@ -111,11 +78,7 @@ function deferralOf(header: string): string | undefined {
   return [lines[start], ...(end === -1 ? rest : rest.slice(0, end))].join("\n");
 }
 
-/** Every edge one document's chunks declare: the `> Defers to:` header, every `§N` citation, and —
- *  given a `packageName` — every subpath a section's prose governs.
- *
- *  An unresolved edge is kept with its raw spelling rather than dropped — the gate warns on it, and
- *  a dropped edge would look like a document that simply cites nothing. @public */
+/** Every edge one document's chunks declare: its `> Defers to:` header, every `§N` citation, and every subpath its prose governs. @public */
 export function relationsOf(
   doc: SourceDoc,
   chunks: readonly Chunk[],
@@ -129,9 +92,8 @@ export function relationsOf(
 
   const deferral = deferralOf(header);
   if (deferral !== undefined) {
-    // A markdown link names the document twice — once as its text, once as its href — and only the
-    // href is followed by the `§N`. Keying on the resolved target merges the pair where the raw
-    // spellings differ (`X.md` and `tree/X.md` are one edge), and the section-bearing one wins.
+    // A markdown link names the document twice — as its text and as its href — and only the href is
+    // followed by the `§N`, so keying on the resolved target merges the pair into one edge.
     const targets = new Map<string, { raw: string; to?: string }>();
     for (const match of deferral.matchAll(DEFERRED_DOC)) {
       const cited = spellingOf(match[1] ?? "", match[2], definitions);
@@ -163,14 +125,8 @@ export function relationsOf(
     }
   }
 
-  // Prose only: a table row lists a subpath, a rule binds it. A namespace catalog lists every
-  // published subpath, so indexing its rows would make one section govern the whole codebase.
-  //
-  // The target is minted as `code:<subpath>` and is never null. `unresolved()` selects every
-  // relation with a null target and the gate reports the count as citations resolving to no
-  // indexed document; a `governs` edge is not one of those, and a null would inflate that number
-  // with rows working exactly as intended. `parseId` deliberately does not answer for a `code:`
-  // id — it is a two-corpus function, and no relation target is ever passed to it.
+  // Prose only: a namespace catalog lists every published subpath, so indexing its table rows would
+  // make one section govern the whole codebase.
   if (packageName !== undefined) {
     for (const chunk of chunks) {
       const bound = new Set<string>();
@@ -192,11 +148,7 @@ export function headerOf(source: string): string {
   return (first === -1 ? lines : lines.slice(0, first)).join("\n");
 }
 
-/** The chunk id a `[tree/]DOC.md §N` citation names, for a corpus that resolves it.
- *
- *  **Delegated rather than its own `find`.** A bare `find` returns the first match in discovery
- *  order, and `discover` puts the canon first — so every filename spelled in two corpora resolved
- *  to the canon's copy whatever the citing document was, and said nothing about it. @public */
+/** The chunk id a `[tree/]DOC.md §N` citation names, for a corpus that resolves it. @public */
 export function citationTarget(cited: string, section: string, sources: readonly SourceDoc[], from?: SourceDoc): string | undefined {
   const id = resolveDoc(cited, sources, from);
   return id === undefined ? undefined : `${id}#${section}`;

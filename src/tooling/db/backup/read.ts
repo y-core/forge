@@ -97,15 +97,7 @@ function analyseTable(
   return { table: { name, key: "rowid", columns: columns.map((column) => column.name), pageRows: PAGE_ROWS }, probe: null };
 }
 
-/**
- * Several tables as a bounded read addresses them, in the order asked, in two spawns rather than two each.
- *
- * **The faults arrive in two phases, which is the one place this differs from describing them one at a
- * time**: every structural fault in table order, and only then every key-value fault in table order. A
- * probe statement cannot be written until every describe result is in hand, so a later table's composite
- * key now beats an earlier table's NULL key. Within each phase the first faulty table still wins.
- * @internal
- */
+/** Describes several tables as a bounded read addresses them, in the order asked, in two spawns rather than two each. @internal */
 export function describeTables(io: DbIo, home: Home, names: readonly string[]): AppTable[] {
   const described = queryBatches(
     io,
@@ -132,17 +124,9 @@ export function describeTable(io: DbIo, home: Home, name: string): AppTable {
   return table;
 }
 
-/**
- * The tables one `CREATE TABLE` references, read from its own text.
- *
- * **Read from the DDL rather than from `pragma_foreign_key_list`, because D1 refuses that pragma**
- * with `SQLITE_AUTH`. The declaration is already in hand either way, so this costs no extra query.
- *
- * `REFERENCES` is matched as a bare word, never as a quoted identifier, so a column that happens to be
- * called `"references"` is data rather than a keyword.
- * @internal
- */
+/** The tables one `CREATE TABLE` references, read from its own text. @internal */
 export function referencedTables(tableSql: string): string[] {
+  // D1 refuses `pragma_foreign_key_list` with `SQLITE_AUTH`, so the DDL already in hand is the source.
   const tokens = scanSql(tableSql).filter((token) => token.kind !== "space" && token.kind !== "comment");
   const found: string[] = [];
   for (const [index, token] of tokens.entries()) {
@@ -154,21 +138,10 @@ export function referencedTables(tableSql: string): string[] {
   return found;
 }
 
-/**
- * Table names reordered so every parent precedes the children that reference it.
- *
- * **This is what makes an artifact loadable in pieces.** `sqlite_master` answers in name order, which
- * puts a child ahead of its parent as often as not; a load split across transactions then violates a
- * foreign key at the first commit, and no pragma prevents it — D1 accepts `defer_foreign_keys` without
- * honouring it, and a deferral would not span two transactions if it did.
- *
- * Only the constrained pairs move: anything a foreign key does not order keeps the order it arrived
- * in, so the result is the caller's order with the minimum disturbance. A self-reference is not an
- * edge, because a table cannot precede itself. Tables in a genuine cycle keep their order too —
- * nothing can order them, and leaving them alone beats inventing an order that is no safer.
- * @internal
- */
+/** Reorders table names so every parent precedes the children that reference it. @internal */
 export function dependencyOrder(names: readonly string[], edges: readonly { readonly child: string; readonly parent: string }[]): string[] {
+  // A load split across transactions violates a foreign key at the first commit, and D1 accepts
+  // `defer_foreign_keys` without honouring it, so the load order is what has to carry the constraint.
   const present = new Set(names);
   const parents = new Map<string, Set<string>>(names.map((name) => [name, new Set<string>()]));
   for (const edge of edges) {

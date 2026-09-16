@@ -1,58 +1,66 @@
 import { describe, expect, it } from "bun:test";
 
-import { getAppContext } from "../context/types";
+import { getAppContext, RequestContext } from "../context/types";
 import { requestLog } from "../logging/request-logger";
 import { createTestContext, mockExecutionContext, nullLogger } from "./context";
 
 describe("createTestContext", () => {
-  it("satisfies getAppContext without throwing", () => {
-    const c = createTestContext(new Request("http://test/"));
-    expect(() => getAppContext(c)).not.toThrow();
-  });
-
-  it("exposes env, executionCtx, and config as context properties", () => {
-    const c = createTestContext<{ API_KEY: string }, { debug: boolean }>(new Request("http://test/"), {
+  it("is accepted by the production accessor, which reads back every injection", () => {
+    const executionCtx = mockExecutionContext();
+    const context = createTestContext<{ API_KEY: string }, { debug: boolean }>(new Request("http://test/"), {
       env: { API_KEY: "k-123" },
       config: { debug: true },
+      executionCtx,
     });
-    expect(c.env.API_KEY).toBe("k-123");
-    expect(c.config).toEqual({ debug: true });
-    expect(typeof c.executionCtx.waitUntil).toBe("function");
+
+    const app = getAppContext<{ API_KEY: string }, Record<string, string>, { debug: boolean }>(context);
+    expect(app.env).toEqual({ API_KEY: "k-123" });
+    expect(app.config).toEqual({ debug: true });
+    expect(app.executionCtx).toBe(executionCtx);
   });
 
-  it("installs the request logger (nullLogger by default)", () => {
-    const c = createTestContext(new Request("http://test/"));
-    expect(requestLog.get(c)).toBe(nullLogger);
+  it("is what the accessor is reading, since a context nobody injected into is refused", () => {
+    expect(() => getAppContext(new RequestContext(new Request("http://test/")))).toThrow("per-request state is not available");
   });
 
-  it("accepts a custom logger and execution context", () => {
+  it("installs the request logger a handler reaches, defaulting to the one that drops records", () => {
+    expect(requestLog.get(createTestContext(new Request("http://test/")))).toBe(nullLogger);
+  });
+
+  it("routes a handler's records to a supplied logger instead", () => {
     const recorded: string[] = [];
     const logger = { ...nullLogger, info: (msg: string) => recorded.push(msg) };
-    const ctx = mockExecutionContext();
-    const c = createTestContext(new Request("http://test/"), { logger, executionCtx: ctx });
-    requestLog.get(c).info("hello");
+
+    requestLog.get(createTestContext(new Request("http://test/"), { logger })).info("hello");
     expect(recorded).toEqual(["hello"]);
-    expect(c.executionCtx).toBe(ctx);
   });
 
-  it("defaults env to an empty object", () => {
-    const c = createTestContext(new Request("http://test/"));
-    expect(c.env).toEqual({});
+  it("defaults env to an empty object, so a missing-binding case is testable without constructing one", () => {
+    expect(createTestContext(new Request("http://test/")).env).toEqual({});
   });
 });
 
 describe("mockExecutionContext", () => {
-  it("waitUntil and passThroughOnException are callable no-ops", () => {
+  it("answers both members production calls, returning nothing from either", () => {
     const ctx = mockExecutionContext();
-    expect(() => ctx.waitUntil(Promise.resolve())).not.toThrow();
-    expect(() => ctx.passThroughOnException()).not.toThrow();
+
+    expect(ctx.waitUntil(Promise.resolve())).toBeUndefined();
+    expect(ctx.passThroughOnException()).toBeUndefined();
+  });
+
+  it("hands out a fresh context per call, so no state one test parks on it reaches the next", () => {
+    expect(mockExecutionContext()).not.toBe(mockExecutionContext());
   });
 });
 
 describe("nullLogger", () => {
-  it("drops records, flushes immediately, and child() returns itself", async () => {
-    expect(() => nullLogger.error("dropped")).not.toThrow();
-    await nullLogger.flush();
-    expect(nullLogger.child({ requestId: "x" })).toBe(nullLogger);
+  it("drops a record at every level rather than buffering one for flush to emit", async () => {
+    for (const level of ["debug", "info", "warn", "error"] as const) expect(nullLogger[level]("dropped")).toBeUndefined();
+
+    await expect(nullLogger.flush()).resolves.toBeUndefined();
+  });
+
+  it("returns itself from child() at any depth, so a per-request child never reaches a second sink", () => {
+    expect(nullLogger.child({ requestId: "x" }).child({ route: "/y" })).toBe(nullLogger);
   });
 });

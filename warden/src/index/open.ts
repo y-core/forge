@@ -41,14 +41,7 @@ function sourcesOf(root: string, kind: Tree, options: OpenOptions): SourceDoc[] 
   });
 }
 
-/** Opens the index, building it if it is absent and refreshing it if it is behind.
- *
- *  **An absent index is never an error.** A full build of this corpus is well under a second, so
- *  refusing would only teach a reader to run `warden index` before every question.
- *
- *  **Freshness belongs to `refresh`, not to opening.** A long-lived caller — the MCP server — holds
- *  one handle across many questions while the documents underneath it are being edited, so checking
- *  once at open would answer every later question from the corpus as it stood at startup. @public */
+/** Opens the index, building it if it is absent and refreshing it if it is behind. @public */
 export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): Knowledge {
   const canonVersion = options.canonVersion ?? "unknown";
   const db = openDatabase(options.path ?? indexPath(root));
@@ -69,15 +62,14 @@ export function openIndex(root: string, kind: Tree, options: OpenOptions = {}): 
         return;
       }
 
-      // A rebuild is whole rather than per-document: it runs only when something actually changed,
-      // and this corpus rebuilds in well under a second, which is cheaper than the bookkeeping an
-      // external-content FTS table needs to have rows deleted from it correctly.
+      // A rebuild is whole rather than per-document: an external-content FTS table needs careful
+      // bookkeeping to have rows deleted from it correctly.
       try {
         build(db, sources, canonVersion, packageNameOf(root));
         knowledge.advisory = "";
       } catch (error) {
-        // The index is behind and could not be brought forward. Answering from it is still better
-        // than refusing — the sections it names have not moved — so say so and serve it.
+        // The index is behind and could not be brought forward; the sections it names have not
+        // moved, so it is served with the failure stated.
         knowledge.advisory = `${advisory(state)}; the refresh failed — ${error instanceof Error ? error.message : String(error)}`;
       }
     },
@@ -94,10 +86,8 @@ export function rebuild(root: string, kind: Tree, options: OpenOptions = {}): Bu
   const db = openDatabase(options.path ?? indexPath(root));
   try {
     const report = build(db, sources, options.canonVersion ?? "unknown", packageNameOf(root));
-    // A build that empties the tables frees pages without returning them to the OS, so an index
-    // carried across a schema change keeps the old file's size. `rebuild` owns its handle and runs
-    // outside any transaction, which is what `VACUUM` needs — `refresh()` is the server's hot path
-    // and deliberately does not do this.
+    // A build that empties the tables frees pages without returning them to the OS. `VACUUM` needs
+    // a handle outside any transaction, which `refresh()` on the server's hot path does not have.
     db.run("VACUUM");
     return report;
   } finally {

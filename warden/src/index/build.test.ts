@@ -101,12 +101,10 @@ describe("build()", () => {
 
     // Addressable and outlined, so a `§3` citation resolves and a reader sees the title they scan for.
     expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk WHERE section = '3'").get()?.c).toBe(1);
-    // Absent from the index, so it cannot outrank the child that carries the rule. Asserted through
-    // MATCH on a term only its own gloss carries: on an external-content table a bare `WHERE rowid`
-    // reads the content table and finds the row whether or not it was ever indexed.
+    // Asserted through MATCH on a term only its own gloss carries: on an external-content table a
+    // bare `WHERE rowid` reads the content table and finds the row whether indexed or not.
     expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"subpath"')?.c).toBe(0);
-    // Its title is still reachable, because every child's heading trail carries it — which is why
-    // indexing the stub as well would add a competitor and reach nothing new.
+    // Its title is still reachable, because every child's heading trail carries it.
     expect(
       db
         .query<{ id: string }>("SELECT chunk.id FROM chunk_fts JOIN chunk ON chunk.rowid = chunk_fts.rowid WHERE chunk_fts MATCH ?")

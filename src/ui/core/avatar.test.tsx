@@ -2,135 +2,102 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Avatar } from "./avatar";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
+
+const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Avatar", () => {
-  it("renders a <span> with data-slot=avatar", async () => {
-    expect(await render(<Avatar />)).toBe(
-      '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"></span>',
-    );
-  });
-
-  it("defaults to md size", async () => {
-    expect(await render(<Avatar />)).toBe(
-      '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"></span>',
-    );
-  });
-
-  it("renders sm size classes", async () => {
-    expect(await render(<Avatar size='sm' />)).toBe(
-      '<span data-slot="avatar" data-size="sm" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-8 text-xs"></span>',
-    );
-  });
-
-  it("renders lg size classes", async () => {
-    expect(await render(<Avatar size='lg' />)).toBe(
-      '<span data-slot="avatar" data-size="lg" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-14 text-base"></span>',
-    );
-  });
-
-  it("renders rounded-full and overflow-hidden classes", async () => {
-    expect(await render(<Avatar />)).toBe(
-      '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"></span>',
-    );
-  });
-
-  it("merges a custom class", async () => {
-    expect(await render(<Avatar class='ring-2 ring-primary' />)).toBe(
-      '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm ring-2 ring-primary"></span>',
-    );
-  });
-
-  it("renders children", async () => {
-    expect(
-      await render(
-        <Avatar>
-          <Avatar.Fallback>AB</Avatar.Fallback>
-        </Avatar>,
-      ),
-    ).toBe(
-      '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"><span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground">AB</span></span>',
-    );
-  });
-
-  it("forwards id, data-* and aria-* attributes after class, HTML-escaped", async () => {
+  it("renders the whole frame exactly, forwarded values escaped and placed after the class", async () => {
     expect(await render(<Avatar id='a1' data-testid='avatar' data-note='a&b' aria-label={`R&D's "n" <x>`} />)).toBe(
       '<span data-slot="avatar" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm" id="a1" data-testid="avatar" data-note="a&amp;b" aria-label="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;"></span>',
     );
   });
 
-  it("composes a caller data-slot onto its own token rather than replacing it", async () => {
-    expect(await render(<Avatar data-slot='profile' />)).toBe(
-      '<span data-slot="avatar profile" data-size="md" class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted size-10 text-sm"></span>',
+  it("is a span at the md size, so a variant is readable without reading a class list", async () => {
+    const html = await render(<Avatar />);
+
+    expect(tagOf(html).startsWith("<span ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "avatar", "data-size": "md" });
+  });
+
+  it("swaps the whole frame and type step at the sm size rather than overlaying a second one", async () => {
+    const html = await render(<Avatar size='sm' />);
+
+    expect(attrOf(html, "data-size")).toBe("sm");
+    expect(variantClasses(html, await render(<Avatar />))).toEqual({ added: ["size-8", "text-xs"], dropped: ["size-10", "text-sm"] });
+  });
+
+  it("swaps the whole frame and type step at the lg size rather than overlaying a second one", async () => {
+    const html = await render(<Avatar size='lg' />);
+
+    expect(attrOf(html, "data-size")).toBe("lg");
+    expect(variantClasses(html, await render(<Avatar />))).toEqual({ added: ["size-14", "text-base"], dropped: ["size-10", "text-sm"] });
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Avatar class='ring-2 ring-primary' />)).at(-1)).toBe("ring-primary");
+  });
+
+  it("nests the fallback it was given inside the frame", async () => {
+    const html = await render(
+      <Avatar>
+        <Avatar.Fallback>AB</Avatar.Fallback>
+      </Avatar>,
     );
+
+    expect([...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1])).toEqual(["avatar", "avatar-fallback"]);
+    expect(contentOf(html).endsWith(">AB</span>")).toBe(true);
+  });
+
+  it("composes a caller data-slot onto its own token rather than replacing it", async () => {
+    expect(attrOf(await render(<Avatar data-slot='profile' />), "data-slot")).toBe("avatar profile");
   });
 });
 
 describe("Avatar.Image", () => {
-  it("renders an <img> with data-slot=avatar-image", async () => {
-    expect(await render(<Avatar.Image src='/user.jpg' alt='Alice' />)).toBe(
-      '<img data-slot="avatar-image" class="aspect-square size-full object-cover" alt="Alice" src="/user.jpg">',
-    );
-  });
+  it("is an img carrying the src and the alt text it was given", async () => {
+    const html = await render(<Avatar.Image src='/avatars/alice.jpg' alt='Alice Smith' />);
 
-  it("passes alt text through", async () => {
-    expect(await render(<Avatar.Image src='/user.jpg' alt='Alice Smith' />)).toBe(
-      '<img data-slot="avatar-image" class="aspect-square size-full object-cover" alt="Alice Smith" src="/user.jpg">',
-    );
-  });
-
-  it("passes src through", async () => {
-    expect(await render(<Avatar.Image src='/avatars/alice.jpg' alt='Alice' />)).toBe(
-      '<img data-slot="avatar-image" class="aspect-square size-full object-cover" alt="Alice" src="/avatars/alice.jpg">',
-    );
-  });
-
-  it("renders size-full and object-cover classes", async () => {
-    expect(await render(<Avatar.Image src='/u.jpg' alt='User' />)).toBe(
-      '<img data-slot="avatar-image" class="aspect-square size-full object-cover" alt="User" src="/u.jpg">',
-    );
+    expect(tagOf(html).startsWith("<img ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "avatar-image", alt: "Alice Smith", src: "/avatars/alice.jpg" });
   });
 
   it("composes a caller data-slot onto its own token rather than replacing it", async () => {
-    expect(await render(<Avatar.Image src='/u.jpg' alt='User' data-slot='photo' />)).toBe(
-      '<img data-slot="avatar-image photo" class="aspect-square size-full object-cover" alt="User" src="/u.jpg">',
-    );
+    expect(attrOf(await render(<Avatar.Image src='/u.jpg' alt='User' data-slot='photo' />), "data-slot")).toBe("avatar-image photo");
   });
 });
 
 describe("Avatar.Fallback", () => {
-  it("renders a <span> with data-slot=avatar-fallback", async () => {
-    expect(await render(<Avatar.Fallback>AB</Avatar.Fallback>)).toBe(
-      '<span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground">AB</span>',
-    );
+  it("renders the initials it was given under its own slot token", async () => {
+    const html = await render(<Avatar.Fallback>AB</Avatar.Fallback>);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "avatar-fallback" });
+    expect(contentOf(html)).toBe("AB");
   });
 
-  it("renders centered layout classes", async () => {
-    expect(await render(<Avatar.Fallback>JD</Avatar.Fallback>)).toBe(
-      '<span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground">JD</span>',
-    );
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Avatar.Fallback class='text-lg'>XL</Avatar.Fallback>)).at(-1)).toBe("text-lg");
   });
 
-  it("merges a custom class", async () => {
-    expect(await render(<Avatar.Fallback class='text-lg'>XL</Avatar.Fallback>)).toBe(
-      '<span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground text-lg">XL</span>',
-    );
-  });
-
-  it("forwards id, data-* and aria-* attributes after class, HTML-escaped", async () => {
+  it("forwards an id and data-* and aria-* attributes, with the values escaped", async () => {
     expect(
-      await render(
-        <Avatar.Fallback id='f1' data-testid='fallback' data-note='a&b' aria-label={`R&D's "n" <x>`}>
-          AB
-        </Avatar.Fallback>,
+      attrsOf(
+        await render(
+          <Avatar.Fallback id='f1' data-testid='fallback' data-note='a&b' aria-label={`R&D's "n" <x>`}>
+            AB
+          </Avatar.Fallback>,
+        ),
       ),
-    ).toBe(
-      '<span data-slot="avatar-fallback" class="flex size-full items-center justify-center font-medium text-muted-foreground" id="f1" data-testid="fallback" data-note="a&amp;b" aria-label="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;">AB</span>',
-    );
+    ).toEqual({
+      "data-slot": "avatar-fallback",
+      id: "f1",
+      "data-testid": "fallback",
+      "data-note": "a&amp;b",
+      "aria-label": "R&amp;D&#39;s &quot;n&quot; &lt;x&gt;",
+    });
   });
 
   it("composes a caller data-slot onto its own token rather than replacing it", async () => {
-    expect(await render(<Avatar.Fallback data-slot='initials'>AB</Avatar.Fallback>)).toBe(
-      '<span data-slot="avatar-fallback initials" class="flex size-full items-center justify-center font-medium text-muted-foreground">AB</span>',
-    );
+    expect(attrOf(await render(<Avatar.Fallback data-slot='initials'>AB</Avatar.Fallback>), "data-slot")).toBe("avatar-fallback initials");
   });
 });

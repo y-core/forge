@@ -26,7 +26,12 @@ export interface ExposureCheckConfig {
   root: string;
   /** Wrangler config path, relative to `root`. Defaults to `wrangler.jsonc`. */
   workerConfig?: string;
+  /** What a key must do to satisfy the check. Defaults to `"stated"`. */
+  require?: ExposurePosture;
 }
+
+/** `"stated"`: any explicit value passes. `"unroutable"`: the value must be the one that keeps the Worker off the public internet. @public */
+export type ExposurePosture = "stated" | "unroutable";
 
 /** What the build-time-boundary check needs to know about the project. @public */
 export interface BuildTimeBoundaryCheckConfig {

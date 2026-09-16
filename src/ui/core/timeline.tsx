@@ -54,8 +54,10 @@ const TimelineRoot: FC<TimelineRootProps> = ({
 
 const TimelineItem: FC<TimelineItemProps> = ({ state = "upcoming", marker, class: cls, children, "data-slot": inherited, ...rest }) => (
   <li data-slot={slotToken("timeline-item", inherited)} data-state={state} class={cn(ITEM, cls)} {...rest}>
-    <span data-slot='timeline-marker' aria-hidden='true' class={MARKER_COLUMN}>
-      <span class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>{marker}</span>
+    <span data-slot='timeline-marker-column' aria-hidden='true' class={MARKER_COLUMN}>
+      <span data-slot='timeline-marker' class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>
+        {marker}
+      </span>
       <span data-slot='timeline-rule' class={RULE_LINE}></span>
     </span>
     {/* Outside the `aria-hidden` marker, and not `aria-current`: a record is not a wizard, so

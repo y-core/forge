@@ -1,8 +1,7 @@
 import { ownerDocument, ownerWindow } from "./dom";
 import type { ViewportCollapseOptions } from "./types";
 
-/** Below Tailwind's `md` breakpoint (`48rem`). Stated in `rem` so it meets the `min-width` side
- *  exactly, leaving no width at which neither query matches. */
+/** Below Tailwind's `md` breakpoint (`48rem`), in `rem` so no width leaves both queries unmatched. */
 const DEFAULT_QUERY =
   "(max-width: 47.99rem)"; /* modern-css-allow: forge-ui-platform-container-query — this toggles a disclosure's `open` state, which is DOM state rather than style, and `@container` can only drive style; the decision is a page-chrome one taken against the viewport by design. */
 
@@ -14,8 +13,7 @@ export function mountViewportCollapse(options: ViewportCollapseOptions = {}): ()
   const found = options.element ?? (options.selector ? ownerDocument(options.within).querySelector(options.selector) : null);
   const el = found as HTMLDetailsElement | null;
   // Duck-typed rather than `instanceof HTMLDetailsElement`, which is false for an element from
-  // another realm, and which would also reject a disclosure a consumer implemented some other way.
-  // The call named a target and it did not resolve, which is a property of the call site: it throws.
+  // another realm and rejects a disclosure a consumer implemented some other way.
   if (!el || typeof el.open !== "boolean") {
     const named = options.element !== undefined ? "the given `element`" : `\`${options.selector ?? "(none)"}\``;
     throw new Error(`mountViewportCollapse: ${named} did not resolve to a disclosure with an \`open\` property`);

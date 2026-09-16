@@ -68,11 +68,8 @@ test("a centre-snapping slide settles on the strip's centre", async ({ page }) =
   expect(Math.abs(itemCentre - after.stripWidth / 2)).toBeLessThanOrEqual(1);
 });
 
-// WCAG 2.1.1: the strip is the scrolling region, and without a tab stop a keyboard-only reader can
-// reach every dot and still never scroll the content between them. Chromium focuses a scrollable
-// element even without `tabindex`, so this proves the *behaviour* and not the attribute — that the
-// strip carries `tabindex={0}` for the browsers that do not is `carousel.test.tsx`'s exact-HTML
-// assertion.
+// Chromium focuses a scrollable element even without `tabindex`, so this proves the behaviour WCAG
+// 2.1.1 requires and not the attribute, which `carousel.test.tsx` asserts instead.
 test("the strip takes focus from the keyboard and scrolls with the arrow keys", async ({ page }) => {
   await mountCarousel(page, "start");
 

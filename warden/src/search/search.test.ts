@@ -141,8 +141,7 @@ describe("search() — the excerpt", () => {
   });
 
   // `WHERE rowid IN (…)` returns rows in SQLite's order and not the ranking's, so a fetch zipped by
-  // position would attach each excerpt to the wrong hit — and every hit would still have one, which
-  // is why this pairs each excerpt with the id it belongs to rather than counting them.
+  // position would attach each excerpt to the wrong hit while every hit still had one.
   it("attaches each excerpt to the hit it was fetched for, keyed on rowid and never by position", () => {
     expect(search(glossless, "comment budget", { excerpt: true }).map((hit) => `${hit.path} ${hit.excerpt}`)).toEqual([
       "CODE_RULES.md The comment budget is a ceiling",

@@ -15,9 +15,6 @@ export function resolveJsxSources(config: JsxCheckConfig): string[] {
   return sources.flatMap((dir) => collectFiles(config.root, dir, accept)).map((file) => resolve(config.root, file));
 }
 
-// The ordering half of the JSX contract — a literal `data-slot` a later spread clobbers — is
-// `forge/data-slot-before-spread`, an oxlint rule. What is left here is a file-presence check, which
-// no per-node rule can state.
 /** Judges one file's source against the pragma rule. @public */
 export function validateJsxSource(file: string, source: string, pragmas: readonly string[] = DEFAULT_PRAGMAS): Finding[] {
   const missing = pragmas.filter((pragma) => !source.includes(pragma));

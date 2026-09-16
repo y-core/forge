@@ -68,8 +68,8 @@ describe("PasskeyEnrolView contract attributes", () => {
     });
   });
 
-  // A ceremony spans two endpoints and `csrfProtection` binds a token to one path, so one token used
-  // twice is a 403 on whichever endpoint it was not minted for. This is the assertion that catches it.
+  // A ceremony spans two endpoints and `csrfProtection` binds a token to one path, so one token
+  // used twice is a 403 on whichever endpoint it was not minted for.
   it("never emits the same token for both endpoints", async () => {
     const attrs = attrsOf(await enrol(), `data-scope="${PASSKEY_SCOPE}"`);
     expect(attrs[PASSKEY_OPTIONS_TOKEN_ATTR]).not.toBe(attrs[PASSKEY_VERIFY_TOKEN_ATTR]);
@@ -144,9 +144,6 @@ describe("PasskeyEnrolView and the step-up/enrolment distinction", () => {
   });
 });
 
-// The defect this closes: the way out of this page was `<Link href={signoutPath}>`, a GET to a route
-// `routes.ts` declares as `post("/signout")` — so it could not work at all, and a visitor who could
-// not enrol now had no way off the page.
 describe("PasskeyEnrolView sign-out", () => {
   it("submits the sign-out rather than linking it, since the route is POST-only", async () => {
     const html = await enrol();

@@ -51,9 +51,8 @@ describe("renderHit()", () => {
     expect(rendered.split("\n")[1]).toBe("  Core Components & APIs › requestLogger(options)");
   });
 
-  // A repository specialises the canon under the same filename and the same section numbers, so the
-  // prefix is the only thing distinguishing two otherwise identical hits — and a label is the only
-  // thing that says what the prefix means.
+  // A repository specialises the canon under the same filename and section numbers, so the prefix
+  // is all that distinguishes two otherwise identical hits.
   it("names the corpus even for the repository's own documents, never only the canon's", () => {
     expect(renderHit({ ...HIT, corpus: "project" }).split("\n")[0]).toBe("canon:CODE_RULES.md#5c  (0.87, this repository)");
   });

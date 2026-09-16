@@ -62,9 +62,13 @@ const adminMap = adminRoutes("/admin");
 // `AuthWebOptions.paths` wants all three maps under one object; `authPaths` builds one at a time.
 const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) };
 
-applyMiddlewareChain(app, {                  // session first, then each group's origin check and guards
+applyMiddlewareChain(app, {                  // the chain order is ROUTING_AND_MIDDLEWARE.md §3e's
   securityHeaders,
   session: createAnonymousSession({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+  // `globals` runs after the session and before the guard groups. csrfProtection belongs here: the
+  // subject resolver runs before `next()`, so a resolver mounted ahead of the session reads nothing
+  // and the token binds to nobody.
+  globals: [csrfProtection({ secret, subject: (c) => sessionCtx.getOptional(c)?.id })],
   guards: createAuthGuards({
     routes: { auth: authMap, account: accountMap, admin: adminMap },
     // Both are resolvers: on a Worker a store needs `c.env`, which exists only per request.
@@ -82,9 +86,6 @@ applyMiddlewareChain(app, {                  // session first, then each group's
     rateLimit: { auth: signinLimit, "auth.verify": verifyLimit },
   }),
 });
-// Session first, csrfProtection second: the subject resolver runs before `next()`, so a resolver
-// registered ahead of the session middleware reads nothing and the token binds to nobody.
-app.use("*", csrfProtection({ secret, subject: (c) => sessionCtx.getOptional(c)?.id }));
 registerAuth(app, authMap, options);         // then the routes themselves
 registerAccount(app, accountMap, options);
 registerAdmin(app, adminMap, options);
@@ -122,9 +123,13 @@ cookie name is part of the keying, and a `__Host-` prefix additionally constrain
 re-keys every live session silently — every signed-in visitor is anonymous on the next request, with no error anywhere. Change it where you can
 verify a live session survives, not as a tidy-up.
 
-`applyMiddlewareChain` encodes the order inside a group — origin, then rate limit, then the guards — so a consumer never writes it. **Pass `origin`
-or nothing is mounted on the guard-less groups**: `["auth"]` and `["auth","passkey"]` declare no guards and are emitted only for the origin check,
-which is the sole cross-origin defence this layer gives the sign-in, sign-out and passkey-authentication POSTs.
+`applyMiddlewareChain` encodes the order inside a group — origin, then rate limit, then the guards — so a consumer never writes it, and
+`buildGuardChain` is that same expansion exported for anyone mounting a group by hand. `origin` and `rateLimit` on a group are **policy data, not
+middleware**: a consumer who spreads `group.guards` alone mounts neither, and on a guard-less group mounts nothing at all.
+
+**Pass `origin` or nothing is mounted on the guard-less group**: `["auth"]` declares no guards and is emitted only for the origin check, which is
+the sole cross-origin defence this layer gives the sign-in, sign-up and sign-out POSTs. (`["admin"]` also declares no
+guards, but it has no direct leaves of its own — only nested groups, which register their own stacks — so it is never emitted at all.)
 
 **`rateLimit` is keyed by the group's own dotted path** — the `path.join(".")` of each `AUTH_ROUTE_GROUPS` entry. Forge picks no numbers and ships
 no binding, since a window right for the sign-in POST is wrong for the admin console. A group nothing is named for is emitted as before, and a
@@ -220,10 +225,14 @@ which reads the same `AUTH_ROUTE_GROUPS` table the `register*` functions cut the
 a drifted copy is an unguarded admin page that looks guarded. `createAuthGuards` refuses a group that lists an identity-reading guard before
 `require-auth`.
 
+**`rateLimit` is keyed by the group's own dotted path** — `"auth"`, `"auth.verify"`, `"account"` — rather than declared on `AuthRouteGroup`, so the
+group table stays the one description of what a group is and a consumer never restates it. It is per group and not global because a window right for
+the sign-in POST is wrong for the admin console.
+
 **Mounting the session middleware is yours, and nothing checks it at bootstrap.** `createAuthGuards` takes no `session` option: an option can only
 be checked for presence, and a middleware other than the one actually mounted satisfies that check while protecting nothing. The check that holds
 runs per request — `requireAuth` throws when the request carries no session, naming what to mount. So: session middleware first, then the guard
-chain, the order `applyMiddlewareChain` produces from both.
+chain — a special case of the order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e states, which `applyMiddlewareChain` produces from both.
 
 ---
 
@@ -313,6 +322,7 @@ there is one.
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../src/form/README.md
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
+[ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [session-readme]: ../src/session/README.md
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ui-readme]: ../src/ui/README.md

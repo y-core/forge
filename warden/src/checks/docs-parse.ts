@@ -15,12 +15,7 @@ const IMPORT_POSITION = /\b(?:from|import)\s*\(?\s*["']/;
 const QUICK_REFERENCE_HEADING = /^## 0\. /;
 const QUICK_REFERENCE_ENTRY = /^\s*[-*]\s*§([0-9][A-Za-z0-9]*)\s+(.*)$/;
 
-/** The `## 0. Quick Reference` block as a map from section number to the line describing it.
- *
- *  **One home, because two readers consume it.** The gate checks these lines against the headings
- *  they name; the indexer redistributes them as each section's gloss, which is both what a search
- *  result displays and a ranked retrieval column. A parser that drifted between the two would let
- *  the gate approve a line the index reads differently. @public */
+/** The `## 0. Quick Reference` block as a map from section number to the line describing it. @public */
 export function quickReference(lines: readonly string[]): Map<string, string> {
   const entries = new Map<string, string>();
   const start = lines.findIndex((line) => QUICK_REFERENCE_HEADING.test(line));
@@ -35,8 +30,6 @@ export function quickReference(lines: readonly string[]): Map<string, string> {
   return entries;
 }
 
-// Non-strict scans only import-position lines, so a README may describe a subpath that does not
-// exist without failing the check for naming the thing it denies.
 /** Finds every `packageName/…` reference in `source`, scanning prose as well when `strict`. */
 export function findSubpathCitations(source: string, packageName: string, opts: { strict: boolean }): SubpathCitation[] {
   const re = new RegExp(`${packageName.replace("/", "\\/")}(\\/[A-Za-z0-9._\\-\\/]*)`, "g");

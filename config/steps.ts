@@ -43,17 +43,14 @@ import { BROWSER_ONLY, CN_FIXTURE_SPECS, CO_LOCATION_EXEMPT, DESIGN_CORPUS_EXCLU
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
-// Derived from this file's location, never `process.cwd()`: the table must resolve the same paths
-// whichever directory `forge verify` ran from, and forge has no `node_modules/@y-core/forge` above it.
+// Derived from this file's location, never `process.cwd()`: the paths must resolve the same whichever directory the gate ran from.
 /** Repository root. */
 export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 
 const EXPORTS = pkg.exports as ExportsMap;
 
-// Named once: both bundle rows report the same verb, because one script writes both artifacts.
 const GEN = "bun run gen:bundles";
 
-// `typecheck` runs first because a type failure cascades into misleading lint and test failures.
 /** The gate's steps, in execution order. */
 export const STEPS: readonly Step[] = [
   typecheckStep(),
@@ -65,12 +62,9 @@ export const STEPS: readonly Step[] = [
   },
   lintStep({ sources: ["src/", "config/", "warden/"] }),
   formatStep({ sources: ["."] }),
-  // Beside the formatter, and before `validate-docs`: oxfmt ignores `**/*.md`, so this is what holds
-  // markdown to a house layout, and `docs` then reads already-normalized bytes.
+  // oxfmt ignores `**/*.md`, so this step is what holds markdown to a house layout.
   markdownStep({ root: ROOT, ...MARKDOWN }, { tier: "standard" }),
   typeAwareLintStep({ sources: ["src/", "config/", "warden/"], tier: "standard" }),
-  // Scoped to `src/`: `tests/workerd/` is the `full`-tier `test:workerd` step's, and each of its
-  // specs starts a real Workers runtime.
   testStep({ sources: ["src/"] }),
   exportsStep(
     {
@@ -78,7 +72,6 @@ export const STEPS: readonly Step[] = [
       packageName: pkg.name,
       exports: EXPORTS,
       files: pkg.files,
-      // A subpath under a `client` segment is derived browser-only, so only its static parsing runs.
       browserOnly: BROWSER_ONLY,
       sideEffectOnly: ["./jsx/register"],
       sealedInternal: SEALED_INTERNAL,
@@ -97,44 +90,16 @@ export const STEPS: readonly Step[] = [
     { tier: "standard" },
   ),
   jsxStep({ root: ROOT }, { tier: "standard" }),
-  // CLAUDE.md requires co-located tests and nothing enforced it, which is how a `bind.test.ts`
-  // could vanish in a refactor with no signal at all.
-  coLocationStep(
-    {
-      root: ROOT,
-      sources: ["src", "warden"],
-      // An entry naming no walked module fails the check, so the map can only shrink.
-      exempt: CO_LOCATION_EXEMPT,
-    },
-    { tier: "standard" },
-  ),
-  // `namespaces.ts` declares `ui/core → ui/client` once for the whole namespace,
-  // which alone would license every component in it to import browser code that throws in a Worker.
-  // `auth/client` is the second browser-only directory: the passkey controller lives with the
-  // namespace whose server half stamps its contract, not in general `ui`.
+  coLocationStep({ root: ROOT, sources: ["src", "warden"], exempt: CO_LOCATION_EXEMPT }, { tier: "standard" }),
   ssrBoundaryStep(
-    {
-      root: ROOT,
-      clientDirs: ["src/ui/client", "src/auth/client"],
-      sources: ["src/ui", "src/auth"],
-      // The registration entry points, and nothing else: each exists to pull the client runtime in.
-      entryPoints: ["client.ts"],
-    },
+    { root: ROOT, clientDirs: ["src/ui/client", "src/auth/client"], sources: ["src/ui", "src/auth"], entryPoints: ["client.ts"] },
     { tier: "standard" },
   ),
-  // Membership in `src/tooling/` *is* the build-time exemption ([`NAMESPACES.md`] §4a), so the rule
-  // that makes it true is checked rather than asserted: no published runtime subpath may reach one
-  // of these directories, and no runtime source may name one even before a barrel exports it.
   buildTimeBoundaryStep(
     { root: ROOT, packageName: pkg.name, exports: EXPORTS, buildTimeDirs: ["src/tooling", "src/ui/assets/build", "warden"], sources: ["src"] },
     { tier: "standard" },
   ),
-  // The same rule forge ships to every consumer, turned on itself: `workerConfig: null` because
-  // forge deploys no Worker of its own, and the two dev-only trees named because forge publishes
-  // them — `src/dev` mints the allowances and `src/testing` fakes the bindings.
   devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/dev", "src/testing"] }, { tier: "standard" }),
-  // `.claude/agents/` and `.claude/skills/` are overwrite-on-sync, so an edit made in place is
-  // reverted by the next sync and the reversion looks like nobody's change. The fixer is the sync.
   { label: "warden", tier: "standard", tail: 20, cmd: ["bun", "warden/src/bin.ts", "sync", "--check"], fix: ["bun", "warden/src/bin.ts", "sync"] },
   docsStep(
     {
@@ -143,10 +108,6 @@ export const STEPS: readonly Step[] = [
       exports: EXPORTS,
       decisionsDir: "docs",
       kind: "libs",
-      // The source, not `.claude/agents/` — a fix applied to the synced copy is reverted by the
-      // next sync, and the reversion looks like nobody's change.
-      // Each kind-scoped, because a bare `TESTING.md` names a different file to each reader and the
-      // citing file's own tree is the only thing that says which.
       extraDirs: [
         { dir: "warden/claude/agents/shared", kind: "shared" },
         { dir: "warden/claude/agents/libs", kind: "libs" },
@@ -156,49 +117,23 @@ export const STEPS: readonly Step[] = [
         { dir: "warden/canon/libs", kind: "libs", numbered: true },
         { dir: "warden/canon/apps", kind: "apps", numbered: true },
         { dir: "warden/README.md", kind: "libs" },
-        // Numbered like the canon and for the same reason: warden indexes it, and a section with no
-        // `## 0. Quick Reference` line has no gloss — the heaviest column it can be ranked on, and
-        // the line a search result prints under every hit.
         { dir: "src/ui/design", numbered: true },
       ],
-      // Forge is the canon's home, so a citation into it resolves on disk. Without this root those
-      // citations would land outside `docs/` and be skipped in silence rather than checked.
       citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
-      // All three trees, `apps` included: forge houses the canon, so a stale gloss here ships to
-      // every consumer of it, and no consumer has the files to catch it.
       agreementDirs: ["warden/canon", "src/ui/design"],
-      // What decides whether a document is served into a consuming repository at all. Declared in
-      // frontmatter rather than derived, because the alternatives do not work: `governs` measures
-      // what a document talks about and not who should read it, and `NAMESPACES.md` mints three
-      // subpath edges — one from a sentence saying a subpath does *not* exist — while
-      // `UI_CLASS_COMPOSITION.md` and `STATE_ATTRIBUTES.md` mint none. Required here so a new
-      // document fails closed rather than defaulting into a consumer's index.
       requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
       documentedNonExports: ["./handler", "./all", "./crypto"],
-      // Written by the compiler and by build configuration, never by a consumer, so a documented row
-      // for any of them would advertise an import the reader must not write.
       tableExemptSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"],
-      // Two catalogs, two scopes: the front page covers every published subpath, `NAMESPACES.md`
-      // §3a covers the runtime namespaces and says in its own lead why warden's five are elsewhere.
       catalogs: [
         { doc: "README.md", exempt: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"] },
         { doc: "docs/NAMESPACES.md", exempt: ["./warden", "./warden/checks", "./warden/knowledge", "./warden/mcp", "./warden/steps"] },
       ],
-      // Written by the compiler, never by a consumer, so no prose rule about what belongs in one
-      // could be acted on — listed in the catalog, bound by nothing.
       listedOnlySubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime"],
     },
     { tier: "standard" },
   ),
-  // `validate-docs` holds the governing documents against the subpath catalog; this holds one
-  // README's per-subpath tables against the barrels, and a section opts in via `> Import path:`.
   readmeExportsStep(
-    {
-      root: ROOT,
-      // Five are side-effect imports whose section documents registered scopes rather than symbols,
-      // and `./ui/client/htmx` re-exports the vendored library itself, which has no forge surface.
-      exempt: ["./auth/client", "./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"],
-    },
+    { root: ROOT, exempt: ["./auth/client", "./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"] },
     { tier: "standard" },
   ),
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { tier: "full" }),
@@ -216,29 +151,15 @@ export const STEPS: readonly Step[] = [
   modernCssStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED] }, { tier: "standard" }),
   classOrderStep({ root: ROOT, sources: ["src", ...CN_FIXTURE_SPECS] }, { tier: "standard" }),
   classTokensStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED], stylesheet: "src/ui/assets/css/tailwind.css" }, { tier: "standard" }),
-  // `tailwindcss` is an optional peer: a standard run on a machine without it reports the step
-  // skipped, one with it gets the drift check, and a full run fails either way.
   classGroupsStep(
-    {
-      root: ROOT,
-      stylesheet: "src/ui/assets/css/tailwind.css",
-      table: "src/ui/core/utils/class-groups.ts",
-      // The recipes that paint nothing in the base state; the other four are paint and belong in the
-      // Tailwind slots they compile to, which is what lets a caller's `rounded-lg` beat `field-chrome`.
-      stateRecipes: FORGE_STATE_RECIPES,
-    },
+    { root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/ui/core/utils/class-groups.ts", stateRecipes: FORGE_STATE_RECIPES },
     { tier: "standard" },
   ),
-  // A second step rather than a second assertion inside the first: the two generated files drift for
-  // different reasons, and a reader has to be told which one to regenerate.
   designScaleStep(
     { root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" },
     { tier: "standard" },
   ),
-  // Two bundles for one reason — node refuses to strip types under `node_modules`, so a consumer
-  // loads a prebuilt copy of each surface a node process imports. They drift independently, so each
-  // is its own row: one names the plugin `.oxlintrc.json` loads, the other the resolution a
-  // `playwright.config.ts` imports.
+  // node refuses to strip types under `node_modules`, so a consumer loads a prebuilt copy of each surface a node process imports.
   lintPluginStep({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN }, { tier: "standard" }),
   chromiumBundleStep(
     { root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN },
@@ -252,8 +173,7 @@ export const STEPS: readonly Step[] = [
       mappingFile: "src/ui/assets/css/theme-base.css",
       pairs: CONTRAST_PAIRS,
       criteria: CRITERION,
-      // Deferred: resolving here would throw while this module is imported, before the runner exists to
-      // report the step skipped. `import.meta.resolve` is called from this file so it finds this project's copy.
+      // Deferred: resolving at import time would throw before the runner exists to report the step skipped.
       palettePath: () => fileURLToPath(import.meta.resolve("tailwindcss/theme.css")),
       accepted: ACCEPTED_CONTRAST,
     },
@@ -276,21 +196,12 @@ export const STEPS: readonly Step[] = [
     },
     { tier: "standard" },
   ),
-  // Beside `cssSourcesStep` rather than beside the two generator steps it shares a compile with: this
-  // one judges what the stylesheets declare, not whether a generated file has drifted.
   cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }, { tier: "standard" }),
-  // Two steps rather than one: an index that will not build and a query that stopped finding its
-  // answer fail for different reasons, and a reader has to be told which to fix.
-  // The catalogue is named here because forge is the canon's home repository — the rendered
-  // inventory is canon-scoped, so it is forge's to commit and no consumer's.
   wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { tier: "standard" }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   browserStep({ tier: "full" }),
   workerdStep({ tier: "full" }),
-  // The fixture's `config/db.ts` names `src/auth/schema.sql`, so the check holds it to the snapshot
-  // beside it: by digest every run, and in `full` by loading the file into a real database — which
-  // is what catches a desired state that fails to execute before every consumer does.
   ...dbSchemaStep({ root: "tests/fixtures/db-schema", forge: ["bun", "run", "src/tooling/root/bin.ts"] }),
 ];
 

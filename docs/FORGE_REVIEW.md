@@ -179,16 +179,17 @@ still compiles, and is still always wrong in a prop position — catching that e
 **Unbudgeted comment** ([`CODE_RULES.md`][cr-5a] §5a is the whole budget; [`CODE_RULES.md`][cr-5b] §5b is what is deleted on sight)
 
 ```bash
-rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
-rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
-rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
-rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
-rg -n '^\s*//\s*(const|let|function|return|import|export|if|await)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
-rg -Un --multiline '(?:^[ \t]*//[^\n]*\n){3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts'
+rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
+rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
+rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
+rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
+rg -n '^\s*//\s*(const|let|function|return|import|export|if|await)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
+rg -Un --multiline '(?:^[ \t]*//[^\n]*\n){3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
 ```
 
-**Every command carries `--glob 'config/**/*.ts'`.** Only the first did until the September 2026 sweep, and `config/steps.ts` — the file with the
-most `//` runs in the repository — was therefore scanned by nothing.
+**Every command carries `--glob 'config/**/*.ts'` and `--glob 'warden/**/*.ts'`.** Only the first carried the `config/` glob until the September
+2026 sweep, and `config/steps.ts` — the file with the most `//` runs in the repository — was therefore scanned by nothing. `warden/` was added on
+the same terms in the sweep that followed: it carries TypeScript, it is published as the `./warden` subpath, and no command could see it.
 
 _Triage:_ the third, fourth, and fifth have **no false-positive class** — every hit is a defect, in a test file as readily as in production source.
 The other three do, and all were confirmed on a real sweep:
@@ -199,12 +200,14 @@ The other three do, and all were confirmed on a real sweep:
 - The second needs `-P`: its lookahead is unsupported by the default engine, which errors rather than under-matching. Its 400-character threshold is
   a heuristic floor, not the rule — read each hit and keep the one sentence [`CODE_RULES.md`][cr-5a] §5a permits. It also matches **template-literal
   contents** that use comment syntax as their payload: `cf-env-registry.ts`'s `HEADER` is the banner the `gen:env` command emits into generated
-  files, so shortening it would change generator output. A hit inside a backtick string is code, not a comment.
+  files, so shortening it would change generator output, and `warden/src/checks/docs.test.ts` feeds the checker a fixture containing the literal
+  `/**/*.test.ts`. A hit inside a backtick or quoted string is code, not a comment.
 - The sixth is the run-length detector: three or more consecutive `//` lines. [`CODE_RULES.md`][cr-5a] §5a form 3 caps an inline _why_ at **one or
   two lines**, so a longer run is over budget by construction and no other command sees it. Its one false-positive class is the **upstream
-  attribution header** — the MIT/ISC notice at the top of `cli/term/{capability,codes,color,width}.ts` and `cli/core/tokenize.ts`. A licence notice
-  is a legal requirement, not prose written for the reader, and it is never shortened. Three _separate_ one-line comments on adjacent lines also
-  match; read the hit before cutting.
+  attribution header** — the MIT/ISC notice carried by eight files, `src/tooling/term/{ansi,border,capability,codes,color,width,wrap}.ts` and
+  `src/tooling/cli/tokenize.ts`, of which the four running to three lines or more (`capability`, `codes`, `color`, `tokenize`) are what this command
+  matches. A licence notice is a legal requirement, not prose written for the reader, and it is never shortened. Three _separate_ one-line comments
+  on adjacent lines also match; read the hit before cutting.
 
 Restating-the-code and narration are not reachable by any command; they belong to §3c.
 

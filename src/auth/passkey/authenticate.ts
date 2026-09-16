@@ -2,6 +2,7 @@ import { base64urlDecodeOrNull, concatBytes, decodeCosePublicKey, sha256 } from 
 import type { CosePublicKey } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
+import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
 import type { AuthStoreError } from "../errors";
 import type { AuthCredential, AuthStoreResult, AuthUser } from "../types";
 import { verifyAuthData } from "./auth-data";
@@ -64,24 +65,25 @@ export async function verifyPasskeyAuthentication(
 
   const authData = await verifyAuthData(authenticatorDataBytes, {
     rpId: options.rpId,
-    requireUserVerification: options.requireUserVerification ?? false,
+    requireUserVerification: options.requireUserVerification ?? true,
     requireAttestedCredential: false,
   });
   if (!authData.ok) return err(authData.error);
 
   // WebAuthn L3 §6.1.3 fixes BE for the life of a credential, so a presented value differing from
-  // the enrolled one is an authenticator misreporting its own state — the same class of thing
-  // `verifyAuthData` already refuses, and the same reason it names.
+  // the enrolled one is an authenticator misreporting its own state.
   if (authData.data.flags.backupEligible !== credential.backupEligible) return err("invalid-backup-state");
 
   const key = storedKey(credential);
   if (!key) return err("unsupported-key");
+  // Judged off the decoded key rather than the `algorithm` column, because the key bytes are what
+  // actually verifies the signature. A column disagreeing with its own blob is refused with them.
+  const allowed = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
+  if (!allowed.includes(key.algorithm) || key.algorithm !== credential.algorithm) return err("unsupported-algorithm");
   if (!(await verifyPasskeySignature(key, signature, await signedBytes(authenticatorDataBytes, clientDataBytes)))) return err("unrecognised");
 
   // A challenge naming no `userId` is the discoverable case: nothing but the authenticator's own
-  // user handle says whose account this is, so an assertion without one has not answered the
-  // question the ceremony asked. Where the challenge does name a subject, an absent handle is
-  // legitimate — the account was already known — and stays admitted.
+  // user handle says whose account this is, so an assertion carrying neither answered nothing.
   if (taken.data.userId === undefined && response.userHandle === undefined) return err("unrecognised");
 
   const subject = await resolveSubject(options, credential, response.userHandle);

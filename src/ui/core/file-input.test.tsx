@@ -1,48 +1,64 @@
-/** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { FileInput } from "./file-input";
-
-const BASE =
-  "state-busy state-disabled state-invalid field-chrome focus-ring file:me-3 file:h-full file:border-0 file:bg-transparent file:font-medium file:text-foreground";
+import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("FileInput", () => {
-  it("renders a file input at the md size", async () => {
-    expect(await render(<FileInput />)).toBe(`<input type="file" data-slot="file-input" data-size="md" class="${BASE} h-control-md text-sm">`);
-  });
-
-  it("stamps data-size and swaps the height recipe", async () => {
-    expect(await render(<FileInput size='lg' />)).toBe(
-      `<input type="file" data-slot="file-input" data-size="lg" class="${BASE} h-control-lg text-base">`,
+  it("renders the whole control exactly when it is invalid and busy, caller class merged last", async () => {
+    expect(await render(<FileInput invalid busy class='p-99' data-note='a&b' />)).toBe(
+      '<input type="file" data-slot="file-input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring' +
+        ' file:me-3 file:h-full file:border-0 file:bg-transparent file:font-medium file:text-foreground h-control-md text-sm p-99"' +
+        ' data-note="a&amp;b" data-invalid="" data-busy="" aria-invalid="true" aria-busy="true">',
     );
   });
 
-  it("emits both the styling hook and the ARIA state for invalid and busy, with the caller class last", async () => {
-    expect(await render(<FileInput invalid busy class='p-99' />)).toBe(
-      `<input type="file" data-slot="file-input" data-size="md" class="${BASE} h-control-md text-sm p-99" data-invalid="" data-busy="" aria-invalid="true" aria-busy="true">`,
-    );
+  it("stamps its type and size as attributes, so a variant is readable without reading a class list", async () => {
+    expect(attrsOf(await render(<FileInput />))).toEqual({ type: "file", "data-slot": "file-input", "data-size": "md" });
   });
 
-  it("derives id, name, and aria-describedby from a field descriptor", async () => {
-    expect(await render(<FileInput field={{ name: "avatar", description: true, invalid: true }} />)).toBe(
-      `<input type="file" data-slot="file-input" data-size="md" class="${BASE} h-control-md text-sm" id="field-avatar" name="avatar" aria-describedby="field-avatar-description field-avatar-error" aria-invalid="true">`,
-    );
+  it("names the size it was given on the attribute a stylesheet and a reader both key on", async () => {
+    expect(attrsOf(await render(<FileInput size='lg' />))).toEqual({ type: "file", "data-slot": "file-input", "data-size": "lg" });
   });
 
-  it("passes through accept, multiple, and required", async () => {
-    expect(await render(<FileInput accept='image/png' multiple required />)).toBe(
-      `<input type="file" data-slot="file-input" data-size="md" class="${BASE} h-control-md text-sm" accept="image/png" multiple required>`,
-    );
+  it("exchanges the control height and type step at lg rather than stacking a second pair", async () => {
+    expect(variantClasses(await render(<FileInput size='lg' />), await render(<FileInput />))).toEqual({
+      added: ["h-control-lg", "text-base"],
+      dropped: ["h-control-md", "text-sm"],
+    });
   });
 
-  // `state-invalid` sets `border-color` *and* `--tw-ring-color`, so before it had a group key of
-  // its own it shared `ring-*`'s slot and a caller's ring silently deleted it — leaving a control
-  // that announced `aria-invalid` while looking valid.
-  it("keeps state-invalid when the caller supplies a ring of their own", async () => {
-    expect(await render(<FileInput class='ring-primary' />)).toBe(
-      '<input type="file" data-slot="file-input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring file:me-3 file:h-full file:border-0 file:bg-transparent file:font-medium file:text-foreground h-control-md text-sm ring-primary">',
-    );
+  it("derives id, name, and aria-describedby from a field descriptor, so a caller wires none of them", async () => {
+    expect(attrsOf(await render(<FileInput field={{ name: "avatar", description: true, invalid: true }} />))).toEqual({
+      type: "file",
+      "data-slot": "file-input",
+      "data-size": "md",
+      id: "field-avatar",
+      name: "avatar",
+      "aria-describedby": "field-avatar-description field-avatar-error",
+      "aria-invalid": "true",
+    });
+  });
+
+  it("passes accept, multiple, and required through to the native control", async () => {
+    expect(attrsOf(await render(<FileInput accept='image/png' multiple required />))).toEqual({
+      type: "file",
+      "data-slot": "file-input",
+      "data-size": "md",
+      accept: "image/png",
+      multiple: "",
+      required: "",
+    });
+  });
+
+  it("keeps state-invalid when a caller's own ring would once have evicted it, leaving a control that announced aria-invalid while looking valid", async () => {
+    expect(variantClasses(await render(<FileInput class='ring-primary' />), await render(<FileInput />))).toEqual({
+      added: ["ring-primary"],
+      dropped: [],
+    });
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<FileInput class='ring-primary' />)).at(-1)).toBe("ring-primary");
   });
 });

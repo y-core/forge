@@ -290,6 +290,27 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
     );
     expect(outcome).toEqual({ ok: false, error: "user-not-verified" });
   });
+
+  // The default posture, not a configured one: a deployment that says nothing gets the safe answer.
+  it("refuses a presence-only enrolment when the deployment configured nothing", async () => {
+    const credential = await fakePasskeyRegistration({ ...base(), key: ES256, flags: PASSKEY_FLAG.up | PASSKEY_FLAG.at });
+    const outcome = await verifyPasskeyRegistration(
+      verifyOptions(fakeChallenges().store, fakeCredentials().store),
+      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      AT,
+    );
+    expect(outcome).toEqual({ ok: false, error: "user-not-verified" });
+  });
+
+  it("admits a presence-only enrolment only where verification is explicitly waived", async () => {
+    const credential = await fakePasskeyRegistration({ ...base(), key: ES256, flags: PASSKEY_FLAG.up | PASSKEY_FLAG.at });
+    const outcome = await verifyPasskeyRegistration(
+      verifyOptions(fakeChallenges().store, fakeCredentials().store, { requireUserVerification: false }),
+      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      AT,
+    );
+    expect(outcome.ok).toBe(true);
+  });
 });
 
 describe("verifyPasskeyRegistration — a credential id already registered", () => {

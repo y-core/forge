@@ -22,6 +22,7 @@ description: "How an agent works in any repository: the posture it holds to, the
 - §1a Scope of the Delivered Work: the asked-for scope is the deliverable
 - §2 Tool Selection: `rg` and `find` for discovery, LSP for definitions and references
 - §3 Shell Exit Checks: the one permitted `; echo "EXIT:$?"` spelling and the three refusals
+- §3a Commands the Parser Can Read: the shell shapes that force a permission prompt no allow rule suppresses
 - §4 Verification Delegation: which sub-agent runs the gate, and the scoped-step exception
 - §4a Delegation Restraint: when a sub-agent earns its cost, and when it does not
 - §5 The Ledger Over MCP: the working rhythm, and why never to work from a remembered copy
@@ -103,6 +104,21 @@ status.
 a prefix wildcard. Deviating by one character is what turns a silent run into a prompt, and an allowlist carrying several variants is how the rule
 stops being a rule.
 
+### 3a. Commands the Parser Can Read
+
+**A harness statically parses every shell command, and a command it cannot parse forces a permission prompt no allow rule can suppress** — the
+prompt is caused by the command's _shape_, not by its risk. The cost lands on every call, so the shapes below are avoided by construction rather
+than discovered one prompt at a time:
+
+- **No brace expansion.** Not `{a,b}`, not `{1..9}`, not `file.{ts,tsx}`. Write the paths out, or use a glob.
+- **Braces and quotes never mix** — `"{...}"` in one word is flagged as expansion obfuscation.
+- **Prefer `${VAR}` over `$VAR`**, and keep expansions out of option-position arguments and redirect targets.
+- **No command substitution in a redirect target.** Compute the path in a prior command.
+- **One command per call.** Prefer several tool calls over one chained line.
+- **No `IFS=` assignments, no unquoted heredoc delimiters, no `[[ ]]` regex.** Use `<<'EOF'` when a heredoc is unavoidable.
+- **Use the dedicated tools** — read, edit, write, grep and glob never touch the shell parser at all.
+- **Long or generated commands go in a script**, written to a file and run by path.
+
 ---
 
 ## 4. Verification Delegation
@@ -121,6 +137,13 @@ turn, so the rule follows the size of the output rather than the question of who
 
 **On failure the owning agent fixes and re-delegates.** The gate never re-runs inside the agent that owns the fix, and the runner never edits the
 code it judges — the baseline it established is part of its verdict, and an agent that both fixes and judges has no baseline left.
+
+**A markdown-only change runs no gate.** The doc edit is its own evidence, and there is no compiled artifact for a gate to have an opinion about.
+Where the repository's documentation check covers citations and anchors, that one scoped step is the exception and is run directly (§4a).
+
+**A constraint is restated as what the callee will do, and a gate run travels at most one hop.** An agent handing work down rewrites the constraint
+it was given into the callee's own actions rather than forwarding the sentence it received: a delegate's delegate has been observed running the full
+gate under an instruction that forbade it, because the forwarded sentence addressed the wrong agent.
 
 **Every agent declares the tool set it needs, and the runner declares one without write access.** An allowlist is the one part of an agent's
 boundary a mechanism can hold rather than a paragraph, so it is declared rather than merely permitted: a planning or documentation agent that cannot

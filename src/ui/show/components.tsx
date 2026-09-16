@@ -267,8 +267,7 @@ export const CatalogStack: FC<CatalogSectionProps> = ({ id, title, children }) =
 );
 
 // `w-full` and no cap: a band is a flex row, and an item measured at a cap leaves room on its line
-// for the next specimen to land beside the sentence. The note takes the band's width, as its heading
-// does.
+// for the next specimen to land beside the sentence.
 /** A band's own note — a line about the specimens, on a row of its own. @internal */
 export const CatalogNote: FC<{ children: unknown }> = ({ children }) => <p class='w-full text-sm text-pretty text-muted-foreground'>{children}</p>;
 
@@ -291,8 +290,6 @@ function sectionHref(pagePath: string, id: string): string {
 
 const sectionLabel = (id: string): string => SECTIONS.find((entry) => entry.id === id)?.label ?? id;
 
-// A third sibling for the same reason `CatalogPanel` is the second: the flag would be the fourth on
-// `CatalogSection`. Every clause is the corpus's own — `design/catalog.md` stays its single home.
 /** What a band's component is best at, and which neighbour answers the jobs it does not. @internal */
 export const CatalogPurpose: FC<{ page: string; id: string; best: string; instead: readonly CatalogAlternative[] }> = ({
   page,
@@ -322,8 +319,6 @@ interface CatalogPanelProps extends CatalogSectionProps {
   description: string;
 }
 
-// A sibling of `CatalogSection`, not a flag on it: a band that is a card and carries a description
-// is a different shape, and the alternative is the four-flag component the design corpus warns about.
 /** A card-shaped band: a heading, a line saying what it demonstrates, and the demo itself. @internal */
 export const CatalogPanel: FC<CatalogPanelProps> = ({ id, title, description, children }) => (
   <section id={id} class='scroll-mt-24 space-y-4 rounded-2xl border border-border bg-card p-6'>
@@ -361,8 +356,6 @@ const BUTTON_SHAPE_BOX = { sm: "w-control-sm", md: "w-control-md", lg: "w-contro
 /** The three tones a state has to be legible on: `state-disabled` composes over `--tone`, it does not replace it. */
 const STATE_TONES = ["primary", "neutral", "destructive"] as const;
 
-// A matrix belongs to the component it varies, not to a band of its own: a reader who has scrolled to
-// `Badge` is the reader asking what its tones look like.
 const AlertSection: FC<{ page: string }> = ({ page }) => (
   <CatalogSection id='alert' title='Alert'>
     <CatalogPurpose
@@ -670,9 +663,8 @@ const InputSection: FC = () => (
     <Input type='text' field={{ name: "invalid-input", invalid: true }} placeholder='Invalid' class='max-w-xs' />
     <Input type='text' name='readonly-input' value='Read only' readonly class='max-w-xs' />
     <Input type='text' name='required-input' placeholder='Required' required class='max-w-xs' />
-    {/* Tier 0 and Tier 1 carry the affordances — `inputmode`, `autocomplete`, `maxlength`, and
-        `tabular-nums` as a caller class. `format` only regroups the value on blur, and the `value`
-        here arrives already grouped from the server. */}
+    {/* `format` only regroups the value on blur, and the `value` here arrives already grouped from
+        the server. */}
     <Input
       type='text'
       inputmode='numeric'
@@ -800,9 +792,8 @@ const FileInputSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
     <FileInput name='show-file' class='max-w-xs' />
     <FileInput name='show-file-lg' size='lg' class='max-w-xs' />
     <FileInput name='show-file-invalid' invalid class='max-w-xs' />
-    {/* `FileInput` takes no children and `FILE_INPUT_BASE` styles the native `::file-selector-button`,
-        so a glyph inside the box is a composition over it — the shape `Select` already uses — and not
-        an adornment slot on the component. */}
+    {/* `FileInput` takes no children and `FILE_INPUT_BASE` styles the native
+        `::file-selector-button`, so a glyph inside the box is a composition over it. */}
     <div class='relative max-w-xs'>
       <FileInput name='show-file-icon' class='pe-10' />
       <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 end-3 flex items-center text-muted-foreground'>
@@ -1861,9 +1852,7 @@ const ToggleGroupSection: FC = () => (
   </CatalogSection>
 );
 
-// One band, six boxes: each carries a position *and* a look, so the grid answers "where does it go"
-// and "what does each tone read like" in one pass instead of three disconnected rows. The sixth is
-// the live one — see `TOAST_CYCLE_SCOPE`.
+// The sixth box is the live one — see `TOAST_CYCLE_SCOPE`.
 const TOAST_SAMPLES = [
   { position: "top-left", tone: "neutral", title: "Default", body: "A plain notification." },
   { position: "top-center", tone: "success", title: "Success", body: "Action completed." },

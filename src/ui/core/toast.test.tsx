@@ -1,84 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 import { Toast } from "./toast";
 
-const DEFAULT_TOAST =
-  '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>';
-
-const DISMISSIBLE_TOAST =
-  '<div data-slot="toast" data-tone="neutral" data-appearance="soft" data-scope="toast" data-island-state="{}" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)] pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>';
+const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, "");
+const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]+)"/g)].map((match) => match[1]);
 
 describe("Toast", () => {
-  // No `role`, no `aria-atomic`: a toast is announced by `Toast.Container`'s own live region, and a
-  // second one on each item would re-announce the whole stack.
-  it("is a bare div in the neutral soft variant, with no dismiss button and no scope of its own", async () => {
-    expect(await render(<Toast>Message</Toast>)).toBe(DEFAULT_TOAST);
-  });
-
-  it("defaults to the default variant", async () => {
-    expect(await render(<Toast>Hello</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
-    );
-  });
-
-  it("renders success variant classes", async () => {
-    expect(await render(<Toast tone='success'>Done</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="success" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-success)] [--tone-fg:var(--color-success-foreground)] [--tone-text:var(--color-success-text)] [--tone-soft:var(--color-status-success-subtle)] [--tone-soft-fg:var(--color-status-success-subtle-foreground)] [--tone-soft-border:var(--color-status-success-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Done</div></div>',
-    );
-  });
-
-  it("renders info variant classes", async () => {
-    expect(await render(<Toast tone='info'>Info</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="info" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-info)] [--tone-fg:var(--color-info-foreground)] [--tone-text:var(--color-info-text)] [--tone-soft:var(--color-status-info-subtle)] [--tone-soft-fg:var(--color-status-info-subtle-foreground)] [--tone-soft-border:var(--color-status-info-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Info</div></div>',
-    );
-  });
-
-  it("renders warning variant classes", async () => {
-    expect(await render(<Toast tone='warning'>Alert</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="warning" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-warning)] [--tone-fg:var(--color-warning-foreground)] [--tone-text:var(--color-warning-text)] [--tone-soft:var(--color-status-warning-subtle)] [--tone-soft-fg:var(--color-status-warning-subtle-foreground)] [--tone-soft-border:var(--color-status-warning-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Alert</div></div>',
-    );
-  });
-
-  it("renders destructive variant classes", async () => {
-    expect(await render(<Toast tone='destructive'>Error</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="destructive" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-destructive)] [--tone-fg:var(--color-destructive-foreground)] [--tone-text:var(--color-destructive-text)] [--tone-soft:var(--color-status-danger-subtle)] [--tone-soft-fg:var(--color-status-danger-subtle-foreground)] [--tone-soft-border:var(--color-status-danger-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Error</div></div>',
-    );
-  });
-
-  it("dismissible adds the close button, its dismiss action, the toast scope and the pe-10 it needs", async () => {
-    expect(await render(<Toast dismissible>Message</Toast>)).toBe(DISMISSIBLE_TOAST);
-  });
-
-  it("stamps data-scope and data-state with duration when duration > 0", async () => {
-    expect(await render(<Toast duration={3000}>Message</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" data-scope="toast" data-island-state="{&quot;duration&quot;:3000}" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div></div>',
-    );
-  });
-
-  it("does not stamp data-scope when duration is 0", async () => {
-    expect(await render(<Toast duration={0}>Message</Toast>)).toBe(DEFAULT_TOAST);
-  });
-
-  it("keeps a duration of 0 in data-state, distinguishable from a duration never passed", async () => {
-    expect(
-      await render(
-        <Toast dismissible duration={0}>
-          Message
-        </Toast>,
-      ),
-    ).toBe(
-      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" data-scope="toast" data-island-state="{&quot;duration&quot;:0}" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)] pe-10"><div data-slot="toast-body" class="flex-1 space-y-1">Message</div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div>',
-    );
-  });
-
-  it("merges a custom class", async () => {
-    expect(await render(<Toast class='my-toast'>Hello</Toast>)).toBe(
-      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)] my-toast"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
-    );
-  });
-
-  it("forwards id and data-* attributes on the root with HTML-escaped values", async () => {
+  it("renders the whole notification exactly, with forwarded values escaped", async () => {
     expect(
       await render(
         <Toast id='t1' data-testid='toast' data-note='a&b'>
@@ -86,78 +16,160 @@ describe("Toast", () => {
         </Toast>,
       ),
     ).toBe(
-      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]" id="t1" data-testid="toast" data-note="a&amp;b"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
+      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field' +
+        " py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)]" +
+        " [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]" +
+        " border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)]" +
+        ' hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]" id="t1" data-testid="toast" data-note="a&amp;b">' +
+        '<div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
     );
+  });
+
+  it("claims no role and no live region of its own, since the container announces the whole stack", async () => {
+    const html = await render(<Toast>Message</Toast>);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "toast", "data-tone": "neutral", "data-appearance": "soft" });
+    expect(slotsOf(html)).toEqual(["toast", "toast-body"]);
+  });
+
+  it("stamps the tone it was given and swaps the whole palette rather than overlaying a second one", async () => {
+    const tones = ["success", "info", "warning", "destructive"] as const;
+    const neutral = await render(<Toast>Message</Toast>);
+    const rendered = await Promise.all(tones.map((tone) => render(<Toast tone={tone}>Message</Toast>)));
+
+    expect(
+      rendered.map((html) => {
+        const { added, dropped } = variantClasses(html, neutral);
+        return {
+          tone: attrOf(html, "data-tone"),
+          palette: added[0],
+          beyondPalette: [...added, ...dropped].filter((t) => !t.startsWith("[--tone")),
+        };
+      }),
+    ).toEqual([
+      { tone: "success", palette: "[--tone:var(--color-success)]", beyondPalette: [] },
+      { tone: "info", palette: "[--tone:var(--color-info)]", beyondPalette: [] },
+      { tone: "warning", palette: "[--tone:var(--color-warning)]", beyondPalette: [] },
+      { tone: "destructive", palette: "[--tone:var(--color-destructive)]", beyondPalette: [] },
+    ]);
+  });
+
+  it("gives a dismissible toast a close button, the toast scope, and the end padding that button needs", async () => {
+    const html = await render(<Toast dismissible>Message</Toast>);
+
+    expect(attrsOf(html)).toEqual({
+      "data-slot": "toast",
+      "data-tone": "neutral",
+      "data-appearance": "soft",
+      "data-scope": "toast",
+      "data-island-state": "{}",
+    });
+    expect(variantClasses(html, await render(<Toast>Message</Toast>))).toEqual({ added: ["pe-10"], dropped: ["pe-4"] });
+    expect(attrsOf(html, 'data-slot="toast-close"')).toEqual({
+      type: "button",
+      "data-slot": "toast-close",
+      "aria-label": "Dismiss notification",
+      "data-on-click": "dismiss",
+    });
+  });
+
+  it("hands the controller a duration in island state once there is a timer to run", async () => {
+    const html = await render(<Toast duration={3000}>Message</Toast>);
+
+    expect(attrOf(html, "data-scope")).toBe("toast");
+    expect(attrOf(html, "data-island-state")).toBe("{&quot;duration&quot;:3000}");
+  });
+
+  it("stays inert with no scope when a duration of 0 leaves nothing for a controller to do", async () => {
+    expect(attrsOf(await render(<Toast duration={0}>Message</Toast>))).toEqual({
+      "data-slot": "toast",
+      "data-tone": "neutral",
+      "data-appearance": "soft",
+    });
+  });
+
+  it("keeps a duration of 0 in island state, distinguishable from a duration never passed", async () => {
+    const zero = await render(
+      <Toast dismissible duration={0}>
+        Message
+      </Toast>,
+    );
+
+    expect(attrOf(zero, "data-island-state")).toBe("{&quot;duration&quot;:0}");
+    expect(attrOf(await render(<Toast dismissible>Message</Toast>), "data-island-state")).toBe("{}");
+  });
+
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Toast class='my-toast'>Hello</Toast>)).at(-1)).toBe("my-toast");
   });
 });
 
 describe("Toast.Container", () => {
-  it("is the polite live region, fixed and z-50, defaulting to bottom-right", async () => {
-    expect(await render(<Toast.Container />)).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"></section>',
-    );
+  it("is the one polite live region the stack is announced through, defaulting to the bottom right", async () => {
+    const html = await render(<Toast.Container />);
+
+    expect(attrsOf(html)).toEqual({
+      "data-slot": "toast-container",
+      "data-position": "bottom-right",
+      "aria-label": "Notifications",
+      "aria-live": "polite",
+      "aria-atomic": "false",
+    });
+    expect(classesOf(html).filter((token) => token === "fixed" || token === "z-50")).toEqual(["fixed", "z-50"]);
   });
 
-  it("renders top-left position classes", async () => {
-    expect(await render(<Toast.Container position='top-left' />)).toBe(
-      '<section data-slot="toast-container" data-position="top-left" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 left-4 items-start"></section>',
-    );
+  it("moves the stack to the corner it was asked for and abandons the one it left", async () => {
+    const positions = ["top-left", "top-center", "top-right"] as const;
+    const bottomRight = await render(<Toast.Container />);
+    const rendered = await Promise.all(positions.map((position) => render(<Toast.Container position={position} />)));
+
+    expect(rendered.map((html) => attrOf(html, "data-position"))).toEqual([...positions]);
+    expect(rendered.map((html) => variantClasses(html, bottomRight))).toEqual([
+      { added: ["top-4", "left-4", "items-start"], dropped: ["bottom-4", "right-4", "items-end"] },
+      { added: ["top-4", "left-1/2", "-translate-x-1/2", "items-center"], dropped: ["bottom-4", "right-4", "items-end"] },
+      { added: ["top-4"], dropped: ["bottom-4"] },
+    ]);
   });
 
-  it("renders top-center position with translate", async () => {
-    expect(await render(<Toast.Container position='top-center' />)).toBe(
-      '<section data-slot="toast-container" data-position="top-center" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 left-1/2 -translate-x-1/2 items-center"></section>',
-    );
-  });
-
-  it("renders top-right position classes", async () => {
-    expect(await render(<Toast.Container position='top-right' />)).toBe(
-      '<section data-slot="toast-container" data-position="top-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 right-4 items-end"></section>',
-    );
-  });
-
-  it("renders children", async () => {
+  it("nests the toasts it was given inside the live region, where an insertion can be announced", async () => {
     expect(
-      await render(
-        <Toast.Container>
-          <Toast>Hello</Toast>
-        </Toast.Container>,
+      slotsOf(
+        await render(
+          <Toast.Container>
+            <Toast>Hello</Toast>
+          </Toast.Container>,
+        ),
       ),
-    ).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end"><div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]"><div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div></section>',
-    );
+    ).toEqual(["toast-container", "toast", "toast-body"]);
   });
 
-  it("forwards a custom id and data-* attributes via spread", async () => {
-    expect(await render(<Toast.Container id='toasts' data-testid='container' />)).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="toasts" data-testid="container"></section>',
-    );
+  it("forwards an id and a data attribute through the spread", async () => {
+    expect(attrsOf(await render(<Toast.Container id='toasts' data-testid='container' />))).toEqual({
+      "data-slot": "toast-container",
+      "data-position": "bottom-right",
+      "aria-label": "Notifications",
+      "aria-live": "polite",
+      "aria-atomic": "false",
+      id: "toasts",
+      "data-testid": "container",
+    });
   });
 });
 
 describe("Toast.Title and Toast.Description", () => {
-  it("renders Toast.Title with data-slot=toast-title", async () => {
-    expect(await render(<Toast.Title>Success</Toast.Title>)).toBe(
-      '<div data-slot="toast-title" class="text-sm leading-none font-semibold">Success</div>',
-    );
+  it("names the title and the description apart, so a stylesheet can weight one over the other", async () => {
+    const title = await render(<Toast.Title>Success</Toast.Title>);
+    const description = await render(<Toast.Description>Your changes were saved.</Toast.Description>);
+
+    expect([attrsOf(title), attrsOf(description)]).toEqual([{ "data-slot": "toast-title" }, { "data-slot": "toast-description" }]);
+    expect([textOf(title), textOf(description)]).toEqual(["Success", "Your changes were saved."]);
   });
 
-  it("renders Toast.Description with data-slot=toast-description", async () => {
-    expect(await render(<Toast.Description>Your changes were saved.</Toast.Description>)).toBe(
-      '<div data-slot="toast-description" class="text-sm opacity-90">Your changes were saved.</div>',
-    );
-  });
-
-  it("forwards id and data-* attributes on the title and description", async () => {
-    expect(
-      await render(
-        <>
-          <Toast.Title id='tt'>Saved</Toast.Title>
-          <Toast.Description data-note='a&b'>Detail</Toast.Description>
-        </>,
-      ),
-    ).toBe(
-      '<div data-slot="toast-title" class="text-sm leading-none font-semibold" id="tt">Saved</div><div data-slot="toast-description" class="text-sm opacity-90" data-note="a&amp;b">Detail</div>',
-    );
+  it("forwards an id onto the title and an escaped value onto the description", async () => {
+    expect(attrsOf(await render(<Toast.Title id='tt'>Saved</Toast.Title>))).toEqual({ "data-slot": "toast-title", id: "tt" });
+    expect(attrsOf(await render(<Toast.Description data-note='a&b'>Detail</Toast.Description>))).toEqual({
+      "data-slot": "toast-description",
+      "data-note": "a&amp;b",
+    });
   });
 });

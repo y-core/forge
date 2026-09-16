@@ -11,9 +11,8 @@ const ICON = createIcon("/sprite.svg");
 
 const CSS = { css: ["./ui/assets/css/forge-ui.css"] };
 
-/** What the Tailwind classes a consumer writes compile to — `starting:opacity-0` is `@starting-style`,
- * and `transition-discrete` is `transition-behavior: allow-discrete`. Specs get no Tailwind build,
- * so the compiled form is written out. */
+// Specs get no Tailwind build, so what a consumer's `starting:` and `transition-discrete` classes
+// compile to is written out here.
 const MOTION = `<style>
   body { margin: 0; }
   [data-slot~="popover-trigger"] { position: fixed; top: 200px; left: 120px; }
@@ -40,16 +39,13 @@ async function open(page: Page): Promise<void> {
 const panelOpacity = (page: Page) => page.evaluate(() => Number(getComputedStyle(document.querySelector("#tips") as HTMLElement).opacity));
 
 test.describe("overlay motion is the platform's", () => {
-  // The double-rAF the deleted `mountTransitionState` used existed only to give the enter a "from"
-  // value one frame late. The UA does it inside the style engine, so the first painted frame is
-  // already the starting one.
+  // The UA applies `@starting-style` inside the style engine, so the first painted frame is already
+  // the starting one — no frame of scheduling is needed to produce a from-value.
   test("@starting-style supplies the enter's from-value in the same task as the click", async ({ page }) => {
     await open(page);
 
-    // A ceiling, not an exact `0`: by the time the value is read the transition has legitimately
-    // begun, so under parallel load a frame or two of it has already elapsed. What the test is for
-    // is that the enter *had* a from-value at all — a missing one paints at full opacity, which no
-    // amount of scheduling noise can push below this bound.
+    // A ceiling, not an exact `0`: under parallel load a frame or two of the transition has already
+    // elapsed by the time the value is read.
     expect(await panelOpacity(page), "the first frame painted at full opacity — the enter never had a from-value").toBeLessThan(0.5);
     expect(await page.evaluate(() => document.querySelector("#tips")?.matches(":popover-open")), "already open, and still transparent").toBe(true);
   });
@@ -77,9 +73,8 @@ test.describe("overlay motion is the platform's", () => {
     await expect.poll(() => panelOpacity(page)).toBe(1);
   });
 
-  // `transition-behavior: allow-discrete` on `display` plus `overlay` is what the JavaScript could
-  // not do at all: the old controller kept the box painted with a timer it derived by string-parsing
-  // `getComputedStyle`, and could not keep the element in the top layer for a single frame.
+  // Only `transition-behavior: allow-discrete` on `display` and `overlay` can hold the element in
+  // the top layer through the exit; no script can.
   test("Escape leaves the panel painted and in the top layer for the whole exit", async ({ page }) => {
     await open(page);
     await expect.poll(() => panelOpacity(page)).toBe(1);

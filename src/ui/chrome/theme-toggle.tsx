@@ -14,9 +14,8 @@ const ICON_PX: Record<Size, number> = { sm: 16, md: 20, lg: 24 };
 
 const TOGGLE_BASE = "rounded-field p-2 text-foreground focus-ring hover:bg-accent motion-safe:transition";
 
-// The `theme-{light,dark,system}-icon` classes are matched by the shipped theme CSS, which shows one
-// span and sets the other two to `display: none` — that is also what leaves one `sr-only` label in
-// the accessible name, so a static `aria-label` here would never say which theme is on.
+// The `theme-{light,dark,system}-icon` classes are matched by the shipped theme CSS, which hides
+// two of the three spans — and so leaves exactly one `sr-only` label in the accessible name.
 /** One button that cycles the theme light -> dark -> system. @public */
 export const ThemeToggle: FC<ThemeToggleProps> = ({ icon: Icon, size = "md", class: cls }) => {
   const px = ICON_PX[size];

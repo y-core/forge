@@ -137,9 +137,8 @@ describe("loadSignup", () => {
     expect(valuesOf(html, "href")).toEqual(["/auth/signin"]);
   });
 
-  // Offering a factor and demanding it are different deployments, and the page has to say which:
-  // under `optional` nobody is asked to enrol, so promising the step would be a lie a visitor never
-  // sees honoured. The role alone cannot tell the two apart, which is why the requirement is read.
+  // Under `optional` nobody is asked to enrol, so the requirement and not the role is what says
+  // whether the page may promise the step.
   it("promises the enrolment step only where one is actually demanded", async () => {
     const described = async (requirement: AuthFactorRequirement) => {
       const services = fakeAuthServices({
@@ -225,8 +224,6 @@ describe("loadPasskeyList", () => {
     expect(elementsOf(html, "li", 'data-ref="credential"')).toHaveLength(2);
   });
 
-  // The defect this replaced: one page-level token, minted for the first row, 403-ing every other
-  // Remove button. Each row now carries a token bound to its own path.
   it("mints one token per row, each verifying against that row's own path", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
@@ -411,8 +408,6 @@ describe("the icon a page draws from", () => {
   });
 });
 
-// Two of the nine mint sites used to be checked this way and seven were not, so a token minted for
-// the wrong path rendered, submitted and 403-ed with every unit still green.
 describe("every token a page renders is bound to the path its own control submits to", () => {
   async function boundTo(html: string, selector: string, attr: string, expected: string): Promise<void> {
     const key = await importCsrfKey(CSRF_SECRET);

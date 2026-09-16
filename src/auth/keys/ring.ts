@@ -10,9 +10,8 @@ const MINIMUM_KEY_BYTES = 32;
 
 const KEY_ID_DOMAIN = utf8Encode("y-core/forge/auth/kid");
 
-// Nested on both the env *and* the options: keyed on the env alone, two mounts with different
-// `AuthOptions` on one env shared one `AuthServices`, and the second caller silently got the
-// first's key ring — a token minted under one deployment's secret and read under another's.
+// Nested on the env *and* the options: keyed on the env alone, two mounts with different
+// `AuthOptions` share one key ring — a token minted under one secret and read under another's.
 const servicesCache = new WeakMap<object, WeakMap<AuthOptions, AuthServices>>();
 
 /** Fewest distinct byte values a root secret must carry, above which a degenerate key is implausible. */

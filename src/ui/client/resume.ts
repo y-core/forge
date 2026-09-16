@@ -9,9 +9,7 @@ import type { ScopeDefinition } from "./types";
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
-/** Every currently-resumed scope root, mapped to a disposer for the effects its `setup` created and
- * whatever that `setup` returned. Keyed by root so one scope can be torn down alone, which is what
- * an htmx swap needs. */
+/** Every currently-resumed scope root, mapped to the disposer for its effects and its `setup` return. */
 const active = new Map<HTMLElement, () => void>();
 
 /** Registers a scope's setup and action handlers, keyed to a `data-scope` name. @public */
@@ -19,8 +17,7 @@ export function registerScope<A extends string = string>(name: string, def: Scop
   scopes.set(name, { ...def, on: def.on ?? {} } as ScopeDefinition);
 }
 
-/** One delegated-listener installation per document, with the number of live `resume()` calls holding
- * it open. Per document rather than per module so two frames each get their own runtime. */
+/** One delegated-listener installation per document, refcounted by the live `resume()` calls holding it open. */
 interface Delegation {
   remove: () => void;
   holders: number;
@@ -63,9 +60,6 @@ export function resume(within?: Node): () => void {
   const doc = ownerDocument(within);
   const delegation = delegate(doc);
 
-  // Always runs, on every call. Installing the listeners and resuming a tree are two jobs, and
-  // conflating them made `resume(); resume(shadowRoot)` return the first disposer without ever
-  // visiting the shadow subtree — a web component resuming its own tree came back silently inert.
   const mine: HTMLElement[] = [];
   const warnedUnknown = new Set<string>();
   for (const el of findScopes(scanRoot(within, doc))) {
@@ -81,9 +75,7 @@ export function resume(within?: Node): () => void {
       continue;
     }
     if (!def.eager) continue;
-    // Contained per scope: one throwing `setup` used to abort the loop, so every later scope stayed
-    // dead, the caller never received a disposer, and — because `teardown` was assigned before the
-    // loop — a retry short-circuited and never re-ran the eager pass at all.
+    // Contained per scope, so one throwing `setup` leaves every later scope resumable.
     try {
       if (!resumed.has(el)) mine.push(el);
       ensureResumed(el, def);
@@ -161,12 +153,8 @@ function sweepDetached(): void {
   }
 }
 
-// `sweepDetached` runs only as something else resumes, so a swap that *removes* scoped markup and
-// introduces none never reaches it — and `active` is a strong `Map`, whose retained closures hold
-// live document-level listeners (`drawer.ts`'s `keydown`, `bind.ts`'s `reset`, the navbar filter
-// channel). That is a leak, not untidiness. htmx calls `cleanUpElement` on every element it removes,
-// so the swap has a per-element hook; taking it here costs no scan of `active` and needs no
-// `isConnected` check, which would still read true at cleanup time.
+// htmx's per-element `cleanUpElement` hook, because `sweepDetached` runs only as something else
+// resumes: a swap that removes scoped markup and introduces none would leak `active`'s listeners.
 /** Disposes the scope at `el` and every scope below it, before the DOM removes them. @public */
 export function disposeScopesIn(el: HTMLElement): void {
   // The same cast `scanRoot` makes: under the Workers consumer's lib set `HTMLElement.append` is
@@ -246,16 +234,7 @@ function dispatchCommand(event: Event): void {
   runAction(command.slice(2), source, event);
 }
 
-/** Rebuilds `data-island-state` into signals.
- *
- * The payload has its own attribute name and never shares `data-state`, which is a presentational
- * enum: one name carrying two grammars meant a component spreading `...rest` onto an element that
- * also carried the enum made `resume()` throw from markup that type-checked.
- *
- * Throws rather than degrading to `{}`: the payload is server-authored markup, deterministic per
- * render, so malformed JSON is a bug in the renderer and never a surprise in production. A silent
- * `{}` produced a scope whose every signal was missing, failing far from the cause. The throw is
- * contained to its own scope by `resume`'s per-scope catch. @internal */
+/** Rebuilds `data-island-state` into signals, throwing unless the payload is a JSON object. @internal */
 export function hydrateState(raw: string | undefined): Record<string, Signal<unknown>> {
   const out: Record<string, Signal<unknown>> = {};
   if (!raw) return out;

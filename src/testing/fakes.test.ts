@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { createD1Client } from "../storage/db/client";
-import { sql } from "../storage/db/sql";
+import { requireRowsWritten, sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";
 import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import { nullLogger } from "./context";
@@ -468,5 +468,34 @@ describe("fakeD1 — platform refusals", () => {
   it("returns the value for a column the row carries", async () => {
     const db = fakeD1(() => [{ id: 1 }]);
     expect(await db.prepare("select id from t").first("id")).toBe(1);
+  });
+
+  it("rolls back a guarded batch whose write matched no row", async () => {
+    const client = createD1Client(
+      fakeD1(() => []),
+      { logger: nullLogger },
+    );
+    const outcome = await client.batch([sql`UPDATE t SET a = ${1} WHERE id = ${2}`, requireRowsWritten()]);
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: { message: "a guarded statement in this batch wrote no row, so the batch was rolled back" },
+    });
+  });
+
+  it("commits the same guarded batch once the write reports a row", async () => {
+    const db = fakeD1(() => [], { rowsWritten: () => 1 });
+    const client = createD1Client(db, { logger: nullLogger });
+    const outcome = await client.batch([sql`UPDATE t SET a = ${1} WHERE id = ${2}`, requireRowsWritten()]);
+    expect(outcome.ok).toBe(true);
+  });
+
+  // The shape STORAGE_BINDINGS.md §1g calls a bug: `changes()` reads through to the last write, and
+  // with none behind it the guard has nothing to fail on. The fake need not diagnose it.
+  it("leaves a guard behind a non-write inert", async () => {
+    const client = createD1Client(
+      fakeD1(() => []),
+      { logger: nullLogger },
+    );
+    expect((await client.batch([sql`SELECT 1`, requireRowsWritten()])).ok).toBe(true);
   });
 });

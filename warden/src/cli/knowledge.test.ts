@@ -5,7 +5,8 @@ import { join } from "node:path";
 
 import { createCommand } from "../../../src/tooling/cli/command";
 import { CliError } from "../../../src/tooling/cli/errors";
-import type { CallableCommand, CommandBase } from "../../../src/tooling/cli/types";
+import { execute } from "../../../src/tooling/cli/execute";
+import type { CallableCommand, CliIO, CommandBase } from "../../../src/tooling/cli/types";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
 
 function tree(): CommandBase {
@@ -28,19 +29,33 @@ function repoAt(...segments: string[]): string {
   return root;
 }
 
+async function dispatch(...argv: string[]): Promise<{ err: string[]; code: number | null }> {
+  const err: string[] = [];
+  let code: number | null = null;
+  const io: CliIO = {
+    stdout: () => {},
+    stderr: (message) => err.push(message),
+    exit: ((status: number) => {
+      code = status;
+    }) as CliIO["exit"],
+  };
+  await execute(tree(), argv, io);
+  return { err, code };
+}
+
 describe("the knowledge commands", () => {
-  it("mounts the seven knowledge verbs, the catalogue and the server", () => {
-    expect(tree().commands.map((command) => command.name)).toEqual([
-      "index",
-      "search",
-      "read",
-      "outline",
-      "related",
-      "impact",
-      "probe",
-      "catalogue",
-      "serve",
-    ]);
+  it("refuses a bare `search`, rather than ranking the corpus against an empty query", async () => {
+    const { err, code } = await dispatch("search");
+
+    expect(code).toBe(1);
+    expect(err.join("\n")).toContain("requires at least 1 argument(s), got 0");
+  });
+
+  it("refuses `read` with no id and with two, since a section is named by exactly one", async () => {
+    expect((await dispatch("read")).code).toBe(1);
+    expect((await dispatch("read", "one", "two")).code).toBe(1);
+    expect((await dispatch("outline")).code).toBe(1);
+    expect((await dispatch("related")).code).toBe(1);
   });
 
   it("gives every one a --root, so no command has to discover the repository", () => {
@@ -55,16 +70,6 @@ describe("the knowledge commands", () => {
     const gated = tree().commands.filter((command) => command.flags.gate !== undefined);
 
     expect(gated.map((command) => command.name)).toEqual(["index", "search", "read", "outline", "related", "impact"]);
-  });
-
-  it("requires the argument each verb cannot work without", () => {
-    const args = Object.fromEntries(tree().commands.map((command) => [command.name, command.args]));
-
-    expect(args.search).toEqual({ kind: "min", min: 1 });
-    expect(args.read).toEqual({ kind: "exact", count: 1 });
-    expect(args.outline).toEqual({ kind: "exact", count: 1 });
-    expect(args.related).toEqual({ kind: "exact", count: 1 });
-    expect(args.index).toEqual({ kind: "none" });
   });
 });
 

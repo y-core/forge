@@ -126,11 +126,8 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     refuseSchemaDrift(run, drift, options.allowDrift, "pass --allow-drift to apply anyway; the apply certifies the fingerprint again.");
     checkStamps(run, discovered, plan.pending, new Set(applied));
 
-    // Only the pending files are linted, so a rule added since an old apply cannot newly abort every
-    // one. `--no-lint` judges the SQL; `generated-edited` and `custom-ddl` judge the file itself —
-    // whether it is the one compose wrote, and whether its DDL came from a declaration at all — so
-    // both run regardless. Skipping `custom-ddl` would let an object no schema.sql declares into the
-    // database, which a later compose reads as a deletion.
+    // `generated-edited` and `custom-ddl` judge the file rather than the SQL, so `--no-lint` cannot skip
+    // them: an object no schema.sql declares would reach the database, and a later compose reads that as a deletion.
     const unskippable = new Set(["generated-edited", "custom-ddl"]);
     const findings = lintMigrations(plan.pending);
     enforceLint(run, options.lint ? findings : findings.filter((f) => unskippable.has(f.rule)), options.allowWarnings);

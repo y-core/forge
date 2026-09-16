@@ -15,9 +15,8 @@ type FormProps = Omit<JSX.IntrinsicElements["form"], "children" | "method" | "hx
   csrfHeader?: string | undefined;
 };
 
-// Every entry is kept, whatever its JSON type: htmx serialises a number or a boolean into the header
-// just as it does a string, so dropping them silently loses a header the same form keeps when it
-// carries no `csrfToken`.
+// Every entry is kept whatever its JSON type: htmx serialises a number or a boolean into the header
+// just as it does a string.
 function parseHxHeaders(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -40,10 +39,8 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfHeader: string
 
   if (typeof hxHeaders === "string") {
     const parsed = parseHxHeaders(hxHeaders);
-    // Returning the caller's string here would ship a form with no CSRF token at all — a 403 with
-    // nothing in the markup or the console pointing at the cause, which is the failing-far-from-the-
-    // cause shape ERROR_HANDLING.md §5a exists to forbid. `js:` is the realistic trigger and it
-    // cannot be merged into at render time, so the caller has to add the header itself.
+    // A `js:` value cannot be merged into at render time, and returning it unchanged would ship a
+    // form with no CSRF token and a 403 that names nothing.
     if (!parsed) {
       throw new Error(
         `<Form> cannot merge its csrfToken into an hx-headers value that is not a JSON object (${hxHeaders}). ` +

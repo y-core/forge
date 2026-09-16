@@ -220,9 +220,8 @@ test.describe("a composite widget inside a form", () => {
     expect(await agreement(page)).toEqual({ dom: "in", signal: "in" });
   });
 
-  // Inverted deliberately. A bound group item used to be a `<button>`, which no form ever submits;
-  // it is now a real radio, so the widget's own answer travels with the form — the whole point of
-  // backing these components with native controls.
+  // A bound group item is a real radio, not a `<button>`, so the widget's own answer travels with
+  // the form.
   test("submission carries the widget's own value alongside the native controls", async ({ page }) => {
     await mountForm(page);
     await page.click("label:has(#u-cm)");

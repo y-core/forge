@@ -24,11 +24,13 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §2b The Browser-Spec Suffix Is `*.browser.ts`: fleet-wide, and what it stops colliding with
 - §2c The Minimum Environment Fixture: the smallest env that boots the app
 - §2d Optional Bindings Are Deliberately Absent: proving graceful degradation
+- §2e A Configuration File Gets No Test: a test over one restates the file back to itself
 - §3 Assertion Rules: exactness, and what nondeterminism is allowed to change
 - §3a Exact Match — Never Substring Matching on Markup: the rule
 - §3b Nondeterministic Output: normalise, then assert exactly
 - §3c The Entity Encoding Map: character to entity
 - §3d Headers and Status Are Always Exact: no range assertions
+- §3e Assert the Contract, Not the Implementation Restated: the deletion check, and the copied-literal ban
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Stubbing an Outbound Call: the network seam, not the service
@@ -146,6 +148,15 @@ absence is what proves the degradation path works ([`BOUNDARIES.md`][boundaries-
 
 Add such a binding only in the specific test that exercises it, never to the shared fixture. Adding it globally silently deletes the coverage.
 
+### 2e. A Configuration File Gets No Test
+
+**A config names values; it has no logic to exercise**, so a test over it can only restate the file back to itself and fail whenever the config
+legitimately changes.
+
+Where such a test looks like it proves something, the property belongs to the code that _reads_ the config, and the fix is to enforce it there. A
+route map is the usual case: the assertion worth writing is that requesting each declared path reaches a handler, not that the literal array still
+holds the strings someone typed into it (§3e).
+
 ---
 
 ## 3. Assertion Rules
@@ -205,6 +216,52 @@ expect(res.status).toBe(403);
 
 A range assertion on a status passes for `403` when the test meant `422`, which is precisely the distinction [`BOUNDARIES.md`][boundaries-2d] §2d
 exists to keep.
+
+### 3e. Assert the Contract, Not the Implementation Restated
+
+**Two checks, both applied before a test is counted as written. Each catches what the other misses.**
+
+**The deletion check: delete the mechanism the test names; a test that still passes was never testing it.** The failure shape is always the same —
+the subject is a _mechanism_, and the assertion reads an _outcome_ that a second, independent mechanism also produces. A guard clause is the usual
+second mechanism: an early return at the top of a callback makes "nothing visibly happened" true whether or not the thing that calls it was ever
+there. **Pin the mechanism, and pin that it was armed**: "the timer never fired" is worth nothing without "a timer was scheduled", and both halves
+in one assertion is the cheapest form. A negative assertion over an optional path — `expect(probe?.[0]).not.toBe("x")` — passes when `probe` is
+absent outright, so it asserts nothing at all.
+
+**The copied-literal check: a literal copied from the source under test is not an expected value.** This is the case the deletion check cannot
+reach. A transcription goes red the moment the source changes, so it is never vacuous by that measure — it merely records that two files agree with
+each other, which is a fact about the repository rather than about the software. Three shapes, all common:
+
+- **A transcribed constant map.** A frozen array or lookup table read out of the module and asserted back, entry by entry, often with further cases
+  that are derivable from the first. Test what _reads_ the table: the behaviour its entries were chosen to produce.
+- **A registration list.** The middleware roster or command list copied into the test as an array of names in order. Assert dispatch instead — drive
+  a request through the real stack and pin what it did: which mount got which guard, which status the refusal returned, what the command wrote.
+  Asserting an _identity_ rather than a spelling is what stops two copies of a name drifting apart.
+- **A class string hoisted out of a recipe.** A style literal lifted from the source, or out of rendered output, and reassembled in the expected
+  value. A token rename then fails the test while changing nothing a reader can see, and a stylesheet carrying no rule for that class fails nothing
+  at all.
+
+**The operational test: if this test and the source under test were edited together by the same rename, would anything go red?** If no, the test
+pins agreement between two files, not behaviour.
+
+This does not weaken §3a. An exact assertion on the markup a view emitted **is** the contract — the whole string, written out in the test where a
+reader can see the entity encoding. What §3e refuses is the derived form: a class constant imported or transcribed from the source and recomposed
+into the expectation, so that both sides move together and neither is ever checked against an outcome.
+
+**An expected value has to come from somewhere other than the source.** In descending order of strength:
+
+- **A published standard's test vectors.** Literals from a standards body make transcription structurally impossible.
+- **A table generated from the domain rule** — every shape a discriminator can produce, enumerated from the rule rather than from the branches.
+- **A real dependency's own answer** — a query plan from a real database over real migrations, a DOM state after a real event in a real browser.
+  Neither side of that comparison was transcribed by anyone.
+- **The observable outcome of a request**, asserted whole: status, body, and headers, per §3a and §3d.
+
+**Where a constant genuinely is the contract, write it as a literal rather than importing it.** A test that reads the value back out of the module
+under test cannot fail when that value changes, which is the whole point of pinning it. The reverse holds for a value the repository does not own: a
+cap or a limit defined by the shared library is imported, so a library change surfaces as a failure here rather than as silent disagreement.
+
+**Negative space is evidence.** A refusal that asserts status and body _and_ that nothing downstream ran — no statement issued, no row written, no
+outbound call made — pins what the refusal cost, which no restatement of the guard's own constants can.
 
 ---
 

@@ -178,8 +178,6 @@ function write(ephemera: AuthEphemera, sql: string, params: readonly unknown[]):
   return null;
 }
 
-// The single largest piece of guesswork in testing a consumer's auth mount was the column names and
-// the UUID-as-BLOB binding; this answers the stores' own statements so neither has to be re-derived.
 /** A `fakeD1` that answers forge's auth stores from accounts stated in domain terms, holding the challenge and nonce rows it is written. @public */
 export function fakeAuthD1(
   users: readonly FakeAuthUser[],
@@ -187,8 +185,7 @@ export function fakeAuthD1(
 ): D1DatabaseLike & { calls: { sql: string; params: unknown[] }[] } {
   const ephemera: AuthEphemera = { challenges: new Map(), nonces: new Set() };
   // An unmodelled SELECT answers no rows rather than throwing: every store reads "no rows" as the
-  // absence it is, not as a failure it cannot describe. A caller's own `rowsWritten` leads, and a
-  // `null` from it falls through to what the ephemeral tables actually hold.
+  // absence it is, not as a failure it cannot describe.
   return fakeD1((sql, params) => respond(users, ephemera, squash(sql), params) ?? [], {
     ...options,
     rowsWritten: (sql, params) => options?.rowsWritten?.(sql, params) ?? write(ephemera, squash(sql), params),

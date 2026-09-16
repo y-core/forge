@@ -85,7 +85,7 @@ Group by file, then severity, critical first. **Never write a secret's value int
 
 | Invariant | Owner |
 | --- | --- |
-| No deprecation shim or backward-compatible path before v1.0.0 | this repository's `LIBRARY_ARCHITECTURE.md` |
+| No deprecation shim or backward-compatible path before v1.0.0 | `CLAUDE.md`, and the structure document it cites |
 | No hardcoded secret, key, or credential in source | §3c |
 | A barrel uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`][nd-1b] §1b |
 | No sibling-barrel import outside the named exemptions | [`NAMESPACE_DESIGN.md`][nd-2] §2 |

@@ -1,7 +1,5 @@
-// The showcase's markup names the `theme` and `navbar` scopes from chrome and the `menu`,
-// `toolbar`, `toast`, `number-field`, `slider`, `popover`, `dialog` and `turnstile` scopes from
-// core. `chrome/client` pulls `core/client` itself, but naming both is what keeps this entry honest
-// if that ever stops being true — an app importing only this one would otherwise resume none of them.
+// `chrome/client` pulls `core/client` itself, but naming both keeps this entry honest if that ever
+// stops being true — an app importing only this one would otherwise resume neither's scopes.
 import "../chrome/client";
 import "../core/client";
 import { bindControls } from "../client/bind";
@@ -71,8 +69,7 @@ registerScope(SHOW_SCOPES.contextMenu, {
 
 registerScope(SHOW_SCOPES.toc, { eager: true, setup: ({ root }) => mountScrollSpy({ root }) });
 
-// Eager, and a demo device rather than a `Toast` behaviour — `show/toast-contract.ts` says why. The
-// `toast` scope owns the duration and the removal; this one notices the empty container and refills.
+// Eager, and a demo device rather than a `Toast` behaviour — `show/toast-contract.ts` says why.
 registerScope(TOAST_CYCLE_SCOPE, {
   eager: true,
   setup: ({ root }) => {
@@ -149,8 +146,6 @@ registerScope(CUSTOMISE_SCOPE, {
     const output = doc.querySelector("[data-scheme-output] code");
     const share = doc.querySelector("[data-share-url]");
 
-    // Both directions, for every dial at once. The thumb now follows a signal moved by anything —
-    // a preset pick, a shared link — with no per-control write-back on this page at all.
     const unbind = bindControls(root, state as SignalRecord<Record<string, unknown>>);
 
     /** Write and remember, so the disposer can name exactly what it added. */
@@ -223,10 +218,8 @@ registerScope(CUSTOMISE_SCOPE, {
         if (readout != null) readout.textContent = `${dials[dial.field] ?? dial.fallback}${dial.unit}`;
       }
 
-      // The picker names the scheme on the page, so a lever dragged off a preset has to move it to
-      // `custom` — a control still reading `slate` beside a scheme that is no longer slate is the
-      // same silent disagreement the readouts exist to prevent. Painted onto the control and nowhere
-      // else: which preset the dials name is derived, so it is never stored.
+      // The picker names the scheme on the page, so a lever dragged off a preset must move it to
+      // `custom`; which preset the dials name is derived, so it is painted and never stored.
       const picked = matchPreset(dials)?.id ?? PRESET_CUSTOM;
       if (picker !== null && picker.value !== picked) picker.value = picked;
 
@@ -243,9 +236,8 @@ registerScope(CUSTOMISE_SCOPE, {
     };
   },
   on: {
-    // What a preset *means* is two gray dials, and that translation is this page's business and not
-    // the control's (`UI_SSR_COMPONENTS.md` §2a). It is a command, so it lives in the handler that
-    // the pick fires: the painter above then moves the sliders and repaints, exactly as for a drag.
+    // Translating a preset into dial values is this page's business, not the control's
+    // (`UI_SSR_COMPONENTS.md` §2a).
     [PRESET_ACTION]: ({ el, state }) => {
       const preset = SCHEME_PRESETS.find((candidate) => candidate.id === (el as ValueControl).value);
       if (preset === undefined) return;
@@ -278,7 +270,8 @@ registerScope(COPY_SCOPE, {
       // the reader is looking at.
       const text = doc.querySelector(target.source)?.textContent ?? "";
 
-      /** The label is left alone on failure: a control reading "Copied" over an empty clipboard is worse than one that says nothing. */
+      // The label is left alone on failure: a control reading "Copied" over an empty clipboard is
+      // worse than one that says nothing.
       const fail = () => {
         if (status !== null) status.textContent = target.failed;
       };
@@ -304,7 +297,6 @@ registerScope(COPY_SCOPE, {
         fail();
         return;
       }
-      // Both branches are handled, so nothing floats — the handler's own signature returns void.
       void clipboard.writeText(text).then(confirm, fail);
     },
   },
@@ -389,9 +381,8 @@ registerScope(LAZY_DEMO_SCOPE, {
   setup: ({ root }) => {
     const stopDemo = lazy({ ref: LAZY_DEMO_REF, within: root, load: () => import("./lazy-panel"), init: (mod, el) => mod.mountLazyPanel(el) });
 
-    // A `load` that rejects its first attempts, so the retry path the prose describes is a path the
-    // page actually walks. The counter is written from `onError`, which is the only place a caller
-    // learns an attempt failed at all.
+    // `onError` is the only channel a caller learns a failed attempt on, so the counter is written
+    // from there.
     let attempt = 0;
     const status = root.querySelector(`[data-ref='${LAZY_RETRY_STATUS_REF}']`);
     const stopRetry = lazy({

@@ -42,18 +42,17 @@ declare global {
 
 const mounted = new WeakMap<HTMLElement, () => void>();
 
-// Not `ParentNode`, for the reason `dom.ts`'s `queryAcross` is not either.
 const ref = (name: string, scope: Element | Document | DocumentFragment) => scope.querySelector<HTMLElement>(`[data-ref='${name}']`);
 
-/** The widget at or below `root`. The scope root *is* the widget, and `querySelector` reports
- * descendants only, so the root has to be tested separately — as `resume.ts` does for `data-scope`. @internal */
+/** The widget at or below `root`, testing the root itself as well as its descendants. @internal */
 export function findWidget(root: HTMLElement): HTMLElement | null {
   if (root.getAttribute("data-ref") === TURNSTILE.widget) return root;
   return ref(TURNSTILE.widget, root);
 }
 
-/** Whether Cloudflare's API is present, asked as a capability rather than as truthiness: the DOM
- * exposes any element with `id="turnstile"` as `window.turnstile`, which would answer truthy. @internal */
+/** Whether Cloudflare's Turnstile API is present on `win`. @internal */
+// Asked as a capability, not as truthiness: the DOM exposes any element with `id="turnstile"` as
+// `window.turnstile`, which would answer truthy.
 export const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
 
 /** Whether the form submits through htmx, which is what `challenge="submit"` defers on. @internal */
@@ -310,8 +309,6 @@ export function mountTurnstile(root: HTMLElement): () => void {
     form.removeEventListener("focusout", onGuardFocusout);
   };
 
-  // `documentElement`'s `dark` class, not `ui/chrome`'s theme signal: a `ui/client` → `ui/chrome`
-  // import would be a cross-namespace dependency, and the class is the contract either way.
   const observeTheme = () => {
     const Observer = (win as { MutationObserver?: typeof MutationObserver }).MutationObserver;
     if (themeObserver || typeof Observer !== "function") return;
@@ -350,9 +347,8 @@ export function mountTurnstile(root: HTMLElement): () => void {
       "before-interactive-callback": onBeforeInteractive,
       "after-interactive-callback": onAfterInteractive,
     };
-    // No `expired-callback` or `timeout-callback`: `refresh-expired` and `refresh-timeout` both
-    // default to `auto`, so Cloudflare refreshes the token itself and a second `reset()` here would
-    // spend a further challenge on top of the one it has just re-presented.
+    // No `expired-callback` or `timeout-callback`: `refresh-expired` and `refresh-timeout` default
+    // to `auto`, so Cloudflare refreshes the token itself and a `reset()` here would spend another.
     if (submitMode) {
       params.execution = "execute";
     }
@@ -410,10 +406,8 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const script = doc.createElement("script");
     script.src = TURNSTILE_SCRIPT_URL;
     script.async = true;
-    // Read off the property, never a `data-` copy: the browser empties the `nonce` *content
-    // attribute* precisely to stop the value being exfiltrated through a CSS attribute selector,
-    // and copying it back into an attribute of forge's own would reopen that. Written with
-    // `setAttribute`, because assigning the property sets only the internal slot in some engines.
+    // Read off the property, because the browser empties the `nonce` content attribute to stop
+    // CSS-selector exfiltration; written back with `setAttribute`, which some engines need.
     const nonce = doc.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
     if (nonce) script.setAttribute("nonce", nonce);
     scriptTimeoutId = win.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);

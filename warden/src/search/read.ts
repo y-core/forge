@@ -56,8 +56,7 @@ function toSection(row: Row): Section {
   };
 }
 
-// Hierarchy is implicit in the `§N`/`§Na` id shape, there being no parent column: a child is the
-// parent's section plus a letter, so the scan stops at the first section that is not one. Comparing
+// Hierarchy is implicit in the `§N`/`§Na` id shape, there being no parent column; comparing
 // prefixes alone would take `§10` for a child of `§1`.
 function childrenOf(db: Database, id: string, own: Row): Row[] {
   const rows = db
@@ -72,14 +71,12 @@ function childrenOf(db: Database, id: string, own: Row): Row[] {
   return kept;
 }
 
-/** One section by chunk id, with its immediate neighbours when asked for. A neighbour is what makes
- *  a `### Na.` hit readable: the rule above it is usually the one that scopes it. @public */
+/** One section by chunk id, with its immediate neighbours when asked for. @public */
 export function readSection(db: Database, id: string, neighbours = 0): Section[] {
   const own = db.query<Row>(`${SELECT} WHERE chunk.id = ?`).get(id);
   if (own === null) return [];
-  // A bodyless `§N` is an addressable heading whose rule lives in its `§Na` children, and search
-  // ranks the parent above them — so reading one has to answer with them, or it answers nothing.
-  // `neighbours` is an ordinal window rather than a tree walk, and would pull in the section before.
+  // A bodyless `§N` is an addressable heading whose rule lives in its `§Na` children, so reading one
+  // has to answer with them; `neighbours` is an ordinal window and would pull in the section before.
   if (own.body === "") {
     const children = childrenOf(db, id, own);
     if (children.length > 0) return [own, ...children].map(toSection);
@@ -93,21 +90,12 @@ export function readSection(db: Database, id: string, neighbours = 0): Section[]
   return rows.map(toSection);
 }
 
-/** Every section of one document, by path — the answer to "this file is 62 KB and I need one
- *  section". A path may name a document in more than one corpus; each is returned whole,
- *  one after another, never interleaved. @public */
+/** Every section of one document, by path, each corpus's copy returned whole and never interleaved. @public */
 export function outline(db: Database, path: string): OutlineEntry[] {
   return db
     .query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`)
     .all(path)
-    .map((row) => ({
-      id: row.id,
-      section: row.section,
-      title: row.title,
-      gloss: row.gloss,
-      // A `§Na` refines a `§N`, and the indent is what tells a reader which is which.
-      level: /^\d+$/.test(row.section) ? 1 : 2,
-    }));
+    .map((row) => ({ id: row.id, section: row.section, title: row.title, gloss: row.gloss, level: /^\d+$/.test(row.section) ? 1 : 2 }));
 }
 
 /** Every section of one document, whole. @public */

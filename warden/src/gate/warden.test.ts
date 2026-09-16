@@ -68,9 +68,8 @@ describe("checkWarden()", () => {
     expect(run(repo("warden-gate-counts-", { catalogue: CATALOGUE })).summary).toContain("3 documents (2 canon, 1 project)");
   });
 
-  // A gate may only fail a repository for a file that repository can edit. A dependency document
-  // lives under `node_modules`, is named by a path that does not exist in the consumer's tree, and
-  // is read-only in every practical sense — so a finding against one is a build nobody can fix.
+  // A gate may only fail a repository for a file that repository can edit, and a dependency
+  // document under `node_modules` is named by a path that does not exist in the consumer's tree.
   it("indexes the installed library without holding it to this repository's own checks", () => {
     const library = repo("warden-gate-library-");
     writeFileSync(
@@ -237,5 +236,21 @@ describe("checkWarden() — the filename rule", () => {
     const result = checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon") });
 
     expect(result.findings.filter((finding) => finding.message.includes("is already the name of"))).toEqual([]);
+  });
+});
+
+describe("checkWarden() — citations into a tree this repository does not index", () => {
+  const citing = (body: string) =>
+    `---\ntitle: Rules\ndescription: "Six rules."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\n${body}\n`;
+  const unresolved = (root: string) => run(root).findings.filter((finding) => finding.message.includes("resolved to no indexed document"));
+
+  it("stays silent on a citation that carries the tree it means, which resolves on disk", () => {
+    const docA = citing("The platform rule — [`WORKERS_PLATFORM.md`][wp] §1 — owns it.\n\n[wp]: ../warden/canon/apps/WORKERS_PLATFORM.md#1-one");
+
+    expect(unresolved(repo("warden-gate-crosstree-", { docA }))).toEqual([]);
+  });
+
+  it("still warns on a bare name that exists in no tree at all", () => {
+    expect(unresolved(repo("warden-gate-typo-", { docA: citing("The platform rule — `NOWHERE.md` §1 — owns it.") }))).toHaveLength(1);
   });
 });

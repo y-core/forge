@@ -21,8 +21,7 @@ function place(el: HTMLElement, win: Window, x: number, y: number, margin: numbe
   el.style.setProperty(ANCHOR_Y_PROPERTY, `${axis(y, rect.height, win.innerHeight, margin, flip)}px`);
 }
 
-/** The pending deferred show per element, so a second call cancels the first rather than arming a
- * second listener on the same document. */
+/** The pending deferred show per element, so a second call cancels the first. */
 const pendingArms = new WeakMap<HTMLElement, () => void>();
 
 /** Shows a native popover with its top-left corner at viewport coordinates `x`, `y`, clamped to keep the panel on screen, and returns a disposer. @public */
@@ -56,9 +55,8 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
     return () => {};
   }
 
-  // The platform's light-dismiss pass runs on the `pointerup` that ends the opening right-click and
-  // would hide the menu one event after it appeared; a capture listener on the document shows it
-  // after that pass, within the same event so no frame is missed.
+  // The platform's light-dismiss pass runs on the `pointerup` that ends the opening right-click, so
+  // a capture listener on the document shows the panel after that pass, within the same event.
   const doc = ownerDocument(el);
   doc.addEventListener("pointerup", show, { once: true, capture: true });
 

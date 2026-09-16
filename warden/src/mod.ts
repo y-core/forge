@@ -16,6 +16,7 @@ export {
   DEPENDENCY_WEIGHT,
   dependencyRootOf,
   dependencyWeightOf,
+  libraryDocsDir,
   libraryRoot,
   librarySources,
 } from "./corpus/dependency";
@@ -23,7 +24,7 @@ export { canonSources, discover, localSources, repoRelative, weightOf } from "./
 export type { DuplicateCheckConfig, DuplicatePair } from "./gate/duplicates";
 export { checkDuplicates, duplicatePairs } from "./gate/duplicates";
 export type { ProbeOptions } from "./cli/probe";
-export { createProbeCommand, probe } from "./cli/probe";
+export { createProbeCommand, probe, probeSetsOf } from "./cli/probe";
 export type { ChangedFile } from "./impact/git";
 export { changed, parseDiff } from "./impact/git";
 export type { Impact, Touched } from "./impact/impact";
@@ -33,16 +34,15 @@ export type { GoldenCheckConfig } from "./gate/queries";
 export { checkGoldenQueries } from "./gate/queries";
 export type { Dimension, GoldenQuery } from "./gate/golden";
 export { GOLDEN, NEGATIVE } from "./gate/golden";
+export type { GoldenStep } from "./gate/step-sets";
+export { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf } from "./gate/step-sets";
 export type { WardenCheckConfig } from "./gate/warden";
 export { checkWarden } from "./gate/warden";
 export { readMeta, stampVersions, versionsMatch, writeMeta } from "./index/db";
 export { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE } from "./index/schema";
-// The knowledge surface is re-exported through its own barrel rather than restated module by
-// module, so `search/mod.ts` stays the one place that decides what it is. A star re-export would
-// say it in one line and is banned, so the names are listed — but they are listed once.
 export type { AliasTable, BuildReport, Freshness, Knowledge, OpenOptions } from "./search/mod";
 export { advisory, aliasesFor, build, freshness, gateIndexPath, indexPath, load, openDatabase, openIndex, rebuild } from "./search/mod";
-export { CANON_ROOT, CLAUDE_ROOT, packageNameOf, resolveRepoRoot, walkUpToRepo, WARDEN_ROOT } from "./paths";
+export { CANON_ROOT, CLAUDE_ROOT, libraryPrefix, packageNameOf, resolveRepoRoot, walkUpToRepo, WARDEN_ROOT } from "./paths";
 export { check, checkAgents, checkBoundary, checkTree } from "./sync/check";
 export { type KindSource, readKind, resolveKind, resolveKindSource } from "./sync/kind";
 export { seed, seedFiles } from "./sync/seed";

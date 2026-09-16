@@ -190,9 +190,7 @@ describe("buildAll() — emitHeaders", () => {
 
 describe("buildAll() — rasters", () => {
   it("writes a configured raster under publicDir and still emits the immutable header on a hashed build", async () => {
-    // Stubbed rather than rasterized for real: `sharp` is an optional peer, so a test that loads it
-    // passes or fails on whether the platform happens to have it. What belongs here is that the
-    // pipeline reaches the rasterizer with the configured width and still writes `_headers`.
+    // `sharp` is an optional peer, so a test that loads it for real passes or fails on the platform.
     const resizes: Record<string, number>[] = [];
     await mock.module("sharp", () => ({
       default: () => ({

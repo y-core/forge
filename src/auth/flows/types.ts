@@ -70,10 +70,8 @@ export interface AuthSignin {
   readonly resolution: AuthFactorResolution;
 }
 
-// The decoy exists to make the unknown-address branch cost what the known one costs, so it has to
-// spend the statements the known one spends — which are the emailed-code factor's stores, whatever
-// this deployment's primary factor turns out to be. That coupling is the price of the branches
-// being indistinguishable; a decoy holding no store is a latency oracle.
+// A decoy holding no store is a latency oracle: the unknown-address branch has to spend the
+// statements the known one spends, which are the emailed-code factor's stores.
 /** The stores an unknown address is answered with, so that branch spends what a known one spends. @public */
 export interface AuthDecoyStores {
   keys: AuthKeyRing;

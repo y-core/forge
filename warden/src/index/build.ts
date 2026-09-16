@@ -14,8 +14,7 @@ export interface BuildReport {
   chunks: number;
   relations: number;
   unresolved: number;
-  /** Citations naming more than one indexed document, each with the ids it named. Reported rather
-   *  than stored: a `to_id` of null says the edge did not resolve and cannot say why. */
+  /** Citations naming more than one indexed document, each with the ids it named. */
   ambiguous: readonly { from: string; raw: string; ids: readonly string[] }[];
 }
 
@@ -35,10 +34,7 @@ function destinations(source: string): Map<string, string> {
   return new Map([...linkDefinitions(stripFences(source))].map(([id, definition]) => [id, definition.destination]));
 }
 
-/** Reads and parses every document, resolving relations against the whole set.
- *
- *  `packageName` is what lets a section's prose emit a `governs` edge; absent it, none is produced.
- *  Honestly optional, so a caller with no package to name is not obliged to invent one. @public */
+/** Reads and parses every document, resolving relations against the whole set. @public */
 export function load(sources: readonly SourceDoc[], packageName?: string): Loaded[] {
   return sources.map((doc) => {
     const source = readFileSync(doc.file, "utf-8");
@@ -58,16 +54,14 @@ export function load(sources: readonly SourceDoc[], packageName?: string): Loade
   });
 }
 
-/** Replaces the whole index from `sources`, in one transaction so a failed build leaves the
- *  previous one intact rather than a half-written database. @public */
+/** Replaces the whole index from `sources`, in one transaction. @public */
 export function build(db: Database, sources: readonly SourceDoc[], canonVersion: string, packageName?: string): BuildReport {
   const loaded = load(sources, packageName);
 
   const write = db.transaction(() => {
     db.run("DELETE FROM relation");
-    // An external-content FTS table is emptied through its own command table. A plain
-    // `DELETE FROM chunk_fts` is accepted and does nothing useful: the index keeps its old terms
-    // while `count(*)` reads the content table, so it looks populated and matches nothing.
+    // An external-content FTS table is emptied through its own command table: a plain
+    // `DELETE FROM chunk_fts` is accepted and leaves the index carrying its old terms.
     db.run("INSERT INTO chunk_fts (chunk_fts) VALUES ('delete-all')");
     db.run("DELETE FROM chunk");
     db.run("DELETE FROM source");
@@ -110,10 +104,8 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
           chunk.line,
           chunk.endLine,
         ) as { rowid: number } | null;
-        // The FTS row is written from the chunk in hand rather than selected back out of `chunk`,
-        // which is what lets the content table drop `search_body` entirely. An organising heading is
-        // skipped here and only here: it stays addressable and outlined, but never competes for a
-        // rank it has no prose to earn.
+        // Written from the chunk in hand rather than selected back out of `chunk`, which is what
+        // lets the content table drop `search_body` entirely.
         if (chunk.searchable) {
           insertSearch.run(inserted?.rowid ?? 0, chunk.title, chunk.headingPath, chunk.gloss, chunk.rules, chunk.searchBody);
         }

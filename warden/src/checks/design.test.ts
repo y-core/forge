@@ -23,9 +23,8 @@ function root(config: string): string {
   mkdirSync(join(dir, "src"), { recursive: true });
   // The corpus may not be empty, or the check refuses before it ever reads the config.
   writeFileSync(join(dir, "design", "floor.md"), "# Floor\n\nOne rule, stated in prose.\n", "utf-8");
-  // Nor may the source walk: the corpus registers rules and these are what they are enforced
-  // against, so the check refuses an empty `src` for the same reason — and would then report no
-  // config finding at all, making all three cases below pass without reading a config.
+  // Nor may the source walk: the check refuses an empty `src` too, and would then report no config
+  // finding at all, making every case below pass without reading a config.
   writeFileSync(join(dir, "src", "ok.tsx"), "export const Ok = () => null;\n", "utf-8");
   writeFileSync(join(dir, ".oxlintrc.json"), config, "utf-8");
   return dir;

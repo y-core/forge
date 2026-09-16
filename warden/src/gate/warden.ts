@@ -21,9 +21,7 @@ export interface WardenCheckConfig extends DependencyOptions {
   root: string;
   /** The canon tree this repository is subject to. */
   kind: Tree;
-  /** The committed catalogue, relative to `root`. Unset in every repository but the canon's home:
-   *  the rendered catalogue is canon-scoped and so byte-identical everywhere, which makes it the
-   *  canon owner's to commit; elsewhere the live `knowledge://catalogue` resource is the copy. */
+  /** The committed catalogue, relative to `root`. Unset in every repository but the canon's home. */
   catalogue?: string;
   /** Directory of this repository's own governing documents. Defaults to `docs`. */
   docsDir?: string;
@@ -31,17 +29,11 @@ export interface WardenCheckConfig extends DependencyOptions {
   canonRoot?: string;
   /** Where the gate builds its index. Defaults to `.forge/warden/gate.sqlite`. */
   indexPath?: string;
-  /** Whether this repository authors the canon. Set, the filename check also reads the canon tree
-   *  this repository is not subject to — otherwise a `canon/apps` name colliding with a library's
-   *  `docs/` one is invisible everywhere: in an app neither side is a `project` document, and the
-   *  library never co-indexes the two. Defaults to `false`. */
+  /** Whether this repository authors the canon. Defaults to `false`. */
   canonHome?: boolean;
 }
 
-/** Rebuilds the index from disk and asserts what retrieval depends on.
- *
- *  It builds into its own database rather than the developer's working one, so an index built from
- *  an edit in progress can never change a verdict. @public */
+/** Rebuilds the index from disk and asserts what retrieval depends on. @public */
 export function checkWarden(config: WardenCheckConfig): CheckResult {
   const { root, kind } = config;
   const dependencyRoot = dependencyRootOf(config, root);
@@ -92,12 +84,7 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
   }
 }
 
-/** The document count per corpus, in the fixed order, omitting a corpus this repository has none of.
- *
- *  **The only cheap defence against a silently empty corpus.** A misconfigured dependency root
- *  discovers nothing, and nothing is indistinguishable from a feature switched off: every check
- *  still passes, every query still answers, and the documents the corpus was added to reach are
- *  simply absent. A total alone cannot say that; a per-corpus count can. */
+/** The document count per corpus, in the fixed order, omitting a corpus this repository has none of. */
 function perCorpus(db: Database): string {
   const rows = db.query<{ corpus: string; n: number }>("SELECT corpus, count(*) AS n FROM source GROUP BY corpus").all();
   const counted = new Map(rows.map((row) => [row.corpus, row.n]));
@@ -106,8 +93,7 @@ function perCorpus(db: Database): string {
     .join(", ");
 }
 
-/** The first chunk id two sections claim, when a failed build has one to name. Re-reads the corpus
- *  rather than the half-written database, which the failure has already rolled back. */
+/** The first chunk id two sections claim, when a failed build has one to name. */
 function duplicateChunkId(sources: readonly SourceDoc[]): { id: string; file: string } | undefined {
   try {
     const seen = new Set<string>();
@@ -123,13 +109,7 @@ function duplicateChunkId(sources: readonly SourceDoc[]): { id: string; file: st
   return undefined;
 }
 
-/** The corpora a repository owns the files of, and may therefore be failed over.
- *
- *  **A gate may only fail a repository for a file that repository can edit.** A dependency document
- *  lives inside `node_modules`, is read-only in every practical sense, and is named by a path that
- *  does not exist in the consumer's tree — so a finding against one is a build the reader cannot
- *  fix and a location they cannot open. Every check below is scoped by corpus rather than by how a
- *  path happens to be spelled, so a change to that spelling cannot quietly widen them. */
+/** The corpora a repository owns the files of, and may therefore be failed over. */
 const OWNED: readonly Corpus[] = ["canon", "project"];
 
 /** A document that produced no chunk is a document nothing can retrieve. */
@@ -143,15 +123,7 @@ function emptyDocuments(db: Database): Finding[] {
     .map((row) => fail("produced no chunk — nothing in this document is retrievable", { file: row.path }));
 }
 
-/** Stricter than the docs check's warning, and earned: a section with no Quick Reference line has
- *  lost the corpus's own one-line summary, which is the highest-weighted retrieval column there is.
- *
- *  Governing documents only. A README numbers its headings too, but the Quick Reference convention
- *  is a rule about governing documents, and holding a README to it would be inventing one.
- *
- *  The `docsDir` prefix now narrows `project` alone. Spelled as a path test over every corpus, it
- *  would fail a consumer's gate over a document in the installed library — citing a path that does
- *  not exist in their tree, for prose they cannot edit. */
+/** Every governing section must carry a Quick Reference line, the highest-weighted retrieval column there is. */
 function missingGloss(db: Database, docsDir: string): Finding[] {
   return db
     .query<{ id: string; path: string }>(
@@ -165,19 +137,13 @@ function missingGloss(db: Database, docsDir: string): Finding[] {
     );
 }
 
-/** A citation into a canon tree this repository is not subject to — `apps/` in a library. The link
- *  is correct and resolves on disk; the tree is excluded from the index on purpose (`canonSources`),
- *  so nothing is wrong and nothing is for the reader to fix. */
+/** A citation into a canon tree this repository is not subject to — `apps/` in a library. */
 function outOfIndex(raw: string, canonRoot: string): boolean {
   const cited = raw.split(" §")[0] ?? "";
   return cited.includes("/") && existsSync(resolve(canonRoot, cited));
 }
 
-/** A citation whose target resolved to nothing. A warning, not a failure: the docs check already
- *  fails an unresolvable `§N`, and this sees citations that check does not scan.
- *
- *  A citation into a non-indexed canon tree is not one of these. Counting the two together said a
- *  correct link was broken, and the only fix it left was to delete the link. */
+/** A citation whose target resolved to nothing, warned rather than failed. */
 function unresolvedRelations(db: Database, canonRoot: string): Finding[] {
   const rows = unresolved(db, OWNED).filter((row) => !outOfIndex(row.raw, canonRoot));
   if (rows.length === 0) return [];
@@ -190,12 +156,7 @@ function unresolvedRelations(db: Database, canonRoot: string): Finding[] {
   ];
 }
 
-/** A citation that named more than one indexed document.
- *
- *  Distinguished from an unresolved one because the two are different defects and the fix differs:
- *  one is a typo or a renamed document, the other is a citation that needs a path. Both used to
- *  arrive as a null target, counted together and reported as naming nothing. The wording mirrors
- *  `validate-docs`, which fails the same shape where it can see it. */
+/** A citation that named more than one indexed document. */
 function ambiguousCitations(report: BuildReport): Finding[] {
   return report.ambiguous
     .filter((entry) => OWNED.some((corpus) => entry.from.startsWith(`${corpus}:`)))
@@ -206,17 +167,13 @@ function ambiguousCitations(report: BuildReport): Finding[] {
     );
 }
 
-/** The documents the filename rule is about: the ones a citation addresses **by name**, so two of
- *  them sharing one makes `TESTING.md §2a` two different rules. A canon document is named alone, a
- *  governing document one directory deep is named by its file — and a README is not name-addressed
- *  at all, since every namespace has one and a citation always carries its path. */
+/** The documents the filename rule is about: the ones a citation addresses by name. */
 function nameAddressed(doc: SourceDoc): boolean {
   const segments = doc.path.split("/");
   return segments.length <= 2 && segments.at(-1) !== "README.md";
 }
 
-/** The set the filename rule is computed over: everything this index covers, plus — in the canon's
- *  home — the canon tree this repository is not subject to. */
+/** The set the filename rule is computed over, plus — in the canon's home — the tree this repository is not subject to. */
 function collisionSources(config: WardenCheckConfig, sources: readonly SourceDoc[]): readonly SourceDoc[] {
   if (config.canonHome !== true) return sources;
   const other: Tree = config.kind === "apps" ? "libs" : "apps";
@@ -224,37 +181,22 @@ function collisionSources(config: WardenCheckConfig, sources: readonly SourceDoc
   return [...sources, ...canonSources(other, config.canonRoot ?? CANON_ROOT).filter((doc) => doc.tree === other)];
 }
 
-/** How a colliding document is named in the finding that cites it, since a canon path is
- *  tree-stripped and two trees would otherwise read as the same file. */
+/** How a colliding document is named in the finding that cites it. */
 function cite(doc: SourceDoc): string {
   return doc.corpus === "canon" ? `canon/${doc.tree ?? ""}/${doc.path}` : `${doc.corpus}:${doc.path}`;
 }
 
-/** `canon/libs/X.md` and `canon/apps/X.md` may share a name: a repository takes one kind or the
- *  other, so the two are never in one index and no citation can mean both. */
+/** `canon/libs/X.md` and `canon/apps/X.md` may share a name: the two are never in one index. */
 function exemptPair(left: SourceDoc, right: SourceDoc): boolean {
   return left.corpus === "canon" && right.corpus === "canon" && left.tree !== right.tree && left.tree !== "shared" && right.tree !== "shared";
 }
 
-/** Which side of a collision yields. **The specialising side renames, never the canon**: the canon's
- *  name is what every other repository already cites, and an installed library's is what its own
- *  readers cite. A repository's own document is the one free to move, so it is last. */
+/** Which side of a collision yields — the specialising side renames, never the canon. */
 function precedence(corpus: Corpus): number {
   return corpus === "canon" ? 0 : corpus === "dependency" ? 1 : 2;
 }
 
-/** Two name-addressed documents in one index sharing a filename.
- *
- *  **Uniqueness is per index, not global.** The same name in two repositories that never see each
- *  other's documents costs nothing; the same name twice in one index makes every citation of it
- *  ambiguous, and no chunk id can disambiguate what a reader is holding in their head.
- *
- *  **The specialising side renames, never the canon** — the canon's name is the one every other
- *  repository already cites. And where the specialising document only restates what the canon says,
- *  the answer is to delete it rather than to rename it.
- *
- *  Scoped by `OWNED`, like every check here: a finding names a document this repository can edit and
- *  cites the one it collides with as context. */
+/** Two name-addressed documents in one index sharing a filename. */
 function filenameCollisions(root: string, sources: readonly SourceDoc[]): Finding[] {
   const groups = new Map<string, SourceDoc[]>();
   for (const doc of sources.filter(nameAddressed)) {
@@ -279,8 +221,7 @@ function filenameCollisions(root: string, sources: readonly SourceDoc[]): Findin
   return findings;
 }
 
-/** The committed catalogue against the one the corpus produces now. Compared through `canonical`,
- *  so a formatter's own whitespace can never fail the gate. */
+/** The committed catalogue against the one the corpus produces now. */
 function catalogueDrift(root: string, cataloguePath: string, canonRoot: string): Finding[] {
   const rendered = renderCanon(canonRoot);
   const file = resolve(root, cataloguePath);

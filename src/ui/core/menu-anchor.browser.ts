@@ -290,9 +290,8 @@ test.describe("Menu — a submenu mid-exit", () => {
   });
 });
 
-// One button carrying both slot tokens once needed three spelled-out `anchor-name` pairs. It now
-// needs none: the menu takes the implicit anchor its own invocation supplies and the tooltip takes
-// `--forge-tooltip`, and the two cannot collide because only one of them is a name.
+// The menu takes the implicit anchor its own invocation supplies and the tooltip takes
+// `--forge-tooltip`, so the two cannot collide: only one of them is a name.
 test.describe("Menu — a composed trigger serves both of its compounds", () => {
   test("a tooltip wrapping a menu trigger anchors each popup to the shared button", async ({ page }) => {
     const trigger = Tooltip.Trigger({ id: "file", for: "file-tip", asChild: true, children: Menu.Trigger({ for: "file-menu", children: "File" }) });
@@ -436,9 +435,8 @@ test.describe("Menu — the key that opens a submenu and the edge it opens on ag
   }
 });
 
-/* Resets exactly the declarations §1d deletes, so these cases measure the *implicit* anchor while the
-   named block is still in the stylesheet — and go on measuring it, unchanged, once the block is gone.
-   `position-anchor: auto` is the initial value, and it is what resolves to the invoker's anchor. */
+// Resets the named-anchor declarations so these cases measure the implicit anchor instead:
+// `position-anchor: auto` is the initial value, and it resolves to the invoker's anchor.
 const NO_NAMES = `<style>
   [data-slot~="menu"], [data-slot~="popover"] { anchor-scope: none; }
   [data-slot~="menu-trigger"], [data-slot~="popover-trigger"], [data-slot~="menu-popup"] { anchor-name: none; }
@@ -446,9 +444,8 @@ const NO_NAMES = `<style>
 </style>`;
 
 test.describe("the implicit anchor an invoker supplies", () => {
-  // `UI_CLIENT_RUNTIME.md` claimed, "measured on Chrome 151", that command/commandfor sets no
-  // implicit anchor. On the Chromium this repository actually runs it sets one identical to
-  // `popovertarget`'s, which is what authorises deleting both the binding controller and the names.
+  // On the Chromium this repository runs, `command`/`commandfor` sets an implicit anchor identical
+  // to `popovertarget`'s — which is what lets the stylesheet carry no `anchor-name` at all.
   test("a popover opened by commandfor lands under its trigger with no anchor-name in the sheet", async ({ page }) => {
     const html = await render(
       Popover({

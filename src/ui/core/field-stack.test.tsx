@@ -2,41 +2,50 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Field } from "./field-stack";
+import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("Field (layout)", () => {
-  it("renders a label caption bound to its control children", async () => {
+  it("renders the whole stack exactly, its caption escaped and the control kept after it", async () => {
     expect(
       await render(
-        <Field label='Field of view'>
+        <Field label={`R&D's`}>
           <input data-ref='control' />
         </Field>,
       ),
     ).toBe(
-      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">Field of view</span><input data-ref="control"></div>',
+      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1">' +
+        '<span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">R&amp;D&#39;s</span>' +
+        '<input data-ref="control"></div>',
     );
   });
 
-  it("defaults to vertical orientation", async () => {
-    expect(await render(<Field label='X' />)).toBe(
-      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
-    );
+  it("stands its caption above the control unless told otherwise, and says which on the attribute", async () => {
+    expect(attrsOf(await render(<Field label='X' />))).toEqual({ "data-slot": "field-stack", "data-orientation": "vertical" });
   });
 
-  it("supports horizontal orientation", async () => {
-    expect(await render(<Field label='X' orientation='horizontal' />)).toBe(
-      '<div data-slot="field-stack" data-orientation="horizontal" class="flex items-center gap-2"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
-    );
+  it("names the horizontal orientation it was given, so a stylesheet keys on it rather than on a class", async () => {
+    expect(attrsOf(await render(<Field label='X' orientation='horizontal' />))).toEqual({
+      "data-slot": "field-stack",
+      "data-orientation": "horizontal",
+    });
   });
 
-  it("merges a custom class onto the wrapper", async () => {
-    expect(await render(<Field label='X' class='extra-class' />)).toBe(
-      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1 extra-class"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
-    );
+  it("lays the caption alongside the control when horizontal rather than keeping both layouts", async () => {
+    expect(variantClasses(await render(<Field label='X' orientation='horizontal' />), await render(<Field label='X' />))).toEqual({
+      added: ["items-center", "gap-2"],
+      dropped: ["flex-col", "gap-1"],
+    });
   });
 
-  it("spreads arbitrary attributes onto the wrapper", async () => {
-    expect(await render(<Field label='X' data-ref='fov-field' />)).toBe(
-      '<div data-slot="field-stack" data-orientation="vertical" class="flex flex-col gap-1" data-ref="fov-field"><span data-slot="field-stack-label" class="text-xs font-medium text-muted-foreground">X</span></div>',
-    );
+  it("appends a caller class after its own, so the caller's wins a conflict", async () => {
+    expect(classesOf(await render(<Field label='X' class='extra-class' />)).at(-1)).toBe("extra-class");
+  });
+
+  it("spreads an attribute it does not know onto the wrapper, so a caller can hook the stack itself", async () => {
+    expect(attrsOf(await render(<Field label='X' data-ref='fov-field' />))).toEqual({
+      "data-slot": "field-stack",
+      "data-orientation": "vertical",
+      "data-ref": "fov-field",
+    });
   });
 });

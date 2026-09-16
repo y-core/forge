@@ -41,7 +41,9 @@ You author tests. You do not run the gate — see _Running Tests_.
    `knowledge_outline` on the testing doc lists its sections without reading the whole file. An empty result is an answer: nothing governs it, so
    follow the neighbouring tests. Where no warden MCP is configured, read `TESTING.md` from its `## 0. Quick Reference`.
 2. Read the route map and the controller binding, so you know which guards the route under test actually carries and in what order.
-3. Read the implementation files in full before writing any test. Understand every branch, including the ones the plan did not mention.
+3. Read the implementation files in full before writing any test. Understand every branch, including the ones the plan did not mention. **Reading
+   the implementation tells you what to cover; it never tells you what to expect.** Derive every expected value from the spec, the domain rule, an
+   external table, or the observable outcome — never by copying a literal out of the source under test (`apps/TESTING.md` §3e).
 4. Check for existing fixtures before hand-rolling one — the shared library ships storage fakes, a render helper, and a request builder, and this
    repository ships its minimum environment fixture.
 
@@ -53,7 +55,9 @@ You author tests. You do not run the gate — see _Running Tests_.
 4. **Drive the composition root** through its request entry for anything chain-dependent; test pure functions directly (`apps/TESTING.md` §1c).
 5. **Write one case per rejection path** — never one case that omits everything at once (`apps/TESTING.md` §5b).
 6. **Apply the deletion check** — for each test, ask whether it would still pass with the mechanism it names removed. If yes, it is not a test yet.
-7. **Smoke-run the one file you wrote**, then hand the full gate to `cc-tester`.
+7. **Apply the copied-literal check** — for each test, ask whether the same rename applied to it and to its source together would turn anything red
+   (`apps/TESTING.md` §3e). If no, it pins agreement between two files rather than behaviour.
+8. **Smoke-run the one file you wrote**, then hand the full gate to `cc-tester`.
 
 ## The Comment Budget — Binding
 

@@ -206,10 +206,8 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
     return { reads: world.users.reads, verified: world.primary.verified.length, outcome };
   }
 
-  // The falsifiable criterion for this fix. `request` has had a decoy since the first unit and
-  // `complete` had none, so the branch with no account returned after a single lookup while the
-  // branch with one went on to open a sealed token — a latency answer to the question the
-  // response refuses to answer. Deleting `verifyAuthDecoy` turns this red.
+  // Deleting `verifyAuthDecoy` turns this red: without it the branch with no account returns after
+  // one lookup while the branch with one opens a sealed token, which is a latency oracle.
   it("performs the same reads on the unknown, deactivated and known branches", async () => {
     const unknown = await work(scene([]), "nobody@example.com");
     const deactivated = await work(scene([DEACTIVATED]), EMAIL);
@@ -237,9 +235,6 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
     expect(redactSigninReason("deactivated")).toBe(redactSigninReason("unrecognised"));
   });
 
-  // The defect this closes: a throttled known address answered `too-many-attempts` where an unknown
-  // one answered `unrecognised`, and `redactSigninReason` renders those as two different notices —
-  // so the difference reached the rendered page and named the address as one this deployment knows.
   it("answers a throttled known address exactly as it answers an unknown one", async () => {
     const throttled = await flow(scene(), "none", [], err("too-many-attempts" as const)).complete(EMAIL, "000000", AT);
     const tooSoon = await flow(scene(), "none", [], err("too-soon" as const)).complete(EMAIL, "000000", AT);
@@ -440,8 +435,6 @@ describe("redactSigninReason", () => {
 });
 
 describe("createSigninFlow — the challenge lifetime it reports", () => {
-  // The defect this closes: the flow carried a `challengeTtlMs` of its own, so a deployment could
-  // configure the factor's real lifetime and the number the page shows to different values.
   it("reports the lifetime the primary factor enforces, and has no lifetime of its own to disagree with it", () => {
     const world = scene();
     const registry = flow(world).request("person@example.com", AT);

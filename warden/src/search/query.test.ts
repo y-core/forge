@@ -36,9 +36,8 @@ describe("matchExpression()", () => {
   });
 
   it("stays a valid FTS5 expression whatever punctuation or operator the reader types", () => {
-    // A query is data here, never an expression the reader gets to write: the term pattern admits
-    // no quote, parenthesis or star, and every term is quoted on top of that. `NEAR` survives as a
-    // quoted literal term rather than as the operator.
+    // A query is data, never an expression the reader gets to write: the term pattern admits no
+    // quote, parenthesis or star, and `NEAR` survives as a quoted literal rather than the operator.
     const db = new Database(":memory:");
     db.run("CREATE VIRTUAL TABLE t USING fts5(a)");
     db.run("INSERT INTO t VALUES ('nothing in particular')");

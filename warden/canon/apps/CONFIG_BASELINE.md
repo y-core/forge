@@ -79,6 +79,23 @@ Everything above `overrides` is shared. A repository does not curate this list �
 `eslint/no-restricted-imports` patterns that hold the facade and keep a build-time subpath out of `src/`, and the handful of upstream rules this
 fleet turns off.
 
+**Three entries in it are got wrong by copying the shape and not the options**, so they are written out here:
+
+```json
+{
+  "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
+  "eslint/no-irregular-whitespace": ["error", { "skipComments": true }],
+  "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "ignoreRestSiblings": true }]
+}
+```
+
+A bare `"error"` in place of any of the three is not a stricter setting; it is a rule that fires on code the fleet writes on purpose, which is how a
+rule comes to be turned off.
+
+**Both restricted-import bans are `patterns` groups, and the build-time group names three spellings** — the library's `tooling` prefix bare, then
+its `/*` children, then its `/**` descendants. A group matching only the children leaves the bare prefix open the day the library publishes it as a
+barrel, and the ban is the only thing standing between a Worker bundle and a module that needs node's globals.
+
 **The type-aware block is part of the base, not an option.** These rules only run under `oxlint --type-aware`, which §3 makes a gate row:
 
 ```json
@@ -104,9 +121,19 @@ turns off.
 **Every difference between two repositories' linter configuration lives in `overrides`, and every override states why it exists in a comment above
 it.** An unexplained override is indistinguishable from a rule someone could not make pass.
 
-**The spec override is shared.** Under `**/*.test.*` the design and accessibility rules are off — a test's job is to feed the adversarial markup
-a rule exists to catch, so holding a fixture to the rule inverts it — and `forge/exact-markup-assertion` is on, which is the only file class it
-applies to. `typescript/no-non-null-assertion` is off there too.
+**The spec override is shared, and "shared" means the same list.** Under `["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts"]` every
+`forge/a11y-*`, `forge/platform-*` and design rule is off — a test's job is to feed the adversarial markup a rule exists to catch, so holding a
+fixture to the rule inverts it — and `forge/exact-markup-assertion` is on, which is the only file class it applies to.
+`typescript/no-non-null-assertion` is off there
+too, with the three `jsx-a11y` rules a fixture's deliberately malformed markup trips: `aria-proptypes`, `control-has-associated-label` and
+`tabindex-no-positive`.
+
+A repository that turns off four of them and leaves the rest on has not written a narrower override; it has an untested half of the block, and the
+first spec that needs one of the other rules off gets a per-site suppression instead.
+
+**The second shared override is the build-time one**, scoped to `["config/**", "scripts/**", "playwright.config.ts"]` — the trees that sit outside
+`tsconfig.json`'s `include` precisely so they may import a build-time subpath. It restates the valibot ban and drops the tooling one, so the facade
+still holds where the boundary does not apply.
 
 **A repository-specific override is legitimate when it is narrow and the narrowing is the argument.** A block scoped to the one view directory that
 owns a page's live region, or to the one generated module a vendor ships, is the shape to aim for. A block scoped to `src/**` is not an override; it
@@ -118,6 +145,11 @@ is a disagreement with the base, and it belongs in the base or nowhere.
 
 **`cloudflareWorkerSteps()` is the table.** A repository's `config/steps.ts` spreads the preset and appends only rows that are genuinely its own —
 a check over its own data, a build its own pipeline needs.
+
+**`wardenAppSteps()` is the second half of the table, and appending it is not an exception.** The four rows it emits — `validate-docs`,
+`warden:index`, `warden:queries`, `warden:duplicates` — cannot come from the first preset, which lives under the library's `src/` where nothing may
+import warden. It is spread, not hand-assembled: a repository writing the four builder calls out again has four places for the `dependency` flag and
+the tier to drift.
 
 **The preset emits `lint:types` at the `standard` tier**, immediately after `format`. An application never hand-appends `typeAwareLintStep`: the
 selector refuses a duplicate label, so a local row is not an addition but a failure. A repository that was appending one deletes it when it takes
@@ -162,8 +194,11 @@ apart is what keeps a `lint` from being the command that quietly rewrote your tr
 
 - **`db:*`** — present when the application has a D1 binding: `db:backup`, `db:compose`, `db:lint`, `db:migrate`, `db:reset`, `db:restore`,
   `db:schema:check`, `db:status`.
-- **`cf:*`** — present when the application is deployed to a remote account. **`cf:status` is the dry run and `cf:sync` is the `--commit`.** A
-  repository whose dry-run script is named `sync` has named the safe command after the dangerous one.
+- **`cf:*`** — present when the application is deployed to a remote account, **and absent where it is not**. **`cf:status` is the dry run and
+  `cf:sync` is the `--commit`.** A repository whose dry-run script is named `sync` has named the safe command after the dangerous one. Where every
+  resource id in the worker config is a local placeholder, a provisioning verb creates real resources against a config that names none and then
+  writes the new ids back over the placeholders — so the absence is a control, not an omission, and a repository that records it in its own `docs/`
+  is stating a rule this section defers to.
 - **`release`** — present only where the repository publishes.
 
 ---

@@ -17,8 +17,7 @@ const NO_CURRENT = -1;
 
 const mountedComposites = new WeakMap<HTMLElement, () => void>();
 
-/** Both forms are checked: `disabled` removes an element from the tab order, while `aria-disabled`
- * keeps it focusable but inert — the right shape for a toolbar button that must stay discoverable. @internal */
+/** Whether an item is disabled by either `disabled` or `aria-disabled`. @internal */
 export function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLButtonElement).disabled === true || el.getAttribute("aria-disabled") === "true";
 }
@@ -70,8 +69,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     return items.findIndex((item) => contains(item, node));
   }
 
-  /** `-1` when every item in that direction is disabled — the guard that stops an all-disabled
-   * group from spinning the wrap-and-skip loop forever. */
+  /** The next enabled item's index in `stride`'s direction, or `-1` when every one of them is disabled. */
   function nextEnabled(items: HTMLElement[], from: number, stride: number): number {
     for (let i = from; i >= 0 && i < items.length; i += stride) {
       const item = items[i];
@@ -88,8 +86,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     return nextEnabled(items, items.length - 1, -1);
   }
 
-  /** Returns `current` when there is nowhere to go, so the caller can tell "did not move" apart
-   * from "moved". */
+  /** The index one step in `direction`, or `current` when there is nowhere to go. */
   function step(items: HTMLElement[], current: number, direction: 1 | -1): number {
     const candidate = nextEnabled(items, current + direction, direction);
     if (candidate !== -1) return candidate;
@@ -216,7 +213,6 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
 
   // Removing the focused item drops focus on `<body>`, stranding a keyboard user outside the widget;
   // this puts focus on whichever item took the removed one's place.
-  // Environmental, so the roving focus still works and only the restore-on-removal refinement is lost.
   const hasObserver = typeof win.MutationObserver === "function";
   if (!hasObserver) {
     console.warn("[composite] MutationObserver is unavailable in this realm; focus will not be restored when the focused item is removed");

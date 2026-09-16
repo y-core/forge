@@ -366,9 +366,8 @@ test.describe("bindControls — realm and shadow safety", () => {
 });
 
 test.describe("bindControls — controls whose value setter is not a plain string", () => {
-  // The `value` setter on a file input throws `InvalidStateError` for anything but `""`. `effect`
-  // rethrows on its first run, so the throw would abort the `.map()` that builds the disposers and
-  // every *sibling* control in the scope would silently never be bound at all.
+  // The `value` setter on a file input throws `InvalidStateError` for anything but `""`, and
+  // `effect` rethrows on its first run, which would leave every sibling control unbound.
   test("binds the siblings of a file input rather than aborting the whole scope", async ({ page }) => {
     await mount(
       page,

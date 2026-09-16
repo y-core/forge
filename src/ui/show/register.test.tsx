@@ -104,7 +104,11 @@ describe("registerShowcase", () => {
   });
 
   it("answers the verify endpoint without a secret by saying so, rather than claiming a verification", async () => {
-    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", { method: "POST", body: new FormData() });
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-origin" },
+      body: new FormData(),
+    });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("No secret key is configured");
   });
@@ -114,9 +118,39 @@ describe("registerShowcase", () => {
     app.setShell(appShell);
     const routes = showcaseRoutes("/showcase/ui");
     registerShowcase(app, routes.ui, { icon, turnstileSecret: () => "secret" });
-    const res = await app.request("/showcase/ui/api/turnstile-verify", { method: "POST", body: new FormData() });
+    const res = await app.request("/showcase/ui/api/turnstile-verify", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-origin" },
+      body: new FormData(),
+    });
     expect(res.status).toBe(422);
     expect(await res.text()).toContain("No token reached the server");
+  });
+
+  it("refuses the verify endpoint a cross-site POST before the handler runs", async () => {
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "cross-site" },
+      body: new FormData(),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("refuses the verify endpoint a POST carrying no fetch metadata at all", async () => {
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", { method: "POST", body: new FormData() });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("refuses the verify endpoint a body the form pipeline was never meant to parse", async () => {
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-origin", "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(415);
+    expect(await res.text()).toBe("Unsupported Media Type");
   });
 
   it("wires each of the seven API sub-routes", async () => {

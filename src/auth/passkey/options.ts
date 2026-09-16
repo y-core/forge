@@ -83,7 +83,9 @@ export async function createPasskeyRegistrationOptions(
     // The browser refuses a re-enrolment of an authenticator already registered here, so the
     // conflict surfaces in the ceremony rather than as a unique-constraint failure afterwards.
     excludeCredentials: descriptorsOf(existing.data),
-    authenticatorSelection: { residentKey: options.residentKey ?? "preferred", userVerification: options.userVerification ?? "preferred" },
+    // `required`, matching the verifier's own default: a ceremony that only prefers UV can produce a
+    // presence-only assertion the browser accepts and `verifyPasskeyRegistration` then refuses.
+    authenticatorSelection: { residentKey: options.residentKey ?? "preferred", userVerification: options.userVerification ?? "required" },
   });
 }
 
@@ -110,7 +112,7 @@ export async function createPasskeyRequestOptions(
     rpId: options.rpId,
     challenge,
     timeout: ttlSeconds * 1000,
-    userVerification: options.userVerification ?? "preferred",
+    userVerification: options.userVerification ?? "required",
     allowCredentials: descriptorsOf(allow.data),
   });
 }

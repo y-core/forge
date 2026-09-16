@@ -20,10 +20,9 @@ import { corpusLabel, search } from "../search/search";
 import { resolveKind } from "../sync/kind";
 import { CORPORA } from "../types";
 import { canonVersion } from "../version";
+import { KIND_FLAG, ROOT_FLAG } from "./flags";
 import { createProbeCommand } from "./probe";
 
-const ROOT_FLAG = { type: "string", description: "Repository root (default: derived from warden's install path)" } as const;
-const KIND_FLAG = { type: "string", description: "Select the canon tree (libs|apps), overriding package.json's `warden.kind`" } as const;
 const GATE_FLAG = { type: "boolean", description: "Use the gate's own index rather than the working one" } as const;
 const DEPENDENCY_FLAG = { type: "boolean", description: "Also serve the installed library's consumer-facing documents" } as const;
 
@@ -80,8 +79,7 @@ export function createKnowledgeCommands(parent: CommandBase): void {
       run: (args, flags) => {
         const { root, kind, path, dependency } = context(flags);
         // Validated before the index is opened: an unknown corpus reaches SQL as a literal no row
-        // carries, and "no section of this corpus covers that" is a real answer here — so a typo
-        // would be reported as the corpus having no rule rather than as a typo.
+        // carries, and an empty result here means "nothing governs this" rather than "typo".
         const corpus = flags.corpus === undefined ? undefined : parseCorpus(flags.corpus);
         if (flags.corpus !== undefined && corpus === undefined) {
           throw new CliError("invalid-args", `--corpus must be one of ${CORPORA.join(", ")}, not "${flags.corpus}"`);
@@ -153,9 +151,8 @@ export function createKnowledgeCommands(parent: CommandBase): void {
         try {
           const entries = outline(knowledge.db, args[0] ?? "");
           if (entries.length === 0) throw new CliError("invalid-args", `no document at "${args[0]}"`);
-          // One path can name a document in more than one corpus. The sections arrive grouped, so
-          // a header where the group changes is all it takes to say which is which — and a single
-          // match gets no header, because there is nothing to tell apart.
+          // One path can name a document in more than one corpus, and the sections arrive grouped,
+          // so a header at each group change is all it takes to say which is which.
           const documentOf = (id: string) => id.slice(0, id.indexOf("#") === -1 ? undefined : id.indexOf("#"));
           const labelled = new Set(entries.map((entry) => documentOf(entry.id))).size > 1;
           let current = "";
@@ -236,13 +233,11 @@ export function createCatalogueCommand(parent: CommandBase): void {
       description: "Print the canon catalogue, or write it to <root>/warden/CATALOGUE.md",
       flags: { root: ROOT_FLAG, kind: KIND_FLAG, write: { type: "boolean", description: "Write the file rather than printing it" } },
       run: (_args, flags) => {
-        // No `dependency`: the committed catalogue is the fleet canon's inventory, and this command
-        // is what writes it. Indexing an installed library here would cost a build and change nothing.
         const { root, kind, path } = context({ ...flags, gate: false });
         const knowledge = openIndex(root, kind, { path, canonVersion: canonVersion() });
         try {
-          // The committed file is the fleet's whole inventory and is read off disk; the printed one
-          // is this repository's index, which holds `shared` plus its own kind.
+          // The committed file is the fleet's whole inventory, read off disk; the printed one is
+          // this repository's index, which holds `shared` plus its own kind.
           const rendered = flags.write === true ? renderCanon() : renderCatalogue(knowledge.db);
           if (flags.write !== true) {
             process.stdout.write(rendered);
@@ -250,7 +245,7 @@ export function createCatalogueCommand(parent: CommandBase): void {
           }
           const file = resolve(root, "warden/CATALOGUE.md");
           // The repository being indexed, never the installed package: resolving against the
-          // library's own root wrote a consumer's catalogue into their `node_modules`.
+          // library's own root writes a consumer's catalogue into their `node_modules`.
           if (file.split(sep).includes("node_modules")) {
             throw new CliError("invalid-args", `refusing to write inside a dependency — ${file} is under node_modules`);
           }

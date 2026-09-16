@@ -80,7 +80,7 @@
   },
   "overrides": [
     {
-      // The type-placement rule (`docs/LIBRARY_ARCHITECTURE.md` §8), scoped to the published namespaces under `src/`.
+      // The type-placement rule (`docs/FORGE_STRUCTURE.md` §8), scoped to the published namespaces under `src/`.
       "files": ["src/**/*.ts", "src/**/*.tsx"],
       "rules": { "forge/type-import-external": "error", "forge/type-import-separation": "error" }
     },

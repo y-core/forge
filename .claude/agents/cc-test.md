@@ -40,7 +40,9 @@ You author tests. You do not run the gate — see _Running Tests_.
 1. Search the corpus for the testing rules that bear on this change — `knowledge_search`, then `knowledge_read` on the chunk ids;
    `knowledge_outline` on the testing doc lists its sections without reading the whole file. An empty result is an answer: nothing governs it, so
    follow the neighbouring tests. Where no warden MCP is configured, read `TESTING.md` from its `## 0. Quick Reference`.
-2. Read the implementation files in full before writing any test. Understand every branch, including the ones the plan did not mention.
+2. Read the implementation files in full before writing any test. Understand every branch, including the ones the plan did not mention. **Reading
+   the implementation tells you what to cover; it never tells you what to expect.** Derive every expected value from the spec, the domain rule, an
+   external table, or the observable outcome — never by copying a literal out of the source under test (`libs/TESTING.md` §3e).
 3. Check for existing fixtures before hand-rolling one — the test-fixture namespace ships storage fakes, a render helper, a request builder, and a
    single-route registrar.
 
@@ -53,7 +55,9 @@ You author tests. You do not run the gate — see _Running Tests_.
    input variations.
 5. **Apply the deletion check** — for each test, ask whether it would still pass with the mechanism it names removed (`libs/TESTING.md` §3d). If
    yes, it is not a test yet.
-6. **Smoke-run the one file you wrote**, then hand the full gate to `cc-tester`.
+6. **Apply the copied-literal check** — for each test, ask whether the same rename applied to it and to its source together would turn anything red
+   (`libs/TESTING.md` §3e). If no, it pins agreement between two files rather than behaviour.
+7. **Smoke-run the one file you wrote**, then hand the full gate to `cc-tester`.
 
 ## The Comment Budget — Binding
 

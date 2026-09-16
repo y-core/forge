@@ -33,6 +33,7 @@ audience: internal
 - §2h Roots Are Stated or Derived, Never Discovered: no function walks the disk to find the project
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
+- §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
 
 ---
 
@@ -456,6 +457,18 @@ pre-1.0 forge ships breaking changes with no shim while consumers pin by tag, wh
 (`removedSurfaceSince` in `surface.ts`) refuses a shrinking export surface under an auto-patch release, and its refusal names the prefix as the
 remedy: `--allow-semver` silences the guard rather than answering it, and is described there as the deliberate override it is — for a shrink where a
 patch bump is genuinely correct.
+
+### 2k. `forge dev sync` Is Asked For, Never Automatic
+
+**`syncForge` replaces the forge installed under a consumer's `node_modules` with this checkout, packed as it would be published** — `bun pm pack`
+into a staging tarball, then extracted over the installed tree. It is the only way to exercise an unreleased change against a real consumer without
+cutting a tag, and it runs `--ignore-scripts` so the pack cannot execute anything the publish would not.
+
+**It is deliberately not a `postinstall` hook, and that is the capability forge does not have.** The result disagrees with the consumer's lockfile
+on purpose: the installed tree stops matching the tag the lockfile pins. Making it automatic would mean every `bun i` in the consumer silently
+swapped a published dependency for a working copy, and the failure mode — a bug reproducing only on one machine, against code no tag contains — is
+the worst kind to diagnose. Because it is a command, a plain `bun i` restores the pinned tag and the override has to be asked for again, which is
+the behaviour a consumer can reason about.
 
 ---
 

@@ -225,7 +225,8 @@ would be the one response on that route a cache could keep. A `defineAction` ref
 Global middleware registers with `app.use(path, ...middleware)` and runs for every request whose URL matches `path` — `"*"` for all, `"/api/*"` for
 a subtree. Route-level middleware is declared in a controller action and runs only for that route.
 
-**Recommended `app.use` order:** `createSecurityHeaders` → `requestId` → `requestLogger` → `cors` (scoped to its subtree).
+**The order the global chain goes up in is stated once, in [§3e](#3e-applymiddlewarechain-canonical-chain-builder)** — and `applyMiddlewareChain`
+is what produces it, so a consumer never writes it out. A hand-written chain must reproduce the same order.
 
 **Route-level middleware runs after all matching `app.use` middleware has completed.**
 
@@ -253,23 +254,33 @@ The app's outermost header pass flushes them once.
 ### 3e. `applyMiddlewareChain` Canonical Chain Builder
 
 `applyMiddlewareChain(app, options)` is the primary way to register the global chain — **it encodes the canonical order once so consumers stop
-re-deriving it**:
+re-deriving it. This is the normative statement of that order; every other page defers here rather than restating it**:
 
-    requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
-      → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
+    before[] → requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
+      → validateBindings(bindings) → session → globals[] → per-path guards (origin → rateLimit → guards[])
 
 **`validateBindings` sits after `createSecurityHeaders` because a shape refusal throws**, and a throw that precedes the header factory strips the
 error page of every header it would have set — measured on a wrong-shaped KV binding, the 500 lost `Strict-Transport-Security`, COOP, CORP,
 `X-Frame-Options` and `X-Request-Id`, and kept all five once the order was the one above. The natural reading, "validate first", is the wrong one
 ([`FORGE_ERRORS.md`][eh-5b] §5b).
 
-**A guard group registers each of its guards once, for all of its `paths` at once** — the group's paths compile into one matcher, which
-`app.use(paths, handler)` accepts. Registering per path would instantiate one `rateLimit` per path, so two overlapping patterns (`/api/*` and
-`/api/users`) spent a request's budget twice and halved the effective limit. Registration is therefore guard-major, not path-major, which is the
+**A guard group registers its whole chain once, for all of its `paths` at once** — the group's paths compile into one matcher, which
+`app.use(paths, ...chain)` accepts. Registering per path would instantiate one `rateLimit` per path, so two overlapping patterns (`/api/*` and
+`/api/users`) spent a request's budget twice and halved the effective limit. Registration is therefore group-major, not path-major, which is the
 only order that exists once there is one instance per guard.
 
-**Every slot except `securityHeaders` is optional**; omitted slots are skipped without disturbing the relative order of the rest. `session` and
-per-path `middleware[]` accept prebuilt `Middleware` values, which keeps `app` free of `session`- and route-specific dependencies.
+**Every slot except `securityHeaders` is optional**; omitted slots are skipped without disturbing the relative order of the rest. `session`,
+`before[]`, `globals[]` and per-path `guards[]` accept prebuilt `Middleware` values, which keeps `app` free of `session`- and route-specific
+dependencies.
+
+**`before[]` and `globals[]` are the two slots a consumer's own global middleware goes in**, so a chain carrying middleware the builder does not
+name is still the builder's to register rather than a hand-written one. `before[]` is for tracing that must wrap everything, including `requestId`
+— §3d permits it, because pure tracing
+neither reads nor renders with the nonce. `globals[]` is for everything that must see the session: `csrfProtection` resolves its subject before
+`next()`, so mounted anywhere earlier it binds the token to nobody.
+
+**A group's `origin` and `rateLimit` are policy data, not middleware.** `buildGuardChain(group, { trustCfHeaders })` expands one group into the
+ordered chain above and is exported for consumers mounting a group by hand; spreading `group.guards` alone drops both, silently.
 
 Hand-written `app.use` chains remain valid for layouts the builder cannot express, but **must respect §3d**.
 

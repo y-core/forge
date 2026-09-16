@@ -4,48 +4,71 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { RadioGroup } from "./radio-group";
+import { attrOf, attrsOf, variantClasses } from "./test-support";
+
+const INPUT = 'data-slot="radio-group-input"';
+const DESCRIPTION = 'data-slot="field-description"';
+const ERROR = 'data-slot="field-error"';
+
+const ROOT = { "data-slot": "radio-group", role: "radiogroup", "data-size": "md", "data-orientation": "vertical" };
+const ITEM = { type: "radio", "data-slot": "radio-group-input" };
 
 function idsAndRefs(html: string): string[] {
   return [...html.matchAll(/(?:^|\s)(?:id|for|aria-describedby)="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").split(" "));
 }
 
+describe("RadioGroup", () => {
+  it("renders the whole item exactly, its label text and a forwarded value escaped", async () => {
+    expect(
+      await render(
+        <RadioGroup.Item name='plan' value='free' data-note="R&D's">
+          {`Free & "easy" <x>`}
+        </RadioGroup.Item>,
+      ),
+    ).toBe(
+      '<label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio"' +
+        ' data-slot="radio-group-input" id="field-plan-free" name="plan" value="free" class="state-busy state-disabled shrink-0' +
+        ' appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
+        ' data-note="R&amp;D&#39;s">Free &amp; &quot;easy&quot; &lt;x&gt;</label>',
+    );
+  });
+});
+
 describe("RadioGroup — aria-describedby names only what renders", () => {
   it("a group with no description emits no aria-describedby at all", async () => {
     expect(
-      await render(
-        <RadioGroup name='plan'>
-          <RadioGroup.Item name='plan' value='free'>
-            Free
-          </RadioGroup.Item>
-        </RadioGroup>,
+      attrsOf(
+        await render(
+          <RadioGroup name='plan'>
+            <RadioGroup.Item name='plan' value='free'>
+              Free
+            </RadioGroup.Item>
+          </RadioGroup>,
+        ),
       ),
-    ).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" id="field-plan-free" name="plan" value="free" class="state-busy state-disabled shrink-0 appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Free</label></fieldset>',
-    );
+    ).toEqual(ROOT);
   });
 
   it("a declared description wires the IDREF, and the description element carries that id", async () => {
-    expect(
-      await render(
-        <RadioGroup name='plan' description>
-          <RadioGroup.Description name='plan'>Change it any time.</RadioGroup.Description>
-        </RadioGroup>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" aria-describedby="field-plan-description" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-plan-description">Change it any time.</p></fieldset>',
+    const html = await render(
+      <RadioGroup name='plan' description>
+        <RadioGroup.Description name='plan'>Change it any time.</RadioGroup.Description>
+      </RadioGroup>,
     );
+
+    expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-plan-description" });
+    expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description", id: "field-plan-description" });
   });
 
-  it("an invalid group with no description names the error alone", async () => {
-    expect(
-      await render(
-        <RadioGroup name='plan' invalid>
-          <RadioGroup.Error name='plan'>Choose a plan.</RadioGroup.Error>
-        </RadioGroup>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" aria-describedby="field-plan-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-plan-error" role="alert">Choose a plan.</p></fieldset>',
+  it("an invalid group with no description names the error alone, and the error announces itself", async () => {
+    const html = await render(
+      <RadioGroup name='plan' invalid>
+        <RadioGroup.Error name='plan'>Choose a plan.</RadioGroup.Error>
+      </RadioGroup>,
     );
+
+    expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-plan-error", "data-invalid": "" });
+    expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-plan-error", role: "alert" });
   });
 
   it("an invalid group with a description names both, description first", async () => {
@@ -56,9 +79,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
       </RadioGroup>,
     );
 
-    expect(html).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" aria-describedby="field-plan-description field-plan-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground" id="field-plan-description">Change it any time.</p><p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-plan-error" role="alert">Choose a plan.</p></fieldset>',
-    );
+    expect(attrOf(html, "aria-describedby")).toBe("field-plan-description field-plan-error");
     expect(idsAndRefs(html)).toEqual(["field-plan-description", "field-plan-error", "field-plan-description", "field-plan-error"]);
   });
 });
@@ -66,16 +87,17 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
 describe("RadioGroup — a name must be a single id token", () => {
   it("an item value containing a space declares no id, while the value itself passes through verbatim", async () => {
     expect(
-      await render(
-        <RadioGroup name='pets'>
-          <RadioGroup.Item name='pets' value='a b'>
-            A B
-          </RadioGroup.Item>
-        </RadioGroup>,
+      attrsOf(
+        await render(
+          <RadioGroup name='pets'>
+            <RadioGroup.Item name='pets' value='a b'>
+              A B
+            </RadioGroup.Item>
+          </RadioGroup>,
+        ),
+        INPUT,
       ),
-    ).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="pets" value="a b" class="state-busy state-disabled shrink-0 appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">A B</label></fieldset>',
-    );
+    ).toEqual({ ...ITEM, name: "pets", value: "a b" });
   });
 
   it("a group name containing a space suppresses its items' ids too", async () => {
@@ -87,9 +109,7 @@ describe("RadioGroup — a name must be a single id token", () => {
       </RadioGroup>,
     );
 
-    expect(html).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="fav pet" value="cat" class="state-busy state-disabled shrink-0 appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Cat</label></fieldset>',
-    );
+    expect(attrsOf(html, INPUT)).toEqual({ ...ITEM, name: "fav pet", value: "cat" });
     expect(idsAndRefs(html)).toEqual([]);
   });
 
@@ -102,9 +122,7 @@ describe("RadioGroup — a name must be a single id token", () => {
       </RadioGroup>,
     );
 
-    expect(html).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" name="plan" value="free" class="state-busy state-disabled shrink-0 appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4">Free</label></fieldset>',
-    );
+    expect(attrsOf(html, INPUT)).toEqual({ ...ITEM, name: "plan", value: "free" });
     expect(idsAndRefs(html)).toEqual([]);
   });
 
@@ -124,15 +142,14 @@ describe("RadioGroup — a name must be a single id token", () => {
   });
 
   it("a group name containing a space emits no aria-describedby, and its description no id", async () => {
-    expect(
-      await render(
-        <RadioGroup name='fav pet' description>
-          <RadioGroup.Description name='fav pet'>Pick one.</RadioGroup.Description>
-        </RadioGroup>,
-      ),
-    ).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"><p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick one.</p></fieldset>',
+    const html = await render(
+      <RadioGroup name='fav pet' description>
+        <RadioGroup.Description name='fav pet'>Pick one.</RadioGroup.Description>
+      </RadioGroup>,
     );
+
+    expect(attrsOf(html)).toEqual(ROOT);
+    expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description" });
   });
 });
 
@@ -187,51 +204,47 @@ describe("RadioGroup — two same-named groups on one page", () => {
 });
 
 describe("RadioGroup — size, invalid and busy", () => {
-  it("stamps data-size=md on the root by default", async () => {
-    expect(await render(<RadioGroup name='r' />)).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
+  it("names the size it was given on the attribute a stylesheet and a reader both key on", async () => {
+    expect([
+      attrsOf(await render(<RadioGroup name='r' />)),
+      attrsOf(await render(<RadioGroup name='r' size='sm' />)),
+      attrsOf(await render(<RadioGroup name='r' size='lg' />)),
+    ]).toEqual([ROOT, { ...ROOT, "data-size": "sm" }, { ...ROOT, "data-size": "lg" }]);
   });
 
-  it("size='sm' stamps data-size=sm on the root", async () => {
-    expect(await render(<RadioGroup name='r' size='sm' />)).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="sm" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
+  it("stamps invalidity for a stylesheet but keeps aria-invalid off, which the radiogroup role forbids", async () => {
+    expect(attrsOf(await render(<RadioGroup name='r' invalid />))).toEqual({ ...ROOT, "aria-describedby": "field-r-error", "data-invalid": "" });
   });
 
-  it("size='lg' stamps data-size=lg on the root", async () => {
-    expect(await render(<RadioGroup name='r' size='lg' />)).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="lg" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
-  });
-
-  it("invalid stamps data-invalid on the root, and no aria-invalid, which the group role forbids", async () => {
-    expect(await render(<RadioGroup name='r' invalid />)).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" aria-describedby="field-r-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
-  });
-
-  it("busy stamps data-busy on the root, and no aria-busy, which the group role forbids", async () => {
-    expect(await render(<RadioGroup name='r' busy />)).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" data-size="md" data-busy="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col"></fieldset>',
-    );
+  it("stamps busyness for a stylesheet but keeps aria-busy off, which the radiogroup role forbids", async () => {
+    expect(attrsOf(await render(<RadioGroup name='r' busy />))).toEqual({ ...ROOT, "data-busy": "" });
   });
 
   it("a caller's own aria attribute survives the state spread", async () => {
-    expect(await render(<RadioGroup name='r' invalid aria-label='Plan' />)).toBe(
-      '<fieldset data-slot="radio-group" role="radiogroup" aria-describedby="field-r-error" data-size="md" data-invalid="" data-orientation="vertical" class="state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col" aria-label="Plan"></fieldset>',
-    );
+    expect(attrsOf(await render(<RadioGroup name='r' invalid aria-label='Plan' />))).toEqual({
+      ...ROOT,
+      "aria-describedby": "field-r-error",
+      "data-invalid": "",
+      "aria-label": "Plan",
+    });
   });
 
-  it("an Item sizes its own box", async () => {
-    expect(await render(<RadioGroup.Item name='r' value='a' size='lg' />)).toBe(
-      '<label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" id="field-r-a" name="r" value="a" class="state-busy state-disabled shrink-0 appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-5"></label>',
-    );
+  it("an Item sizes its own box rather than inheriting the group's", async () => {
+    expect(
+      variantClasses(await render(<RadioGroup.Item name='r' value='a' size='lg' />), await render(<RadioGroup.Item name='r' value='a' />), INPUT),
+    ).toEqual({ added: ["size-5"], dropped: ["size-4"] });
   });
 
-  it("an Item carries its own invalid and busy state", async () => {
-    expect(await render(<RadioGroup.Item name='r' value='a' invalid busy />)).toBe(
-      '<label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio" data-slot="radio-group-input" id="field-r-a" name="r" value="a" class="state-busy state-disabled shrink-0 appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4" data-invalid="" data-busy="" aria-invalid="true" aria-busy="true"></label>',
-    );
+  it("an Item carries its own invalid and busy state, where the role does allow the aria", async () => {
+    expect(attrsOf(await render(<RadioGroup.Item name='r' value='a' invalid busy />), INPUT)).toEqual({
+      ...ITEM,
+      id: "field-r-a",
+      name: "r",
+      value: "a",
+      "data-invalid": "",
+      "data-busy": "",
+      "aria-invalid": "true",
+      "aria-busy": "true",
+    });
   });
 });

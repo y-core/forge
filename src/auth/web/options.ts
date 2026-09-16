@@ -12,9 +12,8 @@ import type { AuthFactorKind, PasskeyMode } from "../types";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 import type { AuthPasskeyContract } from "./views/types";
 
-// One request runs a guard, a loader and often an action, and each called `resolveServices` — which
-// rebuilds every store. The promise is memoised rather than the value, so two parallel callers share
-// one build rather than racing two. The same shape `authDemandCtx` uses for the same reason.
+// One request runs a guard, a loader and often an action, each asking for these services. The
+// promise is memoised rather than the value, so two parallel callers share one build.
 const authServicesCtx = contextVar<Promise<AuthRequestServices>>("auth.services");
 
 /** This request's services, built once however many times this request asks for them. @internal */

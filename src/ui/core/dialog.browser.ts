@@ -79,6 +79,22 @@ test.describe("Dialog", () => {
     expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#confirm")?.matches(":modal"))).toBe(false);
     expect(await state(page)).toEqual({ nativeOpen: true });
   });
+
+  // `open` + `openModal` used to render both attributes, and `showModal()` on an already-open dialog
+  // throws `InvalidStateError` — a console exception and no dialog, invisible to any markup check.
+  test("an SSR modal asked for both openings resumes modal, throwing nothing", async ({ page }) => {
+    const thrown: string[] = [];
+    page.on("pageerror", (error) => thrown.push(error.message));
+    const html = await render([
+      Dialog.Trigger({ for: "confirm", id: "open-it", children: "Delete…" }),
+      Dialog({ id: "confirm", open: true, openModal: true, children: Dialog.Close({ for: "confirm", id: "close-it", children: "Cancel" }) }),
+    ]);
+    await mount(page, html, EXPOSE);
+    await start(page);
+
+    await expect.poll(() => page.evaluate(() => document.querySelector<HTMLDialogElement>("#confirm")?.matches(":modal"))).toBe(true);
+    expect(thrown).toEqual([]);
+  });
 });
 
 const CSS = { css: ["./ui/assets/css/forge-ui.css"] };

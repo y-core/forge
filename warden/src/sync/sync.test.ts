@@ -27,8 +27,8 @@ describe("syncTrees()", () => {
     expect(syncTrees("/warden/claude", "apps").map(({ from }) => from[1])).toEqual(["/warden/claude/agents/apps", "/warden/claude/skills/apps"]);
   });
 
-  it("names no .claude/commands tree — a sync that wrote one would delete a repository's own", () => {
-    expect(syncTrees("/warden/claude", "libs").map((entry) => entry.tree)).not.toContain(".claude/commands");
+  it("names only the two trees it owns, so a sync deletes nothing else under .claude/", () => {
+    expect(syncTrees("/warden/claude", "libs").map((entry) => entry.tree)).toEqual([".claude/agents", ".claude/skills"]);
   });
 });
 

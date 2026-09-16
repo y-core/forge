@@ -1,6 +1,3 @@
-// `Toggle` itself has no scope any more: it is a native checkbox whose `:checked` the CSS keys on,
-// so there is no state for a controller to maintain and no bespoke runtime to keep in step with
-// `ToggleGroup`'s.
 /** Resumable-scope name a `ToggleGroup` stamps, for the roving focus a checkbox group lacks. Eager. @public */
 export const TOGGLE_GROUP_SCOPE = "toggle-group";
 

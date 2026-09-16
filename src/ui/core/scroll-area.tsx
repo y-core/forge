@@ -12,9 +12,8 @@ interface ScrollAreaRootProps extends Omit<JSX.IntrinsicElements["div"], "childr
 }
 
 interface ScrollAreaViewportProps extends Omit<JSX.IntrinsicElements["section"], "children"> {
-  // Required, not optional: the viewport is an unconditional tab stop, and a focusable element with
-  // no role and no name announces nothing at all when a keyboard user lands on it. The name is also
-  // what gives the `<section>` its `region` role — an unnamed one is a generic box.
+  // Required: the name is what gives the `<section>` its `region` role, and the viewport is an
+  // unconditional tab stop, so an unnamed one announces nothing at all.
   /** Accessible name for the scrollable region. */
   label: string;
   children?: JSXNode | undefined;
@@ -33,11 +32,8 @@ const ScrollAreaViewport: FC<ScrollAreaViewportProps> = ({ label, class: cls, ch
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow.
     tabindex={0}
     class={cn(
-      // `max-h-[inherit]` is what makes a root bounded by `max-h-*` work: `h-full` resolves to `auto`
-      // against an indefinite parent, so the viewport would grow to its content and spill out of the
-      // root's max-height box instead of scrolling. Inheriting the computed max-height binds the
-      // scrolling element itself. A root bounded by a definite `h-*` computes `max-height: none`,
-      // so this is inert there and `h-full` keeps governing.
+      // `h-full` resolves to `auto` against an indefinite parent, so under a `max-h-*` root only
+      // `max-h-[inherit]` stops the viewport growing to its content instead of scrolling.
       "h-full max-h-[inherit] w-full overflow-auto overscroll-contain rounded-[inherit] focus-ring",
       "[scrollbar-width:thin] [scrollbar-color:var(--color-border)_transparent]",
       cls,

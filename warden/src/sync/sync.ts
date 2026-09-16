@@ -3,8 +3,7 @@ import { join, relative, resolve } from "node:path";
 
 import type { Kind, SyncTree } from "../types";
 
-/** The trees a sync replaces wholesale. The canon is not among them — it is read from the installed
- *  package, never copied into a consumer. @public */
+/** The trees a sync replaces wholesale; the canon is read from the installed package, never copied. @public */
 export function syncTrees(claudeRoot: string, kind: Kind): SyncTree[] {
   return [
     { tree: ".claude/agents", from: [join(claudeRoot, "agents", "shared"), join(claudeRoot, "agents", kind)] },
@@ -48,10 +47,8 @@ export function sync(repo: string, trees: readonly SyncTree[]): string[] {
     const sources = from.filter((source) => existsSync(source));
     if (sources.length === 0) continue;
     const to = resolve(repo, tree);
-    // Staged into a sibling and renamed over, so a copy that fails midway leaves the previous tree
-    // whole: the destination is only ever a complete tree or the one that was already there. It is
-    // replaced rather than copied over, because a copy-over silently keeps a file the corpus
-    // dropped — and the rename is what makes replacing it survivable.
+    // Staged into a sibling and renamed over, so a copy failing midway leaves the previous tree
+    // whole; copying over it instead would silently keep a file the corpus dropped.
     const staged = `${to}.warden-staging`;
     rmSync(staged, { recursive: true, force: true });
     try {

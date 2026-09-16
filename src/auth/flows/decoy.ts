@@ -32,8 +32,7 @@ export async function issueAuthDecoy(stores: AuthDecoyStores, at: number): Promi
 /** Performs every statement a verification performs and establishes nothing — the unknown-address branch. @internal */
 export async function verifyAuthDecoy(stores: AuthDecoyStores, at: number): Promise<void> {
   // Without this, the branch finding no user returns after one lookup while the branch finding one
-  // spends a guess, opens a sealed token and consumes a nonce — a latency oracle answering the
-  // question the response itself refuses.
+  // spends a guess, a sealed token and a nonce — a latency oracle.
   const token = await decoyToken(stores, at);
   await stores.users.findById(DECOY_USER_ID);
   await stores.state.countAttempt(DECOY_USER_ID, 1, at);

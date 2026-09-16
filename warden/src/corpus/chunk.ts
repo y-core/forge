@@ -9,9 +9,8 @@ const BOLD = /\*\*([^*]+)\*\*/g;
 const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 const REFERENCE_LINK = /\[([^\]]*)\]\[[^\]]*\]/g;
 const LINK_DEFINITION = /^ {0,3}\[[^\]]+\]:[ \t]+\S.*$/gm;
-// `.` is a token character, so `mod.ts` survives — but so would `budget.`, and a reader searching
-// for `budget` would miss the sentence that ends with it. Punctuation followed by whitespace is
-// sentence punctuation; punctuation inside a word is part of the identifier.
+// `.` is a token character to the tokenizer, so `budget.` would not match a search for `budget`:
+// punctuation followed by whitespace is sentence punctuation, inside a word it is the identifier's.
 const SENTENCE_PUNCTUATION = /([A-Za-z0-9`)\]])[.,;:!?]+(?=\s|$)/g;
 
 /** The `title` and `description` a document's frontmatter carries. @public */
@@ -24,13 +23,7 @@ export function frontmatter(source: string): { title: string; description: strin
   return { title: strip(block.match(/^title:\s*(.+)$/m)?.[1]), description: strip(block.match(/^description:\s*(.+)$/m)?.[1]) };
 }
 
-/** The per-section summaries of a `## 0. Quick Reference` block, keyed by section number.
- *
- *  The block is never emitted as a chunk of its own: it names every section, so it matches every
- *  query and would win every search. Redistributing each line into the section it names turns the
- *  corpus's best retrieval signal — gate-enforced to be both complete and in step with the headings
- *  it summarises — into a ranked column. The parsing is `quickReference`'s, so the line this indexes
- *  is exactly the line the gate approved. @public */
+/** The per-section summaries of a `## 0. Quick Reference` block, keyed by section number. @public */
 export function glossary(lines: readonly string[]): Map<string, string> {
   return quickReference(lines);
 }
@@ -40,9 +33,7 @@ export function ruleClauses(block: readonly string[]): string {
   return [...block.join("\n").matchAll(BOLD)].map((match) => (match[1] ?? "").trim().replace(SENTENCE_PUNCTUATION, "$1")).join(" ");
 }
 
-/** Prose with links flattened to their text, so a URL never outranks a sentence. Under reference
- *  style the destination sits in its own definition line, which is dropped whole: a block of paths
- *  matches nothing a reader would ask and dilutes every sentence around it. @public */
+/** Prose with links flattened to their text and definition lines dropped, so a URL never outranks a sentence. @public */
 export function proseOf(block: readonly string[]): string {
   return block
     .join("\n")
@@ -78,17 +69,13 @@ export function headings(lines: readonly string[]): Heading[] {
   return found;
 }
 
-/** Splits one document into leaf chunks.
- *
- *  A `## N.` with `### Na.` children emits a stub carrying only its lead paragraph; the children
- *  carry the rest. No text is indexed twice, so BM25's length normalisation stays honest. @public */
+/** Splits one document into leaf chunks, a `## N.` with `### Na.` children keeping only its lead paragraph. @public */
 export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
   const raw = source.split("\n");
   const stripped = stripFences(source);
   const gloss = glossary(stripped);
-  // Scanned on the stripped source, not `raw`: a `## Heading` inside a code fence is a line of an
-  // example, and taking it as a boundary splits the section it is quoted in. `stripFences` blanks
-  // lines rather than removing them, so `heading.line` still indexes into `raw`.
+  // Scanned on the stripped source: `stripFences` blanks lines rather than removing them, so
+  // `heading.line` still indexes into `raw`.
   const found = headings(stripped);
 
   const chunks: Chunk[] = [];
@@ -97,12 +84,7 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
   let ordinal = 0;
 
   // A `~slug` corpus repeats headings — a README carries one `### Exports` per sub-path — so the
-  // slug is qualified by its parent, and a still-colliding one takes a numeric suffix. An id has to
-  // be unique before it can be an address.
-  //
-  // A repeated `## N.` is a defect `validate-docs` reports, but only in the citable trees: a README
-  // with two `## 3.` headings reaches here, and an id that is merely unique is a better answer than
-  // a `UNIQUE` violation thrown out of the middle of a build.
+  // slug is qualified by its parent, and a still-colliding one takes a numeric suffix.
   const uniqueSection = (heading: Heading, parentOf: Heading | undefined): string => {
     const qualified =
       heading.section.startsWith("~") && heading.level === 3 && parentOf !== undefined ? `${parentOf.section}${heading.section}` : heading.section;
@@ -142,27 +124,8 @@ export function chunkDocument(doc: SourceDoc, source: string): Chunk[] {
       ordinal: ordinal++,
       line: heading.line + 1,
       endLine: end,
-      // Two shapes are emitted but not indexed, because the title is what a reader scans an outline
-      // for and the target of every `§N` citation the corpus writes — dropping them made
-      // `NAMESPACES.md §3` an id that resolved nowhere.
-      //
-      // A `## N.` organising `### Na.` children states nothing itself; its title is already carried
-      // by every child's heading trail, so indexing it adds a competitor and reaches nothing new.
-      // That holds even when the Quick Reference glosses it, which is why `organising` stands
-      // beside the emptiness test rather than being subsumed by it.
-      //
-      // A section that is nothing but a code fence is non-empty raw and empty once stripped, so it
-      // could only match on its own title. The gloss and the rules are what make this a guard
-      // rather than `searchBody !== ""`: `COLUMN_WEIGHTS` ranks both above the body, so a
-      // fence-only section carrying a real Quick Reference line stays reachable by exactly the
-      // columns that matter most.
-      //
-      // An export table is the third: a bag of every identifier a namespace publishes, held in one
-      // chunk because the slug qualifies to `<parent>~exports`. In the repository that owns the
-      // code that is a fair competitor; in a consumer it competes with every question about any of
-      // those identifiers at once, and a consumer reaches an export table through the package's
-      // types rather than through prose retrieval. Emitted either way, so it stays addressable by
-      // `knowledge_read` and visible in an outline — this takes it out of ranking only.
+      // Emitted but unranked rather than dropped: the title is the target of every `§N` citation
+      // the corpus writes, so dropping the chunk leaves `NAMESPACES.md §3` resolving nowhere.
       searchable:
         !organising && !(doc.corpus === "dependency" && section.endsWith("~exports")) && (searchBody !== "" || glossOf !== "" || rules !== ""),
     });

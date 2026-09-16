@@ -62,9 +62,8 @@ describe("renderAuthPage", () => {
   });
 });
 
-// Every auth page carries an identity, a pending sign-in or a list of a deployment's accounts, and
-// none of them may sit in a shared cache or come back off the back button after a sign-out. This is
-// the one choke point every one of them goes through.
+// No auth page may sit in a shared cache or come back off the back button after a sign-out, and
+// this is the one choke point all of them go through.
 describe("renderAuthPage caching", () => {
   it("marks every page no-store, as a document and as a fragment alike", async () => {
     expect((await signin(context({}, appShell))).headers.get("cache-control")).toBe("no-store");
@@ -86,8 +85,8 @@ describe("renderAuthPage caching", () => {
   });
 });
 
-// An app that registered no shell is the documented base offering, so what it renders has to be a
-// readable page — not the bare `<!DOCTYPE html><p>` a shell-less render used to answer with.
+// An app that registered no shell is the documented base offering, so what it renders still has to
+// be a readable page.
 describe("renderAuthPage without a registered shell", () => {
   it("renders a complete document, titled for the page", async () => {
     const res = await renderAuthPage(context(), { name: "signin", view: ForgeSignin, props: signinProps("ada@example.com") });
@@ -204,9 +203,8 @@ describe("renderAuthPage view override", () => {
   });
 });
 
-// The map is what makes these two lines errors, and an unused `@ts-expect-error` is itself an error
-// under this tsconfig — so each one is a live assertion that the compiler, and not a cast, holds the
-// promise that an override receives exactly the props the view it replaces would have.
+// An unused `@ts-expect-error` is itself an error under this tsconfig, so each one below is a live
+// assertion that the compiler holds an override to the props of the view it replaces.
 describe("AuthViews holds an override to its own page's props", () => {
   it("refuses a signin entry whose props are not a signin view's", () => {
     const OwnSignin: FC<{ readonly email: string }> = ({ email }) => <p>{email}</p>;
