@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "bin": {
     "forge": "./src/tooling/root/bin.ts",
     "warden": "./warden/src/bin.ts"

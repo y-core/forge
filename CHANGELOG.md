@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.15] — 2026-09-16
+
 ### Breaking Changes
 
 - **A dev-only allowance is a token now, not a boolean on a production option, and every consumer
@@ -6836,6 +6842,7 @@ header casing.
 - Duplicated `toError` in `app/forge-app.ts` removed; the shared env-validation throw wrapper
   extracted to `validation/parse-env.ts`.
 
+[0.1.15]: https://github.com/y-core/forge/compare/v0.1.14...v0.1.15
 [0.1.14]: https://github.com/y-core/forge/compare/v0.1.13...v0.1.14
 [0.1.13]: https://github.com/y-core/forge/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/y-core/forge/compare/v0.1.11...v0.1.12
