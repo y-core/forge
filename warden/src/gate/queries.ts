@@ -1,5 +1,5 @@
 import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
-import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
+import type { CheckResult, Finding, GateMode } from "../../../src/tooling/gate/types";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { build } from "../index/build";
@@ -8,7 +8,7 @@ import { freshness } from "../index/freshness";
 import { packageNameOf } from "../paths";
 import { type AliasTable, aliasesFor } from "../search/aliases";
 import { documentFrequency } from "../search/coverage";
-import { search } from "../search/search";
+import { FLOOR, MARGIN, search } from "../search/search";
 import type { Tree } from "../types";
 import { canonVersion } from "../version";
 import { type Dimension, GOLDEN, type GoldenQuery, NEGATIVE } from "./golden";
@@ -41,17 +41,28 @@ const TOP_N = 5;
  *  reported figure is the whole of what the floor refused rather than the top of it. */
 const POOL = 60;
 
-/** The order the rollup prints, fixed so two runs are diffable. */
-const DIMENSIONS: readonly Dimension[] = ["placement", "prohibition", "procedure", "rationale", "boundary"];
+/** The order the rollup prints, fixed so two runs are diffable.
+ *
+ *  Exhaustive by construction: a dimension added to the type without a rank here fails to compile,
+ *  where the `readonly Dimension[]` this replaced would have compiled and silently dropped the new
+ *  kind of question from the rollup — the rollup being built by filtering, so an unlisted dimension
+ *  is indistinguishable from an untagged one. */
+const DIMENSION_ORDER: Record<Dimension, number> = { placement: 1, prohibition: 2, procedure: 3, rationale: 4, boundary: 5, reference: 6 };
 
 interface Rollup {
   /** The furthest down the expected hit sat, 1-indexed. */
   worst: number;
   /** Whether some query of this kind did not find its answer at all. */
   missed: boolean;
-  /** The least of a query's information any answer of this kind carried. */
-  thinnest?: number;
+  /** The least of a query's information any answer of this kind carried, measured uncapped. */
+  thinnest: number;
 }
+
+/** How small a replacement golden set may be before the margin guard stands down. The check ships
+ *  to other repositories, where `config.queries` is a handful of local questions: a three-query set
+ *  measures one corner of the corpus, and holding a floor calibrated against 45 to what those three
+ *  happen to reach would fail arbitrarily. */
+const MARGIN_QUORUM = 20;
 
 /** What each kind of question cost retrieval, in the fixed order, or `""` when nothing is tagged.
  *
@@ -59,11 +70,9 @@ interface Rollup {
  *  question lexical retrieval serves worst, and until this ran nothing measured it. A dimension
  *  earns a threshold once there are runs to set one from. */
 function rollup(measured: ReadonlyMap<Dimension, Rollup>): string {
-  const clauses = DIMENSIONS.filter((dimension) => measured.has(dimension)).map((dimension) => {
-    const seen = measured.get(dimension) as Rollup;
-    const thinnest = seen.thinnest === undefined ? "none reached" : seen.thinnest.toFixed(3);
-    return `${dimension} worst ${seen.missed ? "miss" : seen.worst} / thinnest ${thinnest}`;
-  });
+  const clauses = [...measured.entries()]
+    .sort(([a], [b]) => DIMENSION_ORDER[a] - DIMENSION_ORDER[b])
+    .map(([dimension, seen]) => `${dimension} worst ${seen.missed ? "miss" : seen.worst} / thinnest ${seen.thinnest.toFixed(3)}`);
   return clauses.length === 0 ? "" : `; ${clauses.join(", ")}`;
 }
 
@@ -71,7 +80,7 @@ function rollup(measured: ReadonlyMap<Dimension, Rollup>): string {
  *
  *  Deterministic by construction: BM25 is a pure function of the index, the index is built from
  *  disk on every run, and ties break on `chunk.id ASC`. @public */
-export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
+export function checkGoldenQueries(config: GoldenCheckConfig, mode: GateMode = "standard"): CheckResult {
   const queries = config.queries ?? GOLDEN;
   if (queries.length === 0) return scannedNothing("the golden set is empty — retrieval is unmeasured", "warden:queries", "read");
 
@@ -95,25 +104,34 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     const topOne = new Set<string>();
     const measured = new Map<Dimension, Rollup>();
     let thinnest = 1;
+    let thinnestQuery = "";
     let loudest = 0;
+    let loudestQuery = "";
 
     for (const golden of queries) {
       const hits = search(db, golden.query, { aliases, limit: Math.max(TOP_N, golden.within ?? 3) });
       const first = hits[0];
       if (first !== undefined) topOne.add(first.id.split("#")[0] ?? first.id);
 
-      const expected = hits.find((hit) => hit.id === golden.expect);
-      if (expected !== undefined) thinnest = Math.min(thinnest, expected.coverage);
+      // Measured with the floor lifted and the limit widened, exactly as `loudest` is: reading the
+      // coverage off `hits` reads it off a list `FLOOR` has already filtered, so the figure could
+      // never fall below the floor — the one region the guard exists to watch — and a regression
+      // that pushed a thin answer out of the results would make the margin look wider.
+      const carried = search(db, golden.query, { aliases, limit: POOL, floor: 0 }).find((hit) => hit.id === golden.expect)?.coverage ?? 0;
+      if (carried < thinnest) {
+        thinnest = carried;
+        thinnestQuery = golden.query;
+      }
 
       const rank = hits.findIndex((hit) => hit.id === golden.expect);
       const within = golden.within ?? 3;
 
       if (golden.dimension !== undefined) {
-        const seen = measured.get(golden.dimension) ?? { worst: 0, missed: false };
+        const seen = measured.get(golden.dimension) ?? { worst: 0, missed: false, thinnest: 1 };
         measured.set(golden.dimension, {
           worst: Math.max(seen.worst, rank + 1),
           missed: seen.missed || rank === -1,
-          ...(expected === undefined && seen.thinnest === undefined ? {} : { thinnest: Math.min(seen.thinnest ?? 1, expected?.coverage ?? 1) }),
+          thinnest: Math.min(seen.thinnest, carried),
         });
       }
 
@@ -140,7 +158,12 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
     // so the hit a floor has to refuse is routinely not the one BM25 ranked first.
     for (const query of config.negative ?? NEGATIVE) {
       const offered = search(db, query, { aliases, limit: TOP_N });
-      for (const hit of search(db, query, { aliases, limit: POOL, floor: 0 })) loudest = Math.max(loudest, hit.coverage);
+      for (const hit of search(db, query, { aliases, limit: POOL, floor: 0 })) {
+        if (hit.coverage > loudest) {
+          loudest = hit.coverage;
+          loudestQuery = query;
+        }
+      }
       if (offered.length > 0) {
         findings.push(
           fail(
@@ -183,10 +206,26 @@ export function checkGoldenQueries(config: GoldenCheckConfig): CheckResult {
       }
     }
 
-    const margin = `floor margin ${thinnest.toFixed(3)} answered / ${loudest.toFixed(3)} refused`;
+    // The figure the gate has printed since the floor was calibrated, now held to `MARGIN`. Both
+    // queries are named because "margin 0.049" says a number moved and not what to look at: the
+    // answer to widen is one of these two, and which one it is decides whether the fix is a
+    // rewrite, a bridge, or a negative entry that has stopped being unanswerable.
+    const margin = thinnest - loudest;
+    const guarded = config.queries === undefined || queries.length >= MARGIN_QUORUM;
+    if (guarded && margin < MARGIN) {
+      const report = mode === "full" ? fail : warn;
+      findings.push(
+        report(`the floor has ${margin.toFixed(3)} of room left, under ${MARGIN.toFixed(2)} — \`FLOOR\` is ${FLOOR} and sits between these two`, {
+          file: "warden/src/search/search.ts",
+          detail: [`thinnest answered ${thinnest.toFixed(3)}  "${thinnestQuery}"`, `loudest refused   ${loudest.toFixed(3)}  "${loudestQuery}"`],
+        }),
+      );
+    }
+
+    const summary = `floor margin ${thinnest.toFixed(3)} answered / ${loudest.toFixed(3)} refused`;
     return checkResult(
       findings,
-      `${queries.length} golden queries, ${topOne.size} documents reached top-1, ${live}/${bridges} alias bridges live, ${margin}${rollup(measured)}.`,
+      `${queries.length} golden queries, ${topOne.size} documents reached top-1, ${live}/${bridges} alias bridges live, ${summary}${rollup(measured)}.`,
     );
   } finally {
     db.close();

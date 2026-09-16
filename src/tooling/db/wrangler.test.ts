@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
-import { argvHas, fakeDbIo, jsonRows, OK } from "./test-support";
+import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "./test-support";
 import type { FakeDbIo } from "./types";
 import type { Home } from "./types";
-import { executeFile, executeSql, exportSql, queryOne, queryRows, queryRowsIfTable, runWrangler, wranglerVersion } from "./wrangler";
+import { executeFile, executeSql, exportSql, queryBatches, queryOne, queryRows, queryRowsIfTable, runWrangler, wranglerVersion } from "./wrangler";
 
 function home(over: Partial<Home> = {}): Home {
   return {
@@ -184,6 +184,61 @@ describe("queryRows()", () => {
       kind: "external",
       message: 'query `SELEC 1` against local (app-db) failed (exit 2):\n✘ [ERROR] near "SELEC": syntax error',
     });
+  });
+});
+
+describe("queryBatches()", () => {
+  it("sends every statement in one spawn, terminating each and doubling none", () => {
+    const io = ioWith((a) => argvHas(a, "execute"), jsonBatches([[{ n: 1 }], [{ n: 2 }]]));
+    expect(queryBatches(io, home(), ["SELECT 1 AS n;", "SELECT 2 AS n"])).toEqual([[{ n: 1 }], [{ n: 2 }]]);
+    expect(io.calls.length).toBe(1);
+    expect(io.calls[0]?.slice(-2)).toEqual(["--command", "SELECT 1 AS n;\nSELECT 2 AS n;"]);
+  });
+
+  it("returns the result sets in the order the statements were asked in", () => {
+    const io = ioWith((a) => argvHas(a, "execute"), jsonBatches([[{ n: 1 }], [], [{ n: 3 }]]));
+    expect(queryBatches(io, home(), ["SELECT 1", "SELECT 2", "SELECT 3"])).toEqual([[{ n: 1 }], [], [{ n: 3 }]]);
+  });
+
+  it("spawns nothing at all for no statements", () => {
+    const io = ioWith(() => true, jsonRows([]));
+    expect(queryBatches(io, home(), [])).toEqual([]);
+    expect(io.calls).toEqual([]);
+  });
+
+  it("names the home and the exit code when wrangler fails", () => {
+    const io = ioWith(() => true, { code: 2, stdout: "", stderr: "✘ [ERROR] no such table: t\n" });
+    expect(capture(() => queryBatches(io, home(), ["SELECT 1 FROM t"]))).toMatchObject({
+      kind: "external",
+      message: "query `SELECT 1 FROM t;` against local (app-db) failed (exit 2):\n✘ [ERROR] no such table: t",
+    });
+  });
+
+  // A result set per statement is what makes the answers positional; one fewer would silently shift them.
+  it("refuses a reply carrying a different number of result sets than it asked statements", () => {
+    const io = ioWith(() => true, jsonBatches([[{ n: 1 }]]));
+    expect(capture(() => queryBatches(io, home(), ["SELECT 1", "SELECT 2"]))).toMatchObject({
+      kind: "invalid-args",
+      message: "wrangler answered 1 result set(s) for 2 statements against local",
+    });
+  });
+
+  it("splits past the budget into as many spawns as it takes, concatenating the result sets in order", () => {
+    const io = fakeDbIo();
+    const replies = [jsonBatches([[{ n: 1 }], [{ n: 2 }]]), jsonBatches([[{ n: 3 }]])];
+    io.rules.push({ match: (a) => argvHas(a, "execute"), reply: () => replies[io.calls.length - 1] ?? OK });
+
+    expect(queryBatches(io, home(), ["SELECT 1 AS n", "SELECT 2 AS n", "SELECT 3 AS n"], 40)).toEqual([[{ n: 1 }], [{ n: 2 }], [{ n: 3 }]]);
+    expect(io.calls.map((call) => call.at(-1))).toEqual(["SELECT 1 AS n;\nSELECT 2 AS n;", "SELECT 3 AS n;"]);
+  });
+
+  it("gives a statement longer than the budget a spawn of its own rather than splitting it", () => {
+    const io = fakeDbIo();
+    const wide = `SELECT '${"x".repeat(60)}' AS n`;
+    io.rules.push({ match: (a) => argvHas(a, "execute"), reply: jsonBatches([[{ n: 1 }]]) });
+
+    expect(queryBatches(io, home(), ["SELECT 1 AS n", wide], 40)).toEqual([[{ n: 1 }], [{ n: 1 }]]);
+    expect(io.calls.map((call) => call.at(-1))).toEqual(["SELECT 1 AS n;", `${wide};`]);
   });
 });
 

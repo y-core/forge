@@ -57,6 +57,19 @@ describe("readResource()", () => {
     expect(readResource(knowledge, "knowledge://project/CODE_RULES.md")).toBeUndefined();
   });
 
+  // A whole document is the largest thing this server can emit, and a governing document is allowed
+  // 800 lines by the docs gate.
+  it("caps a document that would not fit, and says which two tools reach the rest", () => {
+    const big = join(root, "docs/Big.md");
+    writeFileSync(big, `${DOC}\n${"A sentence about honeypots. ".repeat(1200)}\n`, "utf-8");
+    knowledge.refresh();
+
+    const text = readResource(knowledge, "knowledge://project/docs/Big.md")?.contents[0]?.text ?? "";
+
+    expect(text).toContain("--- TRUNCATED ---");
+    expect(text).toContain("Use knowledge_outline on docs/Big.md");
+  });
+
   it("returns undefined for a URI it does not serve, so the caller answers with an error", () => {
     expect(readResource(knowledge, "knowledge://nowhere")).toBeUndefined();
     expect(readResource(knowledge, "https://example.com")).toBeUndefined();

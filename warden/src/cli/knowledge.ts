@@ -4,7 +4,7 @@ import { resolve, sep } from "node:path";
 import { addCommand, createCommand } from "../../../src/tooling/cli/command";
 import { CliError } from "../../../src/tooling/cli/errors";
 import type { CommandBase } from "../../../src/tooling/cli/types";
-import { renderCatalogue } from "../catalogue/render";
+import { renderCanon, renderCatalogue } from "../catalogue/render";
 import { parseCorpus, parseId } from "../corpus/ident";
 import { changed } from "../impact/git";
 import { impact } from "../impact/impact";
@@ -15,6 +15,7 @@ import { serveStdio } from "../mcp/server";
 import { resolveRepoRoot } from "../paths";
 import { outline, readSection } from "../search/read";
 import { related } from "../search/related";
+import { renderHit } from "../search/render";
 import { corpusLabel, search } from "../search/search";
 import { resolveKind } from "../sync/kind";
 import { CORPORA } from "../types";
@@ -93,18 +94,13 @@ export function createKnowledgeCommands(parent: CommandBase): void {
             aliases: knowledge.aliases,
             ...(flags.path === undefined ? {} : { path: flags.path }),
             limit: Number(flags.limit ?? "10"),
+            excerpt: true,
           });
           if (hits.length === 0) {
             console.log("no section of this corpus covers that");
             return;
           }
-          for (const hit of hits) {
-            console.log(
-              `${flags.scores === true ? `${hit.coverage.toFixed(2)} ${hit.score.toFixed(4)}  ` : ""}${hit.id}  (${corpusLabel(hit.corpus)})`,
-            );
-            console.log(`    ${hit.headingPath}`);
-            if (hit.gloss !== "") console.log(`    ${hit.gloss}`);
-          }
+          for (const hit of hits) console.log(renderHit(hit, { score: flags.scores === true }));
         } finally {
           knowledge.close();
         }
@@ -245,7 +241,9 @@ export function createCatalogueCommand(parent: CommandBase): void {
         const { root, kind, path } = context({ ...flags, gate: false });
         const knowledge = openIndex(root, kind, { path, canonVersion: canonVersion() });
         try {
-          const rendered = renderCatalogue(knowledge.db);
+          // The committed file is the fleet's whole inventory and is read off disk; the printed one
+          // is this repository's index, which holds `shared` plus its own kind.
+          const rendered = flags.write === true ? renderCanon() : renderCatalogue(knowledge.db);
           if (flags.write !== true) {
             process.stdout.write(rendered);
             return;

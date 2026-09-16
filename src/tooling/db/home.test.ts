@@ -177,6 +177,12 @@ describe("clearLocalState()", () => {
     expect(io.exists(`/app/.wrangler/state/${STATE}`)).toBe(true);
   });
 
+  it("accepts a real standbyHome, which is the precondition `runStandbyReset` leans on", () => {
+    const io = fakeDbIo({ [`/app/.forge/standby/app-db-standby/.wrangler/state/${STATE}`]: "" });
+    clearLocalState(io, standbyHome(dbConfig({ target: { place: "standby", database: null } }), io));
+    expect(io.exists(`/app/.forge/standby/app-db-standby/.wrangler/state/${STATE}`)).toBe(false);
+  });
+
   it("refuses the app's own home, whose state is not `.forge/`'s to throw away", () => {
     const io = fakeDbIo({ [`/app/.wrangler/state/${STATE}`]: "" });
     expect(() => clearLocalState(io, appHome(dbConfig()))).toThrow(

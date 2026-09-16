@@ -1,4 +1,4 @@
-export { type CatalogueScope, renderCatalogue } from "./catalogue/render";
+export { type CatalogueScope, renderCanon, renderCatalogue } from "./catalogue/render";
 export { createWardenCommands } from "./cli/commands";
 export { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./cli/knowledge";
 export { bindings, DEFAULT_ARCH, declaredVersion, executables, installedVersion, placeNatives } from "./cli/natives";

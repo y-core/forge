@@ -29,7 +29,7 @@ export const typeImportSeparation: LintRule = {
         if (inline.length === 0) return;
         const named = inline.map((specifier) => `\`${specifier.local?.name ?? "?"}\``).join(", ");
         context.report({
-          message: `${named} rides in on a value import as an inline \`type\` specifier — give the type its own \`import type { … }\` line, so what this file needs at runtime is legible from the import block alone (docs/LIBRARY_ARCHITECTURE.md §8).`,
+          message: `${named} rides in on a value import as an inline \`type\` specifier — give the type its own \`import type { … }\` line, so what this file needs at runtime is legible from the import block alone (docs/FORGE_STRUCTURE.md §8).`,
           loc: node.loc,
         });
       },

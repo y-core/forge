@@ -8,9 +8,9 @@ import {
   canonicaliseRow,
   canonicaliseValue,
   checkDataArtifact,
-  checkFullArtifact,
   checkInventory,
   checkRestoreTarget,
+  checkSchemaArtifact,
   classifyTable,
   compareKeys,
   compareManifests,
@@ -647,6 +647,15 @@ describe("insertStatement()", () => {
     );
   });
 
+  it("writes the idempotent form under orIgnore, and the bare one for an absent bag or a false flag", () => {
+    const row = { uuid: "t", lane: "todo" };
+    expect(insertStatement("tasks", ["uuid", "lane"], row, { orIgnore: true })).toBe(
+      `INSERT OR IGNORE INTO "tasks" ("uuid","lane") VALUES ('t','todo');`,
+    );
+    expect(insertStatement("tasks", ["uuid", "lane"], row, { orIgnore: false })).toBe(`INSERT INTO "tasks" ("uuid","lane") VALUES ('t','todo');`);
+    expect(insertStatement("tasks", ["uuid", "lane"], row, {})).toBe(`INSERT INTO "tasks" ("uuid","lane") VALUES ('t','todo');`);
+  });
+
   it("quotes a table and column name unconditionally, so a keyword name still loads", () => {
     expect(insertStatement("order", ["key"], { key: "k" })).toBe(`INSERT INTO "order" ("key") VALUES ('k');`);
   });
@@ -811,83 +820,88 @@ describe("decodeReadRow()", () => {
 const PREAMBLE = "PRAGMA defer_foreign_keys=TRUE;";
 const CLEAR_SEQUENCE = "DELETE FROM sqlite_sequence;";
 
-const FULL_DUMP = [
+const SCHEMA_DUMP = [
   PREAMBLE,
   "CREATE TABLE projects (uuid TEXT PRIMARY KEY);",
   "CREATE TABLE counted_rows (seq INTEGER PRIMARY KEY AUTOINCREMENT);",
   CLEAR_SEQUENCE,
-  `INSERT INTO "projects" VALUES('p');`,
-  `INSERT INTO "sqlite_sequence" VALUES('counted_rows',124);`,
 ];
 
-describe("checkFullArtifact()", () => {
-  it("passes a well-formed dump", () => {
-    expect(checkFullArtifact(FULL_DUMP.join("\n"))).toEqual([]);
+describe("checkSchemaArtifact()", () => {
+  it("passes a well-formed schema dump", () => {
+    expect(checkSchemaArtifact(SCHEMA_DUMP.join("\n"))).toEqual([]);
   });
 
   it("reports a file that does not open with wrangler's preamble", () => {
-    expect(checkFullArtifact(FULL_DUMP.slice(1).join("\n"))).toEqual([
+    expect(checkSchemaArtifact(SCHEMA_DUMP.slice(1).join("\n"))).toEqual([
       { line: 1, reason: "the first line is not PRAGMA defer_foreign_keys=TRUE; — this is not a wrangler dump" },
     ]);
   });
 
-  it("reports a dump that carries sqlite_sequence rows and never clears the table", () => {
-    expect(checkFullArtifact(FULL_DUMP.filter((line) => line !== CLEAR_SEQUENCE).join("\n"))).toEqual([
+  // The load-bearing rule: route full loads this file and then data.sql, so a schema that grew rows
+  // would restore them twice.
+  it("reports every INSERT, naming the table each one carries a row of", () => {
+    const grown = [...SCHEMA_DUMP, `INSERT INTO "projects" VALUES('p');`, `INSERT INTO "sqlite_sequence" VALUES('counted_rows',124);`];
+
+    expect(checkSchemaArtifact(grown.join("\n"))).toEqual([
       {
         line: 5,
-        reason:
-          "the dump carries 1 sqlite_sequence row(s) and never clears the table first, so restoring it would append to whatever the target already had",
+        reason: "an INSERT into projects — a schema artifact declares tables and carries no row, because route full loads data.sql after it",
+      },
+      {
+        line: 6,
+        reason: "an INSERT into sqlite_sequence — a schema artifact declares tables and carries no row, because route full loads data.sql after it",
       },
     ]);
   });
 
-  it("passes a dump from a database with no AUTOINCREMENT table, where sqlite_sequence does not exist", () => {
-    const dump = [PREAMBLE, "CREATE TABLE projects (uuid TEXT PRIMARY KEY);", `INSERT INTO "projects" VALUES('p');`];
-
-    expect(checkFullArtifact(dump.join("\n"))).toEqual([]);
+  it("reports a schema that declares no table at all, rather than leaving data.sql to fail row by row", () => {
+    expect(checkSchemaArtifact(PREAMBLE)).toEqual([
+      { line: 1, reason: "no CREATE TABLE at all — this cannot be the schema route full loads data.sql into" },
+    ]);
   });
 
-  it("reports a dump that clears sqlite_sequence twice", () => {
-    expect(checkFullArtifact([...FULL_DUMP.slice(0, 4), CLEAR_SEQUENCE, ...FULL_DUMP.slice(4)].join("\n"))).toEqual([
+  it("passes a schema from a database with no AUTOINCREMENT table, where sqlite_sequence does not exist", () => {
+    expect(checkSchemaArtifact([PREAMBLE, "CREATE TABLE projects (uuid TEXT PRIMARY KEY);"].join("\n"))).toEqual([]);
+  });
+
+  it("reports a schema that clears sqlite_sequence twice", () => {
+    expect(checkSchemaArtifact([...SCHEMA_DUMP, CLEAR_SEQUENCE].join("\n"))).toEqual([
       { line: 5, reason: "sqlite_sequence is cleared 2 times and should be cleared once" },
     ]);
   });
 
   it("reports a clear that lands before the last CREATE TABLE, where it would be undone", () => {
-    expect(checkFullArtifact([PREAMBLE, CLEAR_SEQUENCE, ...FULL_DUMP.slice(1, 3), ...FULL_DUMP.slice(4)].join("\n"))).toEqual([
+    expect(checkSchemaArtifact([PREAMBLE, CLEAR_SEQUENCE, ...SCHEMA_DUMP.slice(1, 3)].join("\n"))).toEqual([
       { line: 2, reason: "sqlite_sequence is cleared at line 2, before the last CREATE TABLE at line 4" },
     ]);
   });
 
   it("reports a row-removal statement that is not the sequence clear", () => {
-    expect(checkFullArtifact([...FULL_DUMP, "DELETE FROM task_reviews;"].join("\n"))).toEqual([
-      { line: 7, reason: "an unexpected row-removal statement in a dump: DELETE FROM task_reviews;" },
+    expect(checkSchemaArtifact([...SCHEMA_DUMP, "DELETE FROM task_reviews;"].join("\n"))).toEqual([
+      { line: 5, reason: "an unexpected row-removal statement in a schema: DELETE FROM task_reviews;" },
     ]);
-  });
-
-  it("leaves a data row alone whose own text spells out row-removal statements", () => {
-    expect(checkFullArtifact([...FULL_DUMP, `INSERT INTO "tasks" VALUES('t','${CLEAR_SEQUENCE} and DELETE FROM tasks;');`].join("\n"))).toEqual([]);
   });
 
   it("reads a trigger whose body deletes rows as one statement, and still faults a bare DELETE after it", () => {
     const trigger = ["CREATE TRIGGER sessions_sweep AFTER INSERT ON sessions BEGIN", "  DELETE FROM sessions WHERE expires < NEW.now;", "END;"];
-    expect(checkFullArtifact([...FULL_DUMP.slice(0, 3), ...trigger, ...FULL_DUMP.slice(3)].join("\n"))).toEqual([]);
-    expect(checkFullArtifact([...FULL_DUMP.slice(0, 3), ...trigger, ...FULL_DUMP.slice(3), "DELETE FROM users;"].join("\n"))).toEqual([
-      { line: 10, reason: "an unexpected row-removal statement in a dump: DELETE FROM users;" },
+    expect(checkSchemaArtifact([...SCHEMA_DUMP.slice(0, 3), ...trigger, ...SCHEMA_DUMP.slice(3)].join("\n"))).toEqual([]);
+    expect(checkSchemaArtifact([...SCHEMA_DUMP.slice(0, 3), ...trigger, ...SCHEMA_DUMP.slice(3), "DELETE FROM users;"].join("\n"))).toEqual([
+      { line: 8, reason: "an unexpected row-removal statement in a schema: DELETE FROM users;" },
     ]);
   });
 
   it("reports a virtual table declaration, which cannot be restored", () => {
-    const dump = [...FULL_DUMP.slice(0, 3), "CREATE VIRTUAL TABLE tasks_fts USING fts5(summary);", ...FULL_DUMP.slice(3)];
+    const dump = [...SCHEMA_DUMP.slice(0, 3), "CREATE VIRTUAL TABLE tasks_fts USING fts5(summary);", ...SCHEMA_DUMP.slice(3)];
 
-    expect(checkFullArtifact(dump.join("\n"))).toEqual([{ line: 4, reason: "a virtual table cannot be dumped or restored" }]);
+    expect(checkSchemaArtifact(dump.join("\n"))).toEqual([{ line: 4, reason: "a virtual table cannot be dumped or restored" }]);
   });
 });
 
 const DATA_DUMP = [PREAMBLE, `INSERT INTO "projects" VALUES('p','ledger',NULL,'2026-08-06');`, `INSERT INTO "tasks" VALUES('t');`];
 
 const SEQUENCE_REASON =
-  "sqlite_sequence is the engine's and is restored only by the full-dump route, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name";
+  "sqlite_sequence is the engine's and is restored only by schema.sql, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name";
 
 describe("checkDataArtifact()", () => {
   it("passes an artifact holding only rows of the tables it may carry", () => {
@@ -1017,7 +1031,7 @@ const MANIFEST: BackupManifest = {
   schema: ON_DISK,
   migrations: [{ name: "0001_init", sha256: MIGRATIONS_DIGEST }],
   tables: [{ name: "tasks", rows: 218, digest: SCHEMA_DIGEST }],
-  artifacts: [{ file: "full.sql", bytes: 1024, sha256: SCHEMA_DIGEST }],
+  artifacts: [{ file: "schema.sql", bytes: 1024, sha256: SCHEMA_DIGEST }],
   warnings: [],
   verified: [{ route: "full", divergent: 0 }],
   selfDigest: "e".repeat(64),
@@ -1042,13 +1056,13 @@ describe("validateManifest()", () => {
 
   it("refuses a formatVersion this tool does not write, including a missing one", () => {
     expect(validateManifest(manifestJson({ formatVersion: 1 }))).toEqual([
-      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
     ]);
     const value = manifestJson();
     delete value.formatVersion;
 
     expect(validateManifest(value)).toEqual([
-      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
     ]);
   });
 

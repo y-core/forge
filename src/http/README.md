@@ -378,20 +378,20 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview" (no leading slas
   `href`/`src`/`action`; `safeUrl` collapses dangerous schemes to `"#"`. Apply `safeUrl` first, then `escapeHtml` the result.
 - **`successAttr` is validated, not escaped.** `renderSuccess` rejects an attribute name that is not a valid HTML identifier
   (`^[A-Za-z_][A-Za-z0-9_-]*$`) by throwing. Keep `successAttr` developer-supplied configuration — never derive it from request input. Why it alone
-  is interpolated verbatim while every option _class_ value is escaped is [`ERROR_HANDLING.md`][eh-2d] §2d's.
+  is interpolated verbatim while every option _class_ value is escaped is [`FORGE_ERRORS.md`][eh-2d] §2d's.
 
 ---
 
 ## See also
 
-- [`ERROR_HANDLING.md`][eh] — the fragment renderers' contract and where the status goes (§2), the fragment options and their escaping (§2d), and
+- [`FORGE_ERRORS.md`][eh] — the fragment renderers' contract and where the status goes (§2), the fragment options and their escaping (§2d), and
   the `htmlResponse` / `html` / `escapeHtml` render paths (§3).
 - [`SECURITY_HARDENING.md`][sh] — automatic `safeUrl` sanitization at JSX render time, and why no `hx-*` attribute is covered by it (§2d).
 - [`NAMESPACES.md`][namespaces] — the ruling that every HTTP output concern lands here rather than reaching for `@remix-run/headers` directly (§5d).
 - [`@y-core/forge/session`](../session/) — `createSignedCookie` / `createUnsignedCookie`, preferred over the raw `SetCookie` builder for application
   cookies.
 
-[eh]: ../../docs/ERROR_HANDLING.md
-[eh-2d]: ../../docs/ERROR_HANDLING.md#2d-fragment-options-and-escaping
+[eh]: ../../docs/FORGE_ERRORS.md
+[eh-2d]: ../../docs/FORGE_ERRORS.md#2d-fragment-options-and-escaping
 [namespaces]: ../../docs/NAMESPACES.md
 [sh]: ../../docs/SECURITY_HARDENING.md

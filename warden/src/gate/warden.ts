@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 import { canonical } from "../../../src/tooling/gate/checks/design-system";
 import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
 import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
-import { renderCatalogue } from "../catalogue/render";
+import { renderCanon } from "../catalogue/render";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
-import { discover } from "../corpus/source";
+import { canonSources, discover, repoRelative } from "../corpus/source";
 import { type BuildReport, build, load } from "../index/build";
 import { gateIndexPath, openDatabase } from "../index/db";
 import { CANON_ROOT, packageNameOf } from "../paths";
@@ -31,6 +31,11 @@ export interface WardenCheckConfig extends DependencyOptions {
   canonRoot?: string;
   /** Where the gate builds its index. Defaults to `.forge/warden/gate.sqlite`. */
   indexPath?: string;
+  /** Whether this repository authors the canon. Set, the filename check also reads the canon tree
+   *  this repository is not subject to — otherwise a `canon/apps` name colliding with a library's
+   *  `docs/` one is invisible everywhere: in an app neither side is a `project` document, and the
+   *  library never co-indexes the two. Defaults to `false`. */
+  canonHome?: boolean;
 }
 
 /** Rebuilds the index from disk and asserts what retrieval depends on.
@@ -74,7 +79,8 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
       ...missingGloss(db, config.docsDir ?? "docs"),
       ...unresolvedRelations(db, config.canonRoot ?? CANON_ROOT),
       ...ambiguousCitations(report),
-      ...(config.catalogue === undefined ? [] : catalogueDrift(db, root, config.catalogue)),
+      ...filenameCollisions(root, collisionSources(config, sources)),
+      ...(config.catalogue === undefined ? [] : catalogueDrift(root, config.catalogue, config.canonRoot ?? CANON_ROOT)),
     ];
     const warnings = findings.filter((finding) => finding.level === "warn").length;
     return checkResult(
@@ -200,10 +206,83 @@ function ambiguousCitations(report: BuildReport): Finding[] {
     );
 }
 
+/** The documents the filename rule is about: the ones a citation addresses **by name**, so two of
+ *  them sharing one makes `TESTING.md §2a` two different rules. A canon document is named alone, a
+ *  governing document one directory deep is named by its file — and a README is not name-addressed
+ *  at all, since every namespace has one and a citation always carries its path. */
+function nameAddressed(doc: SourceDoc): boolean {
+  const segments = doc.path.split("/");
+  return segments.length <= 2 && segments.at(-1) !== "README.md";
+}
+
+/** The set the filename rule is computed over: everything this index covers, plus — in the canon's
+ *  home — the canon tree this repository is not subject to. */
+function collisionSources(config: WardenCheckConfig, sources: readonly SourceDoc[]): readonly SourceDoc[] {
+  if (config.canonHome !== true) return sources;
+  const other: Tree = config.kind === "apps" ? "libs" : "apps";
+  // The other tree alone: `canonSources` also returns `shared`, which this index already holds.
+  return [...sources, ...canonSources(other, config.canonRoot ?? CANON_ROOT).filter((doc) => doc.tree === other)];
+}
+
+/** How a colliding document is named in the finding that cites it, since a canon path is
+ *  tree-stripped and two trees would otherwise read as the same file. */
+function cite(doc: SourceDoc): string {
+  return doc.corpus === "canon" ? `canon/${doc.tree ?? ""}/${doc.path}` : `${doc.corpus}:${doc.path}`;
+}
+
+/** `canon/libs/X.md` and `canon/apps/X.md` may share a name: a repository takes one kind or the
+ *  other, so the two are never in one index and no citation can mean both. */
+function exemptPair(left: SourceDoc, right: SourceDoc): boolean {
+  return left.corpus === "canon" && right.corpus === "canon" && left.tree !== right.tree && left.tree !== "shared" && right.tree !== "shared";
+}
+
+/** Which side of a collision yields. **The specialising side renames, never the canon**: the canon's
+ *  name is what every other repository already cites, and an installed library's is what its own
+ *  readers cite. A repository's own document is the one free to move, so it is last. */
+function precedence(corpus: Corpus): number {
+  return corpus === "canon" ? 0 : corpus === "dependency" ? 1 : 2;
+}
+
+/** Two name-addressed documents in one index sharing a filename.
+ *
+ *  **Uniqueness is per index, not global.** The same name in two repositories that never see each
+ *  other's documents costs nothing; the same name twice in one index makes every citation of it
+ *  ambiguous, and no chunk id can disambiguate what a reader is holding in their head.
+ *
+ *  **The specialising side renames, never the canon** — the canon's name is the one every other
+ *  repository already cites. And where the specialising document only restates what the canon says,
+ *  the answer is to delete it rather than to rename it.
+ *
+ *  Scoped by `OWNED`, like every check here: a finding names a document this repository can edit and
+ *  cites the one it collides with as context. */
+function filenameCollisions(root: string, sources: readonly SourceDoc[]): Finding[] {
+  const groups = new Map<string, SourceDoc[]>();
+  for (const doc of sources.filter(nameAddressed)) {
+    const name = doc.path.split("/").at(-1) ?? doc.path;
+    groups.set(name, [...(groups.get(name) ?? []), doc]);
+  }
+
+  const findings: Finding[] = [];
+  for (const [name, group] of [...groups].sort(([left], [right]) => (left < right ? -1 : 1))) {
+    for (const doc of group) {
+      if (!OWNED.includes(doc.corpus)) continue;
+      const others = group.filter((other) => other !== doc && !exemptPair(doc, other) && precedence(other.corpus) <= precedence(doc.corpus));
+      if (others.length === 0) continue;
+      findings.push(
+        fail(
+          `\`${name}\` is already the name of ${others.map(cite).join(" and ")} — rename this document, or delete it where it restates that one`,
+          { file: repoRelative(root, doc.file) },
+        ),
+      );
+    }
+  }
+  return findings;
+}
+
 /** The committed catalogue against the one the corpus produces now. Compared through `canonical`,
  *  so a formatter's own whitespace can never fail the gate. */
-function catalogueDrift(db: Database, root: string, cataloguePath: string): Finding[] {
-  const rendered = renderCatalogue(db);
+function catalogueDrift(root: string, cataloguePath: string, canonRoot: string): Finding[] {
+  const rendered = renderCanon(canonRoot);
   const file = resolve(root, cataloguePath);
   if (!existsSync(file)) {
     return [fail("does not exist — run `warden catalogue --write`", { file: cataloguePath })];

@@ -289,7 +289,7 @@ and `--green-contrast` retire. The audit rows that already named `--emerald-cont
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
 [ucc-2]: ./UI_CLASS_COMPOSITION.md#2-colour-scheme-declaration-contract
 [ucc-2a]: ./UI_CLASS_COMPOSITION.md#2a-oklch-solids
-[ucc-2f]: ./UI_CLASS_COMPOSITION.md#2f-scale-tokens-are-namespaced-away-from-colour
+[ucc-2f]: ./UI_CLASS_COMPOSITION.md#2f-a-reserved-root-where-a-utility-root-carries-two-concerns
 [ucr-2b]: ./UI_CLIENT_RUNTIME.md#2b-theme-controller-and-fouc-prevention
 [ucr-2i]: ./UI_CLIENT_RUNTIME.md#2i-openpopoverat--coordinate-placement
 [us-1b]: ./UI_SHOWCASE.md#1b-routes-are-derived-from-one-base-path

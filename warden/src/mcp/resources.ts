@@ -2,6 +2,7 @@ import { renderCatalogue } from "../catalogue/render";
 import { parseCorpus } from "../corpus/ident";
 import type { Knowledge } from "../index/open";
 import { readDocument } from "../search/read";
+import { truncate } from "./truncate";
 
 /** A fixed resource, as MCP's `resources/list` returns it. @public */
 export interface ResourceSpec {
@@ -77,5 +78,5 @@ export function readResource(knowledge: Knowledge, uri: string): ResourceContent
   if (sections.length === 0) return undefined;
 
   const body = sections.map((section) => `## ${section.section}. ${section.title}\n\n${section.body}`).join("\n\n");
-  return { contents: [{ uri, mimeType: "text/markdown", text: body }] };
+  return { contents: [{ uri, mimeType: "text/markdown", text: truncate(body, path) }] };
 }

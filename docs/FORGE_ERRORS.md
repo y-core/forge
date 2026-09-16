@@ -139,7 +139,7 @@ only needed outside those paths.
 
 **For URL attribute values use `safeUrl`, not `escapeHtml`** — see [`SECURITY_HARDENING.md`][sh-2d] §2d.
 
-Test assertions against rendered HTML must match the encoded form — [`TESTING.md`][testing-3a] §3a owns the encoding map.
+Test assertions against rendered HTML must match the encoded form — [`TEST_RUNNERS.md`][testing-3a] §3a owns the encoding map.
 
 ### 3d. Who Answers in What — Guards in Plain Text, Handlers in Markup
 
@@ -217,9 +217,9 @@ before `requestId` carries neither the line nor the header.
   not a defect to page anyone about. `definePage` and `defineAction` rethrow on the same condition, so neither an `onError` page nor the generic
   fragment is built for a gone client — **this is the one case `defineAction` rethrows** (§5d).
 
-The boundary logs via `createLogger("app")` and includes the escaped `err.message` only in debug builds (the `isDebug` predicate passed to
-`createApp`). **The client never receives a stack trace.** Consumers may override the page with `onError` on `createApp`, `definePage`, or
-`defineAction`.
+The boundary logs via `createLogger("app")` and includes the escaped `err.message` only under a `DevAllowance` granting `errorDetail` — a token
+only a development entry can mint, passed to `createApp` or to `createErrorPage`. **The client never receives a stack trace.** Consumers may
+override the page with `onError` on `createApp`, `definePage`, or `defineAction`.
 
 ### 5c. Infrastructure Errors — Log and Fail Closed
 
@@ -308,5 +308,5 @@ parameter and never supply their own (`passkeyTtlSeconds(operation, requested)`)
 [sb-3b]: ./STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
 [sb-4a]: ./STORAGE_BINDINGS.md#4a-two-function-pattern
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization
-[testing-3a]: ./TESTING.md#3a-the-encoding-map
+[testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
 [ucc-1a]: ./UI_CLASS_COMPOSITION.md#1a-conflict-resolution-the-fail-open-boundary-and-the-memo

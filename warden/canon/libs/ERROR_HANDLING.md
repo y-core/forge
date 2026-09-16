@@ -42,7 +42,7 @@ description: "The one Result primitive and its narrowing rule, how failures cros
 ### 1a. The Unified `Result` Primitive
 
 There is exactly **one** result primitive, published from a single namespace, discriminated on an `ok` boolean. The repository's own
-`docs/ERROR_HANDLING.md` §1a publishes its exact signatures and the subpath they are imported from; this section carries only the rules they obey.
+`docs/FORGE_ERRORS.md` §1a publishes its exact signatures and the subpath they are imported from; this section carries only the rules they obey.
 
 **Return `Result` from any function that can fail predictably.**
 
@@ -139,7 +139,7 @@ middleware at all, and so the handler emits its own **baseline-hardened** respon
 referrer.
 
 **A pending queued header always beats one the handler baked into its own `Response`** — otherwise a handler could silently downgrade the
-application's policy. The repository's own `docs/ERROR_HANDLING.md` §5b states the precedence rule among queued headers and the exact baseline
+application's policy. The repository's own `docs/FORGE_ERRORS.md` §5b states the precedence rule among queued headers and the exact baseline
 header set.
 
 The consequence worth holding on to: **an error page is the response most likely to be rendered with attacker-influenced content**, so it is the
@@ -166,7 +166,7 @@ than throwing ([`BOUNDARIES.md`][boundaries-5b] §5b).
 
 Mistakes that cannot be recovered at the call site. **The application needs no per-route `try/catch`** — the router installs an error boundary as
 middleware, and it is installed at more than one depth, because a throw from a route handler and a throw from an application-level guard unwind
-through different amounts of the chain and therefore carry different headers. The repository's own `docs/ERROR_HANDLING.md` §5b names the depths and
+through different amounts of the chain and therefore carry different headers. The repository's own `docs/FORGE_ERRORS.md` §5b names the depths and
 the guarantee each one gives.
 
 The portable consequence: **middleware that queues headers before calling next still protects an error page; middleware that queues on the way out

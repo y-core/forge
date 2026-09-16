@@ -4,6 +4,7 @@ import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { createConfig } from "../config/config";
+import { devAllowance } from "../dev/allowance";
 import { csrfProtection, importCsrfKey } from "../form/csrf";
 import type { SerializedError } from "../logging/types";
 import { createSecurityHeaders } from "../security/headers";
@@ -125,8 +126,8 @@ describe("createApp", () => {
     expect(await res.text()).toBe("custom error");
   });
 
-  it("shows error details when isDebug returns true", async () => {
-    const app = createApp({ isDebug: () => true });
+  it("shows error details under a dev allowance granting errorDetail", async () => {
+    const app = createApp({ dev: devAllowance({ errorDetail: true }) });
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("database timeout");
     });
@@ -138,7 +139,7 @@ describe("createApp", () => {
   });
 
   it("escapes HTML in debug error messages", async () => {
-    const app = createApp({ isDebug: () => true });
+    const app = createApp({ dev: devAllowance({ errorDetail: true }) });
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("<script>alert(1)</script>");
     });
@@ -148,8 +149,8 @@ describe("createApp", () => {
     expect(text).toBe(boundary("&lt;script&gt;alert(1)&lt;/script&gt;"));
   });
 
-  it("hides error details when isDebug returns false", async () => {
-    const app = createApp({ isDebug: () => false });
+  it("hides error details when the allowance grants something else", async () => {
+    const app = createApp({ dev: devAllowance({ rateLimitOptional: true }) });
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("secret info");
     });

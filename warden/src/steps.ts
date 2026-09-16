@@ -43,9 +43,12 @@ export function wardenStep(config: WardenCheckConfig, options: StepOptions = {})
 
 /** Runs the golden retrieval set against a freshly built index. A second step rather than a second
  *  assertion inside the first: the two fail for different reasons, and a reader has to be told
- *  which one to fix. @public */
+ *  which one to fix.
+ *
+ *  The mode is passed on rather than dropped: the floor-margin guard warns on a standard run and
+ *  fails on a release one. @public */
 export function wardenQueriesStep(config: GoldenCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("warden:queries", () => checkGoldenQueries(config), options, { requires: SQLITE });
+  return checkStep("warden:queries", (mode) => checkGoldenQueries(config, mode), options, { requires: SQLITE });
 }
 
 /** Reports two sections saying the same thing, which the single-home rule forbids. A third step for

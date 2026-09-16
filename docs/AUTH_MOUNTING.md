@@ -13,7 +13,7 @@ audience: consumer
 > Owns the mount, not the flows. What each flow does once mounted is [`AUTH_FLOWS.md`][af], which also owns the limits this release carries.
 >
 > Defers to: [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
-> [`src/auth/README.md`][auth-readme] for every signature, option shape and export; [`ERROR_HANDLING.md`][eh-5e] §5e for why resolution throws and
+> [`src/auth/README.md`][auth-readme] for every signature, option shape and export; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
 > operations return a `Result`; [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c for `resume()` and scope registration.
 
 ---
@@ -310,7 +310,7 @@ there is one.
 [af-5]: ./AUTH_FLOWS.md#5-email-change
 [auth-readme]: ../src/auth/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../src/form/README.md
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [session-readme]: ../src/session/README.md

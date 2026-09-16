@@ -6,10 +6,10 @@ import { sha256 } from "../digest";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbRunContext } from "../types";
-import { queryOne, queryRows } from "../wrangler";
+import { queryBatches, queryRows } from "../wrangler";
 import { classifyTable, isVerifiedBackupOf, validateManifest, verifyBackupArtifact } from "./artifact";
 import { resolveBackupsDir } from "./backup";
-import { describeTable, readWholeTable } from "./read";
+import { describeTables, readWholeTable } from "./read";
 import { readBackupManifest } from "./restore";
 import type { ResetOptions, ResetOutcome, ResetPlan } from "./types";
 
@@ -111,11 +111,9 @@ export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPla
   if (!io.exists(state)) return { database: home.database, state: null, rows: 0, backedUpBy: null };
 
   const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-  const counts = new Map<string, number>();
-  for (const object of objects) {
-    if (object.type !== "table" || classifyTable(object.name) !== "app") continue;
-    counts.set(object.name, Number(queryOne(io, home, rowCountSelect(object.name)).rows ?? 0));
-  }
+  const appTables = objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app").map((object) => object.name);
+  const counted = queryBatches(io, home, appTables.map(rowCountSelect));
+  const counts = new Map<string, number>(appTables.map((name, index) => [name, Number(counted[index]?.[0]?.rows ?? 0)]));
   const rows = [...counts.values()].reduce((total, count) => total + count, 0);
 
   let backedUpBy: string | null = null;
@@ -125,10 +123,10 @@ export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPla
     const stale = compareCounts(selected.manifest, counts);
     if (stale.length === 0) {
       const digests = new Map(selected.manifest.tables.map((table) => [table.name, table.digest]));
-      for (const name of [...counts.keys()].sort()) {
-        const read = readWholeTable(io, home, describeTable(io, home, name));
-        if (digests.get(name) !== sha256(read.rows.map((row) => row.canonical).join("\n"))) {
-          stale.push(`${name}: ${read.rows.length} row(s) in both, and their contents differ`);
+      for (const table of describeTables(io, home, [...counts.keys()].sort())) {
+        const read = readWholeTable(io, home, table);
+        if (digests.get(table.name) !== sha256(read.rows.map((row) => row.canonical).join("\n"))) {
+          stale.push(`${table.name}: ${read.rows.length} row(s) in both, and their contents differ`);
         }
       }
     }

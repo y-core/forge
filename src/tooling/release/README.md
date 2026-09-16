@@ -76,10 +76,10 @@ is what publishes, via `.github/workflows/release.yml`: the workflow re-runs the
 with `bun pm pack`, and attaches the result to a GitHub Release.
 
 ```json
-{ 
-  "dependencies": { 
-    "@y-core/forge": "https://github.com/y-core/forge/releases/download/v0.1.12/y-core-forge-0.1.12.tgz" 
-  } 
+{
+  "dependencies": {
+    "@y-core/forge": "https://github.com/y-core/forge/releases/download/v0.1.12/y-core-forge-0.1.12.tgz"
+  }
 }
 ```
 

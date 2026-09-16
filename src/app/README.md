@@ -15,7 +15,7 @@ path-scoped middleware, per-request config/env injection, two route-handler fact
 (`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
 
 This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the
-app lifecycle. See [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] and [`docs/LIBRARY_ARCHITECTURE.md`][la] for the authoritative architecture.
+app lifecycle. See [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] and [`docs/FORGE_STRUCTURE.md`][la] for the authoritative architecture.
 
 ---
 
@@ -62,7 +62,7 @@ interface Bindings {
 
 const app = createApp<Bindings>({
   config: configStore, // resolved once per request → c.config
-  isDebug: (c) => configStore.get(c.env).site.debug, // show error detail when true
+  dev, // the token minted in src/worker.dev.ts; with `errorDetail`, the 500 page prints the thrown message
 });
 
 // Global, path-scoped middleware. "*" matches everything; "/api/*" matches the prefix.
@@ -104,7 +104,7 @@ Creates a `Forge` instance with a structured error boundary.
 | Option | Type | Description |
 | --- | --- | --- |
 | `config` | `Config<T>` (object) | A config store (from `@y-core/forge/config`). Registered against the app and resolved once per request; the result is exposed as `c.config` and to page/action handlers. |
-| `isDebug` | `(c: AppContext<Bindings>) => boolean` | When it returns `true`, the default `500` page includes the error message; otherwise a generic message is shown. Throwing inside `isDebug` is caught and treated as `false`. |
+| `dev` | `DevAllowance` | A token from `@y-core/forge/dev`. With `errorDetail` granted, the default `500` page includes the error message; otherwise a generic message is shown. Only a development entry can mint one. |
 | `onError` | `(error: Error, c: AppContext<Bindings>) => Response \| Promise<Response>` | Custom app-level error handler. Replaces the default `500` page. If it throws, forge falls back to the default page. |
 | `logger` | `Logger` | Custom logger injected into the error handler. Defaults to `createLogger("app")`. |
 | `shell` | `PageShell<Bindings>` | The document every mounted page renders into, resolved per request. Omitted, forge renders a bare document. |
@@ -124,7 +124,7 @@ import { applyMiddlewareChain, createApp } from "@y-core/forge/app";
 
 export default createApp<Bindings>({
   config: configStore,
-  isDebug: (c) => configStore.get(c.env).site.debug,
+  dev, // minted in src/worker.dev.ts
   onError: (err, c) => renderErrorPage(c, err),
   middleware: (app) =>
     applyMiddlewareChain(app, {
@@ -340,12 +340,12 @@ real routes take precedence over the catch-all.
 ### `createErrorPage(options?)`
 
 Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` (and reusable as `definePage`'s `onError`). It preserves the default
-boundary's guarantees — the real error message appears **only** when `isDebug(c)` returns `true` (a throwing `isDebug` counts as `false`), and all
+boundary's guarantees — the real error message appears **only** under a `DevAllowance` granting `errorDetail`, and all
 interpolated content is HTML-escaped.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `isDebug` | `(c) => boolean` | `() => false` | Gate for showing `error.message`. |
+| `dev` | `DevAllowance` | — | With `errorDetail` granted, shows `error.message`. Mintable only from a development entry ([`@y-core/forge/dev`][dev-readme]). |
 | `title` | `string` | `"Something went wrong"` | Page `<title>` and heading. |
 | `stylesheetHref` | `string \| ((c) => string)` | — | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
 | `homeHref` | `string` | — | Optional "Back to safety" link. |
@@ -357,7 +357,7 @@ support ticket. Neither this page nor the default boundary page generates an id,
 import { createApp, createErrorPage } from "@y-core/forge/app";
 
 const onError = createErrorPage<Bindings>({
-  isDebug: (c) => configStore.get(c.env).site.debug,
+  dev, // minted in src/worker.dev.ts
   stylesheetHref: "/assets/css/main.css",
   homeHref: "/",
 });
@@ -604,9 +604,10 @@ expect(res.status).toBe(200);
 
 - **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page that carries
   security headers by construction. The three paths, the baseline header set an out-of-chain throw ships, and what a guard throwing mid-chain does
-  and does not queue are [`ERROR_HANDLING.md`][eh-5b] §5b's.
-- **Error detail is gated.** The default `500` page reveals the error message **only** when `isDebug(c)` returns `true`; otherwise it shows a
-  generic message. Never wire `isDebug` to a value an attacker controls.
+  and does not queue are [`FORGE_ERRORS.md`][eh-5b] §5b's.
+- **Error detail is gated by a token production cannot mint.** The default `500` page reveals the error message **only** under a `DevAllowance`
+  granting `errorDetail` ([`@y-core/forge/dev`][dev-readme]); otherwise it shows a generic message. There is no predicate to wire to a value an
+  attacker controls, and `validate-dev-boundary` fails the import that would mint the token outside a `*.dev.ts` entry.
 - **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply
   `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
 - **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app
@@ -631,8 +632,8 @@ request-independent across V8 isolates. Use `c.executionCtx.waitUntil` for work 
 Related docs:
 
 - [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
-- [`docs/LIBRARY_ARCHITECTURE.md`][la] — facade pattern, namespace tiers, Workers runtime constraints.
-- [`docs/ERROR_HANDLING.md`][eh] — the error boundary's three paths and their header guarantees (§5b), and the `definePage`/`defineAction` recovery
+- [`docs/FORGE_STRUCTURE.md`][la] — facade pattern, namespace tiers, Workers runtime constraints.
+- [`docs/FORGE_ERRORS.md`][eh] — the error boundary's three paths and their header guarantees (§5b), and the `definePage`/`defineAction` recovery
   divergence (§5d).
 
 ---
@@ -663,12 +664,13 @@ Related docs:
 | `PageDefinition` | type | The `definePage` config shape, inheriting the submission sequence's options. |
 
 [config-readme]: ../config/README.md
-[eh]: ../../docs/ERROR_HANDLING.md
-[eh-5b]: ../../docs/ERROR_HANDLING.md#5b-unexpected-errors--the-router-error-boundary
+[dev-readme]: ../dev/README.md
+[eh]: ../../docs/FORGE_ERRORS.md
+[eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [iv-1b]: ../../docs/INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
 [iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-4b]: ../../docs/INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
-[la]: ../../docs/LIBRARY_ARCHITECTURE.md
+[la]: ../../docs/FORGE_STRUCTURE.md
 [la-1a]: ../../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1a-facade-over-dependencies
 [ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell

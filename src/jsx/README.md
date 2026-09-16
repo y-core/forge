@@ -295,9 +295,9 @@ emits element-construction calls, never the rendered output.
 - [`@y-core/forge/ui/core`][ui-readme] — the SSR components built on this runtime.
 - [`UI_SSR_COMPONENTS.md`][usc] — the component contract the renderer serves, and the dropped-`style` ruling (§1a).
 - [`SECURITY_HARDENING.md`][sh] — automatic URL sanitization at render time and its limits (§2d).
-- [`ERROR_HANDLING.md`][eh] — the `html` tag and `escapeHtml`, for the raw string paths outside this runtime (§3).
+- [`FORGE_ERRORS.md`][eh] — the `html` tag and `escapeHtml`, for the raw string paths outside this runtime (§3).
 
-[eh]: ../../docs/ERROR_HANDLING.md
+[eh]: ../../docs/FORGE_ERRORS.md
 [http-readme]: ../http/README.md
 [sh]: ../../docs/SECURITY_HARDENING.md
 [sh-2d]: ../../docs/SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

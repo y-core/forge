@@ -5,20 +5,14 @@ import { htmlResponse } from "../http/response";
 import { requestIdCtx } from "../security/request-id";
 import type { ErrorPageOptions } from "./types";
 
-/** Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`. @public */
+/** Builds a styled full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`; the thrown message is printed only under a `DevAllowance` granting `errorDetail`. @public */
 export function createErrorPage<Bindings = Record<string, unknown>>(
   options: ErrorPageOptions<Bindings> = {},
 ): (error: Error, c: AppContext<Bindings>) => Response {
   const title = options.title ?? "Something went wrong";
 
   return (error, c) => {
-    let debug = false;
-    try {
-      debug = options.isDebug?.(c) ?? false;
-    } catch {
-      // A broken debug probe must never leak detail — treat as production.
-    }
-    const message = debug ? error.message : "An unexpected error occurred.";
+    const message = options.dev?.options.errorDetail === true ? error.message : "An unexpected error occurred.";
 
     let stylesheetHref: string | undefined;
     try {

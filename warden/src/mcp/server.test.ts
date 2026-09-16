@@ -166,9 +166,21 @@ describe("handle() freshness", () => {
     const { index, root } = served();
 
     writeFileSync(join(root, "docs/A.md"), `${DOC}\nA sentence about honeypots.\n`, "utf-8");
-    handle(index, "tools/list", {}, 1);
+    handle(index, "initialize", {}, 1);
+    handle(index, "resources/templates/list", {}, 2);
 
     expect(search(index.db, "honeypots")).toEqual([]);
+    index.close();
+  });
+
+  // `tools/list` is the exception among the describing methods: the search description names the
+  // documents this index holds, so a stale one advertises a corpus that has moved on.
+  it("rebuilds for tools/list, whose description is built from the corpus", () => {
+    const { index, root } = served();
+
+    writeFileSync(join(root, "docs/B.md"), DOC, "utf-8");
+
+    expect(JSON.stringify(handle(index, "tools/list", {}, 1))).toContain("B.md");
     index.close();
   });
 });

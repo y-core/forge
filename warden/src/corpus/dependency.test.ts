@@ -116,7 +116,7 @@ describe("dependencyRootOf()", () => {
 
 describe("discover()", () => {
   it("indexes nothing of the library until a root is passed", () => {
-    const repo = tree({ "docs/A.md": doc(undefined), "warden/canon/libs/CODE_RULES.md": doc(undefined) });
+    const repo = tree({ "docs/A.md": doc(undefined), "warden/canon/shared/CODE_RULES.md": doc(undefined) });
     const canonRoot = join(repo, "warden/canon");
 
     expect(discover(repo, "libs", { canonRoot }).some((source) => source.corpus === "dependency")).toBe(false);

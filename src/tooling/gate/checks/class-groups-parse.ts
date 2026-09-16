@@ -120,6 +120,8 @@ const SR_ONLY_GROUP = "sr-only";
 
 const SCALE_ROOT = "text-size";
 
+const FACE_ROOT = "font-face";
+
 function tally(values: Iterable<string>): Map<string, number> {
   const counts = new Map<string, number>();
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
@@ -276,6 +278,15 @@ export function deriveClassGroups(ds: DesignSystem, stateRecipes: readonly strin
   if (fontSize !== undefined && !roots.has(SCALE_ROOT)) {
     const arbitrary = textRow?.kinds?.["length"] ?? textRow?.arbitrary;
     roots.set(SCALE_ROOT, arbitrary === undefined ? { named: fontSize } : { named: fontSize, arbitrary });
+  }
+
+  // The same reservation, for the same trap one root over: `font` is modally weight, so a consumer's
+  // `--font-display` reads as weight and `cn("font-display", "font-semibold")` drops the face.
+  const fontRow = roots.get("font");
+  const fontFamily = fontRow?.exceptions?.group;
+  if (fontFamily !== undefined && !roots.has(FACE_ROOT)) {
+    const arbitrary = fontRow?.kinds?.["other"] ?? fontRow?.arbitrary;
+    roots.set(FACE_ROOT, arbitrary === undefined ? { named: fontFamily } : { named: fontFamily, arbitrary });
   }
 
   const groups = new Set<string>(statics.values());

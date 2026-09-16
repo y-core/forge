@@ -12,10 +12,11 @@ audience: consumer
 > copied into it, and what a backup artifact must be for a restore to mean anything.
 >
 > Defers to: [`SCHEMA_COMPOSITION.md`][sc] for how a declared schema becomes the migration this document applies — ownership, what compose emits,
-> the stamp and the snapshot; [`src/tooling/db/README.md`][db-readme] for the command tree, every flag and every export;
-> [`STORAGE_BINDINGS.md`][sb-1] §1 for the runtime D1 client a Worker reads the same database through; [`NAMESPACES.md`][namespaces-5g] §5g for why
-> this surface is a `tooling` namespace and never Worker-reachable; [`BUILD_TOOLING.md`][bt-1c] §1c for the exit contract every verb reports
-> through.
+> the stamp and the snapshot; [`DATABASE_BACKUPS.md`][db] for the artifact whole — the four files, the proof both routes pass, the data format and
+> its limits, and what a restore and a reset check before they act; [`src/tooling/db/README.md`][db-readme] for the command tree, every flag, every
+> worked invocation and every export; [`STORAGE_BINDINGS.md`][sb-1] §1 for the runtime D1 client a Worker reads the same database through;
+> [`NAMESPACES.md`][namespaces-5g] §5g for why this surface is a `tooling` namespace and never Worker-reachable; [`BUILD_TOOLING.md`][bt-1c] §1c for
+> the exit contract every verb reports through.
 
 ---
 
@@ -23,12 +24,12 @@ audience: consumer
 
 - §1 Forward-Only Migrations: why no migration has a Down, and what replaces one
 - §2 Targets and Homes: the `place[:database]` grammar, the four places, and where each one's state lives
-- §2a Standby — a Second Local Database: what it is for and why it is generated, not checked in
+- §2a Standby — a Second Local Database: what it is for, why it is generated rather than checked in, and the one verb that rebuilds it
 - §3 The Undo, Per Place: a Time Travel bookmark on a deployed database, reset-and-restore locally, and a backup from any place
 - §4 The Companion Tables: the two tables forge keeps, why their names begin `_forge_`, and that forge owns the migration history outright
 - §4a `_forge_migrations` — The Migration History: what each column holds, the three states status reports, and what a NULL fingerprint means
 - §4c `_forge_seed_history` — What Has Been Seeded: a seed that already ran, and one that was edited since
-- §5 The Migration Lint Rules: the eighteen rules, their levels, when a level aborts, and the compose warning that never does
+- §5 The Migration Lint Rules: what each rule matches and why, when a level aborts, and the compose warning that never does
 - §6 Applying: the lock, the `--to` cut, and the status gate
 - §6a The Apply Lock: one apply per home at a time
 - §6c `status --check` Exit Conditions: exactly what makes the gate fail
@@ -40,9 +41,9 @@ audience: consumer
 - §7 The Seed Contract: keyed by directory and name, hashed over raw text, refused when it changed, off the deployed database without a places line,
   and guarded there like a migrate
 - §7a Migration or Seed: where a row belongs
+- §7b A Generated Fixture Seed: rows in memory emitted as SQL, proved against the declared schema, and what the generator refuses
 - §8 Every Position Is Declared: the host config names every file forge reads, and nothing else is read
-- §9 Backup Artifacts: a pointer to [`DATABASE_BACKUPS.md`][db], which owns the artifact whole
-- §10 Consumer Scripts and the CI Gate: the nine scripts, and the two lines that belong before a deploy
+- §9 The CI Gate: the two lines that belong before a deploy, and why neither covers the other
 
 ---
 
@@ -101,6 +102,14 @@ config carries its own `--persist-to`.
 The generated config is marked as generated, is not read by the Worker, and is safe to delete. `.forge/` as a whole is scratch: `standby/`,
 `scratch/` and `backups/` all live under it.
 
+**`forge db standby reset` is the one verb that builds one**, and it is the three steps in order: empty the state directory, apply every migration,
+apply every seed. `--target` defaults to `standby` here rather than the shared `local`, because the verb refuses every other place by name — a
+`--target local` is a typo rather than an instruction. `--no-seed` stops after the migrations, `--dir <seeds>` narrows the seeding to one directory,
+and `--yes` skips the confirmation a non-interactive run needs.
+
+**The wipe is on the way in, and nothing wipes on the way out.** An exit path can be skipped — a killed run, a crashed server, an interrupted gate —
+so a caller whose determinism depended on the previous run having cleaned up is exactly the ambient state this verb ends.
+
 ---
 
 ## 3. The Undo, Per Place
@@ -125,18 +134,12 @@ fingerprint — `--allow-drift` is the way past that refusal, and the apply then
 **The cheapest undo is not needing one:** `forge db migrate --rehearse` applies the pending migrations to a copy restored from a backup artifact
 first, so a migration that only fails on real rows fails on the copy (§6f).
 
-**On `local` and `standby`, the undo is a verified backup and a reset.** Time Travel does not exist off Cloudflare, so the sequence is explicit:
-
-```bash
-forge db backup                                   # a verified artifact of the current state
-forge db reset --expect <database>                # remove the local state files
-forge db restore --artifact .forge/backups/<dir>  # load the artifact into the empty database
-```
+**On `local` and `standby`, the undo is a verified backup and a reset.** Time Travel does not exist off Cloudflare, so the sequence is explicit and
+in three verbs rather than one: back up, reset, restore. The README spells the invocation.
 
 `reset` is the only verb that empties a database, and it does so by removing miniflare's state files rather than by deleting rows. It refuses to run
-against a database that holds rows and has no verified backup that still describes those rows, unless `--allow-unbacked` says the database is
-disposable; `--backup <dir>` names the artifact to rely on instead of the most recent verified one ([`DATABASE_BACKUPS.md`][db-6] §6). `--expect` is
-required so a stale `--target` cannot aim it at the wrong database.
+against a database that holds rows and has no verified backup that still describes those rows ([`DATABASE_BACKUPS.md`][db-6] §6). It also demands
+the database be named back to it, so a stale `--target` cannot aim it at the wrong one.
 
 **The undo halves do not cross, and `backup` reads any place.** `forge db backup --target remote` gives a deployed database a verified artifact that
 outlives Time Travel's thirty days: it is taken read-only and proven into a local scratch ([`DATABASE_BACKUPS.md`][db-3] §3). `restore` and `reset`
@@ -454,6 +457,35 @@ new column needs, a move a DDL change requires. It is part of the schema's meani
 **A row goes in a seed when it is environment content**: development users, sample posts, an admin whose address differs by place. It may differ by
 place, it may be re-run, and it is never what makes the deployed database correct.
 
+### 7b. A Generated Fixture Seed
+
+**`composeSeedFixture` writes a seed from rows held in memory, and there is no CLI verb for it** — the rows are TypeScript literals in the
+consumer's own build script and cannot reach a flag. It exists so a fixture is never hand-typed `INSERT` text: a statement built by concatenation is
+indistinguishable at its call site from one built from a literal, and the newline encoding forge's artifact writer owns then has a second home to
+drift from.
+
+What it does, in order: reads the declared schema into a scratch database of its own (`fixture`, kept apart from the two `migrate compose` caches so
+a regeneration can never empty a database a cached model was built against, and forced to `local` so no target a caller resolved is reachable),
+reads each named table's columns in `cid` order, emits one single-line `INSERT OR IGNORE` per row, loads the whole text, and counts what arrived.
+
+It refuses, each naming what to change:
+
+- **A path outside every declared seeds directory (§8), or one not ending `.sql`** — a seed forge does not read is a file nothing applies.
+- **A table the declared schema does not create.**
+- **A row missing a column the schema declares**, naming the table and the columns. An authored key the schema does not declare is the other way
+  round: it is reported in the outcome and not emitted, because nothing has to be edited for a drop.
+- **A `${VAR}` or `${VAR:-default}` anywhere in the emitted text.** `seed apply` would substitute it (§7), so a fixture carrying one does not say
+  what it appears to say. The scan is for the expander's own pattern rather than for a bare `${`: anything it would not substitute, it would also
+  not refuse.
+- **A load the schema rejects** — a `CHECK` or a foreign key, named by the constraint that refused the row. Foreign keys are asserted on first,
+  since a scratch database with them off would prove nothing.
+- **A loaded count below the authored count**, which is a duplicate key `OR IGNORE` swallowed. This is what buys back what `OR IGNORE` costs, and it
+  is also the only check that covers a statement the file never emitted.
+
+**The bytes are stable across runs**: no generated-at header and no version stamp, because a stamp would change the file's hash every release and
+`seed apply` would report the seed as `changed`. Composing the same rows twice gives the same `sha256`, which is what makes "regenerate, then expect
+an empty diff" a usable check in a consumer's gate.
+
 ---
 
 ## 8. Every Position Is Declared
@@ -462,29 +494,14 @@ place, it may be re-run, and it is never what makes the deployed database correc
 contributes no DDL to your database because it happens to ship some; it contributes DDL because the app asked for it, by path, in a file a reviewer
 can see.
 
-```ts
-import type { DbHostConfig } from "@y-core/forge/tooling/db";
+It declares five positions: the desired-state files in load order, the seeds directories in run order, the one migrations directory, where the
+composed snapshot lives, and where backups go. The fields, their defaults and a worked `db.ts` are the README's; `DbHostConfig` in
+`src/tooling/db/types.ts` is authoritative over both ([`SOURCE_OF_TRUTH.md`][sot] §2a).
 
-export default {
-  // Loaded in this order into one empty database, so a file with a FOREIGN KEY comes after the
-  // file that declares the table it points at.
-  schemas: ["node_modules/@acme/auth/schema.sql", "config/schema.sql"],
-  seeds: ["config/seeds"],
-} satisfies DbHostConfig;
-```
-
-| Field | What it names | Default |
-| --- | --- | --- |
-| `schemas` | Every desired-state file or directory, in load order | `[]` — nothing is implicit |
-| `seeds` | Every seeds directory, in run order | `[]` |
-| `migrations` | The one directory every migration is read from and composed into | `migrations` |
-| `snapshot` | Where the composed snapshot lives | `schema.snapshot.json` |
-| `backupsDir` | Where backups go | `.forge/backups` |
-
-**Every path is resolved against the root**, the `migrations` directory included, so the four of them read one way instead of three. An app that
-kept its migrations somewhere other than `migrations/` names it here; `migrations_dir` and `migrations_table` in a `d1_databases` entry are not read
-at all, and leaving them in `wrangler.jsonc` changes nothing. The snapshot's default moved with the base: it sits at the root beside `config/`
-unless `snapshot` says otherwise.
+**Two rulings hold whatever the fields say.** `schemas` is ordered and loaded into one empty database, so a file with a `FOREIGN KEY` comes after
+the file declaring the table it points at. And **every path is resolved against the root**, the `migrations` directory included, so they read one
+way instead of several — an app that keeps its migrations elsewhere names the directory here, and `migrations_dir` and `migrations_table` in a
+`d1_databases` entry are not read at all.
 
 The file itself is optional, and an app with none declares nothing: `compose` and `schema check` say so and name what to write.
 
@@ -507,32 +524,7 @@ throwaway D1 and fails when the DDL does not execute — which is the whole of w
 
 ---
 
-## 9. Backup Artifacts
-
-Moved whole to [`DATABASE_BACKUPS.md`][db]: the four files, the proof both routes pass before the artifact exists, the data format and its limits,
-and what a restore and a reset check before they act.
-
----
-
-## 10. Consumer Scripts and the CI Gate
-
-The verbs are long enough to be worth naming once in `package.json`:
-
-```json
-{
-  "scripts": {
-    "db:migrate": "forge db migrate",
-    "db:migrate:remote": "forge db migrate --target remote",
-    "db:status": "forge db migrate status",
-    "db:backup": "forge db backup",
-    "db:restore": "forge db restore",
-    "db:reset": "forge db reset",
-    "db:lint": "forge db lint --strict",
-    "db:compose": "forge db migrate compose",
-    "db:schema:check": "forge db schema check"
-  }
-}
-```
+## 9. The CI Gate
 
 **Two lines belong in CI, before the deploy step:**
 
@@ -554,9 +546,6 @@ a column no migration has applied is the failure they catch, and the build is th
 database — in `full`. An app already on the shared Worker table takes the same pair from `cloudflareWorkerSteps({ db: true })` rather than appending
 the builder itself.
 
-A destructive verb asks before it acts, so any of them in a non-interactive run needs `--yes`, and a run without a terminal that did not pass it is
-refused rather than assumed.
-
 [bt-1c]: ./BUILD_TOOLING.md#1c-errors-carry-a-kind-not-an-exit-code
 [db]: ./DATABASE_BACKUPS.md
 [db-3]: ./DATABASE_BACKUPS.md#3-a-remote-backup-is-a-read
@@ -571,3 +560,4 @@ refused rather than assumed.
 [sc-1]: ./SCHEMA_COMPOSITION.md#1-how-a-migration-is-composed
 [sc-2]: ./SCHEMA_COMPOSITION.md#2-the-desired-state-file
 [sc-3]: ./SCHEMA_COMPOSITION.md#3-ownership
+[sot]: ./SOURCE_OF_TRUTH.md#2a-package-and-configuration-facts

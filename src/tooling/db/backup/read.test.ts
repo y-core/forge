@@ -1,10 +1,32 @@
 import { describe, expect, it } from "bun:test";
 
 import { toColumnInfo, toSchemaObjects } from "../sql";
-import { argvHas, describeTableReply, fakeDbIo, jsonBatches, jsonRows, projectReadRows } from "../test-support";
+import {
+  argvHas,
+  fakeDbIo,
+  jsonRows,
+  keyProbeAsked,
+  keyProbeReply,
+  projectReadRows,
+  routedReply,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
+} from "../test-support";
 import type { DbIo, FakeDbIo, Home } from "../types";
 import { SqlReal } from "./artifact";
-import { compareTable, describeTable, discoverAppTables, keyCollation, readColumns, readPage, readWholeTable } from "./read";
+import {
+  compareTable,
+  dependencyOrder,
+  describeTable,
+  describeTables,
+  discoverAppTables,
+  keyCollation,
+  readColumns,
+  readPage,
+  readWholeTable,
+  referencedTables,
+} from "./read";
 
 function capture(run: () => unknown): unknown {
   try {
@@ -56,14 +78,6 @@ const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
   ],
 };
 
-function storageClassOf(value: unknown): string {
-  if (value === null || value === undefined) return "null";
-  if (value instanceof SqlReal) return "real";
-  if (Array.isArray(value)) return "blob";
-  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "real";
-  return "text";
-}
-
 function sortKey(value: unknown): string {
   if (value instanceof SqlReal) return String(value.value);
   return Array.isArray(value)
@@ -74,46 +88,34 @@ function sortKey(value: unknown): string {
     : String(value);
 }
 
-/** A fake wrangler that answers the inventory, `pragma_table_info`, and a keyset page of `rows`. */
+/** A fake wrangler that answers the inventory, `pragma_table_info`, and a keyset page of `rows` — one statement at a time. */
 function fakeDatabase(rows: Readonly<Record<string, Record<string, unknown>[]>> = {}): FakeDbIo {
   const io = fakeDbIo();
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) => {
-      const statement = args[args.length - 1] ?? "";
-      // The batched read `describeTable` makes names both, so it is recognised before either alone.
-      const info = /pragma_table_info\('([^']+)'\)/.exec(statement);
-      if (info !== null) {
-        const table = info[1] ?? "";
-        const columns = COLUMNS[table] ?? [];
-        if (!statement.includes("sqlite_master")) return jsonRows(columns);
-        return describeTableReply(columns, INVENTORY.find((object) => object.name === table)?.sql);
-      }
-      if (statement.includes("sqlite_master")) return jsonRows(INVENTORY);
-      if (statement.includes("IS NULL LIMIT 1")) {
-        const all = rows[/FROM "([^"]+)"/.exec(statement)?.[1] ?? ""] ?? [];
-        const column = /WHERE "([^"]+)" IS NULL/.exec(statement)?.[1] ?? "";
-        const nulls = all.filter((row) => row[column] === null || row[column] === undefined);
-        const classes = new Set(all.map((row) => storageClassOf(row[column])));
-        return jsonBatches([nulls.slice(0, 1).map(() => ({ present: 1 })), [{ classes: Math.max(classes.size, 1) }]]);
-      }
-      const from = /FROM "([^"]+)"/.exec(statement);
-      const after = /WHERE t\."[^"]+" > '([^']*)'/.exec(statement);
-      const afterBlob = /WHERE t\."[^"]+" > X'([0-9a-fA-F]*)'/.exec(statement);
-      const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-      const all = rows[from?.[1] ?? ""] ?? [];
-      const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-      const afterNumber = /WHERE t\."[^"]+" > (-?\d+(?:\.\d+)?) ORDER/.exec(statement);
-      const cursor = afterBlob?.[1]?.toUpperCase() ?? after?.[1];
-      const seek =
-        afterNumber !== null
-          ? all.filter((row) => Number(sortKey(row[key])) > Number(afterNumber[1]))
-          : cursor === undefined
-            ? all
-            : all.filter((row) => sortKey(row[key]) > cursor);
-      return jsonRows(projectReadRows(seek.slice(0, limit)));
-    },
-  });
+  const answer = (statement: string): Record<string, unknown>[] => {
+    const info = tableInfoAsked(statement);
+    if (info !== null) return COLUMNS[info] ?? [];
+    const ddl = tableSqlAsked(statement);
+    if (ddl !== null) return tableSqlReply(INVENTORY.find((object) => object.name === ddl)?.sql);
+    if (statement.includes("sqlite_master")) return INVENTORY;
+    const probe = keyProbeAsked(statement);
+    if (probe !== null) return keyProbeReply(probe.asks, rows[probe.table] ?? [], probe.column);
+    const from = /FROM "([^"]+)"/.exec(statement);
+    const after = /WHERE t\."[^"]+" > '([^']*)'/.exec(statement);
+    const afterBlob = /WHERE t\."[^"]+" > X'([0-9a-fA-F]*)'/.exec(statement);
+    const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
+    const all = rows[from?.[1] ?? ""] ?? [];
+    const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
+    const afterNumber = /WHERE t\."[^"]+" > (-?\d+(?:\.\d+)?) ORDER/.exec(statement);
+    const cursor = afterBlob?.[1]?.toUpperCase() ?? after?.[1];
+    const seek =
+      afterNumber !== null
+        ? all.filter((row) => Number(sortKey(row[key])) > Number(afterNumber[1]))
+        : cursor === undefined
+          ? all
+          : all.filter((row) => sortKey(row[key]) > cursor);
+    return projectReadRows(seek.slice(0, limit));
+  };
+  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }
 
@@ -149,14 +151,15 @@ const COLLATED: Readonly<Record<string, { sql: string; columns: Record<string, u
 
 function collationDatabase(): DbIo {
   const io = fakeDbIo();
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) => {
-      const table = /pragma_table_info\('([^']+)'\)/.exec(args[args.length - 1] ?? "")?.[1] ?? "";
-      const found = COLLATED[table];
-      return describeTableReply(found?.columns ?? [], found?.sql);
-    },
-  });
+  const answer = (statement: string): Record<string, unknown>[] => {
+    const info = tableInfoAsked(statement);
+    if (info !== null) return COLLATED[info]?.columns ?? [];
+    const ddl = tableSqlAsked(statement);
+    if (ddl !== null) return tableSqlReply(COLLATED[ddl]?.sql);
+    const probe = keyProbeAsked(statement);
+    return probe === null ? [] : keyProbeReply(probe.asks, [], probe.column);
+  };
+  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }
 
@@ -268,6 +271,53 @@ describe("describeTable()", () => {
   it("leaves a collation on a column that is not the key alone", () => {
     expect(describeTable(collationDatabase(), HOME, "mail")).toEqual({ name: "mail", key: "id", columns: ["id", "address"], pageRows: 256 });
   });
+
+  it("still costs two spawns for the one table it describes", () => {
+    const io = fakeDatabase({ tasks: [{ uuid: "t1", lane: "todo" }] });
+    describeTable(io, HOME, "tasks");
+
+    expect(io.calls.length).toBe(2);
+  });
+});
+
+describe("describeTables()", () => {
+  it("returns every shape in the order it was asked, in two spawns however many tables there are", () => {
+    const io = fakeDatabase({ tasks: [{ uuid: "t1", lane: "todo" }], d1_migrations: [{ id: 1 }] });
+
+    expect(describeTables(io, HOME, ["tasks", "notes", "d1_migrations"])).toEqual([
+      { name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 },
+      { name: "notes", key: "rowid", columns: ["body"], pageRows: 256 },
+      { name: "d1_migrations", key: "id", columns: ["id"], pageRows: 256 },
+    ]);
+    expect(io.calls.length).toBe(2);
+  });
+
+  it("asks nothing at all for no tables", () => {
+    const io = fakeDatabase();
+
+    expect(describeTables(io, HOME, [])).toEqual([]);
+    expect(io.calls).toEqual([]);
+  });
+
+  it("spawns once where no key needs a value probe", () => {
+    const io = fakeDatabase();
+
+    expect(describeTables(io, HOME, ["notes"]).map((table) => table.key)).toEqual(["rowid"]);
+    expect(io.calls.length).toBe(1);
+  });
+
+  // The probe statements cannot be written until every describe result is in hand, so a later table's
+  // structural fault now beats an earlier table's key-value one. Both phases keep first-faulty-wins.
+  it("reports every structural fault before any key-value fault, whichever table each is in", () => {
+    const io = fakeDatabase({ tasks: [{ uuid: null, lane: "todo" }] });
+
+    expect((capture(() => describeTables(io, HOME, ["tasks", "members"])) as Error).message).toBe(
+      "members has a composite primary key (team, person) — a keyset read orders by one column, so this table cannot be backed up",
+    );
+    expect((capture(() => describeTables(io, HOME, ["tasks", "notes"])) as Error).message).toBe(
+      "tasks.uuid holds NULL in at least one row — a keyset read seeks past the key it last read and cannot seek past a NULL, so this table cannot be backed up",
+    );
+  });
 });
 
 describe("keyCollation()", () => {
@@ -283,6 +333,75 @@ describe("discoverAppTables()", () => {
       { name: "notes", key: "rowid", columns: ["body"], pageRows: 256 },
       { name: "d1_migrations", key: "id", columns: ["id"], pageRows: 256 },
     ]);
+  });
+
+  // The inventory, one batched describe, one batched probe — and not a spawn per table.
+  it("costs three spawns for three tables", () => {
+    const io = fakeDatabase({ tasks: [{ uuid: "t1", lane: "todo" }], d1_migrations: [{ id: 1 }] });
+    discoverAppTables(io, HOME);
+
+    expect(io.calls.length).toBe(3);
+  });
+});
+
+describe("referencedTables()", () => {
+  it("reads a column-level REFERENCES", () => {
+    expect(referencedTables(`CREATE TABLE tasks (uuid TEXT, project_uuid TEXT REFERENCES projects (uuid))`)).toEqual(["projects"]);
+  });
+
+  it("reads a table-level FOREIGN KEY and unquotes the parent", () => {
+    expect(referencedTables(`CREATE TABLE t (a, FOREIGN KEY (a) REFERENCES "my parent" (a))`)).toEqual(["my parent"]);
+  });
+
+  it("reads every reference a table declares", () => {
+    const sql = `CREATE TABLE tasks (p TEXT REFERENCES projects (uuid), e TEXT REFERENCES epics (uuid))`;
+    expect(referencedTables(sql)).toEqual(["projects", "epics"]);
+  });
+
+  // The word has to be a keyword, not a column somebody quoted into the same spelling.
+  it("does not read a quoted identifier spelled references", () => {
+    expect(referencedTables(`CREATE TABLE t ("references" TEXT, other TEXT)`)).toEqual([]);
+  });
+
+  it("finds nothing in a table that declares no foreign key", () => {
+    expect(referencedTables(`CREATE TABLE projects (uuid TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE)`)).toEqual([]);
+  });
+});
+
+describe("dependencyOrder()", () => {
+  it("moves a parent ahead of its child", () => {
+    expect(dependencyOrder(["epics", "projects", "tasks"], [{ child: "epics", parent: "projects" }])).toEqual(["projects", "epics", "tasks"]);
+  });
+
+  it("keeps the order it was given where no foreign key constrains it", () => {
+    expect(dependencyOrder(["c", "b", "a"], [])).toEqual(["c", "b", "a"]);
+  });
+
+  it("orders a chain transitively", () => {
+    const edges = [
+      { child: "tasks", parent: "epics" },
+      { child: "epics", parent: "projects" },
+    ];
+    expect(dependencyOrder(["tasks", "epics", "projects"], edges)).toEqual(["projects", "epics", "tasks"]);
+  });
+
+  // A tree's rows reference their own table, which no ordering of tables can help with; treating it
+  // as an edge would instead report every such table as a cycle.
+  it("ignores a self-reference", () => {
+    expect(dependencyOrder(["nodes"], [{ child: "nodes", parent: "nodes" }])).toEqual(["nodes"]);
+  });
+
+  it("leaves a cycle in the order it arrived, rather than inventing one", () => {
+    const edges = [
+      { child: "a", parent: "b" },
+      { child: "b", parent: "a" },
+    ];
+    expect(dependencyOrder(["ok", "a", "b"], edges)).toEqual(["ok", "a", "b"]);
+  });
+
+  // A foreign key onto forge's own managed table names a parent that is not in the backup's list.
+  it("ignores an edge naming a table that is not being ordered", () => {
+    expect(dependencyOrder(["tasks"], [{ child: "tasks", parent: "_forge_migrations" }])).toEqual(["tasks"]);
   });
 });
 

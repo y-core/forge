@@ -11,7 +11,7 @@ audience: consumer
 >
 > Defers to: [`AUTH_MOUNTING.md`][am] for the mount itself — the builders, the guard table, the seams forge ships no implementation for, and
 > embedding a single view; [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
-> [`src/auth/README.md`][auth-readme] for every signature, option shape and export; [`ERROR_HANDLING.md`][eh-5e] §5e for why resolution throws and
+> [`src/auth/README.md`][auth-readme] for every signature, option shape and export; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
 > operations return a `Result`; [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c for `resume()` and scope registration.
 
 ---
@@ -98,7 +98,7 @@ to do on a page nobody is sent to.
 
 Three notices, and only three: the service is unavailable, you are throttled, or that did not match. Every other reason — expired, consumed, not
 enrolled, deactivated, unrecognised — folds into **that did not match**, because telling them apart is the account-enumeration oracle the decoy
-closes. The unredacted reason is for your logs and your branching, never for the page ([`ERROR_HANDLING.md`][eh-1c] §1c).
+closes. The unredacted reason is for your logs and your branching, never for the page ([`FORGE_ERRORS.md`][eh-1c] §1c).
 
 **On the primary path, throttled folds in too.** A known-but-throttled address answering "you are throttled" where an unknown one answers "that did
 not match" is the same membership answer, so `complete` reports both `too-many-attempts` and `too-soon` as `unrecognised` there. `stepUp` and
@@ -329,8 +329,8 @@ under the same one-way rule ([`NAMESPACES.md`][namespaces-5h] §5h).
 [am-1]: ./AUTH_MOUNTING.md#1-the-mount-in-order
 [am-6]: ./AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
 [auth-readme]: ../src/auth/README.md
-[eh-1c]: ./ERROR_HANDLING.md#1c-guardresult-and-validationresult-domain-aliases
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ./ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes

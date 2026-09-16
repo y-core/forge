@@ -17,14 +17,14 @@ description: "How to review: the blocking invariants, tiered detection with a co
 
 - §1 Review Workflow: what to do before and while reviewing
 - §1a Pre-Review Preparation: establish a green baseline first
-- §1b Review Output Format: the finding shape
+- §1b Review Output Format: the six fields a finding carries, impact first
 - §2 Blocking Invariants: the violations that always block a merge
 - §3 Detection by Tier: how each rule is actually checked
 - §3a Tier 1 — Gated: rules a gate step already proves
 - §3b Tier 2 — Ripgrep With Triage: where the commands live, and the triage classes each states
 - §3c Tier 3 — Judgement: what to read when no command can decide
 - §4 Severity Calibration: critical, major, minor, informational
-- §5 Verification Protocol: prove a finding before reporting it
+- §5 Verification Protocol: try to disprove a finding; the default is reject
 - §6 Valid Patterns — Do Not Flag: correct code that looks wrong
 
 ---
@@ -40,12 +40,42 @@ description: "How to review: the blocking invariants, tiered detection with a co
 
 ### 1b. Review Output Format
 
-    [FILE:LINE] ISSUE_TITLE
-    Severity: Critical | Major | Minor | Informational
-    What is wrong, and the consequence.
+**Name the consequence, not the rule.** A finding that only cites a rule number gives the author nothing to weigh, and a reader who has to look the
+rule up before they can judge the finding will not look it up.
 
-Group by file, then severity, critical first. **Name the consequence, not the rule** — a finding that only cites a rule number gives the author
-nothing to weigh.
+Every finding carries six fields, in this order. The order is the point: a busy engineer decides in about ninety seconds whether to act, and impact
+is what decides it.
+
+- **Impact** — what an attacker gets, or what breaks, in one sentence. First, because it sets priority.
+- **Where** — `path/file.ts:123`, and the function name.
+- **What** — two or three sentences: the untrusted source, the dangerous operation it reaches, and why nothing in between stops it.
+- **Exploit scenario** — concrete. Not "an attacker could inject SQL": what they send, what the code then does, and what they get back.
+- **Preconditions** — what has to be true for this to work: an authenticated session, a feature flag, a specific deployment. An empty list is worth
+  writing, because "none" is the strongest version of this field.
+- **Fix** — stated as an outcome, and aimed at the root cause. The sink is where the fix belongs; patching one caller leaves the next one.
+
+**If you cannot write the exploit scenario, downgrade the severity.** The scenario is the test of whether the finding is real. A finding whose
+scenario reads "an attacker could somehow" is a §5 question, not a finding.
+
+Not this:
+
+    [api/users.ts:88] Possible SQL injection
+    Severity: High
+    The query may be vulnerable to injection. Consider parameterized queries as a best practice.
+
+This:
+
+    Impact: Any unauthenticated caller can read the whole users table, password hashes included.
+    Where: api/users.ts:88, in `searchUsers`.
+    What: `req.query.q` is concatenated into the SQL string at line 88. It is never escaped or
+      parameterised, and the only validation on the path is a length cap applied at line 61.
+    Exploit scenario: GET /api/users?q=' UNION SELECT email, password_hash FROM users-- returns
+      every row in the response body, which the endpoint renders without filtering.
+    Preconditions: none — the endpoint is unauthenticated.
+    Fix: parameterise the query in `searchUsers`. Every caller reaches the sink through this one
+      function, so fixing it there closes the class rather than this instance.
+
+Group by file, then severity, critical first. **Never write a secret's value into a finding** (`AGENT_WORKFLOW.md` §7).
 
 ---
 
@@ -169,6 +199,10 @@ Minor.
 
 ## 5. Verification Protocol
 
+**The verification pass tries to disprove the finding, and the finding survives only if that attempt fails.** The default is reject. A review that
+verifies by looking for confirmation will confirm almost everything it looked at, which is how a report arrives long, plausible and mostly wrong —
+and a reader who finds two false positives stops trusting the other thirty.
+
 Before reporting any finding:
 
 1. **Read the whole file, not the diff** — the guard you think is missing is often three lines above the hunk.
@@ -211,11 +245,11 @@ reads both.
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [boundaries-5a]: ./BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [boundaries-5c]: ./BOUNDARIES.md#5c-recording-a-fail-open-exception
-[cr-1c]: ./CODE_RULES.md#1c-constants-are-acceptable
-[cr-1e]: ./CODE_RULES.md#1e-browser-only-modules-are-exempt
-[cr-5a]: ./CODE_RULES.md#5a-the-entire-permitted-budget
-[cr-5d]: ./CODE_RULES.md#5d-tests-are-not-exempt
-[cr-7]: ./CODE_RULES.md#7-name-distinctiveness-rule
+[cr-1c]: ../shared/CODE_RULES.md#1c-constants-are-acceptable
+[cr-1e]: ../shared/CODE_RULES.md#1e-browser-only-modules-are-exempt
+[cr-5a]: ../shared/CODE_RULES.md#5a-the-entire-permitted-budget
+[cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt
+[cr-7]: ../shared/CODE_RULES.md#7-name-distinctiveness-rule
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
 [eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--resolvers-throw
 [la-1a]: ./LIBRARY_ARCHITECTURE.md#1a-facade-over-dependencies

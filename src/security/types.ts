@@ -1,4 +1,5 @@
 import type { AppContext } from "../context/types";
+import type { DevAllowance } from "../dev/types";
 import type { GuardResult } from "../result/types";
 import type { NONCE } from "./nonce";
 
@@ -55,7 +56,8 @@ export type OriginResult = GuardResult<"missing" | "disallowed">;
 /** Options controlling how allowed origins are derived from a base URL. @public */
 export interface DeriveAllowedOriginsOptions {
   includeWww?: boolean;
-  extraOrigins?: string[];
+  /** A development entry's token: its `extraOrigins` are appended to the derived set. */
+  dev?: DevAllowance;
 }
 
 /** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
@@ -63,8 +65,8 @@ export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-si
 
 /** Options for the Fetch-Metadata cross-origin protection guard. @public */
 export interface CrossOriginProtectionOptions {
-  /** When true, allows requests with no Sec-Fetch-Site header. Defaults to false (fail-closed). */
-  allowMissingHeader?: boolean;
+  /** A development entry's token: with `missingFetchMetadata` a request carrying no `Sec-Fetch-Site` header is accepted. Absent, the guard fails closed. */
+  dev?: DevAllowance;
 }
 
 /** Options for the Origin/Referer allowlist middleware, with per-request origin resolution. @public */
@@ -83,8 +85,8 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   limiter: (c: AppContext<Bindings>) => RateLimitBinding | undefined;
   key?: (c: AppContext<Bindings>) => string;
   onLimit?: (c: AppContext<Bindings>) => Response | Promise<Response>;
-  /** When true (default), returns 503 if the binding is absent. */
-  required?: boolean;
+  /** A development entry's token: with `rateLimitOptional` an absent binding is skipped instead of answering 503. */
+  dev?: DevAllowance;
   /** Opts the default keying into `CF-Connecting-IP`, which is only trustworthy behind Cloudflare;
    *  defaults to false, and without a custom `key` the default keying then throws. */
   trustCfHeaders?: boolean;

@@ -680,7 +680,7 @@ its default.
 and KV's and D1's methods accept no options at all. There is no signal to pass and none to honour, so a cancelled request does not stop storage I/O
 already in flight — the platform decides when that work ends.
 
-What this leaves is the failure answer, not a retry: a binding fault is caught, logged, and failed closed as a `503` ([`ERROR_HANDLING.md`][eh-5c]
+What this leaves is the failure answer, not a retry: a binding fault is caught, logged, and failed closed as a `503` ([`FORGE_ERRORS.md`][eh-5c]
 §5c). That includes Cloudflare's `Network connection lost`. **No storage client retries**, because how many attempts a given call is worth is the
 consumer's decision, not this layer's.
 
@@ -690,10 +690,10 @@ consumer's decision, not this layer's.
 
 - [`STORAGE_BINDINGS.md`][sb] — the three clients, the resolve/validate lifecycle (§4), the structural contracts (§4c), and the degradation policy
   (§5).
-- [`ERROR_HANDLING.md`][eh] — the `Result` primitive every operation here returns, and the free `serveObject`'s exception to it.
+- [`FORGE_ERRORS.md`][eh] — the `Result` primitive every operation here returns, and the free `serveObject`'s exception to it.
 
-[eh]: ../../docs/ERROR_HANDLING.md
-[eh-5c]: ../../docs/ERROR_HANDLING.md#5c-infrastructure-errors--log-and-fail-closed
+[eh]: ../../docs/FORGE_ERRORS.md
+[eh-5c]: ../../docs/FORGE_ERRORS.md#5c-infrastructure-errors--log-and-fail-closed
 [sb]: ../../docs/STORAGE_BINDINGS.md
 [sb-1e]: ../../docs/STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
 [sb-1g]: ../../docs/STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary

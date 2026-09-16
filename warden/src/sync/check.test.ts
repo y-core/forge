@@ -20,18 +20,29 @@ describe("checkTree()", () => {
     const from = tree({ "cc-dev.md": "dev" }, "warden-check-from-");
     const repo = tree({ ".claude/agents/cc-dev.md": "dev" }, "warden-check-repo-");
 
-    expect(checkTree(repo, { tree: ".claude/agents", from })).toEqual([]);
+    expect(checkTree(repo, { tree: ".claude/agents", from: [from] })).toEqual([]);
   });
 
   it("names a missing, a modified and an extra file", () => {
     const from = tree({ "cc-dev.md": "dev", "cc-doc.md": "doc" }, "warden-check-drift-from-");
     const repo = tree({ ".claude/agents/cc-dev.md": "edited in place", ".claude/agents/cc-own.md": "project" }, "warden-check-drift-repo-");
 
-    expect(checkTree(repo, { tree: ".claude/agents", from })).toEqual([
+    expect(checkTree(repo, { tree: ".claude/agents", from: [from] })).toEqual([
       { code: "modified", detail: ".claude/agents/cc-dev.md" },
       { code: "missing", detail: ".claude/agents/cc-doc.md" },
       { code: "extra", detail: ".claude/agents/cc-own.md" },
     ]);
+  });
+
+  it("layers the sources in order, so the kind tree's copy is the one a shared name is held to", () => {
+    const shared = tree({ "cc-tester.md": "shared", "cc-both.md": "shared" }, "warden-check-shared-");
+    const kind = tree({ "cc-both.md": "kind", "cc-dev.md": "dev" }, "warden-check-kind-");
+    const repo = tree(
+      { ".claude/agents/cc-tester.md": "shared", ".claude/agents/cc-both.md": "kind", ".claude/agents/cc-dev.md": "dev" },
+      "warden-check-layered-",
+    );
+
+    expect(checkTree(repo, { tree: ".claude/agents", from: [shared, kind] })).toEqual([]);
   });
 });
 
@@ -86,7 +97,7 @@ describe("check()", () => {
     const repo = tree({ "CLAUDE.md": "delegate to cc-dev", ".claude/agents/cc-dev.md": "dev" }, "warden-check-all-repo-");
     const canon = tree({ "shared/AGENT_GUIDE.md": "Clean.\n" }, "warden-check-all-canon-");
 
-    expect(check(repo, [{ tree: ".claude/agents", from }], canon)).toEqual([]);
+    expect(check(repo, [{ tree: ".claude/agents", from: [from] }], canon)).toEqual([]);
   });
 
   it("surfaces a boundary violation through the one report a sync --check prints", () => {
@@ -94,6 +105,6 @@ describe("check()", () => {
     const repo = tree({ "CLAUDE.md": "delegate to cc-dev", ".claude/agents/cc-dev.md": "dev" }, "warden-check-b-repo-");
     const canon = tree({ "shared/AGENT_GUIDE.md": "See [x](./docs/X.md).\n" }, "warden-check-b-canon-");
 
-    expect(check(repo, [{ tree: ".claude/agents", from }], canon).map((problem) => problem.code)).toEqual(["boundary"]);
+    expect(check(repo, [{ tree: ".claude/agents", from: [from] }], canon).map((problem) => problem.code)).toEqual(["boundary"]);
   });
 });

@@ -72,6 +72,7 @@ A fact that is stable and short â€” a naming convention, a posture, a boundary â
 | Declared cross-namespace dependency graph | `config/namespaces.ts` |
 | CSRF and Turnstile field names | `src/form/constants.ts` |
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
+| The database host config's fields and their defaults | `DbHostConfig` in `src/tooling/db/types.ts` |
 | Bash allowlist patterns, including the exit-check literal | `.claude/settings.local.json` `permissions.allow` |
 
 ### 2b. Enforced Rules
@@ -212,5 +213,5 @@ stylesheet that was never written would satisfy the shape and send a reader to a
 
 [ag-5d]: ../warden/canon/shared/AGENT_GUIDE.md#5d-crossing-the-governance-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
-[cr-5]: ../warden/canon/libs/CODE_RULES.md#5-comment-budget-rule
+[cr-5]: ../warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification

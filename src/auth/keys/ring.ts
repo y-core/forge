@@ -101,7 +101,7 @@ export async function resolveAuthServices(
 
   const algorithms = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
   // Resolving a binding throws, where a resolved store answers with a `Result`
-  // ([`ERROR_HANDLING.md`](../../docs/ERROR_HANDLING.md) §5e) — so a bad ring fails here, not at sign-in.
+  // ([`FORGE_ERRORS.md`](../../docs/FORGE_ERRORS.md) §5e) — so a bad ring fails here, not at sign-in.
   await assertAlgorithmsAvailable(algorithms);
   const keys = await Promise.resolve(options.secret(context));
   assertRingUsable(keys);

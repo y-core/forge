@@ -17,9 +17,327 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **A dev-only allowance is a token now, not a boolean on a production option, and every consumer
+  gate gains a row that enforces it.** Four option signatures change, with no shim (pre-1.0,
+  [`FORGE_STRUCTURE.md`](docs/FORGE_STRUCTURE.md) §7):
+
+  | Surface | Was | Is |
+  | --- | --- | --- |
+  | `rateLimit(options)` | `required?: boolean` | `dev?: DevAllowance` — an absent binding is `503` with no opt-out short of a token |
+  | `crossOriginProtection` / `checkCrossOriginProtection` | `allowMissingHeader?: boolean` | `dev?: DevAllowance` granting `missingFetchMetadata` |
+  | `createApp` and `createErrorPage` | `isDebug?: (c) => boolean` | `dev?: DevAllowance` granting `errorDetail`; `Forge.setIsDebug` is now `setErrorDetail(boolean)` |
+  | `verifyTurnstile` | *(new in this window)* | `dev?: DevAllowance` granting `turnstileTestingSecrets`, as the second lock beside the published testing secrets |
+  | `deriveAllowedOrigins` | `extraOrigins?: string[]` | the origins ride on the allowance, as `dev?: DevAllowance` |
+
+  **The new subpath is `@y-core/forge/dev`** ([`src/dev/README.md`](src/dev/README.md)). `devAllowance(options)`
+  mints a `DevAllowance`, a branded token carrying a `unique symbol` the module does not export — so
+  no object literal written elsewhere satisfies the type, and minting one means importing the
+  subpath. The *type* is exempt from the boundary below, because it is erased at emit: a production
+  option may name `DevAllowance` and still be unable to construct one.
+
+  **`validate-dev-boundary` is the row, and it ships default-on in `cloudflareWorkerSteps()`** at the
+  `standard` tier. Three rules: the Worker config's `main` is not a `*.dev.ts` entry; nothing outside
+  the test set imports one; and only such an entry imports a dev-only module at value. The forbidden
+  specifiers are read from the *installed dependency's* manifest — forge declares
+  `"forge": { "devOnly": [...] }` in `package.json` — so the check carries no forge knowledge and a
+  consumer needs no configuration. An app whose `src/` imports `@y-core/forge/testing`, whose fakes
+  lose every write in a deployed Worker, goes red on upgrade; so does one whose `main` names a
+  development entry.
+
+  **What this closes.** `rateLimit({ required: false })` sat on a production option and in a shared
+  middleware module reachable from the production entry, so a missing `RATE_LIMITER` binding in
+  production disabled rate limiting in silence. The same shape held for the other three. The rule was
+  prose in [`SECURITY_HARDENING.md`](docs/SECURITY_HARDENING.md) §2c and canon `WORKERS_PLATFORM.md`
+  §4e — that a production bundle "structurally contains none of them" — and no tool read it.
+
+  **What it does not close, stated rather than solved.** `wrangler deploy src/worker.dev.ts` bypasses
+  `main` and therefore the first rule; no gate row can see a command nobody ran, and the mitigation
+  stays canon §4c's pre-deploy gate. A `{} as DevAllowance` cast defeats the type layer; it is
+  greppable, and the boundary still fails the import the cast exists to avoid.
+
+- **Four of forge's `docs/` documents are renamed**, each having shared a filename with a canon
+  document — which makes `TESTING.md §2a` name two different rules to the same reader
+  (`AGENT_GUIDE.md` §6e). `docs/TESTING.md` → `docs/TEST_RUNNERS.md`, `docs/ERROR_HANDLING.md` →
+  `docs/FORGE_ERRORS.md`, `docs/CODE_REVIEW.md` → `docs/FORGE_REVIEW.md`,
+  `docs/LIBRARY_ARCHITECTURE.md` → `docs/FORGE_STRUCTURE.md`. `TEST_RUNNERS.md` and `FORGE_ERRORS.md`
+  are `audience: consumer`, so a consuming repository's citations of them move too.
+
+- **`cloudflareWorkerSteps()` now emits a `lint:types` row** at the `standard` tier, immediately
+  after `format`. An app that installs this version gains a gate step it was not running and needs
+  `oxlint-tsgolint` as a devDependency before its gate is green. Any app hand-appending
+  `typeAwareLintStep` must drop its local row — `selectSteps` refuses a duplicate label.
+
+- **The `c-review` and `c-unreview` slash commands are gone, and `warden sync` no longer writes
+  `.claude/commands`.** A repository's own slash commands are now left alone by a sync, where a sync
+  that wrote an empty tree deleted them. The review path is the new `warden-review` skill, which
+  fires on the words a user actually types where a command had to be invoked by name.
+
+- **`SyncTree.from` is now `readonly string[]`**, layered in order into one staging directory before
+  the single atomic swap. Two sources can therefore land in one destination — which is what
+  `.claude/agents` (shared + kind) and `.claude/skills` need.
+
+- **`TOOLS` is now `knowledgeTools(knowledge)`** on `@y-core/forge/warden` — a constant array became a
+  function taking the index. A tool list that cannot see the corpus can only describe it in the
+  abstract, and `knowledge_search`'s description now ends in a `Covers:` line naming the documents
+  actually indexed and the per-corpus counts, built from the `source` table at call time. So the
+  description an agent reads answers "is the rule I want even in here?" before it spends a call
+  asking. Every caller passes the `Knowledge` it already holds: `TOOLS` → `knowledgeTools(knowledge)`.
+
+- **`canon/{libs,apps}/CODE_RULES.md` are consolidated into `canon/shared/CODE_RULES.md`**, 77% of
+  the two files having been byte-identical. Chunk ids are tree-stripped, so `canon:CODE_RULES.md#5c`
+  is unchanged and no citation moved; a reference-style link naming the path does.
+  `NAMESPACE_DESIGN.md` §4a now defers to `CODE_RULES.md` §1d for the three factory verbs and keeps
+  only the value-constructor exception.
+
+- **`PLAIN_LANGUAGE.md` §11 and §12 have moved to `AGENT_WORKFLOW.md` §1a and §4a** — neither was
+  about prose. `PLAIN_LANGUAGE.md` drops ~60 lines and governs prose quality alone. The numbering
+  gaps at §11/§12 stand; closing them is a separate change.
+
+- **`full.sql` is gone, and `BACKUP_FORMAT_VERSION` goes 6 → 7.** Route `full` now loads `schema.sql`
+  and then `data.sql`, which together are byte-for-byte what `full.sql` was. Every existing artifact
+  is refused by `forge db restore`, `forge db reset --backup` and `forge db migrate --rehearse`,
+  naming `formatVersion` — **retake your backups**. The artifact also halves, because the rows were
+  being written twice.
+  **The hand path changes too:** `wrangler d1 execute --file full.sql` no longer exists, and the
+  equivalent is that command twice, `schema.sql` first. There is no converter and no shim, pre-1.0.
+  [`docs/DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md) §1, §6.
+
+- **`executeFileInParts` and `sqlParts` are removed** from `src/tooling/db/wrangler.ts`, along with
+  their `EXECUTE_BUDGET`. Nothing loads a `.sql` file as parts any more; `executeFile` carries the
+  measured reason in its TSDoc. Both were `@internal` and absent from the barrel.
+
+- **`checkFullArtifact` is replaced by `checkSchemaArtifact`**, which refuses an `INSERT` anywhere in
+  `schema.sql` and a schema declaring no table at all — the two faults a dump checker applied to a
+  schema file would have passed.
+
+- **`describeTable` keeps its signature and `describeTables` is the one to reach for**, and the
+  `test-support` helpers it was shaped for are replaced: `describeTableReply` → `tableInfoAsked` /
+  `tableSqlAsked` / `tableSqlReply`, `keyProbeAsks` / `keyProbeReply` → `keyProbeAsked` /
+  `keyProbeReply` (now per statement), plus `routedReply` for a fake that answers a `--command` one
+  statement at a time. A fake dispatching on the whole payload breaks as soon as a read is batched.
+
+### Added
+
+- **`AGENT_GUIDE.md` §6e — no two governing documents share a filename.** Per-index uniqueness
+  rather than global; `canon/libs/X.md` and `canon/apps/X.md` exempt, since a repository takes one
+  kind or the other; the specialising side renames and never the canon; and a document that only
+  restates the one it collides with is deleted rather than renamed.
+
+- **`warden:index` reports a filename collision**, scoped to the corpora a repository owns the files
+  of — the finding names the document you can edit and cites the one it collides with. The new
+  `canonHome` option makes the canon's own repository read the tree it is not subject to, without
+  which a `canon/apps` name colliding with the library's `docs/` one is invisible everywhere.
+
+- **`warden/canon/apps/CONFIG_BASELINE.md`** — the tsconfig flags, oxlint base and override split,
+  gate wiring, script set and version pins every Worker application shares. Diffed by hand; no check
+  enforces it.
+
+- **`warden/canon/apps/TESTING.md` §2b and §6d** — browser specs are `*.browser.ts` fleet-wide
+  (the unit runner collects `*.spec.*` and cannot run one), and the three local port slots, each a
+  port *and* a bind address.
+
+- **`warden/canon/apps/APP_ARCHITECTURE.md` §2a** — the domain directory is `model/`, and `types/`
+  and `vendor/` are permitted optional members of `src/`.
+
+- **`cloudflareWorkerSteps({ markdown })`** emits the `validate-markdown` row at the `standard`
+  tier, between `format` and `lint:types`. An adopting app must also add `"**/*.md"` to its
+  `.oxfmtrc.json` `ignorePatterns`, as forge does — otherwise the formatter and the check own the
+  same bytes.
+
+- **`AGENT_WORKFLOW.md` §6 Untrusted Content and §7 Secrets in What an Agent Writes.** What an agent
+  reads is data and never instruction, and text addressing the agent is reported at its `file:line`
+  as a finding; a secret's value is never written into any output, only masked, located and flagged
+  for rotation.
+
+- **`AGENT_GUIDE.md` §10 `CLAUDE.md` — What Belongs In It.** The third leg beside §6c and §6d: what
+  earns a line, what does not, and that the single-home rule binds `CLAUDE.md` exactly as it binds
+  `docs/`.
+
+- **`warden/claude/skills/`, a third synced tree, and the `warden-review` skill in it.** The skill
+  routes into the index rather than restating `CODE_REVIEW.md`, takes a scope argument, and defaults
+  to the uncommitted working tree.
+
+- **`renderCanon`** — the committed `warden/CATALOGUE.md` is now rendered by walking the canon root,
+  so it carries all three trees. Rendered from the per-kind index it could never carry the tree its
+  repository is not subject to, and the file's claim to cover the fleet canon was false.
+
+- **`forge db standby reset` builds a standby database in one verb**: empty its state directory,
+  apply every migration, apply every seed. `--target` defaults to `standby` rather than the shared
+  `local`, because the verb refuses every other place by name; `--no-seed`, `--dir <seeds>` and
+  `--no-lint` narrow it, and it confirms unless `--yes` said so. Exported as `runStandbyReset` with
+  `StandbyResetOptions` and `StandbyResetOutcome`. A consumer that was composing this out of an
+  `rm -rf` plus two spawns can now spawn one.
+  [`docs/DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §2a.
+
+- **`composeSeedFixture` writes a seed file from rows held in memory**, proving every one loads into
+  the declared schema before the file is written — in a scratch database of its own, so a
+  regeneration cannot empty the one `migrate compose` caches a model against. It refuses a path
+  outside a declared seeds directory, an undeclared table, a row missing a declared column, a
+  `${VAR}` `seed apply` would substitute, a row a constraint rejects, and a loaded count below the
+  authored one; a column the schema no longer declares is reported rather than fatal. The emitted
+  bytes carry no header and no version stamp, so composing the same rows twice gives the same
+  `sha256`. There is no CLI verb — the rows are TypeScript literals and cannot reach a flag.
+  [`docs/DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7b.
+
+- **A warden search hit now carries a line you can judge it by.** `search` takes `excerpt: true` and
+  fills `Hit.excerpt`: the section's gloss, else its bolded rule clause, else an excerpt of its prose
+  cut around the query's own terms, else its title — never empty. 37% of the searchable corpus has no
+  gloss, so until now those hits came back as an id and a heading trail and cost a second call to
+  judge. `chunk.rules` is the highest-weighted column in the index and was never shown to anyone.
+  Opt-in: the gate and the probe read only ids, and `body` is the largest column in the table. Both
+  reader-facing surfaces — `warden search` and `knowledge_search` — now render through one
+  `renderHit`, which also drops the `~slug.` prefix from a heading trail and keeps every title.
+  Exported from `@y-core/forge/warden/knowledge` as `renderHit`, `excerptOf`, `headingTrail`,
+  `HitFormat` and `Excerptable`. **Ranking is untouched** — the excerpt is fetched from the ordinary
+  `chunk` table after the slice, so `bm25()` is never re-evaluated and no indexed column changed.
+
+- **The floor's safety margin is guarded rather than printed.** `FLOOR` and the new `MARGIN` are
+  exported from the same file, and `warden:queries` warns below 0.05 of room in `standard` and fails
+  there in `full`, naming the query behind each figure. The margin had halved — 0.392/0.308 when the
+  floor was calibrated, 0.387/0.338 now — with nothing asserting anything about it. The gate also
+  measured `thinnest` off results the floor had already filtered, so it could never report a value
+  below 0.35: the one region the guard exists to watch. Both it and `warden probe` now measure it
+  uncapped, as `loudest` always was.
+
+- **Ten `reference` golden queries measure the namespace READMEs**, 478 of 1,291 searchable chunks
+  and previously expected by no query at all. `Dimension` gains `reference` — "what does this export
+  do?", Sillito's *building on a focus point* — and the rollup's dimension list is now exhaustive by
+  construction, where forgetting to list a new dimension silently dropped it. `warden probe` gains a
+  `## rules` block, which is what the render-time screen on `rules` was set from.
+
+- **`cloudflareWorkerSteps()` emits a `validate-exposure` row** whenever `workerConfig` is named —
+  the assets half of the coupling is not needed, since only the wrangler config is read. `checkExposure`
+  fails on any of `workers_dev`, `preview_urls` or `routes` being **unstated**, each finding naming what
+  the default does and both ways to state the intent. A stated value is never judged: `workers_dev: true`
+  passes, because public routability is a legitimate choice and an unstated key is the thing that carries
+  no intent. `exposureStep`, `checkExposure` and `ExposureCheckConfig` are on the `tooling/gate` barrel.
+  Every consumer picks this up on a bump, with no local `scripts/` directory.
+
+- **`@y-core/forge/testing/node`** — a types-only subpath declaring exactly the node surface
+  `testing/workerd` reaches: the six `node:*` modules it imports, plus `Buffer` and the `process`
+  members it calls. A suite that reaches `startDevServer` writes
+  `/// <reference types="@y-core/forge/testing/node" />` at the top of the file and then needs no
+  `exclude` and no `node` entry in its `types` array; a type reference directive is resolved per file,
+  so the Worker half of the same program still sees nothing of node. This is the supported way to put
+  `tests/workerd/**` in a `"types": []` type program ([`docs/TEST_RUNNERS.md`](docs/TEST_RUNNERS.md) §7f).
+
+- **`font-face` is a reserved class-group root**, synthesised from the `font` row's own exceptions
+  group the way `text-size` already is from `text`'s. Tailwind compiles nine weight utilities against
+  three families, so root `font` is modally *weight* and a consumer's `--font-display` token yielded
+  `font-display`, which `cn("font-display", "font-semibold")` silently dropped. Declared as
+  `--font-face-display` it merges against `font-sans` and coexists with `font-semibold`. The generated
+  table gains exactly one row; no other row moved. The convention is published in the `forge.css`
+  header and `src/ui/README.md`, and `validate-css-tokens` already flags the non-conforming spelling in
+  any app that names `design.cssDir` ([`docs/UI_CLASS_COMPOSITION.md`](docs/UI_CLASS_COMPOSITION.md) §2f).
 
 ---
+
+### Changed
+
+- **Gate execution order is tier-stable.** `selectSteps` sorts by tier after filtering, so within a
+  tier the declared order holds and across tiers the cheaper tier runs first. Where a table declares
+  a `full` row is no longer where it runs: an appended `standard` row runs ahead of it, and a
+  consumer never declines a preset opt-in to get sensible full-run ordering. The sort is stable, so
+  every intra-tier constraint a table states survives it.
+
+- **The fleet's linter pins move to `oxlint` 1.82.0 and `oxfmt` 0.67.0**, `oxlint-tsgolint` staying
+  at 7.0.2001 (`>=7.0.2001` is oxlint's optional peer range). forge's pin is the fleet's pin.
+
+- **`DATABASE_MANAGEMENT.md` is back under the 600-line target**, at 563. The cuts were restatement,
+  per `AGENT_GUIDE.md` §6a's prefer-cutting rule: the local undo's command block and the host
+  config's `db.ts` example and field table now live only in `src/tooling/db/README.md`, which
+  already carried fuller versions of both, and the `package.json` scripts block moved there too as
+  consumer usage (`AGENT_GUIDE.md` §6c). **`§9 Backup Artifacts` is gone** — a signpost nothing
+  cited, folded into the document's `Defers to:` line — and **`§10` is renumbered `§9`**; nothing
+  outside the CHANGELOG referenced either. `DbHostConfig` is now a `SOURCE_OF_TRUTH.md` §2a row, so
+  the fields and their defaults have a named owner rather than a prose copy.
+
+- **`CODE_REVIEW.md` §1b is the six-field finding shape** — impact, where, what, exploit scenario,
+  preconditions, fix — with a paired counter-example, and a finding whose exploit scenario cannot be
+  written is downgraded. **§5 states the posture ahead of its checks**: the verification pass tries to
+  disprove the finding, and the default is reject.
+
+- **Every agent declares a `tools` allowlist**, ends its `description` with what it is not for, and
+  states its return contract as a literal skeleton. `AGENT_WORKFLOW.md` §4 now says the split **is**
+  declared rather than merely permitted. `cc-tester` moves to `claude/agents/shared/`, the two tree
+  copies having been byte-identical.
+
+- **A verified `forge db backup` of 1,407 rows goes from ~180s to 63s, and `forge db restore --route
+  full` from ~116s to 20s** — both measured end to end, with `0 divergent` on either route unchanged.
+  About 118 `wrangler` spawns down to 45, and 82 down to 15; a spawn was measured at 1.3–1.4s on the
+  machine this was cut on, so the whole change is the spawn count. Route `full`'s load drops from ~65
+  parts to 2 files, `discoverAppTables` from 7 spawns to 3, and five further read sites that issued a
+  spawn per table now issue one batched spawn. `--route migrations` restores in 23s.
+  [`docs/DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md) §5a.
+
+- **`queryBatches` takes an optional `budget` and packs statements under it**, spawning as many times
+  as it takes and concatenating the result sets in order. The cap is the kernel's `MAX_ARG_STRLEN` on
+  one argv string — measured at 131,072 bytes — which fails at spawn with `E2BIG` naming no SQL; the
+  budget is half of it. A statement over the budget rides alone.
+
+- **`describeTables` reports faults in two phases** — every structural fault in table order, then
+  every key-value fault in table order. The probe statements cannot be written until every describe
+  result is in hand, so a later table's composite key now beats an earlier table's NULL key. Within
+  each phase the first faulty table still wins.
+
+---
+
+### Fixed
+
+- **Turnstile's published testing secret keys no longer refuse every local submission.**
+  `verifyTurnstile` compared `data.hostname` against `options.expectedHostname` unconditionally, and
+  under Cloudflare's three dummy secrets — `1x…AA`, `2x…AA`, `3x…AA` — siteverify answers a fixed
+  hostname whatever origin the widget ran on. An app pinning its own hostname therefore failed every
+  submission in development, and by the §4b refusal shape the failure was byte-identical to a
+  validation refusal, visible only in the `warn` log.
+
+  `TurnstileVerifyOptions` gains **`dev?: DevAllowance`**, which — granted `turnstileTestingSecrets` —
+  skips the hostname comparison **only when `secretKey` is one of those three published literals**. It
+  takes both locks: the token against a real secret does nothing, and a testing secret without the
+  token is compared as before. Every other check, including the fail-closed guard on an empty
+  `expectedHostname`, is unchanged, and `expectedHostname` stays required.
+
+  **There is no env var, and now no way to write one**: minting the token means importing
+  `@y-core/forge/dev`, which `validate-dev-boundary` permits from a `*.dev.ts` entry alone — the
+  containment shape of `extraOrigins` and the live-reload CSP hash
+  ([`docs/SECURITY_HARDENING.md`](docs/SECURITY_HARDENING.md) §3f), made checkable
+  ([`docs/INPUT_VALIDATION.md`](docs/INPUT_VALIDATION.md) §4a).
+
+- **`checkExports` accepts a types-only `.d.ts` export target.** It matched `/\.tsx?$/`, took a
+  declaration file for a barrel, and failed trying to import a module that has no runtime. Existence
+  and publication are now the whole of such a target's contract.
+
+- **An `icons` block that emits no raster no longer requires `sharp`.** `buildIcons` hoisted its
+  `await import("sharp")` above the computation that works out whether any `png` or `ico` output was
+  asked for, so a config emitting only `svg` and `manifest` hard-required the optional peer — which
+  made the README's claim that consumers without icons never need the package false. The import now
+  sits behind the size gate, as `buildRasters`'s empty-list return already did.
+
+  A missing optional peer also fails with a sentence rather than a bare `ERR_MODULE_NOT_FOUND`. One
+  internal loader per peer names the config key that demanded it, the package and the install command,
+  and raises a `CliError` — which `execute` renders as a single `Error:` line where a plain `Error`
+  surfaced as an unformatted crash. `buildJS` reports a missing `esbuild` the same way.
+
+  `sharp` stays an **optional** peer and no consumer's install changes. Its peer range moves from
+  `latest` — not a semver range, so nothing could warn on a drifting pin — to `>=0.33.0`, the release
+  that landed the `@img/sharp-*` prebuilds and the ESM default export forge calls, matching the house
+  `>=` style of the other three peers.
+
+- **An application's root `README.md` no longer enters the project corpus.** `localSources` now takes
+  the repository's `kind` and admits the front page only where it is `libs`, so a consuming app's
+  index loses one document and `knowledge://catalogue` loses the blank first line of its local
+  section — `` - `README.md` — README.md:`` — which described the map's own first entry to nobody. A
+  library is unaffected: forge keeps its root README and all 19 namespace ones.
+
+  The branch taken was exclusion, not required frontmatter. The canon asks frontmatter and a
+  `## 0. Quick Reference` of a governing document (`AGENT_GUIDE.md` §4, §7), and an app's root README
+  is a human-facing entry point that is neither; requiring them would turn every consumer's front page
+  into governed prose. A library's READMEs are different in kind — `SOURCE_OF_TRUTH.md` §2f records
+  five of forge's own owning their namespace's rulings outright — which is why indexing those stays
+  deliberate. A `src/**/README.md` and `warden/README.md` are still indexed in either kind; no consumer
+  has one, and a namespace README in an app would be governing prose on the same terms.
 
 ## [0.1.14] — 2026-09-14
 

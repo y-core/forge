@@ -32,7 +32,7 @@ export function deriveAllowedOrigins(parsed: ParsedUrl, options: DeriveAllowedOr
   if (options.includeWww && !parsed.hostname.startsWith("www.")) {
     add(parsed.origin.replace("://", "://www."));
   }
-  for (const entry of options.extraOrigins ?? []) {
+  for (const entry of options.dev?.options.extraOrigins ?? []) {
     add(parseExtraOrigin(entry).origin);
   }
   return origins;

@@ -9,7 +9,7 @@ audience: internal
 > Owns the export-subpath catalog, barrel discipline, the leaf/integration classification, and the growth rules for new namespaces. Other documents
 > link here rather than restating the classification.
 >
-> Defers to: [`LIBRARY_ARCHITECTURE.md`][la] for the facade and runtime-only principles these rules serve; [`CODE_RULES.md`][cr] for the coding
+> Defers to: [`FORGE_STRUCTURE.md`][la] for the facade and runtime-only principles these rules serve; [`CODE_RULES.md`][cr] for the coding
 > rules inside a namespace; `package.json` `exports` for the subpath names themselves, and `src/{ns}/mod.ts` for each namespace's export list.
 
 ---
@@ -37,6 +37,7 @@ audience: internal
 - §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is
   Worker-reachable
 - §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
+- §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
 - §6 When to Add a New Namespace: criteria and checklist
 - §7 Binding a Subpath to Its Governance: a row lists a subpath, a prose rule binds it
 
@@ -106,6 +107,7 @@ shape and send a reader to a resolution error.
 | `@y-core/forge/tooling/term` | `src/tooling/term/mod.ts` | `stringWidth`, `truncate`, `wrapLines`, `padAlign`, `terminalWidth`, `renderGrid`, `definitionList`, `BORDERS`, `resolveColorLevel`, `createColorize`, `PLAIN` — terminal rendering, and a sink: it imports `node:process` and nothing else in this repository, so every other `tooling/*` namespace may import it and it may import none of them |
 | `@y-core/forge/config` | `src/config/mod.ts` | `Config`, `createConfig`, `env`, `resolveConfig` |
 | `@y-core/forge/context` | `src/context/mod.ts` | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`, `bindingSchema`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
+| `@y-core/forge/dev` | `src/dev/mod.ts` | `devAllowance`; types `DevAllowance`, `DevAllowanceOptions` — a branded token a development entry mints and production cannot, and the one key every dev-only relaxation in forge takes (§5i). Declared `forge.devOnly` in `package.json`, so `validate-dev-boundary` fails a deployable module that imports it at value |
 | `@y-core/forge/form` | `src/form/mod.ts` | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
 | `@y-core/forge/jsx` | `src/jsx/mod.ts` | `createElement`, `cloneElement`, `Fragment`, `isValidElement`, `renderToString`, `renderPage` — imports `http` |
 | `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | automatic-runtime transform target |
@@ -123,8 +125,9 @@ shape and send a reader to a resolution error.
 | `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | the D1 client, its resolver and binding check, the `sql` tag and its guard, the UUIDv7 set — which is implemented in `crypto` and surfaced here (§3b) — and the read-only schema health report (`checkSchemaHealth`, `schemaHealthMonitor`, `schemaHealthCheck`) whose fingerprint rules `tooling/db` imports |
 | `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend`, `UnsatisfiableRangeError` |
-| `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TESTING.md`][testing-7] §7 |
-| `@y-core/forge/testing/workerd` | `src/testing/workerd.ts` | `startDevServer`, `DevServer`, `DevServerOptions` — a `wrangler dev` fixture server for a suite the node process runs. A file target, not a barrel, and deliberately off `./testing`: it reads `node:child_process`/`node:fs`/`node:net` ([`TESTING.md`][testing-7f] §7f) |
+| `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TEST_RUNNERS.md`][testing-7] §7 |
+| `@y-core/forge/testing/workerd` | `src/testing/workerd.ts` | `startDevServer`, `DevServer`, `DevServerOptions` — a `wrangler dev` fixture server for a suite the node process runs. A file target, not a barrel, and deliberately off `./testing`: it reads `node:child_process`/`node:fs`/`node:net` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
+| `@y-core/forge/testing/node` | `src/testing/node.d.ts` | No runtime: ambient declarations for the node surface `testing/workerd` reaches, referenced per file by the suite that imports it so a `"types": []` program needs no `exclude` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/build` | `src/ui/assets/build/mod.ts` | `forgeUiSpriteSources`, `svgToSymbol`, `sanitizeSVG`, `extractViewBoxes`, `parseColor`, `toHex`, `readThemeTokens`, `resolveToken`, `buildCursors` — build-time only; it computes the artifacts `ui/assets` owns and drives no external builder ([`ASSET_PIPELINE.md`][ap-2c] §2c) |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
@@ -237,7 +240,7 @@ module under `src/tooling/` is a visible contradiction rather than an argument t
 _confer_ the exemption, it makes the reachability answer obvious enough to check per file. Two places come apart from the path —
 `src/ui/assets/build/`, a `buildTimeDirs` entry for that reason, and `src/testing/workerd.ts`, the mixed-namespace case the same section settles:
 **the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So that module is published under its own
-subpath and left off `src/testing/mod.ts`, which stops a Worker-side `"types": []` program reaching it ([`TESTING.md`][testing-7f] §7f).
+subpath and left off `src/testing/mod.ts`, which stops a Worker-side `"types": []` program reaching it ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 **`validate-build-time-boundary` is what makes that a fact rather than a convention.** It fails any source outside `src/tooling/` or
 `src/ui/assets/build/` that imports one of their modules at value — by relative path or by package subpath, barrelled or not. The rule it enforces
@@ -280,7 +283,7 @@ Four namespaces sit **below** the leaf/integration split: **any namespace may im
 | `context` | public | concrete file `../context/{accessor,app-context,env-validation}` | `app`, `form`, `logging`, `logging/show`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server`, `ui/show` |
 | `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/show`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
 
-`result` is the single result primitive ([`ERROR_HANDLING.md`][eh-1] §1). Because explicit error handling is cross-cutting, `security` / `form` /
+`result` is the single result primitive ([`FORGE_ERRORS.md`][eh-1] §1). Because explicit error handling is cross-cutting, `security` / `form` /
 `storage` importing `result` is **expected** — treat it like importing a Web API.
 
 **The test is arithmetic, not taste: how many namespaces reach for it independently.** Twelve reach for `context` and ten for `validation` —
@@ -371,11 +374,11 @@ concern — a JSON response builder, a streaming helper, content negotiation —
 **Factories use the `create*` prefix — never `make*`** (`createApp`, `createSecurityHeaders`, `createD1Client`). **Request-time binding accessors
 use `resolve*`** (`resolveKVStore`, `resolveObjectStore`). **Declarative handler configs use `define*`** (`definePage`, `defineAction`).
 
-`ok` / `err` are the one documented exception ([`ERROR_HANDLING.md`][eh-1a] §1a).
+`ok` / `err` are the one documented exception ([`FORGE_ERRORS.md`][eh-1a] §1a).
 
 **`startDevServer` is the second, and it is a verb exception** — [`NAMESPACE_DESIGN.md`][nd-4a] §4a puts one in the owning `docs/` doc, and this is
 that entry. What `@y-core/forge/testing/workerd` returns is a live `wrangler dev` process the caller **must** `stop()`, and `create*` names a value
-that needs nothing further — a reader who believed it would leak a process group. [`TESTING.md`][testing-7f] §7f owns the rest.
+that needs nothing further — a reader who believed it would leak a process group. [`TEST_RUNNERS.md`][testing-7f] §7f owns the rest.
 
 Exported option and shape types take a suffix chosen by what the type _is_:
 
@@ -462,6 +465,29 @@ published through `./auth/client`, and reads the `PASSKEY_*` contract from `auth
 Worker-safe and the browser bundle takes only the constants. `ui/client` keeps the runtime it lends (`registerScope`, `ownerWindow`), and
 `ssrBoundaryStep` names both client directories. Nothing auth-specific goes in `ui/contracts` or `ui/client`.
 
+### 5i. dev — A Dev-Only Allowance, Never a Boolean on a Production Option
+
+**A relaxation that must not reach production goes in `dev` as an allowance, never on the production option as a boolean.** `rateLimit`'s absent
+binding, the Fetch-Metadata guard's missing header, the error page's thrown message and `verifyTurnstile`'s testing secrets each take
+`dev?: DevAllowance` — a token `@y-core/forge/dev` mints and nothing else can construct ([`src/dev/README.md`][dev-readme]).
+
+**The reason is where the boolean could be set from.** `rateLimit({ required: false })` sat on a production option, so a shared middleware module
+both entries import could set it, and a missing `RATE_LIMITER` binding in production then disabled rate limiting in silence. Minting an allowance is
+an _import_, and `validate-dev-boundary` fails that import from anything a `wrangler deploy` bundles — so the seam is a fact about the module graph
+rather than a promise about a call site.
+
+**Two layers hold it.** The type makes the relaxation unrepresentable without the token; rule C of the check makes the import that mints one a gate
+failure outside a `*.dev.ts` entry. The _type_ crosses freely, because it is erased at emit — which is what lets a production option name
+`DevAllowance` and still be unable to build one.
+
+**`dev` is a leaf, and stays one.** It owns the token and the option shape; every relaxation stays in the namespace that owns its concern
+(`security`, `app`, `form`), each of which names `dev` at type only. A development _behaviour_ — a fake binding, a dev route, a reload channel — is
+not this namespace's: fakes are `testing`'s, and a dev route is the app's own `*.dev.ts` entry.
+
+**Where a relaxation is legitimate in production, it stays an explicit literal.** `csrfProtection({ subject: false })` is the idiom — a grep finds
+every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). The token is for the ones that are not legitimate, and the difference must stay
+visible at the call site.
+
 ---
 
 ## 6. When to Add a New Namespace
@@ -504,11 +530,13 @@ second repository needs it.
 [bt-2c]: ./BUILD_TOOLING.md#2c-git-and-manifest-internals
 [bt-2f]: ./BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ./BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
-[cr]: ../warden/canon/libs/CODE_RULES.md
+[cr]: ../warden/canon/shared/CODE_RULES.md
+[dev-readme]: ../src/dev/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
-[eh-1]: ./ERROR_HANDLING.md#1-result-monad
-[eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive-okerr-result-and-toerror
-[la]: ./LIBRARY_ARCHITECTURE.md
+[eh-1]: ./FORGE_ERRORS.md#1-result-monad
+[eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
+[iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
+[la]: ./FORGE_STRUCTURE.md
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [nd-1]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1-barrel-rules-and-export-discipline
 [nd-2]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2-no-sibling-barrel-import-rule
@@ -519,8 +547,8 @@ second repository needs it.
 [ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
 [sb-1e]: ./STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
-[testing-7]: ./TESTING.md#7-testing-namespace-utilities-y-coreforgetesting
-[testing-7f]: ./TESTING.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7]: ./TEST_RUNNERS.md#7-testing-namespace-utilities-y-coreforgetesting
+[testing-7f]: ./TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
 [tg]: ./THEME_GENERATION.md
 [ucc]: ./UI_CLASS_COMPOSITION.md
 [ucr-2]: ./UI_CLIENT_RUNTIME.md#2-mount-controllers

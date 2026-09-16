@@ -30,7 +30,7 @@ description: "Barrel discipline and the export-star ban, the no-sibling-barrel r
 - §3d A Directory Is a Namespace Only With a Subpath: classify by published surface
 - §3e Duplication Across a Leaf Boundary: an accepted cost, not an oversight
 - §4 Exported Symbol Naming Convention: verbs and type suffixes
-- §4a Factory and Accessor Verbs: `create*`, `resolve*`, `define*`
+- §4a Factory and Accessor Verbs: the value-constructor exception to the three verbs
 - §4b Option and Shape Type Suffixes: `*Config`, `*Options`, `*Definition`, `*Descriptor`
 - §5 When to Add a New Namespace: criteria and checklist
 - §5a Criteria for a New Namespace: the four tests
@@ -178,11 +178,8 @@ edge should be declared.
 
 ### 4a. Factory and Accessor Verbs
 
-**Three verbs, one rule each:**
-
-- **`create*`** names **any factory** that instantiates behaviour from captured configuration. Never `make*`, never `new*`.
-- **`resolve*`** names a **request-time accessor** that reads a binding or a value off the context and fails closed when it is absent.
-- **`define*`** names a **declarative configuration object** consumed by a builder.
+`CODE_RULES.md` §1d owns the three verbs — `create*` for a factory, `resolve*` for a request-time accessor, `define*` for a declarative
+configuration object. This section adds only the exception class a layered namespace tree needs.
 
 Value constructors are the one documented class of exception — a pair like `ok` / `err` builds values rather than configured objects, and prefixing
 them would make every call site worse. An exception is documented in [`ERROR_HANDLING.md`][eh-1a] §1a or in the owning `docs/` doc; an undocumented
@@ -242,7 +239,7 @@ recur:
 count at two; it does not fire the rule. Where the trigger is ambiguous, that ambiguity means the threshold was stated in the wrong unit — fix the
 threshold rather than arguing the instance.
 
-[cr]: ./CODE_RULES.md
+[cr]: ../shared/CODE_RULES.md
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
 [la]: ./LIBRARY_ARCHITECTURE.md
 [la-1d]: ./LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 import type { IconLink } from "../../assets/types";
+import { rasterizer } from "./peers";
 import type { IconOutput, IconsConfig } from "./types";
 
 function normalisePrefix(prefix: string | undefined): string {
@@ -39,10 +40,8 @@ export function iconLinks(config: IconsConfig): IconLink[] {
   return links;
 }
 
-/** Writes every configured icon output, loading the optional `sharp` dependency on demand. @public */
+/** Writes every configured icon output, loading the optional `sharp` dependency only when a `png` or `ico` output is configured. @public */
 export async function buildIcons(config: IconsConfig): Promise<void> {
-  // Dynamic import keeps sharp optional — callers without icons skip it entirely
-  const { default: sharp } = await import("sharp");
   const src = readFileSync(config.src, "utf-8");
   for (const dir of new Set(config.outputs.map((output) => iconTarget(config, output).dir))) {
     mkdirSync(dir, { recursive: true });
@@ -51,13 +50,18 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   const darkRule = config.darkColor ? `@media(prefers-color-scheme:dark){path{fill:${config.darkColor}}}` : "";
   const faviconSvg = src.replace("<path", `<style>path{fill:${config.lightColor}}${darkRule}</style><path`);
 
-  // sharp doesn't resolve currentColor — replace with the explicit light fill
-  const rasterSvg = new TextEncoder().encode(src.replaceAll("currentColor", config.lightColor));
-
   const sizes = [...new Set(config.outputs.flatMap((o) => (o.kind === "png" ? [o.size] : o.kind === "ico" ? o.sizes : [])))];
-  const rasters = new Map(
-    await Promise.all(sizes.map(async (s) => [s, await sharp(rasterSvg, { density: 300 }).resize(s, s).png().toBuffer()] as const)),
-  );
+  const rasters = new Map<number, Uint8Array>();
+  if (sizes.length > 0) {
+    const sharp = await rasterizer("icons.outputs");
+    // sharp doesn't resolve currentColor — replace with the explicit light fill
+    const rasterSvg = new TextEncoder().encode(src.replaceAll("currentColor", config.lightColor));
+    for (const [size, png] of await Promise.all(
+      sizes.map(async (s) => [s, await sharp(rasterSvg, { density: 300 }).resize(s, s).png().toBuffer()] as const),
+    )) {
+      rasters.set(size, png);
+    }
+  }
   const getPixels = (size: number): Uint8Array => {
     const buf = rasters.get(size);
     if (!buf) throw new Error(`no raster for size ${size}`);

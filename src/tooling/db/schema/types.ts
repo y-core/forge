@@ -160,8 +160,8 @@ export interface SchemaDiff {
   readonly dropDependents: readonly string[];
 }
 
-/** Which scratch database a step uses: the replayed migrations, or the desired files loaded fresh. @internal */
-export type ScratchSide = "baseline" | "desired";
+/** Which scratch database a step uses: the replayed migrations, the desired files loaded fresh, or a fixture's own, kept apart so composing one cannot wipe a cached model's database. @internal */
+export type ScratchSide = "baseline" | "desired" | "fixture";
 
 /** Everything the schema verbs read from disk before any database is touched. @internal */
 export interface SchemaInputs {

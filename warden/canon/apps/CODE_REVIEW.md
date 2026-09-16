@@ -17,14 +17,14 @@ description: "How to review an application: the blocking invariants, tiered dete
 
 - §1 Review Workflow: what to do before and while reviewing
 - §1a Pre-Review Preparation: establish a green baseline and read the route map
-- §1b Review Output Format: the finding shape
+- §1b Review Output Format: the six fields a finding carries, impact first
 - §2 Blocking Invariants: the violations that always block a merge
 - §3 Detection by Tier: how each rule is actually checked
 - §3a Tier 1 — Gated: rules a gate step already proves
 - §3b Tier 2 — Ripgrep With Triage: commands and their false-positive classes
 - §3c Tier 3 — Judgement: what to read when no command can decide
 - §4 Severity Calibration: critical, major, minor, informational
-- §5 Verification Protocol: prove a finding before reporting it
+- §5 Verification Protocol: try to disprove a finding; the default is reject
 - §6 Valid Patterns — Do Not Flag: correct code that looks wrong
 
 ---
@@ -46,13 +46,42 @@ middleware list.
 
 ### 1b. Review Output Format
 
-    [FILE:LINE] ISSUE_TITLE
-    Severity: Critical | Major | Minor | Informational
-    What is wrong, and the consequence.
-    Suggested fix, briefly.
+**Name the consequence, not the rule.** A finding that only cites a rule number gives the author nothing to weigh, and a reader who has to look the
+rule up before they can judge the finding will not look it up.
 
-Group by file, critical first within each file. End with a summary table: file, finding count, highest severity. **Name the consequence, not just
-the rule** — a finding that only cites a rule number gives the author nothing to weigh.
+Every finding carries six fields, in this order. The order is the point: a busy engineer decides in about ninety seconds whether to act, and impact
+is what decides it.
+
+- **Impact** — what an attacker gets, or what breaks, in one sentence. First, because it sets priority.
+- **Where** — `path/file.ts:123`, and the function name.
+- **What** — two or three sentences: the untrusted source, the dangerous operation it reaches, and why nothing in between stops it.
+- **Exploit scenario** — concrete. Not "an attacker could inject SQL": what they send, what the code then does, and what they get back.
+- **Preconditions** — what has to be true for this to work: an authenticated session, a feature flag, a specific deployment. An empty list is worth
+  writing, because "none" is the strongest version of this field.
+- **Fix** — stated as an outcome, and aimed at the root cause. The sink is where the fix belongs; patching one caller leaves the next one.
+
+**If you cannot write the exploit scenario, downgrade the severity.** The scenario is the test of whether the finding is real. A finding whose
+scenario reads "an attacker could somehow" is a §5 question, not a finding.
+
+Not this:
+
+    [api/users.ts:88] Possible SQL injection
+    Severity: High
+    The query may be vulnerable to injection. Consider parameterized queries as a best practice.
+
+This:
+
+    Impact: Any unauthenticated caller can read the whole users table, password hashes included.
+    Where: api/users.ts:88, in `searchUsers`.
+    What: `req.query.q` is concatenated into the SQL string at line 88. It is never escaped or
+      parameterised, and the only validation on the path is a length cap applied at line 61.
+    Exploit scenario: GET /api/users?q=' UNION SELECT email, password_hash FROM users-- returns
+      every row in the response body, which the endpoint renders without filtering.
+    Preconditions: none — the endpoint is unauthenticated.
+    Fix: parameterise the query in `searchUsers`. Every caller reaches the sink through this one
+      function, so fixing it there closes the class rather than this instance.
+
+Group by file, then severity, critical first. **Never write a secret's value into a finding** (`AGENT_WORKFLOW.md` §7).
 
 ---
 
@@ -174,7 +203,7 @@ Restating-the-code and narration are reachable by no command; they belong to §3
 No command decides these. Read the named files and answer the named question.
 
 **Hardcoded secrets.** Read every added constant and test fixture. _Does any string look like a key, token, or hex secret that is not obviously a
-test value?_ A 64-character hex literal is fine in a fixture and fatal in a config module ([`TESTING.md`][testing-2b] §2b).
+test value?_ A 64-character hex literal is fine in a fixture and fatal in a config module ([`TESTING.md`][testing-2c] §2c).
 
 **Guard placement and order.** Read the controller binding, not the handler. _Is every guard in the route's middleware list, and in the order
 [`BOUNDARIES.md`][boundaries-2c] §2c requires?_ An inline guard is invisible to a route-map audit even when it works.
@@ -221,6 +250,10 @@ Minor.
 
 ## 5. Verification Protocol
 
+**The verification pass tries to disprove the finding, and the finding survives only if that attempt fails.** The default is reject. A review that
+verifies by looking for confirmation will confirm almost everything it looked at, which is how a report arrives long, plausible and mostly wrong —
+and a reader who finds two false positives stops trusting the other thirty.
+
 Before reporting any finding:
 
 1. **Read the whole function, not the flagged line** — surrounding guards or validation often already address the concern.
@@ -240,7 +273,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | Pattern | Why it is correct |
 | --- | --- |
 | Graceful degradation on a rate-limit binding | The one sanctioned use of the option — [`BOUNDARIES.md`][boundaries-5b] §5b, [`WORKERS_PLATFORM.md`][wp-3b] §3b |
-| A minimum test environment missing optional bindings | Deliberate — it is what proves degradation — [`TESTING.md`][testing-2c] §2c |
+| A minimum test environment missing optional bindings | Deliberate — it is what proves degradation — [`TESTING.md`][testing-2d] §2d |
 | A separate dev entry layering a weaker policy | The dev/production split is structural, not accidental — [`APP_ARCHITECTURE.md`][aa-1c] §1c |
 | An intentionally trusted raw HTML value for an inline script | Required where the script must run before paint; it carries a nonce and no interpolation |
 | `export const X = …` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
@@ -270,18 +303,18 @@ reviewer reads both.
 [boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
 [boundaries-5c]: ./BOUNDARIES.md#5c-no-silent-error-swallowing
 [boundaries-5d]: ./BOUNDARIES.md#5d-recording-a-fail-open-exception
-[cr-1a]: ./CODE_RULES.md#1a-no-module-level-mutable-variables
-[cr-1c]: ./CODE_RULES.md#1c-constants-are-acceptable
-[cr-1e]: ./CODE_RULES.md#1e-browser-only-modules-are-exempt
-[cr-5a]: ./CODE_RULES.md#5a-the-entire-permitted-budget
-[cr-5b]: ./CODE_RULES.md#5b-forbidden-outright
-[cr-7]: ./CODE_RULES.md#7-name-distinctiveness-rule
+[cr-1a]: ../shared/CODE_RULES.md#1a-no-module-level-mutable-variables
+[cr-1c]: ../shared/CODE_RULES.md#1c-constants-are-acceptable
+[cr-1e]: ../shared/CODE_RULES.md#1e-browser-only-modules-are-exempt
+[cr-5a]: ../shared/CODE_RULES.md#5a-the-entire-permitted-budget
+[cr-5b]: ../shared/CODE_RULES.md#5b-forbidden-outright
+[cr-7]: ../shared/CODE_RULES.md#7-name-distinctiveness-rule
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
 [fc-1a]: ./FORGE_CONSUMPTION.md#1a-the-check-before-writing-code
 [fc-2a]: ./FORGE_CONSUMPTION.md#2a-import-through-the-library-subpath-always
 [fc-3d]: ./FORGE_CONSUMPTION.md#3d-what-is-never-worked-around-locally
-[testing-2b]: ./TESTING.md#2b-the-minimum-environment-fixture
-[testing-2c]: ./TESTING.md#2c-optional-bindings-are-deliberately-absent
+[testing-2c]: ./TESTING.md#2c-the-minimum-environment-fixture
+[testing-2d]: ./TESTING.md#2d-optional-bindings-are-deliberately-absent
 [testing-3a]: ./TESTING.md#3a-exact-match--never-substring-matching-on-markup
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
 [testing-5b]: ./TESTING.md#5b-one-test-per-rejection-path

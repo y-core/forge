@@ -10,12 +10,12 @@ Shared test utilities for apps built on forge — the fixtures every consumer pr
 minting, typed in-memory storage fakes, an SSR render helper, a `Request` builder, and a single-route registrar.
 
 This is an **integration namespace** (composes `context`, `app`, `jsx`, `logging`, `form`, and `storage/db`/`storage/kv`/`storage/r2` types).
-Reaching into `app` and `jsx` is the declared, acceptable edge for a test-only namespace — see [docs/TESTING.md][testing-7a] §7a. It is intended for
-**test code only** — never import it from Worker source files.
+Reaching into `app` and `jsx` is the declared, acceptable edge for a test-only namespace — see [docs/TEST_RUNNERS.md][testing-7a] §7a. It is
+intended for **test code only** — never import it from Worker source files.
 
 The namespace publishes a second subpath, `@y-core/forge/testing/workerd`, and it is **node-only and deliberately off the barrel**: it reads
 `node:child_process`, `node:fs` and `node:net` to run a `wrangler dev` fixture, so a Worker-side test program must not be able to reach it through
-`@y-core/forge/testing` — see [docs/TESTING.md][testing-7f] §7f.
+`@y-core/forge/testing` — see [docs/TEST_RUNNERS.md][testing-7f] §7f.
 
 ---
 
@@ -112,6 +112,15 @@ takes its children down.
 
 `wrangler` is an **optional peer dependency** and is resolved out of the consumer's own tree — a suite that imports this subpath installs it.
 
+A suite that imports it puts one line at the top of the file, and then needs no `exclude` and no `node` entry in its `types` array:
+
+```ts
+/// <reference types="@y-core/forge/testing/node" />
+```
+
+`@y-core/forge/testing/node` is a types-only subpath (`src/testing/node.d.ts`) declaring exactly the node surface this module reaches. A type
+reference directive is resolved per file, so the Worker half of the same program still sees nothing of node.
+
 ```ts
 import { afterAll, beforeAll } from "bun:test";
 import { type DevServer, startDevServer } from "@y-core/forge/testing/workerd";
@@ -133,15 +142,15 @@ Requests still go to `origin`.
 
 - **Real primitives, typed fakes.** `mintTestCsrfToken` wraps the production `importCsrfKey`/`createCsrfToken`; the fakes implement the real
   structural contracts (`KVNamespace`, `D1DatabaseLike`, `R2BucketLike`, `AssetsFetcher`) so interface drift breaks tests at compile time. No mock
-  libraries (see [docs/TESTING.md][testing-4] §4).
+  libraries (see [docs/TEST_RUNNERS.md][testing-4] §4).
 - **No wall-clock behavior.** `fakeKV` enforces an expiry against the clock passed as `now`, defaulting to `Date.now` — assert one by advancing an
   injected clock, never by letting real time pass. The TTL _floor_ is a constant rather than a clock, and is enforced either way.
 - **The fakes refuse what the platform refuses.** A fake that is green where the real binding throws certifies code that fails on deploy. When a
   test fails against one of these refusals, fix the test — not the fake.
 - **Render once, assert once.** Use `render()` with a single entity-aware `toBe` on the full markup — never substring `toContain`/`toMatch` (see
-  [docs/TESTING.md][testing-3] §3, §7c).
+  [docs/TEST_RUNNERS.md][testing-3] §3, §7c).
 
-[testing-3]: ../../docs/TESTING.md#3-html-entity-exact-match-assertion-rule
-[testing-4]: ../../docs/TESTING.md#4-fakes-over-mocks
-[testing-7a]: ../../docs/TESTING.md#7a-declared-integration-edge--testing-imports-app-and-jsx
-[testing-7f]: ../../docs/TESTING.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-3]: ../../docs/TEST_RUNNERS.md#3-html-entity-exact-match-assertion-rule
+[testing-4]: ../../docs/TEST_RUNNERS.md#4-fakes-over-mocks
+[testing-7a]: ../../docs/TEST_RUNNERS.md#7a-declared-integration-edge--testing-imports-app-and-jsx
+[testing-7f]: ../../docs/TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd

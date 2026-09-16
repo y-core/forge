@@ -189,6 +189,13 @@ export async function checkExports(config: ExportsCheckConfig): Promise<CheckRes
       continue;
     }
 
+    // A `.d.ts` target declares types and nothing else: there is no runtime module to import and no
+    // barrel to compare against, so being on disk and published is the whole of its contract.
+    if (rawPath.endsWith(".d.ts")) {
+      checked++;
+      continue;
+    }
+
     if (!/\.tsx?$/.test(rawPath)) {
       const consumerSpecifier = `${packageName}${specifier.slice(1)}`;
       try {

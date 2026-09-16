@@ -19,7 +19,16 @@ const DESIGN = { stylesheet: "src/assets/tailwind.css", cssDir: "src/assets" };
 
 describe("cloudflareWorkerSteps() — shape", () => {
   it("emits the fleet's order, minus the optional asset step", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "test"]);
+    expect(labelsOf(cloudflareWorkerSteps())).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "lint:types",
+      "test",
+      "validate-dev-boundary",
+    ]);
   });
 
   it("inserts types:assets, then the check that judges what it wrote, before the type check", () => {
@@ -31,7 +40,9 @@ describe("cloudflareWorkerSteps() — shape", () => {
       "typecheck",
       "lint",
       "format",
+      "lint:types",
       "test",
+      "validate-dev-boundary",
     ]);
   });
 
@@ -41,16 +52,19 @@ describe("cloudflareWorkerSteps() — shape", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("puts every step of the default table on the fast tier, so all three modes select the same table", () => {
-    for (const step of cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" })) {
-      expect(step.tier).toBeUndefined();
-    }
+  it("holds back only the type-aware lint row, so a fast run is every other step of the default table", () => {
+    const held = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }).filter((step) => step.tier !== undefined);
+
+    expect(held.map((step) => [step.label, step.tier])).toEqual([
+      ["lint:types", "standard"],
+      ["validate-dev-boundary", "standard"],
+    ]);
   });
 
-  it("makes test:browser the only row above the fast tier once the browser opt-in is taken", () => {
-    const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier !== undefined);
+  it("makes test:browser the only full-tier row once the browser opt-in is taken", () => {
+    const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === "full");
 
-    expect(held.map((step) => [step.label, step.tier])).toEqual([["test:browser", "full"]]);
+    expect(held.map((step) => step.label)).toEqual(["test:browser"]);
   });
 });
 
@@ -68,6 +82,57 @@ describe("cloudflareWorkerSteps() — the §6c property", () => {
 
     expect(labelsOf(gated)).toEqual(["validate-class-tokens", "validate-css-tokens", "test:browser"]);
     expect(gated.map((step) => step.requires?.tool)).toEqual(["tailwindcss", "tailwindcss", "chromium"]);
+  });
+});
+
+describe("cloudflareWorkerSteps() — the exposure row", () => {
+  it("emits validate-exposure from the worker config alone, with no assets half", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" }))).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "lint:types",
+      "test",
+      "validate-exposure",
+      "validate-dev-boundary",
+    ]);
+  });
+
+  it("orders it after validate-asset-root when both halves are configured", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" }));
+
+    expect(labels.slice(-3)).toEqual(["validate-asset-root", "validate-exposure", "validate-dev-boundary"]);
+  });
+
+  it("omits the row for an app naming no worker config", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-exposure");
+    expect(labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }))).not.toContain("validate-exposure");
+  });
+});
+
+describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
+  // Default-on: the forbidden specifiers come from forge's own installed manifest, so an app that
+  // configures nothing still fails on `@y-core/forge/testing` in a deployed module.
+  it("emits validate-dev-boundary at the standard tier for an app that configures nothing", () => {
+    const row = cloudflareWorkerSteps().find((step) => step.label === "validate-dev-boundary");
+
+    expect(row?.tier).toBe("standard");
+    expect(labelsOf(cloudflareWorkerSteps()).at(-1)).toBe("validate-dev-boundary");
+  });
+
+  it("orders it after validate-exposure, the other row read from the worker config", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" }));
+
+    expect(labels.indexOf("validate-dev-boundary")).toBe(labels.indexOf("validate-exposure") + 1);
+  });
+
+  it("keeps the long rows last, so a sub-second boundary finding is not paid for with a browser", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ browser: true, workerd: true, db: true }));
+
+    expect(labels.indexOf("validate-dev-boundary")).toBeLessThan(labels.indexOf("db:schema:digests"));
+    expect(labels.indexOf("validate-dev-boundary")).toBeLessThan(labels.indexOf("test:browser"));
   });
 });
 
@@ -143,10 +208,12 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "typecheck",
       "lint",
       "format",
+      "lint:types",
       "validate-modern-css",
       "validate-class-order",
       "validate-class-tokens",
       "test",
+      "validate-dev-boundary",
     ]);
     expect(labels).not.toContain("validate-css-tokens");
   });
@@ -158,11 +225,13 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "typecheck",
       "lint",
       "format",
+      "lint:types",
       "validate-modern-css",
       "validate-class-order",
       "validate-class-tokens",
       "validate-css-tokens",
       "test",
+      "validate-dev-boundary",
     ]);
   });
 
@@ -177,7 +246,9 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "typecheck",
       "lint",
       "format",
+      "lint:types",
       "test",
+      "validate-dev-boundary",
     ]);
   });
 
@@ -234,7 +305,14 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
   });
 
   it("omits both wrangler steps for an app that declares its binding types by hand", () => {
-    expect(labelsOf(cloudflareWorkerSteps({ wranglerTypes: false }))).toEqual(["typecheck", "lint", "format", "test"]);
+    expect(labelsOf(cloudflareWorkerSteps({ wranglerTypes: false }))).toEqual([
+      "typecheck",
+      "lint",
+      "format",
+      "lint:types",
+      "test",
+      "validate-dev-boundary",
+    ]);
   });
 
   it("emits the asset step with --out, since the emitter writes nothing useful without one", () => {
@@ -286,6 +364,70 @@ describe("cloudflareWorkerSteps() — options", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the type-aware lint row", () => {
+  it("emits lint:types at the standard tier, immediately after format", () => {
+    const steps = cloudflareWorkerSteps({ sources: ["src/", "tests/"] });
+    const row = steps.find((step) => step.label === "lint:types");
+
+    expect(row?.tier).toBe("standard");
+    expect(row?.cmd).toEqual([
+      "oxlint",
+      "--type-aware",
+      "--deny-warnings",
+      "--report-unused-disable-directives-severity",
+      "error",
+      "src/",
+      "tests/",
+    ]);
+    expect(labelsOf(steps).indexOf("lint:types")).toBe(labelsOf(steps).indexOf("format") + 1);
+  });
+
+  it("threads sources through, so an app that lints scripts/ type-checks them too", () => {
+    const row = cloudflareWorkerSteps({ sources: ["src/", "scripts/"] }).find((step) => step.label === "lint:types");
+
+    expect(row?.cmd?.slice(-2)).toEqual(["src/", "scripts/"]);
+  });
+
+  // The row runs before anything minutes long, so a sub-second finding is not paid for with Chromium.
+  it("orders lint:types ahead of the browser and workerd rows", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ browser: true, workerd: true }));
+
+    expect(labels.indexOf("lint:types")).toBeLessThan(labels.indexOf("test:browser"));
+    expect(labels.indexOf("lint:types")).toBeLessThan(labels.indexOf("test:workerd"));
+  });
+});
+
+describe("cloudflareWorkerSteps() — the markdown row", () => {
+  it("emits validate-markdown at the standard tier, between format and lint:types", () => {
+    const steps = cloudflareWorkerSteps({ markdown: { sources: ["docs"] } });
+    const row = steps.find((step) => step.label === "validate-markdown");
+
+    expect(row?.tier).toBe("standard");
+    expect(labelsOf(steps)).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "validate-markdown",
+      "lint:types",
+      "test",
+      "validate-dev-boundary",
+    ]);
+  });
+
+  it("gives the row a fixer, so `--fix` normalizes prose the formatter is told to ignore", () => {
+    const steps = cloudflareWorkerSteps({ markdown: { sources: ["docs"] } });
+    const row = steps.find((step) => step.label === "validate-markdown");
+
+    expect(row !== undefined && isCheckStep(row) && row.fix !== undefined).toBe(true);
+  });
+
+  it("omits the row for an app that does not opt in", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-markdown");
+  });
+});
+
 describe("cloudflareWorkerSteps() — the warden step", () => {
   // The argv is published contract: a sibling's gate invokes exactly these words.
   it("emits `warden sync --check` after format, with the sync itself as its fixer", () => {
@@ -294,7 +436,17 @@ describe("cloudflareWorkerSteps() — the warden step", () => {
 
     expect(warden?.cmd).toEqual(["warden", "sync", "--check"]);
     expect(fixerOf(warden)).toEqual(["warden", "sync"]);
-    expect(labelsOf(steps)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "format", "warden", "test"]);
+    expect(labelsOf(steps)).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "typecheck",
+      "lint",
+      "format",
+      "lint:types",
+      "warden",
+      "test",
+      "validate-dev-boundary",
+    ]);
   });
 
   it("omits the step entirely for an app that does not clone the corpus", () => {

@@ -22,7 +22,7 @@ function defaultOnLimit(): Response {
   return new Response(DEFAULT_MESSAGE, { status: 429 });
 }
 
-/** Middleware enforcing a Cloudflare rate-limit binding, returning 503 when the binding is absent unless `required: false`. @public */
+/** Middleware enforcing a Cloudflare rate-limit binding, returning 503 when the binding is absent unless a `DevAllowance` grants `rateLimitOptional`. @public */
 export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimitOptions<Bindings>): Middleware {
   const logger = createLogger("rate-limit");
   const limiter = options.limiter;
@@ -36,7 +36,7 @@ export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimit
       };
   const key: (c: AppContext<Bindings>) => string = options.key ?? defaultKeyResolver;
   const onLimit: (c: AppContext<Bindings>) => Response | Promise<Response> = options.onLimit ?? defaultOnLimit;
-  const required = options.required !== false;
+  const required = options.dev?.options.rateLimitOptional !== true;
 
   return async (context, next) => {
     const c = getAppContext<Bindings>(context);

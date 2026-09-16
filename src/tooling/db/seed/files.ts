@@ -34,6 +34,11 @@ export function parseSeedPlaces(rawSql: string, path: string): Place[] | null {
 
 const VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
 
+/** Every distinct placeholder `expandSeedEnv` would substitute, so a generator refuses text before writing it as a seed. @internal */
+export function seedVariablesIn(sql: string): string[] {
+  return [...new Set(sql.match(VARIABLE) ?? [])];
+}
+
 /** What a value may be where the SQL quotes nothing around it: one identifier-like token, or a number. @internal */
 export const SEED_BARE_VALUE = /^(?:[A-Za-z_][A-Za-z0-9_.]*|-?\d+(?:\.\d+)?)$/;
 

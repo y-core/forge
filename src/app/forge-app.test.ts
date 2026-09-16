@@ -331,10 +331,10 @@ describe("Forge.setOnError", () => {
   });
 });
 
-describe("Forge.setIsDebug", () => {
-  it("shows the error message when the predicate returns true", async () => {
+describe("Forge.setErrorDetail", () => {
+  it("shows the error message once the detail is turned on", async () => {
     const app = new Forge();
-    app.setIsDebug(() => true);
+    app.setErrorDetail(true);
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("connection refused");
     });
@@ -343,9 +343,9 @@ describe("Forge.setIsDebug", () => {
     expect(await res.text()).toBe(ERROR_PAGE("connection refused"));
   });
 
-  it("escapes the message it reveals in debug mode", async () => {
+  it("escapes the message it reveals", async () => {
     const app = new Forge();
-    app.setIsDebug(() => true);
+    app.setErrorDetail(true);
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("<script>alert('x')</script> & co");
     });
@@ -354,22 +354,8 @@ describe("Forge.setIsDebug", () => {
     expect(await res.text()).toBe(ERROR_PAGE("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt; &amp; co"));
   });
 
-  it("hides the message when the predicate returns false", async () => {
+  it("hides the message by default, no allowance having turned it on", async () => {
     const app = new Forge();
-    app.setIsDebug(() => false);
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("connection refused");
-    });
-
-    const res = await app.request("/boom");
-    expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
-  });
-
-  it("hides the message when the predicate itself throws", async () => {
-    const app = new Forge();
-    app.setIsDebug(() => {
-      throw new Error("predicate exploded");
-    });
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("connection refused");
     });
@@ -379,15 +365,16 @@ describe("Forge.setIsDebug", () => {
     expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
   });
 
-  it("receives a context carrying env, so a debug flag can come from a binding", async () => {
-    const app = new Forge<{ DEBUG: string }>();
-    app.setIsDebug((c) => c.env.DEBUG === "1");
+  it("hides it again when the detail is turned back off", async () => {
+    const app = new Forge();
+    app.setErrorDetail(true);
+    app.setErrorDetail(false);
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("connection refused");
     });
 
-    expect(await (await app.request("/boom", {}, { DEBUG: "1" })).text()).toBe(ERROR_PAGE("connection refused"));
-    expect(await (await app.request("/boom", {}, { DEBUG: "0" })).text()).toBe(ERROR_PAGE("An unexpected error occurred."));
+    const res = await app.request("/boom");
+    expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
   });
 });
 

@@ -20,7 +20,7 @@ function repo(prefix: string, files: readonly (readonly [string, string])[]): st
 }
 
 const CORPUS = [
-  ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", "A comment earns its line or it is deleted.")],
+  ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", "A comment earns its line or it is deleted.")],
   ["docs/NAMESPACES.md", doc("where a new namespace goes", "A leaf namespace imports no sibling.")],
 ] as const;
 

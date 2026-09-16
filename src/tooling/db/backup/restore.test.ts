@@ -9,7 +9,19 @@ import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { migrationsDigest } from "../migrate/files";
 import { toSchemaObjects } from "../sql";
-import { argvHas, describeTableReply, fakeDbIo, jsonRows, keyProbeAsks, keyProbeReply, minimalWranglerConfig, OK } from "../test-support";
+import {
+  argvHas,
+  fakeDbIo,
+  jsonRows,
+  keyProbeAsked,
+  keyProbeReply,
+  minimalWranglerConfig,
+  OK,
+  routedReply,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
+} from "../test-support";
 import type { BackupManifest, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, BACKUP_FORMAT_VERSION, manifestSelfDigest } from "./artifact";
 import { executeRestore, prepareRestore, readBackupManifest } from "./restore";
@@ -22,7 +34,7 @@ const INVENTORY = [
 
 const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
 
-const FULL_SQL = [
+const SCHEMA_SQL = [
   "PRAGMA defer_foreign_keys=TRUE;",
   "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);",
   "DELETE FROM sqlite_sequence;",
@@ -45,7 +57,7 @@ function manifest(database: string, over: Partial<BackupManifest> = {}): BackupM
     schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
     migrations: [{ name: "0001_init", sha256: "d".repeat(64) }],
     tables: [{ name: "tasks", rows: 2, digest: "c".repeat(64) }],
-    artifacts: [declares("full.sql", FULL_SQL), declares("data.sql", DATA_SQL)],
+    artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL)],
     warnings: [],
     verified: [{ route: "full", divergent: 0 }],
     ...over,
@@ -72,24 +84,18 @@ function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}):
 /** A fake wrangler answering the inventory and a row count for every table: `rows` for each, or per table by name. */
 function fakeDatabase(seed: Record<string, string>, rows: number | Readonly<Record<string, number>>, inventory = INVENTORY): FakeDbIo {
   const io = fakeDbIo(seed);
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) => {
-      const statement = args[args.length - 1] ?? "";
-      // The batched read `describeTable` makes names both, so it is recognised before either alone.
-      const info = /pragma_table_info\('([^']+)'\)/.exec(statement);
-      if (info !== null && statement.includes("sqlite_master")) {
-        const table = info[1] ?? "";
-        return describeTableReply([], inventory.find((object) => object.name === table)?.sql);
-      }
-      if (statement.includes("sqlite_master")) return jsonRows(inventory);
-      const probe = keyProbeAsks(statement);
-      if (probe !== null) return keyProbeReply([], probe.column);
-      const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
-      if (count !== null) return jsonRows([{ rows: typeof rows === "number" ? rows : (rows[count[1] ?? ""] ?? 0) }]);
-      return jsonRows([]);
-    },
-  });
+  const answer = (statement: string): Record<string, unknown>[] => {
+    if (tableInfoAsked(statement) !== null) return [];
+    const ddl = tableSqlAsked(statement);
+    if (ddl !== null) return tableSqlReply(inventory.find((object) => object.name === ddl)?.sql);
+    if (statement.includes("sqlite_master")) return inventory;
+    const probe = keyProbeAsked(statement);
+    if (probe !== null) return keyProbeReply(probe.asks, [], probe.column);
+    const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
+    if (count !== null) return [{ rows: typeof rows === "number" ? rows : (rows[count[1] ?? ""] ?? 0) }];
+    return [];
+  };
+  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }
 
@@ -140,7 +146,7 @@ describe("readBackupManifest", () => {
     const run = await context(root, io);
 
     expect(refusal(() => readBackupManifest(run, artifact)).message).toBe(
-      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
     );
   });
 
@@ -157,7 +163,7 @@ describe("readBackupManifest", () => {
 
     expect(refusal(() => readBackupManifest(run, artifact))).toEqual({
       kind: "invalid-args",
-      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself\n  schema.digest is not a 64-character hex SHA-256`,
+      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql\n  schema.digest is not a 64-character hex SHA-256`,
     });
   });
 });
@@ -181,7 +187,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
   it("refuses an artifact taken from a database expect does not name", async () => {
     const root = appRoot();
     const artifact = join(root, "artifact");
-    const io = fakeDbIo({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("other-db")), [join(artifact, "full.sql")]: FULL_SQL });
+    const io = fakeDbIo({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("other-db")), [join(artifact, "schema.sql")]: SCHEMA_SQL });
     const run = await context(root, io);
 
     expect(refusal(() => runRestore(run, { artifact, route: "full", expect: "app-db" }))).toEqual({
@@ -229,7 +235,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
       },
       2,
     );
@@ -249,7 +255,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
       },
       { tasks: 0, _forge_migrations: 2 },
     );
@@ -307,7 +313,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
           }),
         ),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: taken,
       },
       0,
@@ -338,7 +344,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { migrations: [{ name: "0001_init", sha256: sha256(taken) }] })),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: taken,
         // What the installed package holds now, which a restore must not reach for.
         [join(root, "migrations", "0001_init.sql")]: "CREATE TABLE moved (id TEXT);",
@@ -364,7 +370,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { migrations: [{ name: "0001_init", sha256: sha256(taken) }] })),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: taken,
       },
       0,
@@ -387,7 +393,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { migrations: [{ name: "0001_init", sha256: sha256(taken) }] })),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: taken,
       },
       0,
@@ -415,14 +421,14 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")),
         [join(artifact, "data.sql")]: DATA_SQL,
         // One line short of what the manifest declares for it.
-        [join(artifact, "full.sql")]: FULL_SQL.split("\n").slice(0, -2).join("\n"),
+        [join(artifact, "schema.sql")]: SCHEMA_SQL.split("\n").slice(0, -2).join("\n"),
       },
       0,
     );
     const run = await context(root, io);
 
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
-      `${join(artifact, "full.sql")} does not hash to what the manifest declares for it — this artifact is damaged`,
+      `${join(artifact, "schema.sql")} does not hash to what the manifest declares for it — this artifact is damaged`,
     );
     expect(io.calls).toEqual([]);
   });
@@ -434,7 +440,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const run = await context(root, io);
 
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
-      `${join(artifact, "full.sql")} is declared in the manifest and missing from the artifact`,
+      `${join(artifact, "schema.sql")} is declared in the manifest and missing from the artifact`,
     );
     expect(io.calls).toEqual([]);
   });
@@ -453,7 +459,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const run = await context(root, io);
 
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
-      "data.sql is not what a data-only artifact must be:\n  line 2: sqlite_sequence is the engine's and is restored only by the full-dump route, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name",
+      "data.sql is not what a data-only artifact must be:\n  line 2: sqlite_sequence is the engine's and is restored only by schema.sql, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name",
     );
     expect(io.calls).toEqual([]);
   });
@@ -479,7 +485,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
           manifest("app-db", { migrations: [{ name: "../../../migrations/0001_init", sha256: sha256(escaped) }] }),
         ),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: escaped,
       },
       0,
@@ -501,7 +507,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       {
         [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")),
         [join(artifact, "data.sql")]: DATA_SQL,
-        [join(artifact, "full.sql")]: FULL_SQL,
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY);",
       },
       0,
@@ -511,5 +517,72 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
       `${join(artifact, "migrations", "0001_init.sql")} does not hash to what the manifest declares for it`,
     );
+  });
+
+  it("refuses route full when the schema half is missing, naming it rather than the file it would load second", async () => {
+    const root = appRoot();
+    const artifact = join(root, "artifact");
+    const io = fakeDatabase({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")), [join(artifact, "data.sql")]: DATA_SQL }, 0);
+    const run = await context(root, io);
+
+    expect(refusal(() => runRestore(run, { artifact, route: "full" }))).toEqual({
+      kind: "invalid-args",
+      message: `schema.sql is missing from ${artifact}, and route full loads it`,
+    });
+  });
+
+  it("loads route full as schema.sql then data.sql, and reports the target matching the manifest", async () => {
+    const root = appRoot();
+    const artifact = join(root, "artifact");
+    const taken = "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);";
+    const restored = [{ type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" }];
+    const io = fakeDbIo({
+      [join(artifact, "manifest.json")]: JSON.stringify(
+        manifest("app-db", {
+          schema: {
+            migrations: ["0001_init"],
+            digest: sha256(appSchemaDigestInput(toSchemaObjects(restored))),
+            migrationsDigest: migrationsDigest([{ name: "0001_init", sha256: sha256(taken) }]),
+          },
+          migrations: [{ name: "0001_init", sha256: sha256(taken) }],
+          tables: [{ name: "tasks", rows: 0, digest: sha256("") }],
+        }),
+      ),
+      [join(artifact, "schema.sql")]: SCHEMA_SQL,
+      [join(artifact, "data.sql")]: DATA_SQL,
+      [join(artifact, "migrations", "0001_init.sql")]: taken,
+    });
+    // The target is empty until the two files have been loaded, which is what route full demands of it.
+    let loaded = false;
+    io.rules.push({
+      match: (args) => argvHas(args, "execute", "--file"),
+      reply: () => {
+        loaded = true;
+        return OK;
+      },
+    });
+    const answer = (statement: string): Record<string, unknown>[] => {
+      if (tableInfoAsked(statement) !== null) return [];
+      const ddl = tableSqlAsked(statement);
+      if (ddl !== null) return tableSqlReply(restored.find((object) => object.name === ddl)?.sql);
+      if (statement === RECORDED_CHECKSUM_SELECT) return loaded ? [{ name: "0001_init" }] : [];
+      if (statement.includes("sqlite_master")) return loaded ? restored : [];
+      const probe = keyProbeAsked(statement);
+      return probe === null ? [] : keyProbeReply(probe.asks, [], probe.column);
+    };
+    io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
+    const run = await context(root, io);
+
+    expect(runRestore(run, { artifact, route: "full" })).toEqual({
+      database: "app-db",
+      route: "full",
+      artifact,
+      tables: [{ name: "tasks", rows: 0, matches: true }],
+    });
+    expect(io.calls.filter((call) => call.includes("--file")).map((call) => call[call.length - 1])).toEqual([
+      join(artifact, "schema.sql"),
+      join(artifact, "data.sql"),
+    ]);
+    expect(io.logs).toEqual([]);
   });
 });

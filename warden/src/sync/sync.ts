@@ -7,8 +7,8 @@ import type { Kind, SyncTree } from "../types";
  *  package, never copied into a consumer. @public */
 export function syncTrees(claudeRoot: string, kind: Kind): SyncTree[] {
   return [
-    { tree: ".claude/agents", from: join(claudeRoot, "agents", kind) },
-    { tree: ".claude/commands", from: join(claudeRoot, "commands") },
+    { tree: ".claude/agents", from: [join(claudeRoot, "agents", "shared"), join(claudeRoot, "agents", kind)] },
+    { tree: ".claude/skills", from: [join(claudeRoot, "skills", "shared"), join(claudeRoot, "skills", kind)] },
   ];
 }
 
@@ -45,7 +45,8 @@ export function copyTree(from: string, to: string): void {
 export function sync(repo: string, trees: readonly SyncTree[]): string[] {
   const written: string[] = [];
   for (const { tree, from } of trees) {
-    if (!existsSync(from)) continue;
+    const sources = from.filter((source) => existsSync(source));
+    if (sources.length === 0) continue;
     const to = resolve(repo, tree);
     // Staged into a sibling and renamed over, so a copy that fails midway leaves the previous tree
     // whole: the destination is only ever a complete tree or the one that was already there. It is
@@ -54,7 +55,7 @@ export function sync(repo: string, trees: readonly SyncTree[]): string[] {
     const staged = `${to}.warden-staging`;
     rmSync(staged, { recursive: true, force: true });
     try {
-      copyTree(from, staged);
+      for (const source of sources) copyTree(source, staged);
       rmSync(to, { recursive: true, force: true });
       renameSync(staged, to);
     } finally {

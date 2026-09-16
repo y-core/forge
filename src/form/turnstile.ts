@@ -4,6 +4,17 @@ import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
+// Cloudflare's published testing secrets — always-passes, always-fails, token-already-spent. Under
+// one of them siteverify answers a fixed `hostname` whatever origin the widget ran on, so comparing
+// it refuses every local submission. Half of the lock on the relaxation below: the other half is a
+// `DevAllowance` granting `turnstileTestingSecrets`, which only a development entry can mint, so
+// neither half alone relaxes a deployment.
+const TESTING_SECRETS: ReadonlySet<string> = new Set([
+  "1x0000000000000000000000000000000AA",
+  "2x0000000000000000000000000000000AA",
+  "3x0000000000000000000000000000000AA",
+]);
+
 /** Verifies a Cloudflare Turnstile token against the siteverify API. @public */
 export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: string, options: TurnstileVerifyOptions): Promise<TurnstileResult> {
   if (!options.expectedHostname) {
@@ -50,7 +61,8 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
     return err("verification-failed");
   }
 
-  if (data.hostname !== options.expectedHostname) {
+  const testingSecret = options.dev?.options.turnstileTestingSecrets === true && TESTING_SECRETS.has(secretKey);
+  if (!testingSecret && data.hostname !== options.expectedHostname) {
     return err("hostname-mismatch");
   }
 

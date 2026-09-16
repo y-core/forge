@@ -18,13 +18,17 @@ function tree(files: Record<string, string>, prefix: string): string {
 describe("syncTrees()", () => {
   it("names the two .claude trees and nothing else — the canon is never copied", () => {
     expect(syncTrees("/warden/claude", "libs")).toEqual([
-      { tree: ".claude/agents", from: "/warden/claude/agents/libs" },
-      { tree: ".claude/commands", from: "/warden/claude/commands" },
+      { tree: ".claude/agents", from: ["/warden/claude/agents/shared", "/warden/claude/agents/libs"] },
+      { tree: ".claude/skills", from: ["/warden/claude/skills/shared", "/warden/claude/skills/libs"] },
     ]);
   });
 
-  it("selects the agent tree by kind", () => {
-    expect(syncTrees("/warden/claude", "apps")[0]?.from).toBe("/warden/claude/agents/apps");
+  it("selects the kind-specific source of each tree by kind", () => {
+    expect(syncTrees("/warden/claude", "apps").map(({ from }) => from[1])).toEqual(["/warden/claude/agents/apps", "/warden/claude/skills/apps"]);
+  });
+
+  it("names no .claude/commands tree — a sync that wrote one would delete a repository's own", () => {
+    expect(syncTrees("/warden/claude", "libs").map((entry) => entry.tree)).not.toContain(".claude/commands");
   });
 });
 
@@ -78,7 +82,7 @@ describe("sync()", () => {
     const from = tree({ "kept.md": "new" }, "warden-sync-from-");
     const repo = tree({ ".claude/agents/kept.md": "old", ".claude/agents/dropped.md": "gone" }, "warden-sync-repo-");
 
-    expect(sync(repo, [{ tree: ".claude/agents", from }])).toEqual([".claude/agents"]);
+    expect(sync(repo, [{ tree: ".claude/agents", from: [from] }])).toEqual([".claude/agents"]);
     expect(readFileSync(join(repo, ".claude/agents/kept.md"), "utf-8")).toBe("new");
     expect(existsSync(join(repo, ".claude/agents/dropped.md"))).toBe(false);
   });
@@ -90,14 +94,14 @@ describe("sync()", () => {
     // exactly where the destination used to be already deleted with nothing to restore from.
     symlinkSync(join(from, "absent.md"), join(from, "broken.md"));
 
-    expect(() => sync(repo, [{ tree: ".claude/agents", from }])).toThrow();
+    expect(() => sync(repo, [{ tree: ".claude/agents", from: [from] }])).toThrow();
     expect(readFileSync(join(repo, ".claude/agents/kept.md"), "utf-8")).toBe("old");
   });
 
   it("skips a tree the installed corpus does not carry, writing nothing", () => {
     const repo = tree({ ".claude/agents/own.md": "own" }, "warden-sync-skip-");
 
-    expect(sync(repo, [{ tree: ".claude/agents", from: join(tmpdir(), "warden-absent-source") }])).toEqual([]);
+    expect(sync(repo, [{ tree: ".claude/agents", from: [join(tmpdir(), "warden-absent-source")] }])).toEqual([]);
     expect(existsSync(join(repo, ".claude/agents/own.md"))).toBe(true);
   });
 });

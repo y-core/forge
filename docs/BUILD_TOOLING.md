@@ -232,9 +232,9 @@ I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
 
 ### 2e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `full`-tier gate step** — `config/steps.ts` owns the step table (see [`TESTING.md`][testing-6] §6). Requiring a
-written `[Unreleased]` entry on every fast or standard run would fail every work-in-progress commit; a full run runs exactly where the invariant
-bites, before `prepublishOnly` and before a tag exists.
+**`CHANGELOG.md` is checked by a `full`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
+Requiring a written `[Unreleased]` entry on every fast or standard run would fail every work-in-progress commit; a full run runs exactly where
+the invariant bites, before `prepublishOnly` and before a tag exists.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
 with, and two parsers for one document is precisely the drift the gate exists to catch. One parser, two callers.
@@ -464,6 +464,6 @@ patch bump is genuinely correct.
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [namespaces-3c]: ./NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
-[testing-6]: ./TESTING.md#6-the-verification-gate
+[testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-three-modes
 [testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-prerequisite-line

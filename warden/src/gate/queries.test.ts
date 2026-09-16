@@ -14,7 +14,7 @@ function repo(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
   for (const [path, source] of [
     ["docs/A.md", doc("honeypots", "A honeypot field is never rendered visibly.")],
-    ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", "The comment budget is a ceiling on prose.")],
+    ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", "The comment budget is a ceiling on prose.")],
     ["warden/canon/shared/AGENT_GUIDE.md", doc("section numbering", "A section is numbered so it can be cited.")],
   ] as const) {
     const file = join(root, path);
@@ -40,6 +40,13 @@ const COVERING = [
   { query: "comment budget ceiling", expect: "canon:CODE_RULES.md#1" },
   { query: "section numbering cited", expect: "canon:AGENT_GUIDE.md#1" },
 ];
+
+// One known term among seven the corpus has never seen: coverage lands at 0.045, under `FLOOR`, so
+// `search` refuses it and only an uncapped measurement can see the figure at all.
+const THIN = { query: "comment zqxj ywvk utrp snmb lkhg fdsa qpwo", expect: "canon:CODE_RULES.md#1" };
+
+/** A set large enough to arm the margin guard, thinnest-answered pinned by `THIN`. */
+const QUORUM = [...Array.from({ length: 19 }, () => COVERING[0] as (typeof COVERING)[number]), THIN];
 
 describe("checkGoldenQueries()", () => {
   it("passes when every query finds its answer and every canon document is reached", () => {
@@ -78,7 +85,11 @@ describe("checkGoldenQueries()", () => {
       coverage: false,
     });
 
-    expect(result.summary).toContain("rationale worst miss / thinnest none reached");
+    // `thinnest 0.000` rather than a refusal to say: the coverage is measured with the floor
+    // lifted, so an expectation nothing reached carries none of the query, which is a figure.
+    expect(result.summary).toBe(
+      "1 golden queries, 1 documents reached top-1, 1/1 alias bridges live, floor margin 0.000 answered / 0.000 refused; rationale worst miss / thinnest 0.000.",
+    );
   });
 
   it("warns on an alias bridge that reaches no chunk, which nothing else would ever surface", () => {
@@ -115,6 +126,44 @@ describe("checkGoldenQueries()", () => {
 
     expect(result.ok).toBe(true);
     expect(result.summary).toContain("floor margin 1.000 answered /");
+  });
+
+  it("measures the thinnest answer below the floor, which the results themselves can never show", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-subfloor-")),
+      queries: [{ query: THIN.query, expect: THIN.expect }],
+      coverage: false,
+    });
+
+    // The whole point of the uncapped second call: `search` refused this hit, so a figure read off
+    // the returned hits would have reported the untouched 1.000 and called the margin healthy.
+    expect(result.summary).toContain("floor margin 0.045 answered / 0.000 refused");
+  });
+
+  it("warns on a standard run when the floor has less than 0.05 of room, naming both queries", () => {
+    const result = checkGoldenQueries({ ...config(repo("warden-golden-margin-warn-")), queries: QUORUM, coverage: false });
+
+    const margin = result.findings.find((finding) => finding.file === "warden/src/search/search.ts");
+
+    expect(margin?.level).toBe("warn");
+    expect(margin?.message).toBe("the floor has 0.045 of room left, under 0.05 — `FLOOR` is 0.35 and sits between these two");
+    expect(margin?.detail).toEqual([`thinnest answered 0.045  "${THIN.query}"`, 'loudest refused   0.000  ""']);
+  });
+
+  it("fails the same margin on a release run — a warning that fires daily is trained away", () => {
+    const result = checkGoldenQueries({ ...config(repo("warden-golden-margin-fail-")), queries: QUORUM, coverage: false }, "full");
+
+    expect(result.findings.find((finding) => finding.file === "warden/src/search/search.ts")?.level).toBe("fail");
+  });
+
+  it("stands the margin guard down for a replacement set too small to have measured the corpus", () => {
+    const result = checkGoldenQueries({
+      ...config(repo("warden-golden-margin-quorum-")),
+      queries: [{ query: THIN.query, expect: THIN.expect }],
+      coverage: false,
+    });
+
+    expect(result.findings.some((finding) => finding.file === "warden/src/search/search.ts")).toBe(false);
   });
 
   it("prints the query, the expected id and the actual top hits when a query misses", () => {

@@ -125,7 +125,7 @@ function parsePort(raw: string): Result<number, string> {
 ```
 
 `ok` / `err` are the only sanctioned value-constructors, and the reason they are a documented exception to forge's `create*` factory-naming rule is
-[`ERROR_HANDLING.md`][eh-1a] §1a's.
+[`FORGE_ERRORS.md`][eh-1a] §1a's.
 
 ### Guard checks with `GuardResult`
 
@@ -182,7 +182,7 @@ type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
 ```
 
 A discriminated union representing the outcome of a fallible operation. When to reach for it rather than `null | T` or a throw is
-[`ERROR_HANDLING.md`][eh-1a] §1a's.
+[`FORGE_ERRORS.md`][eh-1a] §1a's.
 
 | Type parameter | Default | Description |
 | --- | --- | --- |
@@ -190,7 +190,7 @@ A discriminated union representing the outcome of a fallible operation. When to 
 | `E` | `Error` | Type of the failure payload, available as `error` when `ok` is `false`. |
 
 Always check `r.ok` before accessing `r.data` or `r.error`; the union narrows automatically inside the guard. The single-failure-channel rule the
-domain aliases below reuse rather than extend is [`ERROR_HANDLING.md`][eh-1a] §1a's, and the narrow-and-return-early shape is §1b's.
+domain aliases below reuse rather than extend is [`FORGE_ERRORS.md`][eh-1a] §1a's, and the narrow-and-return-early shape is §1b's.
 
 ### `ok(data?)` and `err(error)`
 
@@ -219,7 +219,7 @@ type GuardResult<R = string> = Result<void, R>;
 
 A domain alias of `Result` for predicate/authorization checks (origin, CSRF, Turnstile) that produce no success value. The success arm is `void`;
 the failure channel carries a machine-readable reason code in `.error` — typically a string-literal union (e.g. `"missing" | "disallowed"`). That
-the reason is a server diagnostic, never echoed to a client, is [`ERROR_HANDLING.md`][eh-1c] §1c's.
+the reason is a server diagnostic, never echoed to a client, is [`FORGE_ERRORS.md`][eh-1c] §1c's.
 
 | Type parameter | Default | Description |
 | --- | --- | --- |
@@ -280,10 +280,10 @@ Coerces any thrown value into an `Error` instance. Returns `thrown` unchanged if
 
 - [`@y-core/forge/validation`][validation-readme] — produces `ValidationResult<T>` values.
 - [`@y-core/forge/http`][http-readme] — `renderValidationErrors`, `renderError`, `fragmentResponse` for turning results into HTMX fragments.
-- [`ERROR_HANDLING.md`][eh] — the governing error-handling doctrine (error taxonomy, fail-closed posture, router error boundary).
+- [`FORGE_ERRORS.md`][eh] — the governing error-handling doctrine (error taxonomy, fail-closed posture, router error boundary).
 
-[eh]: ../../docs/ERROR_HANDLING.md
-[eh-1a]: ../../docs/ERROR_HANDLING.md#1a-the-unified-result-primitive-okerr-result-and-toerror
-[eh-1c]: ../../docs/ERROR_HANDLING.md#1c-guardresult-and-validationresult-domain-aliases
+[eh]: ../../docs/FORGE_ERRORS.md
+[eh-1a]: ../../docs/FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
+[eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [http-readme]: ../http/README.md
 [validation-readme]: ../validation/README.md

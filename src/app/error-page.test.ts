@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { devAllowance } from "../dev/allowance";
 import { requestIdCtx } from "../security/request-id";
 import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
@@ -22,7 +23,7 @@ function fragment(body: string, open: string, close: string): string {
 const banner = (body: string): string => fragment(body, `<div class="${ERROR_CLASSES}">`, "</div>");
 
 describe("createErrorPage — debug gate", () => {
-  it("hides the real error message by default (no isDebug)", async () => {
+  it("hides the real error message by default, there being no allowance", async () => {
     const page = createErrorPage();
     const res = page(new Error("secret db string"), createTestContext(new Request("http://test/")));
     expect(res.status).toBe(500);
@@ -31,8 +32,8 @@ describe("createErrorPage — debug gate", () => {
     expect(body).not.toContain("secret db string");
   });
 
-  it("shows the real error message when isDebug returns true", async () => {
-    const page = createErrorPage({ isDebug: () => true });
+  it("shows the real error message under a dev allowance granting errorDetail", async () => {
+    const page = createErrorPage({ dev: devAllowance({ errorDetail: true }) });
     const res = page(new Error("database timeout"), createTestContext(new Request("http://test/")));
     const body = await res.text();
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>database timeout</p></div>`);
@@ -40,19 +41,15 @@ describe("createErrorPage — debug gate", () => {
   });
 
   it("HTML-escapes the error message in debug mode", async () => {
-    const page = createErrorPage({ isDebug: () => true });
+    const page = createErrorPage({ dev: devAllowance({ errorDetail: true }) });
     const res = page(new Error("<script>alert(1)</script>"), createTestContext(new Request("http://test/")));
     const body = await res.text();
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>&lt;script&gt;alert(1)&lt;/script&gt;</p></div>`);
     expect(body).not.toContain("<script>alert(1)</script>");
   });
 
-  it("treats a throwing isDebug as production (fail closed)", async () => {
-    const page = createErrorPage({
-      isDebug: () => {
-        throw new Error("probe broken");
-      },
-    });
+  it("treats an allowance granting something else as production", async () => {
+    const page = createErrorPage({ dev: devAllowance({ rateLimitOptional: true }) });
     const res = page(new Error("internal detail"), createTestContext(new Request("http://test/")));
     const body = await res.text();
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>An unexpected error occurred.</p></div>`);

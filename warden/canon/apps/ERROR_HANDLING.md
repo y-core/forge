@@ -237,6 +237,6 @@ developer sees most often during deployment is the one with the least consistent
 [boundaries-2d]: ./BOUNDARIES.md#2d-rejection-status-discipline
 [boundaries-4]: ./BOUNDARIES.md#4-no-pii-in-logs
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
-[cr-1d]: ./CODE_RULES.md#1d-factory-naming-and-bare-constructors
+[cr-1d]: ../shared/CODE_RULES.md#1d-factory-verbs-and-bare-constructors
 [testing-5]: ./TESTING.md#5-security-and-fail-closed-expectations
 [wp-4d]: ./WORKERS_PLATFORM.md#4d-environment-parity

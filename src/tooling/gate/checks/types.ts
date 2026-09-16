@@ -20,6 +20,14 @@ export interface AssetRootCheckConfig {
   workerConfig?: string;
 }
 
+/** What the deployment-exposure check needs to find the Worker config it reads intent from. @public */
+export interface ExposureCheckConfig {
+  /** Application root. The worker config path resolves against it. */
+  root: string;
+  /** Wrangler config path, relative to `root`. Defaults to `wrangler.jsonc`. */
+  workerConfig?: string;
+}
+
 /** What the build-time-boundary check needs to know about the project. @public */
 export interface BuildTimeBoundaryCheckConfig {
   /** Repository root; every reported path is relative to it. */
@@ -32,6 +40,22 @@ export interface BuildTimeBoundaryCheckConfig {
   buildTimeDirs: readonly string[];
   /** Directories walked for source files, relative to `root`. Defaults to `["src"]`. */
   sources?: readonly string[];
+}
+
+/** What the dev-boundary check needs to know about the project. @public */
+export interface DevBoundaryCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Directories walked for source files, relative to `root`. Defaults to `["src"]`. */
+  sources?: readonly string[];
+  /** Worker config read for `main`. Defaults to `wrangler.jsonc`; omit the `main` rule by passing `null`. */
+  workerConfig?: string | null;
+  /** Dev entries beyond the `*.dev.ts` convention; an entry restating the convention fails. */
+  devEntries?: readonly string[];
+  /** This repository's own dev-only trees, for a library that publishes them (forge: `src/dev`, `src/testing`). */
+  devOnlyDirs?: readonly string[];
+  /** Dependencies whose `package.json` declares `forge.devOnly`; their subpaths become forbidden specifiers. */
+  packages?: readonly string[];
 }
 
 /** What a bundle-drift check needs to know about the project. @public */

@@ -23,5 +23,9 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@y-core/forge/jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", "warden/**/*.ts", ".types/**/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", "warden/**/*.ts", ".types/**/*.d.ts"],
+  // `src/testing/node.d.ts` is the shim a consumer references for its workerd suite: it declares the
+  // same globals as `.types/node.d.ts` but narrowed to what `workerd.ts` alone reaches, so including
+  // both would shadow `process` here. `tests/fixtures/workers-consumer` is the program that holds it.
+  "exclude": ["src/testing/node.d.ts"]
 }

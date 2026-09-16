@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 import { openIndex } from "../index/open";
 import { CORPORA } from "../types";
-import { callTool, TOOLS } from "./tools";
+import { callTool, knowledgeTools } from "./tools";
 
 const DOC =
   '---\ntitle: Rules\ndescription: "One."\n---\n\n> Defers to: `AGENT_GUIDE.md` §1 for the form.\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nThe comment budget is a ceiling.\n';
@@ -18,13 +18,15 @@ for (const path of [join(root, "docs/A.md"), join(canonRoot, "libs/CODE_RULES.md
 }
 const knowledge = openIndex(root, "libs", { path: ":memory:", canonRoot, canonVersion: "1.0.0" });
 
-describe("TOOLS", () => {
+const tools = knowledgeTools(knowledge);
+
+describe("knowledgeTools()", () => {
   it("declares a required argument for every tool, so a caller cannot omit the one that matters", () => {
-    for (const tool of TOOLS) expect((tool.inputSchema as { required: string[] }).required.length).toBeGreaterThan(0);
+    for (const tool of tools) expect((tool.inputSchema as { required: string[] }).required.length).toBeGreaterThan(0);
   });
 
   it("offers every corpus in the search schema, since an agent will not use a filter it is not told about", () => {
-    const schema = TOOLS.find((tool) => tool.name === "knowledge_search")?.inputSchema as
+    const schema = tools.find((tool) => tool.name === "knowledge_search")?.inputSchema as
       | { properties: { corpus: { enum: string[] } } }
       | undefined;
 
@@ -32,7 +34,27 @@ describe("TOOLS", () => {
   });
 
   it("names each tool distinctly", () => {
-    expect(new Set(TOOLS.map((tool) => tool.name)).size).toBe(TOOLS.length);
+    expect(new Set(tools.map((tool) => tool.name)).size).toBe(tools.length);
+  });
+
+  // A host that is not told a tool only reads asks before every call, which costs a turn each time.
+  it("declares every tool read-only, non-destructive and closed-world", () => {
+    for (const tool of tools) {
+      expect(tool.annotations.readOnlyHint).toBe(true);
+      expect(tool.annotations.destructiveHint).toBe(false);
+      expect(tool.annotations.openWorldHint).toBe(false);
+      expect(tool.annotations.idempotentHint).toBe(true);
+      expect(tool.annotations.title).not.toBe("");
+    }
+  });
+
+  it("names the documents it holds in the search description, so scope is known before a turn is spent", () => {
+    const description = tools.find((tool) => tool.name === "knowledge_search")?.description ?? "";
+    const line = description.split("\n").at(-1) ?? "";
+
+    expect(line).toContain("Covers: ");
+    expect(line).toContain("CODE_RULES.md");
+    expect(line).toContain("(2 canon, 1 project documents).");
   });
 });
 
@@ -51,6 +73,12 @@ describe("callTool()", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toBe('knowledge_search: `corpus` must be one of canon, project, dependency, not "cannon"');
+  });
+
+  it("renders each hit as `renderHit` does, so the CLI and this tool describe one corpus", () => {
+    const result = callTool(knowledge, "knowledge_search", { query: "comment budget", corpus: "canon", limit: 1 });
+
+    expect(result.content[0]?.text).toBe("canon:AGENT_GUIDE.md#1  (1.00, fleet canon)\n  1. One\n  One: the comment budget");
   });
 
   it("names an uncovered question as a property of the corpus, not as a failed lookup", () => {
@@ -96,6 +124,21 @@ describe("callTool()", () => {
 
   it("returns the edges a section declares", () => {
     expect(callTool(knowledge, "knowledge_related", { id: "canon:CODE_RULES.md#1" }).content[0]?.text).toContain("defers");
+  });
+
+  // `limit` is the only number a caller sets that bounds how much the server reads, and it reached
+  // both the SQL pool and the final slice unchecked.
+  it("clamps a limit outside [1, 50] rather than passing it through", () => {
+    const hits = (limit: unknown): number =>
+      (callTool(knowledge, "knowledge_search", { query: "comment budget", limit }).content[0]?.text ?? "").split("\n\n").length;
+
+    // Floored to 1 from below, and from above capped well under the three hits this corpus holds is
+    // not something to assert — what matters is that neither extreme reaches SQL as given.
+    expect(hits(0)).toBe(1);
+    expect(hits(-5)).toBe(1);
+    expect(hits(Number.NaN)).toBe(3);
+    expect(hits(10_000)).toBe(3);
+    expect(hits(2.7)).toBe(2);
   });
 
   it("names an unknown tool rather than answering it", () => {

@@ -148,7 +148,7 @@ else.
 ### 3a. Assert the Escaped Form
 
 A correct renderer escapes **every** string child, static and interpolated alike. **Assert the escaped form, exactly** — the repository's own
-`docs/TESTING.md` §3a publishes the character-to-entity map its renderer produces, and that map is the one to assert against.
+`docs/TEST_RUNNERS.md` §3a publishes the character-to-entity map its renderer produces, and that map is the one to assert against.
 
 **Static text in the source is escaped exactly as an interpolated value is.** Never assert a raw `&`, `<`, `>`, `'` or `"` on the strength of a
 literal having been written that way in the JSX.
@@ -350,6 +350,11 @@ The full run is the release gate and **is** permitted a prerequisite. A step who
 needing nothing carries no marker and runs in every mode. Between them sits the step that declares a `requires` probe — it runs wherever its
 dependency happens to be installed, and §6a's mode-decided verdict is what keeps that from weakening the release gate.
 
+That rank is also what orders the run. **Execution order is tier-stable rather than table order: within a tier the table's declared order holds,
+and across tiers the cheaper tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `full` row is
+not where it runs, and a `standard` row appended after one still runs ahead of it. That is what makes a fail-fast `full` run fail on the
+sub-second check rather than after minutes of browser — and why a repository never re-declares a row it only wanted moved.
+
 The mode enum is closed and ordered, and a step names **the lowest mode it runs in — a rank, not a set of modes**. There is consequently no way to
 express a step a lower mode has and a higher one does not, so `fast ⊆ standard ⊆ full` is structural rather than something a test has to catch after
 the fact.
@@ -360,4 +365,4 @@ A narrowed selection brands every summary line as scoped and not the gate, so a 
 resolving to zero steps is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
 
 [boundaries]: ./BOUNDARIES.md
-[cr-5d]: ./CODE_RULES.md#5d-tests-are-not-exempt
+[cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt

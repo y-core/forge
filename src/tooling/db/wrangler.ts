@@ -35,20 +35,46 @@ export function queryRows(io: DbIo, home: Home, statement: string): Record<strin
   return payload[0]?.results ?? [];
 }
 
+// The cap is on one argv string, not on the query: a single `--command` over the kernel's
+// MAX_ARG_STRLEN — measured at 131,072 bytes here — fails at spawn with E2BIG, before wrangler sees a
+// byte of it. Half of that leaves room for the longest single statement a chunk may carry alongside
+// others.
+const COMMAND_BUDGET = 65_536;
+
 /** Several statements in one spawn, returning each statement's rows in order — five reads for the price of one process. @internal */
-export function queryBatches(io: DbIo, home: Home, statements: readonly string[]): Record<string, unknown>[][] {
-  const command = statements.map((statement) => (statement.trim().endsWith(";") ? statement.trim() : `${statement.trim()};`)).join("\n");
-  const what = `query \`${command.slice(0, 120)}\``;
-  const run = runWrangler(io, home, ["execute", home.database, ...wranglerPlaceFlags(home), "--json", "--command", command]);
-  if (run.code !== 0) throw failed(what, home, run);
-  const payload = parseJsonOutput(what, home, run.stdout) as { results?: Record<string, unknown>[] }[];
-  if (payload.length !== statements.length) {
-    throw new CliError(
-      "invalid-args",
-      `wrangler answered ${payload.length} result set(s) for ${statements.length} statements against ${home.label}`,
-    );
+export function queryBatches(io: DbIo, home: Home, statements: readonly string[], budget: number = COMMAND_BUDGET): Record<string, unknown>[][] {
+  const rows: Record<string, unknown>[][] = [];
+  for (const chunk of commandChunks(statements, budget)) {
+    const command = chunk.join("\n");
+    const what = `query \`${command.slice(0, 120)}\``;
+    const run = runWrangler(io, home, ["execute", home.database, ...wranglerPlaceFlags(home), "--json", "--command", command]);
+    if (run.code !== 0) throw failed(what, home, run);
+    const payload = parseJsonOutput(what, home, run.stdout) as { results?: Record<string, unknown>[] }[];
+    if (payload.length !== chunk.length) {
+      throw new CliError("invalid-args", `wrangler answered ${payload.length} result set(s) for ${chunk.length} statements against ${home.label}`);
+    }
+    rows.push(...payload.map((entry) => entry.results ?? []));
   }
-  return payload.map((entry) => entry.results ?? []);
+  return rows;
+}
+
+/** Terminated statements packed into `--command`-sized groups; one longer than the budget rides alone rather than being split. */
+function commandChunks(statements: readonly string[], budget: number): string[][] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let length = 0;
+  for (const statement of statements) {
+    const text = statement.trim().endsWith(";") ? statement.trim() : `${statement.trim()};`;
+    if (current.length > 0 && length + text.length + 1 > budget) {
+      chunks.push(current);
+      current = [];
+      length = 0;
+    }
+    current.push(text);
+    length += text.length + 1;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
 }
 
 /** A single-row, single-column read. @internal */
@@ -74,7 +100,17 @@ export function executeSql(io: DbIo, home: Home, statement: string): void {
   if (run.code !== 0) throw failed(`execute \`${statement.slice(0, 120)}\``, home, run);
 }
 
-/** Loads a `.sql` file. A local `--file` is applied in one transaction, all or nothing. @internal */
+/**
+ * Loads a `.sql` file. A local `--file` is applied in one transaction, all or nothing.
+ *
+ * **A file declaring schema is bounded where one carrying only rows is not, which is why a backup
+ * artifact is two files rather than one.** Wrangler cannot prepare a payload that declares schema
+ * statement by statement, so it hands the whole file to miniflare's `exec`, which refuses anything over
+ * 102,400 bytes with `SQLITE_TOOBIG` — measured against wrangler 4.118 and 4.131, and again at 4.131.2
+ * on a 4.2 MB dump. A data-only file takes the prepared path and has loaded the same 4.2 MB in one spawn
+ * all along, so route `full` loads `schema.sql` and then `data.sql`.
+ * @internal
+ */
 export function executeFile(io: DbIo, home: Home, file: string): void {
   const run = runWrangler(io, home, ["execute", home.database, ...wranglerPlaceFlags(home), "--yes", "--file", file]);
   if (run.code !== 0) throw failed(`loading ${file}`, home, run);

@@ -33,7 +33,7 @@ audience: consumer
 - §2c Status Hues Are Forge's: which colour roles an app may re-point, and which carry meaning
 - §2d The dark: Variant Is Class-Driven: the takeover a consumer stylesheet inherits
 - §2e A Consumer Rule Loses by Layer: why the remedy is a layer and never specificity
-- §2f Scale Tokens Are Namespaced Away From Colour: the reserved `--text-size-*` spelling, and what it fixes
+- §2f A Reserved Root, Where a Utility Root Carries Two Concerns: the reserved `--text-size-*` and `--font-face-*` spellings, and what they fix
 
 ---
 
@@ -157,7 +157,7 @@ removes a real repetition; a group id is its own documentation at the point of u
 
 **`validate-class-groups` regenerates the table and fails the gate on any difference**, so a `tailwindcss` release that moves the ground truth is
 reported rather than silently absorbed, and a hand edit to the generated file fails the same way. It runs wherever the optional `tailwindcss` peer
-resolves — skipped below the `full` tier, failed by a full run ([`TESTING.md`][testing-6] §6).
+resolves — skipped below the `full` tier, failed by a full run ([`TEST_RUNNERS.md`][testing-6] §6).
 
 **The class list is not authoritative for a root's named values.** `getClassList()` enumerates a value scale for `left`, `right` and `inset-s` but
 nothing for `start` and `end` beyond three statics — which is the whole reason `start-*` and `end-*` once failed to merge against each other at all.
@@ -326,29 +326,38 @@ last-declaration-wins.
 every forge utility in `@layer utilities`, whatever its specificity. **The remedy is a layer, not a selector** — one declared after `utilities`.
 Reaching for higher specificity instead appears to work until the next utility is added.
 
-### 2f. Scale Tokens Are Namespaced Away From Colour
+### 2f. A Reserved Root, Where a Utility Root Carries Two Concerns
 
-**A theme token whose value is a scale step is declared in a namespace no colour utility reads. A font-size step is `--text-size-*`, never a bare
-`--text-*`** — so its concern is legible from its name, to a reader and to a table alike.
+**A theme token is declared in a namespace no other concern under the same root reads. A font-size step is `--text-size-*`, never a bare `--text-*`;
+a font face is `--font-face-*`, never a bare `--font-*`** — so the concern is legible from the name, to a reader and to a table alike.
 
 Tailwind's `--text-*` namespace carries font size while the `text-*` utility also carries colour, so `--text-hero` and `--color-hero` produce the
 same class name. A conflict table cannot tell them apart, guesses colour — what nearly every unenumerated name under `text-` is — and drops the
 other: `cn("text-hero text-red-500")` returns `text-red-500` alone, in a consuming app's markup, silently.
 
-**Forge cannot close this from its own stylesheet, which is why the answer is a namespace and not a heuristic.** The table is derived from what
-`tailwind.css` compiles to (§1c), and an app's theme is not in that compile; a discriminator inside `cn` would be forge encoding a guess about
-someone else's naming. Forge reserves one root instead: `text-size` resolves to the size group the design system itself states, so the conforming
-spelling merges against `text-2xl` and coexists with `text-red-500`. A non-conforming token keeps §1a's behaviour, unchanged and still silent.
+**`font-*` is the same shape, and the trap is worse for being unenumerated.** Tailwind compiles nine weight utilities against three families, so the
+derived row gives root `font` the weight concern and lists `mono | sans | serif` as its exceptions. A consumer's `--font-display` token yields
+`font-display`, which reads as a _weight_, and `cn("font-display", "font-semibold")` silently drops the face. The row is mechanically correct — the
+modal group is the named group — so the answer is not a hand-edit of the table, which is generated (§1c).
 
-**The gate holds forge to it, and can hold nobody else to it.** `validate-css-tokens` fails any `@theme` token forge declares in an overloaded
-namespace, deriving _overloaded_ from the compiled design system rather than a hand-kept list that would age: a root whose enumerated values mean
-one concern and whose other names mean another. A consumer's stylesheet is out of reach, so the convention is published where an app reads it — the
-`forge.css` header and `src/ui/README.md`.
+**Forge cannot close either from its own stylesheet, which is why the answer is a namespace and not a heuristic.** The table is derived from what
+`tailwind.css` compiles to (§1c), and an app's theme is not in that compile; a discriminator inside `cn` would be forge encoding a guess about
+someone else's naming. Forge reserves a root instead, synthesised from the overloaded row's own exceptions group: `text-size` resolves to the size
+group the design system states, so the conforming spelling merges against `text-2xl` and coexists with `text-red-500`, and `font-face` resolves to
+its family group, so `font-face-display` merges against `font-sans` and coexists with `font-semibold`. A non-conforming token keeps §1a's behaviour,
+unchanged and still silent.
+
+**The gate holds forge to it, and holds a consumer to it once the consumer opts in.** `validate-css-tokens` fails any `@theme` token declared in an
+overloaded namespace, deriving _overloaded_ from the compiled design system rather than a hand-kept list that would age: a root whose enumerated
+values mean one concern and whose other names mean another. The row is not forge-only — `cloudflareWorkerSteps({ design: { cssDir } })` runs it
+against the app's own CSS directory, so a consumer naming `design.cssDir` has its non-conforming `--text-*` or `--font-*` token flagged today. It is
+opt-in on that key, so an app that names no `cssDir` runs no such row; for that app the convention is published where it reads it — the `forge.css`
+header and `src/ui/README.md`.
 
 [boundaries]: ../warden/canon/libs/BOUNDARIES.md
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
-[cr-1]: ../warden/canon/libs/CODE_RULES.md#1-zero-global-state-rule
-[testing-6]: ./TESTING.md#6-the-verification-gate
+[cr-1]: ../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
+[testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [tg]: ./THEME_GENERATION.md
 [tg-3a]: ./THEME_GENERATION.md#3a-audited-pairs-and-criteria
 [udg]: ./UI_DESIGN_GUIDANCE.md

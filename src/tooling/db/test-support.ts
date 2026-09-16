@@ -26,6 +26,16 @@ export function jsonBatches(batches: readonly Record<string, unknown>[][]): Spaw
   return { code: 0, stdout: `${JSON.stringify(batches.map((results) => ({ results, success: true, meta: {} })))}\n`, stderr: "" };
 }
 
+/**
+ * One `--command` answered statement by statement, which is what wrangler does however many were batched
+ * into the spawn — so a fake built this way answers a batched read and an unbatched one alike.
+ */
+export function routedReply(command: string, answer: (statement: string) => Record<string, unknown>[]): Spawned {
+  // A batch terminates every statement and an unbatched read does not; the terminator is dropped so a
+  // matcher sees the statement as its caller wrote it either way.
+  return jsonBatches(command.split("\n").map((statement) => answer(statement.trim().replace(/;$/, ""))));
+}
+
 /** The one batched reply `readSchemaModel` expects: the five result sets in the order it asks for them. */
 export function schemaModelReply(rows: {
   inventory?: Record<string, unknown>[];
@@ -37,9 +47,38 @@ export function schemaModelReply(rows: {
   return jsonBatches([rows.inventory ?? [], rows.columns ?? [], rows.indexList ?? [], rows.indexColumns ?? [], rows.foreignKeys ?? []]);
 }
 
-/** The two result sets `describeTable` asks for in one spawn: one table's columns, then its own DDL. */
-export function describeTableReply(columns: readonly Record<string, unknown>[], tableSql: string | null | undefined): Spawned {
-  return jsonBatches([[...columns], tableSql === null || tableSql === undefined ? [] : [{ sql: tableSql }]]);
+/** The table one `pragma_table_info` statement reads, or null when the statement is not one. */
+export function tableInfoAsked(statement: string): string | null {
+  return /pragma_table_info\('((?:[^']|'')*)'\)/.exec(statement)?.[1]?.replaceAll("''", "'") ?? null;
+}
+
+/** The table one `sqlite_master` DDL read names, or null when the statement is not one. */
+export function tableSqlAsked(statement: string): string | null {
+  return /FROM sqlite_master WHERE type = 'table' AND name = '((?:[^']|'')*)'/.exec(statement)?.[1]?.replaceAll("''", "'") ?? null;
+}
+
+/** The result set a `tableSqlAsked` statement expects, empty where the table declares nothing. */
+export function tableSqlReply(tableSql: string | null | undefined): Record<string, unknown>[] {
+  return tableSql === null || tableSql === undefined ? [] : [{ sql: tableSql }];
+}
+
+/** What one key-probe statement asks about: the table, the key column, and which of the two probes it is. */
+export function keyProbeAsked(statement: string): { table: string; column: string; asks: "nulls" | "classes" } | null {
+  if (statement.includes("IS NULL LIMIT 1")) {
+    return { table: /FROM "([^"]+)"/.exec(statement)?.[1] ?? "", column: /WHERE "([^"]+)" IS NULL/.exec(statement)?.[1] ?? "", asks: "nulls" };
+  }
+  if (!statement.includes("COUNT(DISTINCT typeof(")) return null;
+  return { table: /FROM "([^"]+)"/.exec(statement)?.[1] ?? "", column: /typeof\("([^"]+)"\)/.exec(statement)?.[1] ?? "", asks: "classes" };
+}
+
+/** The result set one key probe expects, over the rows the table holds: the NULL row, or how many storage classes the column spans. */
+export function keyProbeReply(asks: "nulls" | "classes", rows: readonly Record<string, unknown>[], column: string): Record<string, unknown>[] {
+  if (asks === "nulls")
+    return rows
+      .filter((row) => row[column] === null || row[column] === undefined)
+      .slice(0, 1)
+      .map(() => ({ present: 1 }));
+  return [{ classes: Math.max(new Set(rows.map((row) => storageClass(row[column]))).size, 1) }];
 }
 
 function storageClass(value: unknown): string {
@@ -48,19 +87,6 @@ function storageClass(value: unknown): string {
   if (Array.isArray(value)) return "blob";
   if (typeof value === "number") return Number.isInteger(value) ? "integer" : "real";
   return "text";
-}
-
-/** The two result sets `describeTable` asks for about a key in one spawn: whether any row holds NULL, then how many storage classes it spans. */
-export function keyProbeReply(rows: readonly Record<string, unknown>[], column: string): Spawned {
-  const nulls = rows.filter((row) => row[column] === null || row[column] === undefined);
-  const classes = new Set(rows.map((row) => storageClass(row[column])));
-  return jsonBatches([nulls.slice(0, 1).map(() => ({ present: 1 })), [{ classes: Math.max(classes.size, 1) }]]);
-}
-
-/** The table and key column a `describeTable` key probe asks about, or null when the statement is not one. */
-export function keyProbeAsks(statement: string): { table: string; column: string } | null {
-  if (!statement.includes("IS NULL LIMIT 1")) return null;
-  return { table: /FROM "([^"]+)"/.exec(statement)?.[1] ?? "", column: /WHERE "([^"]+)" IS NULL/.exec(statement)?.[1] ?? "" };
 }
 
 /** Stored rows as the self-describing projection of `verificationSelect` returns them: value, then `typeof`. */

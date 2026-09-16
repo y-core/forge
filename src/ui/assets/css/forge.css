@@ -68,6 +68,15 @@
    `text-size-hero` merges against `text-2xl` and coexists with `text-red-500`, which is what it
    means.
 
+   A **font face** is the same trap one namespace over, and takes the same answer: `--font-face-*`.
+
+     @theme { --font-face-display: "Literata", serif; }   →   the utility `font-face-display`
+
+   Not `--font-display`. Tailwind's `font-*` utility is modally weight — nine weight utilities
+   against three families — so `font-display` reads as a weight and `cn("font-display",
+   "font-semibold")` drops the face. Under the reserved spelling `font-face-display` merges against
+   `font-sans` and coexists with `font-semibold`.
+
    Note the override point for a *per-mode* value is the **scale**, never the semantic token. Each
    semantic token is declared once and means the same thing in both modes; only a scale step carries
    a `light-dark()`. An app that sets `:root { --primary: … }` gets that value in both modes.

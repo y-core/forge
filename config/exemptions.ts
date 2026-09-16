@@ -64,4 +64,5 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
   ["src/auth/web/resolve.golden.ts", "the recorded render of every auth page — test data, and `resolve.test.tsx` is what reads it"],
   ["src/testing/workerd.ts", "test infrastructure — `tests/workerd/`'s specs are what exercise it, in the `full` tier"],
+  ["src/testing/node.d.ts", "a declaration file — it defines nothing to run, and `typecheck` is what holds it against `workerd.ts`"],
 ]);

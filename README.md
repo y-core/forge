@@ -64,6 +64,7 @@ a namespace to open it.
 | `@y-core/forge/warden/mcp` | The MCP server behind `warden serve` — its tools and resources | [warden/README.md][warden-readme] |
 | `@y-core/forge/config` | Environment config | [src/config/README.md][config-readme] |
 | `@y-core/forge/context` | `RequestContext`, `AppContext` | [src/context/README.md][context-readme] |
+| `@y-core/forge/dev` | The development allowance — the token every dev-only relaxation takes | [src/dev/README.md][dev-readme] |
 | `@y-core/forge/form` | Form parsing, CSRF & bot detection | [src/form/README.md][form-readme] |
 | `@y-core/forge/html/htmx` | HTMX server-side helpers | [src/html/README.md][html-readme] |
 | `@y-core/forge/http` | HTTP output — responses, headers, fragments | [src/http/README.md][http-readme] |
@@ -82,6 +83,7 @@ a namespace to open it.
 | `@y-core/forge/storage/r2` | R2 object storage | [src/storage/README.md][storage-readme] |
 | `@y-core/forge/testing` | Test fixtures & fakes | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/workerd` | `wrangler dev` fixture server (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
+| `@y-core/forge/testing/node` | Types only: the node surface `testing/workerd` reaches, referenced per file | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/ui/contracts` | Shared SSR/browser DOM contract as pure data | [src/ui/README.md][ui-readme] |
 | `@y-core/forge/ui/contracts/theme` | Colour-scheme generation and the audited contrast pairs | [src/ui/README.md][ui-readme] |
 | `@y-core/forge/ui/core` | Server-side JSX component library | [src/ui/README.md][ui-readme] |
@@ -182,6 +184,7 @@ MIT — see [LICENSE](LICENSE). This covers everything the package ships, includ
 [context-readme]: src/context/README.md
 [crypto-readme]: src/crypto/README.md
 [db-readme]: src/tooling/db/README.md
+[dev-readme]: src/dev/README.md
 [form-readme]: src/form/README.md
 [gate-readme]: src/tooling/gate/README.md
 [html-readme]: src/html/README.md

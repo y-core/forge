@@ -21,8 +21,8 @@ its `## 0. Quick Reference` picks the section. Such a repository may still follo
 single-home rule — without being served by warden. `devctl` is the standing example: single-purpose, in maintenance, and deliberately a
 non-consumer.
 
-Two consequences worth stating. A non-consumer gets no `warden sync`, so its agent definitions and slash commands are its own to maintain, and they
-will drift from the fleet's unless someone reconciles them. And `docs/` is only warden's corpus convention where warden is in use — a repository
+Two consequences worth stating. A non-consumer gets no `warden sync`, so its agent definitions and skills are its own to maintain, and they will
+drift from the fleet's unless someone reconciles them. And `docs/` is only warden's corpus convention where warden is in use — a repository
 already using that directory name for something else is not obliged to rename it.
 
 ## Layout
@@ -32,8 +32,8 @@ already using that directory name for something else is not obliged to rename it
 | `canon/shared/` | The documents both kinds share, byte-identical |
 | `canon/libs/` | The library corpus |
 | `canon/apps/` | The application corpus |
-| `claude/agents/` | Agent definitions, one tree per kind — the source a sync copies from |
-| `claude/commands/` | Slash commands, shared by both kinds |
+| `claude/agents/` | Agent definitions — `shared/` plus one tree per kind, layered in that order |
+| `claude/skills/` | Skills, laid out the same way — `shared/` plus one tree per kind |
 | `claude/seed/` | `CLAUDE.md`, `AGENTS.md` and `settings.local.json`, written only when absent |
 | `share/` | Example editor configuration `warden show` writes to stdout |
 | `src/` | Every module — the command, the sync, the checks, the index, the MCP server |
@@ -49,7 +49,7 @@ reads the canon takes `--kind=<libs|apps>` to override the tree selection.
 ### Keeping a repository in step
 
 ```bash
-warden sync                  # replace .claude/agents and .claude/commands
+warden sync                  # replace .claude/agents and .claude/skills
 warden sync --init           # also seed CLAUDE.md, AGENTS.md and settings.local.json if absent
 warden sync --check          # report drift and exit 1 if any, writing nothing
 
@@ -59,7 +59,12 @@ warden natives               # place the editor architecture's prebuilt native b
 warden show --zed            # write the Zed user settings to stdout, to merge by hand
 ```
 
-A sync deletes `.claude/agents/` wholesale. A repository-local agent added since the last sync is lost — keep one outside that directory.
+**A synced tree is layered from more than one source, and replaced as one.** `.claude/agents` is `agents/shared/` then `agents/<kind>/`, and
+`.claude/skills` the same; a file both carry lands as the kind tree's copy. The whole destination is staged and renamed over, so it is only ever a
+complete tree or the one that was already there.
+
+A sync deletes each of those directories wholesale. A repository-local agent or skill added since the last sync is lost — keep one outside them.
+`.claude/commands/` is neither written nor deleted: a repository's own slash commands are its own.
 
 ### Reading the corpus
 
@@ -92,6 +97,10 @@ warden serve                 # serve the corpus over MCP on stdio
 byte-identical wherever it is written — forge owns it, and `wardenStep` asserts it only where `catalogue` is configured. Elsewhere the live
 `knowledge://catalogue` resource is the copy, rendered per repository and stored nowhere. `--write` writes under the root it was given and refuses a
 target inside `node_modules`.
+
+**`--write` reads the canon off disk; printing reads the index.** An index holds `shared` plus its repository's own kind by design, so a catalogue
+rendered from one could never carry the other tree — and the committed file's claim to cover the fleet canon would be false. The written file walks
+all three trees instead.
 
 Search, read, outline and related also take `--gate`, which reads the gate's own index rather than the working one.
 
@@ -173,9 +182,16 @@ Building, opening and querying the index — everything the CLI and the MCP serv
 | Symbol | Kind | Summary |
 | --- | --- | --- |
 | `search` | function | BM25 over the index, scaled by the document's weight and held to a coverage floor. |
-| `Hit` | type | One ranked hit: its chunk id, its corpus and path, its heading trail, its score and its coverage. |
-| `SearchOptions` | type | What a search may be narrowed by — corpus, path, limit, floor and the bridge table. |
+| `Hit` | type | One ranked hit: its chunk id, its corpus and path, its heading trail, its score, its coverage and — on request — one line to judge it by. |
+| `SearchOptions` | type | What a search may be narrowed by — corpus, path, limit, floor, the bridge table and whether an excerpt is carried. |
+| `FLOOR` | const | The least of a query's information a hit may carry and still be offered as an answer. |
+| `MARGIN` | const | The least room the floor may have between the thinnest answer and the loudest refusal. |
 | `corpusLabel` | function | Which corpus a section belongs to, in words rather than as an id prefix. |
+| `renderHit` | function | One hit as a reader is shown it, on both the CLI and the MCP tool. |
+| `HitFormat` | type | What a rendering of a hit may add beyond the hit itself. |
+| `excerptOf` | function | The one line a reader judges a hit by: its gloss, its rule clause, or its prose cut around the query. |
+| `Excerptable` | type | The columns an excerpt is drawn from. |
+| `headingTrail` | function | A heading trail as a reader reads it, without the slugs that only ever addressed it. |
 | `coverage` | function | The share of a query's information each candidate chunk carries. |
 | `documentFrequency` | function | How many chunks contain each term of a query. |
 | `idf` | function | One term's inverse document frequency over the indexed corpus. |
@@ -220,10 +236,12 @@ The MCP server: the tool and resource surface, the JSON-RPC framing, and the std
 
 | Symbol | Kind | Summary |
 | --- | --- | --- |
-| `TOOLS` | const | The declared tools — search, read, outline, related and impact. |
+| `knowledgeTools` | function | The declared tools — search, read, outline, related and impact — described against the corpus an index holds. |
 | `callTool` | function | Runs one tool against an open index. |
 | `ToolSpec` | type | A tool's declared shape, as `tools/list` returns it. |
+| `ToolAnnotations` | type | What a host may assume about a tool without calling it. |
 | `ToolResult` | type | One tool's result, in MCP's content shape. |
+| `truncate` | function | Caps one response, naming the narrower path to what was cut. |
 | `RESOURCES` | const | The one fixed resource: the catalogue. |
 | `TEMPLATES` | const | The two parameterised resources, one per corpus. |
 | `readResource` | function | Reads one resource by URI, or nothing when the URI names none. |

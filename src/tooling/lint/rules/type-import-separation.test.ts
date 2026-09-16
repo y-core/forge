@@ -13,7 +13,7 @@ function statement(importKind: string, ...specifiers: AstNode[]): AstNode {
 }
 
 const message = (named: string) =>
-  `${named} rides in on a value import as an inline \`type\` specifier — give the type its own \`import type { … }\` line, so what this file needs at runtime is legible from the import block alone (docs/LIBRARY_ARCHITECTURE.md §8).`;
+  `${named} rides in on a value import as an inline \`type\` specifier — give the type its own \`import type { … }\` line, so what this file needs at runtime is legible from the import block alone (docs/FORGE_STRUCTURE.md §8).`;
 
 describe("type-import-separation", () => {
   it("reports a type specifier mixed into a value import", () => {

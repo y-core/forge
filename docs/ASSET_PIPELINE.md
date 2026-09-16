@@ -11,7 +11,7 @@ audience: internal
 > the exemption from the Web-APIs-only rule ([`NAMESPACES.md`][namespaces-4a] §4a).
 >
 > Defers to: [`BUILD_TOOLING.md`][bt] for the CLI framework, the verification gate and the release workflow that drive it;
-> [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d for that exemption, and [`LIBRARY_ARCHITECTURE.md`][la-3c] §3c for the optional build peer dependencies.
+> [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d for that exemption, and [`FORGE_STRUCTURE.md`][la-3c] §3c for the optional build peer dependencies.
 
 ---
 
@@ -86,6 +86,11 @@ Signatures live in `src/tooling/assets/README.md`; none of these takes the whole
 names or `{ key, file }` pairs. A missing local file is a warning and a skipped symbol, not a failure, and a group producing no symbols writes
 nothing. The consequence is the point — the symbol set is stated in the config, so the glyph-name union generated from it (§4) changes only when a
 human edits that list, where a glob would let a file appearing on disk silently widen a published type.
+
+**The same no-glob rule holds for the `_headers` rules `buildAll` writes**, and there for a second reason: Cloudflare applies _every_ matching rule
+and joins a repeated header with a comma, so one `/static/*` glob overlapping the per-file icon rules would hand the manifest a `Cache-Control`
+carrying both values. `emitHeaders` therefore emits one rule per icon output — the rationale sits at `src/tooling/assets/pipeline.ts`, and
+`src/tooling/assets/README.md` carries the emitted shape.
 
 `buildAll` is the standard entry for CI and `package.json` scripts. The per-stage functions exist because the CLI exposes each as its own
 subcommand, so a developer can rerun one stage alone.
@@ -215,16 +220,16 @@ narrows its `name` prop against, so the two cannot disagree.
 **It exists to be usable in type position.** `createIcon` already infers the narrow component type at the _value_ site, but a consumer writing a
 props interface — `icon: ForgeIcon<G>` — needs the union as a name it can spell. Without one it hand-maintains a literal union beside the sprite
 config, a second copy of the glyph list that drifts the first time a glyph is added. `ForgeIcon` declares no default for its parameter, so the
-widening a missing union invites does not compile ([`CODE_REVIEW.md`][cr-3b] §3b).
+widening a missing union invites does not compile ([`FORGE_REVIEW.md`][cr-3b] §3b).
 
 Forge's own glyph list is a separate fact with its own owner: `src/ui/assets/glyphs.ts` enumerates it as `ForgeUiIconName`, because forge's
 components must name the glyphs they require without depending on any consumer's generated module.
 
 [bt]: ./BUILD_TOOLING.md
 [bt-2h]: ./BUILD_TOOLING.md#2h-roots-are-stated-or-derived-never-discovered
-[cr-3b]: ./CODE_REVIEW.md#3b-tier-2--ripgrep-with-triage
+[cr-3b]: ./FORGE_REVIEW.md#3b-tier-2--ripgrep-with-triage
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
-[la-3c]: ./LIBRARY_ARCHITECTURE.md#3c-peer-dependencies-for-build-tools
+[la-3c]: ./FORGE_STRUCTURE.md#3c-peer-dependencies-for-build-tools
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [tg]: ./THEME_GENERATION.md

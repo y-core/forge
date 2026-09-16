@@ -9,8 +9,8 @@ audience: consumer
 > Owns the validation and form-parsing pipeline: the valibot facade, `defineAction`'s schema contract, body parsing and its byte cap, CSRF, and
 > Turnstile.
 >
-> Defers to: [`ERROR_HANDLING.md`][eh-1c] §1c for `ValidationResult` and §2c for rendering its message list; [`SECURITY_HARDENING.md`][sh] for the
-> transport-layer guards that sit in front of these; [`TESTING.md`][testing-3a] §3a for the HTML-entity assertion rule.
+> Defers to: [`FORGE_ERRORS.md`][eh-1c] §1c for `ValidationResult` and §2c for rendering its message list; [`SECURITY_HARDENING.md`][sh] for the
+> transport-layer guards that sit in front of these; [`TEST_RUNNERS.md`][testing-3a] §3a for the HTML-entity assertion rule.
 >
 > The request context is `AppContext<Bindings>` (`c.request`, `c.env`, `c.url`); parse bodies with `parseFormData(c)`.
 
@@ -89,7 +89,7 @@ enumerating refusal is one a caller can lengthen by adding fields, so choose it 
 
 ### 1c. `ValidationResult` Type
 
-`ValidationResult<T>` is the standard return type for a service function that validates its own input. [`ERROR_HANDLING.md`][eh-1c] §1c owns the
+`ValidationResult<T>` is the standard return type for a service function that validates its own input. [`FORGE_ERRORS.md`][eh-1c] §1c owns the
 type; it is exported from `@y-core/forge/result` and re-exported from `@y-core/forge/validation`.
 
 ### 1d. `defineAction` — The Schema Contract
@@ -273,6 +273,18 @@ and the hostname a token must have been minted on is usually the request's own.
 **Always pass `expectedHostname` in production.** Without it the token's origin hostname is not checked, so a token minted on an attacker-controlled
 site can be replayed against this one. A runtime warning is logged when it is omitted.
 
+**The dev allowance is the key for Cloudflare's testing secrets, and it takes two locks to open.** Those three published secrets — `1x…AA` (always
+passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` whatever origin the widget ran on, so
+an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Passing
+`dev`, a [`DevAllowance`][dev-readme] granting `turnstileTestingSecrets`, skips the hostname comparison **only when `secretKey` is one of those
+three literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret without the token is
+compared as before. Every other check, `expectedHostname`'s fail-closed guard included, is unchanged.
+
+**There is no env var, and now no way to write one.** Minting the token means importing `@y-core/forge/dev` at value, and `validate-dev-boundary`
+fails that import from anything but a `*.dev.ts` entry — so the production bundle holds no module that can set it. That is the containment shape
+`extraOrigins` has ([`SECURITY_HARDENING.md`][sh-3f] §3f), made checkable: a relaxation computed from an env check in the shared path is what
+[`SECURITY_HARDENING.md`][sh-3f] §3f rules out, and the token cannot be reached from that path at all.
+
 **`expectedAction` is only usable when the widget minted the token with one.** The action rides on the token, so `<Turnstile action='…'>`
 ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c) is the other half of this option — set one without the other and every token is either refused or unscoped,
 which lets a token minted on one form verify at another endpoint on the same host.
@@ -299,7 +311,7 @@ second, richer signal; forge takes the narrower residual. An app that needs the 
 **Every trip is logged at `warn`, naming the guard and, for Turnstile, the reason.** The refusal is deliberately indistinguishable from a validation
 failure to the caller, so without the log line it is indistinguishable to the operator too — and a CAPTCHA that cannot pass in a given environment
 then reads as every submission getting its first field wrong. That is not hypothetical: it is what a consuming app saw under a local dev server
-whose widget issued no token, and diagnosing it took a Workers-runtime spec ([`TESTING.md`][testing-1f] §1f) to rule the body parse out. The
+whose widget issued no token, and diagnosing it took a Workers-runtime spec ([`TEST_RUNNERS.md`][testing-1f] §1f) to rule the body parse out. The
 response the caller sees is unchanged; only the server-side record is.
 
 ---
@@ -325,9 +337,11 @@ surface each step calls.
 
 [boundaries-3]: ../warden/canon/libs/BOUNDARIES.md#3-validate-at-the-boundary
 [boundaries-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
-[eh-1c]: ./ERROR_HANDLING.md#1c-guardresult-and-validationresult-domain-aliases
+[dev-readme]: ../src/dev/README.md
+[eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [ram-2b]: ./ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [sh]: ./SECURITY_HARDENING.md
-[testing-1f]: ./TESTING.md#1f-the-workerd-set
-[testing-3a]: ./TESTING.md#3a-the-encoding-map
+[sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
+[testing-1f]: ./TEST_RUNNERS.md#1f-the-workerd-set
+[testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
 [ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller

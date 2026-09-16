@@ -4,6 +4,7 @@ import type { DeferredFinding } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
 import type { ExportsMap } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
+import type { MarkdownCheckConfig } from "./checks/types";
 import type { GATE_MODES } from "./steps";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
@@ -134,6 +135,9 @@ export interface CloudflareWorkerStepOptions {
   workerd?: boolean;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
   design?: CloudflareWorkerDesignOptions;
+  /** The markdown conventions to hold prose to; omit to emit no row. An app that takes it must also
+   *  ignore every markdown file in `.oxfmtrc.json`, so the formatter and this check do not fight for the same bytes. */
+  markdown?: Omit<MarkdownCheckConfig, "root">;
 }
 
 /** The fields `forgeChecks` reads from the consuming package's `package.json`. @public */

@@ -68,8 +68,8 @@ run with no terminal that did not pass `--yes`.
   rename is `--rename old:new`, never inferred.
 - **Forward-only migrations**, with the history forge's own rather than wrangler's: one `_forge_migrations` row per applied migration carrying its
   checksum, when it ran, and the schema fingerprint it certified — written in the same load as the migration body.
-- **A lint pass before every apply** — eighteen rules over SQL that is destructive, unbounded, unbackupable, or that D1 refuses, errors aborting any
-  apply and warnings aborting a deployed one.
+- **A lint pass before every apply** — over SQL that is destructive, unbounded, unbackupable, or that D1 refuses, errors aborting any apply and
+  warnings aborting a deployed one.
 - **An undo per place** — a D1 Time Travel bookmark captured before every deployed apply, and backup-plus-reset locally.
 - **Verified backups** — an artifact is replayed by both restore routes into a throwaway database and compared row by row before it is written; a
   deployed database is backed up the same way, read-only, so it has an artifact beyond Time Travel's window.
@@ -257,6 +257,28 @@ directory every migration is read from and composed into. An entry in `schemas` 
 is not named here, including a library's. `snapshot` defaults to `schema.snapshot.json` at the root. `migrations_dir` and `migrations_table` in a
 `d1_databases` entry are not read at all.
 
+### Naming the verbs once
+
+The verbs are long enough to be worth a script apiece:
+
+```json
+{
+  "scripts": {
+    "db:migrate": "forge db migrate",
+    "db:migrate:remote": "forge db migrate --target remote",
+    "db:status": "forge db migrate status",
+    "db:backup": "forge db backup",
+    "db:restore": "forge db restore",
+    "db:reset": "forge db reset",
+    "db:lint": "forge db lint --strict",
+    "db:compose": "forge db migrate compose",
+    "db:schema:check": "forge db schema check"
+  }
+}
+```
+
+Which two lines belong in CI, and why neither covers the other, is [`DATABASE_MANAGEMENT.md`][dm-9] §9.
+
 ### Driving it from your own CLI
 
 `createDbCommands()` returns the whole subtree, ready to attach:
@@ -280,9 +302,9 @@ filesystem or spawns `wrangler`.
 > Import path: `@y-core/forge/tooling/db` → `src/tooling/db/mod.ts`
 
 The barrel publishes the command factory, the run context, and one entry point per verb, in the order the table follows: `bookmark`, `commands`,
-`context`, then `migrate/`, `backup/`, `seed/` and `schema/`. The engine beneath them — `home`, `io`, `sql`, `target`, `wrangler` and the rest of
-each directory — is `@internal`: the gate and the tests reach it by file, and a consumer drives a verb through its `run*`, `prepare*` or `execute*`
-function with the run context `resolveDbContext` resolves. The inventory read, the last-fingerprint read and the fingerprint rules are
+`context`, then `migrate/`, `backup/`, `seed/`, `standby` and `schema/`. The engine beneath them — `home`, `io`, `sql`, `target`, `wrangler` and the
+rest of each directory — is `@internal`: the gate and the tests reach it by file, and a consumer drives a verb through its `run*`, `prepare*` or
+`execute*` function with the run context `resolveDbContext` resolves. The inventory read, the last-fingerprint read and the fingerprint rules are
 `@y-core/forge/storage/db`'s, so a Worker judges a schema by the same spelling the CLI does.
 
 ### Exports
@@ -291,7 +313,7 @@ function with the run context `resolveDbContext` resolves. The inventory read, t
 | --- | --- | --- |
 | `timeTravelInfo` | `timeTravelInfo(io: DbIo, home: Home, timestamp?: string, config?: DbConfig): Bookmark` | Captures the bookmark for now or for `--timestamp`, and the command that restores to it. |
 | `timeTravelRestore` | `timeTravelRestore(io: DbIo, home: Home, point: { bookmark: string } \| { timestamp: string }): string` | Restores the deployed database to a bookmark or a timestamp. The confirmation is the caller's. |
-| `createDbCommands` | `createDbCommands(overrides: DbContextOverrides = {}): CommandBase` | The `forge db` command tree: migrate, lint, schema, backup, restore, reset, seed and bookmark. |
+| `createDbCommands` | `createDbCommands(overrides: DbContextOverrides = {}): CommandBase` | The `forge db` command tree: migrate, lint, schema, backup, restore, reset, seed, standby and bookmark. |
 | `resolveDbContext` | `resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, overrides: DbContextOverrides = {}): Promise<DbRunContext>` | Resolves the shared flags into a run context. |
 | `confirmPrinter` | `confirmPrinter(run: DbRunContext): (line: string) => void` | Where a confirmation prints: stderr under `--json`, so stdout stays the one JSON document, and stdout otherwise. |
 | `runMigrate` | `runMigrate(run: DbRunContext, options: MigrateOptions): Promise<MigrateOutcome>` | Checks the history against what forge recorded and applies every pending migration under a lock, each with its own history row. |
@@ -305,7 +327,9 @@ function with the run context `resolveDbContext` resolves. The inventory read, t
 | `prepareRestore` | `prepareRestore(run: DbRunContext, options: RestoreOptions): RestorePlan` | Everything a restore checks before it asks: the manifest, the artifact whole, its embedded migrations, and an empty target. |
 | `executeRestore` | `executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOutcome` | Loads a prepared restore into the target and checks the result against the manifest's own digests. |
 | `readSeeds` | `readSeeds(run: DbRunContext, dir?: string \| undefined): readonly Seed[]` | Every seed on disk: each declared directory's, in the order `config/db.ts` names them, with `--dir` overriding the lot. |
+| `composeSeedFixture` | `composeSeedFixture(run: DbRunContext, options: SeedFixtureOptions): SeedFixtureOutcome` | Composes a seed file from rows in memory, proving every one loads into the declared schema before the file is written. |
 | `lintSeeds` | `lintSeeds(seeds: readonly Seed[]): LintFinding[]` | Checks every seed, naming each finding by the file it came from. |
+| `runStandbyReset` | `runStandbyReset(run: DbRunContext, options: StandbyResetOptions): Promise<StandbyResetOutcome>` | Empties a standby database, applies every migration, then applies every seed, so what it holds depends on nothing a previous run left. |
 | `checkSchema` | `checkSchema(run: DbRunContext, options: { replay: boolean; cache: boolean }): SchemaCheckReport` | Holds every declared schema and the migrations against the snapshot: by digest always, by replay when asked. |
 | `composeMigration` | `composeMigration(run: DbRunContext, options: ComposeOptions): ComposeOutcome` | Composes the next migration from every declared schema, proving it against a replay of the migrations before writing it; a rebuild that depends on the rows already there is warned in `warnings`, and a drop whose declaring file `config/db.ts` no longer names is attributed in `causes`. |
 
@@ -318,7 +342,10 @@ function with the run context `resolveDbContext` resolves. The inventory read, t
 **Types:** backup, restore and reset — `BackupManifest`, `BackupOptions`, `BackupOutcome`, `RestoreRoute`, `RestoreOptions`, `RestoreOutcome`,
 `RestorePlan`, `RestoreTargetState`, `ResetOptions`, `ResetOutcome`, `ResetPlan`.
 
-**Types:** seeds and the declared schema — `Seed`, `SeedPlan`, `SeedOutcome`, `ComposeOptions`, `ComposeOutcome`, `SchemaCheckReport`.
+**Types:** seeds and the declared schema — `Seed`, `SeedPlan`, `SeedOutcome`, `SeedFixtureOptions`, `SeedFixtureOutcome`, `ComposeOptions`,
+`ComposeOutcome`, `SchemaCheckReport`.
+
+**Types:** the standby database — `StandbyResetOptions`, `StandbyResetOutcome`.
 
 ---
 
@@ -337,5 +364,6 @@ function with the run context `resolveDbContext` resolves. The inventory read, t
 [cli-readme]: ../cli/README.md
 [dm]: ../../../docs/DATABASE_MANAGEMENT.md
 [dm-4]: ../../../docs/DATABASE_MANAGEMENT.md#4-the-companion-tables
+[dm-9]: ../../../docs/DATABASE_MANAGEMENT.md#9-the-ci-gate
 [sb-1]: ../../../docs/STORAGE_BINDINGS.md#1-storagedb--d1-database-client
 [sc]: ../../../docs/SCHEMA_COMPOSITION.md

@@ -13,7 +13,7 @@ function exported(declaration?: AstNode): AstNode {
 }
 
 const message = (kind: string, name: string) =>
-  `\`export ${kind} ${name}\` is declared outside \`types.ts\` — move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/LIBRARY_ARCHITECTURE.md §8).`;
+  `\`export ${kind} ${name}\` is declared outside \`types.ts\` — move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/FORGE_STRUCTURE.md §8).`;
 
 describe("type-import-external", () => {
   it("reports an exported interface", () => {

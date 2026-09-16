@@ -4,8 +4,8 @@ import type { CliErrorKind } from "./types";
 export class CliError extends Error {
   readonly kind: CliErrorKind;
 
-  constructor(kind: CliErrorKind, message: string) {
-    super(message);
+  constructor(kind: CliErrorKind, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "CliError";
     this.kind = kind;
   }

@@ -43,8 +43,6 @@ description: "Reader-centred prose for governing documents and for what an agent
 - §8 Response Length and Proportion: length tracks substance, not effort
 - §9 Progress Narration During Work: one sentence up front, then findings only
 - §10 Corrections to Earlier Statements: correct what changes a decision, and nothing else
-- §11 Scope of the Delivered Work: the asked-for scope is the deliverable
-- §12 Delegation Restraint: when a sub-agent earns its cost, and when it does not
 - §13 What This Document Does Not Enforce: why no check measures plainness
 
 ---
@@ -151,7 +149,7 @@ Brevity is never a licence for the third. In practice, in this corpus:
 - **A failing test is said plainly**, with what failed. "Mostly green" is not a verdict.
 - **A skipped step is named** as skipped, not omitted from the summary.
 - **A part of the request not delivered is stated**, with the reason, rather than quietly dropped — the reader cannot re-scope what they do not know
-  was cut (§11).
+  was cut (`AGENT_WORKFLOW.md` §1a).
 - **A caveat that would change the reader's next action is not compressed away.** Compressing it is the failure mode that brevity rules produce, and
   it is worse than the verbosity they fix.
 
@@ -409,40 +407,6 @@ Two things that are not corrections, and must not be treated as one:
 
 Where another agent's report contradicts your own finding, check it before adopting it. A sub-agent's claim is a claim. When it turns out to be
 right, correct the substance and move on — without narrating the correction itself.
-
----
-
-## 11. Scope of the Delivered Work
-
-**The requested scope is the deliverable.** Do not quietly narrow it, widen it, or convert it into an adjacent task that seems more useful.
-
-- **Make routine judgement calls; do not escalate them.** Where a choice has an obvious default and getting it wrong is cheap to reverse, choose,
-  say what you chose, and continue. Ask only when two readings lead to materially different work.
-- **State a concern in a sentence, then do the work.** If the request has a real problem, say so briefly, name the assumption you are proceeding
-  under, and deliver. A concern is not a reason to stop, and a reaffirmed request is a decision.
-- **Finish every part that is not blocked.** Do not stop at the easy portion and report completion.
-- **Name what you left out, and why.** Silently reducing scope is a §3d failure — the reader cannot re-scope what they were not told was cut.
-  Scaling the work down is their call.
-- **Do not exceed the scope either.** An unrequested improvement, a nearby refactor, or an extra abstraction is expensive to review and was not
-  asked for. Note it; do not build it.
-
----
-
-## 12. Delegation Restraint
-
-Delegation buys two things: **parallelism** across genuinely independent tracks, and **context isolation**, keeping voluminous output out of the
-calling context. It buys nothing else, and it is not free — every sub-agent costs setup, a prompt, and a synthesis step.
-
-- **Delegate a track that is sizeable and independent.** Several unrelated areas surveyed at once; one mechanical change applied across many files;
-  a gate whose output would otherwise fill this context.
-- **Do not delegate what you can finish in a handful of tool calls.** Reading three files and answering is faster done than described to somebody
-  else.
-- **Do not delegate to verify or double-check your own work.** A second agent re-reading your change is not an independent check; it is the same
-  reasoning at one remove, and it costs a full context to produce agreement. Where a mechanical check exists, run it — that is what a gate is for.
-- **One agent where one suffices.** Two agents on one track produce two answers and a reconciliation problem.
-
-Where an agent definition names a delegation boundary of its own — what it may never delegate, where its gate runs go — that boundary is narrower
-than this section and wins.
 
 ---
 

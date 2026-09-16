@@ -269,6 +269,8 @@ const TOP_THEN_LEFT_CORNERS = "rounded-t-md rounded-l-lg";
 const SCALE_THEN_COLOR = "text-size-hero text-red-500";
 const SCALE_THEN_SIZE = "text-size-hero text-2xl";
 const AMBIGUOUS_THEN_COLOR = "text-hero text-red-500";
+const FACE_THEN_WEIGHT = "font-face-display font-semibold";
+const AMBIGUOUS_FACE_THEN_WEIGHT = "font-display font-semibold";
 
 describe("cn arbitrary-value discrimination", () => {
   it("reads an arbitrary length under `text-` as a font size, not a colour", () => {
@@ -305,6 +307,20 @@ describe("cn and the reserved `text-size-*` namespace", () => {
 
   it("still drops the same step declared as `--text-hero`, which is what the reserved namespace exists to avoid", () => {
     expect(cn(AMBIGUOUS_THEN_COLOR)).toBe("text-red-500");
+  });
+});
+
+describe("cn and the reserved `font-face-*` namespace", () => {
+  it("keeps an app's face beside a weight, because the two set different concerns", () => {
+    expect(cn(FACE_THEN_WEIGHT)).toBe(FACE_THEN_WEIGHT);
+  });
+
+  it("resolves it against a Tailwind family, which is the concern it shares", () => {
+    expect(cn("font-face-display", "font-sans")).toBe("font-sans");
+  });
+
+  it("still drops the same face declared as `--font-display`, which is what the reserved namespace exists to avoid", () => {
+    expect(cn(AMBIGUOUS_FACE_THEN_WEIGHT)).toBe("font-semibold");
   });
 });
 

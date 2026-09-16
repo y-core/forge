@@ -2,6 +2,7 @@ import type { Middleware } from "@remix-run/fetch-router";
 import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 
 import type { AppContext } from "../context/types";
+import type { DevAllowance } from "../dev/types";
 import type { TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
 import type { JSXNode } from "../jsx/types";
 import type { Logger } from "../logging/types";
@@ -19,7 +20,8 @@ import type { PIPELINE_ONLY_KEYS } from "./pipeline";
 /** Options for `createApp`; the wiring hooks run in the order they are numbered. @public */
 export interface AppOptions<Bindings = Record<string, unknown>> {
   config?: object;
-  isDebug?: (c: AppContext<Bindings>) => boolean;
+  /** A development entry's token: with `errorDetail` the boundary's 500 page prints the thrown message. */
+  dev?: DevAllowance;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   /** Custom logger injected into the app error handler. */
   logger?: Logger;
@@ -168,8 +170,8 @@ export type CheckFn<Bindings = Record<string, unknown>> = (c: AppContext<Binding
 
 /** Options for `createErrorPage`. @public */
 export interface ErrorPageOptions<Bindings = Record<string, unknown>> {
-  /** Show the real error message when it returns `true`. */
-  isDebug?: (c: AppContext<Bindings>) => boolean;
+  /** A development entry's token: with `errorDetail` the thrown message is printed instead of a fixed sentence. */
+  dev?: DevAllowance;
   /** Page `<title>` and heading. */
   title?: string;
   /** Stylesheet `<link>` href, static or resolved per request. */

@@ -247,7 +247,7 @@ request.
 [boundaries-3c]: ./BOUNDARIES.md#3c-trust-boundaries-on-inbound-headers
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
-[cr-1]: ./CODE_RULES.md#1-zero-global-state-rule
+[cr-1]: ../shared/CODE_RULES.md#1-zero-global-state-rule
 [cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
 [eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--config-and-resolvers-throw
 [testing-6]: ./TESTING.md#6-the-verification-gate

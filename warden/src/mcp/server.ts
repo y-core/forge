@@ -6,14 +6,15 @@ import type { Tree } from "../types";
 import { canonVersion } from "../version";
 import { RESOURCES, readResource, TEMPLATES } from "./resources";
 import { encode, err, ok, parseRequest, RPC_ERRORS, type RpcResponse, takeLines } from "./rpc";
-import { callTool, TOOLS } from "./tools";
+import { callTool, knowledgeTools } from "./tools";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
 /** The methods that answer from the corpus, and so must see it as it is now rather than as it was
- *  when the server started. The rest — `initialize`, `ping`, the two list methods — describe the
- *  server itself and cannot go stale. */
-const SERVES_CONTENT = new Set(["tools/call", "resources/read"]);
+ *  when the server started. `tools/list` is one of them because `knowledge_search`'s description
+ *  names the documents this index holds. The rest — `initialize`, `ping`, the resource lists —
+ *  describe the server itself and cannot go stale. */
+const SERVES_CONTENT = new Set(["tools/call", "resources/read", "tools/list"]);
 
 /** A minimal readable/writable pair, so `serve` can be driven by a test as well as by stdio. @public */
 export interface Transport {
@@ -46,7 +47,7 @@ export function handle(knowledge: Knowledge, method: string, params: Record<stri
       return ok(id, {});
 
     case "tools/list":
-      return ok(id, { tools: TOOLS });
+      return ok(id, { tools: knowledgeTools(knowledge) });
 
     case "tools/call": {
       const name = typeof params.name === "string" ? params.name : "";

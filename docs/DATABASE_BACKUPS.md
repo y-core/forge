@@ -1,6 +1,6 @@
 ---
 title: Database Backups
-description: "The backup artifact: its four files, the proof both restore routes pass before it exists, what binds it to a schema, the data format and its limits, and what restore and reset check."
+description: "The backup artifact: its three files, the proof both restore routes pass before it exists, what binds it to a schema, the data format and its limits, and what restore and reset check."
 audience: consumer
 ---
 
@@ -14,7 +14,7 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 The Artifact: the directory name, the four files, and which route restores from each
+- §1 The Artifact: the directory name, the three files, and which route restores from each
 - §2 Proven Before Written: both routes replayed into a scratch and compared row by row, and what a backup holds the lock for
 - §3 A Remote Backup Is a Read: no lock, no bookmark, proven into a local scratch
 - §4 Self-Contained and Bound: the embedded migrations, the three facts the manifest binds to, and the manifest's own digest
@@ -26,16 +26,15 @@ audience: consumer
 
 ## 1. The Artifact
 
-`forge db backup` writes a directory named `<database>-<YYYYMMDDTHHMMSSZ>` under `.forge/backups` (or `backupsDir`, or `--out`), holding four files.
-The name is the second the backup began, so a second backup of the same database in that second is refused rather than written over the first. Every
-file and directory forge writes under `.forge/` is created readable by the owner alone (`0600` and `0700`), since an artifact holds every row the
-database does.
+`forge db backup` writes a directory named `<database>-<YYYYMMDDTHHMMSSZ>` under `.forge/backups` (or `backupsDir`, or `--out`), holding three files
+and a directory of migrations. The name is the second the backup began, so a second backup of that database in that second is refused rather than
+written over the first. Every file and directory forge writes under `.forge/` is created readable by the owner alone (`0600` and `0700`), since an
+artifact holds every row the database does.
 
 | File | What it is | Restores by |
 | --- | --- | --- |
-| `schema.sql` | The schema alone, from `wrangler d1 export --no-data` | Nothing — it is the record of what the data was shaped by |
-| `data.sql` | Rows only, for the app's tables and forge's companions — the migration history among them | `--route migrations`: replay `migrations/`, then load this |
-| `full.sql` | The schema, then every row `data.sql` carries | `--route full`: load one self-contained file |
+| `schema.sql` | The schema alone, from `wrangler d1 export --no-data` | `--route full` loads this first, then `data.sql` |
+| `data.sql` | Rows only, for the app's tables and forge's companions — the migration history among them | Both routes: after `migrations/`, or after `schema.sql` |
 | `migrations/` | Every migration the artifact was taken with, under the name the history recorded | `--route migrations` applies exactly these |
 | `manifest.json` | What was read, what it hashes to, and what was proven | Read first by every restore |
 
@@ -126,16 +125,24 @@ What the format carries, and the limits that follow from it — each refused up 
 - **A key that collates otherwise than BINARY is read by `rowid` instead**, since the read seeks past the last key it saw and compares by code point
   — BINARY's order and no other collation's. A `WITHOUT ROWID` table has no other column to order by and is refused up front, naming the column and
   its collation.
-- **A trigger may delete rows.** `full.sql` is checked statement by statement, and a `CREATE TRIGGER … BEGIN … END` is one statement, so a
-  `DELETE FROM` inside its body is the trigger's and not a row-removal the dump must never carry.
+- **A trigger may delete rows.** `schema.sql` is checked statement by statement, and a `CREATE TRIGGER … BEGIN … END` is one statement, so a
+  `DELETE FROM` inside its body is the trigger's and not a row-removal the schema must never carry.
 
 ### 5a. What a Backup Costs, and the Size It Stops Suiting
 
 **This is a documented limit, not a defect.** The reader is shaped for a database a `wrangler` CLI can be driven against, and it is worth knowing
 where that stops.
 
+- **A spawn costs about 1.3 seconds, whatever it carries.** Loading a 2,754-byte `schema.sql` was measured at 1.34s and a 4.2 MB `data.sql` at 8.4s,
+  so every count below converts to seconds at roughly that rate — the process spawn dominates the query, and reducing spawns is the only thing that
+  moves the wall clock.
 - **One `wrangler d1 execute` spawn per 256 rows.** The page size is a bound on bytes rather than on rows — one page's worst case has to fit in a
-  single `--json` result — so a 100k-row table is roughly 400 spawns for one pass over it, and the process spawn dominates the query.
+  single `--json` result — so a 100k-row table is roughly 400 spawns for one pass over it.
+- **Every other read is batched.** The inventory, each table's shape, each key probe and each row count go out as one `--command` carrying many
+  statements, so describing N tables costs two spawns rather than 2N; a batch is split only when it would exceed the kernel's 128 KiB cap on one
+  argv string.
+- **A route-`full` load is two spawns.** `schema.sql` then `data.sql`, each loaded whole with `--file`. It is two rather than one because wrangler
+  cannot prepare a payload declaring schema statement by statement, and hands it to miniflare's `exec`, which refuses over 102,400 bytes.
 - **The whole database is held in memory at once.** Every table is read whole before anything is written, and each is held twice: the canonical rows
   the artifact is emitted from, and the raw `--json` rows the verification compares against. Peak memory therefore tracks the database's size, not
   the largest table's.
@@ -154,13 +161,14 @@ A restore loads into an empty database only: it adds rows and never removes them
 load over it.
 
 **A restore checks the whole artifact before it touches the target.** After the manifest is read and before anything is queried, every declared file
-is hashed against its `artifacts[].sha256` — a missing one is the same refusal — and the file the route will load is put back through the check that
-admitted it at backup time. A damaged artifact is refused with no row loaded, rather than discovered afterwards, where there is deliberately no
-repair path.
+is hashed against its `artifacts[].sha256` — a missing one is the same refusal — and every file is put back through the check that admitted it at
+backup time: `schema.sql` against the schema-only check, `data.sql` against the data-only one. A damaged artifact is refused with no row loaded,
+rather than discovered afterwards, where there is deliberately no repair path.
 
 **An artifact written by an earlier forge is refused by `formatVersion`, not misread.** The field is bumped whenever a manifest field changes
 meaning, and the refusal names both numbers and says to take the backup again. An artifact from before forge owned the migration history is one such
-— its `data.sql` carries no history rows and its `full.sql` carries wrangler's — and there is no converter, pre-1.0.
+— its `data.sql` carries no history rows and its `full.sql` carries wrangler's. An artifact from before route `full` became two files is another: it
+carries a `full.sql` no verb loads any more, and no `schema.sql` this one could load instead. There is no converter, pre-1.0.
 
 `forge db reset` refuses a database holding rows unless a verified artifact still describes them — not "a backup exists". Every app table's count is
 compared against the manifest's `tables[].rows` first, refusing immediately and naming the table when one differs; only when every count agrees are

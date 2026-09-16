@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { CliError } from "../../cli/errors";
 import { sha256 } from "../digest";
 import { fakeDbIo } from "../test-support";
-import { discoverSeeds, expandSeedEnv, parseSeed, parseSeedPlaces, readSeedFiles, SEED_BARE_VALUE } from "./files";
+import { discoverSeeds, expandSeedEnv, parseSeed, parseSeedPlaces, readSeedFiles, SEED_BARE_VALUE, seedVariablesIn } from "./files";
 
 describe("SEED_BARE_VALUE", () => {
   const cases: { input: string; expected: boolean }[] = [
@@ -20,6 +20,16 @@ describe("SEED_BARE_VALUE", () => {
 
   it("accepts an identifier or a number, and nothing that could open a comment or a second token", () => {
     expect(cases.map(({ input }) => [input, SEED_BARE_VALUE.test(input)])).toEqual(cases.map(({ input, expected }) => [input, expected]));
+  });
+});
+
+describe("seedVariablesIn()", () => {
+  it("finds each distinct placeholder the expander would substitute, once", () => {
+    expect(seedVariablesIn("VALUES ('${NAME}', '${HOST:-localhost}', '${NAME}');")).toEqual(["${NAME}", "${HOST:-localhost}"]);
+  });
+
+  it("finds nothing in a `$` the expander would leave alone", () => {
+    expect(seedVariablesIn("VALUES ('$5.00', '${ }', '$NAME', '${1A}');")).toEqual([]);
   });
 });
 

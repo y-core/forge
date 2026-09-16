@@ -21,8 +21,9 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §1c What Is Still a Unit Test: pure functions and schemas
 - §2 Test Placement and the Environment Fixture: where tests live and what they inject
 - §2a Test Placement Is a Repository Decision, Stated Once: and why
-- §2b The Minimum Environment Fixture: the smallest env that boots the app
-- §2c Optional Bindings Are Deliberately Absent: proving graceful degradation
+- §2b The Browser-Spec Suffix Is `*.browser.ts`: fleet-wide, and what it stops colliding with
+- §2c The Minimum Environment Fixture: the smallest env that boots the app
+- §2d Optional Bindings Are Deliberately Absent: proving graceful degradation
 - §3 Assertion Rules: exactness, and what nondeterminism is allowed to change
 - §3a Exact Match — Never Substring Matching on Markup: the rule
 - §3b Nondeterministic Output: normalise, then assert exactly
@@ -42,6 +43,7 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §6a One Command, Three Modes: the inner loop, the gate a task closes on, and the release gate
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
+- §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: the three, and who overrides which
 
 ---
 
@@ -69,7 +71,7 @@ it("returns 200", async () => {
 });
 ```
 
-**The environment is an argument, not a global.** That is what makes a missing-binding case testable at all, and it is why §2b's fixture is a value
+**The environment is an argument, not a global.** That is what makes a missing-binding case testable at all, and it is why §2c's fixture is a value
 rather than an ambient setup step.
 
 ### 1c. What Is Still a Unit Test
@@ -98,7 +100,24 @@ end-to-end — rather than by the file they cover. That is a legitimate taxonomy
 `headers.test.ts`, wherever that file sits. Grouping by question is a choice about _placement_; it is not a licence to name a test after the
 question instead, which leaves the source file with no test findable from its own name.
 
-### 2b. The Minimum Environment Fixture
+**Where a repository does dedicate a directory to the browser set, it is named `browser/`** — the same word as the `test:browser` verb that runs it,
+so the directory and the command a reader types are one name. That is a naming rule for a directory that exists, not a requirement to grow one.
+
+### 2b. The Browser-Spec Suffix Is `*.browser.ts`
+
+**A browser spec is named `*.browser.ts`, and this is fleet-wide rather than a repository's choice.** The unit runner collects `*.test.*`,
+`*_test.*`, `*.spec.*` and `*_spec.*` — never `*.browser.ts`. A browser spec named `.spec.ts` is therefore collected by a bare unit run, inside
+which it cannot execute, and every repository that hits this reaches for the same workaround: hand-scoping the gate's test paths around its own
+specs. With `.browser.ts` the collision is impossible by construction rather than avoided by configuration.
+
+**A repository consequently never narrows the preset's `tests` option to dodge the unit collector.** Narrowing it for a deliberate tier split — a
+set whose every spec starts a real runtime, held to its own step — stays legitimate; those specs keep the `.test.ts` suffix, because their own
+runner has to collect them.
+
+The suffix also makes a helper safe to keep beside the specs it serves: a driver or a fixture module under the browser directory is collected by
+neither runner, where the same file beside a `.spec.ts` would be.
+
+### 2c. The Minimum Environment Fixture
 
 **Define one shared fixture holding the smallest environment that boots the app**, and derive every variant from it by spreading and overriding.
 
@@ -120,7 +139,7 @@ Two properties make it useful rather than ceremonial:
 **The fixture's required fields are documented in `docs/`** with what each one must satisfy — a key length, a URL scheme — because those constraints
 are real and a wrong value produces a confusing failure rather than a clear one.
 
-### 2c. Optional Bindings Are Deliberately Absent
+### 2d. Optional Bindings Are Deliberately Absent
 
 **Bindings the application degrades gracefully without are left out of the minimum fixture on purpose** — a logging store, a rate limiter. Their
 absence is what proves the degradation path works ([`BOUNDARIES.md`][boundaries-5b] §5b).
@@ -299,6 +318,11 @@ question. An absent prerequisite is a skip below `full` and a failure in a `full
 **The mode is part of the verdict**, since the three are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
 
+**Execution order is tier-stable, not table order: within a tier the table's declared order holds, and across tiers the cheaper tier runs first.**
+The selector sorts by tier after filtering, so where a preset emits a `full` row is not where it runs — an appended `standard` row still runs ahead
+of it. That is what makes a fail-fast `full` run fail on the sub-second check rather than after minutes of browser. A repository consequently never
+declines a preset's opt-in to get sensible ordering, and never re-declares a row it only wanted moved.
+
 ### 6b. What Each Tool Catches
 
 | Tool | Catches |
@@ -316,10 +340,40 @@ a fail-fast run stops there without being told to.
 A narrowed selection brands every summary line as scoped, so a scoped green can never be read as a green gate. **A selection resolving to zero steps
 is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
 
+### 6d. Local Ports Are Slots, and a Slot Is a Port and a Bind Address
+
+**Three slots, each declaring both halves:**
+
+| Slot | Port | Bind address | Used by |
+| --- | --- | --- | --- |
+| The application's dev server | 8787 | `0.0.0.0` | `bun run dev`, and anything reaching it across the container network |
+| The browser set | 8788 | `127.0.0.1` | `test:browser`, and the `dev:browser` script that attaches to it |
+| Ad-hoc observation | 8789 | `127.0.0.1` | Reserved, not required — a repository claims it only when it has a use |
+
+**The bind address is load-bearing, not decoration.** `0.0.0.0` is what makes 8787 reachable from another container, which is what turns a browser
+set bound there from an annoyance into a hazard: the run does not merely collide with the dev server, it **answers as it** — driving the real
+application, against the real bindings, and writing into the database the next run wipes. Stating only the port number permits exactly the failure
+this rule exists for.
+
+**The origin is spelled to match the bind address — `127.0.0.1`, never `localhost`.** An application's allowed-origin check compares strings, so
+`https://localhost:8788` is not `https://127.0.0.1:8788` and a browser run on the wrong spelling fails its own origin guard for a reason that has
+nothing to do with the code under test.
+
+**The override lives in the browser runner's config, never in the Worker config.** The port a harness listens on is a property of the harness;
+moving the number the application declares moves the application.
+
+**A fixed port is for a server a human starts or attaches to. A server a spec starts per run takes an ephemeral port and never a number** — the
+library's dev-server helper reserves a free one from the OS on `127.0.0.1`, which is why a per-run set has no port problem to solve. A fixed 8788
+still collides when two repositories' browser sets run at once; an environment-variable override covers that in one line.
+
+**`reuseExistingServer` is `false`.** The dev command builds the stylesheet as it boots, so a reused server serves the CSS the source had at boot
+time — a run against edited views then measures the previous layout and reports it as current. A repository that cannot make `false` work records
+the exception with its compensating control, rather than leaving the reuse undocumented.
+
 [aa-1]: ./APP_ARCHITECTURE.md#1-the-composition-root
 [boundaries-2]: ./BOUNDARIES.md#2-middleware-ordering-and-guard-placement
 [boundaries-2d]: ./BOUNDARIES.md#2d-rejection-status-discipline
 [boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
 [cr-3c]: ./CODE_REVIEW.md#3c-tier-3--judgement
-[cr-5d]: ./CODE_RULES.md#5d-tests-are-not-exempt
+[cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt
 [fc-1b]: ./FORGE_CONSUMPTION.md#1b-capability-classes-the-library-owns

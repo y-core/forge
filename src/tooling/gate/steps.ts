@@ -35,14 +35,21 @@ function invalidTable(steps: readonly Step[]): string | undefined {
  * An **empty array is the flag's absence**, not a request for nothing: that is what a repeatable
  * flag resolves to when it was never given, and reading it as "select no steps" would refuse every
  * unscoped run.
+ *
+ * **Order is tier-stable:** within a tier the table's declared order holds, and across tiers the
+ * cheaper tier runs first — so a full-tier row declared early cannot make a full run pay minutes for
+ * a browser before a standard row that was going to fail in under a second.
  * @public
  */
 export function selectSteps(steps: readonly Step[], opts: { mode: GateMode; only?: readonly string[] }): Selection {
   const malformed = invalidTable(steps);
   if (malformed !== undefined) return { ok: false, error: malformed };
 
-  // A rank comparison, so each mode is a superset of the one below it by construction.
-  const inMode = steps.filter((step) => rank(step.tier ?? "fast") <= rank(opts.mode));
+  // A rank comparison, so each mode is a superset of the one below it by construction. The sort is
+  // stable, so every intra-tier ordering the table states — `lint` before `format` — survives it.
+  const inMode = steps
+    .filter((step) => rank(step.tier ?? "fast") <= rank(opts.mode))
+    .sort((a, b) => rank(a.tier ?? "fast") - rank(b.tier ?? "fast"));
   const known = inMode.map((step) => step.label);
 
   const only = opts.only !== undefined && opts.only.length === 0 ? undefined : opts.only;

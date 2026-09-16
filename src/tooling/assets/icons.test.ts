@@ -62,6 +62,41 @@ describe("buildIcons()", () => {
     }
   });
 
+  // The size gate is what keeps sharp an optional peer: an icons block emitting no raster must
+  // never reach the import, so a consumer who configures none never has to install it.
+  it("writes the svg and manifest without ever loading sharp when no png or ico output is configured", async () => {
+    const sharpStub = await stubSharp();
+    const tmpDir = join(tmpdir(), `forge-icons-noraster-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const outDir = join(tmpDir, "icons");
+    mkdirSync(tmpDir, { recursive: true });
+    try {
+      const srcPath = join(tmpDir, "icon.svg");
+      writeFileSync(srcPath, `<svg viewBox="0 0 24 24"><path d="M12 12" fill="currentColor"/></svg>`);
+
+      const config: IconsConfig = {
+        src: srcPath,
+        outDir,
+        lightColor: "#163030",
+        app: { name: "Demo", shortName: "Demo", backgroundColor: "#ffffff" },
+        outputs: [
+          { kind: "svg", file: "favicon.svg" },
+          { kind: "manifest", file: "manifest.webmanifest" },
+        ],
+      };
+
+      await buildIcons(config);
+
+      expect(readFileSync(join(outDir, "favicon.svg"), "utf-8")).toBe(
+        `<svg viewBox="0 0 24 24"><style>path{fill:#163030}</style><path d="M12 12" fill="currentColor"/></svg>`,
+      );
+      expect(JSON.parse(readFileSync(join(outDir, "manifest.webmanifest"), "utf-8")).icons).toEqual([]);
+      expect(sharpStub.inputs).toEqual([]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      mock.restore();
+    }
+  });
+
   it("injects a dark-mode media rule into the svg when darkColor is set", async () => {
     await stubSharp();
     const tmpDir = join(tmpdir(), `forge-icons-dark-${Date.now()}-${Math.random().toString(36).slice(2)}`);

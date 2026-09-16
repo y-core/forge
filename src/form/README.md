@@ -387,6 +387,7 @@ half is, and what an unverifiable CAPTCHA does are [`INPUT_VALIDATION.md`][iv-4b
 | `options.tokenField` | `string` | `TURNSTILE_FIELD_DEFAULT` | Form field holding the Turnstile response token — the field Cloudflare's widget writes. |
 | `options.remoteIp` | `string` | — | Client IP forwarded to siteverify (e.g. the `CF-Connecting-IP` header). |
 | `options.timeoutMs` | `number` | `5000` | Request timeout; clamped to a 1 ms minimum. A timed-out request returns `timeout`. |
+| `options.dev` | `DevAllowance` | — | With `turnstileTestingSecrets` granted, skips the hostname comparison — and **only** when `secretKey` is one of Cloudflare's three published testing secrets. Neither half relaxes anything alone, and only a development entry can mint the token ([`INPUT_VALIDATION.md`][iv-4a] §4a). |
 | `options.signal` | `AbortSignal` | — | Caller cancellation, combined with the timeout. An abort on **this** signal **rejects** rather than resolving to a `Result` — cancellation is not a verification outcome, so it has no member in `TurnstileFailure`. |
 
 ```ts
@@ -456,6 +457,7 @@ for it. A `verify(c, config)` that returns its own `signal` wins over the defaul
 [iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-3a]: ../../docs/INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
 [iv-3b]: ../../docs/INPUT_VALIDATION.md#3b-importcsrfkey-and-importcsrfkeyring--secret-import
+[iv-4a]: ../../docs/INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [iv-4b]: ../../docs/INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
 [ram-2b]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [security-readme]: ../security/README.md

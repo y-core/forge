@@ -8,8 +8,8 @@ description: "Seven non-negotiable coding rules: zero global state, explicit err
 > Seven non-negotiable rules for every TypeScript file in the repository, keeping it testable, predictable, and safe in the Cloudflare Workers
 > runtime.
 >
-> Defers to: [`ERROR_HANDLING.md`][eh-1] §1 for the `Result` primitive; [`TESTING.md`][testing] for test placement and fake patterns;
-> [`BOUNDARIES.md`][boundaries] for the boundaries these rules serve.
+> Defers to: `ERROR_HANDLING.md` §1 for the `Result` primitive; `TESTING.md` for test placement and fake patterns; `BOUNDARIES.md` for the
+> boundaries these rules serve.
 
 ---
 
@@ -19,10 +19,10 @@ description: "Seven non-negotiable coding rules: zero global state, explicit err
 - §1a No Module-Level Mutable Variables: why isolates make this unsafe
 - §1b Factory Function Pattern: capture config, not request state
 - §1c Constants Are Acceptable: the permitted module-level form
-- §1d Factory Naming and Bare Constructors: `create*` / `resolve*` / `define*`, and carve-outs
+- §1d Factory Verbs and Bare Constructors: `create*` / `resolve*` / `define*`, and the private-constructor rule
 - §1e Browser-Only Modules Are Exempt: why page-scoped state is safe, and what still applies
 - §2 Explicit Errors via Result Monad: return failures, do not throw them
-- §2a When to Throw vs Return Result: the three-way split
+- §2a When to Throw vs Return Result: the taxonomy that owns the split, and the canonical throw
 - §3 Validation First Rule: untrusted input stops at the boundary
 - §3a Validate at System Boundaries: the handler and the config loader
 - §3b The Validation Facade: never import the schema library directly
@@ -61,18 +61,19 @@ let currentUser: User | null = null; // never do this
 
 ### 1b. Factory Function Pattern
 
-**Use a factory to create stateful behaviour.** The factory captures configuration — immutable after creation — never request state.
+**Use a factory to create stateful behaviour.** The factory captures configuration — immutable after creation — never request state. The options
+object is captured once, at creation time; everything request-scoped is read off the context the returned function is called with.
 
 ```ts
-export function createSecurityHeaders(options: SecurityHeadersOptions): Middleware {
-  // `options` captured once at creation time
-  return async (c, next) => next(); // request-scoped work uses `c`
+export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
+  const scriptSrc = options?.scriptSrc ?? ["'self'", NONCE]; // captured once
+  return async (c, next) => next(); // request work uses `c`
 }
 ```
 
 ### 1c. Constants Are Acceptable
 
-Module-level **immutable** constants are fine:
+Module-level **immutable** constants are fine — a default field name, a size cap, a header name.
 
 ```ts
 export const CSRF_FIELD_DEFAULT = "_csrf";
@@ -81,7 +82,7 @@ export const CSRF_HEADER_DEFAULT = "X-CSRF-Token";
 
 One file owns each such value, and it is named in the source-of-truth register (`AGENT_GUIDE.md` §8) rather than restated anywhere else.
 
-### 1d. Factory Naming and Bare Constructors
+### 1d. Factory Verbs and Bare Constructors
 
 **Three verbs, one rule each:**
 
@@ -89,13 +90,16 @@ One file owns each such value, and it is named in the source-of-truth register (
 - **`resolve*`** names a **request-time accessor** that reads a binding or a value off the context and fails closed when it is absent.
 - **`define*`** names a **declarative configuration object** consumed by a builder.
 
+A library corpus refines these verbs against its own layering — `NAMESPACE_DESIGN.md` §4a owns the value-constructor exception class and the
+suffix rules that sit beside it.
+
 **A class holding configuration exposes a `create*` factory rather than a public constructor.** Where a class is unavoidable, pair a
 `private constructor` with a `static create`. The rule targets _configuration holders_ — objects that would otherwise expose partially-initialised
 state to a caller who has no way to tell.
 
 **A carve-out is written down or it does not exist.** Where a public constructor is genuinely correct — an app object whose constructor takes only
-optional collaborators, for instance — the exception is recorded in the repository's `docs/` docs and in [`CODE_REVIEW.md`][cr-6] §6, so a reviewer
-does not re-litigate it every pass.
+optional collaborators, for instance — the exception is recorded in the repository's `docs/` docs and in `CODE_REVIEW.md` §6, so a reviewer does
+not re-litigate it every pass.
 
 ### 1e. Browser-Only Modules Are Exempt
 
@@ -105,7 +109,7 @@ discarded on navigation.
 
 Module-level mutable state is therefore the house style in browser-only code — reactive-graph bookkeeping, mounted-controller registries,
 per-document caches. Rewriting them as factories would buy nothing: there is one document, and these are page-scoped singletons by nature.
-[`BOUNDARIES.md`][boundaries-1] §1 owns the import-path boundary that makes the exemption safe.
+`BOUNDARIES.md` §1 owns the import-path boundary that makes the exemption safe.
 
 **Stating it explicitly rather than leaving it implied**, because the alternative is a recurring review finding against browser-only files that
 carry no exemption marker and need none.
@@ -121,16 +125,15 @@ the order they run in.
 **There is exactly one result primitive, with a single `error` failure field.** Return a `Result` for expected failures rather than throwing; build
 values with `ok()` / `err()`; wrap a throwing call with `result()`.
 
-[`ERROR_HANDLING.md`][eh-1] §1 owns the primitive, its constructors, and its domain aliases.
+`ERROR_HANDLING.md` §1 owns the primitive, its constructors, and its domain aliases.
 
 ### 2a. When to Throw vs Return Result
 
-- **Throw** — programming errors, missing required bindings at startup, violated invariants.
-- **Return `Result`** — expected failures: parse errors, not-found, validation failures.
-- **Never** — throw from middleware that is meant to degrade gracefully.
+`ERROR_HANDLING.md` §5a owns the split between an expected failure that returns a `Result` and the programming error that throws;
+`ERROR_HANDLING.md` §5e owns the startup-invariant case. This section adds no rule to either, only the canonical illustration.
 
-A canonical programming-error throw is a component that merges props onto a single element child: a string, fragment, array, or empty child cannot
-receive them, so it throws rather than emitting malformed markup.
+A component that merges props onto a single element child cannot accept a string, fragment, array, or empty child, so it throws rather than emitting
+malformed markup:
 
 ```tsx
 if (asChild && !isValidElement(children)) {
@@ -138,7 +141,7 @@ if (asChild && !isValidElement(children)) {
 }
 ```
 
-That is a caller bug surfaced at render time — not an expected runtime failure — so a throw is correct, where a parse or validation failure would
+That is a caller bug surfaced at render time — not an expected runtime failure — so a throw is correct where a parse or validation failure would
 return a `Result`.
 
 ---
@@ -148,15 +151,20 @@ return a `Result`.
 ### 3a. Validate at System Boundaries
 
 **Validate all untrusted input — form data, request params, env vars — before it enters business logic.** The boundary is the handler or the config
-loader. [`BOUNDARIES.md`][boundaries-3] §3 owns the rule and the ordered pipeline.
+loader. `BOUNDARIES.md` §3 owns the rule and the ordered pipeline.
 
 ### 3b. The Validation Facade
 
 **All validation goes through the single validation facade the project publishes. Never import the underlying schema library directly** — not in
-application code, not in a shared namespace, not in a test.
+application code, not in a shared namespace, not in a test. Schemas are built from the facade's re-exported combinators, so a version bump to the
+library reaches every schema through one file.
+
+The facade is reached by the spelling the repository publishes it under — a relative path to the namespace inside the library that owns it, the
+published subpath from an application consuming that library:
 
 ```ts
-import { v } from "@y-core/forge/validation";
+import { v } from "../validation"; // inside the library that owns the facade
+import { v } from "@y-core/forge/validation"; // from an application consuming it
 const Schema = v.object({ name: v.string(), email: v.pipe(v.string(), v.email()) });
 ```
 
@@ -164,14 +172,14 @@ A direct import bypasses the facade exactly as production code would and will no
 
 ### 3c. Abort-Early Validation
 
-**Use `{ abortEarly: true }` in `v.safeParse` for form validation** so the first failing field is reported immediately. Omit it when a response must
-enumerate every error.
+**Use `{ abortEarly: true }` in the facade's `v.safeParse` call for form validation** so the first failing field is reported immediately. Omit the
+flag when a response must enumerate every error.
 
 ---
 
 ## 4. Testability Rule
 
-**Every source file has a co-located test file, and dependencies are faked rather than mocked.** [`TESTING.md`][testing-2] §2 and §4 own both rules.
+**Every source file has a co-located test file, and dependencies are faked rather than mocked.** `TESTING.md` §2 and §4 own both rules.
 
 ### 4a. No Globals to Mock
 
@@ -206,8 +214,8 @@ is deleted. Write it so it survives alone.
 not what was considered instead.
 
 ```ts
-/** Creates a flash-message reader and writer bound to the app's session config. */
-export function createAppFlash(config: AppConfig): Flasher;
+/** Creates an app with a structured error boundary, wiring middleware → routes → assets. */
+export function createApp<Bindings extends object = Record<string, unknown>>(options?: AppOptions<Bindings>): App<Bindings>;
 ```
 
 **2. The visibility tags `@public` and `@internal`.** These are machine-readable markers, not prose. `@internal` is what keeps a symbol out of the
@@ -223,8 +231,8 @@ files contain zero. It is permitted only when all four hold:
 - it fits in one or two lines.
 
 ```ts
-// Cloudflare strips this header before the isolate sees it; re-reading it here is not redundant.
-const clientIp = request.headers.get("cf-connecting-ip") ?? fallbackIp(request);
+// The platform rewrites this header at the edge, so the inbound value is not the client's.
+const clientIp = trustedClientIp(request) ?? fallbackIp(request);
 ```
 
 ### 5b. Forbidden Outright
@@ -304,8 +312,8 @@ from those parts — `createClient`, `createStore`, `createLogger` — is a pref
 only part a question can match on. §1d owns the verb; this section owns the word the verb is applied to.
 
 ```ts
-export function createContactStore(config: AppConfig): ContactStore; // nameable from a question
-export function createStore(config: AppConfig): ContactStore; // prefix and shape only
+export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware; // nameable from a question
+export function createMiddleware(options?: SecurityHeadersOptions): Middleware; // prefix and shape only
 ```
 
 **The floor is one domain word. It is also, near enough, the ceiling.** Past that word, added words buy nothing a reader or a tool did not already
@@ -344,11 +352,3 @@ function grantAccess(grant: { userId: UserId; resourceId: ResourceId; role: Role
 
 The compiler is the one reviewer that cannot be skipped, and this is the cheapest class of bug to hand it. Distinct from §3, which governs
 _untrusted_ input arriving at a boundary: §7d governs _internal_ signatures, where the values are already trusted and the whole risk is positional.
-
-[boundaries]: ./BOUNDARIES.md
-[boundaries-1]: ./BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
-[boundaries-3]: ./BOUNDARIES.md#3-validate-at-the-boundary
-[cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
-[eh-1]: ./ERROR_HANDLING.md#1-result-monad
-[testing]: ./TESTING.md
-[testing-2]: ./TESTING.md#2-test-placement-and-the-environment-fixture

@@ -219,8 +219,8 @@ effect can be killed mid-flight when the response stream closes; `waitUntil` ext
 promise is the canonical way this ships silently and fails under load.
 
 [boundaries]: ./BOUNDARIES.md
-[cr]: ./CODE_RULES.md
-[cr-1a]: ./CODE_RULES.md#1a-no-module-level-mutable-variables
+[cr]: ../shared/CODE_RULES.md
+[cr-1a]: ../shared/CODE_RULES.md#1a-no-module-level-mutable-variables
 [nd-3]: ./NAMESPACE_DESIGN.md#3-namespace-classification
 [testing-1b]: ./TESTING.md#1b-no-runtime-specific-type-package
 [testing-6]: ./TESTING.md#6-the-verification-gate

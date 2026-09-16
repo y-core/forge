@@ -15,7 +15,7 @@ import { packageNameOf, resolveRepoRoot } from "../paths";
 import { aliasesFor } from "../search/aliases";
 import { documentFrequency } from "../search/coverage";
 import { terms } from "../search/query";
-import { search } from "../search/search";
+import { MARGIN, search } from "../search/search";
 import { resolveKind } from "../sync/kind";
 import type { Tree } from "../types";
 import { canonVersion } from "../version";
@@ -79,6 +79,7 @@ export function probe(options: ProbeOptions): string {
     lines.push("## golden");
     const topOne = new Set<string>();
     let thinnest = 1;
+    let thinnestQuery = "";
     for (const entry of golden) {
       const within = entry.within ?? 3;
       const hits = search(db, entry.query, { aliases, limit: Math.max(TOP_N, within) });
@@ -86,7 +87,14 @@ export function probe(options: ProbeOptions): string {
       if (first !== undefined) topOne.add(first.id.split("#")[0] ?? first.id);
       const rank = hits.findIndex((hit) => hit.id === entry.expect);
       const found = hits[rank];
-      if (found !== undefined) thinnest = Math.min(thinnest, found.coverage);
+      // Uncapped, like the refusal figure below and for the same reason: `hits` has already had
+      // `FLOOR` applied, so a thinnest read off it can never report the sub-floor region the margin
+      // exists to measure — and a hit that fell out would read as the floor gaining room.
+      const carried = search(db, entry.query, { aliases, limit: POOL, floor: 0 }).find((hit) => hit.id === entry.expect)?.coverage ?? 0;
+      if (carried < thinnest) {
+        thinnest = carried;
+        thinnestQuery = entry.query;
+      }
       const verdict = rank !== -1 && rank < within ? "pass" : "fail";
       const rankText = rank === -1 ? "-" : String(rank + 1);
       const cover = found === undefined ? "-----" : found.coverage.toFixed(3);
@@ -96,16 +104,26 @@ export function probe(options: ProbeOptions): string {
 
     lines.push("## negative");
     let loudest = 0;
+    let loudestQuery = "";
     for (const query of negative) {
       let peak = 0;
       for (const hit of search(db, query, { aliases, limit: POOL, floor: 0 })) peak = Math.max(peak, hit.coverage);
-      loudest = Math.max(loudest, peak);
+      if (peak > loudest) {
+        loudest = peak;
+        loudestQuery = query;
+      }
       const offered = search(db, query, { aliases, limit: TOP_N }).length;
       lines.push(`${peak.toFixed(3)} peak, ${offered} offered  "${query}"`);
     }
     lines.push("");
 
-    lines.push(`## margin`, `thinnest answered ${thinnest.toFixed(3)}`, `loudest refused   ${loudest.toFixed(3)}`, "");
+    lines.push(
+      `## margin`,
+      `thinnest answered ${thinnest.toFixed(3)}  "${thinnestQuery}"`,
+      `loudest refused   ${loudest.toFixed(3)}  "${loudestQuery}"`,
+      `room left         ${(thinnest - loudest).toFixed(3)}  (guarded at ${MARGIN.toFixed(2)})`,
+      "",
+    );
 
     // The load-bearing list. `ABSENT_PENALTY` means a negative query can only cross the floor after
     // one of its terms stops being unknown to the corpus, so a `df` moving off zero is the single
@@ -122,6 +140,17 @@ export function probe(options: ProbeOptions): string {
     for (const row of db.query<{ path: string }>("SELECT path FROM source WHERE corpus = 'canon' ORDER BY path").all()) {
       if (!topOne.has(`canon:${row.path}`)) lines.push(`UNREACHED canon:${row.path}`);
     }
+    lines.push("");
+
+    // What a reader is shown when a hit has no gloss, which is 37% of the searchable corpus.
+    // `rules` is the highest-weighted column in the index and has never been rendered anywhere, so
+    // this is the only place its real values can be read before a screen is set against them.
+    lines.push("## rules");
+    const glossless = db
+      .query<{ id: string; rules: string }>("SELECT id, rules FROM chunk WHERE searchable = 1 AND gloss = '' AND rules <> '' ORDER BY id")
+      .all();
+    for (const row of glossless) lines.push(`${pad(String(row.rules.split(/\s+/).length), 4)}${pad(row.id, 56)} ${row.rules}`);
+    lines.push(`${glossless.length} gloss-less chunks carry rules`);
     lines.push("");
 
     lines.push("## dead bridges");

@@ -17,7 +17,9 @@ export {
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
+  devBoundaryStep,
   exportsStep,
+  exposureStep,
   formatStep,
   jsxStep,
   lintPluginStep,
@@ -98,8 +100,12 @@ export {
   isValidRuleId,
   parseDeclaredCustomProperties,
 } from "./checks/design-parse";
+export type { DevBoundaryCheckConfig } from "./checks/types";
+export { checkDevBoundary, devOnlySpecifiers, isDevEntry } from "./checks/dev-boundary";
 export type { ExportsCheckConfig, ExportsMap } from "./checks/types";
 export { checkExports, isBrowserSubpath, isPublished, parseSubpathPatterns } from "./checks/exports";
+export type { ExposureCheckConfig } from "./checks/types";
+export { checkExposure } from "./checks/exposure";
 export type { JsxCheckConfig } from "./checks/types";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
 export type { BundleCheckConfig } from "./checks/types";

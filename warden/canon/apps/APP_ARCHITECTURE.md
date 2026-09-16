@@ -20,7 +20,7 @@ description: "The composition-root factory, the layer stack and its dependency r
 - §1b Composition Order: the fixed sequence inside the factory
 - §1c The Dev and Production Entry Split: making an environment difference structural
 - §2 The Layer Stack: what layers exist and what each owns
-- §2a Layer Roster: the canonical directory per layer
+- §2a Layer Roster: the canonical directory per layer, the `model/` ruling, and the two optional members
 - §2b Layer Dependency Rules: which layer may import which
 - §2c No Layer Skipping: the handler-to-service boundary
 - §2d Views Are Pure: no services, no business rules
@@ -101,6 +101,18 @@ Two properties follow, and both are the reason for the shape:
     model/                 ← domain types and schemas
     client/                ← browser-only entry, bundled for the page
     assets/                ← stylesheets and static source
+
+**The domain directory is `model/`, in every repository.** It names what the directory holds; `core/` names a location, and a location is what every
+directory in the tree has. A repository on another name renames, carrying its own architecture document and growth-rules table with it.
+
+**Two further directories are permitted optional members of `src/`, available to any application rather than one repository's exception:**
+
+    types/                 ← ambient or shared type declarations with no runtime
+    vendor/                ← third-party code and the glue that adapts it
+
+An application carries one only when it has the content for it. Neither is a layer: `types/` holds no behaviour, and `vendor/` is code this
+repository did not write and does not hold to §2b's dependency rules — which is precisely why it is named apart from the layers that are held to
+them.
 
 ### 2b. Layer Dependency Rules
 
@@ -255,7 +267,7 @@ long enough to need section comments has absorbed a layer below it ([`CODE_RULES
 
 [boundaries]: ./BOUNDARIES.md
 [boundaries-2]: ./BOUNDARIES.md#2-middleware-ordering-and-guard-placement
-[cr-5b]: ./CODE_RULES.md#5b-forbidden-outright
+[cr-5b]: ../shared/CODE_RULES.md#5b-forbidden-outright
 [eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--config-and-resolvers-throw
 [fc]: ./FORGE_CONSUMPTION.md
 [testing-1]: ./TESTING.md#1-the-app-request-pattern

@@ -10,7 +10,7 @@ import { executeRestore, prepareRestore } from "./restore";
 
 function readRoute(value: unknown): RestoreRoute {
   if (value === "full" || value === "migrations") return value;
-  throw new CliError("invalid-args", `--route ${String(value)} is not a route — use full (one self-contained SQL file) or migrations`);
+  throw new CliError("invalid-args", `--route ${String(value)} is not a route — use full (the artifact's own schema, then its rows) or migrations`);
 }
 
 /** The `forge db` verbs this directory owns: backup, restore and reset. @internal */
@@ -48,7 +48,7 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
       route: {
         type: "string" as const,
         default: "migrations",
-        description: "full loads one self-contained file; migrations applies the migrations directory then loads data",
+        description: "full loads the artifact's schema then its rows; migrations applies the migrations directory then loads data",
       },
       expect: { type: "string" as const, description: "The database name the artifact must have been taken from" },
     },

@@ -34,7 +34,8 @@ See [`ASSET_PIPELINE.md`][ap-1] §1 and §2 for the authoritative architecture.
 - **Tailwind CSS** — `buildCSS` shells out to the `tailwindcss` CLI for each `css` build.
 - **SVG sprite sheets** — `buildSprites` normalises and sanitises source SVGs into `<symbol>` entries inside a single hidden `<svg>`, preserving
   root presentation attributes on a wrapping `<g>` and emitting per-symbol `viewBox` metadata.
-- **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`) into SVG, PNG, ICO, and a web-app `manifest.json`.
+- **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`, loaded only where a `png` or `ico` output is configured) into SVG,
+  PNG, ICO, and a web-app `manifest.json`.
   `icons.publicPrefix` puts them all under one directory, so a Worker's `run_worker_first` needs one `!` glob rather than one rule per filename;
   `root: true` pins the single output that must stay at the origin root. `iconLinks` derives the head `<link>` set, emitted as `ICON_LINKS`.
 - **Font downloads** — `buildFonts` fetches remote fonts into the public directory, cached on disk.
@@ -380,8 +381,17 @@ await buildAll(config, { minify: true, assetsPath: "src/generated/assets.ts" });
 
 ### Optional dependencies
 
-`buildIcons` and `buildRasters` dynamically import `sharp`, and `buildJS` dynamically imports `esbuild` — each only when the relevant config section
-is present. Consumers without icons, rasters or JS bundles never need those packages installed.
+`buildIcons` and `buildRasters` dynamically import `sharp`, and `buildJS` dynamically imports `esbuild` — each only when the config asks for what
+that package does. `buildIcons` is gated on a configured `png` or `ico` output, not merely on an `icons` block: one emitting only `svg` and
+`manifest` outputs writes both files without `sharp` installed. `buildRasters` returns before the import for an empty raster list, and `buildJS`
+before it for an empty `js.bundles`.
+
+A missing peer fails with a sentence, not a module-resolution stack trace: it names the config key that demanded the package, the package, and the
+command that installs it.
+
+```text
+[forge-assets] icons.outputs asks for a rasterized PNG, which needs the optional peer "sharp". Install it: bun add -d sharp
+```
 
 ---
 

@@ -276,7 +276,7 @@ Two things that settles:
 - **A backend fault is named.** A bucket outage reaches the caller as its `Error`, so it is distinguishable from a bug in forge.
 
 **No `logger` option is added.** §3a's rule stands: `ObjectStoreOptions` is `{ prefix? }`, and a store reports a fault by returning it. This is what
-[`ERROR_HANDLING.md`][eh-5e] §5e already required of every other operation — resolving a binding throws, operating on a resolved store returns
+[`FORGE_ERRORS.md`][eh-5e] §5e already required of every other operation — resolving a binding throws, operating on a resolved store returns
 `Result`.
 
 ### 3c. Signed URLs for Secure Object Access
@@ -289,7 +289,7 @@ itself contains the `|` delimiter.
 
 `verifySignedObjectUrl(signingKey, url)` **checks expiry first, then compares signatures in constant time**, returning forge's one `Result`
 primitive — `SignedUrlVerdict`, i.e. `Result<string, SignedUrlFailure>`, whose `data` is the object key and whose `error` is `"expired"`,
-`"invalid-signature"` or `"invalid-format"`. **The reason is for the operator, not the client** ([`ERROR_HANDLING.md`][eh-1c] §1c): echoing which
+`"invalid-signature"` or `"invalid-format"`. **The reason is for the operator, not the client** ([`FORGE_ERRORS.md`][eh-1c] §1c): echoing which
 check failed tells a caller what to change next.
 
 **`hexSecret` must come from a secret binding, never from source code. Never serve an object from a signed-URL path without verifying the signature
@@ -342,7 +342,7 @@ wrappers over it. Its canonical home is `@y-core/forge/context`.
 from the same entry, so the two forms cannot diverge, and an app validates its whole env with one middleware rather than one per binding.
 
 **`optional: true` means an absent binding passes and a present one of the wrong shape still fails.** It relaxes presence, never shape — consistent
-with §4a's "a shape check, not a presence check", and the schema-side statement of what `rateLimit`'s `required: false` and the optional resolvers
+with §4a's "a shape check, not a presence check", and the schema-side statement of what `rateLimit`'s dev allowance and the optional resolvers
 already do at runtime (§5a). A security-critical binding is never declared optional (§5b).
 
 ---
@@ -380,7 +380,8 @@ Running tests or `wrangler dev` without a full binding configuration leaves stor
 explicitly for non-critical features:**
 
 - **KV logging** — select channels per request and fall back to console-only ([`STRUCTURED_LOGGING.md`][sl-2d] §2d).
-- **Rate limiting** — pass `required: false` so the middleware no-ops.
+- **Rate limiting** — pass a `DevAllowance` granting `rateLimitOptional` so the middleware no-ops; only a development entry can mint one
+  ([`SECURITY_HARDENING.md`][sh-4b] §4b).
 - **D1** — provide in-memory fakes in tests rather than branching in production code paths.
 - **Optional resolvers** — pass `required: false` to receive `null` instead of a throw.
 
@@ -398,13 +399,14 @@ exist before the worker reaches a serving state.
 
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
-[cr-1a]: ../warden/canon/libs/CODE_RULES.md#1a-no-module-level-mutable-variables
+[cr-1a]: ../warden/canon/shared/CODE_RULES.md#1a-no-module-level-mutable-variables
 [dm]: ./DATABASE_MANAGEMENT.md
 [dm-4a]: ./DATABASE_MANAGEMENT.md#4a-_forge_migrations--the-migration-history
 [dm-6c]: ./DATABASE_MANAGEMENT.md#6c-status---check-exit-conditions
-[eh-1c]: ./ERROR_HANDLING.md#1c-guardresult-and-validationresult-domain-aliases
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [lint-readme]: ../src/tooling/lint/README.md
 [namespaces-3b]: ./NAMESPACES.md#3b-internal-namespaces
+[sh-4b]: ./SECURITY_HARDENING.md#4b-the-dev-allowance-for-a-missing-binding
 [sl]: ./STRUCTURED_LOGGING.md
 [sl-2d]: ./STRUCTURED_LOGGING.md#2d-channel-selection-by-environment

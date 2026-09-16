@@ -247,8 +247,13 @@ export function sqlValueExpression(column: string, value: unknown): string {
   throw new UnsupportedValue(column, "no newline token survives a round trip against this value — every candidate occurs in the data");
 }
 
-/** One row as a single-line `INSERT` naming its columns, so it loads into a schema whose column order differs. @internal */
-export function insertStatement(table: string, columns: readonly string[], row: Readonly<Record<string, unknown>>): string {
+/** One row as a single-line `INSERT` naming its columns, so it loads into a schema whose column order differs; `orIgnore` writes the idempotent form a seed needs. @internal */
+export function insertStatement(
+  table: string,
+  columns: readonly string[],
+  row: Readonly<Record<string, unknown>>,
+  options?: { readonly orIgnore?: boolean },
+): string {
   const names = columns.map(quoteSqlIdentifier).join(",");
   const values = columns
     .map((column) => {
@@ -256,7 +261,8 @@ export function insertStatement(table: string, columns: readonly string[], row: 
       return sqlValueExpression(column, row[column]);
     })
     .join(",");
-  return `INSERT INTO ${quoteSqlIdentifier(table)} (${names}) VALUES (${values});`;
+  const verb = options?.orIgnore === true ? "INSERT OR IGNORE INTO" : "INSERT INTO";
+  return `${verb} ${quoteSqlIdentifier(table)} (${names}) VALUES (${values});`;
 }
 
 /** The alias prefix carrying a column's SQLite storage class alongside its value. @internal */
@@ -350,35 +356,40 @@ function isRowRemoval(line: string): boolean {
   return isStatement(line) && new RegExp(`^\\s*(?:${ROW_REMOVAL.source})`, "i").test(line);
 }
 
-/** Whether `full.sql` is a self-contained dump that will restore an unambiguous sequence. @internal */
-export function checkFullArtifact(sql: string): readonly ArtifactFault[] {
+/** Whether `schema.sql` declares the tables route `full` loads before `data.sql`, and carries no row of its own. @internal */
+export function checkSchemaArtifact(sql: string): readonly ArtifactFault[] {
   const faults: ArtifactFault[] = [];
   const lines = sql.split("\n");
   if (lines[0] !== DUMP_PREAMBLE) faults.push({ line: 1, reason: `the first line is not ${DUMP_PREAMBLE} — this is not a wrangler dump` });
 
+  let tables = 0;
   let lastCreateTable = 0;
   const clears: number[] = [];
-  const sequenceRows: number[] = [];
   for (const statement of splitSqlStatements(sql)) {
     const lead = statement.masked.search(/\S/);
     const number = sqlLineAt(sql, statement.offset + Math.max(lead, 0));
-    if (/^\s*CREATE\s+TABLE\b/i.test(statement.masked)) lastCreateTable = number;
+    if (/^\s*CREATE\s+TABLE\b/i.test(statement.masked)) {
+      tables += 1;
+      lastCreateTable = number;
+    }
     if (/^\s*CREATE\s+VIRTUAL\s+TABLE\b/i.test(statement.masked))
       faults.push({ line: number, reason: "a virtual table cannot be dumped or restored" });
-    if (INSERT_LINE.test(statement.raw) && insertTarget(statement.raw) === "sqlite_sequence") sequenceRows.push(number);
+    if (INSERT_LINE.test(statement.raw)) {
+      const table = insertTarget(statement.raw);
+      faults.push({
+        line: number,
+        reason: `an INSERT into ${table ?? "a table this scan cannot read"} — a schema artifact declares tables and carries no row, because route full loads data.sql after it`,
+      });
+      continue;
+    }
     if (!new RegExp(`^\\s*(?:${ROW_REMOVAL.source})`, "i").test(statement.masked)) continue;
     if (statement.raw.includes("sqlite_sequence")) clears.push(number);
-    else faults.push({ line: number, reason: `an unexpected row-removal statement in a dump: ${`${statement.raw.trim()};`.slice(0, 80)}` });
+    else faults.push({ line: number, reason: `an unexpected row-removal statement in a schema: ${`${statement.raw.trim()};`.slice(0, 80)}` });
   }
 
-  // `sqlite_sequence` exists only where a table declares AUTOINCREMENT, and no forge table does, so a
-  // dump without it is the ordinary case. The hazard is rows carried with nothing to clear them first.
-  if (clears.length === 0 && sequenceRows.length > 0) {
-    faults.push({
-      line: sequenceRows[0] ?? lines.length,
-      reason: `the dump carries ${sequenceRows.length} sqlite_sequence row(s) and never clears the table first, so restoring it would append to whatever the target already had`,
-    });
-  }
+  // A schema declaring nothing would let `data.sql` fail statement by statement instead of up front.
+  if (tables === 0)
+    faults.push({ line: lines.length, reason: "no CREATE TABLE at all — this cannot be the schema route full loads data.sql into" });
   if (clears.length > 1) {
     faults.push({ line: clears[1] ?? lines.length, reason: `sqlite_sequence is cleared ${clears.length} times and should be cleared once` });
   }
@@ -390,7 +401,7 @@ export function checkFullArtifact(sql: string): readonly ArtifactFault[] {
 }
 
 const SEQUENCE_FAULT =
-  "sqlite_sequence is the engine's and is restored only by the full-dump route, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name";
+  "sqlite_sequence is the engine's and is restored only by schema.sql, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name";
 
 /** Whether `data.sql` holds only rows of the tables it may carry, and declares nothing. @internal */
 export function checkDataArtifact(sql: string, appTables: readonly string[]): readonly ArtifactFault[] {
@@ -424,7 +435,7 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
 }
 
 /** Bumped when a manifest field changes meaning, so an old artifact is refused rather than misread. @internal */
-export const BACKUP_FORMAT_VERSION = 6;
+export const BACKUP_FORMAT_VERSION = 7;
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -453,7 +464,7 @@ export function validateManifest(value: unknown): readonly string[] {
 
   if (manifest.formatVersion !== BACKUP_FORMAT_VERSION) {
     problems.push(
-      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since forge now owns the migration history itself`,
+      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
     );
   }
   if (typeof manifest.createdAt !== "string" || Number.isNaN(Date.parse(manifest.createdAt))) {
@@ -572,7 +583,7 @@ export function verifyBackupArtifact(io: DbIo, directory: string, manifest: Back
     if (sha256(text) !== entry.sha256) {
       throw new CliError("invalid-args", `${path} does not hash to what the manifest declares for it — this artifact is damaged`);
     }
-    if (entry.file === "full.sql") refuseFaults(entry.file, "a self-contained artifact must be", checkFullArtifact(text));
+    if (entry.file === "schema.sql") refuseFaults(entry.file, "a schema-only artifact must be", checkSchemaArtifact(text));
     if (entry.file === "data.sql") refuseFaults(entry.file, "a data-only artifact must be", checkDataArtifact(text, carried));
   }
 }

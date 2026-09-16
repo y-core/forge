@@ -25,7 +25,7 @@ export const typeImportExternal: LintRule = {
         if (declaration === undefined || declaration === null || !DECLARED.has(declaration.type)) return;
         const name = declaration.id?.name ?? "this type";
         context.report({
-          message: `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` — move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/LIBRARY_ARCHITECTURE.md §8).`,
+          message: `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` — move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/FORGE_STRUCTURE.md §8).`,
           loc: node.loc,
         });
       },

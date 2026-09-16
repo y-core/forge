@@ -52,7 +52,7 @@ reaching a log record. Each still blocks a merge. Read both tables, or read the 
 
 | Invariant | Owner |
 | --- | --- |
-| No deprecation shim or backward-compatible path before v1.0.0 | [`LIBRARY_ARCHITECTURE.md`][la-7] §7 |
+| No deprecation shim or backward-compatible path before v1.0.0 | [`FORGE_STRUCTURE.md`][la-7] §7 |
 | No hardcoded secret, key, or credential in source | §3c |
 | `mod.ts` uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`][nd-1b] §1b |
 | No sibling-barrel import outside the two exemptions | [`NAMESPACES.md`][namespaces-2] §2 |
@@ -60,7 +60,7 @@ reaching a log record. Each still blocks a merge. Read both tables, or read the 
 | `valibot` is never imported outside the facade | [`INPUT_VALIDATION.md`][iv-1a] §1a |
 | Security-critical paths fail closed | [`BOUNDARIES.md`][boundaries-5] §5 |
 | A state-changing route carries a CSRF guard | [`INPUT_VALIDATION.md`][iv-3a] §3a |
-| A security guard has both a pass and a fail test | [`TESTING.md`][testing-5a] §5a |
+| A security guard has both a pass and a fail test | [`TEST_RUNNERS.md`][testing-5a] §5a |
 | No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b |
 | No comment outside the permitted budget | [`CODE_RULES.md`][cr-5a] §5a |
 
@@ -156,7 +156,7 @@ rg -n 'toContain\(|toMatch\(' src/ --glob '*.test.ts*'
 ```
 
 _Triage:_ legitimate on non-HTML strings — an error message, a log line, a SQL fragment. **A hit asserting on rendered markup is a defect**
-([`TESTING.md`][testing-3b] §3b).
+([`TEST_RUNNERS.md`][testing-3b] §3b).
 
 **Widest-possible icon prop**
 
@@ -219,7 +219,7 @@ test value?_ A 64-char hex literal is fine in a test and fatal in `src/*/config.
 error — or continue?_ Silent continuation is the defect ([`BOUNDARIES.md`][boundaries-5a] §5a).
 
 **Facade intent.** Read the changed `mod.ts`. _Does a new export widen the surface beyond what a consumer needs, or leak a third-party type into
-forge's signature?_ ([`LIBRARY_ARCHITECTURE.md`][la-4a] §4a.)
+forge's signature?_ ([`FORGE_STRUCTURE.md`][la-4a] §4a.)
 
 **Namespace classification.** Read the new imports in the changed namespace. _Does this introduce a cross-namespace edge that the classification
 does not declare?_ ([`NAMESPACES.md`][namespaces-4b] §4b.)
@@ -230,7 +230,7 @@ guards are invisible to a reader auditing the route map ([`ROUTING_AND_MIDDLEWAR
 **Async lifetime.** Read every function whose returned promise reaches `executionCtx.waitUntil()` or `Logger.flush()`. _Does the returned promise
 cover every piece of work the function started, or only the headline one?_ A `void work().catch(…)` branch is untracked, so the isolate may suspend
 before it settles — the shape to look for is a probabilistic or opportunistic side task detached from the promise the caller awaits
-([`LIBRARY_ARCHITECTURE.md`][la-6] §6).
+([`FORGE_STRUCTURE.md`][la-6] §6).
 
 **The ten unchecked a11y rule ids.** Read every added or changed `.tsx` under `src/ui/`. _Does the markup meet each of these ids, none of which any
 gate step proves?_ The eight that are gated are §3a's; these ten are the remainder, and the reason each has no command is recorded below so it is
@@ -277,14 +277,14 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `import … from "../crypto/mod"` in forge source | The other sanctioned exemption |
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
-| `node:child_process` / `node:fs` / `node:net` in `src/testing/workerd.ts` | The one node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel — [`NAMESPACES.md`][namespaces-4a] §4a, [`TESTING.md`][testing-7f] §7f |
+| `node:child_process` / `node:fs` / `node:net` in `src/testing/workerd.ts` | The one node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a |
 | `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`][ucr-4] §4 |
 | A non-null assertion in a test file | Permitted by the `**/*.test.ts` oxlint override, which sets `typescript/no-non-null-assertion: off`; the rule is `error` in production source |
-| `ok` / `err` not following `create*` | The one documented naming exception — [`ERROR_HANDLING.md`][eh-1a] §1a |
-| `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`][eh-5e] §5e |
+| `ok` / `err` not following `create*` | The one documented naming exception — [`FORGE_ERRORS.md`][eh-1a] §1a |
+| `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`FORGE_ERRORS.md`][eh-5e] §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACES.md`][namespaces-5b] §5b |
 | `@public` / `@internal` on a TSDoc line | Machine-readable visibility markers, explicitly budgeted — [`CODE_RULES.md`][cr-5a] §5a |
 | A one-line inline comment carrying an external _why_ | The third budgeted form, subject to the four conditions in [`CODE_RULES.md`][cr-5a] §5a |
@@ -327,8 +327,8 @@ false-positive-dominated.
 
 `no-shadow`'s only sanctioned exception is the cross-realm `page.evaluate` case in §6.
 
-**Type-aware rules are configured in the same file but only run under `lint:types`** — see [`TESTING.md`][testing-6] §6 for which tier that step
-runs from.
+**Type-aware rules are configured in the same file but only run under `lint:types`** — see [`TEST_RUNNERS.md`][testing-6] §6 for which tier that
+step runs from.
 
 ### 7c. Why `jsx-a11y` is on, and what it does not see
 
@@ -374,23 +374,23 @@ forge's published a11y ids and its checked ones — the ten ids that gap still c
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [cr]: ../warden/canon/libs/CODE_REVIEW.md
 [cr-1]: ../warden/canon/libs/CODE_REVIEW.md#1-review-workflow
-[cr-1c]: ../warden/canon/libs/CODE_RULES.md#1c-constants-are-acceptable
-[cr-1d]: ../warden/canon/libs/CODE_RULES.md#1d-bare-constructors-on-configuration-holders
-[cr-1e]: ../warden/canon/libs/CODE_RULES.md#1e-browser-only-modules-are-exempt
+[cr-1c]: ../warden/canon/shared/CODE_RULES.md#1c-constants-are-acceptable
+[cr-1d]: ../warden/canon/shared/CODE_RULES.md#1d-factory-verbs-and-bare-constructors
+[cr-1e]: ../warden/canon/shared/CODE_RULES.md#1e-browser-only-modules-are-exempt
 [cr-4]: ../warden/canon/libs/CODE_REVIEW.md#4-severity-calibration
 [cr-5]: ../warden/canon/libs/CODE_REVIEW.md#5-verification-protocol
-[cr-5a]: ../warden/canon/libs/CODE_RULES.md#5a-the-entire-permitted-budget
-[cr-5b]: ../warden/canon/libs/CODE_RULES.md#5b-forbidden-outright
-[cr-5d]: ../warden/canon/libs/CODE_RULES.md#5d-tests-are-not-exempt
-[eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive-okerr-result-and-toerror
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[cr-5a]: ../warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
+[cr-5b]: ../warden/canon/shared/CODE_RULES.md#5b-forbidden-outright
+[cr-5d]: ../warden/canon/shared/CODE_RULES.md#5d-tests-are-not-exempt
+[eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
+[eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [floor]: ../src/ui/design/floor.md
 [iv-1a]: ./INPUT_VALIDATION.md#1a-v-namespace--complete-valibot-re-export
 [iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
-[la-4a]: ./LIBRARY_ARCHITECTURE.md#4a-re-export-rules-for-facade-namespaces
-[la-6]: ./LIBRARY_ARCHITECTURE.md#6-cloudflare-workers-runtime-model
-[la-7]: ./LIBRARY_ARCHITECTURE.md#7-pre-10-api-evolution
+[la-4a]: ./FORGE_STRUCTURE.md#4a-re-export-rules-for-facade-namespaces
+[la-6]: ./FORGE_STRUCTURE.md#6-cloudflare-workers-runtime-model
+[la-7]: ./FORGE_STRUCTURE.md#7-pre-10-api-evolution
 [namespaces-2]: ./NAMESPACES.md#2-no-sibling-barrel-import-rule
 [namespaces-3b]: ./NAMESPACES.md#3b-internal-namespaces
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
@@ -403,10 +403,10 @@ forge's published a11y ids and its checked ones — the ten ids that gap still c
 [sa-2]: ./STATE_ATTRIBUTES.md#2-presentational-attributes-are-declared-too
 [testing]: ../warden/canon/libs/TESTING.md
 [testing-2a]: ../warden/canon/libs/TESTING.md#2a-test-file-naming-convention
-[testing-3b]: ./TESTING.md#3b-exact-match--never-substring-matching
-[testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
-[testing-6]: ./TESTING.md#6-the-verification-gate
-[testing-7f]: ./TESTING.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-3b]: ./TEST_RUNNERS.md#3b-exact-match--never-substring-matching
+[testing-5a]: ./TEST_RUNNERS.md#5a-both-pass-and-fail-cases-required
+[testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
+[testing-7f]: ./TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
 [ucr-2d]: ./UI_CLIENT_RUNTIME.md#2d-the-disposer-contract
 [ucr-4]: ./UI_CLIENT_RUNTIME.md#4-htmx-bundle-import

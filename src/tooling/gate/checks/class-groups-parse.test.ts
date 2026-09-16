@@ -164,6 +164,34 @@ describe("deriveClassGroups", () => {
     expect(table.roots.get("text-size")).toEqual({ named: "font-size,line-height", arbitrary: "font-size" });
   });
 
+  it("reserves `font-face` for the family group `font` itself states, so an app's own face is not read as a weight", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({
+        functional: { font: ["--tw-font-weight"] },
+        classes: { "font-bold": ["--tw-font-weight"], "font-semibold": ["--tw-font-weight"], "font-sans": ["font-family"] },
+      }),
+    );
+    expect(table.roots.get("font-face")).toEqual({ named: "font-family" });
+  });
+
+  it("gives `font-face` the group an arbitrary family takes under `font`, so its two spellings meet", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({
+        functional: { font: ["--tw-font-weight"] },
+        classes: { "font-bold": ["--tw-font-weight"], "font-semibold": ["--tw-font-weight"], "font-sans": ["font-family"] },
+        compiles: { "font-[3]": ["--tw-font-weight"], "font-[foo]": ["font-family"] },
+      }),
+    );
+    expect(table.roots.get("font-face")).toEqual({ named: "font-family", arbitrary: "font-family" });
+  });
+
+  it("reserves nothing when the design system states no family group under `font`", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({ functional: { font: ["--tw-font-weight"] }, classes: { "font-bold": ["--tw-font-weight"] } }),
+    );
+    expect(table.roots.has("font-face")).toBe(false);
+  });
+
   it("takes a root's named group from a scale probe when the class list enumerates none, as with `start-*`", () => {
     const table = deriveClassGroups(
       fakeDesignSystem({

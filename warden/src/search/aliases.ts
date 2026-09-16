@@ -50,6 +50,22 @@ export const SHARED: AliasTable = new Map([
   // case — so the only bridge worth having is to what the rule asks for instead.
   ["pii", ["redaction"]],
   ["secret", ["binding", "env", "PII"]],
+  // `key` reaches `credential` and deliberately not `secret`: `secret` is also the placement
+  // question's word — "where does API key rotation belong" — and bridging onto it put the rule
+  // about an agent's own output above the namespace that owns the key's lifecycle.
+  ["key", ["credential"]],
+  ["credential", ["secret"]],
+  // The agent's own conduct, which `AGENT_WORKFLOW.md` §6 and §7 state in the corpus's words and a
+  // reader asks in their own. `believe` is what a reader types; the rule is written as `evidence`
+  // and `trusted`. `finding` is the reader's word for what an agent emits, and the rule about not
+  // writing a secret's value is filed under `output` and `report` — which also lifts the section on
+  // how a finding is written above the documents that merely mention one.
+  //
+  // `key → secret` is still not the bridge, and was re-measured after these: it costs
+  // `where does API key rotation belong` its rank, exactly as the note above records, because
+  // `secret` is also the placement question's word.
+  ["believe", ["evidence", "trusted"]],
+  ["finding", ["output", "report"]],
   // `origin-guard` is a hyphenated spelling no document writes: the middleware is `originGuard` and
   // the rule is about the request's `origin`. One token the tokenizer keeps whole, spelled as the
   // prose spells it.

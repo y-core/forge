@@ -1,5 +1,9 @@
 export type { Hit, SearchOptions } from "./search";
-export { corpusLabel, search } from "./search";
+export { corpusLabel, FLOOR, MARGIN, search } from "./search";
+export type { Excerptable } from "./excerpt";
+export { excerptOf, headingTrail } from "./excerpt";
+export type { HitFormat } from "./render";
+export { renderHit } from "./render";
 export { coverage, documentFrequency, idf } from "./coverage";
 export type { OutlineEntry, Section } from "./read";
 export { outline, readDocument, readSection } from "./read";

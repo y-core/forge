@@ -16,7 +16,9 @@ import { checkCssSources } from "./checks/css-sources";
 import { checkCssTokens } from "./checks/css-tokens";
 import { checkDesignScale } from "./checks/design-scale";
 import { hasTailwind } from "./checks/design-system";
+import { checkDevBoundary } from "./checks/dev-boundary";
 import { checkExports } from "./checks/exports";
+import { checkExposure } from "./checks/exposure";
 import { checkJsx } from "./checks/jsx";
 import { checkMarkdown, fixMarkdown } from "./checks/markdown";
 import { checkModernCss } from "./checks/modern-css";
@@ -34,7 +36,9 @@ import type { ContrastCheckConfig } from "./checks/types";
 import type { CssSourcesCheckConfig } from "./checks/types";
 import type { CssTokensCheckConfig } from "./checks/types";
 import type { DesignScaleCheckConfig } from "./checks/types";
+import type { DevBoundaryCheckConfig } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
+import type { ExposureCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { ModernCssCheckConfig } from "./checks/types";
@@ -195,6 +199,11 @@ export function assetRootStep(config: AssetRootCheckConfig, options: StepOptions
   return checkStep("validate-asset-root", () => checkAssetRoot(config), options);
 }
 
+/** Fails on any Worker config key whose default runs toward exposure being unstated. @public */
+export function exposureStep(config: ExposureCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-exposure", () => checkExposure(config), options);
+}
+
 /** Checks every path the emitted assets manifest maps to exists under the served asset directory. @public */
 export function assetManifestStep(config: AssetManifestCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-asset-manifest", (gateMode) => checkAssetManifest(config, gateMode), options);
@@ -215,6 +224,11 @@ export function ssrBoundaryStep(config: SsrBoundaryCheckConfig, options: StepOpt
 /** Checks that nothing a consumer can import at runtime reaches a build-time directory. @public */
 export function buildTimeBoundaryStep(config: BuildTimeBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-build-time-boundary", () => checkBuildTimeBoundary(config), options);
+}
+
+/** Checks that no deployable module names a development entry or a dev-only module. @public */
+export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-dev-boundary", () => checkDevBoundary(config), options);
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */

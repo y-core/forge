@@ -54,13 +54,13 @@ See [`NAMESPACE_DESIGN.md`][nd-3] §3 for the leaf/integration split. forge's me
 
 ### 3a. No Build Step in the Gate
 
-**There is no build step in `bun run verify`** — the library is always consumed as raw TS. [`TESTING.md`][testing-6] §6 owns the gate.
+**There is no build step in `bun run verify`** — the library is always consumed as raw TS. [`TEST_RUNNERS.md`][testing-6] §6 owns the gate.
 
 ### 3b. TypeScript Configuration Constraints
 
 `tsconfig.json` owns the `lib` and `types` configuration. The decision it encodes: **no `@types/*` is auto-included, and source files see the
 standard Web-API libs and nothing else**, so a Node or Bun global is a type error rather than a portability bug found at deploy time. Test files
-reach `bun:test` through a hand-written stub instead of a package — [`TESTING.md`][testing-1b] §1b owns that rule and the reason.
+reach `bun:test` through a hand-written stub instead of a package — [`TEST_RUNNERS.md`][testing-1b] §1b owns that rule and the reason.
 
 ### 3c. Peer Dependencies for Build Tools
 
@@ -166,7 +166,7 @@ file can reach is the file's own business, and moving it would widen the directo
 moved declaration is written in terms of: it follows the declaration, because that is now where it is used.
 
 **`types.ts` declares and never runs.** The co-location check reserves the name — a `types.ts` needs no co-located test, and the same check fails
-one that grows a callable export ([`TESTING.md`][testing-2] §2).
+one that grows a callable export ([`TEST_RUNNERS.md`][testing-2] §2).
 
 ### 8a. A Type Is Imported on Its Own Line
 
@@ -190,10 +190,10 @@ two into one statement means every reader asking what a file costs at runtime ha
 `types.ts`; `forge/type-import-separation` reports a `type` specifier riding inside a value import. Both are scoped to `src/` in `.oxlintrc.json`,
 with the declaration rule off for `types.ts` itself and for specs — a fixture type is local by definition.
 
-**A file that is itself a published subpath is its own `types.ts`.** `src/testing/workerd.ts` is `@y-core/forge/testing/workerd`, deliberately off
-the `./testing` barrel ([`TESTING.md`][testing-7f] §7f); moving `DevServer` and `DevServerOptions` into `src/testing/types.ts` would put them on
-that barrel, which is the one place they must not be. The exemption is one `overrides` entry naming the file, not a general escape — every other
-file in the namespace obeys the rule.
+**A file that is itself a published subpath is its own `types.ts`.** `src/testing/workerd.ts` is `@y-core/forge/testing/workerd`, deliberately
+off the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f); moving `DevServer` and `DevServerOptions` into `src/testing/types.ts` would put
+them on that barrel, which is the one place they must not be. The exemption is one `overrides` entry naming the file, not a general escape —
+every other file in the namespace obeys the rule.
 
 Neither half is available off the shelf. `oxfmt` is a formatter and judges no structure at all; oxlint's builtin
 `typescript/consistent-type-imports` only reports a type reached through a value import, which `verbatimModuleSyntax` already makes a compile error,
@@ -202,7 +202,7 @@ and it accepts the inline specifier this rule exists to forbid. The lint plugin 
 
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
 [bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
-[cr]: ../warden/canon/libs/CODE_RULES.md
+[cr]: ../warden/canon/shared/CODE_RULES.md
 [la-1]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1-core-architectural-principles
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-3d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#3d-asset-scanning-stops-at-the-component-tier
@@ -212,7 +212,7 @@ and it accepts the inline specifier this rule exists to forbid. The lint plugin 
 [namespaces-3a]: ./NAMESPACES.md#3a-public-export-paths
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification
 [nd-3]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3-namespace-classification
-[testing-1b]: ./TESTING.md#1b-custom-buntest-stub--no-bun-types
-[testing-2]: ./TESTING.md#2-co-located-test-files
-[testing-6]: ./TESTING.md#6-the-verification-gate
-[testing-7f]: ./TESTING.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-1b]: ./TEST_RUNNERS.md#1b-custom-buntest-stub--no-bun-types
+[testing-2]: ./TEST_RUNNERS.md#2-co-located-test-files
+[testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
+[testing-7f]: ./TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd

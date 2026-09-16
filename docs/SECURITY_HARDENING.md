@@ -10,7 +10,7 @@ audience: consumer
 > verification, rate limiting, request identity. Authentication, sessions, and RBAC are out of scope (§7).
 >
 > Defers to: [`INPUT_VALIDATION.md`][iv] for CSRF, Turnstile, and the form body cap; [`ROUTING_AND_MIDDLEWARE.md`][ram] for middleware placement;
-> [`ERROR_HANDLING.md`][eh-2d] §2d and §5b for fragment-option escaping and the baseline-hardened 500; [`STORAGE_BINDINGS.md`][sb-3b] §3b, §3c, §4a
+> [`FORGE_ERRORS.md`][eh-2d] §2d and §5b for fragment-option escaping and the baseline-hardened 500; [`STORAGE_BINDINGS.md`][sb-3b] §3b, §3c, §4a
 > for R2 serving, signed URLs, and binding shape checks.
 
 ---
@@ -30,10 +30,10 @@ audience: consumer
 - §3c verifyOrigin — Inline Origin Check: the in-handler form
 - §3d crossOriginProtection — Fetch Metadata: the `Sec-Fetch-Site` tier
 - §3e Origin-Guard Tiering — Which Guard When: pick one, never stack
-- §3f Deriving allowedOrigins in Dev: `BASE_URL` as the source, `extraOrigins` as the sole escape hatch
+- §3f Deriving allowedOrigins in Dev: `BASE_URL` as the source, the dev allowance's `extraOrigins` as the sole escape hatch
 - §4 Rate Limiting with Workers Binding: the limiter middleware
 - §4a rateLimit Middleware Factory: per-route application
-- §4b required false for Dev Graceful Degradation: the availability trade
+- §4b The Dev Allowance for a Missing Binding: the availability trade, and the key it now takes
 - §4c Workers Rate Limiter Binding Configuration: wrangler and env typing
 - §4d Rate-Limit Key Selection: the default key and its trust precondition
 - §5 Request Identity: request-id generation and the CF trust boundary
@@ -190,8 +190,9 @@ For a one-off check inside a handler rather than as middleware. Takes the standa
 `crossOriginProtection()` enforces same-origin for state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`) using the browser
 `Sec-Fetch-Site` header.
 
-**Requests labelled `cross-site` are rejected with `403`, and a missing header is rejected by default (fail-closed)** unless
-`allowMissingHeader: true`.
+**Requests labelled `cross-site` are rejected with `403`, and a missing header is rejected by default (fail-closed).** The one way to accept it is
+`dev`, a [`DevAllowance`][dev-readme] granting `missingFetchMetadata` — a token only a development entry can mint, so no production module can pass
+one and `validate-dev-boundary` fails the import that would try.
 
 `checkCrossOriginProtection(request, options)` performs the same check as a plain function, returning a `GuardResult` alias with the reason code in
 `error`. Use it when the result must drive conditional logic rather than an automatic rejection.
@@ -206,7 +207,7 @@ Three middleware defend against cross-origin mutation. They form a deliberate ti
 | Guard | Signal | When the signal is absent | Use when |
 | --- | --- | --- | --- |
 | `originProtection(options)` | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
-| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless `allowMissingHeader` | Stricter, no allowlist |
+| `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless a dev allowance grants `missingFetchMetadata` | Stricter, no allowlist |
 | `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Webhook/privileged endpoints keyed purely on an origin allowlist |
 
 **`originProtection` is the authoritative recommended default** — the other two are the single-signal tiers it is built from.
@@ -234,10 +235,11 @@ consuming app cites that. This section holds only what is forge's own — how `a
 **`BASE_URL` is the derivation source.** `deriveAllowedOrigins` (`src/security/url.ts`) builds the allowed-origin set from it, and
 `BaseUrlConfigSchema` validates it at boot. In dev that value is the canonical proxy origin — the same URL the browser is pointed at, https and all.
 
-**`extraOrigins` is the only escape hatch.** It exists for the proxy-less fallback — the dev server on a bare machine with the browser at
-`https://localhost:8787`. Entries must be normalized origins and https-or-loopback, and throw at boot otherwise. It is **dev-entrypoint-only and
-carries no env var**: extras arrive as a parameter from a dev worker entry production never imports, so the production bundle structurally contains
-no extra origin — the same containment guarantee as the live-reload CSP hash (§2c).
+**`extraOrigins` is the only escape hatch, and it rides on the dev allowance.** It exists for the proxy-less fallback — the dev server on a bare
+machine with the browser at `https://localhost:8787`. Entries must be normalized origins and https-or-loopback, and throw at boot otherwise.
+`deriveAllowedOrigins(parsed, { dev })` reads them off a [`DevAllowance`][dev-readme]; there is no `extraOrigins` option and **no env var**. Minting
+the token means importing `@y-core/forge/dev` at value, which `validate-dev-boundary` permits from a `*.dev.ts` entry and from nowhere else — so the
+production bundle structurally contains no extra origin, the same containment guarantee as the live-reload CSP hash (§2c), and now a checked one.
 
 Forge's own browser set serves no origin at all, so the canon's loopback-https rule for a browser suite does not reach it (`playwright.config.ts`
 owns why).
@@ -257,12 +259,17 @@ failure the option made reachable — a relaxation computed from a mistyped env 
 `rateLimit` wraps the Cloudflare Workers Rate Limiting binding. **Apply per-route, not globally**, to target high-risk endpoints such as form
 submissions and API mutations.
 
-### 4b. `required: false` for Dev Graceful Degradation
+### 4b. The Dev Allowance for a Missing Binding
 
-`required: false` makes the middleware a no-op when the binding is absent (local dev without wrangler bindings).
+**An absent binding returns `503` per request, and the only thing that changes it is a token production cannot mint.** `rateLimit({ dev })` takes a
+[`DevAllowance`][dev-readme]; with `rateLimitOptional` granted, a missing binding is logged and skipped instead. With no token — which is every
+production route, by construction — a misconfigured binding fails closed rather than silently disabling the limit.
 
-**The default `required: true` returns `503` per request when the binding is missing** — use it on production routes where rate limiting is
-non-negotiable, so a misconfigured binding fails closed rather than silently disabling the limit.
+**This is the graceful degradation [`BOUNDARIES.md`][boundaries-5b] §5b scopes to rate limiting, with the call site made unforgeable.** The
+asymmetry §5b draws still holds: bypassed rate limiting is an availability concern, bypassed CSRF is an integrity breach. What changed is that the
+relaxation was a boolean on a production option, so a shared middleware module reached from the production entry could set it — and a missing
+`RATE_LIMITER` binding in production then disabled rate limiting in silence. Minting the token is an import, and `validate-dev-boundary` fails that
+import outside a `*.dev.ts` entry.
 
 ### 4c. Workers Rate Limiter Binding Configuration
 
@@ -349,7 +356,9 @@ See [`BOUNDARIES.md`][boundaries-2] §2 for the transport-versus-application bou
 namespace, and why identity is application-layer.
 
 [boundaries-2]: ../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
-[eh-2d]: ./ERROR_HANDLING.md#2d-fragment-options-and-escaping
+[boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
+[dev-readme]: ../src/dev/README.md
+[eh-2d]: ./FORGE_ERRORS.md#2d-fragment-options-and-escaping
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [iv]: ./INPUT_VALIDATION.md

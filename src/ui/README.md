@@ -100,6 +100,11 @@ ships as the one alternate, imported after `forge.css` exactly as a scheme is. T
 anything working from the class name, `cn` included: `cn("text-hero text-red-500")` returns `text-red-500` alone, with no error. Under the reserved
 spelling the class merges against `text-2xl` and coexists with `text-red-500`. The reasoning is [`UI_CLASS_COMPOSITION.md`][ucc-2f] §2f.
 
+**A font face you add is namespaced away from weight, for the same reason.** A face is
+`@theme { --font-face-display: "Literata", serif; }`, giving `font-face-display` — not `--font-display`. Tailwind's `font-*` utility is modally
+weight, so `font-display` reads as one and `cn("font-display", "font-semibold")` drops the face. Under the reserved spelling it merges against
+`font-sans` and coexists with `font-semibold`.
+
 **Status colours are tokens, not palette utilities.** `Alert`, `Toast`, `Badge` and the banners `@y-core/forge/http` renders take their colour from
 a `--status-*` family — four intents (`danger`, `warning`, `success`, `info`) by five roles (`-subtle`, `-subtle-foreground`, `-strong`,
 `-strong-foreground`, `-border`), each bridged to a Tailwind utility such as `bg-status-danger-subtle`. They are deliberately separate from
@@ -1160,7 +1165,7 @@ behind it. That scope is `eager`, because a bound control stamps no `data-on-*` 
 - [`UI_SHOWCASE.md`][us] — mounting `ui/show`, and its coverage contract.
 
 [ap-2c]: ../../docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
-[cr-1]: ../../warden/canon/libs/CODE_RULES.md#1-zero-global-state-rule
+[cr-1]: ../../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
 [navigation]: ./design/reference/08-navigation.md
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value
@@ -1175,7 +1180,7 @@ behind it. That scope is `eager`, because a bound control stamps no `data-on-*` 
 [ucc-2c]: ../../docs/UI_CLASS_COMPOSITION.md#2c-status-hues-are-forges-brand-fills-are-the-apps
 [ucc-2d]: ../../docs/UI_CLASS_COMPOSITION.md#2d-the-dark-variant-is-class-driven-and-that-is-a-takeover
 [ucc-2e]: ../../docs/UI_CLASS_COMPOSITION.md#2e-a-consumer-rule-loses-by-layer-not-by-selector
-[ucc-2f]: ../../docs/UI_CLASS_COMPOSITION.md#2f-scale-tokens-are-namespaced-away-from-colour
+[ucc-2f]: ../../docs/UI_CLASS_COMPOSITION.md#2f-a-reserved-root-where-a-utility-root-carries-two-concerns
 [ucr]: ../../docs/UI_CLIENT_RUNTIME.md
 [ucr-2c]: ../../docs/UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
 [udg]: ../../docs/UI_DESIGN_GUIDANCE.md

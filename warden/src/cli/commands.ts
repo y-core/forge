@@ -20,7 +20,7 @@ export function createWardenCommands(): CommandBase {
     root,
     createCommand({
       name: "sync",
-      description: "Replace .claude/agents and .claude/commands from the installed corpus",
+      description: "Replace .claude/agents and .claude/skills from the installed corpus",
       flags: {
         check: { type: "boolean", description: "Report drift and exit 1 if any, writing nothing" },
         init: { type: "boolean", description: "Also seed CLAUDE.md, AGENTS.md and settings.local.json if absent" },

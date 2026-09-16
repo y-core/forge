@@ -182,6 +182,18 @@ describe("checkExports() — one entry against the source tree", () => {
     expect(await messages(tree, { exports: { "./x": "./src/x/mod.ts" }, files: ["src"], sideEffectOnly: ["./x"] })).toEqual([]);
   });
 
+  it("accepts a types-only `.d.ts` target, which has no runtime to import", async () => {
+    const tree = { "src/x/ambient.d.ts": 'declare module "node:os" {\n  export function tmpdir(): string;\n}\n' };
+
+    expect(await messages(tree, { exports: { "./x": { types: "./src/x/ambient.d.ts" } }, files: ["src"] })).toEqual([]);
+  });
+
+  it("still reports a `.d.ts` target the tree does not have", async () => {
+    expect(await messages({}, { exports: { "./x": { types: "./src/x/ambient.d.ts" } } })).toEqual([
+      "./x: barrel file not found at ./src/x/ambient.d.ts",
+    ]);
+  });
+
   it("reports a non-module target that ships but does not resolve for a consumer", async () => {
     const [message = ""] = await messages(
       { "src/css/theme.css": ":root {}\n" },

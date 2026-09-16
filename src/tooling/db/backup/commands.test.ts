@@ -10,14 +10,16 @@ import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import {
   argvHas,
   bufferedIO,
-  describeTableReply,
   fakeDbIo,
-  jsonRows,
-  keyProbeAsks,
+  keyProbeAsked,
   keyProbeReply,
   minimalWranglerConfig,
   OK,
   projectReadRows,
+  routedReply,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
 } from "../test-support";
 import type { BackupManifest, FakeDbIo } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
@@ -74,33 +76,26 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
     },
   });
   io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) => {
-      const statement = args[args.length - 1] ?? "";
-      // The batched read `describeTable` makes names both, so it is recognised before either alone.
-      const info = /pragma_table_info\('([^']+)'\)/.exec(statement);
-      if (info !== null) {
-        const table = info[1] ?? "";
-        const columns = COLUMNS[table] ?? [];
-        if (!statement.includes("sqlite_master")) return jsonRows(columns);
-        return describeTableReply(columns, INVENTORY.find((object) => object.name === table)?.sql);
-      }
-      if (statement.includes("sqlite_master")) return jsonRows(INVENTORY);
-      const probe = keyProbeAsks(statement);
-      if (probe !== null) return keyProbeReply(rows[probe.table] ?? [], probe.column);
-      const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
-      if (count !== null) return jsonRows([{ rows: (rows[count[1] ?? ""] ?? []).length }]);
-      if (statement === RECORDED_CHECKSUM_SELECT) return jsonRows((rows._forge_migrations ?? []).map((row) => ({ name: row.name })));
-      const from = /FROM "([^"]+)"/.exec(statement);
-      const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-      const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
-      const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-      const all = rows[from?.[1] ?? ""] ?? [];
-      const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
-      return jsonRows(projectReadRows(seek.slice(0, limit)));
-    },
-  });
+  const answer = (statement: string): Record<string, unknown>[] => {
+    const info = tableInfoAsked(statement);
+    if (info !== null) return COLUMNS[info] ?? [];
+    const ddl = tableSqlAsked(statement);
+    if (ddl !== null) return tableSqlReply(INVENTORY.find((object) => object.name === ddl)?.sql);
+    if (statement.includes("sqlite_master")) return INVENTORY;
+    const probe = keyProbeAsked(statement);
+    if (probe !== null) return keyProbeReply(probe.asks, rows[probe.table] ?? [], probe.column);
+    const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
+    if (count !== null) return [{ rows: (rows[count[1] ?? ""] ?? []).length }];
+    if (statement === RECORDED_CHECKSUM_SELECT) return (rows._forge_migrations ?? []).map((row) => ({ name: row.name }));
+    const from = /FROM "([^"]+)"/.exec(statement);
+    const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
+    const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
+    const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
+    const all = rows[from?.[1] ?? ""] ?? [];
+    const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
+    return projectReadRows(seek.slice(0, limit));
+  };
+  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }
 
@@ -115,7 +110,7 @@ async function runCli(io: FakeDbIo, argv: string[]): Promise<{ out: string[]; er
 }
 
 describe("forge db backup", () => {
-  it("writes the four artifact files and a manifest naming what it proved", async () => {
+  it("writes the three artifact files and a manifest naming what it proved", async () => {
     const root = appRoot();
     const io = fakeWrangler();
     const buffer = await runCli(io, ["backup", "--root", root, "--yes"]);
@@ -126,7 +121,6 @@ describe("forge db backup", () => {
     expect(buffer.out).toEqual([`✓ ${directory}`, "  route full: 0 divergent", "  route migrations: 0 divergent"]);
     expect([...io.files.keys()].filter((path) => path.startsWith(`${directory}/`)).sort()).toEqual([
       join(directory, "data.sql"),
-      join(directory, "full.sql"),
       join(directory, "manifest.json"),
       join(directory, "schema.sql"),
     ]);
@@ -142,7 +136,7 @@ describe("forge db backup", () => {
     });
     expect(manifest.schema.migrations).toEqual(["0001_init"]);
     expect(manifest.tables).toEqual([{ name: "tasks", rows: 2, digest: manifest.tables[0]?.digest ?? "" }]);
-    expect(manifest.artifacts.map((artifact) => artifact.file)).toEqual(["full.sql", "data.sql", "schema.sql"]);
+    expect(manifest.artifacts.map((artifact) => artifact.file)).toEqual(["schema.sql", "data.sql"]);
     expect(manifest.warnings).toEqual([]);
     expect(manifest.verified).toEqual([
       { route: "full", divergent: 0 },

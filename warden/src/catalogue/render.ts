@@ -1,4 +1,11 @@
 import type { Database } from "bun:sqlite";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
+import { frontmatter } from "../corpus/chunk";
+import { CANON_ROOT } from "../paths";
+import type { Tree } from "../types";
 
 interface Row {
   corpus: string;
@@ -49,9 +56,10 @@ export interface CatalogueScope {
  *  Nothing here changes when prose changes without the document set changing — no counts, no
  *  timestamps, no version string — so a drift check reports a real change and never a heartbeat.
  *
- *  **Only the committed file names a tree.** It is forge's own inventory, and forge houses all three
- *  trees on disk; a consumer's index holds `shared` plus its own kind, so the distinction is one it
- *  could not act on and the served resource groups the canon whole. @public */
+ *  **Only the committed file names a tree, and `renderCanon` is what writes it.** It is forge's own
+ *  inventory, and forge houses all three trees on disk; a consumer's index holds `shared` plus its
+ *  own kind, so the distinction is one it could not act on and the served resource groups the canon
+ *  whole. @public */
 export function renderCatalogue(db: Database, scope: CatalogueScope = {}): string {
   const local = scope.local === true;
   const where = local ? "" : " WHERE corpus = 'canon'";
@@ -66,6 +74,27 @@ export function renderCatalogue(db: Database, scope: CatalogueScope = {}): strin
       sections.push(`\n## ${title}\n`);
     }
     sections.push(`- \`${row.path}\` — ${row.title}: ${row.description}`);
+  }
+  return `${sections.join("\n")}\n`;
+}
+
+/** The committed catalogue, read off the canon on disk rather than out of an index.
+ *
+ *  **An index holds `shared` plus one kind, and the committed file is the fleet's whole inventory.**
+ *  The tree selection is per-repository by design — the apps corpus is not law in a library — so a
+ *  catalogue rendered from the built index could never carry the tree its repository is not subject
+ *  to, and the header's claim to cover the fleet canon would be false in whichever repository
+ *  committed it. Walking the canon root is what makes the claim true. @public */
+export function renderCanon(canonRoot = CANON_ROOT): string {
+  const sections: string[] = [header("canon")];
+  for (const tree of ["apps", "libs", "shared"] as Tree[]) {
+    const files = collectFiles(canonRoot, tree, (name) => name.endsWith(".md")).sort();
+    if (files.length === 0) continue;
+    sections.push(`\n## ${TREE_TITLES[tree] ?? tree}\n`);
+    for (const entry of files) {
+      const { title, description } = frontmatter(readFileSync(resolve(canonRoot, entry), "utf-8"));
+      sections.push(`- \`${entry.slice(tree.length + 1)}\` — ${title}: ${description}`);
+    }
   }
   return `${sections.join("\n")}\n`;
 }

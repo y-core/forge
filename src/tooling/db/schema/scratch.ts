@@ -46,12 +46,12 @@ export function replayBaseline(run: DbRunContext, migrations: readonly Migration
 }
 
 /** Loads every declared schema into one empty scratch database in the order `config/db.ts` names them, naming the one that does not execute. @internal */
-export function loadDesired(run: DbRunContext, desired: readonly DesiredState[]): Home {
-  const dir = scratchDir(localScratchConfig(run.config), "desired");
+export function loadDesired(run: DbRunContext, desired: readonly DesiredState[], side: ScratchSide = "desired"): Home {
+  const dir = scratchDir(localScratchConfig(run.config), side);
   const filesDir = join(dir, "files");
   run.io.remove(filesDir);
   run.io.mkdir(filesDir);
-  const home = composeScratchHome(run, "desired");
+  const home = composeScratchHome(run, side);
   for (const state of desired) {
     const file = join(filesDir, `${state.source.replace(/[^A-Za-z0-9_-]+/g, "_")}.sql`);
     run.io.writeText(file, state.text);

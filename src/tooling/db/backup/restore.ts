@@ -10,7 +10,7 @@ import { parseMigrationHeader } from "../schema/header";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbRunContext, Migration } from "../types";
-import { executeFile, queryOne, queryRows, queryRowsIfTable } from "../wrangler";
+import { executeFile, queryBatches, queryRows, queryRowsIfTable } from "../wrangler";
 import {
   appSchemaDigestInput,
   checkRestoreTarget,
@@ -20,7 +20,7 @@ import {
   validateManifest,
   verifyBackupArtifact,
 } from "./artifact";
-import { describeTable, readWholeTable } from "./read";
+import { describeTables, readWholeTable } from "./read";
 import type { RestoreOptions, RestoreOutcome, RestorePlan, RestoreTargetState } from "./types";
 
 function refuseRemoteRestore(run: DbRunContext): void {
@@ -69,13 +69,15 @@ function discoverArtifactMigrations(run: DbRunContext, artifact: string, manifes
 
 function inspect(run: DbRunContext): RestoreTargetState {
   const objects = toSchemaObjects(queryRows(run.io, run.home, INVENTORY_SELECT));
+  const carried = objects
+    .filter((object) => object.type === "table")
+    .map((object) => object.name)
+    .filter((name) => classifyTable(name) === "app" || (classifyTable(name) === "managed" && COMPANION_TABLES.includes(name)));
+  const counted = queryBatches(run.io, run.home, carried.map(rowCountSelect));
   const counts: Record<string, number> = {};
-  for (const object of objects) {
-    if (object.type !== "table") continue;
-    const kind = classifyTable(object.name);
-    if (kind !== "app" && !(kind === "managed" && COMPANION_TABLES.includes(object.name))) continue;
-    counts[object.name] = Number(queryOne(run.io, run.home, rowCountSelect(object.name)).rows ?? 0);
-  }
+  carried.forEach((name, index) => {
+    counts[name] = Number(counted[index]?.[0]?.rows ?? 0);
+  });
   return { objects, counts };
 }
 
@@ -99,9 +101,10 @@ export function prepareRestore(run: DbRunContext, options: RestoreOptions): Rest
   if (manifest.verified.length === 0) io.log("! this artifact was produced with --no-verify and has never been proven to rebuild");
   for (const warning of manifest.warnings) io.log(`! ${warning}`);
 
-  const file = options.route === "full" ? "full.sql" : "data.sql";
-  if (!io.exists(join(artifact, file))) {
-    throw new CliError("invalid-args", `${file} is missing from ${artifact}, and route ${options.route} loads it`);
+  for (const file of options.route === "full" ? ["schema.sql", "data.sql"] : ["data.sql"]) {
+    if (!io.exists(join(artifact, file))) {
+      throw new CliError("invalid-args", `${file} is missing from ${artifact}, and route ${options.route} loads it`);
+    }
   }
 
   verifyBackupArtifact(io, artifact, manifest);
@@ -128,7 +131,10 @@ export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOut
   if (plan.route === "full") {
     const problems = checkRestoreTarget("full", before.objects, before.counts, expectedTables);
     if (problems.length > 0) throw new CliError("invalid-args", `the target is not empty:\n  ${problems.join("\n  ")}`);
-    executeFile(io, home, join(artifact, "full.sql"));
+    // The schema declares the tables, then the rows fill them — the repeated `PRAGMA
+    // defer_foreign_keys=TRUE;` the second file opens with is accepted and not honoured, as it is anywhere.
+    executeFile(io, home, join(artifact, "schema.sql"));
+    executeFile(io, home, join(artifact, "data.sql"));
   } else {
     // `record: false`: `data.sql` carries the artifact's own `_forge_migrations` rows, with their
     // original ids, `applied_at` and `fingerprint`, so recording here would collide with every one.
@@ -149,9 +155,13 @@ export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOut
   });
 
   const declared = new Map(manifest.tables.map((table) => [table.name, table.digest]));
-  const tables = expectedTables.map((name) => {
-    const read = readWholeTable(io, home, describeTable(io, home, name));
-    return { name, rows: read.rows.length, matches: declared.get(name) === sha256(read.rows.map((row) => row.canonical).join("\n")) };
+  const tables = describeTables(io, home, expectedTables).map((table) => {
+    const read = readWholeTable(io, home, table);
+    return {
+      name: table.name,
+      rows: read.rows.length,
+      matches: declared.get(table.name) === sha256(read.rows.map((row) => row.canonical).join("\n")),
+    };
   });
 
   for (const binding of bindings) io.log(`! ${binding}`);

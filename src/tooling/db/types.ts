@@ -261,6 +261,43 @@ export interface SeedOutcome {
   readonly bookmark?: Bookmark;
 }
 
+/** What one `forge db standby reset` run was asked to do. @public */
+export interface StandbyResetOptions {
+  /** Seed just this directory, instead of every one `config/db.ts` names. */
+  readonly dir?: string | undefined;
+  readonly seed: boolean;
+  readonly lint: boolean;
+}
+
+/** What one `forge db standby reset` run rebuilt, by migration and seed name. @public */
+export interface StandbyResetOutcome {
+  readonly database: string;
+  readonly applied: readonly string[];
+  readonly seeded: readonly string[];
+  /** Left out for want of a `-- forge:places standby` line. */
+  readonly excluded: readonly string[];
+}
+
+/** What `composeSeedFixture` writes: where the file goes, the tables in load order, and the rows each holds. @public */
+export interface SeedFixtureOptions {
+  /** The file to write, under a seeds directory `config/db.ts` declares. */
+  readonly path: string;
+  /** The tables to emit, in load order, so a foreign key points at a row already in. */
+  readonly tables: readonly string[];
+  readonly rows: Readonly<Record<string, readonly Readonly<Record<string, unknown>>[]>>;
+  /** The `-- forge:places` line's places; absent writes no line, so the seed runs everywhere. */
+  readonly places?: readonly Place[];
+}
+
+/** What one composed fixture holds, and what the schema no longer declares of it. @public */
+export interface SeedFixtureOutcome {
+  readonly path: string;
+  readonly sha256: string;
+  readonly sql: string;
+  /** Per table, in the order they were emitted; `dropped` names authored keys the schema no longer declares. */
+  readonly tables: readonly { readonly name: string; readonly rows: number; readonly dropped: readonly string[] }[];
+}
+
 /** A position the host config declares: where it is, and the text it was declared as — which is what a message names and a record keys on. @internal */
 export interface DeclaredPath {
   /** Absolute. */

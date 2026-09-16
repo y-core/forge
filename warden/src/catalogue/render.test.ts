@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import type { Corpus, SourceDoc } from "../types";
-import { renderCatalogue } from "./render";
+import { renderCanon, renderCatalogue } from "./render";
 
 function doc(title: string, description: string): string {
   return `---\ntitle: ${title}\ndescription: "${description}"\n---\n\n## 0. Quick Reference\n\n- §1 One: what it decides\n\n## 1. One\n\nBody.\n`;
@@ -78,5 +78,37 @@ describe("renderCatalogue() — the corpus a row is filed under", () => {
   it("keeps the committed file canon-only, whatever else the index holds", () => {
     expect(rendered).not.toContain("forge/UI_CLASS_COMPOSITION.md");
     expect(rendered).not.toContain("docs/NAMESPACES.md");
+  });
+});
+
+describe("renderCanon()", () => {
+  const canon = mkdtempSync(join(tmpdir(), "warden-canon-"));
+  for (const [tree, name, description] of [
+    ["shared", "CODE_RULES.md", "Seven rules every source file obeys."],
+    ["libs", "NAMESPACE_DESIGN.md", "Barrel discipline and the leaf split."],
+    ["apps", "WORKERS_PLATFORM.md", "What the platform gives an application."],
+  ]) {
+    const file = join(canon, String(tree), String(name));
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, doc(String(name), String(description)), "utf-8");
+  }
+  const whole = renderCanon(canon);
+
+  it("carries all three trees, so the header's claim to cover the fleet canon is true", () => {
+    expect(whole).toContain("- `CODE_RULES.md` — CODE_RULES.md: Seven rules every source file obeys.");
+    expect(whole).toContain("- `NAMESPACE_DESIGN.md` — NAMESPACE_DESIGN.md: Barrel discipline and the leaf split.");
+    expect(whole).toContain("- `WORKERS_PLATFORM.md` — WORKERS_PLATFORM.md: What the platform gives an application.");
+  });
+
+  it("names the apps tree, which no per-kind index of a library could ever hold", () => {
+    expect(whole).toContain("## Applications");
+  });
+
+  it("strips the tree from each path, so a row is spelled as a citation spells it", () => {
+    expect(whole).not.toContain("apps/WORKERS_PLATFORM.md");
+  });
+
+  it("is byte-identical on a second render, which is what the drift check depends on", () => {
+    expect(renderCanon(canon)).toBe(whole);
   });
 });

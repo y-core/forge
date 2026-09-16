@@ -38,5 +38,4 @@ test-results/
 .claude/routines
 .claude/scheduled_tasks.json
 .claude/settings.json
-.claude/skills
 .claude/workflows

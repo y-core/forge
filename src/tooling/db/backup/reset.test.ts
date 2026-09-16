@@ -8,13 +8,15 @@ import { resolveDbContext } from "../context";
 import { sha256 } from "../digest";
 import {
   argvHas,
-  describeTableReply,
   fakeDbIo,
-  jsonRows,
-  keyProbeAsks,
+  keyProbeAsked,
   keyProbeReply,
   minimalWranglerConfig,
   projectReadRows,
+  routedReply,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
 } from "../test-support";
 import type { BackupManifest, DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
@@ -83,29 +85,22 @@ function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}, 
 /** A fake wrangler answering the inventory, each app table's count, and a paged read of its rows. */
 function fakeDatabase(seed: Record<string, string>, tasks: readonly Record<string, unknown>[] = ROWS): FakeDbIo {
   const io = fakeDbIo(seed);
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) => {
-      const statement = args[args.length - 1] ?? "";
-      // The batched read `describeTable` makes names both, so it is recognised before either alone.
-      const info = /pragma_table_info\('([^']+)'\)/.exec(statement);
-      if (info !== null) {
-        const table = info[1] ?? "";
-        const columns = COLUMNS[table] ?? [];
-        if (!statement.includes("sqlite_master")) return jsonRows(columns);
-        return describeTableReply(columns, INVENTORY.find((object) => object.name === table)?.sql);
-      }
-      if (statement.includes("sqlite_master")) return jsonRows(INVENTORY);
-      const probe = keyProbeAsks(statement);
-      if (probe !== null) return keyProbeReply(tasks, probe.column);
-      if (statement.includes("COUNT(*)")) return jsonRows([{ rows: tasks.length }]);
-      const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-      const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
-      const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-      const seek = after === null ? tasks : tasks.filter((row) => String(row[key]) > (after[1] ?? ""));
-      return jsonRows(projectReadRows(seek.slice(0, limit)));
-    },
-  });
+  const answer = (statement: string): Record<string, unknown>[] => {
+    const info = tableInfoAsked(statement);
+    if (info !== null) return COLUMNS[info] ?? [];
+    const ddl = tableSqlAsked(statement);
+    if (ddl !== null) return tableSqlReply(INVENTORY.find((object) => object.name === ddl)?.sql);
+    if (statement.includes("sqlite_master")) return INVENTORY;
+    const probe = keyProbeAsked(statement);
+    if (probe !== null) return keyProbeReply(probe.asks, tasks, probe.column);
+    if (statement.includes("COUNT(*)")) return [{ rows: tasks.length }];
+    const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
+    const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
+    const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
+    const seek = after === null ? tasks : tasks.filter((row) => String(row[key]) > (after[1] ?? ""));
+    return projectReadRows(seek.slice(0, limit));
+  };
+  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }
 

@@ -17,21 +17,25 @@ with \`knowledge_outline\`, \`knowledge_search\` or \`warden outline <path>\`.
 
 Generated — run \`warden catalogue --write\` after adding, removing or re-describing a document.
 
-## Libraries
+## Applications
 
-- \`CODE_RULES.md\` — Rules: Six rules.
+- \`WORKERS_PLATFORM.md\` — Rules: Six rules.
 
 ## Shared — every repository, whatever its kind
 
 - \`AGENT_GUIDE.md\` — Rules: Six rules.
+- \`CODE_RULES.md\` — Rules: Six rules.
 `;
 
 function repo(prefix: string, options: { catalogue?: string; docA?: string } = {}): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
   for (const [path, source] of [
     ["docs/A.md", options.docA ?? DOC],
-    ["warden/canon/libs/CODE_RULES.md", DOC],
+    ["warden/canon/shared/CODE_RULES.md", DOC],
     ["warden/canon/shared/AGENT_GUIDE.md", DOC],
+    // The apps tree is not indexed in a libs repository, and the committed catalogue carries it
+    // anyway — that is the whole reason the file is rendered off disk rather than out of the index.
+    ["warden/canon/apps/WORKERS_PLATFORM.md", DOC],
     ...(options.catalogue === undefined ? [] : [["warden/CATALOGUE.md", options.catalogue] as const]),
   ] as const) {
     const file = join(root, path);
@@ -50,6 +54,12 @@ describe("checkWarden()", () => {
 
     expect(result.ok).toBe(true);
     expect(result.summary).toContain("3 documents");
+  });
+
+  it("holds the catalogue to every tree on disk, including the one this repository does not index", () => {
+    const withoutApps = CATALOGUE.replace("## Applications\n\n- `WORKERS_PLATFORM.md` — Rules: Six rules.\n\n", "");
+
+    expect(run(repo("warden-gate-apps-", { catalogue: withoutApps })).ok).toBe(false);
   });
 
   // A misconfigured corpus root discovers nothing, and nothing is indistinguishable from a feature
@@ -155,5 +165,77 @@ describe("checkWarden()", () => {
     const db = openDatabase(path);
     expect(db.query<{ c: number }>("SELECT count(*) AS c FROM source").get()?.c).toBe(3);
     db.close();
+  });
+});
+
+describe("checkWarden() — the filename rule", () => {
+  // The fixture repository's own document is `docs/A.md`, so a canon `A.md` is the collision.
+  function colliding(prefix: string, options: { canonHome?: boolean } = {}): ReturnType<typeof checkWarden> {
+    const root = repo(prefix);
+    mkdirSync(join(root, "warden/canon/libs"), { recursive: true });
+    writeFileSync(join(root, "warden/canon/libs/A.md"), DOC, "utf-8");
+    return checkWarden({
+      root,
+      kind: "libs",
+      indexPath: ":memory:",
+      canonRoot: join(root, "warden/canon"),
+      ...(options.canonHome === undefined ? {} : { canonHome: options.canonHome }),
+    });
+  }
+
+  it("fails the repository's own document, and names the canon one it collides with", () => {
+    const findings = colliding("warden-gate-collide-").findings;
+    const collision = findings.find((finding) => finding.message.includes("is already the name of"));
+
+    expect(collision?.file).toBe("docs/A.md");
+    expect(collision?.message).toBe(
+      "`A.md` is already the name of canon/libs/A.md — rename this document, or delete it where it restates that one",
+    );
+  });
+
+  // The specialising side renames, never the canon: a finding against the canon document would ask
+  // every other repository's citation to move.
+  it("never fails the canon document for a collision with a repository's own", () => {
+    const files = colliding("warden-gate-collide-side-").findings.map((finding) => finding.file);
+
+    expect(files).not.toContain("warden/canon/libs/A.md");
+  });
+
+  it("passes a corpus whose names are all distinct", () => {
+    expect(run(repo("warden-gate-distinct-", { catalogue: CATALOGUE })).ok).toBe(true);
+  });
+
+  // A repository takes one kind or the other, so the two are never in one index.
+  it("exempts a libs/apps canon pair even in the canon's home, where both trees are read", () => {
+    const root = repo("warden-gate-crosskind-");
+    mkdirSync(join(root, "warden/canon/libs"), { recursive: true });
+    writeFileSync(join(root, "warden/canon/libs/WORKERS_PLATFORM.md"), DOC, "utf-8");
+    const result = checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon"), canonHome: true });
+
+    expect(result.findings.filter((finding) => finding.message.includes("is already the name of"))).toEqual([]);
+  });
+
+  // Without the flag the `canon/apps` tree is invisible here, and in an app neither side is a
+  // `project` document — so the pair would be caught nowhere at all.
+  it("reaches the canon tree this repository is not subject to, but only in the canon's home", () => {
+    const root = repo("warden-gate-apps-index-");
+    writeFileSync(join(root, "docs/WORKERS_PLATFORM.md"), DOC, "utf-8");
+    const config = { root, kind: "libs" as const, indexPath: ":memory:", canonRoot: join(root, "warden/canon") };
+    const named = (result: ReturnType<typeof checkWarden>) => result.findings.filter((f) => f.message.includes("is already the name of")).length;
+
+    expect(named(checkWarden(config))).toBe(0);
+    expect(named(checkWarden({ ...config, canonHome: true }))).toBe(1);
+  });
+
+  // Every namespace has one, and a citation of a README always carries its path.
+  it("ignores a README, which is addressed by path rather than by name", () => {
+    const root = repo("warden-gate-readme-");
+    mkdirSync(join(root, "src/one"), { recursive: true });
+    mkdirSync(join(root, "src/two"), { recursive: true });
+    writeFileSync(join(root, "src/one/README.md"), DOC, "utf-8");
+    writeFileSync(join(root, "src/two/README.md"), DOC, "utf-8");
+    const result = checkWarden({ root, kind: "libs", indexPath: ":memory:", canonRoot: join(root, "warden/canon") });
+
+    expect(result.findings.filter((finding) => finding.message.includes("is already the name of"))).toEqual([]);
   });
 });

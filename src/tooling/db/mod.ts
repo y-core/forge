@@ -23,10 +23,14 @@ export type {
   SchemaFacts,
   SchemaObject,
   Seed,
+  SeedFixtureOptions,
+  SeedFixtureOutcome,
   SeedOutcome,
   SeedPlan,
   SharedDbFlags,
   Spawned,
+  StandbyResetOptions,
+  StandbyResetOutcome,
 } from "./types";
 
 export { runMigrate } from "./migrate/apply";
@@ -49,7 +53,10 @@ export type {
 } from "./backup/types";
 
 export { readSeeds } from "./seed/apply";
+export { composeSeedFixture } from "./seed/fixture";
 export { lintSeeds } from "./seed/lint";
+
+export { runStandbyReset } from "./standby";
 
 export { checkSchema } from "./schema/check";
 export { composeMigration } from "./schema/compose";

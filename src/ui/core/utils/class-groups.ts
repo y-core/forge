@@ -1172,6 +1172,7 @@ const ROOT_GROUPS: ReadonlyMap<string, RootRow> = new Map<string, RootRow>([
     "font",
     { n: "--tw-font-weight", x: [3, "font-family"], a: "--tw-font-weight", k: { color: "font-family", url: "font-family", other: "font-family" } },
   ],
+  ["font-face", { n: "font-family", a: "font-family" }],
   ["font-features", { a: "font-feature-settings" }],
   ["font-stretch", { n: "font-stretch", a: "font-stretch" }],
   [

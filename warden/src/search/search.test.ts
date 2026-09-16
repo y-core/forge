@@ -110,6 +110,52 @@ describe("search()", () => {
   });
 });
 
+// No Quick Reference, so every chunk falls past the gloss arm to its own prose and each excerpt is
+// distinct — which is what makes a mis-keyed fetch visible at all.
+const glossless = openDatabase(":memory:");
+{
+  const sources: SourceDoc[] = [];
+  const bare = mkdtempSync(join(tmpdir(), "warden-excerpt-"));
+  for (const [path, weight, body] of [
+    ["CODE_RULES.md", 1.3, "The comment budget is a ceiling."],
+    ["docs/NAMESPACES.md", 1.2, "The comment budget is cited here."],
+    ["src/ui/README.md", 0.9, "The comment budget is mentioned in passing."],
+  ] as const) {
+    const file = join(bare, path.replaceAll("/", "-"));
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `---\ntitle: Doc\ndescription: "One."\n---\n\n## 1. One\n\n${body}\n`, "utf-8");
+    sources.push({
+      corpus: path === "CODE_RULES.md" ? "canon" : "project",
+      ...(path === "CODE_RULES.md" ? { tree: "libs" } : {}),
+      path,
+      file,
+      weight,
+    });
+  }
+  build(glossless, sources, "1.0.0");
+}
+
+describe("search() — the excerpt", () => {
+  it("carries no excerpt unless one was asked for, `body` being the largest column in the table", () => {
+    expect(search(db, "comment budget")[0]?.excerpt).toBeUndefined();
+  });
+
+  // `WHERE rowid IN (…)` returns rows in SQLite's order and not the ranking's, so a fetch zipped by
+  // position would attach each excerpt to the wrong hit — and every hit would still have one, which
+  // is why this pairs each excerpt with the id it belongs to rather than counting them.
+  it("attaches each excerpt to the hit it was fetched for, keyed on rowid and never by position", () => {
+    expect(search(glossless, "comment budget", { excerpt: true }).map((hit) => `${hit.path} ${hit.excerpt}`)).toEqual([
+      "CODE_RULES.md The comment budget is a ceiling",
+      "docs/NAMESPACES.md The comment budget is cited here",
+      "src/ui/README.md The comment budget is mentioned in passing",
+    ]);
+  });
+
+  it("does not move the ranking, the second read touching `chunk` and never `chunk_fts`", () => {
+    expect(search(db, "comment budget", { excerpt: true }).map((hit) => hit.id)).toEqual(search(db, "comment budget").map((hit) => hit.id));
+  });
+});
+
 describe("search() — coverage in the ranking", () => {
   it("ranks a chunk covering the whole query above one BM25 alone would lead with", () => {
     // Both carry `budget`; only the canon chunk carries `ceiling` too.

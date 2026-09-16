@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
+import { devAllowance } from "../dev/allowance";
 import { mapHandler } from "../testing/route";
 import { checkCrossOriginProtection, crossOriginProtection, originProtection } from "./cop";
 import type { OriginProtectionOptions } from "./types";
@@ -67,9 +68,9 @@ describe("checkCrossOriginProtection", () => {
     expect(checkCrossOriginProtection(req)).toEqual({ ok: false, error: "missing-fetch-metadata" });
   });
 
-  it("allows POST when Sec-Fetch-Site is absent and allowMissingHeader: true", () => {
+  it("allows POST when Sec-Fetch-Site is absent and a dev allowance grants missingFetchMetadata", () => {
     const req = new Request("https://example.com/test", { method: "POST" });
-    expect(checkCrossOriginProtection(req, { allowMissingHeader: true })).toEqual({ ok: true });
+    expect(checkCrossOriginProtection(req, { dev: devAllowance({ missingFetchMetadata: true }) })).toEqual({ ok: true });
   });
 });
 
@@ -100,8 +101,8 @@ describe("crossOriginProtection middleware", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
-  it("allows DELETE with no Sec-Fetch-Site when allowMissingHeader: true", async () => {
-    const app = makeApp({ allowMissingHeader: true });
+  it("allows DELETE with no Sec-Fetch-Site under a dev allowance granting missingFetchMetadata", async () => {
+    const app = makeApp({ dev: devAllowance({ missingFetchMetadata: true }) });
     const res = await app.request("/test", { method: "DELETE" });
     expect(res.status).toBe(200);
   });

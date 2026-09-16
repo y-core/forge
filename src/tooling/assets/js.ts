@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 
 import { safeJoin } from "./paths";
+import { bundler } from "./peers";
 import type { ResolvedJsBundle } from "./types";
 
 /** Bundles JavaScript entries with esbuild and writes them to `opts.outDir`. */
@@ -22,7 +23,7 @@ export async function buildJS(
     byOutdir.set(key, group);
   }
 
-  const esbuild = await import("esbuild");
+  const esbuild = await bundler("js.bundles");
   const mapping: Record<string, string> = {};
 
   for (const [outdir, group] of byOutdir) {

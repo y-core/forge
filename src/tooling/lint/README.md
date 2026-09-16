@@ -167,9 +167,9 @@ The twenty-five rules it registers:
 `data-slot-before-spread`, `exact-markup-assertion`, `sql-explicit-transaction`, `suppression-needs-reason`, `type-import-external` and
 `type-import-separation` state no design rule, so the register names none of them. The first is the ordering half of the JSX contract, moved off
 `validate-jsx`'s tag-frame scanner — the pragma half stays in the gate, where a file-presence check belongs. The second is
-[`TESTING.md`][testing-3e] §3e's rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere.
+[`TEST_RUNNERS.md`][testing-3e] §3e's rule, scoped by an `overrides` entry to `src/ui`'s test files rather than turned on everywhere.
 `sql-explicit-transaction` is [`STORAGE_BINDINGS.md`][sb-1g] §1g's rule for runtime code — the migrate lint's `explicit-transaction` states the same
-for migration files — scoped off `src/tooling` and the specs. The last two are [`LIBRARY_ARCHITECTURE.md`][la-8] §8's two halves — where an exported
+for migration files — scoped off `src/tooling` and the specs. The last two are [`FORGE_STRUCTURE.md`][la-8] §8's two halves — where an exported
 type is declared, and how it is imported.
 
 `suppression-needs-reason` is AST-anchored and covers every rule rather than only the design ones: `oxlint --type-aware` already fails a _stale_
@@ -231,7 +231,7 @@ ones this plugin catches in source, rather than the gate catching them in a styl
 - [`UI_DESIGN_GUIDANCE.md`][udg-3] §3, §4 and §5 — the stable rule-id scheme, the anti-drift gate contract, and where a new design rule is written.
 
 [gate-readme]: ../gate/README.md
-[la-8]: ../../../docs/LIBRARY_ARCHITECTURE.md#8-type-declarations-live-in-typests
+[la-8]: ../../../docs/FORGE_STRUCTURE.md#8-type-declarations-live-in-typests
 [sb-1g]: ../../../docs/STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
-[testing-3e]: ../../../docs/TESTING.md#3e-forgeexact-markup-assertion--the-enforced-form
+[testing-3e]: ../../../docs/TEST_RUNNERS.md#3e-forgeexact-markup-assertion--the-enforced-form
 [udg-3]: ../../../docs/UI_DESIGN_GUIDANCE.md#3-rule-identifier-scheme

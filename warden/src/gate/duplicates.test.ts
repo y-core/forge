@@ -32,7 +32,7 @@ describe("checkDuplicates()", () => {
     const result = checkDuplicates(
       config(
         repo("warden-dup-identical-", [
-          ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", RULE)],
+          ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", RULE)],
           ["docs/CODE_RULES.md", doc("the comment budget", RULE)],
         ]),
       ),
@@ -50,7 +50,7 @@ describe("checkDuplicates()", () => {
     const result = checkDuplicates(
       config(
         repo("warden-dup-specialisation-", [
-          ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", RULE)],
+          ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", RULE)],
           [
             "docs/CODE_RULES.md",
             doc(
@@ -79,7 +79,7 @@ describe("checkDuplicates()", () => {
     const result = checkDuplicates(
       config(
         repo("warden-dup-short-", [
-          ["warden/canon/libs/CODE_RULES.md", doc("terse", "Delete it.")],
+          ["warden/canon/shared/CODE_RULES.md", doc("terse", "Delete it.")],
           ["docs/CODE_RULES.md", doc("terse", "Delete it.")],
         ]),
       ),
@@ -91,7 +91,7 @@ describe("checkDuplicates()", () => {
 
   it("excludes an organising stub, whose prose belongs to its children", () => {
     const parent = `---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: budget\n- §1a Child: budget\n\n## 1. One\n\n### 1a. Child\n\n${RULE}\n`;
-    const result = checkDuplicates(config(repo("warden-dup-stub-", [["warden/canon/libs/CODE_RULES.md", parent]])));
+    const result = checkDuplicates(config(repo("warden-dup-stub-", [["warden/canon/shared/CODE_RULES.md", parent]])));
 
     // Three headings, one of them a `## 1.` stub with no prose of its own.
     expect(result.summary).toBe("1 searchable chunks, 0 pairs at or above 0.28, highest 0.000.");
@@ -102,7 +102,7 @@ describe("checkDuplicates()", () => {
     const result = checkDuplicates(
       config(
         repo("warden-dup-order-", [
-          ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", RULE)],
+          ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", RULE)],
           ["docs/CODE_RULES.md", doc("the comment budget", other)],
           ["README.md", doc("the comment budget", RULE)],
         ]),
@@ -120,7 +120,7 @@ describe("duplicatePairs()", () => {
     const pairs = duplicatePairs(
       config(
         repo("warden-dup-pairs-", [
-          ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", RULE)],
+          ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", RULE)],
           ["docs/CODE_RULES.md", doc("the comment budget", other)],
           ["README.md", doc("the comment budget", RULE)],
         ]),
@@ -144,7 +144,7 @@ describe("duplicatePairs()", () => {
       ["src/ui/README.md", `${doc("the comment budget", RULE).replace("description:", "audience: consumer\ndescription:")}`],
     ]);
     const root = repo("warden-dup-consumer-", [
-      ["warden/canon/libs/CODE_RULES.md", doc("the comment budget", other)],
+      ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", other)],
       ["docs/CODE_RULES.md", doc("the comment budget", RULE)],
       ["README.md", doc("the comment budget", RULE)],
     ]);
@@ -160,6 +160,6 @@ describe("duplicatePairs()", () => {
   });
 
   it("reports nothing where the check reports nothing", () => {
-    expect(duplicatePairs(config(repo("warden-dup-pairs-none-", [["warden/canon/libs/CODE_RULES.md", doc("the budget", RULE)]])))).toEqual([]);
+    expect(duplicatePairs(config(repo("warden-dup-pairs-none-", [["warden/canon/shared/CODE_RULES.md", doc("the budget", RULE)]])))).toEqual([]);
   });
 });

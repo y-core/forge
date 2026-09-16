@@ -11,14 +11,17 @@ import { schemaFingerprint } from "../migrate/fingerprint";
 import { toSchemaObjects } from "../sql";
 import {
   argvHas,
-  describeTableReply,
   fakeDbIo,
   jsonRows,
-  keyProbeAsks,
+  keyProbeAsked,
   keyProbeReply,
   minimalWranglerConfig,
   OK,
   projectReadRows,
+  routedReply,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
 } from "../test-support";
 import type { DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
@@ -100,32 +103,30 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
       // A proof reads its scratch under a database named for the route, which is what tells the two apart.
       const scratch = args.some((arg) => arg.includes("-verify-"));
       const rows = scratch ? (over.scratchRows ?? ROWS) : ROWS;
-      const statement = args[args.length - 1] ?? "";
       const inventory = scratch ? (over.scratchInventory ?? INVENTORY) : INVENTORY;
-      // The batched read `describeTable` makes names both, so it is recognised before either alone.
-      const info = /pragma_table_info\('([^']+)'\)/.exec(statement);
-      if (info !== null) {
-        const table = info[1] ?? "";
-        const columns = (over.columns ?? COLUMNS)[table] ?? [];
-        if (!statement.includes("sqlite_master")) return jsonRows(columns);
-        return describeTableReply(columns, String(inventory.find((object) => object.name === table)?.sql ?? ""));
-      }
-      if (statement.includes("sqlite_master")) return jsonRows(inventory);
-      const probe = keyProbeAsks(statement);
-      if (probe !== null) return keyProbeReply(rows[probe.table] ?? [], probe.column);
-      const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
-      if (count !== null) {
-        const table = count[1] ?? "";
-        return jsonRows([{ rows: scratch ? (rows[table] ?? []).length : (over.counts?.[table] ?? (ROWS[table] ?? []).length) }]);
-      }
-      if (statement === RECORDED_CHECKSUM_SELECT) return jsonRows((rows._forge_migrations ?? []).map((row) => ({ name: row.name })));
-      const from = /FROM "([^"]+)"/.exec(statement);
-      const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-      const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
-      const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-      const all = rows[from?.[1] ?? ""] ?? [];
-      const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
-      return jsonRows(projectReadRows(seek.slice(0, limit)));
+      const answer = (statement: string): Record<string, unknown>[] => {
+        const info = tableInfoAsked(statement);
+        if (info !== null) return (over.columns ?? COLUMNS)[info] ?? [];
+        const ddl = tableSqlAsked(statement);
+        if (ddl !== null) return tableSqlReply(String(inventory.find((object) => object.name === ddl)?.sql ?? ""));
+        if (statement.includes("sqlite_master")) return inventory;
+        const probe = keyProbeAsked(statement);
+        if (probe !== null) return keyProbeReply(probe.asks, rows[probe.table] ?? [], probe.column);
+        const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
+        if (count !== null) {
+          const table = count[1] ?? "";
+          return [{ rows: scratch ? (rows[table] ?? []).length : (over.counts?.[table] ?? (ROWS[table] ?? []).length) }];
+        }
+        if (statement === RECORDED_CHECKSUM_SELECT) return (rows._forge_migrations ?? []).map((row) => ({ name: row.name }));
+        const from = /FROM "([^"]+)"/.exec(statement);
+        const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
+        const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
+        const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
+        const all = rows[from?.[1] ?? ""] ?? [];
+        const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
+        return projectReadRows(seek.slice(0, limit));
+      };
+      return routedReply(args[args.length - 1] ?? "", answer);
     },
   });
   return io;
@@ -157,7 +158,7 @@ describe("resolveBackupsDir", () => {
 });
 
 describe("runBackup", () => {
-  it("writes the three artifacts and a manifest, and proves nothing when verify is off", async () => {
+  it("writes the two artifacts and a manifest, and proves nothing when verify is off", async () => {
     const root = appRoot();
     const io = fakeWrangler();
     const outcome = runBackup(await context(root, io), { out: null, verify: false, label: "before the cut" });
@@ -166,11 +167,10 @@ describe("runBackup", () => {
     expect(outcome.directory).toBe(directory);
     expect([...io.files.keys()].filter((path) => path.startsWith(`${directory}/`)).sort()).toEqual([
       join(directory, "data.sql"),
-      join(directory, "full.sql"),
       join(directory, "manifest.json"),
       join(directory, "schema.sql"),
     ]);
-    expect(io.logs).toEqual(["read ✓ 2 rows across 1 tables", "artifacts ✓ full.sql, data.sql, schema.sql"]);
+    expect(io.logs).toEqual(["read ✓ 2 rows across 1 tables", "artifacts ✓ schema.sql, data.sql"]);
     expect(outcome.manifest.verified).toEqual([]);
     expect(outcome.manifest.warnings).toEqual(["--no-verify: nothing in this artifact has been proven to rebuild"]);
     expect(outcome.manifest.label).toBe("before the cut");
@@ -182,7 +182,7 @@ describe("runBackup", () => {
       persistPath: join(root, ".wrangler", "state"),
     });
     expect(outcome.manifest.tables.map((table) => ({ name: table.name, rows: table.rows }))).toEqual([{ name: "tasks", rows: 2 }]);
-    expect(outcome.manifest.artifacts.map((artifact) => artifact.file)).toEqual(["full.sql", "data.sql", "schema.sql"]);
+    expect(outcome.manifest.artifacts.map((artifact) => artifact.file)).toEqual(["schema.sql", "data.sql"]);
     expect(outcome.manifest.drift).toBe("unrecorded");
     expect(JSON.parse(io.files.get(join(directory, "manifest.json")) ?? "{}")).toEqual(outcome.manifest);
   });
@@ -248,7 +248,7 @@ describe("runBackup", () => {
       join(root, "wrangler.jsonc"),
       "--remote",
       "--output",
-      join(directory, "schema.sql"),
+      `${join(directory, "schema.sql")}.tmp`,
       "--no-data",
     ]);
     expect(outcome.manifest.database).toEqual({ name: "app-db", id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", target: "remote", persistPath: null });
@@ -288,7 +288,7 @@ describe("runBackup", () => {
       "--remote",
       "--preview",
       "--output",
-      join(directory, "schema.sql"),
+      `${join(directory, "schema.sql")}.tmp`,
       "--no-data",
     ]);
     expect(outcome.manifest.database.target).toBe("preview");
@@ -407,6 +407,47 @@ describe("runBackup", () => {
     runBackup(await context(root, io), { out: null, verify: false, label: null });
 
     expect(io.files.has(lock)).toBe(false);
+  });
+
+  it("proves route full by loading the two files in order, rather than one file in parts", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    runBackup(await context(root, io), { out: null, verify: true, label: null });
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+
+    expect(io.calls.filter((call) => call.includes("--file")).map((call) => call[call.length - 1])).toEqual([
+      join(directory, "schema.sql"),
+      join(directory, "data.sql"),
+      join(directory, "data.sql"),
+    ]);
+  });
+
+  // The guard on the whole win: a regression into a spawn per table or a part per 64 KiB shows up here
+  // and nowhere else.
+  it("takes a verified backup of one app table and one companion in a bounded number of spawns", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    runBackup(await context(root, io), { out: null, verify: true, label: null });
+
+    expect(io.calls.filter((call) => call[1] === "d1").length).toBe(21);
+  });
+
+  it("refuses a schema.sql that grew a row, which route full would restore twice", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    io.rules.unshift({
+      match: (args) => argvHas(args, "export", "--output"),
+      reply: (args) => {
+        io.writeText(args[args.indexOf("--output") + 1] ?? "", `${SCHEMA_SQL}INSERT INTO "tasks" VALUES('t1','todo');\n`);
+        return OK;
+      },
+    });
+    const run = await context(root, io);
+
+    expect(refusal(() => runBackup(run, { out: null, verify: false, label: null })).message).toBe(
+      "schema.sql is not what a schema-only artifact must be:\n  line 5: an INSERT into tasks — a schema artifact declares tables and carries no row, because route full loads data.sql after it",
+    );
+    expect(io.files.has(join(root, ".forge/backups", DIRECTORY_NAME, "manifest.json"))).toBe(false);
   });
 
   it("refuses while another run holds the lock, naming backup rather than apply", async () => {

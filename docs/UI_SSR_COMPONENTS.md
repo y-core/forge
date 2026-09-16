@@ -226,7 +226,7 @@ form-associated element would hand-maintain `setFormValue` and `setValidity` to 
 **Rejected — Custom Elements as a second path.** Three costs, each sufficient: the spec's mandated hyphenated name moves the namespace out of the
 import and into every consumer's markup as a vendor prefix; the registry is process-global and early-binding, reintroducing global mutable state
 ([`CODE_RULES.md`][cr-1] §1) plus collision and FOUC failure modes late-binding delegation does not have; and the audience does not exist under the
-no-build-step constraint ([`LIBRARY_ARCHITECTURE.md`][la-2] §2), since a consumer able to load the registering module already runs the bundler that
+no-build-step constraint ([`FORGE_STRUCTURE.md`][la-2] §2), since a consumer able to load the registering module already runs the bundler that
 compiles the JSX. **Form-associated elements for the form controls alone** are rejected for the narrower version of the same reason.
 
 ### 1l. Chrome Navigation Announces Only What It Implements
@@ -327,10 +327,10 @@ Some `ui/core` components render a **resumable scope**, whose behaviour wakes on
 Without it the markup still renders but no handler is registered, so **`resume()` warns on every `data-scope` it finds unregistered. Treat that
 warning as a missing client-entry import or a scope-name typo — never as an expected runtime condition.**
 
-[cr-1]: ../warden/canon/libs/CODE_RULES.md#1-zero-global-state-rule
+[cr-1]: ../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
 [eh-5a]: ../warden/canon/libs/ERROR_HANDLING.md#5a-expected-errors--return-result
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
-[la-2]: ./LIBRARY_ARCHITECTURE.md#2-namespace-dependency-tiers
+[la-2]: ./FORGE_STRUCTURE.md#2-namespace-dependency-tiers
 [namespaces-5b]: ./NAMESPACES.md#5b-uicore--ssr-components-only
 [sa]: ./STATE_ATTRIBUTES.md
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

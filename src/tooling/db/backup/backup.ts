@@ -13,25 +13,26 @@ import { localScratchConfig } from "../schema/scratch";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbIo, DbRunContext, Home, RestoreRoute, SchemaFacts } from "../types";
-import { executeFile, exportSql, queryOne, queryRows, queryRowsIfTable, wranglerVersion } from "../wrangler";
+import { executeFile, exportSql, queryBatches, queryRows, queryRowsIfTable, wranglerVersion } from "../wrangler";
 import {
   appSchemaDigestInput,
   BACKUP_FORMAT_VERSION,
   checkDataArtifact,
-  checkFullArtifact,
   checkInventory,
+  checkSchemaArtifact,
   formatBackupDirectory,
   insertStatement,
   manifestSelfDigest,
   UnsupportedValue,
 } from "./artifact";
 import { formatDivergence } from "./compare";
-import { compareTable, describeTable, discoverAppTables, readWholeTable } from "./read";
+import { compareTable, describeTables, discoverAppTables, readWholeTable } from "./read";
 import type { BackupOptions, BackupOutcome, SourceTable } from "./types";
 
 const DATA_PREAMBLE = "PRAGMA defer_foreign_keys=TRUE;";
 
-const ARTIFACT_FILES = ["full.sql", "data.sql", "schema.sql"];
+// Load order: route `full` declares the tables from the first and fills them from the second.
+const ARTIFACT_FILES = ["schema.sql", "data.sql"];
 
 /** Where backups go: the host config's `backupsDir`, or `.forge/backups`, resolved against the root. @internal */
 export function resolveBackupsDir(run: DbRunContext, out: string | null = null): string {
@@ -58,7 +59,11 @@ function tableInserts(source: SourceTable): string[] {
 
 function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute, name: string): void {
   if (route === "full") {
-    executeFile(run.io, scratch, join(directory, "full.sql"));
+    // Both files open with the same `PRAGMA defer_foreign_keys=TRUE;`, so the second repeats it — D1
+    // accepts that pragma without honouring it either time, which is why the order below is what carries
+    // the foreign keys instead.
+    executeFile(run.io, scratch, join(directory, "schema.sql"));
+    executeFile(run.io, scratch, join(directory, "data.sql"));
     return;
   }
   // `record: false`: `data.sql` carries the artifact's own `_forge_migrations` rows, with their
@@ -152,7 +157,7 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
   };
 
   const sources = appTables.map((table) => readWholeTable(io, home, table));
-  const companions = companionNames.map((name) => readWholeTable(io, home, describeTable(io, home, name)));
+  const companions = describeTables(io, home, companionNames).map((table) => readWholeTable(io, home, table));
   io.log(`read ✓ ${sources.reduce((total, source) => total + source.rows.length, 0)} rows across ${sources.length} tables`);
 
   const directory = join(resolveBackupsDir(run, options.out), formatBackupDirectory(home.database, io.now()));
@@ -160,20 +165,22 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
     throw new CliError("invalid-args", `${directory} already exists — a backup a second ago took this name; wait a second and take it again`);
   }
   io.mkdir(directory);
-  exportSql(io, home, join(directory, "schema.sql"), ["--no-data"]);
-  const schemaSql = io.readText(join(directory, "schema.sql"));
+  // Exported to a temporary name and renamed, like every other file here: route `full` loads this one,
+  // so a torn export must not be left under the name the manifest declares.
+  const schemaPath = join(directory, "schema.sql");
+  exportSql(io, home, `${schemaPath}.tmp`, ["--no-data"]);
+  const schemaSql = io.readText(`${schemaPath}.tmp`);
+  io.rename(`${schemaPath}.tmp`, schemaPath);
 
   const rows = [...sources.flatMap(tableInserts), ...companions.flatMap(tableInserts)];
   const dataSql = `${DATA_PREAMBLE}\n${rows.join("\n")}\n`;
-  const fullSql = `${schemaSql.endsWith("\n") ? schemaSql : `${schemaSql}\n`}${rows.join("\n")}\n`;
   writeArtifactFile(io, join(directory, "data.sql"), dataSql);
-  writeArtifactFile(io, join(directory, "full.sql"), fullSql);
 
-  const fullFaults = checkFullArtifact(fullSql);
-  if (fullFaults.length > 0) {
+  const schemaFaults = checkSchemaArtifact(schemaSql);
+  if (schemaFaults.length > 0) {
     throw new CliError(
       "invalid-args",
-      `full.sql is not what a self-contained artifact must be:\n  ${fullFaults.map((fault) => `line ${fault.line}: ${fault.reason}`).join("\n  ")}`,
+      `schema.sql is not what a schema-only artifact must be:\n  ${schemaFaults.map((fault) => `line ${fault.line}: ${fault.reason}`).join("\n  ")}`,
     );
   }
   const dataFaults = checkDataArtifact(dataSql, [...appTables.map((table) => table.name), ...companionNames]);
@@ -195,9 +202,12 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
 
   // Counted after the reads and after the proof, which is the widest window a concurrent write can
   // be caught in: the manifest records the rows the artifact holds, and this says they are all of them.
-  const counts = new Map<string, number>(
-    proved.map((source) => [source.table.name, Number(queryOne(io, home, rowCountSelect(source.table.name)).rows ?? 0)]),
+  const counted = queryBatches(
+    io,
+    home,
+    proved.map((source) => rowCountSelect(source.table.name)),
   );
+  const counts = new Map<string, number>(proved.map((source, index) => [source.table.name, Number(counted[index]?.[0]?.rows ?? 0)]));
   const torn = proved
     .filter((source) => counts.get(source.table.name) !== source.rows.length)
     .map((source) => `${source.table.name}: ${source.rows.length} rows read and ${counts.get(source.table.name) ?? 0} now in the table`);

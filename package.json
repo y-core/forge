@@ -15,6 +15,15 @@
   "warden": {
     "kind": "libs"
   },
+  "forge": {
+    "devOnly": [
+      "./dev",
+      "./testing",
+      "./testing/node",
+      "./testing/workerd",
+      "./tooling/*"
+    ]
+  },
   "scripts": {
     "fix": "bun run src/tooling/root/bin.ts verify --fix",
     "gen:bundles": "bun run src/tooling/gate/checks/bundle.ts",
@@ -49,8 +58,8 @@
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "esbuild": "^0.28.1",
-    "oxfmt": "0.66.0",
-    "oxlint": "1.80.0",
+    "oxfmt": "0.67.0",
+    "oxlint": "1.82.0",
     "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
@@ -58,7 +67,7 @@
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",
-    "sharp": "latest",
+    "sharp": ">=0.33.0",
     "tailwindcss": ">=4.0.0",
     "wrangler": ">=4.0.0"
   },
@@ -104,6 +113,10 @@
     "./context": {
       "types": "./src/context/mod.ts",
       "import": "./src/context/mod.ts"
+    },
+    "./dev": {
+      "types": "./src/dev/mod.ts",
+      "import": "./src/dev/mod.ts"
     },
     "./form": {
       "types": "./src/form/mod.ts",
@@ -176,6 +189,9 @@
     "./testing": {
       "types": "./src/testing/mod.ts",
       "import": "./src/testing/mod.ts"
+    },
+    "./testing/node": {
+      "types": "./src/testing/node.d.ts"
     },
     "./testing/workerd": {
       "types": "./src/testing/workerd.ts",
@@ -312,6 +328,7 @@
     "src/config/",
     "src/context/",
     "src/crypto/",
+    "src/dev/",
     "src/form/",
     "src/html/",
     "src/http/",

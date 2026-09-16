@@ -6,17 +6,24 @@ import {
   classTokensStep,
   cssTokensStep,
   dbSchemaStep,
+  devBoundaryStep,
   exportsStep,
+  exposureStep,
   formatStep,
   jsxStep,
   lintStep,
+  markdownStep,
   modernCssStep,
   testStep,
+  typeAwareLintStep,
   typecheckStep,
   workerdStep,
 } from "./builders";
 import type { Step } from "./types";
 import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
+
+/** The package whose `forge.devOnly` declaration the dev-boundary row reads — this one. */
+const PACKAGE = "@y-core/forge";
 
 const RUNTIME_TYPES = "./.types/cloudflare.d.ts";
 
@@ -54,6 +61,16 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));
 
+  // Opt-in: `markdownStep` reads the prose oxfmt is told to ignore, so an app that takes it must add
+  // `"**/*.md"` to its `.oxfmtrc.json` `ignorePatterns` — otherwise two tools own the same bytes.
+  if (options.markdown !== undefined) {
+    steps.push(markdownStep({ root, ...options.markdown }, { tier: "standard" }));
+  }
+
+  // After `format`, so the fast rows have already had their say, and before anything minutes long: a
+  // run that is going to fail a sub-second type-aware finding should not pay for a browser first.
+  steps.push(typeAwareLintStep({ sources, tier: "standard" }));
+
   // Opt-in: the step runs `warden`, which an app that does not clone the `.claude/` trees has no
   // reason to run even though forge ships it.
   if (options.warden) {
@@ -83,6 +100,21 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   if (options.assetConfig !== undefined && options.workerConfig !== undefined) {
     steps.push(assetRootStep({ root, assetConfig: options.assetConfig, workerConfig: options.workerConfig }));
   }
+
+  // Only the wrangler config is read here, so this row needs no assets half of the coupling.
+  if (options.workerConfig !== undefined) {
+    steps.push(exposureStep({ root, workerConfig: options.workerConfig }));
+  }
+
+  // Default-on, and the one row here an app cannot opt out of: the forbidden specifiers are read
+  // from forge's own installed manifest, so the check needs no configuration to know that
+  // `@y-core/forge/testing` in a deployed bundle loses every write it is handed.
+  steps.push(
+    devBoundaryStep(
+      { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] },
+      { tier: "standard" },
+    ),
+  );
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
   if (options.db) steps.push(...dbSchemaStep({ root }));

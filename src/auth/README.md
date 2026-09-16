@@ -81,7 +81,7 @@ function resolveAuthServices(context: RequestContext, options: AuthOptions): Pro
 at least 32 bytes. Rotation is adding a key and moving `activeKeyId`; the old key stays for as long as tokens signed under it may arrive.
 
 Resolution **throws** on a configuration that cannot work: an `activeKeyId` the ring has no key for, a key shorter than 32 bytes, or COSE `-8` on a
-runtime without Ed25519. That is the resolving-a-binding half of [`ERROR_HANDLING.md`][eh-5e] §5e — operating on a resolved store returns a `Result`
+runtime without Ed25519. That is the resolving-a-binding half of [`FORGE_ERRORS.md`][eh-5e] §5e — operating on a resolved store returns a `Result`
 instead.
 
 The result is cached in a `WeakMap<env, WeakMap<AuthOptions, AuthServices>>`, so one Worker isolate resolves the ring once and every later request
@@ -127,7 +127,7 @@ key-ring change, which is why the present single use is named here rather than r
 observer with read access to the nonce store a consumed-or-not oracle for a token they merely saw in a log.
 
 `AuthTokenReason` is `"expired" | "malformed" | "not-authentic" | "unknown-key" | "unsupported-version"`. It is for your logs and your branching —
-never echo it to a client ([`ERROR_HANDLING.md`][eh-1c] §1c).
+never echo it to a client ([`FORGE_ERRORS.md`][eh-1c] §1c).
 
 ### Key ring construction — `importAuthKeyRing`, `authKeyId`
 
@@ -1078,7 +1078,7 @@ scope root is hand-rendered rather than wrapped in `Resumable` — [`UI_CLIENT_R
   own.
 - [`AUTH_FLOWS.md`][af] — every flow end to end, and the limits this release carries.
 - [`NAMESPACES.md`][namespaces-5h] §5h — the rule that binds all three subpaths, and §5a for what `security` routes here.
-- [`ERROR_HANDLING.md`][eh-5e] §5e — why resolution throws and operations return a `Result`.
+- [`FORGE_ERRORS.md`][eh-5e] §5e — why resolution throws and operations return a `Result`.
 - [`src/crypto/README.md`][crypto-readme] — the sealed primitives this namespace builds on.
 
 [af]: ../../docs/AUTH_FLOWS.md
@@ -1093,8 +1093,8 @@ scope root is hand-rendered rather than wrapped in `Resumable` — [`UI_CLIENT_R
 [boundaries-2c]: ../../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
 [crypto-readme]: ../crypto/README.md
 [dm]: ../../docs/DATABASE_MANAGEMENT.md
-[eh-1c]: ../../docs/ERROR_HANDLING.md#1c-guardresult-and-validationresult-domain-aliases
-[eh-5e]: ../../docs/ERROR_HANDLING.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [namespaces-3b]: ../../docs/NAMESPACES.md#3b-internal-namespaces
 [namespaces-5h]: ../../docs/NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell

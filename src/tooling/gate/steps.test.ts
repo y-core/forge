@@ -107,6 +107,52 @@ describe("selectSteps() — tier membership", () => {
   });
 });
 
+describe("selectSteps() — tier-stable order", () => {
+  // The table a consumer writes is not the order it runs in: a preset emits its full-tier rows where
+  // it happens to know about them, and an appended standard row must still run before them.
+  const INVERTED: readonly Step[] = [
+    { label: "browser", tier: "full", tail: 10, cmd: ["playwright"] },
+    { label: "lint:types", tier: "standard", tail: 10, cmd: ["oxlint"] },
+    { label: "lint", tail: 10, cmd: ["oxlint"] },
+  ];
+
+  it("runs the cheaper tier first, whatever order the table declared", () => {
+    const result = selectSteps(INVERTED, { mode: "full" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(labelsOf(result.steps)).toEqual(["lint", "lint:types", "browser"]);
+  });
+
+  it("keeps declared order within a tier, so `lint` before `format` survives the sort", () => {
+    const table: readonly Step[] = [
+      { label: "lint", tail: 10, cmd: ["oxlint"] },
+      { label: "format", tail: 10, cmd: ["oxfmt"] },
+      { label: "browser", tier: "full", tail: 10, cmd: ["playwright"] },
+      { label: "types:assets", tail: 10, cmd: ["forge"] },
+    ];
+    const result = selectSteps(table, { mode: "full" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(labelsOf(result.steps)).toEqual(["lint", "format", "types:assets", "browser"]);
+  });
+
+  it("sorts an --only selection the same way, so a scoped run is a prefix of the same order", () => {
+    const result = selectSteps(INVERTED, { mode: "full", only: ["browser", "lint:types"] });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(labelsOf(result.steps)).toEqual(["lint:types", "browser"]);
+  });
+
+  it("leaves the caller's table untouched, since a selection may not reorder what it was handed", () => {
+    selectSteps(INVERTED, { mode: "full" });
+
+    expect(labelsOf([...INVERTED])).toEqual(["browser", "lint:types", "lint"]);
+  });
+});
+
 describe("selectSteps() — --only filtering", () => {
   it("narrows to the named labels and marks the run scoped", () => {
     const result = selectSteps(FIXTURE, { mode: "full", only: ["gamma", "alpha"] });

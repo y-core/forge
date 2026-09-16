@@ -305,7 +305,7 @@ Middleware that enforces a Cloudflare Workers Rate Limiting binding. Resolves th
 | `limiter` | `(c) => RateLimitBinding \| undefined` | — (required) | Resolves the binding from app context |
 | `key` | `(c) => string` | see `trustCfHeaders` | The rate-limit key. Always overrides the default, whatever `trustCfHeaders` says |
 | `onLimit` | `(c) => Response \| Promise<Response>` | `429 Too many requests` | Response when the limit is exceeded |
-| `required` | `boolean` | `true` | When `true`, returns `503` if the binding is absent; `false` skips the check |
+| `dev` | `DevAllowance` | — | With `rateLimitOptional` granted, an absent binding is skipped instead of answering `503`. Absent — which is every production route — the binding is required |
 | `trustCfHeaders` | `boolean` | `false` | Opts the **default** key into reading `CF-Connecting-IP`. Left at `false` with no custom `key`, the default resolver throws and the request fails closed with `503` |
 
 ```ts
@@ -318,7 +318,7 @@ interface AppEnv {
 const rateLimitGuard = rateLimit<AppEnv>({
   limiter: (c) => c.env.RATE_LIMITER,
   trustCfHeaders: true, // this Worker runs behind Cloudflare — key by CF-Connecting-IP
-  required: false, // dev-graceful: skip when the binding is absent
+  dev, // minted in src/worker.dev.ts; with `rateLimitOptional`, an absent binding is skipped
 });
 ```
 
@@ -396,7 +396,8 @@ Computes the allowed-origin list for a `ParsedUrl`. Always includes the base ori
 variant for non-`www` hostnames. The variant carries the base origin's port, so a `BASE_URL` on a non-default port grants the `www` host on that
 same port and nothing else.
 
-`{ extraOrigins: [...] }` appends further origins after those. Each entry must be a **normalized origin** — exactly what a browser puts in an
+`{ dev }` — a [`DevAllowance`][dev-readme] carrying `extraOrigins` — appends further origins after those. Each entry must be a **normalized
+origin** — exactly what a browser puts in an
 `Origin` header, so no path, no trailing slash, no credentials, no redundant default port — and must be `https:` or an `http://localhost` /
 `http://127.0.0.1` loopback, the same rule `BaseUrlConfigSchema` applies. Anything else throws, which for a dev entrypoint is boot time. An entry
 already in the list is dropped, so passing the base origin back in is harmless.
@@ -412,12 +413,13 @@ deriveAllowedOrigins(parseUrl("https://example.com:8443"), { includeWww: true })
 // ["https://example.com:8443", "https://www.example.com:8443"]
 
 // dev worker entry only — browser at https://localhost:8787, no proxy in front
-deriveAllowedOrigins(parseUrl(env.BASE_URL), { extraOrigins: ["https://localhost:8787"] });
+deriveAllowedOrigins(parseUrl(env.BASE_URL), { dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) });
 ```
 
-> **Dev entrypoints only.** There is no env var for `extraOrigins` — extras arrive as a parameter from a dev worker entry that production never
-> imports, so the production bundle structurally contains no extra origin, exactly as with the live-reload CSP hash above. Under the standard
-> posture dev is https at every hop and no extra origin is needed at all; see [Dev is https at every hop](#dev-is-https-at-every-hop).
+> **Dev entrypoints only, and checked.** There is no env var for extra origins: they ride on a token `@y-core/forge/dev` mints, and
+> `validate-dev-boundary` fails that import from anything but a `*.dev.ts` entry — so the production bundle structurally contains no extra origin,
+> exactly as with the live-reload CSP hash above. Under the standard posture dev is https at every hop and no extra origin is needed at all; see
+> [Dev is https at every hop](#dev-is-https-at-every-hop).
 
 ### `BaseUrlConfigSchema`
 
@@ -461,7 +463,8 @@ typical form route combines all three: `requireFormContentType()`, an origin/cro
 #### `crossOriginProtection(options?)` / `checkCrossOriginProtection(request, options?)`
 
 Rejects state-changing requests (anything other than `GET`/`HEAD`/`OPTIONS`/`TRACE`) with `403` unless the browser **Fetch Metadata**
-`Sec-Fetch-Site` header says `same-origin` or `none`, and rejects a request carrying no such header unless `allowMissingHeader: true` is passed. It
+`Sec-Fetch-Site` header says `same-origin` or `none`, and rejects a request carrying no such header unless a [`DevAllowance`][dev-readme] granting
+`missingFetchMetadata` is passed. It
 matches Go's `http.CrossOriginProtection`. Why `same-site` is rejected too — the allowlist-not-denylist reading — is
 [`SECURITY_HARDENING.md`][sh-3e] §3e's.
 
@@ -478,7 +481,7 @@ app.use("/form/*", crossOriginProtection());
 
 | `CrossOriginProtectionOptions` field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `allowMissingHeader` | `boolean` | `false` | When `true`, allows requests with no `Sec-Fetch-Site` header |
+| `dev` | `DevAllowance` | — | With `missingFetchMetadata` granted, allows requests with no `Sec-Fetch-Site` header. Only a development entry can mint one |
 
 #### `originProtection(options)`
 
@@ -519,7 +522,7 @@ app.use("/api/*", originProtection({ allowedOrigins: (c) => c.var.config.allowed
 Responses produced **outside** the middleware chain (router internals, a 500 thrown before the chain runs) never see `createSecurityHeaders`. Use
 `applySecurityHeaders(response, options?)` to harden them explicitly (pass `options.nonce` to reuse a nonce already embedded in the markup). The
 app's last-resort `500` already ships a baseline-hardened response of its own — that baseline, and the three error paths it belongs to, are
-[`ERROR_HANDLING.md`][eh-5b] §5b's.
+[`FORGE_ERRORS.md`][eh-5b] §5b's.
 
 ### Dev/prod CSP split without leakage
 
@@ -551,9 +554,9 @@ together.
 a dev server speaking `http` behind a TLS-terminating proxy rejects the browser's `https` origin — its own forms included.
 
 **What to do:** serve https at every hop in dev — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and
-reach for `extraOrigins` only in the proxy-less case. The posture — including why the scheme is never patched up in middleware and why HSTS and
-`Secure` cookies stay hardcoded — is [`WORKERS_PLATFORM.md`][wp-4e] §4e's; how `allowedOrigins` is derived here, and what `extraOrigins` may hold,
-are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
+reach for the allowance's `extraOrigins` only in the proxy-less case. The posture — including why the scheme is never patched up in middleware and
+why HSTS and `Secure` cookies stay hardcoded — is [`WORKERS_PLATFORM.md`][wp-4e] §4e's; how `allowedOrigins` is derived here, and what the extra
+origins may hold, are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
 
 ---
 
@@ -567,7 +570,8 @@ are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
 - [`WORKERS_PLATFORM.md`][wp-4e] §4e — the https-everywhere development transport posture the origin guards depend on
 
 [assets-readme]: ../assets/README.md
-[eh-5b]: ../../docs/ERROR_HANDLING.md#5b-unexpected-errors--the-router-error-boundary
+[dev-readme]: ../dev/README.md
+[eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [sh]: ../../docs/SECURITY_HARDENING.md

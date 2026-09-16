@@ -5,8 +5,11 @@ export type Kind = "libs" | "apps";
 export interface SyncTree {
   /** Destination, relative to the repository root. */
   tree: string;
-  /** Source, absolute, inside the installed warden directory. */
-  from: string;
+  /** Sources, absolute, inside the installed warden directory, layered in order — a later source
+   *  overwrites a file of the same name from an earlier one. More than one, because a shared
+   *  definition and a kind-specific one land in the same destination and a second `SyncTree` naming
+   *  it would replace rather than add to the first. */
+  from: readonly string[];
 }
 
 /** One file a sync writes only when it is absent. @public */

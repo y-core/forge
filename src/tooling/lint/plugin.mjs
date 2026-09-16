@@ -1802,7 +1802,7 @@ var typeImportExternal = {
         if (declaration === void 0 || declaration === null || !DECLARED.has(declaration.type)) return;
         const name = declaration.id?.name ?? "this type";
         context.report({
-          message: `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` \u2014 move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/LIBRARY_ARCHITECTURE.md \xA78).`,
+          message: `\`export ${kindOf(declaration.type)} ${name}\` is declared outside \`types.ts\` \u2014 move it to the \`types.ts\` beside this file and import it with its own \`import type\` line (docs/FORGE_STRUCTURE.md \xA78).`,
           loc: node.loc
         });
       }
@@ -1827,7 +1827,7 @@ var typeImportSeparation = {
         if (inline.length === 0) return;
         const named2 = inline.map((specifier) => `\`${specifier.local?.name ?? "?"}\``).join(", ");
         context.report({
-          message: `${named2} rides in on a value import as an inline \`type\` specifier \u2014 give the type its own \`import type { \u2026 }\` line, so what this file needs at runtime is legible from the import block alone (docs/LIBRARY_ARCHITECTURE.md \xA78).`,
+          message: `${named2} rides in on a value import as an inline \`type\` specifier \u2014 give the type its own \`import type { \u2026 }\` line, so what this file needs at runtime is legible from the import block alone (docs/FORGE_STRUCTURE.md \xA78).`,
           loc: node.loc
         });
       }

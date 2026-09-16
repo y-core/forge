@@ -134,9 +134,11 @@ pre-built step, whose label is its `--only` token:
 | `exportsStep` | `validate-exports` | `checkExports` | Every declared subpath resolves; every `@public` symbol is in its barrel; every barrel, `files[]` entry and asset is reachable; and no escape entry restates the `client` convention or names a subpath that is gone |
 | `namespaceGraphStep` | `validate-namespace-graph` | `checkNamespaceGraph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
 | `assetRootStep` | `validate-asset-root` | `checkAssetRoot` | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions |
+| `exposureStep` | `validate-exposure` | `checkExposure` | The Worker config states `workers_dev`, `preview_urls` and `routes` — intent, not a particular value |
 | `assetManifestStep` | `validate-asset-manifest` | `checkAssetManifest` | Every path the emitted assets manifest maps to exists under `publicDir` |
 | `coLocationStep` | `validate-co-location` | `checkCoLocation` | Every source module has a test beside it, so deleting one is loud — bar a `types.ts` or `bin.ts`, each held to declaring nothing callable |
 | `buildTimeBoundaryStep` | `validate-build-time-boundary` | `checkBuildTimeBoundary` | No module outside a build-time directory imports one at value |
+| `devBoundaryStep` | `validate-dev-boundary` | `checkDevBoundary` | The Worker's `main` is not a `*.dev.ts` entry, nothing imports one, and only such an entry imports a dev-only module at value |
 | `ssrBoundaryStep` | `validate-ssr-boundary` | `checkSsrBoundary` | No Worker-executed module reaches the browser-only tier |
 | `jsxStep` | `validate-jsx` | `checkJsx` | Every shipped `.tsx` carries its pragmas |
 | `markdownStep` | `validate-markdown` | `checkMarkdown` | Markdown holds the house conventions — compact tables, one bullet marker, tagged fences, no stray whitespace |
@@ -370,7 +372,7 @@ Flags:
 | --- | --- |
 | `--mode <m>` | Which tier to run: `fast`, `standard` or `full`. Default `standard`. An unrecognised value is refused. |
 | `--full` | Sugar for `--mode full`. Passing both is refused rather than given a precedence. |
-| `--only <a,b>` | Run only those steps, in table order. Repeatable. An unknown label is refused with the known ones listed. |
+| `--only <a,b>` | Run only those steps, in the run's own order. Repeatable. An unknown label is refused with the known ones listed. |
 | `--list` | Print the resolved selection and exit, running nothing. |
 | `--fix` | Run each selected step's fixer instead of the step. Steps without one are counted as having no fixer. |
 
@@ -402,7 +404,7 @@ Behaviour worth relying on:
 | Field | Type | Description |
 | --- | --- | --- |
 | `label` | `string` | Stable identifier — the `--only` token, and the name reported on failure. |
-| `tier` | `GateMode?` | The **lowest** mode this step runs in; absent means `fast`. An ordered tier rather than a set of modes, so `fast ⊆ standard ⊆ full` holds by construction — selection is a rank comparison, not a membership test. |
+| `tier` | `GateMode?` | The **lowest** mode this step runs in; absent means `fast`. An ordered tier rather than a set of modes, so `fast ⊆ standard ⊆ full` holds by construction — selection is a rank comparison, not a membership test. It is also the sort key: the run is tier-stable, cheaper tier first, declared order within a tier. |
 | `requires` | `StepRequirement?` | Dependency probed before the step runs: absent, only a full run fails it; the lower tiers skip it. |
 | `cmd` | `readonly [string, ...string[]]` | Executable followed by its arguments. |
 | `tail` | `number` | Lines of captured output shown when the step fails. |
@@ -438,14 +440,25 @@ reading it as "select no steps" would refuse every unscoped run.
 
 #### `cloudflareWorkerSteps(options?)`
 
-The step table every Cloudflare Worker app in this fleet shares, in execution order: `types:cf-runtime` → `types:cf-bindings` → `types:assets` →
-`validate-asset-manifest` → `typecheck` → `lint` → `format` → (`warden`) → (`validate-modern-css` → `validate-class-order` → `validate-class-tokens`
-→ `validate-css-tokens`) → `test` → (`validate-asset-root`) → (`test:browser`). Generation leads judgement, so a stale generated type surfaces as a
-type error.
+The step table every Cloudflare Worker app in this fleet shares, in declared order: `types:cf-runtime` → `types:cf-bindings` → `types:assets` →
+`validate-asset-manifest` → `typecheck` → `lint` → `format` → (`validate-markdown`) → `lint:types` → (`warden`) → (`validate-modern-css` →
+`validate-class-order` → `validate-class-tokens` → `validate-css-tokens`) → `test` → (`validate-asset-root`) → (`validate-exposure`) →
+`validate-dev-boundary` → (`db:schema:digests` → `db:schema`) → (`test:browser`) → (`test:workerd`). Generation leads judgement, so a stale
+generated type surfaces as a type error. Execution order is the tier-stable one — cheaper tier first, declared order within a tier — so the
+`full`-tier rows run last however the table was written.
 
-**The default table declares no dependency and puts every row on the `fast` tier**, so it runs whole in a fast run. The two opt-ins are what change
-that: `browser` adds the only `full`-tier row, and `design` adds the only rows carrying a `tailwindcss` prerequisite — skipped below the `full` tier
-on a machine without it, failed in a full run.
+**`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's own installed manifest
+(`forge.devOnly` in `package.json`), so an app that configures nothing still fails on a deployed module importing `@y-core/forge/testing` — whose
+fakes lose every write — or `@y-core/forge/dev`, whose token is what opens each dev-only relaxation ([`NAMESPACES.md`][namespaces-5i] §5i). Its
+`main` rule reads `workerConfig` when given and `wrangler.jsonc` otherwise.
+
+**The default table declares no dependency and puts every row but `lint:types` and `validate-dev-boundary` on the `fast` tier.** Both are
+`standard`. The type-aware lint row is `standard` because it
+builds its own TypeScript program, and it sits immediately after `format` so a run that is going to fail a sub-second finding never pays for a
+browser first. The opt-ins are what add the rest: `browser` and `workerd` add `full`-tier rows, `db` adds one row per tier, `design` adds the
+rows carrying a `tailwindcss` prerequisite — skipped below the `full` tier on a machine without it, failed in a full run — and `markdown` adds
+`validate-markdown`, which requires the app to ignore its markdown in `.oxfmtrc.json` so the formatter and the check do not fight for the same
+bytes.
 
 The two `wrangler types` invocations are two steps rather than one `&&` chain, so a failure names which one broke. `--config` goes on the bindings
 invocation only — runtime types do not depend on the wrangler config.
@@ -459,12 +472,13 @@ invocation only — runtime types do not depend on the wrangler config.
 | `assetConfig` | `string?` | — | Asset config path. Omit to skip the `types:assets` step entirely. |
 | `assetOut` | `string` | `.forge/assets.ts` | Where the asset-types emitter writes. |
 | `wranglerTypes` | `boolean` | `true` | Emit the two `wrangler types` steps. `false` for an app that declares its binding types by hand. |
-| `workerConfig` | `string?` | — | `--config` for the bindings invocation. |
+| `workerConfig` | `string?` | — | `--config` for the bindings invocation, and the config `validate-exposure` and `validate-dev-boundary` read. |
 | `warden` | `boolean` | `false` | Add the `warden sync --check` step. Opt-in: it needs the cloned `.claude/` trees. |
 | `root` | `string` | `process.cwd()` | Application root, needed by the asset-root and design checks. |
 | `db` | `boolean` | `false` | Add the two `forge db schema check` rows: `db:schema:digests` in `standard`, `db:schema` (a real replay) in `full`. |
 | `browser` | `boolean` | `false` | Add the `full`-tier `test:browser` step, last in the table. |
 | `design` | `CloudflareWorkerDesignOptions?` | — | Add the design rows. Omit for an app that does not use `ui/*`. |
+| `markdown` | `Omit<MarkdownCheckConfig, "root">?` | — | Add the `validate-markdown` row. Requires ignoring markdown in `.oxfmtrc.json`. |
 
 `CloudflareWorkerDesignOptions`:
 
@@ -578,7 +592,7 @@ The parsers the export and README checks read a `mod.ts` with, published because
 - [`@y-core/forge/tooling/cli`][cli-readme] — the command framework and `resolveAppRoot`.
 - [`BUILD_TOOLING.md`][bt-2f] §2f, §2g, §2h and §2i — the published gate, the fleet preset, root resolution, and why checks are functions rather
   than scripts.
-- [`TESTING.md`][testing-6] §6 — the gate's three modes and its flags as forge itself runs them.
+- [`TEST_RUNNERS.md`][testing-6] §6 — the gate's three modes and its flags as forge itself runs them.
 - [`TESTING.md`][testing-6a] §6a — the general law the modes and the dependency skip implement.
 
 [bt-2]: ../../../docs/BUILD_TOOLING.md#2-toolinggate-and-toolingrelease--project-tooling
@@ -586,7 +600,8 @@ The parsers the export and README checks read a `mod.ts` with, published because
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [cli-readme]: ../cli/README.md
 [lint-readme]: ../lint/README.md
+[namespaces-5i]: ../../../docs/NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
 [release-readme]: ../release/README.md
 [result-readme]: ../../result/README.md
-[testing-6]: ../../../docs/TESTING.md#6-the-verification-gate
+[testing-6]: ../../../docs/TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-three-modes

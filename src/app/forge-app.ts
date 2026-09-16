@@ -62,7 +62,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   private _router?: ReturnType<typeof createRouter>;
   private _onError?: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   private _notFound?: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
-  private _isDebug?: (c: AppContext<Bindings>) => boolean;
+  private _errorDetail = false;
   /** Config store attached by `registerConfig`. @internal */
   configStore?: Config<unknown>;
   private _shell?: PageShell<Bindings>;
@@ -89,8 +89,9 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     return new Response("Not Found", { status: 404, headers: { ...BASELINE_HEADERS, "content-type": "text/plain; charset=utf-8" } });
   }
 
-  setIsDebug(fn: (c: AppContext<Bindings>) => boolean): void {
-    this._isDebug = fn;
+  /** Whether the boundary's 500 page prints the thrown message; only a `DevAllowance` turns it on. */
+  setErrorDetail(enabled: boolean): void {
+    this._errorDetail = enabled;
   }
 
   /** Registers the document shell every mounted page renders into — the single writer of that slot. */
@@ -217,15 +218,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       }
     }
     this._logger.error("Unhandled error", { error: serializeError(err) });
-    let isDebug = false;
-    try {
-      if (this._isDebug) {
-        isDebug = this._isDebug(context);
-      }
-    } catch {
-      /* ignore */
-    }
-    const detail = isDebug ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
+    const detail = this._errorDetail ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
     // Only ever echoed, never generated here: an id exists only where `requestId` middleware ran.
     const reference = requestIdCtx.getOptional(context);
     const quote = reference ? `<p>Reference: ${escapeHtml(reference)}</p>` : "";

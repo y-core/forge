@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execute } from "../cli/execute";
 import type { CommandBase } from "../cli/types";
 import { createDbCommands } from "./commands";
-import { bufferedIO, fakeDbIo, minimalWranglerConfig } from "./test-support";
+import { bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "./test-support";
 import type { FakeDbIo } from "./types";
 
 const roots: string[] = [];
@@ -56,6 +56,31 @@ describe("createDbCommands()", () => {
   it("mounts bookmark with the two Time Travel verbs under it", () => {
     const bookmark = subcommand(createDbCommands(), "bookmark");
     expect(bookmark?.commands.map((c) => c.name)).toEqual(["info", "restore"]);
+  });
+});
+
+describe("forge db standby reset", () => {
+  it("defaults --target to standby, so the bare verb builds the second database", () => {
+    const reset = subcommand(subcommand(createDbCommands(), "standby") as CommandBase, "reset");
+    const target = reset?.flags?.target;
+    expect(target?.type === "string" ? target.default : null).toBe("standby");
+  });
+
+  it("prints one JSON document naming the standby database it rebuilt", async () => {
+    const root = appRoot();
+    const io = fakeDbIo();
+    io.rules.push(
+      {
+        match: (args) => args.includes("--json") && (args.at(-1) ?? "").includes("_forge_migrations"),
+        reply: { code: 1, stdout: "", stderr: "no such table: _forge_migrations" },
+      },
+      { match: (args) => args.includes("--json"), reply: jsonRows([]) },
+      { match: (args) => args.includes("--yes"), reply: OK },
+    );
+
+    const cli = await runDb(io, ["standby", "reset", "--root", root, "--yes", "--json"]);
+
+    expect(cli.out).toEqual([`{"target":"standby","database":"app-db-standby","applied":[],"seeded":[],"excluded":[]}`]);
   });
 });
 

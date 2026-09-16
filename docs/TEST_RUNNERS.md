@@ -359,6 +359,10 @@ See [`TESTING.md`][testing-6] §6 for the one-command-three-modes gate, the flag
 
 `test` is scoped to `src/`, so the fast tier runs the co-located suites alone and the workerd set is reached only through its own step (§1d).
 
+The table is not the running order: the selector sorts by tier after filtering, so every `fast` row runs before every `standard` one and both before
+`full`, with declared order preserved inside each tier. `config/steps.ts` is therefore read as a per-tier sequence — `browserStep` sitting above
+`dbSchemaStep` in the file does not put Chromium ahead of the standard-tier digest check.
+
 ---
 
 ## 7. Testing Namespace Utilities (`@y-core/forge/testing`)
@@ -430,6 +434,18 @@ those modules exists there — putting the symbol on the barrel would make every
 a module its own program cannot type. Off the barrel, the only way to reach it is to ask for it by name, which is a decision the importing file
 makes visibly. `checkExports` supports this directly: a non-`mod.ts` export target is excluded from its parent barrel's `@public` coverage walk, so
 "published but off the barrel" is a shape the gate holds rather than one it tolerates.
+
+**A suite that imports it references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a types-only subpath declaring exactly
+the node surface `workerd.ts` reaches — the six `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
+file that reaches `startDevServer`:
+
+```ts
+/// <reference types="@y-core/forge/testing/node" />
+```
+
+A type reference directive is resolved per file, so the Worker half of the same program keeps an empty `types` array and sees none of it. This is
+the supported way to put `tests/workerd/**` in a consumer's type program; dropping the directory from `include`, or adding `node` to `types`, is
+not. Forge exercises it from `tests/fixtures/workers-consumer/workerd-suite.ts`, which compiles under `"types": []` the way a consumer's does.
 
 **`wrangler` is an optional peer dependency**, declared because the module resolves the CLI out of the importing package's own tree —
 `import.meta.resolve("wrangler/package.json")`, never a path relative to forge's checkout. A consumer that imports this subpath installs `wrangler`;

@@ -37,9 +37,11 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 - §6b Subsection Citability Test: a `###` exists to be cited, not to be long
 - §6c Decisions Versus Usage — the README Boundary: examples live beside the source
 - §6d The Canon Versus This Repository's Docs: portable rule or local fact
+- §6e No Two Governing Documents Share a Filename: per-index uniqueness, and which side renames
 - §7 Quick Reference Convention: one line per `##` and `###`
 - §8 Single Home Rule and the Source-of-Truth Register: where each fact is allowed to live
 - §9 No Dated or Ticketed Content: no dates, task IDs, or changelog notes
+- §10 `CLAUDE.md` — What Belongs In It: the non-obvious only, one line each, and nothing a document owns
 
 ---
 
@@ -303,6 +305,28 @@ and section — `CODE_RULES.md §5c` — because a path would dangle there. The 
 the link resolves, and the docs check holds the path against the file. Either way the name and the section are what the citation is; the path, where
 one is written, is a convenience for the reader who can follow it.
 
+### 6e. No Two Governing Documents Share a Filename
+
+Because the name and the section _are_ the citation (§6d), **two governing documents reachable from one repository may not share a filename.** With
+two `TESTING.md` in reach, `TESTING.md §2a` names two different rules, and no amount of tooling fixes that: the ambiguity is in the reader's head,
+not in the index.
+
+**Uniqueness is per index, not global.** One repository's `ARCHITECTURE.md` and another's cost nothing while neither can see the other's documents.
+What matters is the set one reader has in front of them at once — the canon they are subject to, this repository's own `docs/`, and the
+consumer-facing documents of any library installed here.
+
+**`canon/libs/X.md` and `canon/apps/X.md` are exempt**, and only those. A repository takes one kind or the other, so the two are never in one index
+and no citation can mean both.
+
+**The specialising side renames; the canon never does.** The canon's name is what every other repository already cites, and an installed library's
+name is what its own readers cite. The document free to move is the local one.
+
+**Where the local document only restates the one it collides with, the answer is to delete it rather than to rename it.** A rename preserves a
+second copy of a rule that already has a home, which §8's single-home rule forbids on its own.
+
+A rename carries its inbound citations with it: link tables in `CLAUDE.md`, cross-references from sibling documents, and any committed query set
+that names the old filename.
+
 ---
 
 ## 7. Quick Reference Convention
@@ -351,5 +375,33 @@ Forbidden: calendar dates in `YYYY-MM-DD` form, "as of" qualifiers, task or tick
 `previously…`).
 
 A rule that needs a date to make sense is not a rule yet. `CHANGELOG.md` and git history own the past; a governing document owns only the present.
+
+---
+
+## 10. `CLAUDE.md` — What Belongs In It
+
+`CLAUDE.md` is loaded into every agent's context, on every task, before anything is asked. **The context window is finite, so every line has to earn
+its place** — the same argument `CODE_RULES.md` §5 makes about a comment, one level up and with a larger bill, because a `CLAUDE.md` line is read on
+every turn in the repository rather than on every read of one file.
+
+**What earns a line — the non-obvious:**
+
+- A command that cannot be found from `package.json`, or one whose obvious spelling is wrong.
+- A convention a competent reader would otherwise violate, because nothing in the tree signals it.
+- A gotcha with a real cost — a thing that looks safe, is not, and fails in a way that is expensive to discover.
+- The placement rules that decide where new code goes, which is the question an agent asks first and the one the tree cannot answer.
+
+**What does not:**
+
+- Anything a filename or a class name already says. A reader who can open the file does not need the line.
+- Anything a linter, a type checker or the gate already enforces. A mechanically enforced rule needs no prose copy; the failure is the notice.
+- Anything a governing document owns. §8 applies to `CLAUDE.md` exactly as it applies to `docs/`: carry the one-line imperative and the citation,
+  never the rule's body. A second copy of a rule is an amendment the moment the two disagree.
+- Generic engineering advice. "Write tests", "handle errors", "use meaningful names" — true everywhere, and therefore about nothing here.
+- A table of governing documents. The catalogue is served (§1) and a hand-maintained list beside it can disagree with it, which is the one failure a
+  reader cannot detect from the list itself (§5c).
+
+**A stale line is worse than an absent one.** An absent rule is looked up; a wrong one is believed and acted on. When a command, a path or a
+convention changes, the `CLAUDE.md` line naming it changes in the same commit, or it is deleted.
 
 [pl]: ./PLAIN_LANGUAGE.md

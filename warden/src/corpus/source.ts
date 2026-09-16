@@ -26,7 +26,15 @@ const CANON_TREES: readonly Tree[] = ["shared", "libs", "apps"];
  *  among them rather than sink it. The floor margin widened on its own (0.392/0.308 before the sweep,
  *  0.390/0.271 after), which is the sweep's real effect. The sweep itself is no longer a manual one:
  *  `warden:duplicates` measures it every run, so a later re-examination starts from that step's
- *  output rather than from this paragraph. @public */
+ *  output rather than from this paragraph.
+ *
+ *  **Dropping the READMEs from the corpus is no longer free, and used to look it.** They are 464 of
+ *  1,294 searchable chunks, and removing all of them moved MRR 0.874 → 0.878 — invisible to the
+ *  gate, while still surfacing in top-5 for real queries and supplying two of the five loudest
+ *  negative-set peaks. Ten `reference` golden queries now hold one README chunk each at rank 1, so
+ *  the same removal is ten failures rather than a rounding error. That is the point of them: the
+ *  next person weighing this paragraph's 0.9 against deleting the bucket entirely gets an answer
+ *  from the gate instead of from a measurement that could not see what it was measuring. @public */
 export function weightOf(corpus: Corpus, path: string): number {
   if (corpus === "canon") return 1.3;
   if (corpus === "dependency") return dependencyWeightOf(path);
@@ -48,13 +56,19 @@ export function canonSources(kind: Tree, canonRoot = CANON_ROOT): SourceDoc[] {
   );
 }
 
-/** The repository's own indexable documents: `docs/`, the design corpus, every README, and warden's own. @public */
-export function localSources(root: string, docsDir = "docs"): SourceDoc[] {
+/** The repository's own indexable documents: `docs/`, the design corpus, every source README, and warden's own.
+ *
+ *  **The root README is indexed in a library and not in an application.** A library's README is prose a
+ *  ruling can live in — five of forge's own READMEs own their namespace's rulings outright — so indexing it is
+ *  deliberate. An application's root README is a human-facing entry point with no frontmatter, so it
+ *  reaches `knowledge://catalogue` as an empty gloss, and a map entry that describes itself to nobody is
+ *  worse than an absent one. @public */
+export function localSources(root: string, kind: Tree, docsDir = "docs"): SourceDoc[] {
   const paths = [
     ...collectFiles(root, docsDir, (name) => name.endsWith(".md")),
     ...collectFiles(root, "src/ui/design", (name) => name.endsWith(".md")),
     ...collectFiles(root, "src", (name) => name === "README.md"),
-    ...(existsSync(resolve(root, "README.md")) ? ["README.md"] : []),
+    ...(kind === "libs" && existsSync(resolve(root, "README.md")) ? ["README.md"] : []),
     ...(existsSync(resolve(root, "warden/README.md")) ? ["warden/README.md"] : []),
   ];
   return [...new Set(paths)]
@@ -68,7 +82,7 @@ export function localSources(root: string, docsDir = "docs"): SourceDoc[] {
  *  library's documents are served only where a repository has asked for them. @public */
 export function discover(root: string, kind: Tree, options: { canonRoot?: string; docsDir?: string; dependencyRoot?: string } = {}): SourceDoc[] {
   const canon = canonSources(kind, options.canonRoot ?? CANON_ROOT);
-  const local = localSources(root, options.docsDir ?? "docs");
+  const local = localSources(root, kind, options.docsDir ?? "docs");
   const library = options.dependencyRoot === undefined ? [] : librarySources(options.dependencyRoot);
   return [...canon, ...local, ...library].map((doc) => ({ ...doc, path: doc.path.split(sep).join(posix.sep) }));
 }

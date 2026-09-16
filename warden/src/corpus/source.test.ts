@@ -51,16 +51,29 @@ describe("canonSources()", () => {
 });
 
 describe("localSources()", () => {
-  it("takes docs/, the design corpus, every source README, and the front page", () => {
-    const root = tree(["docs/NAMESPACES.md", "src/ui/design/floor.md", "src/ui/README.md", "src/ui/core/button.tsx", "README.md"], "warden-local-");
+  const files = ["docs/NAMESPACES.md", "src/ui/design/floor.md", "src/ui/README.md", "src/ui/core/button.tsx", "README.md"];
 
-    expect(localSources(root).map((doc) => doc.path)).toEqual(["README.md", "docs/NAMESPACES.md", "src/ui/README.md", "src/ui/design/floor.md"]);
+  it("takes docs/, the design corpus, every source README, and a library's front page", () => {
+    const root = tree(files, "warden-local-");
+
+    expect(localSources(root, "libs").map((doc) => doc.path)).toEqual([
+      "README.md",
+      "docs/NAMESPACES.md",
+      "src/ui/README.md",
+      "src/ui/design/floor.md",
+    ]);
+  });
+
+  it("drops an application's front page, which has no frontmatter and would gloss as nothing", () => {
+    const root = tree(files, "warden-local-app-");
+
+    expect(localSources(root, "apps").map((doc) => doc.path)).toEqual(["docs/NAMESPACES.md", "src/ui/README.md", "src/ui/design/floor.md"]);
   });
 
   it("lists a document under both `docs/` and a README root exactly once", () => {
     const root = tree(["docs/README.md"], "warden-dedupe-");
 
-    expect(localSources(root).map((doc) => doc.path)).toEqual(["docs/README.md"]);
+    expect(localSources(root, "libs").map((doc) => doc.path)).toEqual(["docs/README.md"]);
   });
 });
 

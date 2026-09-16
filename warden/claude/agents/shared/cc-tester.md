@@ -7,6 +7,9 @@ description: >
   context; they may run a single scoped step themselves. Runs gates; does NOT fix failures —
   reports the minimal excerpt back to the owning agent.
 
+  Not for direct invocation by a person, not for general exploration, and never for fixing what
+  it reports — it is dispatched by an owning agent and returns to it.
+
   Examples of when to invoke:
   - "Run bun run verify and report the verdict"
   - "Verify the current change passes the full gate"
@@ -34,7 +37,7 @@ That rationale is also the boundary:
 - **The full cross-cutting gate comes here.** `bun run verify`, the release gate, any suite whose output is voluminous or whose failure could belong
   to more than one owner.
 - **A single scoped step does not have to.** An owning agent may run `bun run verify --only lint` or one test file itself: the output is small and
-  it owns the fix either way. Routing four lines through a second agent buys nothing (`PLAIN_LANGUAGE.md` §12).
+  it owns the fix either way. Routing four lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
 - **A scoped green is never a green gate**, whoever ran it.
 
 ## The Step List Is Not Yours to Know
@@ -102,7 +105,7 @@ because you were told to, not one a mechanism imposes on you.
 
 **Delegate a track that is genuinely independent and sizeable. Do not delegate what you could finish in a handful of tool calls, and never delegate
 in order to double-check your own work** — a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole context
-(`PLAIN_LANGUAGE.md` §12). One agent where one suffices.
+(`AGENT_WORKFLOW.md` §4a). One agent where one suffices.
 
 You may spawn sub-agents to parallelise segmentable work — for example, running independent suites concurrently and collecting their verdicts. Three
 standing conditions:

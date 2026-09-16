@@ -9,15 +9,21 @@ import { identical, walk } from "./sync";
 // the definition block — which is exactly where a boundary-crossing path would now hide.
 const DOCS_HREF = /\]\(([^)]*\bdocs\/[^)]*)\)|^ {0,3}\[[^\]]+\]:[ \t]+(\S*\bdocs\/\S*)/gm;
 
-/** Compares one synced tree against the installed corpus. @public */
+/** Compares one synced tree against the installed corpus.
+ *
+ *  The sources are layered in the order `sync` copies them, so a file two sources both carry is
+ *  expected to hold the later one's bytes — the same file the destination would end up with. @public */
 export function checkTree(repo: string, { tree, from }: SyncTree): Divergence[] {
   const to = resolve(repo, tree);
-  const expected = new Set(walk(from));
+  const expected = new Map<string, string>();
+  for (const source of from) {
+    for (const file of walk(source)) expected.set(file, join(source, file));
+  }
   const actual = new Set(walk(to));
   const problems: Divergence[] = [];
-  for (const file of expected) {
+  for (const [file, source] of expected) {
     if (!actual.has(file)) problems.push({ code: "missing", detail: `${tree}/${file}` });
-    else if (!identical(join(from, file), join(to, file))) problems.push({ code: "modified", detail: `${tree}/${file}` });
+    else if (!identical(source, join(to, file))) problems.push({ code: "modified", detail: `${tree}/${file}` });
   }
   for (const file of actual) {
     if (!expected.has(file)) problems.push({ code: "extra", detail: `${tree}/${file}` });

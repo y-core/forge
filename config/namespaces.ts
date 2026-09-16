@@ -8,7 +8,7 @@ export const LEAF: readonly string[] = [
   "assets",
   "config",
   "context",
-  "form",
+  "dev",
   "html/htmx",
   "http",
   "result",
@@ -27,7 +27,7 @@ export const LEAF: readonly string[] = [
 export const EDGES: Record<string, Record<string, EdgeKind>> = {
   // `jsx` is the shell's: `app` owns where a document shell is registered and resolved, and a shell
   // renders JSX. Nothing in `jsx` names `app`, so the edge closes no cycle.
-  app: { config: "value", form: "value", http: "value", jsx: "value", logging: "value", security: "value" },
+  app: { config: "value", dev: "type", form: "value", http: "value", jsx: "value", logging: "value", security: "value" },
   auth: { "storage/db": "value" },
   // `auth` here is the passkey contract — pure data both tiers read — and nothing else.
   "auth/client": { auth: "value", http: "value", "ui/client": "value" },
@@ -43,12 +43,15 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     session: "value",
     "ui/core": "value",
   },
+  // Type-only, and the one edge out of `form`: the allowance is the shape of a token a dev entry
+  // mints, so the option naming it is erased at emit and `form` ships as leaf code still.
+  form: { dev: "type" },
   jsx: { http: "value" },
   // Type-only on purpose: `storage/kv → logging` is the runtime edge, so a value import here would
   // close a real cycle.
   logging: { "storage/kv": "type" },
   "logging/show": { app: "value", "html/htmx": "value", http: "value", jsx: "value", logging: "value", "ui/contracts": "type", "ui/core": "value" },
-  security: { logging: "value" },
+  security: { dev: "type", logging: "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },
   testing: { app: "type", form: "value", jsx: "value", logging: "value", "storage/db": "type", "storage/kv": "type", "storage/r2": "value" },
@@ -66,6 +69,9 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   // and semver parsers and the barrel parser, and `tooling/release` builds its workflow on them.
   "tooling/gate": {
     "tooling/assets": "value",
+    // Type-only: the Worker config shape has one home, and the dev-boundary check reads `main` out
+    // of the same declaration `tooling/cf` writes.
+    "tooling/cf": "type",
     "tooling/cli": "value",
     "tooling/lint": "value",
     "tooling/term": "value",

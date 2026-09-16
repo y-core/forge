@@ -9,7 +9,7 @@ audience: consumer
 > Owns forge's declarative route configuration, the `definePage` / `defineAction` builders, middleware ordering, and the `context` namespace's typed
 > accessors.
 >
-> Defers to: [`SECURITY_HARDENING.md`][sh] for what the security middleware does; [`ERROR_HANDLING.md`][eh-2] §2 and §5d for response helpers and
+> Defers to: [`SECURITY_HARDENING.md`][sh] for what the security middleware does; [`FORGE_ERRORS.md`][eh-2] §2 and §5d for response helpers and
 > handler error recovery; [`INPUT_VALIDATION.md`][iv-1d] §1d for the submission pipeline's validation steps.
 
 ---
@@ -97,7 +97,7 @@ changes which code path reaches the hook, never which answer a client gets.
 request path**, which fetch-router's own default does. The hook receives the resolved app config as its second argument.
 
 Because `defaultHandler` runs inside `dispatchMatches`, a no-match flows back out through the pending-header flush and both error-boundary depths
-exactly as a matched route does ([`ERROR_HANDLING.md`][eh-5b] §5b).
+exactly as a matched route does ([`FORGE_ERRORS.md`][eh-5b] §5b).
 
 ---
 
@@ -209,7 +209,7 @@ stated keys, because a union's own diagnostic ("not assignable to either arm") i
 **What the builders do not share is the recovery arm: a throw from inside the sequence lands on the builder's own, deliberately.** The sequence
 answers what it can answer — a refused body, a tripped guard, an oversized body — and lets a throw escape, because they already recover differently
 and that divergence is ratified: a `defineAction` throw becomes a logged `500` fragment, a `definePage` throw reaches `onError` or re-throws to the
-router boundary ([`ERROR_HANDLING.md`][eh-5d] §5d). So a `v.transform` that throws on malformed input is answered by whichever builder declared it,
+router boundary ([`FORGE_ERRORS.md`][eh-5d] §5d). So a `v.transform` that throws on malformed input is answered by whichever builder declared it,
 in that builder's own idiom. One shared answer would mean a page rendering a bare fragment where every one of its other failures renders a page.
 
 **A page's refusal carries the page's headers; an action's does not.** A `definePage` refusal is returned through the same header pass as its view,
@@ -257,6 +257,11 @@ re-deriving it**:
 
     requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
       → validateBindings(bindings) → session → per-path guards (origin → rateLimit → middleware[])
+
+**`validateBindings` sits after `createSecurityHeaders` because a shape refusal throws**, and a throw that precedes the header factory strips the
+error page of every header it would have set — measured on a wrong-shaped KV binding, the 500 lost `Strict-Transport-Security`, COOP, CORP,
+`X-Frame-Options` and `X-Request-Id`, and kept all five once the order was the one above. The natural reading, "validate first", is the wrong one
+([`FORGE_ERRORS.md`][eh-5b] §5b).
 
 **A guard group registers each of its guards once, for all of its `paths` at once** — the group's paths compile into one matcher, which
 `app.use(paths, handler)` accepts. Registering per path would instantiate one `rateLimit` per path, so two overlapping patterns (`/api/*` and
@@ -329,7 +334,7 @@ The context is `AppContext<Bindings>` — a `RequestContext` plus `.env` and `.e
 Read the request through the standard Web API surface: `c.request.headers.get("X")`, `c.request.json()`, `c.method`, `c.url` (a `URL`), `c.params`.
 Bindings are `c.env.*`; background work is `c.executionCtx.waitUntil(p)`. Resolved config is `c.config`, or `configStore.get(c.env)`.
 
-**Build responses with the `http` helpers** — `htmlResponse`, `fragmentResponse`, `redirect` ([`ERROR_HANDLING.md`][eh-2] §2, §3) — and read form
+**Build responses with the `http` helpers** — `htmlResponse`, `fragmentResponse`, `redirect` ([`FORGE_ERRORS.md`][eh-2] §2, §3) — and read form
 bodies with `parseFormData(c)` ([`INPUT_VALIDATION.md`][iv-2c] §2c). **Context slots are read through typed `contextVar` accessors (§4), never raw
 keys.**
 
@@ -378,7 +383,7 @@ forge's option types stay one-parameter.
 **`slot.mount` is an open string.** A closed union of mount names would make every mountable forge adds later a breaking change for every shell a
 consumer has already written — so a shell that branches on `mount` needs a default arm.
 
-The old options were removed outright, with no shim and no dual path ([`LIBRARY_ARCHITECTURE.md`][la-7] §7).
+The old options were removed outright, with no shim and no dual path ([`FORGE_STRUCTURE.md`][la-7] §7).
 
 ### 6c. Fragments Never Reach the Shell
 
@@ -421,11 +426,11 @@ Three things the descriptor deliberately does not do:
   renders nothing rather than an element the policy would refuse.
 
 [boundaries-3a]: ../warden/canon/libs/BOUNDARIES.md#3a-the-boundary-rule
-[eh-2]: ./ERROR_HANDLING.md#2-fragment-renderers-http-namespace
-[eh-5b]: ./ERROR_HANDLING.md#5b-unexpected-errors--the-router-error-boundary
-[eh-5d]: ./ERROR_HANDLING.md#5d-defineaction-and-definepage-error-recovery
+[eh-2]: ./FORGE_ERRORS.md#2-fragment-renderers-http-namespace
+[eh-5b]: ./FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
+[eh-5d]: ./FORGE_ERRORS.md#5d-defineaction-and-definepage-error-recovery
 [iv-1d]: ./INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-2c]: ./INPUT_VALIDATION.md#2c-parseformdata--body-read-with-size-limit
-[la-7]: ./LIBRARY_ARCHITECTURE.md#7-pre-10-api-evolution
+[la-7]: ./FORGE_STRUCTURE.md#7-pre-10-api-evolution
 [sh]: ./SECURITY_HARDENING.md
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

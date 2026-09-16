@@ -16,6 +16,7 @@ import {
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
+  devBoundaryStep,
   FORGE_STATE_RECIPES,
   type ExportsMap,
   exportsStep,
@@ -128,7 +129,11 @@ export const STEPS: readonly Step[] = [
     { root: ROOT, packageName: pkg.name, exports: EXPORTS, buildTimeDirs: ["src/tooling", "src/ui/assets/build", "warden"], sources: ["src"] },
     { tier: "standard" },
   ),
-  // `.claude/agents/` and `.claude/commands/` are overwrite-on-sync, so an edit made in place is
+  // The same rule forge ships to every consumer, turned on itself: `workerConfig: null` because
+  // forge deploys no Worker of its own, and the two dev-only trees named because forge publishes
+  // them — `src/dev` mints the allowances and `src/testing` fakes the bindings.
+  devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/dev", "src/testing"] }, { tier: "standard" }),
+  // `.claude/agents/` and `.claude/skills/` are overwrite-on-sync, so an edit made in place is
   // reverted by the next sync and the reversion looks like nobody's change. The fixer is the sync.
   { label: "warden", tier: "standard", tail: 20, cmd: ["bun", "warden/src/bin.ts", "sync", "--check"], fix: ["bun", "warden/src/bin.ts", "sync"] },
   docsStep(
@@ -140,11 +145,13 @@ export const STEPS: readonly Step[] = [
       kind: "libs",
       // The source, not `.claude/agents/` — a fix applied to the synced copy is reverted by the
       // next sync, and the reversion looks like nobody's change.
-      // Each kind-scoped, because a bare `CODE_RULES.md` names a different file to each reader and
-      // the citing file's own tree is the only thing that says which.
+      // Each kind-scoped, because a bare `TESTING.md` names a different file to each reader and the
+      // citing file's own tree is the only thing that says which.
       extraDirs: [
+        { dir: "warden/claude/agents/shared", kind: "shared" },
         { dir: "warden/claude/agents/libs", kind: "libs" },
         { dir: "warden/claude/agents/apps", kind: "apps" },
+        { dir: "warden/claude/skills", kind: "shared" },
         { dir: "warden/canon/shared", kind: "shared", numbered: true },
         { dir: "warden/canon/libs", kind: "libs", numbered: true },
         { dir: "warden/canon/apps", kind: "apps", numbered: true },
@@ -276,7 +283,7 @@ export const STEPS: readonly Step[] = [
   // answer fail for different reasons, and a reader has to be told which to fix.
   // The catalogue is named here because forge is the canon's home repository — the rendered
   // inventory is canon-scoped, so it is forge's to commit and no consumer's.
-  wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md" }, { tier: "standard" }),
+  wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { tier: "standard" }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { tier: "standard" }),
   browserStep({ tier: "full" }),

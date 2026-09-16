@@ -37,13 +37,14 @@ export function keyCollation(tableSql: string, key: string): string | null {
   return null;
 }
 
-function checkKeyValues(io: DbIo, home: Home, name: string, key: string): void {
+/** The two statements a key probe asks: whether any row holds NULL, then how many storage classes the column spans. @internal */
+export function keyProbeSelects(name: string, key: string): [string, string] {
   const table = quoteSqlIdentifier(name);
   const column = quoteSqlIdentifier(key);
-  const [nulls = [], classes = []] = queryBatches(io, home, [
-    `SELECT 1 AS present FROM ${table} WHERE ${column} IS NULL LIMIT 1`,
-    `SELECT COUNT(DISTINCT typeof(${column})) AS classes FROM ${table}`,
-  ]);
+  return [`SELECT 1 AS present FROM ${table} WHERE ${column} IS NULL LIMIT 1`, `SELECT COUNT(DISTINCT typeof(${column})) AS classes FROM ${table}`];
+}
+
+function checkKeyValues(name: string, key: string, nulls: readonly Record<string, unknown>[], classes: readonly Record<string, unknown>[]): void {
   if (nulls.length > 0) {
     throw new CliError(
       "invalid-args",
@@ -58,9 +59,12 @@ function checkKeyValues(io: DbIo, home: Home, name: string, key: string): void {
   }
 }
 
-/** The table as a bounded read addresses it: the column it orders by, and the page size. @internal */
-export function describeTable(io: DbIo, home: Home, name: string): AppTable {
-  const [info = [], declaration = []] = queryBatches(io, home, [tableInfoSelect(name), tableSqlSelect(name)]);
+/** One table's shape, and the key a value probe still has to be run for — null where the key needs none. */
+function analyseTable(
+  name: string,
+  info: readonly Record<string, unknown>[],
+  declaration: readonly Record<string, unknown>[],
+): { table: AppTable; probe: string | null } {
   const columns = toColumnInfo(info);
   const aliased = columns.filter((column) => column.name.startsWith(TYPE_ALIAS_PREFIX)).map((column) => column.name);
   if (aliased.length > 0) {
@@ -81,8 +85,7 @@ export function describeTable(io: DbIo, home: Home, name: string): AppTable {
   const collation = key === "rowid" ? null : keyCollation(tableSql, key);
   if (collation === null) {
     // A rowid is the engine's own integer: never NULL, never another storage class, so never read for one.
-    if (key !== "rowid") checkKeyValues(io, home, name, key);
-    return { name, key, columns: columns.map((column) => column.name), pageRows: PAGE_ROWS };
+    return { table: { name, key, columns: columns.map((column) => column.name), pageRows: PAGE_ROWS }, probe: key === "rowid" ? null : key };
   }
 
   if (/\bWITHOUT\s+ROWID\b/i.test(tableSql)) {
@@ -91,15 +94,115 @@ export function describeTable(io: DbIo, home: Home, name: string): AppTable {
       `${name}.${key} collates ${collation} and ${name} is WITHOUT ROWID — a keyset read orders by BINARY and this table has no other column to order by, so it cannot be backed up`,
     );
   }
-  return { name, key: "rowid", columns: columns.map((column) => column.name), pageRows: PAGE_ROWS };
+  return { table: { name, key: "rowid", columns: columns.map((column) => column.name), pageRows: PAGE_ROWS }, probe: null };
 }
 
-/** Every table the app owns, each with the key a paged read of it orders by. @internal */
+/**
+ * Several tables as a bounded read addresses them, in the order asked, in two spawns rather than two each.
+ *
+ * **The faults arrive in two phases, which is the one place this differs from describing them one at a
+ * time**: every structural fault in table order, and only then every key-value fault in table order. A
+ * probe statement cannot be written until every describe result is in hand, so a later table's composite
+ * key now beats an earlier table's NULL key. Within each phase the first faulty table still wins.
+ * @internal
+ */
+export function describeTables(io: DbIo, home: Home, names: readonly string[]): AppTable[] {
+  const described = queryBatches(
+    io,
+    home,
+    names.flatMap((name) => [tableInfoSelect(name), tableSqlSelect(name)]),
+  );
+  const analysed = names.map((name, index) => analyseTable(name, described[index * 2] ?? [], described[index * 2 + 1] ?? []));
+  const probed = analysed.filter((analysis): analysis is { table: AppTable; probe: string } => analysis.probe !== null);
+  const answers = queryBatches(
+    io,
+    home,
+    probed.flatMap((analysis) => keyProbeSelects(analysis.table.name, analysis.probe)),
+  );
+  probed.forEach((analysis, index) => {
+    checkKeyValues(analysis.table.name, analysis.probe, answers[index * 2] ?? [], answers[index * 2 + 1] ?? []);
+  });
+  return analysed.map((analysis) => analysis.table);
+}
+
+/** The table as a bounded read addresses it: the column it orders by, and the page size. @internal */
+export function describeTable(io: DbIo, home: Home, name: string): AppTable {
+  const [table] = describeTables(io, home, [name]);
+  if (table === undefined) throw new CliError("invalid-args", `${name} could not be described — the read returned nothing for it`);
+  return table;
+}
+
+/**
+ * The tables one `CREATE TABLE` references, read from its own text.
+ *
+ * **Read from the DDL rather than from `pragma_foreign_key_list`, because D1 refuses that pragma**
+ * with `SQLITE_AUTH`. The declaration is already in hand either way, so this costs no extra query.
+ *
+ * `REFERENCES` is matched as a bare word, never as a quoted identifier, so a column that happens to be
+ * called `"references"` is data rather than a keyword.
+ * @internal
+ */
+export function referencedTables(tableSql: string): string[] {
+  const tokens = scanSql(tableSql).filter((token) => token.kind !== "space" && token.kind !== "comment");
+  const found: string[] = [];
+  for (const [index, token] of tokens.entries()) {
+    if (token.kind !== "word" || token.text.toUpperCase() !== "REFERENCES") continue;
+    const parent = tokens[index + 1];
+    if (parent === undefined || (parent.kind !== "word" && parent.kind !== "identifier")) continue;
+    found.push(unquoteSqlIdentifier(parent.text));
+  }
+  return found;
+}
+
+/**
+ * Table names reordered so every parent precedes the children that reference it.
+ *
+ * **This is what makes an artifact loadable in pieces.** `sqlite_master` answers in name order, which
+ * puts a child ahead of its parent as often as not; a load split across transactions then violates a
+ * foreign key at the first commit, and no pragma prevents it — D1 accepts `defer_foreign_keys` without
+ * honouring it, and a deferral would not span two transactions if it did.
+ *
+ * Only the constrained pairs move: anything a foreign key does not order keeps the order it arrived
+ * in, so the result is the caller's order with the minimum disturbance. A self-reference is not an
+ * edge, because a table cannot precede itself. Tables in a genuine cycle keep their order too —
+ * nothing can order them, and leaving them alone beats inventing an order that is no safer.
+ * @internal
+ */
+export function dependencyOrder(names: readonly string[], edges: readonly { readonly child: string; readonly parent: string }[]): string[] {
+  const present = new Set(names);
+  const parents = new Map<string, Set<string>>(names.map((name) => [name, new Set<string>()]));
+  for (const edge of edges) {
+    if (edge.child === edge.parent || !present.has(edge.child) || !present.has(edge.parent)) continue;
+    parents.get(edge.child)?.add(edge.parent);
+  }
+
+  const ordered: string[] = [];
+  const placed = new Set<string>();
+  const remaining = [...names];
+  while (remaining.length > 0) {
+    const next = remaining.findIndex((name) => [...(parents.get(name) ?? [])].every((parent) => placed.has(parent)));
+    if (next === -1) break;
+    const [name] = remaining.splice(next, 1);
+    if (name === undefined) break;
+    ordered.push(name);
+    placed.add(name);
+  }
+  return [...ordered, ...remaining];
+}
+
+/** Every table the app owns, parents first, each with the key a paged read of it orders by. @internal */
 export function discoverAppTables(io: DbIo, home: Home): AppTable[] {
   const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-  return objects
-    .filter((object) => object.type === "table" && classifyTable(object.name) === "app")
-    .map((object) => describeTable(io, home, object.name));
+  const tables = objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app");
+  const edges = tables.flatMap((table) => referencedTables(table.sql ?? "").map((parent) => ({ child: table.name, parent })));
+  return describeTables(
+    io,
+    home,
+    dependencyOrder(
+      tables.map((table) => table.name),
+      edges,
+    ),
+  );
 }
 
 /** Reads one page, ordered by the table's key and seeking past `after`. @internal */

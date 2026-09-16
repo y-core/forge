@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
+import { devAllowance } from "../dev/allowance";
 import { mapHandler } from "../testing/route";
 import { rateLimit } from "./rate-limit";
 import type { RateLimitBinding } from "./types";
@@ -71,14 +72,14 @@ describe("rateLimit middleware", () => {
     expect(res.status).toBe(503);
   });
 
-  it("returns 503 when binding is undefined (default required: true)", async () => {
+  it("returns 503 when binding is undefined, there being no allowance", async () => {
     const app = makeApp();
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(503);
   });
 
-  it("skips when binding is undefined and required: false", async () => {
-    const app = makeApp({ required: false });
+  it("skips when binding is undefined and a dev allowance grants rateLimitOptional", async () => {
+    const app = makeApp({ dev: devAllowance({ rateLimitOptional: true }) });
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
