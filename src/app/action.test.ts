@@ -3,12 +3,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { CSRF_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
 import { mapHandler } from "../testing/route";
-import { strictObject } from "../validation/strict-object";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
 
-const NameSchema = strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
+const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
 function makeApp(action: ReturnType<typeof defineAction>) {
   const app = new Forge();
@@ -232,13 +231,13 @@ describe("defineAction", () => {
 });
 
 describe("defineAction — a throwing schema or hook", () => {
-  const ThrowingTransform = strictObject({
+  const ThrowingTransform = v.strictObject({
     payload: v.pipe(
       v.string(),
       v.transform((raw) => JSON.parse(raw) as unknown),
     ),
   });
-  const ThrowingCheck = strictObject({
+  const ThrowingCheck = v.strictObject({
     name: v.pipe(
       v.string(),
       v.check<string>(() => {
@@ -367,8 +366,6 @@ describe("defineAction — a throwing schema or hook", () => {
 });
 
 describe("defineAction — what reaches the schema", () => {
-  const RawNameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
-
   it("refuses a field nobody declared", async () => {
     const app = makeApp(
       defineAction({
@@ -425,11 +422,20 @@ describe("defineAction — what reaches the schema", () => {
   });
 
   it("does not let a caller-sent __proto__ mutate a prototype or reach the handler", async () => {
-    const app = makeApp(defineAction({ schema: RawNameSchema, handle: (data) => new Response(Object.keys(data).join(",")) }));
+    let handled = false;
+    const app = makeApp(
+      defineAction({
+        schema: NameSchema,
+        handle: () => {
+          handled = true;
+          return new Response("success");
+        },
+      }),
+    );
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=Jane&__proto__=polluted" });
-    expect(res.status).toBe(200);
-    expect(await res.text()).toBe("name");
+    expect(res.status).toBe(422);
+    expect(handled).toBe(false);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(Object.getPrototypeOf({})).toBe(Object.prototype);
   });
@@ -453,7 +459,7 @@ describe("defineAction — what reaches the schema", () => {
   }
 
   it("reads a schema field named constructor as absent when the caller did not send it", async () => {
-    const Schema = strictObject({ name: v.string(), constructor: v.string() });
+    const Schema = v.strictObject({ name: v.string(), constructor: v.string() });
     const app = makeApp(
       defineAction({
         schema: Schema,
@@ -468,7 +474,7 @@ describe("defineAction — what reaches the schema", () => {
   });
 
   it("satisfies v.optional on a schema field named constructor by omission", async () => {
-    const Schema = strictObject({ name: v.string(), constructor: v.optional(v.string()) });
+    const Schema = v.strictObject({ name: v.string(), constructor: v.optional(v.string()) });
     const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(Object.keys(data).join(",")) }));
 
     const res = await post(app, "name=Jane");
@@ -477,7 +483,7 @@ describe("defineAction — what reaches the schema", () => {
   });
 
   it("carries a submitted field named constructor through to handle as the submitted value", async () => {
-    const Schema = strictObject({ name: v.string(), constructor: v.string() });
+    const Schema = v.strictObject({ name: v.string(), constructor: v.string() });
     const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(data.constructor) }));
 
     const res = await post(app, "name=Jane&constructor=Acme%20Builders");
@@ -613,7 +619,7 @@ describe("defineAction — bot guards", () => {
     expect(called).toBe(false);
   });
 
-  it("accepts a cf-turnstile-response body against a strictObject that never declares the token field", async () => {
+  it("accepts a cf-turnstile-response body against a v.strictObject that never declares the token field", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
 
     const res = await post(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
@@ -846,8 +852,8 @@ describe("defineAction — injected field derivation", () => {
 
 describe("defineAction — the one refusal", () => {
   const UNDECLARED = "company";
-  const EmailSchema = strictObject({ email: v.pipe(v.string(), v.email()) });
-  const UnionSchema = v.union([strictObject({ name: v.string() }), strictObject({ email: v.string() })]);
+  const EmailSchema = v.strictObject({ email: v.pipe(v.string(), v.email()) });
+  const UnionSchema = v.union([v.strictObject({ name: v.string() }), v.strictObject({ email: v.string() })]);
   const LONG_KEY = "k".repeat(30_000);
 
   it("renders exactly this markup, which is the literal every other case here is asserted against", () => {
@@ -877,7 +883,7 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("puts neither the submitted value nor the schema's own pattern into the response", async () => {
-    const Schema = strictObject({ password: v.pipe(v.string(), v.regex(/^(?=.*[A-Z]).{12,}$/)) });
+    const Schema = v.strictObject({ password: v.pipe(v.string(), v.regex(/^(?=.*[A-Z]).{12,}$/)) });
     const app = makeApp(defineAction({ schema: Schema, handle: () => new Response("success") }));
 
     const res = await post(app, "password=hunter2secret");
@@ -929,7 +935,7 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("pins the issue count to one for a body failing two declared fields", async () => {
-    const Schema = strictObject({ a: v.pipe(v.string(), v.minLength(2)), b: v.pipe(v.string(), v.minLength(2)) });
+    const Schema = v.strictObject({ a: v.pipe(v.string(), v.minLength(2)), b: v.pipe(v.string(), v.minLength(2)) });
     const app = makeApp(
       defineAction({
         schema: Schema,
@@ -943,7 +949,7 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("renders one list item for a body failing two declared fields", async () => {
-    const Schema = strictObject({ a: v.pipe(v.string(), v.minLength(2)), b: v.pipe(v.string(), v.minLength(2)) });
+    const Schema = v.strictObject({ a: v.pipe(v.string(), v.minLength(2)), b: v.pipe(v.string(), v.minLength(2)) });
     const app = makeApp(defineAction({ schema: Schema, handle: () => new Response("success") }));
 
     const res = await post(app, "a=&b=");

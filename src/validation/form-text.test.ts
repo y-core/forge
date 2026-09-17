@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
 import { formMultilineText, formText } from "./form-text";
-import { strictObject } from "./strict-object";
 import { v } from "./validation";
 
 /** The parsed output of a text schema, or a thrown failure — so a value case never narrows the union itself. */
@@ -142,8 +141,8 @@ describe("formMultilineText", () => {
 });
 
 describe("form text primitives — composition", () => {
-  it("parses a strictObject of both primitives to plain strings", () => {
-    const ContactSchema = strictObject({ name: formText(), message: formMultilineText() });
+  it("parses a v.strictObject of both primitives to plain strings", () => {
+    const ContactSchema = v.strictObject({ name: formText(), message: formMultilineText() });
     const result = v.safeParse(ContactSchema, body({ name: "  Jane  ", message: "  first\r\nsecond  " }));
     if (!result.success) throw new Error("expected the contact schema to accept this body");
     const name: string = result.output.name;
@@ -152,8 +151,8 @@ describe("form text primitives — composition", () => {
     expect(message).toBe("first\nsecond");
   });
 
-  it("reports the failing field by name when a strictObject field refuses its value", () => {
-    const ContactSchema = strictObject({ name: formText() });
+  it("reports the failing field by name when a v.strictObject field refuses its value", () => {
+    const ContactSchema = v.strictObject({ name: formText() });
     const issues = issuesFor(ContactSchema.entries.name, 42);
     expect(issues.map((issue) => issue.type)).toEqual(["string"]);
     const nested = v.safeParse(ContactSchema, body({ name: 42 }));
@@ -192,7 +191,7 @@ describe("form text primitives — the shapes the reader hands through", () => {
   const file = new File(["  resume  "], "cv.txt", { type: "text/plain" });
 
   it("refuses a File on a key rather than coercing it", () => {
-    const TextOnKey = strictObject({ attachment: formText() });
+    const TextOnKey = v.strictObject({ attachment: formText() });
     const issues = issuesFor(TextOnKey.entries.attachment, file);
     expect(issues.map((issue) => issue.type)).toEqual(["string"]);
     expect(issues.map((issue) => issue.message)).toEqual(["Invalid type: Expected string but received Blob"]);
@@ -201,7 +200,7 @@ describe("form text primitives — the shapes the reader hands through", () => {
   });
 
   it("lets a File-accepting schema on that same key succeed with the File intact", () => {
-    const UploadSchema = strictObject({ attachment: v.instance(File) });
+    const UploadSchema = v.strictObject({ attachment: v.instance(File) });
     const result = v.safeParse(UploadSchema, body({ attachment: file }));
     expect(result.success).toBe(true);
     expect(result.success && result.output.attachment).toBe(file);
@@ -209,7 +208,7 @@ describe("form text primitives — the shapes the reader hands through", () => {
   });
 
   it("refuses a repeated key's array on a scalar text field", () => {
-    const TagOnKey = strictObject({ tag: formText() });
+    const TagOnKey = v.strictObject({ tag: formText() });
     const result = v.safeParse(TagOnKey, body({ tag: ["a ", " b"] }));
     expect(!result.success && result.issues.map((issue) => issue.type)).toEqual(["string"]);
     expect(!result.success && result.issues.map((issue) => issue.message)).toEqual(["Invalid type: Expected string but received Array"]);
@@ -217,7 +216,7 @@ describe("form text primitives — the shapes the reader hands through", () => {
   });
 
   it("accepts the same repeated key when the schema declares v.array, trimming each element", () => {
-    const TagsSchema = strictObject({ tag: v.array(formText()) });
+    const TagsSchema = v.strictObject({ tag: v.array(formText()) });
     expect(v.safeParse(TagsSchema, body({ tag: ["a ", " b"] }))).toEqual({
       typed: true,
       success: true,
@@ -227,7 +226,7 @@ describe("form text primitives — the shapes the reader hands through", () => {
   });
 
   it("leaves an absent optional field absent — the primitive does not resurrect the absence collapse", () => {
-    const NoteSchema = strictObject({ note: v.optional(formText()) });
+    const NoteSchema = v.strictObject({ note: v.optional(formText()) });
     const result = v.safeParse(NoteSchema, body({}));
     expect(result.success).toBe(true);
     expect(result.success && Object.hasOwn(result.output, "note")).toBe(false);
@@ -235,7 +234,7 @@ describe("form text primitives — the shapes the reader hands through", () => {
   });
 
   it("trims that same optional field when the caller did send it", () => {
-    const NoteSchema = strictObject({ note: v.optional(formText()) });
+    const NoteSchema = v.strictObject({ note: v.optional(formText()) });
     expect(v.safeParse(NoteSchema, body({ note: "  hi  " }))).toEqual({ typed: true, success: true, output: { note: "hi" }, issues: undefined });
   });
 });

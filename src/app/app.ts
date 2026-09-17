@@ -24,6 +24,9 @@ export function createApp<Bindings extends object = Record<string, unknown>>(opt
   if (options?.notFound) {
     app.setNotFound(options.notFound);
   }
+  if (options?.methodMismatch) {
+    app.setMethodMismatch(options.methodMismatch);
+  }
 
   // Assets must be strictly last: a catch-all registered earlier shadows every route added after it.
   options?.middleware?.(app);

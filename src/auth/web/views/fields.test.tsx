@@ -145,7 +145,7 @@ const SUBMITTING_VIEWS = [
   },
 ] as const;
 
-// Every auth schema is a `strictObject`, so a field the view injects and the action does not drop
+// Every auth schema is a `v.strictObject`, so a field the view injects and the action does not drop
 // refuses the whole submission. This is the one test that fails the moment a view grows a field.
 describe("every auth view submits exactly the fields its schema declares", () => {
   for (const { view, schema, html } of SUBMITTING_VIEWS) {

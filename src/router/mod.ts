@@ -29,5 +29,7 @@ export type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 export { CreateHrefError, createHref } from "@remix-run/route-pattern/href";
 export type { JoinPatterns } from "@remix-run/route-pattern/join";
 export { joinPatterns } from "@remix-run/route-pattern/join";
+export type { MatcherLimits, MatcherResourceErrorDetails } from "@remix-run/route-pattern/match";
+export { MatcherResourceError } from "@remix-run/route-pattern/match";
 export type { RouteFilter } from "./types";
 export { forMethod, routePaths } from "./filter";

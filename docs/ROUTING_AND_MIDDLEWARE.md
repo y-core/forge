@@ -21,7 +21,8 @@ audience: consumer
 - §1b Controller — Mapping Route Names to Actions: where route middleware lives
 - §1c Registering Routes with app.map: ordering against global middleware
 - §1d No `head` Verb Export: why a HEAD route could never match
-- §1e The Unmatched URL: one `notFound` hook, whether or not `assets` is configured
+- §1e The Unmatched URL: one `notFound` hook, and the `methodMismatch` choice between hiding a route and advertising it
+- §1f Matcher Resource Budgets: the limits forge sets for every matcher, and where each failure lands
 - §2 Page and Action Route Patterns: the three handler factories
 - §2a Full-Page Routes with definePage: loader, view, the render state, and the optional schema
 - §2b Action-Only Routes with defineAction: the handle terminal step and the derive-only drop rule
@@ -89,15 +90,63 @@ happens; those branches encode HTTP method semantics, not an assumption about `F
 
 ### 1e. The Unmatched URL
 
-**One hook answers every unmatched URL: `createApp({ notFound })`.** It is registered as the router's `defaultHandler` and is also what the asset
-catch-all renders on a miss — a `404` from the `ASSETS` binding, an absent binding, or a non-`GET`/`HEAD` method. Configuring `assets` therefore
-changes which code path reaches the hook, never which answer a client gets.
+**One hook answers a URL that matches no route: `createApp({ notFound })`.** It is registered as the router's `defaultHandler` and is also what the
+asset catch-all renders on a miss — a `404` from the `ASSETS` binding, an absent binding, or a non-`GET`/`HEAD` method. Configuring `assets`
+therefore changes which code path reaches the hook, and for every URL that matches no pattern it changes nothing a client sees.
 
 **Omitted, forge answers a hardened plain-text `404 Not Found`** carrying `nosniff`, `default-src 'none'` and `no-referrer`. It **never echoes the
 request path**, which fetch-router's own default does. The hook receives the resolved app config as its second argument.
 
+**A matched URL with no route for the method reaches the same hook by default, and `createApp({ methodMismatch })` is what decides.** fetch-router
+answers such a request with `405 Method Not Allowed`, a body echoing the method the client sent, and an `Allow` header naming every method
+registered at that URL. Forge's innermost middleware intercepts that response and replaces it, because the answer is a disclosure decision the app
+owns rather than one the router should settle:
+
+| `methodMismatch` | A method mismatch answers | What a prober learns |
+| --- | --- | --- |
+| `"notFound"` (default) | whatever the `notFound` hook renders, or forge's hardened `404` | nothing — identical to a URL matching no pattern |
+| `"advertise"` | hardened plain-text `405` with `Allow` | the URL exists, and which methods it serves |
+
+**The default closes an enumeration oracle.** Under `"advertise"`, `GET /internal/webhook` answering `405` while `GET /internal/no-such-hook`
+answers `404` tells an unauthenticated caller which of the two is a real route, and `Allow` then names the method to forge a body for. Under the
+default the two answers are identical, so the pair carries no signal. That is why the closed answer is the one you get without asking.
+
+**Choose `"advertise"` for a surface where the routes are not a secret**, which is most JSON APIs: it is what RFC 9110, section 15.5.6 asks for, it
+is what clients and proxies expect, and hiding a route already named in your own published client buys nothing. The disclosure stops at the guard
+line either way — a guard registered with `app.use` runs before dispatch, so a guard that answers without calling `next()` means no `405` is ever
+built and no `Allow` is ever sent.
+
+**Under `"advertise"` the `405` is hardened, not forwarded.** It carries the same `nosniff`, `default-src 'none'` and `no-referrer` the `404` does,
+and its body is the fixed string `Method Not Allowed` which **never echoes the method** the client sent. `Allow` is preserved exactly as the router
+computed it, `HEAD` included wherever `GET` is.
+
+**Only the mismatch `405` is rebuilt.** A `405` a route handler returns for its own reasons, and one a `notFound` hook returns at a URL matching no
+pattern, are both left untouched — a route that dispatched has answered for itself. The rebuild happens inside the router middleware chain, so a
+global middleware's headers land on it as they land on a `404`.
+
+**`"advertise"` governs routed URLs, and an `ANY` catch-all is its limit.** With `assets` configured the catch-all is registered `ANY`, so it
+matches the mismatched method first and `serveAssets` renders `notFound` instead — no `405` is ever reached. This is inherent to a catch-all rather
+than a defect: a route that matches every method has answered the request, and the mismatch never occurs. Under the default the two agree anyway,
+which is the other reason it is the default.
+
 Because `defaultHandler` runs inside `dispatchMatches`, a no-match flows back out through the pending-header flush and both error-boundary depths
 exactly as a matched route does ([`FORGE_ERRORS.md`][eh-5b] §5b).
+
+### 1f. Matcher Resource Budgets
+
+**Forge builds every matcher, so forge sets the budget.** The route matcher and each `app.use` guard matcher are constructed with the same
+`limits` — a per-pattern ceiling, a whole-matcher ceiling, and a per-match work budget — and `src/app/forge-app.ts` is authoritative for the three
+values. They are deliberately tighter than route-pattern's own defaults: a consumer cannot reach the matcher to set them, and an unbounded default
+is a budget nobody chose.
+
+**The two failures land in different places, which is the point of the split.** A pattern over the per-pattern ceiling throws `MatcherResourceError`
+at registration, so an over-long pattern is a deployment defect that surfaces before a request ever arrives. A URL that exhausts the match-work
+budget throws during matching, and the error boundary answers `500` ([`FORGE_ERRORS.md`][eh-5b] §5b). The class is imported from
+`@y-core/forge/router`, along with the `MatcherResourceErrorDetails` its `details` carries — never from route-pattern directly.
+
+**The work budget is calibrated against measurement, not taste.** 500 routes matched against a 32 KB URL — twice the length Cloudflare will
+deliver — costs roughly half of it, so no request a Worker can actually receive reaches the ceiling. Raising the budget is therefore a response to a
+measured match, never to a suspicion.
 
 ---
 

@@ -135,12 +135,17 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
     cmd: ["playwright", "test"],
     // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
     // present, so probing it would pass vacuously and let every spec fail at launch.
-    ...prerequisite(options.requires, { tool: "chromium", probe: hasChromium, hint: options.hint ?? "run `bunx playwright install chromium`" }),
+    ...prerequisite(options.requires, {
+      tool: "chromium",
+      probe: hasChromium,
+      // Unreachable wherever `CHROME_PATH` names a browser: it addresses a machine that has none.
+      hint: options.hint ?? "run `bunx playwright install chromium`",
+    }),
   };
 }
 
-/** `bun test` over `sources` (default `tests/workerd/`), defaulting to the `full` tier: each spec starts a real Workers runtime. @public */
-export function workerdStep(options: { hint?: string } & SourceStepOptions = {}): CommandStep {
+/** `bun test` over `sources` (default `tests/workerd/`), `parallel` files at once (default 2), defaulting to the `full` tier: each spec starts a real Workers runtime. @public */
+export function workerdStep(options: { hint?: string; parallel?: number } & SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["tests/workerd/"];
   return {
     label: "test:workerd",
@@ -148,7 +153,7 @@ export function workerdStep(options: { hint?: string } & SourceStepOptions = {})
     // the step table can be read for which steps run in which mode without opening this file.
     ...tier(options.tier, "full"),
     tail: 120,
-    cmd: ["bun", "test", ...sources],
+    cmd: ["bun", "test", `--parallel=${options.parallel ?? 2}`, ...sources],
     // The probe targets the runtime, not the test runner: `bun` is always present, so probing it
     // would pass vacuously and let every spec fail at server start.
     ...prerequisite(options.requires, {

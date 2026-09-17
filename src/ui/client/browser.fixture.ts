@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { test as playwrightTest } from "@playwright/test";
+import { test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { build } from "esbuild";
 
@@ -10,24 +10,8 @@ import type { MountOptions } from "./types";
 /** The root every bundled specifier resolves from, so a spec in any directory names a module the same way. */
 const SRC_ROOT = new URL("../../", import.meta.url).pathname;
 
-// playwright 1.62 declares `reducedMotion`, `forcedColors` and `contrast` but builds none of them
-// into `_combinedContextOptions`, so `test.use()` type-checks and emulates nothing.
-/** `@playwright/test`'s `test`, with the media options playwright leaves unimplemented reinstated. */
-export const test = playwrightTest.extend<{
-  reducedMotion: "reduce" | "no-preference" | null;
-  forcedColors: "active" | "none" | null;
-  contrast: "more" | "no-preference" | null;
-}>({
-  reducedMotion: [null, { option: true }],
-  forcedColors: [null, { option: true }],
-  contrast: [null, { option: true }],
-  page: async ({ page, reducedMotion, forcedColors, contrast }, use) => {
-    if (reducedMotion !== null || forcedColors !== null || contrast !== null) {
-      await page.emulateMedia({ reducedMotion, forcedColors, contrast });
-    }
-    await use(page);
-  },
-});
+/** `@playwright/test`'s `test`, re-exported so a spec takes its harness and its runner from one module. */
+export { test };
 
 const bundles = new Map<string, Promise<string>>();
 

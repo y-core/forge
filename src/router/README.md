@@ -94,11 +94,20 @@ Never concatenate a path. The pattern's params are part of its type, so a forgot
 const routes = route({ user: get("/users/:id"), search: get("/search") });
 
 routes.user.href({ id: "42" }); // "/users/42"
-routes.search.href(undefined, { q: "a b&c" }); // "/search?q=a+b%26c" — search values are encoded
+routes.search.href(undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c" — search values are encoded
 ```
 
-For a pattern that is not part of a route map, `createHref(pattern, params?, searchParams?)` does the same job standalone, and `joinPatterns(a, b)`
+Params come first, everything else under the options object: `searchParams` takes a `URLSearchParams` or a record of strings, numbers and arrays of
+them, and `baseURL` takes an absolute URL to render the target against. Give `baseURL` the page the link sits on and a same-origin target comes back
+path-relative — useful when the markup is rendered once and served under more than one origin. It throws a `TypeError` where the value is not
+absolute, or where no same-origin target can be resolved from it.
+
+For a pattern that is not part of a route map, `createHref(pattern, params, options)` does the same job standalone, and `joinPatterns(a, b)`
 performs exactly the join `route(base, defs)` applies — useful when you are computing a mount point rather than declaring one.
+
+```ts
+createHref("/search", undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c"
+```
 
 ---
 
@@ -141,6 +150,11 @@ route map with no routes in it.
 `nameless-wildcard`, …) for a caller that wants to branch. A missing _required_ param is caught at compile time; this is the runtime backstop for
 values that were not statically known.
 
+**A route pattern and a URL are both held to a budget, and both throw `MatcherResourceError`.** `app.map` and `app.use` throw it at registration
+when a pattern exceeds forge's per-pattern ceiling; a URL that exhausts the match-work budget throws it during matching, where the error boundary
+answers `500`. Its `details` carries the discriminant that tells the two apart, typed as `MatcherResourceErrorDetails`. Catch it by importing from
+`@y-core/forge/router` — never from route-pattern directly. The budgets themselves are [`ROUTING_AND_MIDDLEWARE.md`][ram-1f] §1f's.
+
 **`createRouter` is here but is rarely yours to call.** `createApp` from [`src/app/README.md`][app-readme] builds and owns the router, including its
 `defaultHandler` and matcher. Reach for the bare constructor only outside the forge app lifecycle.
 
@@ -158,3 +172,4 @@ values that were not statically known.
 [ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
 [ram-1c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1c-registering-routes-with-appmap
 [ram-1d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1d-no-head-verb-export
+[ram-1f]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1f-matcher-resource-budgets

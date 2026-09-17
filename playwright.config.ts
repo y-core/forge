@@ -18,6 +18,10 @@ import { resolveChromiumPath } from "./src/tooling/gate/chromium.mjs";
  * `page.setContent()` markup (`src/ui/client/browser-test-helper.ts`). forge has no dev server and
  * needs none.
  *
+ * `workers` is stated, never defaulted: playwright's own default is half the cores, and this set's
+ * cost is almost entirely per-test fixed overhead, so half the machine sits idle. One worker per
+ * core is the floor — past it the run regresses on context-switch, a page being all a spec holds.
+ *
  * `executablePath` is not a preference: playwright reads no environment variable for the browser
  * path, so a container that bakes Chromium in is invisible to it without this line and every spec
  * fails inside `browserType.launch()` rather than in the code under test.
@@ -30,6 +34,7 @@ export default defineConfig({
   testDir: ".",
   testMatch: "src/**/*.browser.ts",
   fullyParallel: true,
+  workers: "100%",
   reporter: "list",
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: resolveChromiumPath() } } }],
 });

@@ -17,7 +17,129 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+Every action this version asks of a consuming app, loudest failure last. The entry for each below
+carries the reasoning; this is the checklist.
+
+1. **Decide whether this app wants `methodMismatch: "advertise"`.** Nothing breaks if you skip
+   this — the default preserves the previous answer exactly — but a JSON API probably wants the
+   RFC `405`, and opting in is one line.
+2. **Re-check any route param whose value can carry a `.`** — a dot in a param is now percent-encoded,
+   so `/files/report.pdf` is generated as `/files/report%2Epdf`. **Fails silently**: the link still
+   resolves, but the emitted markup, canonical URL and cache key all change.
+3. **Confirm no address is built from a non-ASCII `email` value** in a schema of your own —
+   `v.email()` now refuses characters Unicode case folding previously admitted, so a record that
+   used to validate can stop. Forge's own auth fields no longer use it. **Fails at the boundary**,
+   as a validation refusal rather than an error.
+4. **`strictObject(` → `v.strictObject(`**, and drop `strictObject` from the
+   `@y-core/forge/validation` import — `tsc`.
+5. **Move the third argument of `createHref` and `Route.href` under `searchParams`** — `tsc`.
+
+### Breaking Changes
+
+- **`createHref`'s third argument is an options object, and so is `Route.href`'s second.** Search
+  params are now one field of it:
+
+  ```ts
+  createHref("/search", undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c"
+  routes.search.href(undefined, { searchParams: { q: "a b&c" } });
+  ```
+
+  **Migration:** wrap the existing argument in `{ searchParams: … }` at every call site. `tsc`
+  finds all of them, and the accepted value is unchanged — a `URLSearchParams` or a record of
+  strings, numbers, `null`, `undefined` or arrays of those. Pre-1.0, so no shim is owed.
+
+  The options object also carries **`baseURL`**, which is new: an absolute URL against which a
+  same-origin target is rendered as a path-relative href. It throws `TypeError` when the value is
+  not absolute, or when no same-origin target can be resolved from it. Forge's `authPaths` readers
+  forward `Parameters<Route["href"]>`, so they take both fields without a signature of their own.
+
+- **A `.` inside a path param is now percent-encoded.** A dot became a pathname delimiter, so a param
+  carrying one escapes rather than splitting the segment: `createHref("/files/:name", { name:
+  "report.pdf" })` now returns `/files/report%2Epdf` where it returned `/files/report.pdf`. This
+  reaches every `Route.href` reader too, `authPaths` included.
+
+  **Migration:** no call site changes, and the link still resolves — but the bytes in the markup do
+  not match, so an exact-string assertion, a canonical URL, a sitemap entry or a cache key built from
+  one of these hrefs needs re-checking. A param that cannot hold a dot is unaffected.
+
+- **`strictObject` is gone from `@y-core/forge/validation`; use `v.strictObject`.** The forge
+  wrapper existed only to work around a valibot defect in `strictObject`, `looseObject` and
+  `objectWithRest`, where a key colliding with an `Object.prototype` name was silently dropped
+  instead of refused. The pinned valibot fixes it, which left the wrapper an identity function.
+
+  **Migration:** `strictObject(` → `v.strictObject(`, and drop the name from the import. `tsc`
+  finds every call site. Behaviour is identical — an undeclared `__proto__`, `constructor` or
+  `toString` is refused, nested and under a `v.union` alike, which is what the wrapper already did.
+
+### Added
+
+- **`createApp({ methodMismatch })` decides what a URL answers when a pattern matched but no route's
+  method did.** fetch-router 0.22 began answering such a request with `405` and an `Allow` header
+  instead of falling through to the router's default handler. Forge intercepts that response, because
+  which answer is right is a disclosure decision the app owns:
+
+  - **`"notFound"` (default)** renders the `notFound` hook, or forge's hardened `404`. A registered
+    URL and an absent one then answer identically, so the pair tells an unauthenticated prober
+    nothing. This is the pre-0.22 behaviour, so **no consuming app changes**.
+  - **`"advertise"`** returns a hardened plain-text `405` — the constant body `Method Not Allowed`,
+    never the method the client sent, carrying the same `nosniff`, `default-src 'none'` and
+    `no-referrer` the `404` does — with `Allow` listing every method registered at that URL, `HEAD`
+    included wherever `GET` is. This is RFC 9110, section 15.5.6's answer, and what a JSON API
+    usually wants.
+
+  Under either mode a `405` a route handler returns for its own reasons is left untouched, and
+  forge's global middleware still reaches the response — a `requestId()` guard's header lands on it
+  either way. The disclosure `"advertise"` opts into stops at the guard line: a guard registered with
+  `app.use` runs before dispatch, so one that answers without calling `next()` means no `405` is
+  built. **`"advertise"` governs routed URLs only** — an `ANY` asset catch-all matches the mismatched
+  method and answers first, which is inherent to a catch-all rather than a defect.
+
+  `MethodMismatch` is exported as a type from `@y-core/forge/app`.
+
+- **Every matcher forge builds carries a resource budget.** The route matcher and each `use()`
+  guard matcher are built with `maxPatternSize` 4096 bytes, `maxMatcherSize` 1 MiB and
+  `maxMatchWork` 200,000 — tighter than route-pattern's own 64 KiB / 16 MiB / 1,000,000 defaults.
+  Forge builds every matcher itself, so it is the only layer that can set these for a consumer.
+
+  **A route pattern over 4096 bytes throws `MatcherResourceError` at registration**, which is a
+  deployment defect surfacing loudly rather than at request time. **A URL that exhausts the
+  match-work budget throws during matching**, and forge's error boundary answers `500`. The budget
+  is calibrated against measurement, not taste: 500 routes matched against a 32 KB URL — twice what
+  Cloudflare will deliver — costs about 97,000 work units, so it cannot bite a real request.
+
+  **`MatcherResourceError` is exported from `@y-core/forge/router`**, with `MatcherLimits` and
+  `MatcherResourceErrorDetails` as types, so a consumer catches the error forge's docs name without
+  importing from `@remix-run/route-pattern` directly.
+
+- **`package.json` declares `engines.bun` `>=1.4.0`.** `workerdStep` runs `bun test --parallel=2`,
+  a flag that shipped in Bun 1.3.13, so a consumer building a gate from it now has the floor in a
+  form a package manager can read.
+
+### Changed
+
+- **`v.email()` refuses non-ASCII characters that Unicode case folding used to admit**, `v.ulid()`
+  refuses a ULID above 128 bits, and `v.url()` is now built on `URL.canParse`. All three arrive
+  through the `v` facade with no call-site change. The `email` tightening is the one that can
+  change an answer in a schema of your own: a value that validated before can now be refused. It no
+  longer reaches forge's own fields — see the auth entry below.
+
+- **Every auth address field validates against the HTML living standard, via `v.rfcEmail()`.**
+  `authSigninSchema`, `authSignupSchema` and `authEmailChangeSchema` share one helper, so all three
+  move together. The RFC form admits specials the previous regex refused — `o'brien@example.com`
+  now validates — and forge pairs it with a dotted-domain check, so a single-label domain such as
+  `ada@localhost`, which `v.rfcEmail()` alone accepts, is still refused: an address an OTP cannot be
+  delivered to is not an address these forms want.
+
+  **Migration:** nothing to write. An address previously refused for a legal special character now
+  gets through; nothing that validated before is refused.
+
+- **Dependencies upgraded.** `@remix-run/fetch-router` 0.20.1 → 0.22.0, `@remix-run/route-pattern`
+  0.23.0 → 0.24.0, `valibot` 1.4.2 → 1.5.0, `wrangler` 4.129.1 → 4.134.0, `esbuild` 0.28.1 →
+  0.28.2, `oxlint` 1.82.0 → 1.83.0, `oxfmt` 0.67.0 → 0.68.0, `@playwright/test` 1.62.0 → 1.63.0,
+  and the optional `sharp` peer 0.35.2 → 0.35.4. The three breaking entries above are the whole of
+  what a consumer sees; the rest change nothing forge exposes.
 
 ---
 

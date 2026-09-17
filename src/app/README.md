@@ -138,6 +138,10 @@ The `actions` keys must match the route names exactly, so a missing or misspelle
 controller entry and nowhere else — neither `definePage` nor `defineAction` accepts a `middleware` field ([`ROUTING_AND_MIDDLEWARE.md`][ram-1b]
 §1b).
 
+**A route pattern has a size ceiling, and `app.map` throws `MatcherResourceError` at registration when one exceeds it** — the same ceiling applies
+to an `app.use` path. Nothing a hand-written pattern reaches; a generated one can, and it fails at startup rather than on a request
+([`ROUTING_AND_MIDDLEWARE.md`][ram-1f] §1f).
+
 ---
 
 ## Rendering a page
@@ -178,9 +182,9 @@ read → guard → validate sequence first, and neither has a path to its own te
 ```ts
 import { defineAction } from "@y-core/forge/app";
 import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
-import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
+import { formMultilineText, formText, v } from "@y-core/forge/validation";
 
-const ContactSchema = strictObject({
+const ContactSchema = v.strictObject({
   name: v.pipe(formText(), v.minLength(1)),
   email: v.pipe(formText(), v.email()),
   message: v.pipe(formMultilineText(), v.minLength(10)),
@@ -195,8 +199,8 @@ export const contactAction = defineAction<typeof ContactSchema, Bindings, AppCon
 });
 ```
 
-`handle` receives the schema's **output**, so a transform reaches it as the type it actually is. Reach for `strictObject` and the `formText` family
-from [`@y-core/forge/validation`][validation-readme]: the body read passes values through exactly as submitted, so a bare
+`handle` receives the schema's **output**, so a transform reaches it as the type it actually is. Reach for `v.strictObject` and the `formText`
+family from [`@y-core/forge/validation`][validation-readme]: the body read passes values through exactly as submitted, so a bare
 `v.pipe(v.string(), v.minLength(1))` accepts `" "`. The schema contract itself is [`INPUT_VALIDATION.md`][iv-1d] §1d's.
 
 **The refusals are already written.** An oversized body, an unparseable one, a body the schema refused, and a throw all answer with a fragment
@@ -312,9 +316,19 @@ app.map(routes, controller);
 applyAssets(app); // or applyAssets(app, "/static/*") for a narrower pattern
 ```
 
-**`notFound` is the single answer to an unmatched URL** — the router's no-match and every asset miss alike, so configuring assets changes which path
-reaches it and never what a client gets. Omitted, forge answers a hardened plain-text `404` that does not echo the request path
+**`notFound` is the single answer to a URL that matches no route** — the router's no-match and every asset miss alike, so configuring assets changes
+which path reaches it and never what a client gets. Omitted, forge answers a hardened plain-text `404` that does not echo the request path
 ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e).
+
+**A method mismatch reaches that same hook by default**, so a `POST` to a `GET`-only page is answered exactly as an unknown URL is, and a caller
+cannot tell the two apart. Pass `methodMismatch: "advertise"` for the RFC answer instead — a hardened `405` with `Allow: GET, HEAD` and a body that
+does not echo the method — which is usually what a JSON API wants and rarely what a page surface does:
+
+```tsx
+const app = createApp<Bindings>({ methodMismatch: "advertise" });
+```
+
+The trade, the guard line that bounds it, and why an `ANY` asset catch-all overrides it are [`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e's.
 
 `serveAssets(app)` is the underlying handler, for registering on a route of your own rather than a catch-all.
 
@@ -459,6 +473,7 @@ hooks guarantee.
 [ram-1c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1c-registering-routes-with-appmap
 [ram-1d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1d-no-head-verb-export
 [ram-1e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
+[ram-1f]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1f-matcher-resource-budgets
 [ram-2a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2a-full-page-routes-with-definepage
 [ram-2b]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [ram-2c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2c-health-check-route-with-healthcheck

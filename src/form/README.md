@@ -28,14 +28,14 @@ import { defineAction } from "@y-core/forge/app";
 import { getAppContext } from "@y-core/forge/context";
 import { csrfProtection, importCsrfKey } from "@y-core/forge/form";
 import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
-import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
+import { formMultilineText, formText, v } from "@y-core/forge/validation";
 
 const csrfGuard = csrfProtection({
   secret: (c) => importCsrfKey(getAppContext(c).env.CSRF_SECRET),
   subject: false, // path-only tokens; bind to a session wherever one exists — see below
 });
 
-const ContactSchema = strictObject({
+const ContactSchema = v.strictObject({
   name: v.pipe(formText(), v.minLength(2)),
   email: v.pipe(formText(), v.email()),
   message: v.pipe(formMultilineText(), v.minLength(10)),
@@ -70,7 +70,7 @@ function contactPage(c) {
 rendered on. Anything else needs a minted token — see [Minting a token for another path][mint-section] below.
 
 Neither the CSRF field nor the Turnstile field appears in `ContactSchema`, and that is deliberate: a guard that consumed a field is what removes it
-before validation, so a `strictObject` never has to declare a token the request did not assert ([`INPUT_VALIDATION.md`][iv-1d] §1d). Validate the
+before validation, so a `v.strictObject` never has to declare a token the request did not assert ([`INPUT_VALIDATION.md`][iv-1d] §1d). Validate the
 credentials themselves at startup with `CsrfConfigSchema` and `TurnstileConfigSchema` ([`INPUT_VALIDATION.md`][iv-5] §5).
 
 ---

@@ -18,9 +18,11 @@ import {
   testStep,
   typeAwareLintStep,
   typecheckStep,
+  workerdStep,
 } from "./builders";
 import { hasChromium } from "./checks/browser";
 import { hasTailwind } from "./checks/design-system";
+import { hasWorkerd } from "./checks/workerd";
 import { isCheckStep } from "./steps";
 import type { Step } from "./types";
 
@@ -211,6 +213,30 @@ describe("browserStep()", () => {
 
   it("takes a hint of its own, for a project installing the browser some other way", () => {
     expect(browserStep({ hint: "pnpm exec playwright install" }).requires?.hint).toBe("pnpm exec playwright install");
+  });
+});
+
+describe("workerdStep()", () => {
+  it("defaults to the full tier, because it is held back on a prerequisite the way the browser set is", () => {
+    expect(workerdStep().tier).toBe("full");
+  });
+
+  // A spec file holds a wrangler dev server open and the compose cases spawn four more alongside it,
+  // so the file-level number multiplies against a per-file one and an unbounded fan-out starves both.
+  it("runs two spec files at once by default, since a file here carries its own concurrency", () => {
+    expect(workerdStep().cmd).toEqual(["bun", "test", "--parallel=2", "tests/workerd/"]);
+  });
+
+  it("lets a project whose specs are cheaper name its own file count", () => {
+    expect(workerdStep({ parallel: 4, sources: ["tests/runtime/"] }).cmd).toEqual(["bun", "test", "--parallel=4", "tests/runtime/"]);
+  });
+
+  it("names the runtime as the prerequisite, not the bun that is always present", () => {
+    expect(workerdStep().requires?.tool).toBe("workerd");
+  });
+
+  it("probes for the runtime itself rather than spawning a command that could pass vacuously", () => {
+    expect(workerdStep().requires?.probe).toBe(hasWorkerd);
   });
 });
 

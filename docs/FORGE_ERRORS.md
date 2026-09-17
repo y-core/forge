@@ -205,6 +205,10 @@ The paths carry different header guarantees, and one entry below is not an error
 
   On the in-chain path `applyPendingHeaders` set-overwrites these with the consumer's policy. No error path ships an unprotected response.
 
+- **The `404` and, under `methodMismatch: "advertise"`, the `405`** are not errors, but they are forge-built responses carrying the baseline headers
+  above. Both are built in-chain — the `405` by the innermost middleware, which replaces the one fetch-router would otherwise return unhardened
+  ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e) — so a consumer's queued policy set-overwrites the baseline on each.
+
 **Both error pages quote the request id when there is one to quote.** The default page and `createErrorPage` render a short `Reference: <id>` line
 from `requestIdCtx`, escaped — the opaque internal identifier canon §3b permits, and what a user can paste into a support ticket. **Neither
 generates one:** without the `requestId` middleware there is no id, and the line is omitted. On the out-of-chain path no middleware ran, so a throw
@@ -304,6 +308,7 @@ parameter and never supply their own (`passkeyTtlSeconds(operation, requested)`)
 [iv-1b]: ./INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
 [namespaces-5e]: ./NAMESPACES.md#5e-exported-factory-and-type-naming-convention
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
+[ram-1e]: ./ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
 [sb]: ./STORAGE_BINDINGS.md
 [sb-3b]: ./STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
 [sb-4a]: ./STORAGE_BINDINGS.md#4a-two-function-pattern

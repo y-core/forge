@@ -11,23 +11,23 @@ app and in the library is built from here, which is what keeps one valibot versi
 reaches test files too.
 
 ```ts
-import { describeValidationIssue, formMultilineText, formText, strictObject, v, type ValidationResult } from "@y-core/forge/validation";
+import { describeValidationIssue, formMultilineText, formText, v, type ValidationResult } from "@y-core/forge/validation";
 ```
 
-**What is not prefixed is not valibot.** `strictObject`, `formText`, `formMultilineText`, `formDigits`, `safeCheck` and `describeValidationIssue`
-sit beside `v`, never inside it — and `strictObject` is a different function from `v.strictObject`.
+**What is not prefixed is not valibot.** `formText`, `formMultilineText`, `formDigits`, `safeCheck` and `describeValidationIssue` sit beside `v`,
+never inside it. Everything else you reach for, `v.strictObject` included, is valibot's own.
 
 ---
 
 ## Getting started
 
-Declare the schema with `strictObject`, parse with `v.safeParse`, and turn the issues into a [`ValidationResult`][result-readme] at the boundary.
+Declare the schema with `v.strictObject`, parse with `v.safeParse`, and turn the issues into a [`ValidationResult`][result-readme] at the boundary.
 
 ```ts
-import { describeValidationIssue, formMultilineText, formText, strictObject, v, type ValidationResult } from "@y-core/forge/validation";
+import { describeValidationIssue, formMultilineText, formText, v, type ValidationResult } from "@y-core/forge/validation";
 import { err, ok } from "@y-core/forge/result";
 
-const ContactSchema = strictObject({
+const ContactSchema = v.strictObject({
   name: v.pipe(formText(), v.minLength(2)),
   email: v.pipe(formText(), v.email()),
   message: v.pipe(formMultilineText(), v.minLength(10)),
@@ -42,10 +42,10 @@ export function validateContact(fields: unknown): ValidationResult<ContactInput>
 }
 ```
 
-`strictObject` rather than `v.object` means an undeclared field is **refused** rather than quietly dropped, which
-is what you want for anything a caller composed; [`INPUT_VALIDATION.md`][iv-1d] §1d states the guarantee and why the forge spelling is the one that
-carries it. `abortEarly: true` means the caller learns about one failing field at a time — deliberate, because an enumerating refusal is one a
-caller can lengthen by adding fields (§1b).
+`v.strictObject` rather than `v.object` means an undeclared field is **refused** rather than quietly dropped, which is what you want for anything a
+caller composed, and it holds for a key colliding with an `Object.prototype` name — `__proto__`, `constructor`, `toString` — as it does for any
+other; [`INPUT_VALIDATION.md`][iv-1d] §1d states the guarantee. `abortEarly: true` means the caller learns about one failing field at a time —
+deliberate, because an enumerating refusal is one a caller can lengthen by adding fields (§1b).
 
 **A route built with `defineAction` writes none of this.** Hand it the same `ContactSchema` and the pipeline reads the body, parses, and renders the
 refusal itself. Write a function like the one above for a service that validates its own input, or a handler outside that pipeline.
@@ -64,7 +64,7 @@ primitives cover the cases where the raw value would make a later check mean the
 | `formDigits()` | a number whose separators are cosmetic | `"4111 1111 1111 1111"` and `"4111111111111111"` are the same card |
 
 ```ts
-const PaymentSchema = strictObject({
+const PaymentSchema = v.strictObject({
   card: v.pipe(formDigits(), v.length(16)), // accepts "4111 1111 1111 1111"
   note: v.pipe(formMultilineText(), v.maxLength(2000)),
 });

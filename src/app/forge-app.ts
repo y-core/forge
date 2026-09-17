@@ -1,6 +1,6 @@
 import type { MatchData, Middleware, RequestHandler } from "@remix-run/fetch-router";
 import { createRouter, RequestContext } from "@remix-run/fetch-router";
-import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
+import type { MatcherLimits, Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/match";
 
 import type { Config } from "../config/config";
@@ -17,7 +17,7 @@ import { toError } from "../result/result";
 import { requestIdCtx } from "../security/request-id";
 import { shellCtx } from "./shell";
 import type { PageShell } from "./types";
-import type { GlobalMiddlewareEntry, RequestState } from "./types";
+import type { GlobalMiddlewareEntry, MethodMismatch, RequestState } from "./types";
 
 const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
 
@@ -29,6 +29,14 @@ const BASELINE_HEADERS = {
   "referrer-policy": "no-referrer",
 } as const;
 
+function hardenedText(body: string, status: number, extra?: Record<string, string>): Response {
+  return new Response(body, { status, headers: { ...BASELINE_HEADERS, "content-type": "text/plain; charset=utf-8", ...extra } });
+}
+
+// forge governs every matcher to hold a consumer's routing to a Workers-shaped budget.
+/** Matcher ceilings every forge matcher is built with, tighter than route-pattern's defaults. */
+const MATCHER_LIMITS: MatcherLimits = { maxPatternSize: 4096, maxMatcherSize: 1024 * 1024, maxMatchWork: 200_000 };
+
 /** Rewrites a `use()` path convention into a route-pattern source. */
 function toPatternSource(path: string): string {
   if (path.endsWith("/*")) return `${path.slice(0, -2)}(/*)`;
@@ -39,8 +47,8 @@ function toPatternSource(path: string): string {
 /** Compiles `use()` paths into one matcher, or `null` when any of them is the catch-all. */
 function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiMatcher<null> | null {
   if (paths.includes("*")) return null;
-  if (paths.length === 1) return createMatcher(toPatternSource(paths[0] as string));
-  const multi = createMultiMatcher<null>();
+  if (paths.length === 1) return createMatcher(toPatternSource(paths[0] as string), { limits: MATCHER_LIMITS });
+  const multi = createMultiMatcher<null>({ limits: MATCHER_LIMITS });
   for (const path of paths) multi.add(toPatternSource(path), null);
   return multi;
 }
@@ -62,6 +70,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   private _router?: ReturnType<typeof createRouter>;
   private _onError?: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   private _notFound?: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
+  private _methodMismatch: MethodMismatch = "notFound";
   private _errorDetail = false;
   /** Config store attached by `registerConfig`. @internal */
   configStore?: Config<unknown>;
@@ -69,7 +78,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
   constructor(logger?: Logger) {
     this._logger = logger ?? createLogger("app");
-    this._matcher = createMultiMatcher<MatchData>();
+    this._matcher = createMultiMatcher<MatchData>({ limits: MATCHER_LIMITS });
     this._setup = createRouter({ matcher: this._matcher });
   }
 
@@ -77,16 +86,20 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     this._onError = fn;
   }
 
-  /** Registers the answer to an unmatched URL, replacing the hardened plain-text `404`. */
+  /** Registers the answer to an unmatched URL, replacing the hardened `404`; a method mismatch reaches it too unless `setMethodMismatch` says otherwise. */
   setNotFound(fn: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>): void {
     this._notFound = fn;
+  }
+
+  /** Chooses between hiding a method mismatch behind the not-found answer and advertising it as a `405`. */
+  setMethodMismatch(mode: MethodMismatch): void {
+    this._methodMismatch = mode;
   }
 
   /** Renders the app's not-found answer, or forge's default when none is registered. @internal */
   notFound(c: AppContext<Bindings>, config: unknown): Response | Promise<Response> {
     if (this._notFound) return this._notFound(c, config);
-    // Never echoes the path: fetch-router's own default reflects it back into the body.
-    return new Response("Not Found", { status: 404, headers: { ...BASELINE_HEADERS, "content-type": "text/plain; charset=utf-8" } });
+    return hardenedText("Not Found", 404);
   }
 
   /** Whether the boundary's 500 page prints the thrown message; only a `DevAllowance` turns it on. */
@@ -149,6 +162,23 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       }
     };
 
+    const answerMethodMismatch: Middleware = async (context, next) => {
+      const res = await next();
+      if (res.status !== 405) return res;
+      const matches = this._matcher.matchAll(context.url);
+      if (matches.length === 0) return res;
+      // Sound only because `fetch` rewrites HEAD to GET: the router's dispatch loop breaks on its
+      // HEAD fallback, so a surviving HEAD would make this rewrite a handler's own answer.
+      if (matches.some(({ data }) => data.method === "ANY" || data.method === context.method)) return res;
+      const allow = res.headers.get("allow");
+      await res.body?.cancel();
+      if (this._methodMismatch === "notFound") {
+        const c = getAppContext<Bindings>(context);
+        return this.notFound(c, c.config);
+      }
+      return hardenedText("Method Not Allowed", 405, allow === null ? undefined : { allow });
+    };
+
     // Twice deliberately: the inner boundary keeps an error response flowing back out through guards
     // that queue `set-cookie` after `next()`; the outer one catches a guard's own throw.
     const defaultHandler: RequestHandler = (context) => {
@@ -159,7 +189,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     return createRouter({
       matcher: this._matcher,
       defaultHandler,
-      middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary],
+      middleware: [provideRequestState, applyHeaders, errorBoundary, ...guarded, errorBoundary, answerMethodMismatch],
     });
   }
 

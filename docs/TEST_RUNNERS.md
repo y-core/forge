@@ -21,7 +21,7 @@ audience: consumer
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
 - §1c The Browser Set: real Chromium behind its own verb
 - §1d Waiting on an htmx Swap: settled, not merely swapped
-- §1e Media Options Playwright Does Not Implement: why a spec takes `test` from the harness
+- §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
 - §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, and the published helper that starts it
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
@@ -148,17 +148,17 @@ Whether the poll's tick lands before or after the settle is a coin flip that CPU
 load-dependent rather than reproducible. `showcase.browser.ts` counts `htmx:afterSettle` on `document.body` and gates on the count. Raising
 `defaultSettleDelay` is how such a race is made deterministic while it is being diagnosed; production settle timing is never changed to suit a spec.
 
-### 1e. Media Options Playwright Does Not Implement
+### 1e. Media Options and the Harness `test`
 
-**Take `test` from `src/ui/client/browser.fixture.ts`, not from `@playwright/test`, in any spec that emulates reduced motion, forced colours or
-contrast.** playwright 1.62 declares `reducedMotion`, `forcedColors` and `contrast` in `types/test.d.ts` but builds none of them into
-`_combinedContextOptions` (`playwright/lib/index.js`), so `test.use({ reducedMotion: "reduce" })` type-checks and emulates nothing at all. A spec
-written against the reduced-motion branch of `forge-ui.css` would silently exercise the `no-preference` branch and pass for the wrong reason.
+**`test.use({ reducedMotion })`, `{ forcedColors }` and `{ contrast }` reach the browser, and a spec may take `test` from either module.**
+playwright 1.62 declared all three in `types/test.d.ts` but built none of them into `_combinedContextOptions` (`playwright/lib/index.js`), so
+`test.use({ reducedMotion: "reduce" })` type-checked and emulated nothing at all; `src/ui/client/browser.fixture.ts` reinstated them through an
+overridden `page` fixture. 1.63 builds all three, so the harness overrides nothing and re-exports `@playwright/test`'s `test` unchanged.
 
-The harness `test` reinstates them as real options and applies them through an overridden `page` fixture, which is the one form that does reach
-the browser; the runtime `page.emulateMedia({ … })` call is equally sound and is what the existing motion-sensitive specs use. **Nothing
-enforces the import** — `browser.fixture.browser.ts` is the regression that would catch the option silently reverting to a no-op, not a check on
-call sites.
+**`browser.fixture.browser.ts` is what made that deletion safe, and is why it stays.** Its cases assert the emulation against the real cascade — a
+`prefers-reduced-motion: no-preference` rule leaving the page, `forced-colors: active` matching — so an option silently reverting to a no-op fails
+there, rather than passing for the wrong reason in a spec written against the reduced-motion branch of `forge-ui.css`. **Nothing enforces the
+import**: taking `test` from the harness alongside `mount` is convention, not a rule.
 
 ### 1f. The Workerd Set
 
@@ -179,6 +179,13 @@ would be wrong if it were computed from this file's own location. §7f owns why 
 
 **The compose cases run four at a time.** Each case is a dozen wrangler spawns of roughly 250MB apiece, so running every case at once peaked near
 4GB and the OOM killer took the gate down; four in flight keeps most of the wall-clock win and holds the peak near a gigabyte.
+
+**The spec files themselves run two at a time, and the number is small because it multiplies against that one.** `bun test` runs files in one
+process by default, which left the set serial behind its longest file. `--parallel=2` fits the cheap files into the compose file's slack and cut the
+set by about a third. The next value up does not: at `--parallel` with no number — one worker per core — a `wrangler dev` under `startDevServer`
+never answered inside its 180s readiness budget, because every spec file at once, plus the compose file's own cases already in flight, is more
+processes than the machine has cores. A file here carries its own concurrency, so the file-level number is the multiplier, not the total. The flag
+shipped in Bun 1.3.13, which is what `package.json`'s `engines.bun` floor records for a consumer building a gate out of `workerdStep`.
 
 **`stop()` kills the process group, not the CLI.** wrangler spawns workerd and esbuild as its own children, so a signal to the CLI alone leaves a
 `workerd` pair reparented to PID 1, ignoring `SIGTERM` and holding a core each. The helper spawns `detached`, kills `-pid` with `SIGKILL`, and binds

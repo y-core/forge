@@ -110,9 +110,24 @@ function body(span: CommentSpan): string {
     .trim();
 }
 
+/** The `-- <marker>: <value>` form a check parses out of a whole line, so only a block can hold it. */
+const ANNOTATION = /^--[ \t]*[a-z][a-z0-9-]*:[ \t]*\S+$/;
+
+function isAnnotationBlock(span: CommentSpan): boolean {
+  if (span.kind !== "block" || span.text.startsWith("/**")) return false;
+  // The delimiters get lines of their own, because a marker sharing a line with `/*` or `*/` is one
+  // no whole-line reader can parse — exempting it would buy silence for an annotation nothing reads.
+  const lines = span.text.split("\n");
+  const closer = lines.pop();
+  const opener = lines.shift();
+  if (opener?.trim() !== "/*" || closer?.trim() !== "*/") return false;
+  const marked = lines.map((line) => line.trim()).filter((line) => line !== "");
+  return marked.length > 0 && marked.every((line) => ANNOTATION.test(line));
+}
+
 /** Whether a comment is machine-readable directive rather than prose — outside the budget entirely. @public */
 export function isToolingDirective(span: CommentSpan): boolean {
-  return TOOLING.test(body(span)) || SUPPRESSION.test(span.text);
+  return TOOLING.test(body(span)) || SUPPRESSION.test(span.text) || isAnnotationBlock(span);
 }
 
 // `{@link X}` is the inline form: a cross-reference an editor resolves, costing the reader no line

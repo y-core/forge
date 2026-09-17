@@ -2,12 +2,11 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { mapHandler } from "../testing/route";
-import { strictObject } from "../validation/strict-object";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
 
-const NameSchema = strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
+const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };

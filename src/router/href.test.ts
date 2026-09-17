@@ -10,7 +10,24 @@ describe("createHref re-export (F4)", () => {
   });
 
   it("percent-encodes a search value so a reserved character cannot open a second parameter", () => {
-    expect(createHref("/search", undefined, { q: "a b&c" })).toBe("/search?q=a+b%26c");
+    expect(createHref("/search", undefined, { searchParams: { q: "a b&c" } })).toBe("/search?q=a+b%26c");
+  });
+
+  it("accepts a URLSearchParams as readily as a record, so a caller may build the query however it has it", () => {
+    expect(createHref("/search", undefined, { searchParams: new URLSearchParams({ q: "a b&c" }) })).toBe("/search?q=a+b%26c");
+  });
+
+  // A dot is a pathname delimiter now, so a param carrying one escapes rather than splitting.
+  it("percent-encodes a dot inside a param value", () => {
+    expect(createHref("/files/:name", { name: "report.pdf" })).toBe("/files/report%2Epdf");
+  });
+
+  it("renders a same-origin target path-relative against a baseURL", () => {
+    expect(createHref("/users/:id", { id: "42" }, { baseURL: "https://a.example/admin/" })).toBe("../users/42");
+  });
+
+  it("refuses a baseURL that is not absolute, rather than resolving it against nothing", () => {
+    expect(() => createHref("/users/:id", { id: "42" }, { baseURL: "/admin/" })).toThrow(TypeError);
   });
 
   it("refuses a pattern whose required param was not supplied, naming the one that is missing", () => {

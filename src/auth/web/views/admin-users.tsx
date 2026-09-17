@@ -21,7 +21,8 @@ import type { AdminUsersViewProps } from "./types";
 export const AdminUsersView: FC<AdminUsersViewProps> = ({ users, query, nextCursor, paths, icon: AppIcon, class: cls, level }) => {
   const Heading = `h${level ?? 1}` as "h1";
   const listPath = paths.users.list();
-  const nextPath = nextCursor === null ? null : paths.users.list({}, query === "" ? { after: nextCursor } : { q: query, after: nextCursor });
+  const nextSearch = query === "" ? { after: nextCursor } : { q: query, after: nextCursor };
+  const nextPath = nextCursor === null ? null : paths.users.list({}, { searchParams: nextSearch });
 
   return (
     <div class={cn("mx-auto flex w-full max-w-4xl flex-col gap-6", cls)}>

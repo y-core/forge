@@ -184,6 +184,20 @@
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       // a test's job is to feed adversarial markup — see warden/canon/libs/TESTING.md
       "rules": {
+        // A test imports a barrel on purpose: nothing imports a test, so no cycle is reachable, and
+        // travelling the consumer's path is what proves the barrel exports what the docs promise.
+        // `FORGE_REVIEW.md`'s own detection for this rule already excludes test files.
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              }
+            ]
+          }
+        ],
         "typescript/no-non-null-assertion": "off",
         "forge/optional-prop-undefined": "off",
         // A probe that hands a component a caller `data-slot` and then a per-case override is

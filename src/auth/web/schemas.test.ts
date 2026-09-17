@@ -34,6 +34,14 @@ describe("authSigninSchema", () => {
     expect(fieldsRejected(authSigninSchema(), { email: "ada" })).toEqual(["email"]);
   });
 
+  it("accepts an RFC-legal special in the local part", () => {
+    expect(output(authSigninSchema(), { email: "o'brien@example.com" })).toEqual({ email: "o'brien@example.com" });
+  });
+
+  it("rejects a single-label domain, which no mail path can deliver an OTP to", () => {
+    expect(fieldsRejected(authSigninSchema(), { email: "ada@localhost" })).toEqual(["email"]);
+  });
+
   it("rejects an address past the RFC 5321 path limit", () => {
     expect(fieldsRejected(authSigninSchema(), { email: `${"a".repeat(250)}@example.com` })).toEqual(["email"]);
   });

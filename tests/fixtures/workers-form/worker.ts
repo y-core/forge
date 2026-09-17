@@ -7,7 +7,6 @@ import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 import { defineAction } from "../../../src/app/action";
 import { Forge } from "../../../src/app/forge-app";
 import { csrfProtection, importCsrfKey, mintCsrf } from "../../../src/form/csrf";
-import { strictObject } from "../../../src/validation/strict-object";
 import { v } from "../../../src/validation/validation";
 
 interface Env {
@@ -16,7 +15,7 @@ interface Env {
 
 const MAX_BYTES = 4096;
 
-const ContactSchema = strictObject({
+const ContactSchema = v.strictObject({
   name: v.pipe(v.string(), v.minLength(1)),
   email: v.pipe(v.string(), v.email()),
   message: v.pipe(v.string(), v.minLength(1)),

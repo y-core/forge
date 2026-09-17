@@ -24,5 +24,6 @@ export type {
   BotRejection,
   CacheDirective,
   HealthCheckResult,
+  MethodMismatch,
   PageDefinition,
 } from "./types";

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
 import { describeValidationField, describeValidationIssue } from "./format-issues";
-import { strictObject } from "./strict-object";
 import { v } from "./validation";
 
 function issuesFor(schema: v.GenericSchema, input: unknown, config?: v.Config<v.BaseIssue<unknown>>): v.BaseIssue<unknown>[] {
@@ -22,7 +21,7 @@ describe("describeValidationIssue", () => {
   });
 
   it("names an undeclared key a strict schema refused, and nothing else", () => {
-    const issues = issuesFor(strictObject({ name: v.string() }), { name: "Jane", nobody_asked: "1" });
+    const issues = issuesFor(v.strictObject({ name: v.string() }), { name: "Jane", nobody_asked: "1" });
     expect(issues.map(describeValidationIssue)).toEqual(["nobody_asked"]);
   });
 
@@ -57,18 +56,18 @@ describe("describeValidationIssue", () => {
 
   it("truncates the undeclared key a strict schema refused", () => {
     const key = "z".repeat(120);
-    expect(describeValidationIssue(firstIssue(strictObject({ name: v.string() }), { name: "Jane", [key]: "1" }))).toBe("z".repeat(40));
+    expect(describeValidationIssue(firstIssue(v.strictObject({ name: v.string() }), { name: "Jane", [key]: "1" }))).toBe("z".repeat(40));
   });
 
   it("reproduces neither the submitted value nor the schema's own pattern", () => {
-    const issue = firstIssue(strictObject({ password: v.pipe(v.string(), v.regex(/^(?=.*[A-Z]).{12,}$/)) }), { password: "hunter2secret" });
+    const issue = firstIssue(v.strictObject({ password: v.pipe(v.string(), v.regex(/^(?=.*[A-Z]).{12,}$/)) }), { password: "hunter2secret" });
 
     expect(issue.message).toBe('Invalid format: Expected /^(?=.*[A-Z]).{12,}$/ but received "hunter2secret"');
     expect(describeValidationIssue(issue)).toBe("password");
   });
 
   it("describes a 50,000-character value and a 5-character one identically", () => {
-    const Schema = strictObject({ email: v.pipe(v.string(), v.email()) });
+    const Schema = v.strictObject({ email: v.pipe(v.string(), v.email()) });
     expect(describeValidationIssue(firstIssue(Schema, { email: "z".repeat(50_000) }))).toBe(
       describeValidationIssue(firstIssue(Schema, { email: "z" })),
     );

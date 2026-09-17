@@ -69,6 +69,30 @@ describe("isToolingDirective() — outside the budget entirely", () => {
     expect(isToolingDirective(only("/* modern-css-allow: forge-ui-platform-isolation */"))).toBe(false);
   });
 
+  it("is true of a block holding a whole-line `--` marker, which needs three lines to exist at all", () => {
+    expect(isToolingDirective(only("/*\n-- row-removal-authorised-by: feat-260101-01\n*/"))).toBe(true);
+  });
+
+  it("is true of a `--` marker block carrying more than one marker line", () => {
+    expect(isToolingDirective(only("/*\n  -- row-removal-authorised-by: feat-1\n  -- reviewed-by: feat-2\n*/"))).toBe(true);
+  });
+
+  it("is false of a marker sharing its line with the delimiters, which no whole-line reader can parse", () => {
+    expect(isToolingDirective(only("/* -- row-removal-authorised-by: feat-1 */"))).toBe(false);
+  });
+
+  it("is false of a marker sharing its line with the closing delimiter alone", () => {
+    expect(isToolingDirective(only("/*\n-- row-removal-authorised-by: feat-1 */"))).toBe(false);
+  });
+
+  it("is false of a `--` marker block that also carries prose", () => {
+    expect(isToolingDirective(only("/*\n-- row-removal-authorised-by: feat-1\nthe epic is gone by then\n*/"))).toBe(false);
+  });
+
+  it("is false of a TSDoc block, so `--` in documentation buys no exemption", () => {
+    expect(isToolingDirective(only("/**\n-- row-removal-authorised-by: feat-1\n*/"))).toBe(false);
+  });
+
   it("is false of prose that merely opens with a word", () => {
     expect(isToolingDirective(only("// globally unique across every ledger"))).toBe(false);
   });

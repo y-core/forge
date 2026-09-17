@@ -4,7 +4,6 @@ import { CSRF_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
 import { escapeHtml } from "../http/escape";
 import { mapHandler } from "../testing/route";
-import { strictObject } from "../validation/strict-object";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
@@ -27,7 +26,7 @@ function post(app: Requestable, body: string, path = "/test"): Promise<Response>
 
 const TURNSTILE_OPTIONS = { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) };
 
-const NameSchema = strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
+const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
 function refusal(...fields: readonly string[]): string {
   const items = fields.map((field) => `<li>${field}</li>`).join("");
@@ -358,7 +357,7 @@ describe("definePage — the schema pipeline", () => {
   });
 
   it("hands the parsed body to the action as its third argument, then runs the loader and the view", async () => {
-    const Schema = strictObject({ name: v.string(), phone: v.optional(v.string()) });
+    const Schema = v.strictObject({ name: v.string(), phone: v.optional(v.string()) });
     const calls: string[] = [];
     let firstArgIsTheContext = false;
     let received: unknown;
@@ -540,7 +539,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 });
 
 describe("definePage — the submission sequence's options are the page's own", () => {
-  const MessageSchema = strictObject({ message: v.pipe(v.string(), v.minLength(1, "Tell us what you'd like & we'll reply.")) });
+  const MessageSchema = v.strictObject({ message: v.pipe(v.string(), v.minLength(1, "Tell us what you'd like & we'll reply.")) });
 
   function renderForm(errors: readonly string[]): Response {
     const items = errors.map((message) => `<li>${escapeHtml(message)}</li>`).join("");
@@ -664,7 +663,7 @@ describe("definePage — the submission sequence's options are the page's own", 
 
 describe("definePage — the CSRF field the guard consumed", () => {
   const SECRET = "a".repeat(64);
-  const KeysSchema = strictObject({ name: v.string() });
+  const KeysSchema = v.strictObject({ name: v.string() });
 
   function keysPage() {
     return definePage({
@@ -674,7 +673,7 @@ describe("definePage — the CSRF field the guard consumed", () => {
     });
   }
 
-  it("drops the token field on the page path, so a strictObject that never declares it passes", async () => {
+  it("drops the token field on the page path, so a v.strictObject that never declares it passes", async () => {
     const key = await importCsrfKey(SECRET);
     const app = new Forge();
     mapHandler(app, "POST", "/guarded", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: keysPage() });
@@ -696,7 +695,7 @@ describe("definePage — the CSRF field the guard consumed", () => {
 });
 
 describe("definePage — a throwing schema", () => {
-  const ThrowingCheck = strictObject({
+  const ThrowingCheck = v.strictObject({
     name: v.pipe(
       v.string(),
       v.check<string>(() => {

@@ -18,6 +18,9 @@ import type { definePage } from "./page";
 import type { PIPELINE_ONLY_KEYS } from "./pipeline";
 
 /** Options for `createApp`; the wiring hooks run in the order they are numbered. @public */
+/** How an app answers a method mismatch: `"notFound"` keeps the route unacknowledged, `"advertise"` returns the RFC 9110 `405` with `Allow`. @public */
+export type MethodMismatch = "notFound" | "advertise";
+
 export interface AppOptions<Bindings = Record<string, unknown>> {
   config?: object;
   /** A development entry's token: with `errorDetail` the boundary's 500 page prints the thrown message. */
@@ -33,6 +36,8 @@ export interface AppOptions<Bindings = Record<string, unknown>> {
   routes?: (app: Forge<Bindings & object>) => void;
   /** Renders an unmatched URL — the router's no-match path and the asset catch-all's misses alike. */
   notFound?: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
+  /** Answers a URL a pattern matched but no route's method did; defaults to `"notFound"`. */
+  methodMismatch?: MethodMismatch;
   /** Wiring step 3 — late registrations that must precede the asset catch-all. */
   finalize?: (app: Forge<Bindings & object>) => void;
   /** Wiring step 4 — registers the static-asset catch-all last. */
@@ -120,7 +125,7 @@ export type BotRejection = { guard: "turnstile"; reason: TurnstileFailure };
 
 /** Declarative definition of a mutation route for `defineAction`. @public */
 export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown> {
-  /** The body schema; prefer the `validation` namespace's `strictObject`. */
+  /** The body schema; prefer `v.strictObject`, which refuses an undeclared field rather than dropping it. */
   schema: S;
   handle: (data: v.InferOutput<S>, c: AppContext<Bindings>, config: ConfigData) => Response | Promise<Response>;
   /** Replaces the default validation-errors fragment. */

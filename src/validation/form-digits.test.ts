@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 
 import { formDigits } from "./form-digits";
 import { formText } from "./form-text";
-import { strictObject } from "./strict-object";
 import { v } from "./validation";
 
 /** The parsed output of a digit schema, or a thrown failure — so a value case never narrows the union itself. */
@@ -118,16 +117,16 @@ describe("formDigits", () => {
 });
 
 describe("formDigits — composition", () => {
-  it("parses a strictObject of the digit primitive to a plain string", () => {
-    const PaymentSchema = strictObject({ card: v.pipe(formDigits(), v.length(16)) });
+  it("parses a v.strictObject of the digit primitive to a plain string", () => {
+    const PaymentSchema = v.strictObject({ card: v.pipe(formDigits(), v.length(16)) });
     const result = v.safeParse(PaymentSchema, body({ card: "4111 1111 1111 1111" }));
     if (!result.success) throw new Error("expected the payment schema to accept this body");
     const card: string = result.output.card;
     expect(card).toBe("4111111111111111");
   });
 
-  it("reports the failing field by name when a strictObject field refuses its value", () => {
-    const PaymentSchema = strictObject({ card: formDigits() });
+  it("reports the failing field by name when a v.strictObject field refuses its value", () => {
+    const PaymentSchema = v.strictObject({ card: formDigits() });
     const issues = issuesFor(PaymentSchema.entries.card, 42);
     expect(issues.map((issue) => issue.type)).toEqual(["string"]);
     const nested = v.safeParse(PaymentSchema, body({ card: 42 }));
@@ -149,7 +148,7 @@ describe("formDigits — composition", () => {
   });
 
   it("leaves an absent optional field absent", () => {
-    const PhoneSchema = strictObject({ phone: v.optional(formDigits()) });
+    const PhoneSchema = v.strictObject({ phone: v.optional(formDigits()) });
     const result = v.safeParse(PhoneSchema, body({}));
     expect(result.success).toBe(true);
     expect(result.success && Object.hasOwn(result.output, "phone")).toBe(false);

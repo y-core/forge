@@ -7,11 +7,12 @@ import { createConfig } from "../config/config";
 import { devAllowance } from "../dev/allowance";
 import { csrfProtection, importCsrfKey } from "../form/csrf";
 import type { SerializedError } from "../logging/types";
+import { MatcherResourceError } from "../router/mod";
 import { createSecurityHeaders } from "../security/headers";
 import { rateLimit } from "../security/rate-limit";
 import { requestId } from "../security/request-id";
 import { mapHandler } from "../testing/route";
-import { v } from "../validation/mod";
+import { v } from "../validation/validation";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
 import { definePage } from "./page";
@@ -453,6 +454,46 @@ describe("HEAD requests", () => {
     expect(headRes.headers.get("content-length")).toBe("11");
     expect(headRes.headers.get("content-length")).toBe(getRes.headers.get("content-length"));
   });
+
+  // The router now serves HEAD off a GET route itself, so two layers strip the same body. Forge's
+  // rewrite reaches the router as a GET, which is what keeps the router's layer out of the way.
+  it("reaches the handler as a GET, so the router's own HEAD handling never runs a second strip", async () => {
+    const app = createApp();
+    const methods: string[] = [];
+    mapHandler(app, "GET", "/once", (c) => {
+      methods.push(c.request.method);
+      return new Response("hello world", { status: 201, headers: { "x-custom": "kept" } });
+    });
+
+    const res = await app.request("/once", { method: "HEAD" });
+    expect(methods).toEqual(["GET"]);
+    expect(res.status).toBe(201);
+    expect(res.headers.get("x-custom")).toBe("kept");
+    expect(await res.text()).toBe("");
+  });
+
+  it("strips the body of the hardened 405 the rewritten GET earns, and keeps its baseline headers", async () => {
+    const app = createApp({ methodMismatch: "advertise" });
+    mapHandler(app, "POST", "/submit", () => new Response("posted"));
+
+    const res = await app.request("/submit", { method: "HEAD" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("POST");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(await res.text()).toBe("");
+  });
+
+  it("strips the body of the default not-found answer a mismatched HEAD earns", async () => {
+    const app = createApp();
+    mapHandler(app, "POST", "/submit", () => new Response("posted"));
+
+    const res = await app.request("/submit", { method: "HEAD" });
+    expect(res.status).toBe(404);
+    expect(res.headers.get("allow")).toBeNull();
+    expect(await res.text()).toBe("");
+  });
 });
 
 describe("/admin/* middleware matching (F3)", () => {
@@ -675,6 +716,228 @@ describe("createApp — the unmatched URL", () => {
     const res = await app.request("/missing");
     expect(res.status).toBe(404);
     expect(res.headers.get("x-request-id")).not.toBeNull();
+  });
+});
+
+describe("createApp — a method mismatch, under the default `notFound`", () => {
+  it("renders the not-found hook rather than advertising the methods the URL does serve", async () => {
+    const app = createApp({ notFound: () => new Response("hook ran", { status: 404 }) });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(res.headers.get("allow")).toBeNull();
+    expect(await res.text()).toBe("hook ran");
+  });
+
+  // The whole point of the default: a probe cannot tell a registered URL from an absent one, so the
+  // 404/405 split never becomes an oracle for enumerating routes a guard does not cover.
+  it("answers a registered URL and an absent one identically, byte for byte", async () => {
+    const app = createApp();
+    mapHandler(app, "POST", "/internal/webhook", () => new Response("done"));
+
+    const registered = await app.request("/internal/webhook", { method: "GET" });
+    const absent = await app.request("/internal/no-such-hook", { method: "GET" });
+    expect(registered.status).toBe(absent.status);
+    expect(registered.headers.get("allow")).toBe(absent.headers.get("allow"));
+    expect(await registered.text()).toBe(await absent.text());
+  });
+
+  it("falls to forge's hardened 404 when no hook is registered", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "PROPFIND" });
+    expect(res.status).toBe(404);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(await res.text()).toBe("Not Found");
+  });
+
+  it("answers the same way whether or not assets are mounted, so the catch-all decides nothing", async () => {
+    const withAssets = createApp<{ ASSETS?: { fetch: (req: Request) => Promise<Response> } }>({
+      notFound: () => new Response("hook ran", { status: 404 }),
+      routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")),
+      assets: true,
+    });
+    const without = createApp({
+      notFound: () => new Response("hook ran", { status: 404 }),
+      routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")),
+    });
+
+    const assetRes = await withAssets.request("/page", { method: "POST" }, { ASSETS: { fetch: async () => new Response(null, { status: 404 }) } });
+    const bareRes = await without.request("/page", { method: "POST" });
+    expect(assetRes.status).toBe(bareRes.status);
+    expect(await assetRes.text()).toBe(await bareRes.text());
+  });
+
+  it("reaches the answer through the middleware chain, so a guard's headers still land on it", async () => {
+    const app = createApp({ middleware: (a) => a.use("*", requestId()) });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(res.headers.get("x-request-id")).not.toBeNull();
+  });
+
+  it("returns a route handler's own 405 untouched, because that route did dispatch", async () => {
+    const app = createApp();
+    mapHandler(app, "POST", "/deny", () => new Response("nope", { status: 405, headers: { allow: "GET" } }));
+
+    const res = await app.request("/deny", { method: "POST" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET");
+    expect(await res.text()).toBe("nope");
+  });
+
+  it("returns an ANY route's own 405 untouched, so the method-agnostic arm answers for itself", async () => {
+    const app = createApp();
+    mapHandler(app, "ANY", "/deny", () => new Response("nope", { status: 405, headers: { allow: "GET" } }));
+
+    const res = await app.request("/deny", { method: "POST" });
+    expect(res.status).toBe(405);
+    expect(await res.text()).toBe("nope");
+  });
+
+  it("returns a notFound hook's own 405 untouched, because no pattern matched the URL at all", async () => {
+    const app = createApp({ notFound: () => new Response("hook 405", { status: 405 }) });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/no/such/path");
+    expect(res.status).toBe(405);
+    expect(await res.text()).toBe("hook 405");
+  });
+});
+
+describe("createApp — a method mismatch, under `advertise`", () => {
+  it("answers 405 with the methods the URL does serve, rather than the not-found hook", async () => {
+    const app = createApp({ methodMismatch: "advertise", notFound: () => new Response("hook ran", { status: 404 }) });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "POST" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET, HEAD");
+  });
+
+  it("leaves the not-found hook owning a URL that matches no pattern at all", async () => {
+    const app = createApp({ methodMismatch: "advertise", notFound: () => new Response("hook ran", { status: 404 }) });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/no/such/path", { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("hook ran");
+  });
+
+  it("lists every method registered at the URL, so Allow reports the route map and not one route", async () => {
+    const app = createApp({ methodMismatch: "advertise" });
+    mapHandler(app, "GET", "/page", () => new Response("get"));
+    mapHandler(app, "PUT", "/page", () => new Response("put"));
+
+    const res = await app.request("/page", { method: "DELETE" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET, HEAD, PUT");
+    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await res.text()).toBe("Method Not Allowed");
+  });
+
+  it("answers a body that never echoes the method the client chose", async () => {
+    const app = createApp({ methodMismatch: "advertise" });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "PROPFIND" });
+    const body = await res.text();
+    expect(body).toBe("Method Not Allowed");
+    expect(body).not.toContain("PROPFIND");
+  });
+
+  it("carries the same baseline hardening the default 404 does", async () => {
+    const app = createApp({ methodMismatch: "advertise" });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "PROPFIND" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  });
+
+  // The disclosure this mode opts into stops at the guard line: a guard that answers without calling
+  // `next()` means no dispatch ran, so there is no 405 to rebuild and no `Allow` to leak.
+  it("never reaches a route a rejecting guard covers, so Allow stays behind the guard", async () => {
+    const app = createApp({ methodMismatch: "advertise", middleware: (a) => a.use("/admin/*", () => new Response("denied", { status: 403 })) });
+    mapHandler(app, "POST", "/admin/delete-user", () => new Response("done"));
+
+    const res = await app.request("/admin/delete-user", { method: "GET" });
+    expect(res.status).toBe(403);
+    expect(res.headers.get("allow")).toBeNull();
+  });
+
+  it("returns a route handler's own 405 untouched, because that route did dispatch", async () => {
+    const app = createApp({ methodMismatch: "advertise" });
+    mapHandler(app, "POST", "/deny", () => new Response("nope", { status: 405, headers: { allow: "GET" } }));
+
+    const res = await app.request("/deny", { method: "POST" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET");
+    expect(await res.text()).toBe("nope");
+  });
+
+  // An `ANY` catch-all matches the mismatched method and wins dispatch, so the router never counts an
+  // allowed method. The mode governs routed URLs; a catch-all absorbing every method is its limit.
+  it("is overridden by the asset catch-all, which answers the mismatch itself", async () => {
+    const app = createApp<{ ASSETS?: { fetch: (req: Request) => Promise<Response> } }>({
+      methodMismatch: "advertise",
+      notFound: () => new Response("hook ran", { status: 404 }),
+      routes: (a) => mapHandler(a, "GET", "/page", () => new Response("real route")),
+      assets: true,
+    });
+
+    const res = await app.request("/page", { method: "POST" }, { ASSETS: { fetch: async () => new Response(null, { status: 404 }) } });
+    expect(res.status).toBe(404);
+    expect(res.headers.get("allow")).toBeNull();
+    expect(await res.text()).toBe("hook ran");
+  });
+
+  it("reaches the 405 through the middleware chain, so a guard's headers still land on it", async () => {
+    const app = createApp({ methodMismatch: "advertise", middleware: (a) => a.use("*", requestId()) });
+    mapHandler(app, "GET", "/page", () => new Response("real route"));
+
+    const res = await app.request("/page", { method: "POST" });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("x-request-id")).not.toBeNull();
+    expect(await res.text()).toBe("Method Not Allowed");
+  });
+});
+
+describe("createApp — matcher resource limits", () => {
+  it("answers 500 through the error boundary when a URL exceeds the match-work budget", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/users/:id/edit", () => new Response("real route"));
+
+    const res = await app.request(`/users/${"a".repeat(128 * 1024)}/edit`);
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe(boundary(UNEXPECTED));
+  });
+
+  it("still matches a URL twice the size Cloudflare will deliver, so the budget cannot bite a real request", async () => {
+    const app = createApp();
+    mapHandler(app, "GET", "/users/:id/edit", () => new Response("real route"));
+
+    const res = await app.request(`/users/${"a".repeat(32 * 1024)}/edit`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("real route");
+  });
+
+  it("refuses a single route pattern larger than the per-pattern ceiling", () => {
+    const app = new Forge();
+    expect(() => mapHandler(app, "GET", `/${"a".repeat(8192)}`, () => new Response("never"))).toThrow(MatcherResourceError);
+  });
+
+  it("refuses a `use()` path larger than the per-pattern ceiling, so a guard is held to the same ceiling", () => {
+    const app = new Forge();
+    expect(() => app.use(`/${"a".repeat(8192)}`, (_c, next) => next())).toThrow(MatcherResourceError);
   });
 });
 

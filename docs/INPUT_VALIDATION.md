@@ -51,10 +51,11 @@ audience: consumer
 and lets forge bound its surface.
 
 **`v` is complete, but it is not alone.** The namespace also ships forge's own schema and issue helpers, and they are named exports sitting _beside_
-`v`, never members of it: `strictObject` (§1d), `formText`, `formMultilineText` and `formDigits` (§1d), `safeCheck` (§1b), and
-`describeValidationIssue` (§1b). `src/validation/mod.ts` is authoritative for the list. The import shape is what matters here, because
-`strictObject` and `v.strictObject` are two different functions and only one of them is the recommendation (§1d). `src/validation/README.md` shows
-the import and a worked schema.
+`v`, never members of it: `formText`, `formMultilineText` and `formDigits` (§1d), `safeCheck` (§1b), and `describeValidationIssue` (§1b).
+`src/validation/mod.ts` is authoritative for the list. `src/validation/README.md` shows the import and a worked schema.
+
+**A helper sits beside `v` only while it carries behaviour the pinned valibot does not.** Where valibot covers the behaviour itself, forge ships no
+second name for it: the unknown-key guarantee in §1d is `v.strictObject`'s own, and nothing wraps it.
 
 All valibot primitives, pipes, and combinators are available under the `v` prefix; nothing forge added is.
 
@@ -104,7 +105,7 @@ fixes the order the two run in and nothing more — neither has to involve a sch
 accepted. **Order is a weaker guarantee than validation, and only the second one is worth stating.**
 
 **forge reads the body, so no named-field reader is needed or offered.** Every entry the caller sent reaches the schema, which is what gives
-`strictObject` something to refuse; an **absent field stays absent** rather than becoming `""`, which is what keeps `v.optional` reachable and
+`v.strictObject` something to refuse; an **absent field stays absent** rather than becoming `""`, which is what keeps `v.optional` reachable and
 required-ness a presence check; a **repeated key arrives as an array**, so a scalar schema refuses it and a route that accepts many declares
 `v.array`; and a **`File` passes through unchanged**.
 
@@ -114,10 +115,9 @@ field is dropped because this pipeline checked it (§4a); the CSRF field is drop
 from (§3a). A route that renames one of those fields therefore declares the name once, to the guard that reads it, and never a second time to the
 schema. What happens on a request where no guard ran is the derive-only rule, owned by [`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b.
 
-**Prefer `strictObject` from `validation` over `v.strictObject`** (§1a). The unknown-key guarantee — an undeclared field is _refused_, not silently
-stripped — is stated against the former, and a schema written with the raw valibot form does not carry the correction that makes that guarantee hold
-for every key a caller can send. That is an opt-in property rather than a hidden one: the choice is visible at the call site, and
-`src/validation/strict-object.ts` states exactly what it settles.
+**Declare a body schema with `v.strictObject`, not `v.object`.** An undeclared field is then _refused_ rather than silently stripped, and the
+guarantee holds for every key a caller can send — a key colliding with an `Object.prototype` name (`__proto__`, `constructor`, `toString`) among
+them, nested inside a `v.object` and behind a `v.union` alike. `src/validation/validation.test.ts` is where that guarantee is pinned.
 
 **Normalizing form text is the schema's job, not the reader's** — `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`
 (§1a). The reader hands the schema exactly what was submitted, and that is a deliberate split rather than an omission, for four reasons. It does not

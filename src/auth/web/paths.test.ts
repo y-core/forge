@@ -25,6 +25,6 @@ describe("authPaths", () => {
   });
 
   it("appends search parameters a caller supplies", () => {
-    expect(authPaths(authRoutes("/auth")).verify.show({}, { token: "abc" })).toBe("/auth/verify?token=abc");
+    expect(authPaths(authRoutes("/auth")).verify.show({}, { searchParams: { token: "abc" } })).toBe("/auth/verify?token=abc");
   });
 });

@@ -12,6 +12,9 @@
     "url": "git+https://github.com/y-core/forge.git"
   },
   "license": "MIT",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
   "warden": {
     "kind": "libs"
   },
@@ -33,7 +36,7 @@
     "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
     "test:browser": "playwright test",
-    "test:workerd": "bun test tests/workerd/",
+    "test:workerd": "bun test --parallel=2 tests/workerd/",
     "verify": "bun run src/tooling/root/bin.ts verify",
     "verify:fast": "bun run src/tooling/root/bin.ts verify --mode fast",
     "verify:full": "bun run src/tooling/root/bin.ts verify --full",
@@ -48,22 +51,22 @@
     "./src/ui/show/client.ts"
   ],
   "dependencies": {
-    "@remix-run/fetch-router": "^0.20.1",
+    "@remix-run/fetch-router": "^0.22.0",
     "@remix-run/headers": "^0.21.1",
-    "@remix-run/route-pattern": "^0.23.0",
+    "@remix-run/route-pattern": "^0.24.0",
     "@remix-run/session": "^0.4.2",
     "htmx.org": "^2.0.10",
-    "valibot": "^1.4.2"
+    "valibot": "^1.5.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0",
-    "esbuild": "^0.28.1",
-    "oxfmt": "0.67.0",
-    "oxlint": "1.82.0",
+    "@playwright/test": "^1.63.0",
+    "esbuild": "^0.28.2",
+    "oxfmt": "0.68.0",
+    "oxlint": "1.83.0",
     "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "wrangler": "^4.129.1"
+    "wrangler": "^4.134.0"
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",

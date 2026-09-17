@@ -4,14 +4,10 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as chrome from "../chrome/mod";
-// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as controls from "../controls/mod";
 import { createIcon } from "../core/icon";
-// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as core from "../core/mod";
-// oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as server from "../server/mod";
 import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./components";
 import { COVERAGE_MISSING } from "./coverage-missing.fixture";
