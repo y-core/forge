@@ -66,7 +66,8 @@ audience: consumer
 ### 2a. createSecurityHeaders Factory Pattern
 
 `createSecurityHeaders` generates a fresh nonce per request (16 random bytes, base64url), injects it into the CSP `script-src`, and stores it on the
-request context for `getNonce(c)`.
+request context for `getNonce(c)`. That pairing is what lets an inline `<script>` run under a policy carrying no `'unsafe-inline'`: the script tag
+names the nonce, the header names the same nonce, and nothing else in the document executes.
 
 **Every request gets a fresh nonce** — a static nonce defeats nonce enforcement entirely.
 
@@ -145,6 +146,21 @@ The emitted defaults, and the reasoning where a choice was available:
   partitioning means it is never a shared cache hit, so it costs two connection setups and a visitor-IP disclosure and buys nothing back.
   Self-hosting through the asset pipeline's `fonts.downloads` needs no widening at all, which is why the directives are a plain escape hatch rather
   than a convenience API.
+- **Every unsafe CSP keyword is refused as a string and admitted only as an imported symbol.** The four — `'unsafe-inline'`, `'unsafe-eval'`,
+  `'unsafe-hashes'`, `'wasm-unsafe-eval'` — throw when named as a string source, case-insensitively, in every directive and at both entry points
+  (`createSecurityHeaders` at construction, `applySecurityHeaders` per call). The opt-out is a `unique symbol` per keyword (`UNSAFE_INLINE`,
+  `UNSAFE_EVAL`, `UNSAFE_HASHES`, `WASM_UNSAFE_EVAL`), placed in the source list exactly where the string would have gone; the validator skips
+  non-strings, which is the same seam `NONCE` rides.
+
+  This is deliberately **not** a `DevAllowance` grant ([`NAMESPACES.md`][namespaces-5i] §5i): the dev token is for relaxations that must never
+  reach production, and `'wasm-unsafe-eval'` is legitimate there.
+
+  **Each of the four costs something different, which is why there are four and not one flag.** `'unsafe-inline'` discards §2a's whole contract.
+  `'unsafe-eval'` re-enables the `new Function` path that is otherwise the one thing stopping an `hx-on:*` attribute from executing
+  ([`HTMX.md`][htmx-7b] §7b). `'unsafe-hashes'` is narrower than `'unsafe-inline'`: it admits _hashed_ event-handler attributes and no `<script>`
+  block. `'wasm-unsafe-eval'` is narrowest — WebAssembly compilation only, granting no JavaScript evaluation — and is what a WebAssembly consumer
+  reaches for rather than `UNSAFE_EVAL`. What each one costs in practice, and the pairing the validator refuses because CSP Level 3 would
+  ignore it, are `src/security/README.md`'s, at the point a caller reaches for it.
 - **`Cache-Control` is deliberately not a blanket default.** Caching is a per-route decision (`definePage({ cache })`), and a namespace-wide value
   would either over-cache a private page or defeat caching everywhere.
 
@@ -363,7 +379,9 @@ namespace, and why identity is application-layer.
 [eh-2d]: ./FORGE_ERRORS.md#2d-fragment-options-and-escaping
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
+[htmx-7b]: ./HTMX.md#7b-hx-on-is-the-one-family-htmx-evaluates
 [iv]: ./INPUT_VALIDATION.md
+[namespaces-5i]: ./NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
 [ram-3d]: ./ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder

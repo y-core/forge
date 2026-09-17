@@ -91,17 +91,23 @@ only name-based gate is the attribute-name validity regex owned by `src/jsx/rend
 escaped and written like any other attribute. Escaping does not help: htmx reads the attribute from the DOM _after_ the parser has decoded entities,
 so an escaped payload is decoded again before evaluation.
 
-A CSP without `'unsafe-eval'` is the **second** layer. htmx compiles an `hx-on:*` body with `new Function`, which forge's default `script-src` does
-not permit (`src/security/headers.ts`, and [`SECURITY_HARDENING.md`][sh-2e] §2e for the emitted defaults) — so under the shipped default the
-attribute does not execute at all. Treat that as a backstop and not as permission: `scriptSrc` is a caller-supplied option, and a consumer that
-widens it for an unrelated reason removes this layer without touching a line of htmx.
+A CSP without `'unsafe-eval'` is the **second** layer — a backstop, not a permission model. htmx compiles an `hx-on:*` body with `new Function`,
+which only `'unsafe-eval'` would permit, and forge's emitted policy carries that source in no directive by default. The **string** `'unsafe-eval'`
+is refused, case-insensitively, in every directive, so no directive list assembled from config, from an env var or from a pasted snippet can widen
+the policy into permitting it (`src/security/headers.ts`, and [`SECURITY_HARDENING.md`][sh-2e] §2e for the rule and the emitted defaults).
+
+**A consumer that imports `UNSAFE_EVAL` removes this layer, deliberately, and that is by design.** The override is a `unique symbol` from
+`@y-core/forge/security`; naming it in `scriptSrc` is an import a reviewer reads in the diff, and an `hx-on:*` attribute in that app executes. Forge
+does not own the trade — it owns that the trade be visible. So the layer is bounded twice over: by whether the app opted out, and by the policy
+being emitted at all, since a route that never reaches `createSecurityHeaders` or `applySecurityHeaders` has no CSP from forge. The control above
+both — who wrote the attribute value — is the one that depends on neither.
 
 **`hx-on:*` is deliberately absent from the JSX attribute types and stays absent.** Typing it means a template-pattern index signature — the suffix
 is an arbitrary event name, so no fixed set of keys covers it — added to the htmx attribute interface in `src/jsx/types.ts`. That interface is mixed
 into both the HTML and SVG attribute bases, which every per-tag element type extends and every `ui/core` prop type reaches through
 `JSX.IntrinsicElements`. A template index signature admits every key matching its pattern without further checking, so a misspelled event name stops
 being an error on every element in the library at once. That is a repo-wide weakening of excess-property checking, bought for autocomplete on a
-capability the shipped CSP disables. Declined.
+capability no CSP option can enable. Declined.
 
 **The absence is therefore not a guard, and must not be read as one.** A case in `src/jsx/render-to-string.test.ts` asserts that `hx-on:click`
 renders verbatim, so the rule above never comes to rest on a type error that only exists at a JSX call site.

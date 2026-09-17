@@ -2,9 +2,13 @@ import type { AppContext } from "../context/types";
 import type { DevAllowance } from "../dev/types";
 import type { GuardResult } from "../result/types";
 import type { NONCE } from "./nonce";
+import type { UNSAFE_CSP_SOURCES } from "./unsafe";
 
-/** A single CSP source value — a string literal or the `NONCE` placeholder. @public */
-export type CspSourceValue = string | typeof NONCE;
+/** A deliberate CSP weakening a caller opts into by importing it; the string spelling is refused. @public */
+export type UnsafeCspSource = (typeof UNSAFE_CSP_SOURCES)[number]["placeholder"];
+
+/** A single CSP source value — a string literal, the `NONCE` placeholder, or a deliberate unsafe opt-out. @public */
+export type CspSourceValue = string | typeof NONCE | UnsafeCspSource;
 
 type CspValue = CspSourceValue[];
 

@@ -21,7 +21,7 @@ This namespace operates on the raw HTTP layer — before any application logic r
 
 | Feature | Entry point |
 | --- | --- |
-| Security headers (CSP nonce, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy) | `createSecurityHeaders`, `applySecurityHeaders`, `mergeSecurityHeaders`, `getNonce`, `NONCE`, `TURNSTILE_CSP` |
+| Security headers (CSP nonce, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy) | `createSecurityHeaders`, `applySecurityHeaders`, `mergeSecurityHeaders`, `getNonce`, `NONCE`, `TURNSTILE_CSP`, `UNSAFE_INLINE`, `UNSAFE_EVAL`, `UNSAFE_HASHES`, `WASM_UNSAFE_EVAL` |
 | CORS | `cors`, `matchOrigin` |
 | Origin allowlist enforcement | `originGuard`, `verifyOrigin` |
 | Cross-origin (Fetch Metadata) protection | `crossOriginProtection`, `checkCrossOriginProtection`, `originProtection` |
@@ -85,7 +85,7 @@ Headers set on every response:
 
 | Header | Value |
 | --- | --- |
-| `Content-Security-Policy` | Strict policy — `default-src 'self'`, `style-src`/`font-src` defaulting to `'self'` and extensible via `styleSrc`/`fontSrc` (never `'unsafe-inline'`), `form-action 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `upgrade-insecure-requests`, plus your directives |
+| `Content-Security-Policy` | Strict policy — `default-src 'self'`, `style-src`/`font-src` defaulting to `'self'` and extensible via `styleSrc`/`fontSrc` (no `'unsafe-inline'` or `'unsafe-eval'` in any directive by default, and never from a string source), `form-action 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `upgrade-insecure-requests`, plus your directives |
 | `Strict-Transport-Security` | `max-age=<hstsMaxAge>; includeSubDomains; preload` (default `hstsMaxAge` = `63072000`) |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `X-Content-Type-Options` | `nosniff` |
@@ -117,9 +117,11 @@ COEP is opt-in are [`SECURITY_HARDENING.md`][sh-2e] §2e's.
 | `crossOriginEmbedderPolicy` | `"require-corp" \| "credentialless"` | — (not emitted) | COEP; opt-in only |
 
 Every string source in every directive must be a single CSP source token: non-empty, and free of whitespace, `;`, `,` and control characters — a
-malformed entry silently breaks the whole policy, so it throws instead. `'unsafe-inline'` is rejected outright, case-insensitively, in every
-directive. The `NONCE` symbol is exempt (it is not a string). Both `createSecurityHeaders` (at construction) and `applySecurityHeaders` (per call)
-apply the rule.
+malformed entry silently breaks the whole policy, so it throws instead. The **string** spelling of an unsafe CSP keyword — `'unsafe-inline'`,
+`'unsafe-eval'`, `'unsafe-hashes'`, `'wasm-unsafe-eval'` — is refused in every directive, case-insensitively: a policy snippet pasted from
+elsewhere can never widen the emitted header. The only way to admit one is to import the matching symbol
+([Unsafe-source opt-outs](#unsafe-source-opt-outs)), which a reviewer sees in the diff. Symbols are exempt from the string rules because they are
+not strings — the same seam `NONCE` uses. Both `createSecurityHeaders` (at construction) and `applySecurityHeaders` (per call) apply the rule.
 
 ```ts
 import { createSecurityHeaders, NONCE, TURNSTILE_CSP, type SecurityHeadersOptions } from "@y-core/forge/security";
@@ -151,6 +153,43 @@ when Turnstile is active, rather than hardcoding the string.
 > everything it loads in turn, with no CDN origin in `script-src` at all. `frameSrc` and `connectSrc` still need `TURNSTILE_CSP`: `strict-dynamic`
 > governs script loading only, and the challenge runs in an iframe. A page that sets no nonce is unaffected — the tag is injected bare, and
 > `scriptSrc: ["'self'", TURNSTILE_CSP]` is still the right shape for it.
+
+### Unsafe-source opt-outs
+
+Forge ships the maximum-security stance, not a fixed one: every unsafe CSP keyword stays reachable, but only through a `unique symbol` you import
+by name. The string form throws wherever it appears, so a weakening is never an accident and is always greppable as an `UNSAFE_` import.
+
+| Symbol | Emits | What it admits |
+| --- | --- | --- |
+| `UNSAFE_INLINE` | `'unsafe-inline'` | Inline `<script>`/`<style>`, in a directive that carries no nonce and no hash — the validator refuses any other placement |
+| `UNSAFE_EVAL` | `'unsafe-eval'` | `eval` and `new Function`, including htmx's `hx-on:*` compilation ([`HTMX.md`][htmx-7b] §7b) |
+| `UNSAFE_HASHES` | `'unsafe-hashes'` | Hashed inline event handlers (`onclick="…"`), without admitting inline `<script>` blocks |
+| `WASM_UNSAFE_EVAL` | `'wasm-unsafe-eval'` | WebAssembly compilation only — it does _not_ admit JavaScript `eval` |
+
+```ts
+import { createSecurityHeaders, NONCE, WASM_UNSAFE_EVAL } from "@y-core/forge/security";
+
+// script-src 'self' 'nonce-<base64url>' 'wasm-unsafe-eval'
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE, WASM_UNSAFE_EVAL] }));
+
+// Throws: the string spelling is refused, and the message names WASM_UNSAFE_EVAL.
+createSecurityHeaders({ scriptSrc: ["'self'", "'wasm-unsafe-eval'"] });
+```
+
+Place a symbol in any of the eight directive source lists; it renders as its token in that directive alone. `mergeSecurityHeaders` carries one
+through like any other source. `UnsafeCspSource` is the union type, should you need to name it.
+
+> **`UNSAFE_INLINE` beside a nonce or a hash throws.** CSP Level 3 has the browser ignore `'unsafe-inline'` in any directive that also carries a
+> nonce or a hash source, so that pair is an opt-out that cannot take effect — the validator refuses it at construction rather than emitting a
+> header that reads as if it worked. State the directive without the nonce instead: `scriptSrc: ["'self'", UNSAFE_INLINE]`.
+>
+> `scriptSrc` defaults to `["'self'", NONCE]`, and `mergeSecurityHeaders` backfills that default — so merging `{ scriptSrc: [UNSAFE_INLINE] }` onto
+> a base that never mentioned `scriptSrc` yields `['self', NONCE, UNSAFE_INLINE]` and throws too. Name the whole directive in the merge, nonce
+> omitted, when that is the policy you want.
+
+> **`WASM_UNSAFE_EVAL` is the narrow one — reach for it first.** A WebAssembly module needs only `'wasm-unsafe-eval'`; `'unsafe-eval'` would grant
+> JavaScript evaluation as well and re-open the `hx-on:*` path the strict policy closes. Why the asymmetry between string and symbol _is_ the
+> control is [`SECURITY_HARDENING.md`][sh-2e] §2e's.
 
 ### Widening `style-src` / `font-src`
 
@@ -446,8 +485,8 @@ threat you are addressing.
 
 `createSecurityHeaders` emits a strict CSP with **no `'unsafe-inline'`** for either `script-src` or `style-src`, so every inline `<script>` must
 carry the per-request nonce from `getNonce(c)`, and inline `style=` attributes are dropped by the JSX renderer. The fresh-nonce-per-request contract
-is [`SECURITY_HARDENING.md`][sh-2a] §2a's, and which headers are in the emitted set and why — including that widening `styleSrc`/`fontSrc` never
-introduces `'unsafe-inline'` — is §2e's.
+is [`SECURITY_HARDENING.md`][sh-2a] §2a's, and which headers are in the emitted set and why — including that no directive may name an unsafe keyword
+as a **string**, which the options refuse rather than merely default against, and that the sole opt-out is an imported symbol — is §2e's.
 
 ### CSRF defense lives in two places
 
@@ -572,6 +611,7 @@ origins may hold, are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
 [assets-readme]: ../assets/README.md
 [dev-readme]: ../dev/README.md
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
+[htmx-7b]: ../../docs/HTMX.md#7b-hx-on-is-the-one-family-htmx-evaluates
 [ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [sh]: ../../docs/SECURITY_HARDENING.md

@@ -5,6 +5,7 @@ import { setPendingHeader } from "../context/pending-headers";
 import { base64urlEncode, randomBytes } from "../crypto/mod";
 import { NONCE } from "./nonce";
 import type { ApplySecurityHeadersOptions, CspSourceValue, PermissionsPolicyOptions, SecurityHeadersOptions } from "./types";
+import { UNSAFE_CSP_SOURCES, UNSAFE_INLINE } from "./unsafe";
 
 const CSP_DIRECTIVES = ["scriptSrc", "connectSrc", "frameSrc", "imgSrc", "styleSrc", "fontSrc", "workerSrc", "childSrc"] as const;
 
@@ -21,6 +22,10 @@ const CSP_DEFAULTS: Readonly<Partial<Record<CspDirective, readonly CspSourceValu
 };
 
 const CSP_SOURCE_TOKEN = /^[\x21-\x7e]+$/;
+
+const CSP_HASH_SOURCE = /^'(sha256|sha384|sha512)-/i;
+
+const FORBIDDEN_CSP_SOURCES: ReadonlyMap<string, string> = new Map(UNSAFE_CSP_SOURCES.map((s) => [s.token, s.exportName]));
 
 const PERMISSIONS_POLICY_FEATURES = ["camera", "microphone", "geolocation", "payment"] as const;
 
@@ -53,8 +58,20 @@ function assertValidDirective(name: string, sources: readonly CspSourceValue[]):
         `Invalid CSP directive "${name}": source entries must be single CSP source tokens (no whitespace, ';', ',' or control characters)`,
       );
     }
-    if (source.toLowerCase() === "'unsafe-inline'") {
-      throw new Error(`Invalid CSP directive "${name}": 'unsafe-inline' is never permitted`);
+    const lowered = source.toLowerCase();
+    const exportName = FORBIDDEN_CSP_SOURCES.get(lowered);
+    if (exportName) {
+      throw new Error(
+        `Invalid CSP directive "${name}": ${lowered} is never permitted as a string — import ${exportName} from "@y-core/forge/security" to opt in deliberately`,
+      );
+    }
+  }
+  if (sources.includes(UNSAFE_INLINE)) {
+    const ignoredBy = sources.some((s) => s === NONCE || (typeof s === "string" && CSP_HASH_SOURCE.test(s)));
+    if (ignoredBy) {
+      throw new Error(
+        `Invalid CSP directive "${name}": UNSAFE_INLINE has no effect beside a nonce or hash source, which CSP Level 3 has the browser ignore it next to — remove the nonce or hash from this directive, or remove UNSAFE_INLINE`,
+      );
     }
   }
 }
@@ -88,8 +105,16 @@ function generateNonce(): string {
   return base64urlEncode(randomBytes(16));
 }
 
-function renderCspValues(values: readonly (string | symbol)[], nonce: string): string {
-  return values.map((v) => (v === NONCE ? `'nonce-${nonce}'` : (v as string))).join(" ");
+function renderCspValue(value: CspSourceValue, nonce: string): string {
+  if (typeof value === "string") return value;
+  if (value === NONCE) return `'nonce-${nonce}'`;
+  const entry = UNSAFE_CSP_SOURCES.find((s) => s.placeholder === value);
+  if (!entry) throw new Error("Invalid CSP source: unknown placeholder symbol");
+  return entry.token;
+}
+
+function renderCspValues(values: readonly CspSourceValue[], nonce: string): string {
+  return values.map((v) => renderCspValue(v, nonce)).join(" ");
 }
 
 function buildCsp(nonce: string, options?: SecurityHeadersOptions): string {

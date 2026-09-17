@@ -17,7 +17,40 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **Every unsafe CSP source is refused as a string and admitted only as an imported symbol.** The
+  four — `'unsafe-inline'`, `'unsafe-eval'`, `'unsafe-hashes'`, `'wasm-unsafe-eval'` — throw when
+  named as a string in any of the eight directive options, case-insensitively, from both
+  `createSecurityHeaders` and `applySecurityHeaders`. Previously only `'unsafe-inline'` was refused,
+  and `'unsafe-eval'` was accepted.
+
+  **The opt-out is a `unique symbol` per source**, new from `@y-core/forge/security`:
+  `UNSAFE_INLINE`, `UNSAFE_EVAL`, `UNSAFE_HASHES` and `WASM_UNSAFE_EVAL`, plus the
+  `UnsafeCspSource` union type. Place one where the string would have gone —
+  `scriptSrc: ["'self'", NONCE, WASM_UNSAFE_EVAL]` emits
+  `script-src 'self' 'nonce-…' 'wasm-unsafe-eval'`. The validator skips non-strings, which is the
+  seam `NONCE` already rode.
+
+  **Why the asymmetry:** forge cannot see the application, so denying a capability outright makes
+  forge the decision-maker for a policy it does not own. What it can own is that a weakening be
+  deliberate — a snippet pasted from a blog post, an env var or a JSON config is string-shaped and
+  therefore inert, while the symbol needs an import statement in the diff and `rg 'UNSAFE_'` finds
+  every one fleet-wide. This is deliberately not a `DevAllowance` grant: `'wasm-unsafe-eval'` is
+  legitimate in production, and the dev token is for relaxations that must never reach it.
+
+  **Migration:** an app naming one of the four as a string gets a startup `Error` that names the
+  directive and the symbol to import. The refusal message changed shape for `'unsafe-inline'` too,
+  so a test asserting on its exact text needs updating.
+
+  **`UNSAFE_INLINE` is also refused beside a nonce or a hash source in the same directive**, which
+  CSP Level 3 has the browser ignore it next to — an opt-out that cannot take effect, previously
+  documented as a caveat and now a startup `Error`. Write the directive without the nonce instead:
+  `scriptSrc: ["'self'", UNSAFE_INLINE]`. The check runs on resolved sources, so a merge that
+  backfills the nonce-bearing `scriptSrc` default throws as well.
+
+  **`mergeSecurityHeaders` is unaffected** and stays a non-throwing data transform that carries a
+  symbol through like any other source. Validation runs where it already ran, at the constructor.
 
 ---
 

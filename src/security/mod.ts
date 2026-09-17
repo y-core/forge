@@ -22,5 +22,7 @@ export type {
   RateLimitOptions,
   RequestIdContext,
   SecurityHeadersOptions,
+  UnsafeCspSource,
 } from "./types";
+export { UNSAFE_EVAL, UNSAFE_HASHES, UNSAFE_INLINE, WASM_UNSAFE_EVAL } from "./unsafe";
 export { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";

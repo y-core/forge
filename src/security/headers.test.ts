@@ -5,10 +5,27 @@ import { setPendingHeader } from "../context/pending-headers";
 import { mapHandler } from "../testing/route";
 import { applySecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHeaders } from "./headers";
 import { NONCE } from "./nonce";
-import type { SecurityHeadersOptions } from "./types";
+import type { CspSourceValue, SecurityHeadersOptions } from "./types";
+import { UNSAFE_EVAL, UNSAFE_HASHES, UNSAFE_INLINE, WASM_UNSAFE_EVAL } from "./unsafe";
 
 const tokenMessage = (name: string) =>
   `Invalid CSP directive "${name}": source entries must be single CSP source tokens (no whitespace, ';', ',' or control characters)`;
+
+const unsafeMessage = (name: string, token: string, exportName: string) =>
+  `Invalid CSP directive "${name}": ${token} is never permitted as a string — import ${exportName} from "@y-core/forge/security" to opt in deliberately`;
+
+const inertInlineMessage = (name: string) =>
+  `Invalid CSP directive "${name}": UNSAFE_INLINE has no effect beside a nonce or hash source, which CSP Level 3 has the browser ignore it next to — remove the nonce or hash from this directive, or remove UNSAFE_INLINE`;
+
+const UNSAFE_CASES: readonly { token: string; exportName: string; placeholder: CspSourceValue }[] = [
+  { token: "'unsafe-inline'", exportName: "UNSAFE_INLINE", placeholder: UNSAFE_INLINE },
+  { token: "'unsafe-eval'", exportName: "UNSAFE_EVAL", placeholder: UNSAFE_EVAL },
+  { token: "'unsafe-hashes'", exportName: "UNSAFE_HASHES", placeholder: UNSAFE_HASHES },
+  { token: "'wasm-unsafe-eval'", exportName: "WASM_UNSAFE_EVAL", placeholder: WASM_UNSAFE_EVAL },
+];
+
+const optOutSources = (placeholder: CspSourceValue): CspSourceValue[] =>
+  placeholder === UNSAFE_INLINE ? ["'self'", placeholder] : ["'self'", NONCE, placeholder];
 
 async function headersFor(middleware: ReturnType<typeof createSecurityHeaders>) {
   const app = new Forge();
@@ -165,26 +182,100 @@ describe("createSecurityHeaders — directive validation", () => {
     expect(() => createSecurityHeaders({ styleSrc: ["https://a.example,https://b.example"] })).toThrow(tokenMessage("styleSrc"));
   });
 
-  it("rejects 'unsafe-inline' outright", () => {
-    expect(() => createSecurityHeaders({ styleSrc: ["'unsafe-inline'"] })).toThrow(
-      `Invalid CSP directive "styleSrc": 'unsafe-inline' is never permitted`,
-    );
+  for (const { token, exportName } of UNSAFE_CASES) {
+    it(`rejects the ${token} string spelling on scriptSrc, naming ${exportName}`, () => {
+      expect(() => createSecurityHeaders({ scriptSrc: ["'self'", token] })).toThrow(unsafeMessage("scriptSrc", token, exportName));
+    });
+  }
+
+  it("rejects 'unsafe-inline' spelled in upper case, reporting the lowercase token", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'UNSAFE-INLINE'"] })).toThrow(unsafeMessage("styleSrc", "'unsafe-inline'", "UNSAFE_INLINE"));
   });
 
-  it("rejects 'unsafe-inline' spelled in upper case", () => {
-    expect(() => createSecurityHeaders({ styleSrc: ["'UNSAFE-INLINE'"] })).toThrow(
-      `Invalid CSP directive "styleSrc": 'unsafe-inline' is never permitted`,
-    );
+  it("rejects 'unsafe-eval' spelled in upper case, reporting the lowercase token", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'UNSAFE-EVAL'"] })).toThrow(unsafeMessage("scriptSrc", "'unsafe-eval'", "UNSAFE_EVAL"));
   });
 
-  it("rejects 'unsafe-inline' on scriptSrc", () => {
-    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", "'unsafe-inline'"] })).toThrow(
-      `Invalid CSP directive "scriptSrc": 'unsafe-inline' is never permitted`,
+  it("rejects 'unsafe-eval' on workerSrc, so the rule is not scriptSrc-only", () => {
+    expect(() => createSecurityHeaders({ workerSrc: ["'self'", "'unsafe-eval'"] })).toThrow(
+      unsafeMessage("workerSrc", "'unsafe-eval'", "UNSAFE_EVAL"),
     );
   });
 
   it("accepts the NONCE placeholder, which is not a string source", () => {
     expect(() => createSecurityHeaders({ scriptSrc: ["'self'", NONCE] })).not.toThrow();
+  });
+
+  for (const { token, placeholder } of UNSAFE_CASES) {
+    it(`accepts the opt-out placeholder for ${token}`, () => {
+      expect(() => createSecurityHeaders({ scriptSrc: optOutSources(placeholder) })).not.toThrow();
+    });
+  }
+
+  it("rejects UNSAFE_INLINE beside the nonce placeholder", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", NONCE, UNSAFE_INLINE] })).toThrow(inertInlineMessage("scriptSrc"));
+  });
+
+  it("rejects UNSAFE_INLINE beside a hash source with no nonce present", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'sha256-abc='", UNSAFE_INLINE] })).toThrow(inertInlineMessage("scriptSrc"));
+  });
+
+  it("rejects the same pair through applySecurityHeaders", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { scriptSrc: ["'self'", NONCE, UNSAFE_INLINE] })).toThrow(
+      inertInlineMessage("scriptSrc"),
+    );
+  });
+
+  it("rejects a merged scriptSrc, because the merge backfills the nonce-bearing default", () => {
+    expect(() => createSecurityHeaders(mergeSecurityHeaders({}, { scriptSrc: [UNSAFE_INLINE] }))).toThrow(inertInlineMessage("scriptSrc"));
+  });
+
+  it("accepts UNSAFE_INLINE on scriptSrc stated without a nonce", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", UNSAFE_INLINE] })).not.toThrow();
+  });
+
+  it("accepts UNSAFE_INLINE on styleSrc, whose default carries no nonce", () => {
+    expect(() => createSecurityHeaders({ styleSrc: ["'self'", UNSAFE_INLINE] })).not.toThrow();
+  });
+
+  it("accepts UNSAFE_HASHES beside a nonce, which CSP does not ignore", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", NONCE, UNSAFE_HASHES] })).not.toThrow();
+  });
+
+  it("does not treat 'wasm-unsafe-eval' as a prefix match of 'unsafe-eval'", () => {
+    expect(() => createSecurityHeaders({ scriptSrc: ["'self'", "'wasm-unsafe-eval'"] })).toThrow(
+      unsafeMessage("scriptSrc", "'wasm-unsafe-eval'", "WASM_UNSAFE_EVAL"),
+    );
+  });
+});
+
+describe("createSecurityHeaders — unsafe-source opt-outs", () => {
+  for (const { token, placeholder } of UNSAFE_CASES) {
+    it(`renders ${token} into script-src from its placeholder`, async () => {
+      const headers = await headersFor(createSecurityHeaders({ scriptSrc: optOutSources(placeholder) }));
+      const csp = headers.get("content-security-policy") ?? "";
+      const nonce = /'nonce-([^']+)'/.exec(csp)?.[1] ?? "";
+      const prefix = placeholder === UNSAFE_INLINE ? "script-src 'self'" : `script-src 'self' 'nonce-${nonce}'`;
+      expect(csp).toContain(`${prefix} ${token};`);
+    });
+
+    it(`renders ${token} through applySecurityHeaders with a fixed nonce`, () => {
+      const hardened = applySecurityHeaders(new Response("ok"), { scriptSrc: optOutSources(placeholder), nonce: "fixed" });
+      const prefix = placeholder === UNSAFE_INLINE ? "script-src 'self'" : "script-src 'self' 'nonce-fixed'";
+      expect(hardened.headers.get("content-security-policy")).toContain(`${prefix} ${token};`);
+    });
+  }
+
+  it("renders an opt-out in a non-default directive too", async () => {
+    const headers = await headersFor(createSecurityHeaders({ workerSrc: ["'self'", WASM_UNSAFE_EVAL] }));
+    expect(headers.get("content-security-policy")).toContain("worker-src 'self' 'wasm-unsafe-eval'");
+  });
+
+  it("survives mergeSecurityHeaders and reaches the header", async () => {
+    const merged = mergeSecurityHeaders({ scriptSrc: ["'self'", NONCE] }, { scriptSrc: [WASM_UNSAFE_EVAL] });
+    const headers = await headersFor(createSecurityHeaders(merged));
+    const csp = headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("'wasm-unsafe-eval'");
   });
 });
 
@@ -271,7 +362,13 @@ describe("applySecurityHeaders", () => {
 
   it("rejects 'unsafe-inline' passed straight to the response hardener", () => {
     expect(() => applySecurityHeaders(new Response("ok"), { scriptSrc: ["'unsafe-inline'"], nonce: "n" })).toThrow(
-      `Invalid CSP directive "scriptSrc": 'unsafe-inline' is never permitted`,
+      unsafeMessage("scriptSrc", "'unsafe-inline'", "UNSAFE_INLINE"),
+    );
+  });
+
+  it("rejects 'unsafe-eval' passed straight to the response hardener", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { scriptSrc: ["'unsafe-eval'"], nonce: "n" })).toThrow(
+      unsafeMessage("scriptSrc", "'unsafe-eval'", "UNSAFE_EVAL"),
     );
   });
 
