@@ -27,7 +27,12 @@ const MOTION = `<style>
 
 function markup(): Promise<string> {
   return render(
-    Popover({ children: [Popover.Trigger({ for: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })] }),
+    Popover({
+      children: [
+        Popover.Trigger({ for: "tips", children: "Tips" }),
+        Popover.Content({ id: "tips", label: "Tips", side: "bottom", children: "Body" }),
+      ],
+    }),
   );
 }
 

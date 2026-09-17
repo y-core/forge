@@ -143,11 +143,15 @@ function fakeUsers(rows: readonly AuthUser[]) {
 }
 
 /** The two ephemeral stores the decoy spends, recording nothing but that they were reachable. */
-function decoyStores(): { state: OtpStateStore; nonces: NonceStore } {
+/** The decoy's own stores, with the one call that tells a test the decoy branch ran. */
+function decoyStores(counted: string[] = []): { state: OtpStateStore; nonces: NonceStore } {
   return {
     state: {
       issue: () => Promise.resolve(ok(true)),
-      countAttempt: () => Promise.resolve(ok(null)),
+      countAttempt: (userId) => {
+        counted.push(userId);
+        return Promise.resolve(ok(null));
+      },
       read: () => Promise.resolve(ok(null)),
       discard: () => Promise.resolve(ok()),
       clear: () => Promise.resolve(ok()),
@@ -166,6 +170,8 @@ interface Scene {
   deferral: ReturnType<typeof fakeDeferral>;
   primary: FactorSpy;
   stepUp: FactorSpy;
+  /** Every id the decoy's `countAttempt` was called for — the one observable the decoy branch has. */
+  decoyed: string[];
 }
 
 function flow(
@@ -181,7 +187,7 @@ function flow(
   const options: AuthSigninOptions = {
     keys: ring,
     users: world.users.store,
-    ...decoyStores(),
+    ...decoyStores(world.decoyed),
     factors: createFactorRegistry(fakeFactorStore(enrolled), { offered }),
     defer: world.deferral.defer,
     ...overrides,
@@ -190,7 +196,13 @@ function flow(
 }
 
 function scene(users: readonly AuthUser[] = [userRow()]): Scene {
-  return { users: fakeUsers(users), deferral: fakeDeferral(), primary: { challenged: [], verified: [] }, stepUp: { challenged: [], verified: [] } };
+  return {
+    users: fakeUsers(users),
+    deferral: fakeDeferral(),
+    primary: { challenged: [], verified: [] },
+    stepUp: { challenged: [], verified: [] },
+    decoyed: [],
+  };
 }
 
 function factorRow(kind: AuthFactor["kind"], confirmedAt: number | null): AuthFactor {
@@ -203,23 +215,29 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
   /** What one `complete` cost: the reads it made of the user store, and whether it reached the factor. */
   async function work(world: Scene, email: string) {
     const outcome = await flow(world, "none", [], err("unrecognised" as const)).complete(email, "000000", AT);
-    return { reads: world.users.reads, verified: world.primary.verified.length, outcome };
+    return { reads: world.users.reads, verified: world.primary.verified.length, decoyed: world.decoyed.length > 0, outcome };
   }
 
-  // Deleting `verifyAuthDecoy` turns this red: without it the branch with no account returns after
-  // one lookup while the branch with one opens a sealed token, which is a latency oracle.
-  it("performs the same reads on the unknown, deactivated and known branches", async () => {
+  // Exact lists, not the `reads.length + verified` aggregate this replaces: that folded the whole
+  // factor path into one opaque unit, where the decoy's real cost hid. `decoy.test.ts` asserts that.
+  it("performs the same user-store reads on the unknown, deactivated and known branches", async () => {
     const unknown = await work(scene([]), "nobody@example.com");
     const deactivated = await work(scene([DEACTIVATED]), EMAIL);
     const known = await work(scene(), EMAIL);
 
-    expect(unknown.reads).toEqual(["findByEmailKey", "findById"]);
-    expect(deactivated.reads).toEqual(["findByEmailKey", "findById"]);
-    // The known branch's second read is the factor's own, against the code it was handed.
+    expect(unknown.reads).toEqual(["findByEmailKey"]);
+    expect(deactivated.reads).toEqual(["findByEmailKey"]);
     expect(known.reads).toEqual(["findByEmailKey"]);
+  });
+
+  // Deleting `verifyAuthDecoy` turns this red: without it the refusing branches return after one
+  // lookup while the known branch goes on to spend a statement and open a sealed token.
+  it("reaches the decoy on both refusing branches, which is where the factor path's cost is matched", async () => {
+    const unknown = await work(scene([]), "nobody@example.com");
+    const known = await work(scene(), EMAIL);
+
+    expect(unknown.decoyed).toBe(true);
     expect(known.verified).toBe(1);
-    expect(unknown.reads.length + unknown.verified).toBe(known.reads.length + known.verified);
-    expect(deactivated.reads.length + deactivated.verified).toBe(known.reads.length + known.verified);
   });
 
   it("reaches no factor on either refusing branch, so nothing is spent against a code that does not exist", async () => {

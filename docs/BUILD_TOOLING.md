@@ -115,8 +115,9 @@ what the release wrote (see below). The second parameter is the injected depende
 pass one argument.
 
 It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the next version, reaches a verdict on the changelog and
-promotes it in memory (§2d), prints the previous and next versions with the tag and what the promotion would write, refuses to re-tag, updates
-`package.json`, writes the promoted changelog, commits, and creates the tag. **It is the only blessed way to cut a forge release**, and **all three
+promotes it in memory (§2d), prints the previous and next versions with the tag and what the promotion would write, refuses to re-tag, refuses a
+branch the remote does not publish from, runs the verification gate, updates `package.json`, writes the promoted changelog, commits, and creates the
+tag. **It is the only blessed way to cut a forge release**, and **all three
 places a version lives are computed here** — the git tag, the `package.json` field, the changelog's version heading. A hand-typed version anywhere
 is a defect, and §2e is the gate that says so.
 
@@ -140,6 +141,23 @@ The refusals are guards, not conveniences:
 | Nothing to release | No commits since the latest tag; reports "already at" and stops. `package.json` disagreeing with the tag there is an error, not a bump | none |
 | Empty `[Unreleased]`, with commits since the tag | Shipping a release nobody wrote a line for is the drift the changelog prevents | `--allow-empty-changelog` (§2d); a _malformed_ changelog is a separate refusal no flag reaches |
 | Public export surface shrank under an auto-patch | The bump is derived from subject prefixes alone; a removed symbol shipped as a patch breaks every consumer pinned to a `^` range (§2b) | `--allow-semver` |
+| HEAD is not on the branch the remote publishes from | The tag would publish commits the published branch does not carry. A remote naming no publishing branch is reported and released, never refused against a fabricated one | `--allow-branch` |
+| HEAD is detached | The release commit would sit on no branch, so the printed `git push` pushes nothing while the tag publishes a commit no branch carries. Asked before the remote, because it is answerable without one | `--allow-branch` |
+| The verification gate failed | The tag is the publish trigger, so CI's run happens after the tag is already fetchable; this is the last point a red tree can still be refused | `--allow-unverified` |
+| The gate could not be run at all | A missing script exits 1 exactly as a failing gate does, so the two are separated at the manifest and refused in different words | `gateCommand`, or `--allow-unverified` |
+
+**The gate is `gateCommand`, defaulting to `bun run verify`.** `forge release` is a first-party verb on the shipped CLI with an optional config
+module, so a consumer whose verification script is named otherwise states it in that module rather than passing `--allow-unverified` on every
+release, which is the guard permanently off.
+
+**The gate runs here, not only in CI.** `.github/workflows/release.yml` fires `on: push: tags`, so its `bun run verify` runs against a tag that is
+already public: a failure there aborts before `gh release create` and leaves a fetchable tag with no asset, whose only recoveries are deleting a
+published tag or burning the version. The branch check and the gate run after the re-tag check and before the first write, and both are skipped
+under `--dry`, which writes nothing for them to protect.
+
+**A failure between the version write and the commit names its own recovery.** The bump, the promotion and the commit run as one guarded step; if
+the commit fails — a pre-commit hook, most often — the refusal states `git checkout -- package.json CHANGELOG.md`. Without it the next run refuses
+as dirty, and forcing past that promotes the changelog a second time under the same heading.
 
 **A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error` as `Error: <message>` and exits 1 (§1c), so the
 operator sees the same output while the guard stays reachable from a test that mocks no process. **The changelog verdict is reached after the
@@ -147,8 +165,8 @@ version is resolved** — it has to know whether commits exist — **and before 
 
 **`--dry` prints the resolved version and what would be promoted, then stops before any write.** It skips the clean-tree check too, so it is safe to
 run at any time — but it resolves from `<latest-tag>..HEAD`, so running it _before_ committing reports "nothing to release" rather than the version
-a release would produce. Commit first, then dry-run. **It skips only the clean-tree check** — every other refusal, the shrinking-surface guard
-included, fires under `--dry`, because a preview that hides the refusal it is previewing is worse than no preview.
+a release would produce. Commit first, then dry-run. **It skips the clean-tree check, the branch check and the gate** — every other refusal, the
+shrinking-surface guard included, fires under `--dry`, because a preview that hides the refusal it is previewing is worse than no preview.
 
 **An automatic bump prints the evidence for itself**, as a `because:` row beside `next:`: the short sha and subject of the commit whose prefix won,
 or — for a patch, which no commit asks for — `no major:/minor: subject in <n> commits since <tag>`. The row is printed in a real release too, not
@@ -234,7 +252,7 @@ I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
 ### 2e. Changelog Gate Invariants
 
 **`CHANGELOG.md` is checked by a `full`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
-Requiring a written `[Unreleased]` entry on every fast or standard run would fail every work-in-progress commit; a full run runs exactly where
+Requiring a written `[Unreleased]` entry on every quality or standard run would fail every work-in-progress commit; a full run runs exactly where
 the invariant bites, before `prepublishOnly` and before a tag exists.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
@@ -271,21 +289,23 @@ assembled at run time, or a gate embedded in a larger CLI.
 | `steps` | `readonly Step[]` | — | The table to resolve against. |
 | `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
 
-**One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a task closes on; `verify --mode fast` is the inner
-loop and `verify --full` (sugar for `--mode full`) adds everything, including the steps needing a machine prerequisite. Verbs sharing every flag and
+**One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a task closes on; `verify --mode quality` is the
+writing loop — every row that judges the source without running it — and `verify --full` (sugar for `--mode full`) adds everything, including the
+steps needing a machine prerequisite. Verbs sharing every flag and
 differing only in a membership filter are a mode by definition, and modelling them as separate verbs costs a duplicated binding file per repo, a
 `gate` config field, and a superset invariant that must be _tested_ rather than being true by construction. **A bare `verify` means `standard`**
 because `verify` is "the gate": the cheap run is the one that has to be asked for.
 
 **A dependency's absence is answered by the mode, not the table.** A step carries one `requires` — tool, probe, install hint — and the runner asks
-the probe once: a `fast` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the four design-system
+the probe once: a `quality` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the four design-system
 steps run on every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips, because it is the
 release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could state only one of them. `--list` words a step's dependency per
 mode: conditional, or required.
 
 **`GateMode` is a closed union derived from the ordered `GATE_MODES` tuple, and `Step.tier` names the lowest mode a step runs in.** Together they
 carry the invariant [`TESTING.md`][testing-6c] §6c exists to settle. The tier is ordered rather than a _set_ of modes, so selection is a rank
-comparison and a table cannot express a step a lower mode has and a higher one does not — `fast ⊆ standard ⊆ full` by construction. The prerequisite
+comparison and a table cannot express a step a lower mode has and a higher one does not — `quality ⊆ standard ⊆ full` by construction. The
+prerequisite
 question stays binary regardless of how many tiers there are: only a full run fails on an absent one. Neither is a restriction the runner enforces
 at runtime — both are shapes that make the wrong thing unsayable.
 
@@ -324,7 +344,8 @@ surface for nothing, the same argument that keeps the runner's temp-dir prefix h
 assertable literally — a table that type-checks but names a command no app can run is a preset nobody can adopt, and no structural assertion catches
 it.
 
-**Every preset step is prerequisite-free and on the `fast` tier**, so the whole preset is legal in a fast run ([`TESTING.md`][testing-6c] §6c). A
+**Every preset step is prerequisite-free and on the `quality` tier**, so the whole preset is legal in a quality run
+([`TESTING.md`][testing-6c] §6c). A
 `requires` added to any of them would break that for every app at once, which is why `presets.test.ts` asserts the absence as a property.
 
 `assetConfig` is optional and omitting it drops the `types:assets` step entirely — an app with no asset pipeline gets a four-step table, not a step
@@ -479,4 +500,4 @@ the behaviour a consumer can reason about.
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-three-modes
-[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-prerequisite-line
+[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-two-lines-between-the-modes

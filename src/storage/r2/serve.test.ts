@@ -297,6 +297,66 @@ describe("serveObject — headers", () => {
   });
 });
 
+describe("serveObject — active content types", () => {
+  // `nosniff` stops a sniff *into* a type and does nothing once the stored type already is one the
+  // browser renders, which is the case an app reaches by storing an attacker-supplied MIME type.
+  const cases: ReadonlyArray<{ key: string; contentType: string }> = [
+    { key: "page.html", contentType: "text/html; charset=utf-8" },
+    { key: "page.htm", contentType: "text/html; charset=utf-8" },
+    { key: "avatar.svg", contentType: "image/svg+xml" },
+    { key: "feed.xml", contentType: "application/xml; charset=utf-8" },
+    { key: "app.js", contentType: "text/javascript; charset=utf-8" },
+    { key: "mod.mjs", contentType: "text/javascript; charset=utf-8" },
+    // Caller-supplied spellings `inferContentType` never emits, each of which a browser parses as a
+    // document on this origin or runs outright.
+    { key: "feed.atom", contentType: "application/atom+xml" },
+    { key: "transform.xsl", contentType: "text/xsl" },
+    { key: "legacy.script", contentType: "application/x-javascript" },
+  ];
+
+  for (const { key, contentType } of cases) {
+    it(`downloads a stored ${contentType} under an empty sandbox (${key})`, async () => {
+      const backend = makeBackend(makeObjectBody({ key, contentType }));
+      const res = await serveObject(backend, new Request(`http://x/${key}`), key);
+      const filename = key.split("/").pop() ?? key;
+      expect(Object.fromEntries(res.headers)).toEqual({
+        "accept-ranges": "bytes",
+        "content-disposition": `attachment; filename="${filename}"; filename*=UTF-8''${filename}`,
+        "content-length": "11",
+        "content-security-policy": "sandbox",
+        "content-type": contentType,
+        etag: '"abc123"',
+        "x-content-type-options": "nosniff",
+      });
+    });
+  }
+
+  it("overrides a stored inline disposition on an active type, which is the attack itself", async () => {
+    const backend = makeBackend(makeObjectBody({ key: "avatar.svg", contentType: "image/svg+xml", contentDisposition: "inline" }));
+    const res = await serveObject(backend, new Request("http://x/avatar.svg"), "avatar.svg");
+    expect(res.headers.get("Content-Disposition")).toBe(`attachment; filename="avatar.svg"; filename*=UTF-8''avatar.svg`);
+  });
+
+  it("still lets the caller ask for inline explicitly", async () => {
+    const backend = makeBackend(makeObjectBody({ key: "page.html", contentType: "text/html" }));
+    const res = await serveObject(backend, new Request("http://x/page.html"), "page.html", { contentDisposition: "inline" });
+    expect(res.headers.get("Content-Disposition")).toBe(`inline; filename="page.html"; filename*=UTF-8''page.html`);
+    expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+  });
+
+  it("leaves an inert type untouched — no sandbox, no forced disposition", async () => {
+    const backend = makeBackend(makeObjectBody({ key: "image.png", contentType: "image/png" }));
+    const res = await serveObject(backend, new Request("http://x/image.png"), "image.png");
+    expect(Object.fromEntries(res.headers)).toEqual({
+      "accept-ranges": "bytes",
+      "content-length": "11",
+      "content-type": "image/png",
+      etag: '"abc123"',
+      "x-content-type-options": "nosniff",
+    });
+  });
+});
+
 describe("serveObject — against the R2 fake", () => {
   it("answers 416 with the real size for a range beyond the object", async () => {
     const backend = r2Backend(fakeR2({ "file.txt": "abcdefghij" }));

@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { resolveAppRoot } from "../cli/app-root";
 import { addCommand, createCommand } from "../cli/command";
 import type { CommandBase } from "../cli/types";
@@ -43,7 +45,7 @@ export function createAssetsCommands(): CommandBase {
     const config = await loadAssetsConfig(flags);
     await buildAll(config, {
       ...(flags.minify !== undefined ? { minify: flags.minify } : {}),
-      ...(flags.out !== undefined ? { assetsPath: flags.out } : {}),
+      assetsPath: resolve(config.root, flags.out ?? DEFAULT_ASSETS_PATH),
     });
   };
 
@@ -157,8 +159,8 @@ export function createAssetsCommands(): CommandBase {
       },
       run: async (_args, flags) => {
         const config = await loadAssetsConfig(flags);
-        const outcome = await generateAssetsTypes(config, flags.out !== undefined ? { assetsPath: flags.out } : {});
-        const path = flags.out ?? DEFAULT_ASSETS_PATH;
+        const path = resolve(config.root, flags.out ?? DEFAULT_ASSETS_PATH);
+        const outcome = await generateAssetsTypes(config, { assetsPath: path });
         console.log(
           outcome === "written"
             ? `✓ assets: wrote ${path} (types only)`

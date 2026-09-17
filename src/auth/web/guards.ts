@@ -56,11 +56,12 @@ async function establishIdentity<Bindings>(
   if (session === undefined) throw new Error(NO_SESSION);
 
   const users = await options.users(getAppContext<Bindings>(context));
-  return resolveAuthIdentity(session, users, options.now === undefined ? Date.now() : options.now());
+  return resolveAuthIdentity(session, users, guardNow(options));
 }
 
 /** Establishes the request's identity from the session, sending an anonymous request to sign-in. @public */
 export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGuardOptions<Bindings>): Middleware {
+  assertStepUpMaxAge("requireAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
   const returnParam = options.returnParam ?? "next";
   return async (context, next) => {
     const identity = await establishIdentity<Bindings>(context, options);
@@ -77,6 +78,17 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
     }
 
     authCtx.set(context, identity);
+
+    // The session is established before the second factor is proved, so without this the owed
+    // step-up is only enforced by the groups that happen to list an enrolment guard.
+    if (options.clearsStepUp !== true) {
+      const resolved = await resolveFactorDemand(context, identity, options);
+      if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
+      if (resolved.status === "step-up-required" && !stepUpHolds(identity.stepUpAt, options.stepUpMaxAgeMs, guardNow(options))) {
+        return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
+      }
+    }
+
     return next();
   };
 }
@@ -130,10 +142,15 @@ function assertStepUpMaxAge(operation: string, option: string, requested: number
   });
 }
 
-/** Whether `stepUpAt` still counts, given the configured lifetime. */
-function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined): boolean {
+/** This request's clock, the one every mark is written and measured against. */
+function guardNow(options: { readonly now?: () => number }): number {
+  return options.now === undefined ? Date.now() : options.now();
+}
+
+/** Whether `stepUpAt` still counts as of `now`, given the configured lifetime. */
+function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined, now: number): boolean {
   if (stepUpAt === null) return false;
-  const age = Date.now() - stepUpAt;
+  const age = now - stepUpAt;
   // A negative age is a mark dated into the future: it would satisfy every window until the clock
   // catches up, so it counts for nothing instead.
   if (age < 0) return false;
@@ -167,7 +184,7 @@ async function resolveAuthDemand<Bindings>(
   // `resolve` reads confirmed factor rows and nothing else, so it answers `step-up-required` on
   // every request of a session that has already verified. The session's own mark is the memory it has not got.
   if (resolved.status === "step-up-required") {
-    return stepUpHolds(identity.stepUpAt, options.stepUpMaxAgeMs) ? { status: "none" } : { status: "step-up" };
+    return stepUpHolds(identity.stepUpAt, options.stepUpMaxAgeMs, guardNow(options)) ? { status: "none" } : { status: "step-up" };
   }
   return { status: "none" };
 }
@@ -203,9 +220,9 @@ export function requireEnrolment<Bindings = Record<string, unknown>>(options: Au
     const demand = await resolveAuthDemand(context, identity, options);
     if (demand.status === "enrolment") {
       const target = enrolmentTarget(options, demand.kinds);
-      return refuse(options.medium, ENROLMENT_OWED, 403, () => createRedirectResponse(target));
+      return refuse(options.medium, ENROLMENT_OWED, 403, () => createRedirectResponse(target, 303));
     }
-    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath));
+    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
     // Refused rather than redirected: an unknown demand cannot pick a remedy, and every remedy page
     // asks the same unavailable store, so a redirect here is a loop.
     if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
@@ -225,9 +242,9 @@ export function requirePendingEnrolment<Bindings = Record<string, unknown>>(opti
     if (demand.status === "enrolment") return next();
     // The whole point of this guard: a session owing a step-up may not mint the second factor that
     // would satisfy it, so it is sent to verify rather than admitted to enrol.
-    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath));
+    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
     if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
-    return refuse(options.medium, NOTHING_OWED, 403, () => createRedirectResponse(options.settledPath));
+    return refuse(options.medium, NOTHING_OWED, 403, () => createRedirectResponse(options.settledPath, 303));
   };
 }
 
@@ -246,7 +263,7 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
     const resolved = await resolveFactorDemand(context, identity, options);
     if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
     if (resolved.status !== "step-up-required") return next();
-    if (stepUpHolds(identity.stepUpAt, maxAgeMs)) return next();
+    if (stepUpHolds(identity.stepUpAt, maxAgeMs, guardNow(options))) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
     return refuse(options.medium, STEP_UP_STALE, 403, () => createRedirectResponse(options.stepUpPath, 303));
@@ -297,11 +314,20 @@ function assertGuardOrder(group: AuthRouteGroup): void {
 function guardMiddleware<Bindings>(
   name: AuthGuardName,
   options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment">,
-  medium: AuthMedium,
+  group: AuthRouteGroup,
 ): Middleware {
+  const medium = group.medium;
   if (name === "resolve-auth")
     return resolveAuth({ users: options.auth.users, ...(options.auth.now === undefined ? {} : { now: options.auth.now }) });
-  if (name === "require-auth") return requireAuth({ ...options.auth, medium });
+  if (name === "require-auth")
+    return requireAuth({
+      ...options.auth,
+      factors: options.enrolment.factors,
+      stepUpPath: options.enrolment.stepUpPath,
+      ...(options.enrolment.stepUpMaxAgeMs === undefined ? {} : { stepUpMaxAgeMs: options.enrolment.stepUpMaxAgeMs }),
+      ...(group.clearsStepUp === true ? { clearsStepUp: true } : {}),
+      medium,
+    });
   // No JSON branch: `require-admin` sits on no JSON group, and an unused branch is an untested one.
   if (name === "require-admin") return requireAdmin();
   if (name === "require-pending-enrolment") return requirePendingEnrolment({ ...options.enrolment, medium });
@@ -315,11 +341,32 @@ export function createAuthGuards<Bindings = Record<string, unknown>>(options: Au
   for (const group of options.groups ?? AUTH_ROUTE_GROUPS) {
     assertGuardOrder(group);
 
+    const groupName = group.path.join(".");
     const routeMap = mapAt(options.routes, group.path);
-    if (routeMap === undefined) continue;
+    // A group that declares guards and finds no map is a wiring error, never a choice: its routes
+    // are mounted by something. A group declaring none is legitimately absent, as `admin` is.
+    if (routeMap === undefined) {
+      if (group.guards.length === 0) continue;
+      throw new Error(
+        `createAuthGuards: group \`${groupName}\` declares ${group.guards.length} guards but \`routes\` holds no \`${groupName}\` map — pass the map that mounts those routes, or the group ships with no guard at all.`,
+      );
+    }
 
     const routes = ownRoutes(routeMap);
-    if (routes.length === 0) continue;
+    if (routes.length === 0) {
+      if (group.guards.length === 0) continue;
+      throw new Error(
+        `createAuthGuards: group \`${groupName}\` declares ${group.guards.length} guards but its \`routes\` map holds no route of its own — the guards would cover nothing, so every route meant for them is unguarded.`,
+      );
+    }
+
+    // An absent allowlist is not an opt-out: a mutating group with no `Origin`/`Referer` check
+    // accepts a cross-site POST, and a consumer who omitted `origin` would never be told.
+    if (options.origin === undefined && mutates(routes)) {
+      throw new Error(
+        `createAuthGuards: group \`${groupName}\` answers a state-changing method but no \`origin\` policy was passed — pass one, so a cross-site submission to it is refused.`,
+      );
+    }
 
     const origin = options.origin !== undefined && mutates(routes) ? options.origin : undefined;
     // Every method, not only the mutating ones: an unauthenticated `GET` of the sign-in page is as
@@ -330,7 +377,7 @@ export function createAuthGuards<Bindings = Record<string, unknown>>(options: Au
     if (group.guards.length === 0 && origin === undefined && rateLimit === undefined) continue;
 
     const paths = [...new Set(routes.map((leaf) => leaf.pattern.source))];
-    const guards = group.guards.map((name) => guardMiddleware(name, options, group.medium));
+    const guards = group.guards.map((name) => guardMiddleware(name, options, group));
     groups.push({ paths, ...(origin && { origin }), ...(rateLimit && { rateLimit }), ...(guards.length > 0 && { guards }) });
   }
   return groups;

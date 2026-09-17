@@ -28,6 +28,12 @@ export function applyMapping(source: Record<string, unknown>, map: EnvMapping): 
   return result;
 }
 
+// An unset Workers secret and an empty `.dev.vars` line both arrive as `""`, so a required key
+// holding one is unconfigured. The exact empty string only: length and format are the entry schema's.
+function absent(value: unknown): boolean {
+  return value == null || value === "";
+}
+
 /** Builds a schema for an optional config group that resolves to `null` when required keys are absent. @public */
 export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   entries: T,
@@ -40,16 +46,45 @@ export function optionalGroup<T extends Record<string, v.GenericSchema>>(
   const gate = v.transform((raw: unknown): unknown => {
     const input = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
     for (const key of requiredKeys) {
-      if (input[key] == null) return null;
+      if (absent(input[key])) return null;
     }
     const result: Record<string, unknown> = { ...input };
     for (const [key, defaultVal] of Object.entries(defaults)) {
-      if (result[key] == null) result[key] = defaultVal;
+      if (absent(result[key])) result[key] = defaultVal;
     }
     return result;
   });
 
   return v.pipe(v.unknown(), gate, group as v.GenericSchema<unknown, { [K in keyof T]: v.InferOutput<T[K]> } | null>);
+}
+
+/** Builds a schema for a config group whose every key must be present, raising a valibot issue naming any that is not. @public */
+export function requiredGroup<T extends Record<string, v.GenericSchema>>(
+  entries: T,
+  options: { defaults?: Partial<Record<keyof T & string, unknown>> } = {},
+): v.GenericSchema<unknown, { [K in keyof T]: v.InferOutput<T[K]> }> {
+  const keys = Object.keys(entries);
+  const defaults = options.defaults ?? {};
+
+  const requirePresent = v.rawTransform<unknown, unknown>(({ dataset, addIssue, NEVER }) => {
+    const raw = dataset.value;
+    const input = (raw !== null && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const result: Record<string, unknown> = { ...input };
+    for (const [key, defaultVal] of Object.entries(defaults)) {
+      if (absent(result[key])) result[key] = defaultVal;
+    }
+    // One issue per key, each carrying the key on its path, so `formatEnvIssues` names the env var
+    // that is absent rather than only the group it belongs to.
+    let missing = false;
+    for (const key of keys) {
+      if (!absent(result[key])) continue;
+      missing = true;
+      addIssue({ received: "undefined", path: [{ type: "object", origin: "value", input: result, key, value: result[key] }] });
+    }
+    return missing ? NEVER : result;
+  });
+
+  return v.pipe(v.unknown(), requirePresent, v.object(entries) as v.GenericSchema<unknown, { [K in keyof T]: v.InferOutput<T[K]> }>);
 }
 
 /** Returns config from store, or an empty object cast to T when no store is registered. @public */

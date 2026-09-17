@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { isChosen, paintControl, readControl } from "./bind";
-import { fakeTree } from "./dom.fixture";
+import { bindControls, isChosen, paintControl, readControl } from "./bind";
+import { FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
+import type { FakeElement } from "./dom.fixture";
+import { createSignal } from "./signal";
+
+installCssEscape();
 
 type Control = Parameters<typeof readControl>[0];
 
@@ -239,5 +243,176 @@ describe("paintControl", () => {
       { value: "c", selected: true },
     ]);
     expect(writes).toBe(0);
+  });
+});
+
+// A native form reset reverts controls without firing `input`, so a document-level `reset` listener
+// is the only thing that notices — and the only listener this controller puts outside `root`.
+describe("bindControls — mounting and disposing", () => {
+  function scope() {
+    const { doc, el } = fakeTree();
+    const form = el("FORM");
+    const root = el("DIV");
+    const input = el("INPUT", { "data-field": "name" });
+    form.children.push(root);
+    root.parent = form;
+    root.children.push(input);
+    input.parent = root;
+    doc.body.children.push(form);
+    form.parent = doc.body;
+    return { doc, form, root, input };
+  }
+
+  const count = (target: { listeners: Map<string, unknown[]> }, type: string): number => target.listeners.get(type)?.length ?? 0;
+
+  it("listens on the root for every interaction, and on the document for a form reset", () => {
+    const { doc, root } = scope();
+
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
+
+    expect({ input: count(root, "input"), change: count(root, "change"), click: count(root, "click"), reset: count(doc, "reset") }).toEqual({
+      input: 1,
+      change: 1,
+      click: 1,
+      reset: 1,
+    });
+  });
+
+  it("repaints from the signals a microtask after a form reset has reverted the controls", async () => {
+    const { doc, form, root, input } = scope();
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
+    input.value = "";
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: form }));
+    await Promise.resolve();
+
+    expect(input.value).toBe("ada");
+  });
+
+  it("removes every listener on dispose, the document-level one included", () => {
+    const { doc, root } = scope();
+
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") })();
+
+    expect({ input: count(root, "input"), change: count(root, "change"), click: count(root, "click"), reset: count(doc, "reset") }).toEqual({
+      input: 0,
+      change: 0,
+      click: 0,
+      reset: 0,
+    });
+  });
+
+  it("stops repainting on a reset once disposed, so the disposed listener is gone rather than inert", async () => {
+    const { doc, form, root, input } = scope();
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") })();
+    input.value = "";
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: form }));
+    await Promise.resolve();
+
+    expect(input.value).toBe("");
+  });
+});
+
+// Discovery costs a `querySelectorAll("*")` per tree and `paintField` runs per changed field per
+// effect, i.e. per pointermove frame. Counting the walk is the only way to see it stop happening.
+describe("bindControls — the shadow-root walk on the paint path", () => {
+  function counted() {
+    const { doc, el } = fakeTree();
+    const root = el("DIV");
+    const input = el("INPUT", { "data-field": "name" });
+    root.children.push(input);
+    input.parent = root;
+    doc.body.children.push(root);
+    root.parent = doc.body;
+
+    const walks = { count: 0 };
+    for (const node of [root, input]) {
+      const query = node.querySelectorAll.bind(node);
+      node.querySelectorAll = (selector: string) => {
+        if (selector === "*") walks.count += 1;
+        return query(selector);
+      };
+    }
+    return { root, input, walks };
+  }
+
+  it("walks for shadow roots once at mount rather than once per paint", () => {
+    const { root, walks } = counted();
+    const name = createSignal("ada");
+    bindControls(root as unknown as HTMLElement, { name });
+    const atMount = walks.count;
+
+    for (const value of ["a", "b", "c", "d", "e"]) name.value = value;
+
+    expect({ atMount, afterFivePaints: walks.count }).toEqual({ atMount: 1, afterFivePaints: 1 });
+  });
+
+  // The one case the cache loses — a shadow root attached after mount — and what recovers it.
+  it("walks again when a field matches nothing, so a tree attached after mount is still found", () => {
+    const { root, input, walks } = counted();
+    const name = createSignal("ada");
+    bindControls(root as unknown as HTMLElement, { name });
+    input.remove();
+    const before = walks.count;
+
+    name.value = "grace";
+
+    expect(walks.count).toBe(before + 1);
+  });
+});
+
+// A detached shadow root still answers `querySelectorAll`, so the stale hit looks exactly like a
+// live one and the no-match fallback never fires — the swapped-in control keeps its old value.
+describe("bindControls — a shadow host replaced after mount", () => {
+  function hosted(doc: ReturnType<typeof fakeTree>["doc"], el: ReturnType<typeof fakeTree>["el"], root: FakeElement) {
+    const host = el("QTY-FIELD");
+    const shadow = el();
+    const input = el("INPUT", { "data-field": "qty" });
+    shadow.append(input);
+    host.shadowRoot = shadow;
+    root.append(host);
+    void doc;
+    return { host, input };
+  }
+
+  it("paints the new host's control and leaves the detached one behind", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV");
+    doc.body.append(root);
+    // A light-DOM match as well, so `found.length` stays non-zero and only staleness can trigger
+    // the re-walk. This is the case the task's first fix accepted as lost.
+    root.append(el("INPUT", { "data-field": "qty" }));
+    const first = hosted(doc, el, root);
+
+    const qty = createSignal("1");
+    bindControls(root as unknown as HTMLElement, { qty });
+    expect(first.input.value).toBe("1");
+
+    first.host.remove();
+    const second = hosted(doc, el, root);
+    qty.value = "7";
+
+    expect({ live: second.input.value, detached: first.input.value }).toEqual({ live: "7", detached: "1" });
+  });
+
+  it("leaves a host that is still attached in the cache, so the walk is not re-run for nothing", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV");
+    doc.body.append(root);
+    const only = hosted(doc, el, root);
+
+    const qty = createSignal("1");
+    bindControls(root as unknown as HTMLElement, { qty });
+    const walks: string[] = [];
+    const query = root.querySelectorAll.bind(root);
+    root.querySelectorAll = (selector: string) => {
+      walks.push(selector);
+      return query(selector);
+    };
+
+    qty.value = "7";
+
+    expect({ painted: only.input.value, stars: walks.filter((selector) => selector === "*").length }).toEqual({ painted: "7", stars: 0 });
   });
 });

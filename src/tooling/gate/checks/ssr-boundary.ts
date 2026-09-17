@@ -9,6 +9,9 @@ import type { SsrBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
+/** What judging one file needs: the boundary itself, plus the manifest a bare self-import is read against. */
+type SsrBoundaryConfig = Pick<SsrBoundaryCheckConfig, "clientDirs" | "entryPoints" | "packageName" | "exports">;
+
 // A spec is not shipped, and a `.browser.ts` spec's whole job is to drive the client runtime.
 const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !/\.(test|browser)\.tsx?$/.test(name);
 
@@ -28,16 +31,35 @@ export function boundaryViolation(file: string, config: Pick<SsrBoundaryCheckCon
   return `only ${config.entryPoints.map((name) => `\`${name}\``).join(" / ")} may import the browser runtime from outside ${config.clientDirs.map((dir) => `\`${dir}\``).join(" / ")}`;
 }
 
+/** Every published subpath that reaches the browser runtime, as a consumer would spell it. @public */
+export function clientSubpaths(config: SsrBoundaryConfig): Map<string, string> {
+  const found = new Map<string, string>();
+  if (config.packageName === undefined || config.exports === undefined) return found;
+  for (const [subpath, value] of Object.entries(config.exports)) {
+    const target = typeof value === "string" ? value : (value.import ?? value.types);
+    if (target === undefined) continue;
+    const normalized = target.startsWith("./") ? target.slice(2) : target;
+    const base = normalized.slice(normalized.lastIndexOf("/") + 1);
+    if (!isClientOwned(normalized, config.clientDirs) && !config.entryPoints.includes(base)) continue;
+    found.set(`${config.packageName}${subpath.slice(1)}`, normalized);
+  }
+  return found;
+}
+
 /** Judges one file's imports against the boundary. @public */
-export function validateSsrBoundary(file: string, source: string, config: Pick<SsrBoundaryCheckConfig, "clientDirs" | "entryPoints">): Finding[] {
+export function validateSsrBoundary(file: string, source: string, config: SsrBoundaryConfig): Finding[] {
   const reason = boundaryViolation(file, config);
   if (reason === null) return [];
 
+  const published = clientSubpaths(config);
   const crossings = parseImports(source).flatMap((ref) => {
     // Type-only imports are erased at emit, so they cannot drag browser code into a Worker bundle.
     if (ref.kind === "type") return [];
     const target = resolveSpecifier(file, ref.specifier);
-    if (target === null || !isClientOwned(target, config.clientDirs)) return [];
+    // A self-import by package name resolves to nothing relative, so the published subpath list is
+    // the only thing that can tell it from a third party's.
+    if (target === null) return published.has(ref.specifier) ? [`line ${ref.line}: \`${ref.specifier}\``] : [];
+    if (!isClientOwned(target, config.clientDirs)) return [];
     return [`line ${ref.line}: \`${ref.specifier}\``];
   });
 

@@ -30,6 +30,11 @@ function ioReplying(reply: Spawned): FakeDbIo {
   return io;
 }
 
+/** Splits a printed command the way a POSIX shell would, honouring single quotes. */
+function splitArgs(command: string): string[] {
+  return [...command.matchAll(/'((?:[^']|'\\'')*)'|(\S+)/g)].map((match) => (match[1] ?? match[2] ?? "").replaceAll("'\\''", "'"));
+}
+
 function infoReplying(bookmark: string): FakeDbIo {
   return ioReplying({ code: 0, stdout: `🌀 Time travelling...\n{"bookmark":"${bookmark}"}\n`, stderr: "" });
 }
@@ -80,11 +85,42 @@ describe("timeTravelInfo()", () => {
       target: { place: "remote", database: null },
     };
     expect(timeTravelInfo(io, home({ env: "staging" }), undefined, config).restoreCommand).toBe(
-      `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root /app --config /app/wrangler.jsonc --db DB -e staging`,
+      `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '/app' --config '/app/wrangler.jsonc' --db 'DB' -e 'staging'`,
     );
     expect(timeTravelInfo(io, home(), undefined, { ...config, env: null }).restoreCommand).toBe(
-      `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root /app --config /app/wrangler.jsonc --db DB`,
+      `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '/app' --config '/app/wrangler.jsonc' --db 'DB'`,
     );
+  });
+
+  // The undo is printed to an operator holding a part-migrated database, so it has to run as pasted.
+  it("quotes the paths it aims the undo with, so a project under a path with a space still runs it", () => {
+    const io = infoReplying(BOOKMARK);
+    const root = "/Users/dev/My Projects/app";
+    const config: DbConfig = {
+      root,
+      configPath: `${root}/wrangler.jsonc`,
+      config: { name: "app", compatibility_date: "2026-01-01" } as WranglerConfig,
+      env: null,
+      entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
+      target: { place: "remote", database: null },
+    };
+    const command = timeTravelInfo(io, home(), undefined, config).restoreCommand;
+    expect(splitArgs(command)).toEqual([
+      "forge",
+      "db",
+      "bookmark",
+      "restore",
+      "--target",
+      "remote",
+      "--bookmark",
+      BOOKMARK,
+      "--root",
+      root,
+      "--config",
+      `${root}/wrangler.jsonc`,
+      "--db",
+      "DB",
+    ]);
   });
 
   it("refuses a local place, naming the local undo instead", () => {
@@ -155,6 +191,32 @@ describe("timeTravelRestore()", () => {
       "Time Travel is a property of a deployed database — --target local has none. Undo a local change with `forge db reset` and `forge db restore`.",
     );
     expect(io.calls).toEqual([]);
+  });
+
+  it("refuses a bookmark that is not one, before it reaches wrangler's argv", () => {
+    const io = ioReplying({ code: 0, stdout: "", stderr: "" });
+    for (const bookmark of ["; rm -rf /", "--preview", "book mark", "", "x".repeat(129)]) {
+      expect(() => timeTravelRestore(io, home(), { bookmark })).toThrow(
+        `--bookmark ${JSON.stringify(bookmark)} is not a bookmark — 1 to 128 characters of letters, digits, underscore and hyphen, starting with a letter or a digit`,
+      );
+    }
+    expect(io.calls).toEqual([]);
+  });
+
+  it("refuses a timestamp that is not one, on the restore and on the info read alike", () => {
+    const io = ioReplying({ code: 0, stdout: "", stderr: "" });
+    for (const timestamp of ["yesterday", "2026-09-01 --preview", "-1"]) {
+      expect(() => timeTravelRestore(io, home(), { timestamp })).toThrow(`--timestamp ${JSON.stringify(timestamp)} is not a timestamp`);
+      expect(() => timeTravelInfo(io, home(), timestamp)).toThrow(`--timestamp ${JSON.stringify(timestamp)} is not a timestamp`);
+    }
+    expect(io.calls).toEqual([]);
+  });
+
+  it("accepts the timestamp notations wrangler takes", () => {
+    const io = ioReplying({ code: 0, stdout: "", stderr: "" });
+    for (const timestamp of ["2026-09-01", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00.500+02:00", "1757980800"]) {
+      expect(() => timeTravelRestore(io, home(), { timestamp })).not.toThrow();
+    }
   });
 
   it("reports the exit code and stderr when the restore fails", () => {

@@ -7,6 +7,7 @@ export {
   AUTH_PASSKEY_ASSERTION_ID_SHAPE,
   AUTH_PASSKEY_CHALLENGE_BYTES,
   AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
+  AUTH_PASSKEY_CHALLENGE_MAX_BYTES,
   AUTH_PASSKEY_TTL_SECONDS,
   AUTH_PASSKEY_TTL_MIN_SECONDS,
   AUTH_PASSKEY_TTL_MAX_SECONDS,
@@ -20,7 +21,7 @@ export {
   AUTH_TOTP_LOCKOUT_MS,
 } from "./config";
 export type { AdminUserService, AdminUserServiceOptions } from "./admin/types";
-export { createAdminUserService, isLastAdminRefusal } from "./admin/service";
+export { isLastAdminRefusal } from "./admin/service";
 export type { AttestedCredential, AuthData, AuthDataExpectation, AuthDataFlags, AuthDataReason } from "./passkey/types";
 export { verifyAuthData } from "./passkey/auth-data";
 export type { ClientData, ClientDataExpectation, ClientDataReason, PasskeyCeremony } from "./passkey/types";

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { escapeHtml, safeUrl } from "./escape";
+import { URL_SCHEME_CASES } from "./escape.fixture";
 
 describe("escapeHtml", () => {
   it("escapes ampersands", () => {
@@ -96,5 +97,13 @@ describe("safeUrl", () => {
 
   it("passes a plain relative URL unchanged", () => {
     expect(safeUrl("foo/bar")).toBe("foo/bar");
+  });
+
+  // The same table `src/ui/contracts/bind-contract.test.ts` asserts against `safeBindAttrValue`:
+  // `ui/contracts` is a leaf and may not import `http`, so this is what pins its copy to this one.
+  it("applies the shared scheme rule to every case in the table", () => {
+    for (const { input, expected } of URL_SCHEME_CASES) {
+      expect(safeUrl(input)).toBe(expected);
+    }
   });
 });

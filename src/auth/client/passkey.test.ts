@@ -356,6 +356,46 @@ describe("mountPasskey", () => {
     dispose();
   });
 
+  it("runs one ceremony for a double press, since the second would abort the first", async () => {
+    const { root, win, trigger } = fixture();
+    win.credentials.answer = ASSERTION;
+    win.replies.set(OPTIONS_PATH, { body: REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { body: { ok: true } });
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(win.credentials.calls.map((c) => c.method)).toEqual(["get"]);
+    expect(win.requests.map((r) => r.url)).toEqual([OPTIONS_PATH, VERIFY_PATH]);
+    dispose();
+  });
+
+  it("clears the busy state even when the ceremony throws outside its own try", async () => {
+    const { root, win, trigger } = fixture();
+    win.credentials.answer = ASSERTION;
+    win.replies.set(OPTIONS_PATH, { body: REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { body: { ok: true } });
+    win.location.assign = () => {
+      throw new Error("navigation refused");
+    };
+
+    const seen: PasskeyOutcomeDetail[] = [];
+    root.addEventListener(PASSKEY_OUTCOME_EVENT, (event) => seen.push((event as unknown as CustomEvent<PasskeyOutcomeDetail>).detail));
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toEqual([{ mode: "authentication", reason: "ceremony-failed" }]);
+    expect(trigger.hasAttribute("aria-busy")).toBe(false);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(win.credentials.calls.map((c) => c.method)).toEqual(["get", "get"]);
+    dispose();
+  });
+
   it("stops driving ceremonies once disposed", async () => {
     const { root, win, trigger } = fixture();
     win.credentials.answer = ASSERTION;

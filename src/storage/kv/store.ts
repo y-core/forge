@@ -1,4 +1,5 @@
 import { createLogger } from "../../logging/logger";
+import { serializeError } from "../../logging/serialize-error";
 import { result } from "../../result/result";
 import { jsonCodec } from "./codec";
 import type { KVEntry, KVListEntry, KVListOptions, KVNamespace, KVSetOptions, KVStore, KVStoreOptions, KvCodec } from "./types";
@@ -15,7 +16,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
   const prefix = options?.prefix;
   const codec: KvCodec<T> = (options?.codec ?? jsonCodec()) as KvCodec<T>;
   const defaultTtl = options?.defaultTtl;
-  const logger = options?.logger ?? createLogger("storage/kv");
+  const logger = options?.logger ?? createLogger("storage/kv", { channels: [] });
 
   function validateKey(key: string): void {
     if (key.includes("||")) throw new Error(`KV key must not contain "||": ${key}`);
@@ -55,7 +56,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
         try {
           return codec.decode(raw);
         } catch (err) {
-          logger.warn("kv.decode-error", { key, error: String(err) });
+          logger.warn("kv.decode-error", { key, error: serializeError(err) });
           throw err;
         }
       });

@@ -187,6 +187,11 @@ describe("createAnonymousSession — secret rotation", () => {
 
     const after = await rotatingApp([NEW]).request("/read", { headers: { cookie: issued } }, { SESSIONS: kv });
     expect(await after.json()).toEqual({ settings: { theme: "dark" } });
+
+    // `issued !== sent` alone passes even where every response re-issues, and the year-long `maxAge`
+    // this factory sets puts an epoch second in the signature — so a third request is what proves it.
+    const settled = await rotatingApp([NEW, OLD]).request("/quiet", { headers: { cookie: issued } }, { SESSIONS: kv });
+    expect(settled.headers.get("set-cookie")).toBeNull();
   });
 
   it("rejects a short secret inside an array, reporting its character count", async () => {
@@ -212,15 +217,28 @@ describe("createAnonymousSession — secret rotation", () => {
     expect(reissued.headers.getSetCookie()).toHaveLength(1);
   });
 
+  // The empty-name throw stays ahead of the storage pair, so a call missing both still names the
+  // one a developer can see in front of them.
   it("refuses an empty cookie name", () => {
     expect(() => createAnonymousSession({ cookieName: "", secret: () => SECRET })).toThrow("createAnonymousSession: cookieName must not be empty");
   });
+
+  it("refuses a call naming neither kv nor cookie storage", () => {
+    expect(() => createAnonymousSession({ secret: () => SECRET })).toThrow('pass `kv` to hold session data server-side, or `storage: "cookie"`');
+  });
+
+  it("refuses a call naming both kv and cookie storage", () => {
+    const kv = () => fakeSessionKV().kv;
+    expect(() => createAnonymousSession({ secret: () => SECRET, kv, storage: "cookie" })).toThrow(
+      'createAnonymousSession: pass either `kv` or `storage: "cookie"`, not both',
+    );
+  });
 });
 
-describe("createAnonymousSession — cookie-storage mode (kv omitted)", () => {
+describe("createAnonymousSession — cookie-storage mode", () => {
   it("persists small sessions entirely in the cookie", async () => {
     const app = new Forge<{ SESSION_SECRET: string }>();
-    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ secret: (c) => c.env.SESSION_SECRET }));
+    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ secret: (c) => c.env.SESSION_SECRET, storage: "cookie" }));
     mapHandler(app, "POST", "/save", (context) => {
       sessionCtx.get(context).set("n", 1);
       return new Response("ok");

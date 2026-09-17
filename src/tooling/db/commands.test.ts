@@ -90,7 +90,7 @@ describe("forge db bookmark info", () => {
     const root = appRoot();
     const cli = await runDb(io, ["bookmark", "info", "--target", "remote", "--root", root, "--json"]);
     expect(cli.out).toEqual([
-      `{"target":"remote","database":"app-db","bookmark":"${BOOKMARK}","restoreCommand":"forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB"}`,
+      `{"target":"remote","database":"app-db","bookmark":"${BOOKMARK}","restoreCommand":"forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'"}`,
     ]);
     expect(cli.err).toEqual([]);
   });
@@ -99,7 +99,7 @@ describe("forge db bookmark info", () => {
     const root = appRoot();
     const cli = await runDb(timeTravelIo(), ["bookmark", "info", "--target", "remote", "--root", root]);
     expect(cli.out).toEqual([
-      `bookmark ${BOOKMARK}\nrestore with: forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
+      `bookmark ${BOOKMARK}\nrestore with: forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
     ]);
   });
 

@@ -1,6 +1,6 @@
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { csrfFieldCtx } from "../form/csrf-context";
-import { parseFormData } from "../form/parse-form-data";
+import { isFormCapConflict, parseFormData } from "../form/parse-form-data";
 import { formToObject } from "../form/to-object";
 import { verifyTurnstile } from "../form/turnstile";
 import type { ParseFormDataOptions, ReadonlyFormData } from "../form/types";
@@ -48,6 +48,8 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
     try {
       formData = await parseFormData(c, parseOptions);
     } catch (thrown) {
+      // Rethrown to the error boundary: a 400 fragment would hide a misconfiguration no submission can fix.
+      if (isFormCapConflict(thrown)) throw thrown;
       if ((thrown as { status?: number }).status === 413) {
         return err(fragmentResponse(renderError("The submitted form is too large. Please reduce its size and try again."), 413));
       }

@@ -187,6 +187,25 @@ describe("renderToString — SafeHtml child (rawHtml)", () => {
     const parts = ["prefix: ", rawHtml("<em>mid</em>"), " suffix"];
     expect(String(await renderToString(parts))).toBe("prefix: <em>mid</em> suffix");
   });
+
+  // `<script>` and `<style>` are raw text, so the parser decodes no entity inside them: escaping a
+  // child corrupts it and `rawHtml` guards nothing. `scriptJson` / `styleText` are the way in.
+  it("carries a scriptJson child into a script element with no < left to close it", async () => {
+    const { scriptJson } = await import("../http/html");
+    const node = el("script", { type: "application/json" });
+    node.props.children = scriptJson({ bio: "</script><script>alert(1)</script>" });
+    const out = String(await renderToString(node));
+    expect(out.startsWith('<script type="application/json">')).toBe(true);
+    expect(out.slice('<script type="application/json">'.length, -"</script>".length)).not.toContain("<");
+  });
+
+  it("carries a styleText child into a style element with no < left to close it", async () => {
+    const { styleText } = await import("../http/html");
+    const node = el("style", null);
+    node.props.children = styleText("a{}</style><script>alert(1)</script>");
+    const out = String(await renderToString(node));
+    expect(out.slice("<style>".length, -"</style>".length)).not.toContain("<");
+  });
 });
 
 describe("renderToString — nested elements", () => {
@@ -353,16 +372,34 @@ describe("renderToString — URL attribute sanitization", () => {
     expect(String(await renderToString(node))).toBe('<div id="javascript:notaurl"></div>');
   });
 
-  // `srcdoc` and `data` are outside `URL_ATTRS` by decision, not omission: `srcdoc` is markup rather
-  // than a URL, and `object-src 'none'` with CSP inheritance into the frame is what answers both.
-  it("escapes `srcdoc` as markup and applies no URL sanitization to it", async () => {
+  // `srcdoc` is double-escaped because the browser decodes the attribute value once before parsing
+  // the frame document, so a single escape cancels exactly and the payload would parse as markup.
+  it("double-escapes `srcdoc` so a script payload reaches the frame as text", async () => {
     const node = el("iframe", { srcdoc: "<script>alert(1)</script>" });
-    expect(String(await renderToString(node))).toBe('<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>');
+    expect(String(await renderToString(node))).toBe('<iframe srcdoc="&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;"></iframe>');
   });
 
-  it("leaves an `object` `data` attribute to the content policy rather than to `safeUrl`", async () => {
+  it("leaves a benign `srcdoc` readable after the browser's one decoding pass", async () => {
+    const node = el("iframe", { srcdoc: "<p>hi</p>" });
+    expect(String(await renderToString(node))).toBe('<iframe srcdoc="&amp;lt;p&amp;gt;hi&amp;lt;/p&amp;gt;"></iframe>');
+  });
+
+  // Escaped once, so the browser's one decoding pass hands the parser the markup itself. Trusted
+  // markup had no way into a frame at all: `data-bind-attr` refuses `srcdoc` outright.
+  it("single-escapes a `SafeHtml` `srcdoc`, so trusted markup reaches the frame as a document", async () => {
+    const { rawHtml } = await import("../http/html");
+    const node = el("iframe", { srcdoc: rawHtml("<p>hi</p>") });
+    expect(String(await renderToString(node))).toBe('<iframe srcdoc="&lt;p&gt;hi&lt;/p&gt;"></iframe>');
+  });
+
+  it("neutralizes a javascript: `object` `data` to '#'", async () => {
     const node = el("object", { data: "javascript:alert(1)" });
-    expect(String(await renderToString(node))).toBe('<object data="javascript:alert(1)"></object>');
+    expect(String(await renderToString(node))).toBe('<object data="#"></object>');
+  });
+
+  it("leaves a safe `object` `data` URL unchanged", async () => {
+    const node = el("object", { data: "/assets/doc.pdf" });
+    expect(String(await renderToString(node))).toBe('<object data="/assets/doc.pdf"></object>');
   });
 
   it("neutralizes xlink:href with javascript: scheme to '#'", async () => {
@@ -395,9 +432,35 @@ describe("renderToString — URL attribute sanitization", () => {
     expect(String(await renderToString(node))).toBe('<a href="#" hx-push-url="javascript:alert(1)">x</a>');
   });
 
-  it("emits hx-on:click verbatim — the renderer has no on* filter", async () => {
+  // `hx-on:click` lowercases to a name starting `hx-`, not `on`, so the handler filter below cannot
+  // reach it — the deliberate exemption `docs/HTMX.md` §7b ratifies.
+  it("emits hx-on:click verbatim — the on* filter is scoped to bare handler names", async () => {
     const node = el("button", { "hx-on:click": "alert(1)", children: "go" });
     expect(String(await renderToString(node))).toBe('<button hx-on:click="alert(1)">go</button>');
+  });
+
+  it("drops a bare onclick attribute", async () => {
+    const node = el("button", { onclick: "alert(1)", children: "go" });
+    expect(String(await renderToString(node))).toBe("<button>go</button>");
+  });
+
+  it("drops a bare onerror attribute", async () => {
+    expect(String(await renderToString(el("img", { src: "/x.png", onerror: "alert(1)" })))).toBe('<img src="/x.png">');
+  });
+
+  it("drops a mixed-case ONCLICK spread key", async () => {
+    const node = el("button", { ONCLICK: "alert(1)", children: "go" });
+    expect(String(await renderToString(node))).toBe("<button>go</button>");
+  });
+
+  it("drops a mixed-case STYLE spread key, as it drops the lowercase one", async () => {
+    const node = el("div", { STYLE: "background:url(javascript:alert(1))", children: "x" });
+    expect(String(await renderToString(node))).toBe("<div>x</div>");
+  });
+
+  it("keeps an attribute that merely begins with the letters of a handler name", async () => {
+    const node = el("div", { "data-online": "yes", children: "x" });
+    expect(String(await renderToString(node))).toBe('<div data-online="yes">x</div>');
   });
 });
 

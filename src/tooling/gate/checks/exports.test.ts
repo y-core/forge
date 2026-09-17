@@ -1,11 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
 
 import { fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { checkExports, isPublished, parseSubpathPatterns } from "./exports";
+import { gateFixtureRoot } from "./gate.fixture";
 import type { ExportsCheckConfig } from "./types";
 
 const TYPE_BARREL = 'export type { Thing } from "./thing";\n';
@@ -16,16 +14,7 @@ const THING = "export interface Thing {\n  a: number;\n}\n";
 
 const PUBLIC_ALPHA = "/** A thing. @public */\nexport function alpha(): void {}\n";
 
-/** A throwaway package root holding each `path: contents` pair, directories created as needed. */
-function root(tree: Record<string, string>): string {
-  const dir = mkdtempSync(resolve(tmpdir(), "forge-exports-check-"));
-  for (const [path, contents] of Object.entries(tree)) {
-    const abs = resolve(dir, path);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, contents, "utf-8");
-  }
-  return dir;
-}
+const root = (tree: Record<string, string>): string => gateFixtureRoot(tree, "forge-exports-check-");
 
 // The package name resolves to nothing, so every runtime-resolution branch is reached from a test
 // that never depends on this repository's own installed layout.

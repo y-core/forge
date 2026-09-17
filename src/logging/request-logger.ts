@@ -33,11 +33,11 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
     let res: Response | undefined;
     try {
       res = await next();
-      log[levelForStatus(res.status)](`${method} ${path}`, { method, path, status: res.status, duration: Date.now() - start });
+      log[levelForStatus(res.status)]("request.completed", { method, path, status: res.status, duration: Date.now() - start });
     } catch (err) {
       // A client that disconnected mid-request is cancellation, not an error worth a record.
       if (!c.request.signal.aborted) {
-        log.error(`${method} ${path}`, { method, path, duration: Date.now() - start, error: serializeError(err) });
+        log.error("request.failed", { method, path, duration: Date.now() - start, error: serializeError(err) });
       }
       throw err;
     } finally {

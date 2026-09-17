@@ -70,6 +70,21 @@ describe("AUTH_ROUTE_GROUPS", () => {
     expect(groupAt(["account"])?.guards).toEqual(["require-auth", "require-enrolment", "require-fresh-step-up"]);
   });
 
+  // `requireAuth` refuses a session owing a mandatory factor, so the endpoints that clear one have
+  // to be exempt or they deadlock. The exemption is a property of the table, and this is its whole extent.
+  it("exempts `auth.verify` and its ceremony from the step-up refusal, and exempts nothing else", () => {
+    const exempt = AUTH_ROUTE_GROUPS.filter((group) => group.clearsStepUp === true).map((group) => group.path.join("."));
+
+    expect(exempt).toEqual(["auth.verify", "auth.verify.ceremony"]);
+  });
+
+  it("gives every exempt group a route that actually clears a step-up, so the exemption buys nothing else", () => {
+    const paths = routePaths(authRoutes("/auth"));
+
+    expect(paths).toContain("/auth/verify");
+    expect(paths).toContain("/auth/verify/passkey/finish");
+  });
+
   it("orders `require-auth` before every guard that reads the identity it establishes", () => {
     for (const group of AUTH_ROUTE_GROUPS) {
       // `resolve-auth` establishes rather than reads, so a group carrying only it depends on nothing.

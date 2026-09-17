@@ -57,6 +57,13 @@ describe("Collapsible.Trigger", () => {
     expect(attrsOf(html)).toEqual({ "data-slot": "collapsible-trigger" });
   });
 
+  it("takes its focus ring from focus-ring alone, with no outline-none of its own beside it", async () => {
+    const classes = classesOf(await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>));
+
+    expect(classes).toContain("focus-ring");
+    expect(classes.filter((name) => name === "outline-none")).toEqual([]);
+  });
+
   it("puts the chevron after the label rather than before it", async () => {
     const html = await render(<Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>);
 

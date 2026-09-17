@@ -449,7 +449,10 @@ test.describe("the implicit anchor an invoker supplies", () => {
   test("a popover opened by commandfor lands under its trigger with no anchor-name in the sheet", async ({ page }) => {
     const html = await render(
       Popover({
-        children: [Popover.Trigger({ for: "tips", children: "Tips" }), Popover.Content({ id: "tips", side: "bottom", children: "Body" })],
+        children: [
+          Popover.Trigger({ for: "tips", children: "Tips" }),
+          Popover.Content({ id: "tips", label: "Tips", side: "bottom", children: "Body" }),
+        ],
       }),
     );
     await mount(

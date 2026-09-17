@@ -260,6 +260,30 @@ describe("createObjectStore — content-type inference on put", () => {
     const obj = backend._store.get("data");
     expect(obj?.contentType).toBe("application/octet-stream");
   });
+
+  // The shape the API's own default invited: a key derived from user input, no explicit type, and a
+  // direct navigation to the asset URL that used to render the upload on the app's own origin.
+  it("stores a user-named upload as an inert type, whatever extension the name carries", async () => {
+    const backend = makeMemoryBackend();
+    const store = createObjectStore(backend);
+    for (const key of ["avatar.svg", "resume.html", "feed.xml", "boot.js"]) {
+      await store.put(key, "<svg onload=alert(1)/>");
+      expect(backend._store.get(key)?.contentType).toBe("application/octet-stream");
+    }
+  });
+
+  it("still honours an explicit active content-type, and serves it as a sandboxed download", async () => {
+    const backend = makeMemoryBackend();
+    const store = createObjectStore(backend);
+    await store.put("avatar.svg", "<svg/>", { contentType: "image/svg+xml" });
+    expect(backend._store.get("avatar.svg")?.contentType).toBe("image/svg+xml");
+
+    const served = await store.serveObject(new Request("http://x/avatar.svg"), "avatar.svg");
+    expect(served.ok).toBe(true);
+    if (!served.ok) return;
+    expect(served.data.headers.get("Content-Security-Policy")).toBe("sandbox");
+    expect(served.data.headers.get("Content-Disposition")).toBe(`attachment; filename="avatar.svg"; filename*=UTF-8''avatar.svg`);
+  });
 });
 
 describe("createObjectStore — listing and body identity", () => {

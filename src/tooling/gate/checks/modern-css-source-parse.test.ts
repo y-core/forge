@@ -33,6 +33,16 @@ describe("findModernCssSourceViolations() — Tier B behaviour", () => {
     expect(ids("<dialog role='dialog' aria-modal='true'>", TSX)).toEqual([]);
   });
 
+  // A `popover` element is already in the top layer and already light-dismisses, so naming its role
+  // claims nothing the platform is not doing — which is the whole of what this rule looks for.
+  it("does not flag the role on a popover panel, which has the top layer the rule asks for", () => {
+    expect(ids("<div popover='auto' role='dialog' aria-labelledby='p-title'>", TSX)).toEqual([]);
+  });
+
+  it("still flags aria-modal on a popover panel, which the platform never makes the page inert for", () => {
+    expect(ids("<div popover='auto' aria-modal='true'>", TSX)).toEqual(["forge-ui-platform-native-dialog"]);
+  });
+
   it("flags a floating panel declared with no popover attribute", () => {
     const source = ['const CLS = "absolute z-10 rounded border";', "<div data-slot='menu-popup' class={CLS}>"].join("\n");
 

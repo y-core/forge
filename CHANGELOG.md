@@ -22,21 +22,150 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 Every action this version asks of a consuming app, loudest failure last. The entry for each below
 carries the reasoning; this is the checklist.
 
-1. **Decide whether this app wants `methodMismatch: "advertise"`.** Nothing breaks if you skip
+1. **Expect the D1 client and KV store to stop logging** unless you pass `{ logger }` — they
+   defaulted to the console channel against their own documented promise. **Fails silently**: query
+   and cache-miss records simply stop arriving. Pass a logger where you want them.
+2. **Re-key any dashboard or alert matching `requestLogger`'s summary message.** It was the
+   interpolated request line (`"GET /thing"`); it is now the static label `"request.completed"`, or
+   `"request.failed"` when a throw escaped `next()`. The method and path are still fields.
+   **Fails silently**: a query keyed on the old message matches nothing and the panel reads zero.
+3. **Re-key anything reading the `error` field of `kv.decode-error` or `d1.schema.health.failed`.**
+   Both now carry the serialized `{ name, message, stack? }` object every other forge record uses,
+   rather than a string. **Fails silently**, as a field that no longer parses.
+4. **Decide whether this app wants `methodMismatch: "advertise"`.** Nothing breaks if you skip
    this — the default preserves the previous answer exactly — but a JSON API probably wants the
    RFC `405`, and opting in is one line.
-2. **Re-check any route param whose value can carry a `.`** — a dot in a param is now percent-encoded,
+5. **Expect every signed cookie to stop verifying on deploy** — a cookie configured with `maxAge` or
+   `expires` now carries that expiry inside its signature, and a value minted before this version
+   carries none. Every signed-in visitor is signed out once, and every flash message in flight is
+   dropped. **Fails silently**: the value simply reads as `null`, exactly as a tampered one does, and
+   the visitor gets a fresh session. Nothing to change in code — plan the deploy window.
+6. **Re-check any route param whose value can carry a `.`** — a dot in a param is now percent-encoded,
    so `/files/report.pdf` is generated as `/files/report%2Epdf`. **Fails silently**: the link still
    resolves, but the emitted markup, canonical URL and cache key all change.
-3. **Confirm no address is built from a non-ASCII `email` value** in a schema of your own —
+7. **Confirm no address is built from a non-ASCII `email` value** in a schema of your own —
    `v.email()` now refuses characters Unicode case folding previously admitted, so a record that
    used to validate can stop. Forge's own auth fields no longer use it. **Fails at the boundary**,
    as a validation refusal rather than an error.
-4. **`strictObject(` → `v.strictObject(`**, and drop `strictObject` from the
-   `@y-core/forge/validation` import — `tsc`.
-5. **Move the third argument of `createHref` and `Route.href` under `searchParams`** — `tsc`.
+8. **Expect a signed-in non-administrator's `PATCH`/`DELETE /admin/users/:id` to answer `403`** where
+   the write previously landed. Nothing to change unless an app reached those handlers with a
+   non-admin identity on purpose. **Fails as the refusal**, with no write attempted.
+9. **Re-check any stored object whose `contentType` your app sets from a caller** — an
+   `application/atom+xml`, any other `+xml` essence, `text/xsl`, `application/x-javascript`,
+   `text/ecmascript` or `application/ecmascript` object now serves as an `attachment` under
+   `Content-Security-Policy: sandbox`. **Fails visibly**: an object that rendered inline downloads
+   instead. Objects whose type forge inferred are unaffected.
+10. **Take a fresh `forge db backup` before the next `forge db reset`** if the newest artifact was
+    written by hand — an artifact whose manifest declares no files, or an undeclared `.sql` beside
+    the declared ones, is now refused. **Fails as the refusal**, before anything is removed.
+11. **Give every `assets` JS bundle an `outdir` naming a directory below the asset root** — `"."`,
+    `""`, `".."` and an absolute path are rejected, and `_headers` now stays inside the app root
+    when `publicDir` is a single segment. **Fails at config parse**, naming the field.
+12. **Configure `AuthWebOptions.bootstrapSecret` if this app uses the first-admin claim** — both
+    `GET` and `POST /admin/elevate` answer `404` until one is set, and the form gained a `secret`
+    field. **Fails as a 404** on a page that used to render.
+13. **Add `storage: "cookie"` to any `createAnonymousSession` call that omits `kv`** — omitting both
+    now throws, and so does passing both. **Throws at `app.use(…)` time**, which in a Worker is
+    isolate startup rather than a request, so it is caught by the first deploy that runs.
+14. **Check any cookie-backed session or flash payload approaching 4 KB** — `serialize` now throws
+    over 4096 bytes rather than emitting a header the browser discards. **Throws from the middleware's
+    response phase**, so the boundary answers `500` naming the cookie and its measured size.
+15. **Pass `createAuthGuards` a `routes` map for every group you declare guards for** — a declared
+    group whose map is missing, or which holds no route of its own, now throws instead of being
+    skipped in silence. **Throws at `app.use(…)`**, naming the group.
+16. **`strictObject(` → `v.strictObject(`**, and drop `strictObject` from the
+    `@y-core/forge/validation` import — `tsc`.
+17. **Move the third argument of `createHref` and `Route.href` under `searchParams`** — `tsc`.
+18. **Give any cookie object of your own a `rotating` field before passing it to `sessionMiddleware`**
+    — `{ ...cookie, rotating: false }`, plus a `read` method if it is not one forge built. A correctly
+    signed third-party cookie no longer compiles, because the middleware's parameter narrowed from
+    `SignedCookie | UnsignedCookie` to `SignedCookie` — `tsc`.
+19. **Pass `origin` to `createAuthGuards`** — the field is required, and an untyped consumer who
+    omits it gets a throw naming the group at `app.use(…)` rather than a group mounted with no
+    cross-origin defence — `tsc`.
+20. **Pass `AuthRequestServices.admin` the `AdminUserStore` rather than a built `AdminUserService`**,
+    and drop `createAdminUserService` from the `@y-core/forge/auth` import — forge builds the service
+    per request now — `tsc`.
+21. **Give a hand-rolled `requireAuth` options object `factors` and `stepUpPath`** — the guard now
+    enforces an owed step-up itself, so both are required and a session owing one gets a redirect or
+    `403` where it previously reached `next()` — `tsc`.
+22. **Handle `"refused"` in any exhaustive `switch` over `SyncAction`** — `cf sync` reports a secret
+    whose name is also a plaintext `vars` key rather than pushing it, and exits non-zero — `tsc`.
+23. **`DEFAULT_PREF` → `DEFAULT_THEME_PREF`** in the `@y-core/forge/ui/chrome` import — the old name
+    carried no domain word. Same value, same meaning — `tsc`.
 
 ### Breaking Changes
+
+- **The auth mount fails closed on four wirings it previously accepted in silence.** Each was a
+  deployment that looked mounted and was not guarded, so each is now a throw or a refusal rather
+  than a default:
+
+  | Wiring | Was | Is |
+  | --- | --- | --- |
+  | `createAuthGuards` with no `origin` | the group mounted with no `Origin`/`Referer` check | `origin` is a required field, and a mutating group without one throws at `app.use(…)` naming the group |
+  | `createAuthGuards` with a guarded group whose `routes` map is absent or holds no own leaf | the group was skipped, its routes left unguarded | throws at `app.use(…)`, naming the group and the guards that would have covered nothing |
+  | `requireAuth` on its own | an owed step-up was enforced only by the groups that also listed an enrolment guard | the guard resolves the demand itself; `factors` and `stepUpPath` are required, and a session owing a step-up is redirected (`403` on a JSON group, `503` on an unreadable registry) |
+  | `POST /admin/elevate` | the first-admin claim was open to whoever posted first | requires `AuthWebOptions.bootstrapSecret`; both the page and the POST answer `404` until one is configured, and `authAdminElevateSchema` gained a `secret` field |
+  | `AuthRequestServices.admin` | an `AdminUserService` the consumer built and passed in | the `AdminUserStore`; forge builds the service over it per request, and `createAdminUserService` is no longer exported from `@y-core/forge/auth` |
+
+  **The administrative surface is forge's to build, not the consumer's to supply.** `AdminUserService`
+  is the shape the write path is written against — the last-admin guards, the self-lockout refusals
+  and the role writes are all its methods — so accepting a ready-made one left a consumer able to
+  hand in a surface those refusals had never been checked against. The type stays exported; only the
+  factory is withdrawn.
+
+  **`PATCH` and `DELETE /admin/users/:id` also judge the role themselves now**, answering `403` to a
+  signed-in non-administrator. The `admin.users` group's `require-admin` runs on the loader the
+  handler redirects to — which is after the write commits — so it was never what refused the write.
+
+  **`resolveAuth` is unchanged, and that is the stated limit of the `requireAuth` fix.** A session is
+  established when the primary factor lands, so a visitor owing a step-up carries a full identity on
+  `authCtx` — which is what the verify page needs in order to tell a step-up from a sign-in. Check
+  any route of your own that renders member data behind `resolveAuth` alone: it is not a gate, and
+  `requireAuth` is the guard that resolves the demand.
+
+  **Migration:** pass `origin` (and a `routes` map for every guarded group) where you build the
+  guard chain; add a `bootstrapSecret` resolver if this app uses the claim page; add `factors` and
+  `stepUpPath` to any `requireAuth` you call directly; swap `AuthRequestServices.admin` to the store.
+  `tsc` finds all but the claim secret and the `resolveAuth` review.
+
+- **A session cookie's lifetime is now enforced by its signature, cookie storage is a stated choice,
+  and `sessionMiddleware` will not take an unsigned cookie.** Five surfaces change, with no shim and
+  no legacy wire format (pre-1.0, [`FORGE_STRUCTURE.md`](docs/FORGE_STRUCTURE.md) §7):
+
+  | Surface | Was | Is |
+  | --- | --- | --- |
+  | `sessionMiddleware(storage, cookie)` | `SignedCookie \| UnsignedCookie` | `SignedCookie` — the unsafe wiring is a type error, not a review note |
+  | A signed cookie's wire value | `base64(value) "." base64(hmac)` | `<expEpochSeconds> "." base64(value) "." base64(hmac)` wherever `maxAge` or `expires` is configured, the HMAC covering both segments |
+  | `createAnonymousSession(options)` | omitting `kv` fell back to cookie storage | `storage?: "cookie"`; exactly one of it and `kv`, or the factory throws |
+  | `SignedCookie` | `rotating`, `parse`, `serialize` | adds `read(header)`, answering `SignedCookieReading \| null` — the verified value alongside whether the current secret signed it |
+  | `serialize(value, attributes?)` | any size; `httpOnly`/`secure` relaxable per call | throws over 4096 bytes; both flags re-forced over the override |
+
+  **The expiry is absolute from the last emit, not from login.** It is re-armed on exactly the events
+  that re-arm `Max-Age` — a session write, or `reissue: true` — so an active visitor is never cut off
+  mid-session. A value carrying no expiry where one is configured parses to `null`, the same answer a
+  tampered value or one signed by a retired secret already got. There is no grace window, no
+  format-detection branch and no `legacyUntil`.
+
+  **Rotation no longer decides by re-signing and comparing wire bytes.** `read` reports which secret
+  verified the incoming value, so `sessionMiddleware` checks that directly. This removes one HMAC per
+  request under rotation and makes the detection exact — and it is forced, because an embedded expiry
+  makes the re-signed bytes differ every second, which would have meant a `Set-Cookie` on every
+  response forever.
+
+  **What this closes.** `maxAge` was a `Set-Cookie` attribute a client decides whether to honour, so a
+  session cookie captured once — a shared device, a proxy or CDN access log, a browser profile backup
+  — replayed indefinitely. Under cookie storage upstream's `regenerateId()` is a `console.warn` and
+  nothing else, so signing out changed nothing server-side and the only revocation was rotating the
+  signing secret, which signs out every user. The README's own "Revocation: impossible until cookie
+  expiry" row was false, because nothing enforced the expiry. It is true now.
+
+  **What it does not close, stated rather than solved.** Cookie storage still has no per-session
+  revocation inside the window — the expiry bounds it, `regenerateId()` does not. Bounding a session
+  from the instant it was created is a different guarantee and is not this one: store the login
+  instant in the session and check it. And a `Set-Cookie` under 4096 bytes that a *particular*
+  browser still refuses, over a per-domain cookie count or a smaller vendor cap, is not something a
+  server can measure.
 
 - **`createHref`'s third argument is an options object, and so is `Route.href`'s second.** Search
   params are now one field of it:
@@ -73,7 +202,61 @@ carries the reasoning; this is the checklist.
   finds every call site. Behaviour is identical — an undeclared `__proto__`, `constructor` or
   `toString` is refused, nested and under a `v.union` alike, which is what the wrapper already did.
 
+- **`DEFAULT_PREF` is `DEFAULT_THEME_PREF` in `@y-core/forge/ui/chrome`.** The old name carried no
+  domain word, so at a call site it read as a default of something the import did not say —
+  `canon:CODE_RULES.md` §7 is the rule it failed. The value, the type and the meaning are unchanged;
+  only the name moves.
+
+  **Migration:** `DEFAULT_PREF` → `DEFAULT_THEME_PREF` in the import and at every use. `tsc` finds
+  them all, and there is no behavioural difference to check afterwards.
+
+- **`requestLogger`'s summary message is a static label, and two records serialize their error.**
+  The message was the interpolated request line, which put a caller-supplied path — and any secret
+  in its query string — inside a string no redactor can reach. It is now `"request.completed"`, or
+  `"request.failed"` when a throw escaped `next()`; `method`, `path` and `status` are unchanged
+  fields. Alongside it, `kv.decode-error` and `d1.schema.health.failed` carry `serializeError`'s
+  `{ name, message, stack? }` where they carried a bare string.
+
+  **Migration:** re-key any dashboard, alert or log query matching the old message or reading either
+  `error` field as a string. Nothing in code changes.
+
+- **`cf sync` refuses a secret whose name is also a plaintext `vars` key.** `src/tooling/cf/README.md`
+  has always documented the refusal; the handlers threw the parsed config away and pushed anyway, so
+  a name declared on both sides became a `secret_text` shadowing a `plain_text` of the same name.
+  `SyncAction` gains `"refused"`, which the run's exit code now counts alongside `"error"`.
+
+  **Migration:** handle `"refused"` in an exhaustive `switch` over `SyncAction` — `tsc` finds it.
+  Remove the colliding name from one side or the other before the next `--commit`.
+
+- **An `assets` JS bundle's `outdir` must name a directory below the asset root.** The build cleans
+  `outdir` before writing into it, so `"."` or `""` deleted the asset root — this group's output and
+  every sibling's. The schema now rejects `"."`, `""`, `".."` and an absolute path; `buildJS` refuses
+  the asset root for a caller reaching past the schema; and the clean is scoped to the group's own
+  stems. Separately, `_headers` is written through a new `deployRoot` helper, so a single-segment
+  `publicDir` no longer puts it outside the app root.
+
+  **Migration:** give any bundle whose `outdir` was `"."` a real directory. An app whose `publicDir`
+  is a single segment will find `_headers` inside the root rather than beside it.
+
+- **A backup artifact declaring no files is refused.** `takeBackup` writes `schema.sql` and
+  `data.sql` for every backup, unconditionally, so a manifest declaring neither was never one this
+  tool wrote — and the verifier, which iterated the manifest, had nothing to check and passed. It
+  now works from the files a restore route actually loads, and additionally refuses an undeclared
+  `.sql` in the backup directory or in `migrations/`, which `restoreInto` would otherwise execute.
+  No `formatVersion` bump: every artifact this tool has written still verifies.
+
+  **Migration:** a `forge db reset` against a hand-written artifact now stops. Take a fresh
+  `forge db backup`.
+
 ### Added
+
+- **`shadowTrees` and `queryTrees`, exported from `@y-core/forge/ui/client`** — the two halves of
+  `queryAcross`, split so a caller on a per-frame path can pay for shadow-root discovery once.
+  `shadowTrees(root)` returns `root` and every open shadow root at or below it, each walk costing a
+  `querySelectorAll("*")`; `queryTrees(trees, selector)` is one native query per tree over a list the
+  caller already holds. `queryAcross` is unchanged and is now their composition, so no call site
+  moves. `bindControls` uses the split internally: it discovers at mount and re-walks only when a
+  field matches nothing or a form reset lands.
 
 - **`createApp({ methodMismatch })` decides what a URL answers when a pattern matched but no route's
   method did.** fetch-router 0.22 began answering such a request with `405` and an `Allow` header
@@ -106,12 +289,17 @@ carries the reasoning; this is the checklist.
   **A route pattern over 4096 bytes throws `MatcherResourceError` at registration**, which is a
   deployment defect surfacing loudly rather than at request time. **A URL that exhausts the
   match-work budget throws during matching**, and forge's error boundary answers `500`. The budget
-  is calibrated against measurement, not taste: 500 routes matched against a 32 KB URL — twice what
-  Cloudflare will deliver — costs about 97,000 work units, so it cannot bite a real request.
+  is calibrated to sit above real traffic: 500 routes matched against a 32 KB URL — twice what
+  Cloudflare will deliver — still matches rather than refusing, so it cannot bite a real request.
 
   **`MatcherResourceError` is exported from `@y-core/forge/router`**, with `MatcherLimits` and
   `MatcherResourceErrorDetails` as types, so a consumer catches the error forge's docs name without
   importing from `@remix-run/route-pattern` directly.
+
+- **An `iframe`'s `srcdoc` accepts a `SafeHtml` value.** A trusted document is escaped once, which
+  the browser's one decoding pass cancels, so it reaches the frame as markup; an untrusted string is
+  still escaped twice and reaches it as text. `data-bind-attr` refuses `srcdoc` outright, so this
+  was previously no way to put a document in a frame at all.
 
 - **`package.json` declares `engines.bun` `>=1.4.0`.** `workerdStep` runs `bun test --parallel=2`,
   a flag that shipped in Bun 1.3.13, so a consumer building a gate from it now has the floor in a
@@ -135,11 +323,103 @@ carries the reasoning; this is the checklist.
   **Migration:** nothing to write. An address previously refused for a legal special character now
   gets through; nothing that validated before is refused.
 
+- **`isActiveContentType` recognises the `+xml` family, `text/xsl` and the remaining script
+  spellings**, so `serveObject` downloads them as an `attachment` under `Content-Security-Policy:
+  sandbox` rather than serving them inline. The previous set was seven literal strings, which left
+  `application/atom+xml`, `application/rss+xml`, `application/rdf+xml`, `application/xslt+xml`,
+  `application/mathml+xml`, `text/xsl`, `application/x-javascript`, `text/ecmascript` and
+  `application/ecmascript` rendering as documents on the serving origin — a browser parses any
+  `+xml` essence as one, and an XHTML-namespaced `<script>` in it runs.
+
+  This is reachable only where an app passes a caller-supplied `contentType` to `put`;
+  `inferContentType` never emitted any of these. **Migration:** an object that relied on rendering
+  inline needs an explicit `contentDisposition: "inline"` on the `serveObject` call.
+
 - **Dependencies upgraded.** `@remix-run/fetch-router` 0.20.1 → 0.22.0, `@remix-run/route-pattern`
   0.23.0 → 0.24.0, `valibot` 1.4.2 → 1.5.0, `wrangler` 4.129.1 → 4.134.0, `esbuild` 0.28.1 →
   0.28.2, `oxlint` 1.82.0 → 1.83.0, `oxfmt` 0.67.0 → 0.68.0, `@playwright/test` 1.62.0 → 1.63.0,
-  and the optional `sharp` peer 0.35.2 → 0.35.4. The three breaking entries above are the whole of
-  what a consumer sees; the rest change nothing forge exposes.
+  and the optional `sharp` peer 0.35.2 → 0.35.4. The valibot entries in this section and the
+  `strictObject` removal under **Breaking Changes** are the whole of what a consumer sees from these
+  upgrades; the rest change nothing forge exposes.
+
+### Fixed
+
+- **The D1 client and KV store log nothing unless you pass `{ logger }`.** `src/storage/README.md`
+  has always said query logging is off by default; both built a default logger on the console
+  channel, so every statement — text and bound values — went to the log of any app that never
+  passed one. Both now default to a silent logger.
+
+- **`schemaHealthMonitor` flushes its logger before its `waitUntil` settles.** The monitor's whole
+  product is one record per isolate, and `observe()` resolved before an asynchronous channel had
+  written it — so the record was lost when the isolate was torn down.
+
+- **A tab marked `aria-disabled` stays in the roving-focus ring, focusable but inert.**
+  `src/ui/README.md` promises the WAI-ARIA split — native `disabled` leaves the ring, `aria-disabled`
+  stays in it — and the ring skipped both. This reaches every composite `mountRovingFocus` drives.
+
+- **A signal may no longer be bound to an `hx-on:*` attribute.** `docs/HTMX.md` §7b ratifies
+  `hx-on:*` in the renderer, where a developer typed the attribute and its body. On the runtime
+  binding path the developer names only the attribute and the signal supplies the body, so the
+  script htmx executes would have come from data.
+
+- **`forge/spacing-scale-only` fails loudly when the design system declares no `--spacing`.** An
+  absent declaration made the unit `NaN`, every comparison against it false, and the rule silently
+  reported nothing with the gate still green.
+
+- **`checkSchema` reports a schema `config/db.ts` declares with no file behind it.** An absent file
+  was dropped on the way in, leaving it indistinguishable from declaring nothing — and the check
+  answered clean.
+
+- **A `--` terminator ends flag parsing for `--help` too.** `forge <cmd> -- --help` printed help
+  instead of passing `--help` to the command as the argument the caller had marked it.
+
+- **A JSONC edit lands on the occurrence the parser reads.** Where a key was duplicated, the editor
+  wrote the first and `JSON.parse` and wrangler both read the last — so the edit reported `ok` while
+  the effective value never moved.
+
+- **A `Toolbar` action with no `commandTarget` emits no invoker pair**, rather than `commandfor=""`.
+
+- **A `NavLink` marked `current` inside a `Navbar` menu carries `aria-current`**, as one on the bar
+  already did.
+
+- **A seed refusal describes an environment value's shape rather than printing its bytes.**
+
+- **The SSR-boundary gate reports a server file importing a published client subpath.** Bare
+  specifiers resolve to no file in this tree, and `checkSsrBoundary` collapsed that into "not a
+  crossing" — so a server-rendered `.tsx` writing `import … from "@y-core/forge/ui/core/client"`
+  passed green, which is the crossing the rule exists to stop. It now consults the manifest for a
+  bare specifier, exactly as `checkDevBoundary` already did: `clientSubpaths` collects every
+  published subpath whose target is inside a client directory or is a registration entry point, and
+  a hit is reported as a crossing. A third party's bare specifier still passes.
+
+- **`loadSpriteGlyphs` reads a sprite once per isolate.** Every call fetched and re-parsed the whole
+  sprite, so a handler calling it per request paid a subrequest and a full scan each time for an
+  artifact that is immutable per deploy. The promise is now memoized per URL and prefix, which a
+  deploy resets. A failure is never memoized — caching the empty map it returns would blank every
+  glyph until the isolate was replaced.
+
+- **An emailed one-time code refuses at a constant cost.** A refusal against an absent, expired or
+  exhausted row spent a different number of statements and AEAD operations than one against a live
+  row, so waiting past the code's lifetime restored the enumeration oracle the decoy branch exists
+  to close. Every refusal now spends the same two statements and one AEAD open, and the decoy is
+  calibrated against that one profile.
+
+- **A `data.sql` backup artifact is checked against an allowlist.** The scan named four things it
+  refused, so `REPLACE INTO`, `UPDATE`, `ATTACH DATABASE`, a non-preamble `PRAGMA`, a `WITH … INSERT`
+  and an `INSERT` behind a comment all passed into `wrangler d1 execute --file`. Every statement must
+  now be the dump preamble on line 1 or an `INSERT` into an allow-listed table; anything else is a
+  fault naming the statement.
+
+- **`fetchURL` refuses a redirect off https.** The scheme was checked on the input URL and `fetch`
+  follows a redirect by default, so a host answering `Location: http://…` moved the bytes onto an
+  unauthenticated transport. It now walks the chain itself under `redirect: "manual"` and refuses the
+  first hop that leaves https — every hop, not just the one the bytes arrived from, because an
+  https → http → https bounce reports an https `response.url` having already leaked the request.
+  A chain over ten hops is refused as a loop.
+
+- **`data-bind-attr` refuses `style`.** The SSR renderer drops a `style` attribute under the shipped
+  `style-src 'self'`, so a binding that wrote one in the browser produced markup the renderer would
+  never have emitted. It now warns and binds nothing, as it already did for `on*` and `srcdoc`.
 
 ---
 

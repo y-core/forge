@@ -20,9 +20,19 @@ export function base32Encode(bytes: Uint8Array): string {
   return out;
 }
 
-/** Decodes unpadded or padded RFC 4648 base32, rejecting any character outside the alphabet. @internal */
+/** Padding a body of each length modulo 8 needs; `undefined` marks a length no byte count can produce. */
+const BASE32_PADDING: readonly (number | undefined)[] = [0, undefined, 6, undefined, 4, 3, undefined, 1];
+
+/** Decodes unpadded or padded RFC 4648 base32, rejecting any encoding no byte sequence produces. @internal */
 export function base32Decode(text: string): Uint8Array<ArrayBuffer> {
-  const body = text.replace(/=+$/, "").toUpperCase();
+  const upper = text.toUpperCase();
+  const body = upper.replace(/=+$/, "");
+  const padding = BASE32_PADDING[body.length % 8];
+  // Without the length check `base32Decode("M")` returns an empty array: five bits are too few to
+  // write a byte, so a secret truncated to one character decodes to "no secret" rather than failing.
+  if (padding === undefined) throw new Error(`base32Decode: ${body.length} characters cannot encode whole bytes`);
+  const padded = upper.length - body.length;
+  if (padded !== 0 && padded !== padding) throw new Error(`base32Decode: ${padded} padding characters do not close the block`);
   const out = new Uint8Array(Math.floor((body.length * 5) / 8));
   let buffer = 0;
   let bits = 0;
@@ -39,5 +49,8 @@ export function base32Decode(text: string): Uint8Array<ArrayBuffer> {
       out[written++] = (buffer >> bits) & 0xff;
     }
   }
+  // The encoder zero-fills the leftover bits, so a non-zero remainder came from somewhere else:
+  // `MZXW6YQ` and `MZXW6YR` would otherwise both decode to `foob`, giving one secret two spellings.
+  if ((buffer & ((1 << bits) - 1)) !== 0) throw new Error("base32Decode: trailing bits are not zero");
   return out;
 }

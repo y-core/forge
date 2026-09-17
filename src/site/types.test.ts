@@ -55,6 +55,18 @@ describe("SiteConfigSchema — pages and robots", () => {
     expect(parse({ ...base, robots: { rules: [{ userAgent: "*", crawlDelay: -1 }] } }).success).toBe(false);
   });
 
+  it("rejects a control character in a robots value, which would forge a directive of its own", () => {
+    expect(parse({ ...base, robots: { rules: [{ userAgent: "*", disallow: ["/private\nAllow: /"] }] } }).success).toBe(false);
+    expect(parse({ ...base, robots: { rules: [{ userAgent: "*\r" }] } }).success).toBe(false);
+    expect(parse({ ...base, robots: { rules: [{ userAgent: "*", allow: ["/ok"] }] } }).success).toBe(true);
+  });
+
+  it("rejects a crawl delay that is not a finite integer", () => {
+    expect(parse({ ...base, robots: { rules: [{ userAgent: "*", crawlDelay: Number.POSITIVE_INFINITY }] } }).success).toBe(false);
+    expect(parse({ ...base, robots: { rules: [{ userAgent: "*", crawlDelay: 1.5 }] } }).success).toBe(false);
+    expect(parse({ ...base, robots: { rules: [{ userAgent: "*", crawlDelay: 10 }] } }).success).toBe(true);
+  });
+
   it("rejects a rule with no userAgent", () => {
     expect(parse({ ...base, robots: { rules: [{ allow: ["/"] }] } }).success).toBe(false);
   });
@@ -120,5 +132,13 @@ describe("SiteConfigSchema — zone", () => {
 
   it("rejects a redirect with no from list", () => {
     expect(parse({ ...base, zone: { redirect: { statusCode: 301 } } }).success).toBe(false);
+  });
+
+  it("rejects an apex that is not a bare hostname, since it is interpolated into a zone expression", () => {
+    expect(parse({ ...base, zone: { apex: 'example.com", http.request.uri.path) or true and concat("' } }).success).toBe(false);
+    expect(parse({ ...base, zone: { apex: "https://example.com" } }).success).toBe(false);
+    expect(parse({ ...base, zone: { apex: "example.com/path" } }).success).toBe(false);
+    expect(parse({ ...base, zone: { apex: "localhost" } }).success).toBe(false);
+    expect(parse({ ...base, zone: { apex: "sub.example.co.uk" } }).success).toBe(true);
   });
 });

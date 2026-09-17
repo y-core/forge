@@ -40,8 +40,7 @@ interface BoundRowProps {
 
 const BoundRow: FC<BoundRowProps> = ({ field, label, value, children }) => (
   <div class='w-full max-w-xs space-y-2'>
-    {/* The placeholder keeps the readout in the same column on every row: a control that carries its
-        own label — a Switch, a ToggleGroup — has none here, and without it the value slides left. */}
+    {/* The empty `<span>` is not dead markup: it holds the readout's column where a control labels itself. */}
     <div class='flex items-baseline justify-between gap-3'>
       {label === undefined ? <span /> : <Label for={fieldId(field)}>{label}</Label>}
       <Readout field={field} value={value} />
@@ -214,8 +213,6 @@ const ControlsToggleSection: FC = () => (
       <Toggle bind='bold' name='bold' pressed={CONTROLS_DEMO_STATE.bold}>
         Bold
       </Toggle>
-      {/* The complement of the readout above: same signal, bound to an *attribute* rather than to
-          text, so the line disappears the moment the toggle turns on. */}
       <p {...bindAttrAttr("hidden", "bold")} hidden={CONTROLS_DEMO_STATE.bold} class='text-sm text-muted-foreground'>
         Bold is off — this line is bound to <code>hidden</code>.
       </p>

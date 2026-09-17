@@ -125,3 +125,20 @@ describe("a checkable row carries both halves of its state, in both tiers", () =
     });
   });
 });
+
+describe("a trigger's aria-haspopup names the role its target actually carries", () => {
+  it("pairs a menu trigger with the popup its aria-controls resolves to", async () => {
+    const html = await render(
+      <Menu>
+        <Menu.Trigger for='menu-file'>File</Menu.Trigger>
+        <Menu.Popup id='menu-file'>
+          <Menu.Item for='menu-file'>Open</Menu.Item>
+        </Menu.Popup>
+      </Menu>,
+    );
+    const target = attrOf(html, "aria-controls", 'data-slot="menu-trigger"');
+
+    expect(attrOf(html, "role", `id="${target}"`)).toBe("menu");
+    expect(attrOf(html, "aria-haspopup", 'data-slot="menu-trigger"')).toBe(attrOf(html, "role", `id="${target}"`));
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { buildIcons, iconLinks, iconTarget } from "./icons";
 import type { IconsConfig } from "./types";
@@ -145,6 +145,24 @@ describe("buildIcons()", () => {
     }
   });
 
+  it("refuses an output whose file escapes outDir rather than writing over it", async () => {
+    const tmpDir = join(tmpdir(), `forge-icons-escape-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const outDir = join(tmpDir, "public");
+    mkdirSync(tmpDir, { recursive: true });
+    try {
+      const srcPath = join(tmpDir, "icon.svg");
+      writeFileSync(srcPath, `<svg><path d="M0 0"/></svg>`);
+      writeFileSync(join(tmpDir, "wrangler.jsonc"), `{"name":"app"}`);
+
+      const config: IconsConfig = { src: srcPath, outDir, lightColor: "#000", outputs: [{ kind: "svg", file: "../wrangler.jsonc" }] };
+
+      await expect(buildIcons(config)).rejects.toThrow("escapes the asset root");
+      expect(readFileSync(join(tmpDir, "wrangler.jsonc"), "utf-8")).toBe(`{"name":"app"}`);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("writes a prefixed output under the prefix and a root-pinned one at the asset root", async () => {
     await stubSharp();
     const tmpDir = join(tmpdir(), `forge-icons-prefix-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -188,21 +206,27 @@ describe("iconTarget()", () => {
   const base = { src: "icon.svg", outDir: "public", lightColor: "#000", outputs: [] };
 
   it("serves from the asset root when no prefix is configured", () => {
-    expect(iconTarget(base, { kind: "svg", file: "favicon.svg" })).toEqual({ dir: "public", path: "/favicon.svg" });
+    expect(iconTarget(base, { kind: "svg", file: "favicon.svg" })).toEqual({ dir: resolve("public"), path: "/favicon.svg" });
   });
 
   it("normalises a prefix given without a leading slash or with a trailing one", () => {
     expect(iconTarget({ ...base, publicPrefix: "static/" }, { kind: "svg", file: "favicon.svg" })).toEqual({
-      dir: "public/static",
+      dir: resolve("public", "static"),
       path: "/static/favicon.svg",
     });
   });
 
   it("pins a root output to the asset root even under a prefix", () => {
     expect(iconTarget({ ...base, publicPrefix: "/static" }, { kind: "ico", file: "favicon.ico", sizes: [16], root: true })).toEqual({
-      dir: "public",
+      dir: resolve("public"),
       path: "/favicon.ico",
     });
+  });
+
+  it("refuses a publicPrefix that escapes the asset root", () => {
+    expect(() => iconTarget({ ...base, publicPrefix: "../../etc" }, { kind: "svg", file: "favicon.svg" })).toThrow(
+      'escapes the asset root "public"',
+    );
   });
 });
 

@@ -262,11 +262,17 @@ export function styleAction(action: SyncAction, style: Colorize): string {
     case "remote-only":
     case "unavailable":
       return style.yellow(label);
+    case "refused":
     case "error":
       return style.red(label);
     default:
       return style.dim(label);
   }
+}
+
+/** Whether a run's rows leave it failing: a row the tool could not resolve, or one it declined to write. @public */
+export function failsRun(results: readonly SyncResult[]): boolean {
+  return results.some((r) => r.action === "error" || r.action === "refused");
 }
 
 /** `yes` / `no` for a side that was checked, blank for one that was not. */
@@ -453,9 +459,9 @@ async function runSync(flags: LooseFlags, ctx?: CliContext): Promise<void> {
 
   if (json) console.log(JSON.stringify(report, null, 2));
 
-  // Signalled without returning early: an `error` row must not suppress the
+  // Signalled without returning early: a failing row must not suppress the
   // write-back of the rows that did resolve.
-  if (output.results.some((r) => r.action === "error")) process.exitCode = 1;
+  if (failsRun(output.results)) process.exitCode = 1;
   else if (flags.check && report.pending > 0) process.exitCode = 1;
 }
 

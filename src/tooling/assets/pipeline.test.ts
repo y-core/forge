@@ -47,6 +47,7 @@ describe("buildAll() — emitHeaders", () => {
     try {
       await buildAll(
         {
+          root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
           js: { bundles: [] },
@@ -82,6 +83,7 @@ describe("buildAll() — emitHeaders", () => {
 
       await buildAll(
         {
+          root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
           js: { bundles: [] },
@@ -136,6 +138,7 @@ describe("buildAll() — emitHeaders", () => {
     try {
       await buildAll(
         {
+          root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
           js: { bundles: [] },
@@ -167,6 +170,7 @@ describe("buildAll() — emitHeaders", () => {
     try {
       await buildAll(
         {
+          root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/static" },
           css: [],
           js: { bundles: [] },
@@ -218,6 +222,7 @@ describe("buildAll() — rasters", () => {
 
       await buildAll(
         {
+          root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
           js: { bundles: [] },
@@ -263,6 +268,7 @@ describe("buildAll() — generated module available to the JS bundle", () => {
 
       await buildAll(
         {
+          root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
           js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
@@ -304,6 +310,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       writeFileSync(join(tmpDir, "src", "main.ts"), `export const x = 1;\n`);
 
       const config = {
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
         js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
@@ -381,6 +388,7 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
       tmpDir,
       assetsPath: join(tmpDir, ".forge", "assets.ts"),
       config: {
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
         js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
@@ -510,6 +518,7 @@ describe("readEmittedManifest()", () => {
       tmpDir,
       assetsPath: join(tmpDir, ".forge", "assets.ts"),
       config: {
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
         js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
@@ -561,6 +570,7 @@ describe("readEmittedManifest()", () => {
 describe("generateAssetsTypes() — glyph-name union", () => {
   function typesConfig(tmpDir: string, sprites: ResolvedConfig["sprites"]): ResolvedConfig {
     return {
+      root: tmpDir,
       paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
       css: [],
       js: { bundles: [] },
@@ -627,6 +637,7 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
 
     try {
       const config = {
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
         css: [],
         js: { bundles: [] },
@@ -669,6 +680,7 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
 
     try {
       const config = {
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
         css: [],
         js: { bundles: [] },
@@ -703,6 +715,7 @@ describe("generateAssetsTypes() — derives from config alone", () => {
     const execSpy = stubTailwind();
     try {
       const config = {
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/static" },
         css: [{ tool: "tailwindcss", input: join(missing, "app.css"), output: "styles.css" }],
         js: { bundles: [{ entry: join(missing, "main.ts"), outdir: "js", format: "esm" }] },
@@ -712,12 +725,12 @@ describe("generateAssetsTypes() — derives from config alone", () => {
           ui: {
             target: "sprites/ui.svg",
             sources: [
-              { path: "https://example.invalid/icons/", files: ["spinner.svg"] },
+              { path: "https://example.invalid/icons/", files: [{ key: "spinner", file: "spinner.svg", sha256: "a".repeat(64) }] },
               { path: missing, files: ["chevron-down.svg"] },
             ],
           },
         },
-        fonts: { downloads: [{ url: "https://example.invalid/inter.woff2", to: "fonts/inter.woff2" }] },
+        fonts: { downloads: [{ url: "https://example.invalid/inter.woff2", to: "fonts/inter.woff2", sha256: "a".repeat(64) }] },
         icons: null,
         site: null,
         cursors: {

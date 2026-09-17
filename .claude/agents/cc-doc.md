@@ -124,7 +124,7 @@ doc is worse than a missing one.
 4. Read `PLAIN_LANGUAGE.md` §4 and §5 — headings that say what is beneath them, sentences that expose the actor and the condition, and a section a
    reader can land on cold. That document owns the prose; a neighbouring doc shows the house grain but settles nothing.
 5. Draft: frontmatter, the opening blockquote with its **Defers to** list, `## 0. Quick Reference` with one line per `##` and `###`, then the body.
-6. Run the docs gate step — or delegate the gate to `cc-tester`.
+6. Run the `quality` tier — it holds the docs step and the markdown rules together — or delegate the full gate to `cc-tester`.
 7. Confirm the new document is reachable — `knowledge_search` for the rule it carries returns it.
 
 **For READMEs:** start from the tasks, not the barrel. List what a developer arrives wanting to do, write a section per task, and verify every
@@ -175,8 +175,9 @@ Report back in this shape:
 When the doc pass closes a task, close it yourself over MCP, never by editing files. There is no protocol document to fetch: the tool descriptions
 carry every rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would satisfy it, and whether it is
 `retryable`. Act on that payload rather than guessing past it. Read before you write — a read carries the `revision` a later edit must cite — and
-record the resolution with, or before, the move to `done`. A docs-only change runs no gate beyond the docs step, so what was written, and the source
-claims verified, are themselves the evidence the close rests on.
+record the resolution with, or before, the move to `done`. **Offering a task for review is a claim about a run** (`AGENT_WORKFLOW.md` §5): for a
+docs-only change the `quality` tier is that run, and it judges the wrap, the link style and every structural rule of what you just wrote. The source
+claims you verified are the evidence it cannot check.
 
 ## Delegation
 

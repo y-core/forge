@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { fakeDbIo } from "../db.fixture";
+import { sha256 } from "../digest";
 import { INVENTORY_SELECT, quoteSqlIdentifier, quoteSqlLiteral, rowCountSelect, tableInfoSelect } from "../sql";
-import type { BackupManifest, SchemaFacts, SchemaObject } from "../types";
+import type { BackupManifest, DbIo, SchemaFacts, SchemaObject } from "../types";
 import {
   appSchemaDigestInput,
   BACKUP_FORMAT_VERSION,
@@ -29,6 +31,7 @@ import {
   validateManifest,
   decodeReadRow,
   verificationSelect,
+  verifyBackupArtifact,
 } from "./artifact";
 import type { AppTable } from "./types";
 
@@ -1014,6 +1017,94 @@ describe("checkDataArtifact()", () => {
       { line: 4, reason: "a data-only artifact removes nothing: DELETE FROM projects;" },
     ]);
   });
+
+  it("reports a DROP and an ALTER on the same terms as a CREATE, since all three are the migrations route's", () => {
+    const reason = "a data-only artifact declares no schema — the migrations route applies the migrations directory first";
+
+    expect(checkDataArtifact([...DATA_DUMP, 'DROP TABLE "orders";'].join("\n"), APP_TABLES)).toEqual([{ line: 4, reason }]);
+    expect(checkDataArtifact([...DATA_DUMP, "ALTER TABLE tasks ADD COLUMN x TEXT;"].join("\n"), APP_TABLES)).toEqual([{ line: 4, reason }]);
+  });
+
+  // The judgement is an allowlist and not a list of verbs somebody thought of: the file is handed to
+  // `wrangler d1 execute --file`, and each of these returned no fault while it was a denylist.
+  it("refuses a verb no arm names, because only the preamble and an allowed INSERT pass", () => {
+    const refused = [
+      "REPLACE INTO tasks VALUES(1);",
+      "UPDATE tasks SET lane = 'done';",
+      "ATTACH DATABASE 'evil.db' AS evil;",
+      "PRAGMA writable_schema=ON;",
+      "WITH c AS (SELECT 1) INSERT INTO orders SELECT * FROM c;",
+    ];
+    for (const statement of refused) {
+      expect(checkDataArtifact([...DATA_DUMP, statement].join("\n"), APP_TABLES)).toEqual([
+        { line: 4, reason: `a data artifact carries only the preamble and INSERTs: ${statement}` },
+      ]);
+    }
+  });
+
+  // The verb was matched against the raw text, so a comment ahead of it matched no arm at all — not
+  // the INSERT arm that checks the table, and not one of the denied ones either.
+  it("reads an INSERT behind a comment rather than passing it, whatever table it names", () => {
+    const faults = checkDataArtifact([...DATA_DUMP, "/*c*/INSERT INTO orders VALUES(1);"].join("\n"), APP_TABLES);
+
+    expect(faults.length).toBe(1);
+    expect(faults[0]?.line).toBe(4);
+    expect(faults[0]?.reason.startsWith("an INSERT naming no table this scan can read: ")).toBe(true);
+  });
+
+  it("admits the preamble only as the file's own first statement", () => {
+    expect(checkDataArtifact([...DATA_DUMP, PREAMBLE].join("\n"), APP_TABLES)).toEqual([
+      { line: 4, reason: `a data artifact carries only the preamble and INSERTs: ${PREAMBLE}` },
+    ]);
+  });
+});
+
+// A line scan reads a crafted dump as one INSERT and stops there; the artifact is what `wrangler d1
+// execute --file` is handed, so every statement on the line has to be judged, not just the first.
+describe("checkDataArtifact() — a second statement hidden on an INSERT's line", () => {
+  it("reports a row removal written after an allowed INSERT on the same line", () => {
+    const line = `INSERT INTO "tasks" (id) VALUES (1); DROP TABLE "orders";`;
+
+    expect(checkDataArtifact([...DATA_DUMP, line].join("\n"), APP_TABLES)).toEqual([
+      { line: 4, reason: "a data-only artifact declares no schema — the migrations route applies the migrations directory first" },
+    ]);
+  });
+
+  it("reports an INSERT into a table it may not carry when that INSERT is the line's second statement", () => {
+    const line = `INSERT INTO "tasks" (id) VALUES (1); INSERT INTO "secrets" (id) VALUES (1);`;
+
+    expect(checkDataArtifact([...DATA_DUMP, line].join("\n"), APP_TABLES)).toEqual([
+      { line: 4, reason: "secrets is not one of the tables this artifact may carry" },
+    ]);
+  });
+
+  it("reports a DELETE hidden after an INSERT, which the line scan read as part of the row", () => {
+    const line = `INSERT INTO "tasks" (id) VALUES (1); DELETE FROM "projects";`;
+
+    expect(checkDataArtifact([...DATA_DUMP, line].join("\n"), APP_TABLES)).toEqual([
+      { line: 4, reason: 'a data-only artifact removes nothing: DELETE FROM "projects";' },
+    ]);
+  });
+
+  it("still passes a row whose own literal holds the semicolon that would end a statement", () => {
+    const line = `INSERT INTO "tasks" VALUES('t','a;b');`;
+
+    expect(checkDataArtifact([...DATA_DUMP, line].join("\n"), APP_TABLES)).toEqual([]);
+  });
+
+  it("judges an INSERT written across several lines, and reports it at the line it opens on", () => {
+    const statement = ['INSERT INTO "secrets"', "  (id)", "VALUES", "  (1);"].join("\n");
+
+    expect(checkDataArtifact([...DATA_DUMP, statement].join("\n"), APP_TABLES)).toEqual([
+      { line: 4, reason: "secrets is not one of the tables this artifact may carry" },
+    ]);
+  });
+
+  it("passes an allowed INSERT whose literal holds a raw newline, which is not a statement break", () => {
+    const statement = `INSERT INTO "tasks" VALUES('t','one\ntwo; DELETE FROM projects;');`;
+
+    expect(checkDataArtifact([...DATA_DUMP, statement].join("\n"), APP_TABLES)).toEqual([]);
+  });
 });
 
 const SCHEMA_DIGEST = "a".repeat(64);
@@ -1318,5 +1409,123 @@ describe("checkRestoreTarget()", () => {
       "epics already holds 4 row(s) — a restore adds rows and never removes them, so the target must be empty",
       "tasks already holds 218 row(s) — a restore adds rows and never removes them, so the target must be empty",
     ]);
+  });
+});
+
+describe("verifyBackupArtifact()", () => {
+  const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
+  const SCHEMA_SQL = [
+    "PRAGMA defer_foreign_keys=TRUE;",
+    "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);",
+    "DELETE FROM sqlite_sequence;",
+    "",
+  ].join("\n");
+
+  const declares = (file: string, text: string) => ({ file, bytes: new TextEncoder().encode(text).length, sha256: sha256(text) });
+
+  function artifact(over: Partial<BackupManifest> = {}): BackupManifest {
+    const written = {
+      ...MANIFEST,
+      migrations: [{ name: "0001_init", sha256: MIGRATIONS_DIGEST }],
+      tables: [{ name: "tasks", rows: 0, digest: SCHEMA_DIGEST }],
+      artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL)],
+      ...over,
+      selfDigest: "",
+    };
+    return { ...written, selfDigest: manifestSelfDigest(written) };
+  }
+
+  function io(files: Record<string, string>): DbIo {
+    const store = new Map(Object.entries(files));
+    return {
+      ...fakeDbIo(files),
+      exists: (path: string) => store.has(path) || [...store.keys()].some((key) => key.startsWith(`${path}/`)),
+      readText: (path: string) => store.get(path) ?? "",
+      readDir: (path: string) => [
+        ...new Set([...store.keys()].filter((key) => key.startsWith(`${path}/`)).map((key) => key.slice(path.length + 1).split("/")[0] ?? "")),
+      ],
+    } as DbIo;
+  }
+
+  const files = (dir: string) => ({ [`${dir}/schema.sql`]: SCHEMA_SQL, [`${dir}/data.sql`]: DATA_SQL });
+
+  it("accepts the artifact this tool writes", () => {
+    expect(() => verifyBackupArtifact(io(files("/b")), "/b", artifact())).not.toThrow();
+  });
+
+  // `takeBackup` writes both files for every backup, unconditionally, so a manifest declaring none
+  // is not something this tool produced. The loop this replaced had nothing to iterate and passed.
+  it("refuses a manifest that declares no files at all, rather than verifying it vacuously", () => {
+    expect(() => verifyBackupArtifact(io(files("/b")), "/b", artifact({ artifacts: [] }))).toThrow(/declares no schema.sql and no data.sql/);
+  });
+
+  it("refuses a manifest that declares only one of the two", () => {
+    expect(() => verifyBackupArtifact(io(files("/b")), "/b", artifact({ artifacts: [declares("data.sql", DATA_SQL)] }))).toThrow(
+      /declares no schema.sql/,
+    );
+  });
+
+  it("refuses a declared file no restore route loads", () => {
+    const extra = { ...files("/b"), "/b/notes.sql": "SELECT 1;\n" };
+    const manifest = artifact({
+      artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL), declares("notes.sql", "SELECT 1;\n")],
+    });
+
+    expect(() => verifyBackupArtifact(io(extra), "/b", manifest)).toThrow(/not a file any restore route loads/);
+  });
+
+  it("refuses an undeclared .sql sitting beside the declared ones", () => {
+    expect(() => verifyBackupArtifact(io({ ...files("/b"), "/b/extra.sql": "DROP TABLE tasks;\n" }), "/b", artifact())).toThrow(
+      /holds extra.sql, which the manifest does not declare/,
+    );
+  });
+
+  // Route `migrations` executes what it finds in here, so the rule has to reach one directory down.
+  it("refuses an undeclared .sql under migrations/, which a restore executes by listing it", () => {
+    const seeded = {
+      ...files("/b"),
+      "/b/migrations/0001_init.sql": "CREATE TABLE tasks (uuid TEXT);\n",
+      "/b/migrations/zzz.sql": "DROP TABLE tasks;\n",
+    };
+
+    expect(() => verifyBackupArtifact(io(seeded), "/b", artifact())).toThrow(/holds zzz.sql, which the manifest does not declare/);
+  });
+
+  it("accepts a migrations/ holding exactly what the manifest declares", () => {
+    const seeded = { ...files("/b"), "/b/migrations/0001_init.sql": "CREATE TABLE tasks (uuid TEXT);\n" };
+
+    expect(() => verifyBackupArtifact(io(seeded), "/b", artifact())).not.toThrow();
+  });
+
+  it("still refuses a declared file whose bytes do not hash to what the manifest says", () => {
+    expect(() => verifyBackupArtifact(io({ ...files("/b"), "/b/data.sql": `${DATA_SQL}-- edited\n` }), "/b", artifact())).toThrow(
+      /does not hash to what the manifest declares for it/,
+    );
+  });
+
+  it("still refuses a schema.sql that is not a schema-only artifact", () => {
+    const schema = `${SCHEMA_SQL}INSERT INTO "tasks" VALUES('t1','todo');\n`;
+
+    expect(() =>
+      verifyBackupArtifact(
+        io({ ...files("/b"), "/b/schema.sql": schema }),
+        "/b",
+        artifact({ artifacts: [declares("schema.sql", schema), declares("data.sql", DATA_SQL)] }),
+      ),
+    ).toThrow(
+      "schema.sql is not what a schema-only artifact must be:\n  line 4: an INSERT into tasks — a schema artifact declares tables and carries no row, because route full loads data.sql after it",
+    );
+  });
+
+  it("still refuses a data.sql that is not a data-only artifact", () => {
+    const data = `${DATA_SQL}INSERT INTO "sqlite_sequence" VALUES('tasks',1);\n`;
+
+    expect(() =>
+      verifyBackupArtifact(
+        io({ ...files("/b"), "/b/data.sql": data }),
+        "/b",
+        artifact({ artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", data)] }),
+      ),
+    ).toThrow(/data.sql is not what a data-only artifact must be/);
   });
 });

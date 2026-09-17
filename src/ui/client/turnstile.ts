@@ -53,7 +53,7 @@ export function findWidget(root: HTMLElement): HTMLElement | null {
 /** Whether Cloudflare's Turnstile API is present on `win`. @internal */
 // Asked as a capability, not as truthiness: the DOM exposes any element with `id="turnstile"` as
 // `window.turnstile`, which would answer truthy.
-export const hasApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
+export const hasTurnstileApi = (win: Window): win is Window & { turnstile: TurnstileAPI } => typeof win.turnstile?.render === "function";
 
 /** Whether the form submits through htmx, which is what `challenge="submit"` defers on. @internal */
 export const hasHtmxSubmission = (form: Element): boolean => form.matches(HTMX_SUBMISSION) || form.querySelector(HTMX_SUBMISSION) !== null;
@@ -327,7 +327,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     // A late script `load` or poll hit must not render into a container the app has already swapped
     // out; the widget would mount on a detached node nothing can reach to remove it again.
     if (disposed) return;
-    if (!hasApi(win)) {
+    if (!hasTurnstileApi(win)) {
       showFallback();
       return;
     }
@@ -380,7 +380,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (loadStarted) return;
     loadStarted = true;
 
-    if (hasApi(win)) {
+    if (hasTurnstileApi(win)) {
       renderWidget();
       return;
     }
@@ -389,7 +389,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     // may carry parameters of its own, and a second copy of the script is what double-loads it.
     if (doc.querySelector(`script[src^="${TURNSTILE_SCRIPT_SRC}"]`)) {
       pollId = win.setInterval(() => {
-        if (hasApi(win)) {
+        if (hasTurnstileApi(win)) {
           clearTimers();
           renderWidget();
         }
@@ -456,7 +456,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (htmxWillValidate(elt, pressed) && typeof form.checkValidity === "function" && !form.checkValidity()) return;
     // No API and no widget is a page where the challenge never loaded: let the request go and let
     // `verifyTurnstile` be the one that refuses it, as it already is for a blocked widget.
-    if (!hasApi(win) || state !== "ready") return;
+    if (!hasTurnstileApi(win) || state !== "ready") return;
     event.preventDefault();
     takeHold({ issue: detail.issueRequest, submitter: pressed });
   };

@@ -170,3 +170,9 @@ export interface TotpAppFactorOptions {
 
 /** What an enrolment shows once and never again — the base32 secret and the `otpauth://` URI carrying it. @public */
 export type TotpAppEnrolment = { readonly secret: string; readonly uri: string };
+
+/** What the constant-time primitive answered, in the order a factor asked it. @internal */
+export type TimingProbe = { compared: boolean[] };
+
+/** A probe and the restore that must run before another suite reads `crypto.subtle`. @internal */
+export type TimingProbeHandle = { probe: TimingProbe; restore: () => void };

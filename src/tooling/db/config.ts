@@ -22,7 +22,9 @@ function checkD1Entries(entries: readonly D1DatabaseConfig[], configPath: string
 export function d1Entries(config: WranglerConfig, env: string | null, configPath = "wrangler.jsonc"): D1DatabaseConfig[] {
   if (env !== null) {
     const envs = config.env as Record<string, { d1_databases?: D1DatabaseConfig[] } | undefined> | undefined;
-    const scoped = envs?.[env];
+    // Own keys only: a bare index answers `toString` and every other prototype member, so the
+    // refusal below would not fire and the run would fall through to the top-level entry.
+    const scoped = envs !== undefined && Object.hasOwn(envs, env) ? envs[env] : undefined;
     if (scoped === undefined) throw new CliError("invalid-args", `--env ${env} names no \`env.${env}\` block in the wrangler config`);
     if (scoped.d1_databases !== undefined) return checkD1Entries(scoped.d1_databases, configPath, `env.${env}.d1_databases`);
   }

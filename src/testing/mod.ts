@@ -1,7 +1,7 @@
 export type { FakeAuthFactor, FakeAuthUser } from "./types";
 export { fakeAuthD1 } from "./auth-fakes";
-export type { TestContextOptions } from "./types";
-export { createTestContext, mockExecutionContext, nullLogger } from "./context";
+export type { CollectedExecutionContext, TestContextOptions } from "./types";
+export { collectExecutionContext, createTestContext, mockExecutionContext, nullLogger } from "./context";
 export { mintTestCsrfToken } from "./csrf";
 export type { FakeD1Options, FakeKVOptions } from "./types";
 export { fakeAssetsFetcher, fakeD1, fakeKV, fakeR2 } from "./fakes";

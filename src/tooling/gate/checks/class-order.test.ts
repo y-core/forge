@@ -1,20 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 
 import { checkClassOrder, droppedToken, validateClassOrder } from "./class-order";
+import { gateFixtureRoot } from "./gate.fixture";
 
-/** A throwaway repository root holding exactly the files given. */
-function fixtureRoot(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "forge-class-order-check-"));
-  for (const [path, source] of Object.entries(files)) {
-    const full = join(root, path);
-    mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, source, "utf-8");
-  }
-  return root;
-}
+const fixtureRoot = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-class-order-check-");
 
 describe("droppedToken", () => {
   it("returns null for a literal no token of which conflicts", () => {

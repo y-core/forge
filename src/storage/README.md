@@ -235,10 +235,14 @@ Alongside `put` and `serveObject` the store offers `get` (metadata plus a stream
 and `list`. A key that starts with `/` or carries a `.` or `..` segment is rejected, and reaches the caller as `{ ok: false, error }` like any other
 failure — so an untrusted key goes to the store, never straight to the backend.
 
-**When `contentType` is omitted, `put` infers it from the key's extension** (`inferContentType`, falling back to `CONTENT_TYPE_DEFAULT`). Where the
-caller chose the key, that inference is the thing to override: passing an explicit `contentType` is what stops an upload named `x.html` being
-stored, and later served, as active content. The rest of that posture, and the statuses and headers `serveObject` produces, are
-[`STORAGE_BINDINGS.md`][sb-3b] §3b's.
+**When `contentType` is omitted, `put` infers it from the key's extension** (`inferContentType`, falling back to `CONTENT_TYPE_DEFAULT`) — **except
+for the extensions a browser would execute**: `html`, `htm`, `svg`, `xml`, `js` and `mjs` all infer `application/octet-stream`, because a key is
+routinely a filename someone else chose. Pass an explicit `contentType` for an asset you trust, and it is used unchanged.
+
+**A stored active type is neutralised on the way out too.** `serveObject` serves any object whose stored `Content-Type` is active as
+`Content-Disposition: attachment` under `Content-Security-Policy: sandbox`, unless you passed a `contentDisposition` of your own — so an app that
+deliberately stored `image/svg+xml` still cannot have it rendered as a document on its own origin by a direct navigation. The rest of that posture,
+and the statuses and headers `serveObject` produces, are [`STORAGE_BINDINGS.md`][sb-3b] §3b's.
 
 The free `serveObject(backend, request, key, options?)` is the same machinery without the `Result` wrapper — a bare `Response`, already a `200`,
 `206`, `304`, `404` or `416`:

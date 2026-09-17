@@ -10,6 +10,7 @@ import type { TotpAppEnrolment, TotpAppFactorOptions } from "./types";
 
 const DEFAULT_SECRET_BYTES = 20;
 const MIN_SECRET_BYTES = 16;
+const MAX_SECRET_BYTES = 64;
 const DEFAULT_DIGITS = 6;
 const MIN_DIGITS = 6;
 const MAX_DIGITS = 8;
@@ -54,8 +55,10 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
   const secretBytes = authLimit("createTotpAppFactor", "secretBytes", options.secretBytes, {
     fallback: DEFAULT_SECRET_BYTES,
     min: MIN_SECRET_BYTES,
+    max: MAX_SECRET_BYTES,
     unit: "byte",
     floor: "the 128 bits RFC 4226 §4 R6 states for a shared secret",
+    ceiling: "HMAC hashes a longer key down to its block size, so the extra bytes carry no entropy",
   });
   const maxAttempts = authLimit("createTotpAppFactor", "maxAttempts", options.maxAttempts, {
     fallback: DEFAULT_MAX_ATTEMPTS,
@@ -178,7 +181,9 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     const secret = randomBytes(secretBytes);
     const sealed = await sealTotpSecret(options.keys, userId, secret);
     const enrolled = await options.factors.enrol({ userId, kind: "totp-app", secret: sealed, confirmedAt: null }, at);
-    if (!enrolled.ok) return err("unavailable");
+    // The same race the `find` above cannot close: the loser hits the unique index, and that is this
+    // account enrolling twice rather than the store being down.
+    if (!enrolled.ok) return err(enrolled.error.code === "conflict" ? "already-enrolled" : "unavailable");
     return enrolmentOf(userId, secret, at);
   }
 

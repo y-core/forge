@@ -24,6 +24,7 @@ audience: consumer
 - §2e withRedaction and Stack-Redaction Posture: per-channel transforms and `persistStack`
 - §2f Channel Write Failures and `flush`'s Error Contract: what absorbs a failed write, and who observes it
 - §2g Log Ordering — Newest First by Inverted Key: the key format, the clamps, and what purge deletes
+- §2h One Value, One Meaning Across Sinks: `toJSON` is honoured and a `URL` narrows, on every channel
 - §3 requestLogger Middleware: the per-request child logger
 - §3a requestLogger Configuration: per-request channels and bindings
 - §3c Ordering — requestId Before requestLogger: why the order is load-bearing
@@ -60,7 +61,8 @@ binding. **Pair it with `consoleChannel` for dual output** — see §2d for the 
 `record.data` is cloned into a JSON-faithful shape before persistence. `Date`, `Map` and `Set` carry their payload outside enumerable own
 properties, so each gets an explicit form instead of being flattened to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and
 `{ type: "Set", values: […] }`. A reference that reappears on its own path becomes `"[circular]"`, so a cyclic structure stores rather than
-overflowing the stack.
+overflowing the stack. A value's own `toJSON` is honoured, and a `URL` narrows to `origin + pathname` — both on every channel, which is §2h's
+invariant rather than this section's.
 
 **The key format is §2g's**, and the viewer inherits its ordering from it.
 
@@ -139,6 +141,21 @@ value.
 (`"No log entries match these filters on this page. Load more to keep searching."`) rather than claiming no matches. A paging loop is the
 alternative and is refused: it would issue an unbounded number of billed `kv.list` subrequests inside one invocation, and would break the cursor
 contract, since `complete` would then correspond to no single call.
+
+### 2h. One Value, One Meaning Across Sinks
+
+**A value means the same thing on every channel.** `consoleChannel` and `kvLogChannel` are verified in different places — the console stream in a
+local test, the KV record days later in the viewer — so a shape that differs between them is a shape nobody checks. What makes them agree is the
+`toJSON` rule and the `URL` rule below:
+
+**A value's own `toJSON` decides its logged form.** This is the standard "safe to log" pattern: give a domain object a `toJSON` that drops its
+secret, and the secret is absent from the console line _and_ from the KV record. `kvLogChannel` consults `toJSON` before its own `Map`/`Set` forms,
+exactly as `JSON.stringify` does, and then walks the result — so `persistStack: false` (§2e) still strips a `stack` the `toJSON` returned.
+
+**A `URL` narrows to `origin + pathname` — never its query or fragment.** A `URL` is the one value where honouring `toJSON` would make things worse:
+`URL.prototype.toJSON` returns the full href, so `log.info("redirecting", { to: url })` would put a `?token=…` magic link into the 7-day KV window.
+Both channels drop everything after the path instead. [`BOUNDARIES.md`][bnd-4a] §4a bans a credential on **any** channel, console included, so this
+is not a persistence-only concern. Log a query parameter you actually need as its own named field, after deciding it is not a credential.
 
 ---
 
@@ -253,6 +270,7 @@ filter-bar chevron without owning an icon set. This is what makes `logging/show`
 See [`BOUNDARIES.md`][boundaries-4] §4 for the no-PII rule, the prohibited field classes, and the structured-fields-over-interpolation rule. The
 channels and wrappers that implement redaction are §2 above.
 
+[bnd-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
 [boundaries-4]: ../warden/canon/libs/BOUNDARIES.md#4-no-pii-in-logs
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder

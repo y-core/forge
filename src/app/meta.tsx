@@ -1,20 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 
-import { rawHtml } from "../http/html";
+import { scriptJson } from "../http/html";
 import type { JSXNode } from "../jsx/types";
 import type { MetaOptions, MetaTag, PageMeta, RobotsDirective } from "./types";
 
 /** A `robots` value as the one string the tag carries. */
 function robotsContent(robots: RobotsDirective | readonly RobotsDirective[]): string {
   return typeof robots === "string" ? robots : robots.join(", ");
-}
-
-// `</script>` inside the payload would close the element early; the escape is valid JSON and valid
-// JavaScript, so a parser reads the same object either way.
-/** JSON safe to sit inside a `<script>` element. */
-function jsonLdText(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
 /** One `extra` entry as its element. */
@@ -42,7 +35,7 @@ export function metaTags(meta: PageMeta, options: MetaOptions = {}): JSXNode {
     twitter?.description === undefined ? null : <meta name='twitter:description' content={twitter.description} />,
     meta.jsonLd === undefined || options.nonce === undefined ? null : (
       <script type='application/ld+json' nonce={options.nonce}>
-        {rawHtml(jsonLdText(meta.jsonLd))}
+        {scriptJson(meta.jsonLd)}
       </script>
     ),
     ...(meta.extra ?? []).map(extraTag),

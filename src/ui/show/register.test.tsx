@@ -5,6 +5,9 @@ import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import type { PageShell } from "../../app/types";
+import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
+import { escapeHtml } from "../../http/escape";
+import { attrOf, attrsOf } from "../core/core.fixture";
 import { PAGE_ORDER, SHOWCASE_PAGES } from "./components";
 import { registerShowcase, showcaseRoutes } from "./register";
 
@@ -72,9 +75,14 @@ describe("registerShowcase", () => {
       const res = await app.request(slug === "" ? "/showcase/ui" : `/showcase/ui/${slug}`);
       expect(res.status).toBe(200);
       const body = await res.text();
-      expect(body).toContain(`data-mount="showcase" data-page="${key}" data-title="${label}" data-robots="noindex"`);
+      const shell = attrsOf(body, `data-page="${key}"`);
+      expect(shell["data-mount"]).toBe("showcase");
+      expect(shell["data-title"]).toBe(label);
+      expect(shell["data-robots"]).toBe("noindex");
       expect(body).toContain(`UI Component Showcase — ${label}`);
-      expect(body).toContain(needs.replace(/"/g, "&quot;"));
+      // Escaped with forge's own escaper rather than a pattern of this test's: a page that emitted a
+      // raw quote here would pass a hand-rolled comparison that made the same mistake.
+      expect(body).toContain(escapeHtml(needs));
     }
   });
 
@@ -82,7 +90,7 @@ describe("registerShowcase", () => {
     const res = await makeApp().request("/showcase/ui/theme");
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain('data-mount="showcase" data-page="theme" data-title="Theme" data-robots="noindex"');
+    expect(attrsOf(body, 'data-page="theme"')).toMatchObject({ "data-mount": "showcase", "data-title": "Theme", "data-robots": "noindex" });
     expect(body).toContain("Theme customiser");
     expect(body).toContain("#646464");
   });
@@ -91,16 +99,19 @@ describe("registerShowcase", () => {
     const res = await makeApp().request("/showcase/ui/theme?gh=256&gc=45&ah=267&ac=195&r=4");
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain("#53667e");
-    expect(body).toContain("4px");
+    expect(attrOf(body, "value", 'name="grayHue"')).toBe("256");
+    expect(attrOf(body, "value", 'name="grayChroma"')).toBe("45");
+    expect(attrOf(body, "value", 'name="accentHue"')).toBe("267");
+    expect(attrOf(body, "value", 'name="accentChroma"')).toBe("195");
+    expect(attrOf(body, "value", 'name="radius"')).toBe("4");
   });
 
   it("clamps an out-of-range dial rather than rendering a scheme the sliders could not make", async () => {
     const res = await makeApp().request("/showcase/ui/theme?gc=99999&gh=abc");
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain(">100</output>");
-    expect(body).toContain("0°");
+    expect(attrOf(body, "value", 'name="grayChroma"')).toBe("100");
+    expect(attrOf(body, "value", 'name="grayHue"')).toBe("0");
   });
 
   it("answers the verify endpoint without a secret by saying so, rather than claiming a verification", async () => {
@@ -108,6 +119,20 @@ describe("registerShowcase", () => {
       method: "POST",
       headers: { "Sec-Fetch-Site": "same-origin" },
       body: new FormData(),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("No secret key is configured");
+  });
+
+  // The widget always posts its token, and with no secret configured nothing drops it before the
+  // schema sees it: a strict object that had not declared it answered 422 and never reached `handle`.
+  it("reaches the unconfigured verdict for the body the page really posts, token field and all", async () => {
+    const body = new FormData();
+    body.set(TURNSTILE_FIELD_DEFAULT, "a-widget-token");
+    const res = await makeApp().request("/showcase/ui/api/turnstile-verify", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-origin" },
+      body,
     });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("No secret key is configured");
@@ -125,6 +150,18 @@ describe("registerShowcase", () => {
     });
     expect(res.status).toBe(422);
     expect(await res.text()).toContain("No token reached the server");
+  });
+
+  it("still drops the token before validation once a secret is configured, so the guard is what judges it", async () => {
+    const app = new Forge();
+    app.setShell(appShell);
+    const routes = showcaseRoutes("/showcase/ui");
+    registerShowcase(app, routes.ui, { icon, turnstileSecret: () => "secret" });
+    const body = new FormData();
+    body.set(TURNSTILE_FIELD_DEFAULT, "a-widget-token");
+    const res = await app.request("/showcase/ui/api/turnstile-verify", { method: "POST", headers: { "Sec-Fetch-Site": "same-origin" }, body });
+    expect(res.status).toBe(422);
+    expect(await res.text()).not.toContain("No secret key is configured");
   });
 
   it("refuses the verify endpoint a cross-site POST before the handler runs", async () => {
@@ -162,7 +199,6 @@ describe("registerShowcase", () => {
       ["/showcase/ui/api/paginate?page=1", "show-paginate-table"],
       ["/showcase/ui/api/dependent?category=fruit", "show-dependent-select"],
       ["/showcase/ui/api/toast?type=success", "flash-container"],
-      ["/showcase/ui/api/avatar", "<svg"],
     ];
     for (const [path, marker] of cases) {
       const res = await app.request(path);
@@ -172,5 +208,11 @@ describe("registerShowcase", () => {
       // A fragment is swapped into a document that already exists, so the shell must never wrap one.
       expect(body).not.toContain("<html");
     }
+
+    const avatar = await app.request("/showcase/ui/api/avatar");
+    expect(avatar.status).toBe(200);
+    const drawn = await avatar.text();
+    expect(/^<([a-z]+)/.exec(drawn.trim())?.[1]).toBe("svg");
+    expect(drawn).not.toContain("<html");
   });
 });

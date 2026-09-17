@@ -103,12 +103,43 @@ describe("get", () => {
     const cookieValue = extractCookieValue(setRes.headers.get("Set-Cookie"));
     expect(cookieValue).not.toBeNull();
 
-    const tampered = cookieValue!.slice(0, -1) + (cookieValue!.endsWith("x") ? "y" : "x");
+    // The first character, not the last: base64url drops the low bits of a final character whenever
+    // the length is not a multiple of four, so `x` and `y` there decode to the same bytes.
+    const tampered = (cookieValue!.startsWith("x") ? "y" : "x") + cookieValue!.slice(1);
 
     const getApp = new Forge();
     mapHandler(getApp, "GET", "/", async (c) => Response.json(await flash.get(c)));
     const getRes = await getApp.request("/", { headers: { Cookie: `flash=${tampered}` } });
     expect(await getRes.json()).toEqual([]);
+    expect(getRes.headers.get("Set-Cookie") ?? "").toContain("Max-Age=0");
+  });
+
+  // The clear is keyed on the cookie being present, not on its value verifying: a value the server
+  // now refuses is re-sent by the browser on every request, and would be re-refused forever.
+  it("clears a cookie the signed expiry has since put out of reach", async () => {
+    const flash = createFlash({ secrets: [SECRET], maxAge: 1 });
+
+    const setApp = new Forge();
+    mapHandler(setApp, "GET", "/", async (c) => {
+      await flash.set(c, [{ type: "info", text: "stale" }]);
+      return new Response("ok");
+    });
+    const cookieValue = extractCookieValue((await setApp.request("/")).headers.get("Set-Cookie"));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const getApp = new Forge();
+    mapHandler(getApp, "GET", "/", async (c) => Response.json(await flash.get(c)));
+    const getRes = await getApp.request("/", { headers: { Cookie: `flash=${cookieValue}` } });
+    expect(await getRes.json()).toEqual([]);
+    expect(getRes.headers.get("Set-Cookie") ?? "").toContain("Max-Age=0");
+  });
+
+  it("emits no clear at all where the request carried no flash cookie", async () => {
+    const flash = createFlash({ secrets: [SECRET] });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
+    const res = await app.request("/", { headers: { Cookie: "other=1" } });
+    expect(res.headers.get("Set-Cookie")).toBeNull();
   });
 });
 

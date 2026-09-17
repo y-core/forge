@@ -44,7 +44,11 @@ function separator(placement: ToolbarPlacement): JSXNode {
 
 /** Activation attributes for an action item: native Invoker command or delegated scope event. */
 function actionAttrs<A extends string, G extends string>(item: ToolbarAction<A, G>, commandTarget: string | undefined): Record<string, string> {
-  return item.dispatch === "command" ? commandAttrs<A>(item.action, commandTarget ?? "") : scopeAttrs<A>({ onClick: item.action });
+  if (item.dispatch !== "command") return scopeAttrs<A>({ onClick: item.action });
+  // An invoker with no target is not an invoker. `commandfor=""` referenced no element either, but
+  // it claimed a relationship in the markup that a reader and a validator both have to chase.
+  if (commandTarget === undefined) return {};
+  return commandAttrs<A>(item.action, commandTarget);
 }
 
 function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>, ctx: RenderCtx<G>): JSXNode {
@@ -81,14 +85,22 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         shape='icon'
         command='toggle-popover'
         commandfor={id}
-        {...invokerAttrs(id)}
+        {...invokerAttrs(id, "dialog")}
         data-ref={ref}
         title={label}
         aria-label={label}>
         <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
       </CoreToolbar.Button>
-      <div id={id} data-slot='toolbar-flyout' popover='auto' data-side={placement} data-compact={compact ? "" : undefined} class={FLYOUT_CLS}>
-        <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
+      <div
+        id={id}
+        role='dialog'
+        aria-labelledby={`${id}-title`}
+        data-slot='toolbar-flyout'
+        popover='auto'
+        data-side={placement}
+        data-compact={compact ? "" : undefined}
+        class={FLYOUT_CLS}>
+        <div id={`${id}-title`} data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
           <span>{label}</span>
           {/* Unmarked on purpose: roving focus queries the whole rail subtree, so a toolbar-item
               marker here would splice flyout buttons into the rail's arrow-key ring. */}

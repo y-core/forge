@@ -6,7 +6,6 @@ import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
 import { csrfMinterCtx, importCsrfKey, verifyCsrfToken } from "../../form/csrf";
 import { err, ok } from "../../result/result";
-import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
@@ -32,7 +31,7 @@ import {
   attrOf,
   attrsOf,
   elementsOf,
-  fakeAdminUserService,
+  fakeAdminUserStore,
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthIcon,
@@ -43,11 +42,10 @@ import {
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
+  fakeSessionCookie,
   textOf,
   valuesOf,
 } from "./web.fixture";
-
-const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
 
@@ -63,7 +61,7 @@ type Loader = (c: never, options: AuthWebOptions, state?: AuthPageState) => Prom
 /** Mounts one loader at `pattern` on an app whose guards have run, with a minter the test chooses. */
 function loaderApp(load: Loader, options: AuthWebOptions, pattern = "/page", userId?: string, minter = stubMinter, admin = false): Forge {
   const app = new Forge();
-  app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
+  app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
   app.use("*", (context, next) => {
     // The identity as `requireAuth` would have established it: a loader reads `authCtx` and never
     // the session, so seeding the session alone no longer stands in for a guarded route.
@@ -341,7 +339,7 @@ describe("loadAdminUsers", () => {
   const roster = [fakeAuthUser({ id: "u1", email: "ada@example.com" }), fakeAuthUser({ id: "u2", email: "bob@example.com" })];
 
   it("lists every account with no cursor while the page is not full", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService(roster) });
+    const options = optionsWith({ admin: fakeAdminUserStore(roster) });
     const html = await page(loaderApp(loadAdminUsers, options, "/page", "u9", stubMinter, true));
 
     expect(elementsOf(html, "tr", 'data-ref="admin-user-row"')).toHaveLength(2);
@@ -349,14 +347,14 @@ describe("loadAdminUsers", () => {
   });
 
   it("filters the listing by the search term the query string carries", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService(roster) });
+    const options = optionsWith({ admin: fakeAdminUserStore(roster) });
     const html = await page(loaderApp(loadAdminUsers, options, "/page", "u9", stubMinter, true), "/page?q=bob");
 
     expect(elementsOf(html, "tr", 'data-ref="admin-user-row"')).toHaveLength(1);
   });
 
   it("refuses with 503 when the administrative store is down", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService(roster, { list: async () => err(new Error("db down") as never) }) });
+    const options = optionsWith({ admin: fakeAdminUserStore(roster, { list: async () => err(new Error("db down") as never) }) });
     const res = await loaderApp(loadAdminUsers, options, "/page", "u9", stubMinter, true).request("/page");
 
     expect(res.status).toBe(503);
@@ -366,7 +364,7 @@ describe("loadAdminUsers", () => {
 describe("loadAdminUserEdit", () => {
   it("marks the last admin who could still sign in", async () => {
     const only = fakeAuthUser({ id: "u2", email: "root@example.com", isAdmin: true });
-    const options = optionsWith({ admin: fakeAdminUserService([only]) });
+    const options = optionsWith({ admin: fakeAdminUserStore([only]) });
     const html = await (await loaderApp(loadAdminUserEdit, options, "/page/:id", "u9", stubMinter, true).request("/page/u2")).text();
 
     expect(textOf(html, "p", 'data-ref="admin-role-reason"')).toBe(
@@ -375,7 +373,7 @@ describe("loadAdminUserEdit", () => {
   });
 
   it("answers 404 for an account that is not there", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService([]) });
+    const options = optionsWith({ admin: fakeAdminUserStore([]) });
     const res = await loaderApp(loadAdminUserEdit, options, "/page/:id", "u9", stubMinter, true).request("/page/u2");
 
     expect(res.status).toBe(404);
@@ -384,7 +382,7 @@ describe("loadAdminUserEdit", () => {
 
 describe("loadAdminElevate", () => {
   it("leaves the claim open while the deployment has no administrator", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService([fakeAuthUser()]) });
+    const options = optionsWith({ admin: fakeAdminUserStore([fakeAuthUser()]) });
     const html = await page(loaderApp(loadAdminElevate, options, "/page", "u9"));
 
     expect(elementsOf(html, "div", 'data-ref="elevate-taken"')).toEqual([]);
@@ -392,10 +390,20 @@ describe("loadAdminElevate", () => {
   });
 
   it("closes the claim once an administrator exists", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService([fakeAuthUser({ isAdmin: true })]) });
+    const options = optionsWith({ admin: fakeAdminUserStore([fakeAuthUser({ isAdmin: true })]) });
     const html = await page(loaderApp(loadAdminElevate, options, "/page", "u9"));
 
     expect(elementsOf(html, "div", 'data-ref="elevate-taken"')).toHaveLength(1);
+  });
+
+  // The POST answers 404 without a configured secret, so a page that still rendered an enabled form
+  // would be offering a claim that cannot be made — which is what its own help text says.
+  it("answers 404 when the deployment configured no bootstrap secret, as the claim POST does", async () => {
+    const services = fakeAuthServices({ admin: fakeAdminUserStore([fakeAuthUser()]) });
+    const options = fakeAuthWebOptions({ resolveServices: () => services, bootstrapSecret: () => undefined });
+    const res = await loaderApp(loadAdminElevate, options, "/page", "u9").request("/page");
+
+    expect(res.status).toBe(404);
   });
 });
 
@@ -474,7 +482,7 @@ describe("every token a page renders is bound to the path its own control submit
   });
 
   it("binds the administrative account form's token to that account's update path", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService([fakeAuthUser({ id: "u2" })]) });
+    const options = optionsWith({ admin: fakeAdminUserStore([fakeAuthUser({ id: "u2" })]) });
     const html = await (await loaderApp(loadAdminUserEdit, options, "/page/:id", "u9", realMinter, true).request("/page/u2")).text();
 
     const key = await importCsrfKey(CSRF_SECRET);
@@ -482,7 +490,7 @@ describe("every token a page renders is bound to the path its own control submit
   });
 
   it("binds the elevation form's token to the elevation submit path", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService([fakeAuthUser()]) });
+    const options = optionsWith({ admin: fakeAdminUserStore([fakeAuthUser()]) });
     const html = await page(loaderApp(loadAdminElevate, options, "/page", "u9", realMinter));
 
     await boundTo(html, 'data-slot="form-csrf"', "value", "/admin/elevate");

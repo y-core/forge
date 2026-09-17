@@ -23,6 +23,7 @@ export {
   AUTH_SESSION_KEY,
   AUTH_SIGNED_IN_SESSION_KEY,
   AUTH_STEP_UP_SESSION_KEY,
+  AUTH_SURVIVED_SESSION_KEY,
   clearAuthSession,
   establishAuthSession,
   markAuthSigninPending,

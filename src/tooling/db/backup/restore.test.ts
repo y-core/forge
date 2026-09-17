@@ -451,7 +451,10 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const data = `${DATA_SQL}INSERT INTO "sqlite_sequence" VALUES('tasks',1);\n`;
     const io = fakeDatabase(
       {
-        [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { artifacts: [declares("data.sql", data)] })),
+        [join(artifact, "manifest.json")]: JSON.stringify(
+          manifest("app-db", { artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", data)] }),
+        ),
+        [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "data.sql")]: data,
       },
       0,

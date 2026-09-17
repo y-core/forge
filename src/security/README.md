@@ -393,7 +393,7 @@ plain inputs and return plain results. They reach a route only through the facto
 [dev-readme]: ../dev/README.md
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [form-readme]: ../form/README.md
-[htmx-7b]: ../../docs/HTMX.md#7b-hx-on-is-the-one-family-htmx-evaluates
+[htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [http-readme]: ../http/README.md
 [ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder

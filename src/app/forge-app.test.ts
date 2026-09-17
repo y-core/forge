@@ -3,9 +3,16 @@ import { describe, expect, it } from "bun:test";
 import type { Middleware } from "@remix-run/fetch-router";
 
 import type { AppContext } from "../context/types";
-import type { LogRecord, Logger } from "../logging/types";
+import { createLogger } from "../logging/logger";
+import type { LogChannel, LogRecord, Logger } from "../logging/types";
+import { MatcherResourceError } from "../router/mod";
+import type { MatcherResourceErrorDetails } from "../router/mod";
+import { collectExecutionContext, mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { Forge } from "./forge-app";
+
+/** The `executionCtx` every `fetch` call in this file passes, since the argument is required. */
+const ctx = (): ExecutionContext => collectExecutionContext().executionCtx;
 
 function capturingLogger(records: Partial<LogRecord>[]): Logger {
   const logger: Logger = {
@@ -121,21 +128,40 @@ describe("Forge.use", () => {
     expect(hits).toEqual(["/", "/deep/path"]);
   });
 
-  it("treats a suffix wildcard with no slash as a prefix match", async () => {
+  // The correct-form counterpart is `app.test.ts`'s "runs the guard for /admin and /admin/x but not
+  // /administrator", which pins that `/admin/*` leaves `/administrator` unguarded.
+  it("refuses a suffix wildcard with no slash rather than silently narrowing it", () => {
+    const app = new Forge();
+    expect(() =>
+      app.use("/admin*", (_c, next) => {
+        return next();
+      }),
+    ).toThrow(/not a supported guard pattern/);
+  });
+
+  it("refuses a wildcard that is neither the catch-all nor a trailing slash-star", () => {
+    const app = new Forge();
+    const pass: Middleware = (_c, next) => next();
+    expect(() => app.use("/a*b", pass)).toThrow(/not a supported guard pattern/);
+    expect(() => app.use("*/x", pass)).toThrow(/not a supported guard pattern/);
+    expect(() => app.use(["/ok/*", "/bad*"], pass)).toThrow(/"\/bad\*"/);
+    // The catch-all short-circuits the matcher, not the check: a typo beside it is still a typo.
+    expect(() => app.use(["*", "/bad*"], pass)).toThrow(/"\/bad\*"/);
+  });
+
+  it("still takes the catch-all itself, alone or beside a valid prefix", async () => {
     const hits: string[] = [];
     const app = new Forge();
-    app.use("/admin*", (c, next) => {
+    const probeHit: Middleware = (c, next) => {
       hits.push(c.url.pathname);
       return next();
-    });
-    mapHandler(app, "GET", "/admin", () => new Response("a"));
-    mapHandler(app, "GET", "/admin/users", () => new Response("b"));
-    mapHandler(app, "GET", "/public", () => new Response("c"));
+    };
+    app.use("*", probeHit);
+    app.use(["*", "/ok/*"], probeHit);
+    mapHandler(app, "GET", "/anywhere", () => new Response("ok"));
 
-    await app.request("/admin");
-    await app.request("/admin/users");
-    await app.request("/public");
-    expect(hits).toEqual(["/admin", "/admin/users"]);
+    await app.request("/anywhere");
+    expect(hits).toEqual(["/anywhere", "/anywhere"]);
   });
 
   it("matches an exact path and nothing below it", async () => {
@@ -167,7 +193,7 @@ describe("Forge.use", () => {
 describe("Forge.fetch", () => {
   it("passes env and executionCtx through to the handler", async () => {
     const app = new Forge<{ API_KEY: string }>();
-    const executionCtx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const executionCtx = mockExecutionContext();
     let seenEnv: unknown;
     let seenCtx: unknown;
     mapHandler(app, "GET", "/", (c) => {
@@ -181,16 +207,33 @@ describe("Forge.fetch", () => {
     expect(seenCtx).toBe(executionCtx);
   });
 
-  it("supplies a no-op execution context when the caller omits one", async () => {
+  it("refuses a caller that omits the execution context, naming the three-argument entry", async () => {
     const app = new Forge();
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    // The two-argument call is a compile error; `as never` reproduces the JS caller it still reaches.
+    const call = app.fetch(new Request("http://test/"), {}, undefined as never);
+    await expect(call).rejects.toThrow(/`executionCtx` is required/);
+    await expect(call).rejects.toThrow(/app\.fetch\(req, env, ctx\)/);
+  });
+
+  it("hands deferred work to the caller's execution context rather than dropping it", async () => {
+    const app = new Forge();
+    const collected = collectExecutionContext();
+    let deferred = false;
     mapHandler(app, "GET", "/", (c) => {
-      (c as AppContext).executionCtx.waitUntil(Promise.resolve());
+      (c as AppContext).executionCtx.waitUntil(
+        Promise.resolve().then(() => {
+          deferred = true;
+        }),
+      );
       return new Response("ok");
     });
 
-    const res = await app.fetch(new Request("http://test/"), {});
+    const res = await app.fetch(new Request("http://test/"), {}, collected.executionCtx);
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("ok");
+    await collected.drain();
+    expect(deferred).toBe(true);
   });
 
   it("renders the baseline 500 page with its hardening headers for a throwing handler", async () => {
@@ -199,7 +242,7 @@ describe("Forge.fetch", () => {
       throw new Error("db offline");
     });
 
-    const res = await app.fetch(new Request("http://test/boom"), {});
+    const res = await app.fetch(new Request("http://test/boom"), {}, ctx());
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -215,7 +258,7 @@ describe("Forge.fetch", () => {
       throw new Error("async failure");
     });
 
-    const res = await app.fetch(new Request("http://test/boom"), {});
+    const res = await app.fetch(new Request("http://test/boom"), {}, ctx());
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
   });
@@ -226,8 +269,8 @@ describe("Forge.fetch", () => {
     app.use("*", probe("guard", order));
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
-    await app.fetch(new Request("http://test/"), {});
-    await app.fetch(new Request("http://test/"), {});
+    await app.fetch(new Request("http://test/"), {}, ctx());
+    await app.fetch(new Request("http://test/"), {}, ctx());
     expect(order).toEqual(["guard", "guard"]);
   });
 });
@@ -240,7 +283,7 @@ describe("Forge — client aborts", () => {
       throw new Error("handler exploded");
     });
 
-    const res = await app.fetch(new Request("http://test/slow", { signal: AbortSignal.abort() }), {});
+    const res = await app.fetch(new Request("http://test/slow", { signal: AbortSignal.abort() }), {}, ctx());
     expect(res.status).toBe(499);
     expect(res.body).toBe(null);
     expect(records).toEqual([]);
@@ -257,7 +300,7 @@ describe("Forge — client aborts", () => {
       throw new Error("handler exploded");
     });
 
-    const res = await app.fetch(new Request("http://test/slow", { signal: AbortSignal.abort() }), {});
+    const res = await app.fetch(new Request("http://test/slow", { signal: AbortSignal.abort() }), {}, ctx());
     expect(res.status).toBe(499);
     expect(called).toBe(false);
   });
@@ -273,7 +316,7 @@ describe("Forge — client aborts", () => {
     } as unknown as NonNullable<typeof app.configStore>;
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
-    const res = await app.fetch(new Request("http://test/", { signal: AbortSignal.abort() }), {});
+    const res = await app.fetch(new Request("http://test/", { signal: AbortSignal.abort() }), {}, ctx());
     expect(res.status).toBe(499);
     expect(res.body).toBe(null);
     expect(records).toEqual([]);
@@ -286,7 +329,7 @@ describe("Forge — client aborts", () => {
       throw new Error("handler exploded");
     });
 
-    const res = await app.fetch(new Request("http://test/boom", { signal: new AbortController().signal }), {});
+    const res = await app.fetch(new Request("http://test/boom", { signal: new AbortController().signal }), {}, ctx());
     expect(res.status).toBe(500);
     expect(records.length).toBe(1);
     expect(records[0]!.level).toBe("error");
@@ -445,6 +488,73 @@ describe("Forge.request", () => {
   });
 });
 
+describe("Forge — the app logger's error-path flush", () => {
+  function asyncChannel(records: LogRecord[]): LogChannel {
+    return {
+      write: async (record) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        records.push(record);
+      },
+    };
+  }
+
+  function appOverAsyncChannel(records: LogRecord[]): Forge {
+    return new Forge(createLogger("app", { channels: [asyncChannel(records)] }));
+  }
+
+  it("defers a flush covering its own unhandled-error record", async () => {
+    const records: LogRecord[] = [];
+    const app = appOverAsyncChannel(records);
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+    const collected = collectExecutionContext();
+
+    const res = await app.fetch(new Request("http://test/boom"), {}, collected.executionCtx);
+    await collected.drain();
+
+    expect(res.status).toBe(500);
+    expect(records.map((r) => r.message)).toStrictEqual(["Unhandled error"]);
+    expect((records[0]!.data as { error: { message: string } }).error.message).toBe("handler exploded");
+  });
+
+  it("covers the onError-override record on the same flush", async () => {
+    const records: LogRecord[] = [];
+    const app = appOverAsyncChannel(records);
+    app.setOnError(() => {
+      throw new Error("override exploded");
+    });
+    mapHandler(app, "GET", "/boom", () => {
+      throw new Error("handler exploded");
+    });
+    const collected = collectExecutionContext();
+
+    const res = await app.fetch(new Request("http://test/boom"), {}, collected.executionCtx);
+    await collected.drain();
+
+    expect(res.status).toBe(500);
+    expect(records.map((r) => r.message)).toStrictEqual(["onError override threw", "Unhandled error"]);
+  });
+
+  it("covers the out-of-chain throw, where the app logger holds the only record", async () => {
+    const records: LogRecord[] = [];
+    const app = appOverAsyncChannel(records);
+    app.configStore = {
+      get: () => {
+        throw new Error("config exploded");
+      },
+    } as unknown as NonNullable<typeof app.configStore>;
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+    const collected = collectExecutionContext();
+
+    const res = await app.fetch(new Request("http://test/"), {}, collected.executionCtx);
+    await collected.drain();
+
+    expect(res.status).toBe(500);
+    expect(records.map((r) => r.message)).toStrictEqual(["Unhandled error"]);
+  });
+});
+
 describe("Forge — an abort mid-request", () => {
   it("answers 499 with no record when the client disconnects while a handler is still running", async () => {
     const records: Partial<LogRecord>[] = [];
@@ -452,12 +562,79 @@ describe("Forge — an abort mid-request", () => {
     const controller = new AbortController();
     mapHandler(app, "GET", "/slow", () => new Promise<Response>(() => {}));
 
-    const pending = app.fetch(new Request("http://test/slow", { signal: controller.signal }), {});
+    const pending = app.fetch(new Request("http://test/slow", { signal: controller.signal }), {}, ctx());
     controller.abort();
     const res = await pending;
 
     expect(res.status).toBe(499);
     expect(res.body).toBe(null);
     expect(records).toEqual([]);
+  });
+});
+
+// Without `limits` every call below still answers, just under route-pattern's own looser defaults.
+// So each test names the limit the refusal cites rather than the answer it produced.
+describe("Forge — the matcher resource budget", () => {
+  /** Over forge's 4096-byte ceiling, under route-pattern's own 64 KiB default. */
+  const oversized = `/${"a".repeat(5000)}`;
+
+  /** The structured refusal, or `null` if the call was allowed through. */
+  function refusal(attempt: () => void): MatcherResourceErrorDetails | null {
+    try {
+      attempt();
+      return null;
+    } catch (error) {
+      if (error instanceof MatcherResourceError) return error.details;
+      throw error;
+    }
+  }
+
+  it("refuses an oversized route pattern at registration", () => {
+    const app = new Forge();
+    expect(refusal(() => mapHandler(app, "GET", oversized, () => new Response("ok")))).toMatchObject({ limit: "maxPatternSize", maximum: 4096 });
+  });
+
+  it("refuses an oversized single guard path at registration", () => {
+    const app = new Forge();
+    expect(refusal(() => app.use(oversized, (_c, next) => next()))).toMatchObject({ limit: "maxPatternSize", maximum: 4096 });
+  });
+
+  it("refuses an oversized path among several guard paths at registration", () => {
+    const app = new Forge();
+    expect(refusal(() => app.use(["/ok", oversized], (_c, next) => next()))).toMatchObject({ limit: "maxPatternSize", maximum: 4096 });
+  });
+
+  it("throws mid-match on a URL that costs more than the match-work budget", async () => {
+    const app = new Forge();
+    mapHandler(app, "GET", "/things/:id", () => new Response("ok"));
+    let details: MatcherResourceErrorDetails | null = null;
+    app.setOnError((error) => {
+      if (error instanceof MatcherResourceError) details = error.details;
+      return new Response("handled", { status: 503 });
+    });
+
+    await app.request(`/${"b".repeat(250_000)}`);
+    expect(details).toMatchObject({ limit: "maxMatchWork", maximum: 200_000 });
+  });
+
+  it("answers the exhausted budget with the error boundary's 500 rather than a crash", async () => {
+    const app = new Forge(capturingLogger([]));
+    mapHandler(app, "GET", "/things/:id", () => new Response("ok"));
+    expect((await app.request(`/${"b".repeat(250_000)}`)).status).toBe(500);
+  });
+
+  // The budget is calibrated to sit above real traffic: twice the URL length Cloudflare delivers,
+  // against more routes than a consumer registers, still matches rather than refusing.
+  it("leaves a 32 KiB URL matched against 500 routes inside the budget", async () => {
+    const app = new Forge();
+    for (let route = 0; route < 500; route++) mapHandler(app, "GET", `/route-${route}/:id`, () => new Response("ok"));
+    let refused: unknown;
+    app.setOnError((error) => {
+      refused = error;
+      return new Response("handled", { status: 503 });
+    });
+
+    const res = await app.request(`/route-0/${"c".repeat(32 * 1024)}`);
+    expect({ status: res.status, refused }).toEqual({ status: 200, refused: undefined });
   });
 });

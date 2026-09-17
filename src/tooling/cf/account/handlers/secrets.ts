@@ -14,6 +14,7 @@ import type { HandlerContext, ReconcileResult, ResourceHandler } from "./types";
 interface SecretEntry {
   name: string;
   value: string;
+  conflictsWithVar: boolean;
 }
 
 const identities = (entries: SecretEntry[]) => entries.map((e) => ({ binding: e.name, remoteName: e.name }));
@@ -24,6 +25,9 @@ const REDACT = { redactMessage: true } as const;
 /** The detail an `in-sync` secret row carries, since neither surface returns a value to compare. */
 const NAME_ONLY_DETAIL = "name only (value not readable)";
 
+/** The detail a refused secret row carries. One name cannot be both a plain_text var and a secret_text secret. */
+const VAR_CONFLICT_DETAIL = "also declared in `vars`; remove it from one side — a name cannot be both plain_text and secret_text";
+
 /** What this run intends to send for one secret, decided before any request is made. */
 type Plan = { kind: "row"; result: SyncResult } | { kind: "write"; name: string; value: string; existed: boolean; rotated: boolean };
 
@@ -32,6 +36,10 @@ function planSecret(entry: SecretEntry, kind: DevVarKind, remoteNames: ReadonlyS
   const type: ResourceType = kind === "rotatable" ? "rotatable_secrets" : "secrets";
   const existed = remoteNames.has(entry.name);
   const row = { resourceType: type, binding: entry.name, remoteName: entry.name, local: true, remote: existed };
+
+  // Above the `rotatable` branch, so `--rotate` is covered by where this sits rather than by a
+  // second arm, and so no path below can mint a write for a name the config also declares plainly.
+  if (entry.conflictsWithVar) return { kind: "row", result: { ...row, action: "refused", detail: VAR_CONFLICT_DETAIL } };
 
   if (kind === "rotatable") {
     // A rotatable secret that is not there yet has no old value to destroy, so `--commit` alone
@@ -104,10 +112,11 @@ function createHandler(configPath: string, spec: SecretsHandlerSpec): ResourceHa
     // Only the handler that names the orphans has anything to say when the local side is bare.
     reportsEmpty: spec.reportsOrphans,
 
-    extract() {
+    extract(config) {
+      const vars = new Set(Object.keys(config.vars ?? {}));
       return readDevVars(path)
         .filter((v) => v.kind === spec.kind)
-        .map((v) => ({ name: v.name, value: v.value }));
+        .map((v) => ({ name: v.name, value: v.value, conflictsWithVar: vars.has(v.name) }));
     },
 
     async reconcile(entries, ctx): Promise<ReconcileResult<SecretEntry>> {

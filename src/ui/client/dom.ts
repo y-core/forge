@@ -68,23 +68,34 @@ export function contains(parent?: Node | null, child?: Node | null): boolean {
   return false;
 }
 
-/** Every element matching `selector` at or below `root`, descending into open shadow roots. @public */
-export function queryAcross<E extends Element>(root: Element | Document | DocumentFragment, selector: string): E[] {
-  const found: E[] = [];
+// Split out because discovery costs a `querySelectorAll("*")` per tree while the query itself is one
+// native call, so a caller on a per-frame path can hold the list between paints.
+/** `root` and every open shadow root at or below it — the expensive half of {@link queryAcross}. @public */
+export function shadowTrees(root: Element | Document | DocumentFragment): Array<Element | Document | DocumentFragment> {
   // Breadth-first over a growing list rather than recursion — a shadow root nested inside a shadow
   // root is just another tree to visit, at any depth.
   const trees: Array<Element | Document | DocumentFragment> = [root];
   for (let i = 0; i < trees.length; i += 1) {
     const tree = trees[i];
     if (!tree) continue;
-    // One native query rather than an `el.matches()` per element: `paintControl` runs this per field
-    // paint, i.e. per pointermove frame. The `*` walk survives only for shadow-root discovery.
-    for (const el of tree.querySelectorAll<E>(selector)) found.push(el);
     for (const el of tree.querySelectorAll<HTMLElement>("*")) {
       if (el.shadowRoot) trees.push(el.shadowRoot);
     }
   }
+  return trees;
+}
+
+/** Every element matching `selector` across trees a caller already discovered. @public */
+export function queryTrees<E extends Element>(trees: readonly (Element | Document | DocumentFragment)[], selector: string): E[] {
+  const found: E[] = [];
+  // One native query per tree rather than an `el.matches()` per element.
+  for (const tree of trees) for (const el of tree.querySelectorAll<E>(selector)) found.push(el);
   return found;
+}
+
+/** Every element matching `selector` at or below `root`, descending into open shadow roots. @public */
+export function queryAcross<E extends Element>(root: Element | Document | DocumentFragment, selector: string): E[] {
+  return queryTrees<E>(shadowTrees(root), selector);
 }
 
 /** An element by id, resolved in the tree `node` lives in rather than in the document. */

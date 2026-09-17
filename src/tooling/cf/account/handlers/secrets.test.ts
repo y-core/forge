@@ -162,11 +162,11 @@ describe("classification by marker", () => {
 
   it("labels its rows with its own resource type", async () => {
     const fixedRes = await createSecretsHandler(configPath).reconcile(
-      [{ name: "STRIPE_KEY", value: "v" }],
+      [{ name: "STRIPE_KEY", value: "v", conflictsWithVar: false }],
       makeCtx({ fetch: makeFetch([]), dryRun: true }),
     );
     const rotRes = await createRotatableSecretsHandler(configPath).reconcile(
-      [{ name: "SESSION_SECRET", value: "v" }],
+      [{ name: "SESSION_SECRET", value: "v", conflictsWithVar: false }],
       makeCtx({ fetch: makeFetch([]), dryRun: true }),
     );
     expect(fixedRes.results[0]?.resourceType).toBe("secrets");
@@ -179,7 +179,10 @@ describe("fixed secrets — the local value is what goes remote", () => {
   const handler = createSecretsHandler(configPath);
 
   it("reports in-sync when the name is already there, on both sides", async () => {
-    const res = await handler.reconcile([{ name: "SECRET_KEY", value: "val" }], makeCtx({ fetch: makeFetch(remote("SECRET_KEY")) }));
+    const res = await handler.reconcile(
+      [{ name: "SECRET_KEY", value: "val", conflictsWithVar: false }],
+      makeCtx({ fetch: makeFetch(remote("SECRET_KEY")) }),
+    );
     expect(res.results[0]?.action).toBe("in-sync");
     expect([res.results[0]?.local, res.results[0]?.remote]).toEqual([true, true]);
     // `in-sync` must not imply the values match — Cloudflare never returns them.
@@ -187,19 +190,19 @@ describe("fixed secrets — the local value is what goes remote", () => {
   });
 
   it("creates the secret when it is not there", async () => {
-    const res = await handler.reconcile([{ name: "NEW_SECRET", value: "val" }], makeCtx({ fetch: makeFetch([]) }));
+    const res = await handler.reconcile([{ name: "NEW_SECRET", value: "val", conflictsWithVar: false }], makeCtx({ fetch: makeFetch([]) }));
     expect(res.results[0]?.action).toBe("created");
     expect([res.results[0]?.local, res.results[0]?.remote]).toEqual([true, true]);
   });
 
   it("names the pending create without --commit, and shows it absent remotely", async () => {
-    const res = await handler.reconcile([{ name: "SECRET", value: "v" }], makeCtx({ fetch: makeFetch([]), dryRun: true }));
+    const res = await handler.reconcile([{ name: "SECRET", value: "v", conflictsWithVar: false }], makeCtx({ fetch: makeFetch([]), dryRun: true }));
     expect(res.results[0]?.action).toBe("would-create");
     expect([res.results[0]?.local, res.results[0]?.remote]).toEqual([true, false]);
   });
 
   it("reports error when PUT fails", async () => {
-    const res = await handler.reconcile([{ name: "BAD_SECRET", value: "v" }], makeCtx({ fetch: makeFetch([], false) }));
+    const res = await handler.reconcile([{ name: "BAD_SECRET", value: "v", conflictsWithVar: false }], makeCtx({ fetch: makeFetch([], false) }));
     expect(res.results[0]?.action).toBe("error");
   });
 
@@ -213,8 +216,8 @@ describe("fixed secrets — the local value is what goes remote", () => {
         status: 400,
       });
 
-    const missing = await handler.reconcile([{ name: "S", value: "v" }], makeCtx({ fetch: notFound }));
-    const auth = await handler.reconcile([{ name: "S", value: "v" }], makeCtx({ fetch: badAuth }));
+    const missing = await handler.reconcile([{ name: "S", value: "v", conflictsWithVar: false }], makeCtx({ fetch: notFound }));
+    const auth = await handler.reconcile([{ name: "S", value: "v", conflictsWithVar: false }], makeCtx({ fetch: badAuth }));
 
     expect(missing.results[0]?.detail).toBe("worker script · worker script not found: worker");
     expect(auth.results[0]?.detail).toBe(
@@ -229,7 +232,7 @@ describe("fixed secrets — the local value is what goes remote", () => {
 describe("rotatable secrets — the local value never leaves", () => {
   const { configPath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=local-value\n`);
   const handler = createRotatableSecretsHandler(configPath);
-  const entry = [{ name: "SESSION_SECRET", value: "local-value" }];
+  const entry = [{ name: "SESSION_SECRET", value: "local-value", conflictsWithVar: false }];
 
   function capturingFetch(remoteSecrets: unknown[], sent: { text?: string }[]): typeof globalThis.fetch {
     return async (_url, init) => {
@@ -341,7 +344,7 @@ describe("a remote secret nothing local claims", () => {
   it("is reported as remote-only, and never removed", async () => {
     const { configPath } = makeProject(fixed("MINE"));
     const res = await createSecretsHandler(configPath).reconcile(
-      [{ name: "MINE", value: "v" }],
+      [{ name: "MINE", value: "v", conflictsWithVar: false }],
       makeCtx({ fetch: makeFetch(remote("MINE", "STALE_KEY")), dryRun: true }),
     );
 
@@ -371,7 +374,7 @@ describe("a remote secret nothing local claims", () => {
         }),
       );
     const res = await createSecretsHandler(configPath).reconcile(
-      [{ name: "MINE", value: "v" }],
+      [{ name: "MINE", value: "v", conflictsWithVar: false }],
       makeCtx({ fetch: pagesFetch, dryRun: true, target: { kind: "pages", name: "p" } }),
     );
     expect(res.results.find((r) => r.binding === "STALE_KEY")?.action).toBe("remote-only");
@@ -391,7 +394,7 @@ describe("secret values never reach a result row", () => {
       );
   }
 
-  const entries = [{ name: "CSRF_SECRET", value: SENTINEL }];
+  const entries = [{ name: "CSRF_SECRET", value: SENTINEL, conflictsWithVar: false }];
 
   it("holds across every branch, including an API error echoing the payload", async () => {
     const { configPath } = makeProject(`${PUSH_MARKER}\nCSRF_SECRET=${SENTINEL}\n`);
@@ -417,7 +420,7 @@ describe("secret values never reach a result row", () => {
   it("holds for the rotatable handler, whose local value is never sent at all", async () => {
     const { configPath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=${SENTINEL}\n`);
     const handler = createRotatableSecretsHandler(configPath);
-    const rotatable = [{ name: "SESSION_SECRET", value: SENTINEL }];
+    const rotatable = [{ name: "SESSION_SECRET", value: SENTINEL, conflictsWithVar: false }];
 
     const runs = await Promise.all([
       handler.reconcile(rotatable, makeCtx({ fetch: makeFetch([]) })),
@@ -483,7 +486,7 @@ describe("fixed secrets — pages project", () => {
     const captured: { url: string; method: string; body: unknown }[] = [];
     const fetchFn = makePagesFetch({ CSRF_SECRET: { type: "secret_text" } }, captured);
 
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v" }], makePagesCtx({ fetch: fetchFn }));
+    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }], makePagesCtx({ fetch: fetchFn }));
 
     expect(res.results[0]?.action).toBe("in-sync");
     expect(res.results[0]?.detail).toBe("name only (value not readable)");
@@ -493,7 +496,10 @@ describe("fixed secrets — pages project", () => {
   it("does not mistake a plain_text var for a secret", async () => {
     const captured: { url: string; method: string; body: unknown }[] = [];
     const fetchFn = makePagesFetch({ CSRF_SECRET: { type: "plain_text", value: "x" } }, captured);
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v" }], makePagesCtx({ fetch: fetchFn, dryRun: true }));
+    const res = await handler.reconcile(
+      [{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }],
+      makePagesCtx({ fetch: fetchFn, dryRun: true }),
+    );
     expect(res.results[0]?.action).toBe("would-create");
   });
 
@@ -501,7 +507,7 @@ describe("fixed secrets — pages project", () => {
     const captured: { url: string; method: string; body: unknown }[] = [];
     const fetchFn = makePagesFetch({}, captured);
 
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v" }], makePagesCtx({ fetch: fetchFn }));
+    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }], makePagesCtx({ fetch: fetchFn }));
     expect(res.results[0]?.action).toBe("created");
 
     const patch = captured.find((c) => c.method === "PATCH");
@@ -516,7 +522,7 @@ describe("fixed secrets — pages project", () => {
       new Response(JSON.stringify({ success: false, errors: [{ code: 7003, message: "Could not route" }], messages: [], result: null }), {
         status: 404,
       });
-    const res = await handler.reconcile([{ name: "S", value: "v" }], makePagesCtx({ fetch: notFound }));
+    const res = await handler.reconcile([{ name: "S", value: "v", conflictsWithVar: false }], makePagesCtx({ fetch: notFound }));
     expect(res.results[0]?.action).toBe("unavailable");
     expect(res.results[0]?.detail).toBe("pages project · pages project not found: secrets-fixture");
   });
@@ -524,7 +530,10 @@ describe("fixed secrets — pages project", () => {
   it("keeps the secret value out of rows even when the PATCH is rejected", async () => {
     const captured: { url: string; method: string; body: unknown }[] = [];
     const fetchFn = makePagesFetch({}, captured, false);
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "S3CR3T-SENTINEL" }], makePagesCtx({ fetch: fetchFn }));
+    const res = await handler.reconcile(
+      [{ name: "CSRF_SECRET", value: "S3CR3T-SENTINEL", conflictsWithVar: false }],
+      makePagesCtx({ fetch: fetchFn }),
+    );
     expect(res.results[0]?.action).toBe("error");
     expect(JSON.stringify(res.results)).not.toContain("S3CR3T-SENTINEL");
   });
@@ -535,7 +544,7 @@ describe("fixed secrets — pages project", () => {
     const captured: { url: string; method: string; body: unknown }[] = [];
     const fetchFn = makePagesFetch({ SESSION_SECRET: { type: "secret_text" } }, captured, false);
     const res = await createRotatableSecretsHandler(rotatablePath).reconcile(
-      [{ name: "SESSION_SECRET", value: "local" }],
+      [{ name: "SESSION_SECRET", value: "local", conflictsWithVar: false }],
       makePagesCtx({ fetch: fetchFn, rotate: new Set(["SESSION_SECRET"]) }),
     );
     expect(res.results[0]?.action).toBe("error");
@@ -546,7 +555,7 @@ describe("fixed secrets — pages project", () => {
     const { configPath: rotatablePath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=local\n`);
     const captured: { url: string; method: string; body: unknown }[] = [];
     const res = await createRotatableSecretsHandler(rotatablePath).reconcile(
-      [{ name: "SESSION_SECRET", value: "local" }],
+      [{ name: "SESSION_SECRET", value: "local", conflictsWithVar: false }],
       makePagesCtx({ fetch: makePagesFetch({}, captured), dryRun: true }),
     );
     expect(captured.map((c) => c.method)).toEqual(["GET"]);
@@ -590,5 +599,67 @@ describe("a secret is not a binding", () => {
       makeFetch(remote()),
     );
     expect(out.configChanged).toBe(false);
+  });
+});
+
+describe("a secret whose name is also a plain var is refused", () => {
+  const CONFLICT: WranglerConfig = { name: "proj", vars: { SHARED_NAME: "plain" } };
+
+  it("extract marks the entry the config also declares under vars", () => {
+    const { configPath } = makeProject(fixed("SHARED_NAME", "OWN_NAME"));
+    const entries = createSecretsHandler(configPath).extract(CONFLICT);
+    expect(entries.map((e) => [e.name, e.conflictsWithVar]).sort()).toEqual([
+      ["OWN_NAME", false],
+      ["SHARED_NAME", true],
+    ]);
+  });
+
+  it("refuses the write on the worker path and sends no PUT", async () => {
+    const { configPath } = makeProject(fixed("SHARED_NAME"));
+    const handler = createSecretsHandler(configPath);
+    const sent: string[] = [];
+    const fetchFn: typeof globalThis.fetch = async (_url, init) => {
+      sent.push((init?.method ?? "GET").toUpperCase());
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: [] }));
+    };
+
+    const res = await handler.reconcile(handler.extract(CONFLICT), makeCtx({ fetch: fetchFn }));
+
+    expect(res.results[0]?.action).toBe("refused");
+    expect(res.results[0]?.detail).toContain("vars");
+    expect(sent).not.toContain("PUT");
+  });
+
+  it("refuses on the pages path too, since the rule is the config's and not the surface's", async () => {
+    const { configPath } = makeProject(fixed("SHARED_NAME"));
+    const handler = createSecretsHandler(configPath);
+    const captured: { url: string; method: string; body: unknown }[] = [];
+    const fetchFn: typeof globalThis.fetch = async (_url, init) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "PATCH") captured.push({ url: "", method, body: null });
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { deployment_configs: { production: {} } } }));
+    };
+
+    const res = await handler.reconcile(handler.extract(CONFLICT), makeCtx({ fetch: fetchFn, target: { kind: "pages", name: "proj" } }));
+
+    expect(res.results[0]?.action).toBe("refused");
+    expect(captured).toEqual([]);
+  });
+
+  // The refusal sits above the `rotatable` branch, so `--rotate` is covered by where it is
+  // rather than by a second arm that could be forgotten.
+  it("refuses a rotatable secret under --rotate, which would otherwise mint a new value", async () => {
+    const { configPath } = makeProject(`${GENERATE_MARKER}\nSHARED_NAME=local\n`);
+    const handler = createRotatableSecretsHandler(configPath);
+    const sent: string[] = [];
+    const fetchFn: typeof globalThis.fetch = async (_url, init) => {
+      sent.push((init?.method ?? "GET").toUpperCase());
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: [{ name: "SHARED_NAME", type: "secret_text" }] }));
+    };
+
+    const res = await handler.reconcile(handler.extract(CONFLICT), makeCtx({ fetch: fetchFn, rotate: new Set(["SHARED_NAME"]) }));
+
+    expect(res.results[0]?.action).toBe("refused");
+    expect(sent).not.toContain("PUT");
   });
 });

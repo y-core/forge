@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { currentAttrs } from "../contracts/state-attrs";
 import type { ForgeIcon } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";
@@ -30,7 +31,13 @@ const LIST_BASE = "flex flex-wrap items-center gap-1.5 text-sm text-muted-foregr
 const ITEM_BASE = "inline-flex items-center gap-1.5";
 const LINK_BASE = "focus-ring rounded-sm hover:text-foreground";
 
-const BreadcrumbsRoot: FC<BreadcrumbsRootProps> = ({ label = "Breadcrumb", class: cls, children, "data-slot": inherited, ...rest }) => {
+const BreadcrumbsRoot: FC<BreadcrumbsRootProps> = ({
+  label = LABEL_DEFAULTS.breadcrumbs,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
   return (
     <nav aria-label={label} data-slot={slotToken("breadcrumbs", inherited)} class={cls} {...rest}>
       <ol data-slot='breadcrumbs-list' class={LIST_BASE}>

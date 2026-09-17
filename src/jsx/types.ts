@@ -327,7 +327,8 @@ interface DialogAttributes extends HTMLAttributes {
 
 interface IframeAttributes extends HTMLAttributes {
   src?: string | undefined;
-  srcdoc?: string | undefined;
+  /** A `SafeHtml` document reaches the frame as markup; a plain string reaches it as text. */
+  srcdoc?: SafeHtml | string | undefined;
   name?: string | undefined;
   sandbox?: string | undefined;
   allow?: string | undefined;

@@ -47,3 +47,26 @@ export const html: HtmlTemplateTag = (strings, ...values) => {
 export function rawHtml(s: string): SafeHtml {
   return new SafeHtml(s);
 }
+
+/** Serializes a value as JSON that cannot break out of the `<script>` element holding it. @public */
+export function scriptJson(value: unknown): SafeHtml {
+  const json = JSON.stringify(value);
+  // `undefined`, a function and a symbol all stringify to `undefined` rather than to JSON, and
+  // `PageMeta.jsonLd` is typed `unknown`, so the unrepresentable value reaches here type-checked.
+  if (json === undefined) throw new TypeError("scriptJson: value has no JSON representation");
+  // U+2028 and U+2029 are legal inside a JSON string but are JavaScript line terminators, so a
+  // script parser reading the same bytes would break the statement in two.
+  return new SafeHtml(
+    json
+      .replace(/</g, "\\u003c")
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029"),
+  );
+}
+
+/** Escapes CSS so it cannot break out of the `<style>` element holding it. @public */
+export function styleText(css: string): SafeHtml {
+  // A CSS hex escape needs its trailing space: without one the next character is read as a further
+  // hex digit, so `<a` would become the single code point U+3CA rather than `<` followed by `a`.
+  return new SafeHtml(css.replace(/</g, "\\3c "));
+}

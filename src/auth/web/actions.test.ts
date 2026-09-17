@@ -5,8 +5,8 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { Forge } from "../../app/forge-app";
 import { csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
+import { parseFormData } from "../../form/parse-form-data";
 import { ok } from "../../result/result";
-import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mapHandler } from "../../testing/route";
 import type { TestAction } from "../../testing/types";
@@ -34,7 +34,7 @@ import type { AuthRequestServices, AuthWebOptions } from "./types";
 import {
   attrOf,
   HOSTILE_TEXT,
-  fakeAdminUserService,
+  fakeAdminUserStore,
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthEmailChangeFlow,
@@ -46,9 +46,8 @@ import {
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
+  fakeSessionCookie,
 } from "./web.fixture";
-
-const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 interface Seed {
   readonly userId?: string;
@@ -63,7 +62,7 @@ interface Seed {
 /** A `Forge` app with a seeded session and a deterministic CSRF minter, but no CSRF verification. */
 function actionApp(seed: Seed = {}): Forge {
   const app = new Forge();
-  app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
+  app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
   app.use("*", (context, next) => {
     const session = sessionCtx.get(context);
     // Both, because a mounted route has both: the guards establish the identity every action reads,
@@ -135,6 +134,29 @@ describe("createSigninActions", () => {
     const res = await app.request("/auth/signin", formBody({ _csrf: "csrf-for:/auth/signin", email: "ada@example.com" }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/verify");
+  });
+
+  // The bare `catch` here blames the visitor's field for everything; a cap conflict is the app's own
+  // wiring and must reach the boundary instead of re-rendering the form with a generic refusal.
+  it("rethrows a body-cap conflict rather than turning it into a field refusal", async () => {
+    const options = fakeAuthWebOptions();
+    const app = actionApp();
+    app.use("*", async (c, next) => {
+      await parseFormData(c, { maxBytes: 4 }).catch(() => {});
+      return next();
+    });
+    mounted(app, "POST", "/auth/signin", createSigninActions(options).signinSubmit);
+
+    const res = await app.request("/auth/signin", formBody({ email: "ada@example.com" }));
+    expect(res.status).toBe(500);
+  });
+
+  it("still re-renders the form for an oversize body, which is the visitor's to fix", async () => {
+    const options = fakeAuthWebOptions();
+    const app = mounted(actionApp(), "POST", "/auth/signin", createSigninActions(options).signinSubmit);
+
+    const res = await app.request("/auth/signin", formBody({ email: `${"x".repeat(200_000)}@example.com` }));
+    expect(res.status).toBe(422);
   });
 });
 
@@ -487,6 +509,47 @@ describe("the ceremony endpoints cap what they read", () => {
     const res = await ceremonyApp().request(CEREMONY_PATH, jsonBody({ credential: { id: "c" } }));
     expect(res.status).toBe(400);
   });
+
+  // A `text/plain` form needs no preflight, so a cross-site page can post a JSON-shaped body to this
+  // endpoint. Parsing on shape alone reads it; only the declared type tells the two apart.
+  it("answers 415 to a JSON-shaped body a cross-site form declared as text/plain", async () => {
+    const res = await ceremonyApp().request(CEREMONY_PATH, {
+      method: "POST",
+      body: JSON.stringify({ credential: { id: "c" } }),
+      headers: { "content-type": "text/plain;charset=UTF-8" },
+    });
+
+    expect(res.status).toBe(415);
+  });
+
+  it("answers 415 to the other two enctypes a form may post without a preflight", async () => {
+    const body = JSON.stringify({ credential: { id: "c" } });
+    const post = (contentType: string) => ceremonyApp().request(CEREMONY_PATH, { method: "POST", body, headers: { "content-type": contentType } });
+
+    expect((await post("application/x-www-form-urlencoded")).status).toBe(415);
+    expect((await post("multipart/form-data; boundary=x")).status).toBe(415);
+  });
+
+  it("reads a Content-Type carrying a charset parameter, which is the same media type", async () => {
+    const res = await ceremonyApp().request(CEREMONY_PATH, {
+      method: "POST",
+      body: JSON.stringify({ credential: { id: "c" } }),
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses malformed JSON rather than reading it as an absent body", async () => {
+    const res = await ceremonyApp().request(CEREMONY_PATH, {
+      method: "POST",
+      body: '{"credential":',
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "The passkey was not accepted." });
+  });
 });
 
 describe("createPasskeyManageActions", () => {
@@ -659,7 +722,7 @@ describe("createAdminUserActions", () => {
   const member = fakeAuthUser({ id: "u2", email: "member@example.com" });
 
   it("re-renders the account at 200 when the write went through", async () => {
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserService([member]) });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([member]) });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
@@ -670,7 +733,7 @@ describe("createAdminUserActions", () => {
     const admin = fakeAuthUser({ id: "u2", email: "member@example.com", isAdmin: true });
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
-      admin: fakeAdminUserService([admin], { demote: async () => ok("last-admin-demote" as const) }),
+      admin: fakeAdminUserStore([admin], { setAdmin: async () => ok("last-admin-demote" as const) }),
     });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
@@ -679,7 +742,7 @@ describe("createAdminUserActions", () => {
   });
 
   it("answers 404 for an account that is no longer there", async () => {
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserService([]) });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([]) });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u2", formBody({ role: "member", status: "active" }, "PATCH"));
@@ -687,7 +750,7 @@ describe("createAdminUserActions", () => {
   });
 
   it("returns to the listing once an account is deleted", async () => {
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserService([member]) });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([member]) });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
 
     const res = await app.request("/admin/users/u2", { method: "DELETE" });
@@ -699,20 +762,20 @@ describe("createAdminUserActions", () => {
   // guard admits one of them locking out their own account.
   it("refuses an administrator deactivating their own account, writing nothing", async () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
-    const admin = fakeAdminUserService([self]);
+    const admin = fakeAdminUserStore([self]);
     const options = optionsWith({ users: fakeAuthUserStore([self]), admin });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u9", formBody({ role: "admin", status: "deactivated" }, "PATCH"));
     expect(res.status).toBe(409);
-    expect((await admin.view("u9")).ok).toBe(true);
+    expect((await admin.findById("u9")).ok).toBe(true);
   });
 
   it("refuses an administrator demoting their own account, writing nothing", async () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
     let demoteCalls = 0;
-    const admin = fakeAdminUserService([self], {
-      demote: async () => {
+    const admin = fakeAdminUserStore([self], {
+      setAdmin: async () => {
         demoteCalls += 1;
         return ok("changed" as const);
       },
@@ -729,8 +792,8 @@ describe("createAdminUserActions", () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
     const other = fakeAuthUser({ id: "u2", email: "ada@example.com", isAdmin: true });
     const demoted: string[] = [];
-    const admin = fakeAdminUserService([self, other], {
-      demote: async (id) => {
+    const admin = fakeAdminUserStore([self, other], {
+      setAdmin: async (id: string) => {
         demoted.push(id);
         return ok("changed" as const);
       },
@@ -745,7 +808,7 @@ describe("createAdminUserActions", () => {
 
   it("refuses an administrator deleting their own account, which is not even reversible", async () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
-    const options = optionsWith({ users: fakeAuthUserStore([self]), admin: fakeAdminUserService([self]) });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin: fakeAdminUserStore([self]) });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
 
     const res = await app.request("/admin/users/u9", { method: "DELETE" });
@@ -754,38 +817,142 @@ describe("createAdminUserActions", () => {
 
   it("still lets an administrator reactivate their own account, which locks nobody out", async () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true, deactivatedAt: 1 });
-    const options = optionsWith({ users: fakeAuthUserStore([self]), admin: fakeAdminUserService([self]) });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin: fakeAdminUserStore([self]) });
     const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u9", formBody({ role: "admin", status: "active" }, "PATCH"));
     expect(res.status).toBe(200);
   });
+
+  // A UUID is case-insensitive and the store returns a canonical one, so comparing the acting
+  // administrator against the raw route parameter lets an uppercased id name the same row past the guard.
+  it("refuses a self-delete whose route parameter is the acting administrator's own id uppercased", async () => {
+    const self = fakeAuthUser({ id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", email: "grace@example.com", isAdmin: true });
+    let removals = 0;
+    const admin = fakeAdminUserStore([self], {
+      remove: async () => {
+        removals += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([self]), admin });
+    const app = mounted(actionApp({ userId: self.id, admin: true }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request(`/admin/users/${self.id.toUpperCase()}`, { method: "DELETE" });
+    expect(res.status).toBe(409);
+    expect(removals).toBe(0);
+  });
+});
+
+// The loader-side `refuseUnguarded` runs after the write commits, so a group that lost its guards
+// leaves these two handlers as the only thing between an anonymous request and an account deletion.
+describe("createAdminUserActions — the write path refuses an unprivileged request of its own accord", () => {
+  const member = fakeAuthUser({ id: "u2", email: "member@example.com" });
+
+  it("redirects an anonymous PATCH to sign-in rather than writing the role it carries", async () => {
+    let writes = 0;
+    const admin = fakeAdminUserStore([member], {
+      setAdmin: async () => {
+        writes += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
+    const app = mounted(actionApp(), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/signin");
+    expect(writes).toBe(0);
+  });
+
+  it("redirects an anonymous DELETE to sign-in rather than deleting the account it names", async () => {
+    let removals = 0;
+    const admin = fakeAdminUserStore([member], {
+      remove: async () => {
+        removals += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
+    const app = mounted(actionApp(), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u2", { method: "DELETE" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/signin");
+    expect(removals).toBe(0);
+  });
+
+  // Signed in is not administered: `require-admin` is a loader-side guard, so a member posting
+  // straight at the write path would otherwise have their role change land before it ever ran.
+  it("refuses a signed-in non-administrator's PATCH rather than writing the role it carries", async () => {
+    let writes = 0;
+    const admin = fakeAdminUserStore([member], {
+      setAdmin: async () => {
+        writes += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([member]), admin });
+    const app = mounted(actionApp({ userId: "u2", admin: false }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
+    expect(res.status).toBe(403);
+    expect(writes).toBe(0);
+  });
+
+  it("refuses a signed-in non-administrator's DELETE rather than deleting the account it names", async () => {
+    // The target is seeded, and is not the actor: without it the handler answers `not-found` before
+    // it ever reaches the store, and the assertion below would hold with the role check deleted.
+    const target = fakeAuthUser({ id: "u3", email: "target@example.com" });
+    let removals = 0;
+    const admin = fakeAdminUserStore([member, target], {
+      remove: async () => {
+        removals += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([member, target]), admin });
+    const app = mounted(actionApp({ userId: "u2", admin: false }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u3", { method: "DELETE" });
+    expect(res.status).toBe(403);
+    expect(removals).toBe(0);
+  });
 });
 
 describe("createAdminElevateActions", () => {
+  const SECRET = "bootstrap-s3cret";
+
+  /** `optionsWith`, plus the bootstrap-secret resolver every claim is now held to. `null` configures none. */
+  function elevateOptions(overrides: Partial<AuthRequestServices>, bootstrapSecret: string | null = SECRET): AuthWebOptions {
+    const services = fakeAuthServices(overrides);
+    return fakeAuthWebOptions({ resolveServices: () => services, bootstrapSecret: () => bootstrapSecret ?? undefined });
+  }
+
   it("grants the claim while the deployment has no administrator", async () => {
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserService([signedIn]) });
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/admin/users");
   });
 
   it("refuses the claim at 409 once an administrator exists", async () => {
     const admin = fakeAuthUser({ id: "u1", isAdmin: true });
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserService([admin]) });
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([admin]) });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
     expect(res.status).toBe(409);
   });
 
   it("grants exactly one of two claims racing an empty deployment, because the write decides", async () => {
     let admins = 0;
-    const service = fakeAdminUserService([signedIn], {
+    const service = fakeAdminUserStore([signedIn], {
       countAdmins: async () => ok(admins),
-      claimFirst: async () => {
+      claimFirstAdmin: async () => {
         if (admins >= 1) return ok("admin-exists" as const);
         admins += 1;
         return ok("changed" as const);
@@ -793,12 +960,12 @@ describe("createAdminElevateActions", () => {
     });
     // One service across both requests: `optionsWith` builds a fresh one per call, and two services
     // would each hold their own count, which is the race rather than a test of it.
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: service });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     const statuses = await Promise.all([
-      app.request("/admin/elevate", formBody({ confirm: "yes" })),
-      app.request("/admin/elevate", formBody({ confirm: "yes" })),
+      app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET })),
+      app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET })),
     ]).then((responses) => responses.map((res) => res.status).sort());
 
     expect(statuses).toEqual([303, 409]);
@@ -806,10 +973,52 @@ describe("createAdminElevateActions", () => {
   });
 
   it("reports a session naming a row that is gone as unavailable, rather than redirecting on it", async () => {
-    const service = fakeAdminUserService([signedIn], { claimFirst: async () => ok("not-found" as const) });
-    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
+    const service = fakeAdminUserStore([signedIn], { claimFirstAdmin: async () => ok("not-found" as const) });
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: service });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    expect((await app.request("/admin/elevate", formBody({ confirm: "yes" }))).status).toBe(503);
+    expect((await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }))).status).toBe(503);
+  });
+
+  // The claim grants the role to whoever posts first, so the secret is what stands between a fresh
+  // sign-up and an administrator. Without one configured the endpoint does not exist at all.
+  it("answers 404 when the deployment configured no bootstrap secret, rather than an open claim", async () => {
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) }, null);
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
+    expect(res.status).toBe(404);
+  });
+
+  it("answers 404 for an empty configured secret too, which is a secret nobody has to guess", async () => {
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) }, "");
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    expect((await app.request("/admin/elevate", formBody({ confirm: "yes", secret: "" }))).status).toBe(404);
+  });
+
+  it("refuses a wrong secret at 422 without writing, and refuses a missing one at the schema", async () => {
+    let claims = 0;
+    const admin = fakeAdminUserStore([signedIn], {
+      claimFirstAdmin: async () => {
+        claims += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    expect((await app.request("/admin/elevate", formBody({ confirm: "yes", secret: "wrong" }))).status).toBe(422);
+    expect((await app.request("/admin/elevate", formBody({ confirm: "yes" }))).status).toBe(422);
+    expect(claims).toBe(0);
+  });
+
+  it("redirects an anonymous claim to sign-in, whatever secret it carries", async () => {
+    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
+    const app = mounted(actionApp(), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/signin");
   });
 });

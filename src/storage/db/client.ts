@@ -22,7 +22,7 @@ function writtenOf(meta: D1Result["meta"]): { rowsWritten: number; lastRowId?: n
 
 /** Creates a D1Client accepting only SqlFragment — raw string SQL is rejected by the type system, so bind parameters are enforced by construction. @public */
 export function createD1Client(db: D1Database, options?: D1ClientOptions): D1Client {
-  const logger = options?.logger ?? createLogger("storage/db");
+  const logger = options?.logger ?? createLogger("storage/db", { channels: [] });
 
   return {
     batch<T = unknown>(fragments: SqlFragment[]): Promise<Result<D1BatchResult<T>[]>> {

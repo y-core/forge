@@ -17,9 +17,19 @@ const DefineValueSchema = v.union([
   v.object({ __flag: v.string() }),
 ]);
 
+// A bundle's output directory is cleaned before it is written, so it has to be a directory of this
+// group's own beneath the asset root — never the root itself, and never a path that leaves it.
+const JsOutdirSchema = v.pipe(
+  v.string(),
+  v.regex(
+    /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/,
+    "not a bundle outdir — one or more path segments below the asset root, and never `.`, `..` or absolute",
+  ),
+);
+
 const JsBundleSchema = v.object({
   entry: v.string(),
-  outdir: v.string(),
+  outdir: JsOutdirSchema,
   splitting: v.optional(v.boolean()),
   format: v.optional(v.picklist(["esm", "cjs", "iife"] as const)),
   minify: v.optional(v.boolean()),
@@ -42,12 +52,22 @@ const IconOutputSchema = v.union([
   v.object({ kind: v.literal("manifest"), file: v.string(), root: v.optional(v.boolean()) }),
 ]);
 
+// An icon colour is interpolated into a `<style>` block and into the manifest, so a value carrying
+// `}` or `<` would close the element and continue as markup the browser executes.
+const CssColorSchema = v.pipe(
+  v.string(),
+  v.regex(
+    /^(#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|[a-zA-Z]+|(?:rgb|rgba|hsl|hsla)\([0-9.,%/\s+-]*\))$/,
+    "not a CSS colour — a hex value, a colour keyword, or an rgb()/hsl() function",
+  ),
+);
+
 const IconsConfigSchema = v.object({
   src: v.string(),
   outDir: v.string(),
   publicPrefix: v.optional(v.string()),
-  lightColor: v.string(),
-  darkColor: v.optional(v.string()),
+  lightColor: CssColorSchema,
+  darkColor: v.optional(CssColorSchema),
   app: v.optional(v.object({ name: v.string(), shortName: v.string(), backgroundColor: v.string() })),
   outputs: v.array(IconOutputSchema),
 });
@@ -61,9 +81,17 @@ const CssBuildSchema = v.object({ tool: v.literal("tailwindcss"), input: v.strin
 
 const CopyEntrySchema = v.object({ from: v.string(), to: v.string() });
 
-const SpriteFileEntrySchema = v.union([v.string(), v.object({ key: v.string(), file: v.string() })]);
+const SpriteFileEntrySchema = v.union([v.string(), v.object({ key: v.string(), file: v.string(), sha256: v.optional(v.string()) })]);
 
-const SpriteSourceSchema = v.object({ path: v.string(), files: v.array(SpriteFileEntrySchema) });
+// A remote source is a supply-chain edge into the deploy directory, so each of its files pins the
+// bytes it expects; a local one reads from the repository, where the review already happened.
+const SpriteSourceSchema = v.pipe(
+  v.object({ path: v.string(), files: v.array(SpriteFileEntrySchema) }),
+  v.check(
+    (source) => !/^https?:\/\//i.test(source.path) || source.files.every((file) => typeof file !== "string" && file.sha256 !== undefined),
+    "a remote sprite source needs a { key, file, sha256 } entry for every file",
+  ),
+);
 
 const SpriteGroupSchema = v.object({ target: v.string(), sources: v.array(SpriteSourceSchema), prefix: v.optional(v.string()) });
 
@@ -79,7 +107,7 @@ const CursorsConfigSchema = v.object({
   vars: v.optional(v.record(v.string(), v.union([v.string(), v.record(v.string(), v.string())]))),
 });
 
-const FontDownloadSchema = v.object({ url: v.string(), to: v.string() });
+const FontDownloadSchema = v.object({ url: v.string(), to: v.string(), sha256: v.string() });
 
 const PathsConfigSchema = v.object({ sourceDir: v.optional(v.string()), publicDir: v.optional(v.string()), publicPrefix: v.optional(v.string()) });
 
@@ -132,6 +160,8 @@ export interface ResolvedPaths {
 }
 
 export interface ResolvedConfig {
+  /** The application root every path below was resolved against. */
+  root: string;
   paths: ResolvedPaths;
   js: { bundles: ResolvedJsBundle[] };
   css: CssBuild[];

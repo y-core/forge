@@ -378,17 +378,19 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ### 6a. One Command, Three Modes
 
-**There is one gate command with three modes — `fast`, `standard` and `full` — selected with `--mode`, not three commands.** They are nested:
-`fast ⊆ standard ⊆ full`. **A bare invocation is `standard`**, and that is the run a task closes on; `fast` is the inner loop and is opt-in, and
-`full` is the release gate. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than trusting
-any prose copy.
+**There is one gate command with three modes — `quality`, `standard` and `full` — selected with `--mode`, not three commands.** They are nested:
+`quality ⊆ standard ⊆ full`. **A bare invocation is `standard`**, and that is the run a task closes on; `quality` is the loop to write in and is
+opt-in, and `full` is the release gate. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather
+than trusting any prose copy.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
 warning" — is a failure.
 
-**The line between the modes is a machine prerequisite, never cost.** Every step below the `full` tier works on any machine with the repository's
-dependencies installed. A step needing a fetched browser binary or a live service is `full`-only. "This suite got slow" has no bearing on the
-question. An absent prerequisite is a skip below `full` and a failure in a `full` run, because a release may not be assured by a step nobody ran.
+**Neither line between the modes is cost.** `full` is separated by a machine prerequisite: every step below it works on any machine with the
+repository's dependencies installed, and a step needing a fetched browser binary or a live service is `full`-only. `quality` is separated from
+`standard` by what a step does — one that judges the source is `quality`, one that runs the code is `standard`. "This suite got slow" has no bearing
+on either question. An absent prerequisite is a skip below `full` and a failure in a `full` run, because a release may not be assured by a step
+nobody ran.
 
 **The mode is part of the verdict**, since the modes are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.

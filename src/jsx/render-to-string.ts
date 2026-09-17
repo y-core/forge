@@ -34,8 +34,19 @@ const BOOLEAN_ATTRS = new Set([
   "selected",
 ]);
 
-/** Attributes whose values are URLs — scheme-sanitized to block `javascript:`-style injection. */
-const URL_ATTRS = new Set(["href", "src", "action", "formaction", "poster", "cite", "background", "xlink:href", "xml:base"]);
+/** Attributes whose values are URLs — scheme-sanitized to block `javascript:`-style injection. @internal */
+export const URL_ATTRS: ReadonlySet<string> = new Set([
+  "href",
+  "src",
+  "action",
+  "formaction",
+  "poster",
+  "cite",
+  "background",
+  "data",
+  "xlink:href",
+  "xml:base",
+]);
 
 /** Attributes whose boolean value renders as `="true"`/`="false"`, per HTML's enumerated semantics. */
 const ENUMERATED_ATTRS = new Set(["draggable", "spellcheck", "contenteditable"]);
@@ -62,11 +73,15 @@ function renderAttributes(props: Record<string, unknown>): string {
     // (e.g. ` onmouseover=…`) would otherwise inject attributes.
     if (!VALID_ATTR_NAME.test(attrName)) continue;
 
+    const lowerName = attrName.toLowerCase();
+
     // The shipped CSP is `style-src 'self'` with no `'unsafe-inline'`, so a `style="…"` attribute
     // would be blocked by the browser anyway.
-    if (attrName === "style") continue;
+    if (lowerName === "style") continue;
 
-    const lowerName = attrName.toLowerCase();
+    // A bare handler name is script an untrusted spread key could inject; `hx-on:*` is deliberately
+    // outside this test and stays verbatim (`docs/HTMX.md` §7b).
+    if (lowerName.startsWith("on")) continue;
 
     if (ENUMERATED_ATTRS.has(lowerName)) {
       if (value === true) {
@@ -99,6 +114,14 @@ function renderAttributes(props: Record<string, unknown>): string {
     }
 
     const raw = String(value);
+
+    if (lowerName === "srcdoc") {
+      // The browser decodes the attribute value once before parsing it as a document, so one escape
+      // cancels exactly: an untrusted string reaches the frame as text and trusted markup as markup.
+      attrs += ` ${attrName}="${isSafeHtml(value) ? escapeHtml(raw) : escapeHtml(escapeHtml(raw))}"`;
+      continue;
+    }
+
     const out = URL_ATTRS.has(lowerName) ? safeUrl(raw) : raw;
     attrs += ` ${attrName}="${escapeHtml(out)}"`;
   }

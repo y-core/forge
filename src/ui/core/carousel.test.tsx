@@ -3,6 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { Carousel } from "./carousel";
 import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 
@@ -148,5 +149,28 @@ describe("Carousel.Dots — current outside the slide range", () => {
 
     expect(dots(below).findIndex((dot) => dot.current)).toBe(0);
     expect(dots(above).findIndex((dot) => dot.current)).toBe(2);
+  });
+});
+
+describe("Carousel.Dots — slideLabel", () => {
+  it("names every dot from the prop, so the per-slide word is the caller's and not forge's English", async () => {
+    const html = await render(<Carousel.Dots ids={["a", "b", "c"]} slideLabel={(position) => `Diapositive ${position}`} />);
+
+    expect([...html.matchAll(/aria-label="([^"]*)"/g)].map((match) => match[1])).toEqual([
+      LABEL_DEFAULTS.carouselDots,
+      "Diapositive 1",
+      "Diapositive 2",
+      "Diapositive 3",
+    ]);
+  });
+
+  it("falls back to the table's word in position order, which is the only English left here", async () => {
+    const html = await render(<Carousel.Dots ids={["a", "b"]} />);
+
+    expect([...html.matchAll(/aria-label="([^"]*)"/g)].map((match) => match[1])).toEqual([
+      LABEL_DEFAULTS.carouselDots,
+      `${LABEL_DEFAULTS.carouselSlide} 1`,
+      `${LABEL_DEFAULTS.carouselSlide} 2`,
+    ]);
   });
 });

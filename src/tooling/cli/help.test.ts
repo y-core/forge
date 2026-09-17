@@ -71,14 +71,14 @@ describe("formatHelp()", () => {
       flags: {
         verbose: { type: "boolean", short: "v", description: "Verbose" },
         output: { type: "string", required: true, description: "Output file" },
-        mode: { type: "string", default: "fast", description: "How much to run" },
+        mode: { type: "string", default: "quality", description: "How much to run" },
         x: { type: "boolean", description: "Extra" },
       },
     });
     expect(formatHelp(cmd).split("\n").slice(-5)).toEqual([
       "  -v, --verbose          Verbose",
       "      --output <string>  Output file (required)",
-      "      --mode <string>    How much to run (default: fast)",
+      "      --mode <string>    How much to run (default: quality)",
       "      --x                Extra",
       "  -h, --help             Show help for this command",
     ]);

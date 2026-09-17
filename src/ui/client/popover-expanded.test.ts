@@ -57,6 +57,28 @@ describe("mountExpandedState", () => {
     expect(invoker.getAttribute("aria-expanded")).toBe("false");
   });
 
+  // The existing tests dispatch only `toggle`; `beforetoggle` is the one that lands inside the
+  // click that caused it, and its removal is invisible to a `toggle`-only dispatch.
+  it("removes both listeners on dispose, the `beforetoggle` one included", () => {
+    const { popup } = scene();
+
+    mountExpandedState(popup as never)();
+
+    expect({ before: popup.listeners.get("beforetoggle")?.length ?? 0, toggle: popup.listeners.get("toggle")?.length ?? 0 }).toEqual({
+      before: 0,
+      toggle: 0,
+    });
+  });
+
+  it("stops writing on a `beforetoggle` once disposed", () => {
+    const { popup, invoker } = scene();
+    mountExpandedState(popup as never)();
+
+    popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+
+    expect(invoker.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("stops writing once disposed", () => {
     const { popup, invoker } = scene();
     mountExpandedState(popup as never)();

@@ -1,22 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { chmodSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
+import { gateFixtureRoot } from "./gate.fixture";
 import { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./markdown";
 
 const CLEAN = "# Title\n\nProse with **strong** and _em_.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n";
 const PADDED = "# Title\n\n| A   | B |\n| --- | --- |\n| 1   | 2 |\n";
 
-/** A throwaway tree holding `files`, keyed by repo-relative path. */
-function fixture(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "forge-markdown-"));
-  for (const [path, content] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), content, "utf-8");
-  }
-  return root;
-}
+const fixture = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-markdown-");
 
 describe("resolveMarkdownFiles()", () => {
   it("walks a directory and accepts a single file, deduped and sorted", () => {

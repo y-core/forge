@@ -74,6 +74,22 @@ describe("consoleChannel", () => {
     expect(obj.message).toBe("real message");
   });
 
+  it("narrows a URL to origin and path, so its query and fragment are never printed", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ data: { target: new URL("https://app.example.com/reset?token=SECRET#frag") } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.target).toBe("https://app.example.com/reset");
+    expect(captured[0]).not.toContain("SECRET");
+  });
+
+  it("narrows a URL nested below the top level too", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ data: { hops: [{ to: new URL("https://api.example.com/v1?key=SECRET") }] } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.hops[0].to).toBe("https://api.example.com/v1");
+    expect(captured[0]).not.toContain("SECRET");
+  });
+
   it("reserved fields win — caller-supplied timestamp in data is overridden by the record timestamp", () => {
     const ch = consoleChannel();
     void ch.write(makeRecord({ timestamp: "2026-01-01T00:00:00.000Z", data: { timestamp: "fake" } }));

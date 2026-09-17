@@ -105,9 +105,9 @@ const origin = verifyOrigin(request.headers.get("Origin"), allowed);
 if (!origin.ok) return new Response("Forbidden", { status: 403 }); // log `origin.error`; never send it
 ```
 
-**`ValidationResult<T>` comes back from anything that parses input** — every `@y-core/forge/validation` helper and `defineAction`'s `validate` hook.
-Its `error` is a `readonly string[]` of already-formatted field messages, so a UI can surface every failing field in one pass rather than one at a
-time. `@y-core/forge/http` renders that list directly.
+**`ValidationResult<T>` is the alias you give your own input-parsing function.** Forge exports the type, not a helper that returns one: its `error`
+is a `readonly string[]` of already-formatted field messages, so a UI can surface every failing field in one pass rather than one at a time.
+`renderValidationErrors` from `@y-core/forge/http` takes that list directly.
 
 ```ts
 const contact = validateContact(form);
@@ -134,7 +134,7 @@ turns a thrown plain object into the message `[object Object]`. Throw an `Error`
 - [`docs/FORGE_ERRORS.md`][fe] — the governing doctrine: the primitive (§1a), the narrowing guard (§1b), the aliases (§1c), and which failures are
   expected, unexpected, or infrastructural (§5)
 - [`src/http/README.md`][http-readme] — turning a failure into a response fragment
-- [`src/validation/README.md`][validation-readme] — the producer of most `ValidationResult` values you will handle
+- [`src/validation/README.md`][validation-readme] — the schemas and issue formatting a `ValidationResult` of your own is usually built from
 
 [fe]: ../../docs/FORGE_ERRORS.md
 [fe-1a]: ../../docs/FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror

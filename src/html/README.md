@@ -189,8 +189,9 @@ Every value passed to `hxAttrs` and to the pattern helpers is emitted exactly as
 design — build them from route definitions and static configuration, never from request data. The trust posture is [`HTMX.md`][htmx-7] §7's, and why
 the URL-valued props are deliberately left out of `safeUrl` is §7a's.
 
-An `hx-on:*` attribute is stricter still: htmx evaluates its value as JavaScript, so it may only ever be literal source you wrote
-([`HTMX.md`][htmx-7b] §7b).
+What htmx evaluates is stricter still. An `hx-on:*` attribute, and an `hx-vals` or `hx-headers` whose value begins `js:`, are run as JavaScript
+rather than read — so each may only ever be literal source you wrote ([`HTMX.md`][htmx-7b] §7b). `hxAttrs` cannot emit a `js:` value — its `values`
+and `headers` are JSON-encoded — so one is always hand-written.
 
 ### Allowing Turnstile through the CSP
 
@@ -233,7 +234,7 @@ path and query.
 [form-readme]: ../form/README.md
 [htmx]: ../../docs/HTMX.md
 [htmx-7]: ../../docs/HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
-[htmx-7b]: ../../docs/HTMX.md#7b-hx-on-is-the-one-family-htmx-evaluates
+[htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [htmx-8]: ../../docs/HTMX.md#8-the-form-independent-sync-default
 [http-readme]: ../http/README.md
 [jsx-readme]: ../jsx/README.md

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { getAppContext, RequestContext } from "../context/types";
 import { requestLog } from "../logging/request-logger";
-import { createTestContext, mockExecutionContext, nullLogger } from "./context";
+import { collectExecutionContext, createTestContext, mockExecutionContext, nullLogger } from "./context";
 
 describe("createTestContext", () => {
   it("is accepted by the production accessor, which reads back every injection", () => {
@@ -50,6 +50,28 @@ describe("mockExecutionContext", () => {
 
   it("hands out a fresh context per call, so no state one test parks on it reaches the next", () => {
     expect(mockExecutionContext()).not.toBe(mockExecutionContext());
+  });
+});
+
+describe("collectExecutionContext", () => {
+  it("holds a deferred promise unsettled, so work can be asserted before it is allowed to finish", async () => {
+    const { executionCtx, pending, drain } = collectExecutionContext();
+    let done = false;
+    let release = () => {};
+    executionCtx.waitUntil(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }).then(() => {
+        done = true;
+      }),
+    );
+
+    expect(pending).toHaveLength(1);
+    expect(done).toBe(false);
+    release();
+    await drain();
+    expect(done).toBe(true);
+    expect(pending).toHaveLength(0);
   });
 });
 

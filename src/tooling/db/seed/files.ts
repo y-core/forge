@@ -69,7 +69,9 @@ export function expandSeedEnv(sql: string, env: Record<string, string | undefine
     if (value === "" || SEED_BARE_VALUE.test(value)) return value;
     throw new CliError(
       "invalid-args",
-      `${name} is substituted outside a SQL string literal, where its value is the SQL itself, and \`${value.slice(0, 24)}\` is neither an identifier-like token nor a number — quote the placeholder in the seed ('\${${name}}'), or set a value matching [A-Za-z_][A-Za-z0-9_.]* or -?\\d+(\\.\\d+)?`,
+      // The shape, never the bytes: this value comes from the environment and the message it lands
+      // in goes to a terminal, a CI log and whatever scrapes one.
+      `${name} is substituted outside a SQL string literal, where its value is the SQL itself, and its value (${value.length} characters) is neither an identifier-like token nor a number — quote the placeholder in the seed ('\${${name}}'), or set a value matching [A-Za-z_][A-Za-z0-9_.]* or -?\\d+(\\.\\d+)?`,
     );
   });
 }

@@ -121,6 +121,24 @@ describe("execute()", () => {
     expect(out[0]).toContain("My great tool");
   });
 
+  // Past a `--` the caller has said the rest is data. `parseArgs` already honours that, so reading
+  // a flag here disagreed with what the command itself then received.
+  it("treats --help past a -- terminator as an argument rather than a flag", async () => {
+    let received: string[] = [];
+    const cmd = createCommand({
+      name: "mytool",
+      description: "My great tool",
+      args: { kind: "exact", count: 1 },
+      run: (args) => void (received = args),
+    });
+    const { io, out } = makeIO();
+
+    await run(cmd, ["--", "--help"], io);
+
+    expect(out).toEqual([]);
+    expect(received).toEqual(["--help"]);
+  });
+
   it("prints help for -h flag", async () => {
     const cmd = createCommand({ name: "mytool", description: "My great tool" });
     const { io, out } = makeIO();

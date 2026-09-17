@@ -197,3 +197,15 @@ describe("applyJsoncEdits() — several new members in one object", () => {
     ).toBe(`{\r\n  "binding": "DB",\r\n  "a": 1,\r\n  "b": 2\r\n}`);
   });
 });
+
+describe("applyJsoncEdits() — a duplicated key", () => {
+  // `JSON.parse` and wrangler both read the last occurrence, so editing the first would report `ok`
+  // while the value the tool actually loads stayed exactly as it was.
+  it("edits the occurrence the parser reads, which is the last one", () => {
+    const src = `{\n  "name": "old",\n  "name": "stale"\n}`;
+    const out = apply(src, [{ path: ["name"], value: "new" }]);
+
+    expect(out).toBe(`{\n  "name": "old",\n  "name": "new"\n}`);
+    expect((JSON.parse(stripJsonc(out)) as { name: string }).name).toBe("new");
+  });
+});

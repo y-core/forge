@@ -107,6 +107,8 @@ runtime-dependent values such as signed tokens and generated ids.
 **Smoke-run the test file you just wrote.** That confirms your new cases pass and your fakes typecheck, it is a handful of lines, and you own the
 fix either way. **Then hand the full gate to `cc-tester`** and act on its verdict — never stream a full gate through this context
 (`AGENT_WORKFLOW.md` §4a). A file-scoped green is not a green gate; report which you have.
+**Offering a task for review claims the gate, not your file** (`AGENT_WORKFLOW.md` §5), and the `quality` tier is what catches a comment budget or
+a document you left over.
 
 **You never edit a test to make a failing gate go green.** If a test you wrote fails, decide which is wrong — the test or the implementation — and
 say so. If the implementation is wrong, that is `cc-dev`'s fix, not yours.

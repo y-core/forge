@@ -136,6 +136,12 @@ visually-hidden span above is used instead, which is the preferred form wherever
 to its glyph, so there is no text left in it to carry a name, and `Icon` is `aria-hidden` by default — the button ships nameless unless one is
 given.
 
+Default: a stepper, a nudge or any repeated pair of adjacent controls names the quantity it moves, not the direction it moves it — unless the page
+provably renders one such pair. <!-- rule:forge-ui-a11y-stepper-names-its-quantity --> `NumberField.Increment` and `.Decrement` default to
+"Increment" and "Decrement", which is a complete name for one field on a page and an ambiguous one for two: a reader tabbing a quantity beside a
+price hears the same two words twice and cannot tell which column they belong to. Pass `label` — "Increase quantity" — wherever a second pair can
+appear. Override for a form with exactly one, which is why the default is not the empty string.
+
 ### 3c. Required markers and `aria-readonly`
 
 Default: keep the required marker decorative and carry requiredness on the control — unless the form has no visual required convention at all.

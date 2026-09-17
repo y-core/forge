@@ -3,7 +3,7 @@ import type { TurnstileFailure } from "../../form/types";
 import type { DialValues } from "../contracts/theme/types";
 import type { ForgeIcon } from "../core/types";
 import type { showcaseRoutes } from "./register";
-import type { APPEARANCES } from "./turnstile-demo";
+import type { TURNSTILE_APPEARANCES } from "./turnstile-demo";
 import type { CHALLENGES } from "./turnstile-demo";
 import type { LANGUAGES } from "./turnstile-demo";
 import type { LOADS } from "./turnstile-demo";
@@ -187,10 +187,9 @@ export interface TurnstileDemoOptions {
   size: (typeof SIZES)[number];
   load: (typeof LOADS)[number];
   challenge: (typeof CHALLENGES)[number];
-  appearance: (typeof APPEARANCES)[number];
+  appearance: (typeof TURNSTILE_APPEARANCES)[number];
   action: string;
   cData: string;
-  responseFieldName: string;
   language: (typeof LANGUAGES)[number];
   tabindex: number | null;
 }

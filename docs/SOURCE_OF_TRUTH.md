@@ -137,6 +137,7 @@ restates a naming rule or a handler's plan.
 | The dialled shape properties and the values they take | `SHAPE_PROPERTIES` and `shapeVars` in `src/ui/contracts/theme/theme-contract.ts` |
 | The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.fixture.ts` + `src/ui/show/coverage-missing.fixture.ts` |
 | The glyph names the auth views draw, which a consumer's sprite must cover | `AuthIconName` in `src/auth/web/types.ts` |
+| Every English accessible name forge falls back to, and the word read for each step state | `src/ui/contracts/labels.ts` |
 
 ### 2e. On-Disk Database Formats
 

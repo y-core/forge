@@ -74,7 +74,7 @@ describe("the @utility recipes claim the scope they paint at", () => {
   for (const [utility, expected] of [
     ["border-field", "border-width"],
     ["field-chrome", "background-color,border-color,border-radius,border-width,color,font-size,height,line-height,padding-inline,width"],
-    ["otp-cells", "background-image,background-position,background-repeat,background-size,width"],
+    ["otp-cells", "background-image,background-position,background-repeat,background-size,max-width,min-width,width"],
     ["otp-editor", "box-sizing,letter-spacing,padding-inline,width"],
   ] as const) {
     it(`${utility} paints its whole signature unconditionally, so the claim is honest`, async () => {

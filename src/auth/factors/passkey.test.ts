@@ -417,6 +417,18 @@ describe("createPasskeyFactor — listing and store failures", () => {
     expect(listed.ok && listed.data.map((row) => row.kind)).toEqual(["passkey"]);
   });
 
+  it("reports a lost enrolment race as `already-enrolled`, since the account does hold the factor", async () => {
+    const scene = world();
+    scene.factors.store.enrol = () => Promise.resolve(err(new AuthStoreError("conflict", "factors.enrol")));
+    expect(await offer(scene)).toEqual({ ok: false, error: "already-enrolled" });
+  });
+
+  it("still reports a store outage on that same write as `unavailable`", async () => {
+    const scene = world();
+    scene.factors.store.enrol = () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol")));
+    expect(await offer(scene)).toEqual({ ok: false, error: "unavailable" });
+  });
+
   it("reports an I/O failure as `unavailable`, never as a refused ceremony", async () => {
     const scene = world();
     const broken: UserStore = { ...scene.users.store, findById: () => Promise.resolve(err(new AuthStoreError("unavailable", "users.findById"))) };

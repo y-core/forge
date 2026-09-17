@@ -8,10 +8,15 @@ import type { AuthIdentity } from "./types";
 /** The session key the signed-in user's id is stored under. @public */
 export const AUTH_SESSION_KEY = "auth.userId";
 
-// The absolute lifetime is measured from here, and it is what a cross-session revocation compares
-// against, so it is written once at sign-in and never refreshed.
+// The absolute lifetime is measured from here, so it is written once at sign-in and never refreshed:
+// a stamp that moved would be a session an attacker who took it could keep alive forever.
 /** The session key recording when this session was established. @public */
 export const AUTH_SIGNED_IN_SESSION_KEY = "auth.signedInAt";
+
+// A second key because one stamp cannot carry two meanings: the actor raising a revocation barrier
+// must survive it, and letting them move the lifetime stamp to do that resets their own expiry.
+/** The session key recording the revocation barrier this session has already been carried past. @public */
+export const AUTH_SURVIVED_SESSION_KEY = "auth.survivedRevocationAt";
 
 /** The session key recording when this session completed a step-up verification. @public */
 export const AUTH_STEP_UP_SESSION_KEY = "auth.stepUpAt";
@@ -32,22 +37,25 @@ function readStamp(session: Session, key: string): number | null {
 
 // The mark is cleared here rather than left for the caller: a new sign-in has proven the primary
 // factor and nothing else, so a carried-over step-up would satisfy the demand it has to meet.
-/** Binds a signed-in user to `session` as of `at`, clearing any step-up mark and rotating the session id. @public */
-export function establishAuthSession(session: Session, userId: string, at: number): void {
+/** Binds a signed-in user to `session` as of `at` and no later than `now`, clearing any step-up mark and rotating the session id. @public */
+export function establishAuthSession(session: Session, userId: string, at: number, now: number): void {
   session.set(AUTH_SESSION_KEY, userId);
   // Never later than now, for the reason `markAuthStepUp` clamps: a stamp in the future is a
   // lifetime that never runs out and a revocation that never reaches this session.
-  session.set(AUTH_SIGNED_IN_SESSION_KEY, Math.min(at, Date.now()));
+  session.set(AUTH_SIGNED_IN_SESSION_KEY, Math.min(at, now));
+  session.unset(AUTH_SURVIVED_SESSION_KEY);
   session.unset(AUTH_STEP_UP_SESSION_KEY);
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);
   session.regenerateId(true);
 }
 
-// `UserStore.revokeSessions` raises a barrier refusing every session established at or before it,
-// the one that raised it included, so the actor's own stamp is moved past it.
-/** Moves `session` past a revocation barrier raised at `at`, so a caller's own session survives it. @public */
-export function renewAuthSession(session: Session, at: number): void {
-  session.set(AUTH_SIGNED_IN_SESSION_KEY, at + 1);
+// `UserStore.revokeSessions` refuses every session established at or before the barrier, the one
+// that raised it included. Only the barrier stamp moves; moving the other restarts the lifetime.
+/** Moves `session` past a revocation barrier raised at `at` and no later than `now`, so a caller's own session survives it. @public */
+export function renewAuthSession(session: Session, at: number, now: number): void {
+  // Never later than now, for the reason `establishAuthSession` clamps: a barrier stamp in the
+  // future carries this session past every revocation raised until the clock catches up.
+  session.set(AUTH_SURVIVED_SESSION_KEY, Math.min(at, now) + 1);
 }
 
 /** Records on `session` the address a started sign-in is waiting on. @public */
@@ -63,15 +71,16 @@ export function resolveAuthSigninPending(session: Session): string | null {
 
 // A mark is a memory of something that happened, so it cannot be in the future; a skewed clock or
 // an injected one must not be able to make one last forever.
-/** Records on `session` that its step-up verification passed at `at`, never later than now. @public */
-export function markAuthStepUp(session: Session, at: number): void {
-  session.set(AUTH_STEP_UP_SESSION_KEY, Math.min(at, Date.now()));
+/** Records on `session` that its step-up verification passed at `at`, never later than the caller's own `now`. @public */
+export function markAuthStepUp(session: Session, at: number, now: number): void {
+  session.set(AUTH_STEP_UP_SESSION_KEY, Math.min(at, now));
 }
 
 /** Drops every auth key from `session`, leaving the session id alone. @internal */
 function revokeAuthSession(session: Session): void {
   session.unset(AUTH_SESSION_KEY);
   session.unset(AUTH_SIGNED_IN_SESSION_KEY);
+  session.unset(AUTH_SURVIVED_SESSION_KEY);
   session.unset(AUTH_STEP_UP_SESSION_KEY);
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);
 }
@@ -102,10 +111,11 @@ export async function resolveAuthIdentity(session: Session, users: Pick<UserStor
   // It leaves the session alone, though — clearing on a blip would sign every user out of it.
   if (!found.ok) return null;
 
-  // Without this, reactivating an account revives every cookie issued before it, and the barrier
-  // reaches the sessions this request cannot see only on their own next request.
+  // Without this, reactivating an account revives every cookie issued before it. It reads the
+  // barrier stamp where there is one, so the actor who raised one keeps their own session.
   const invalidBefore = found.data?.sessionsInvalidBefore ?? null;
-  if (found.data === null || found.data.deactivatedAt !== null || (invalidBefore !== null && signedInAt <= invalidBefore)) {
+  const carriedPast = readStamp(session, AUTH_SURVIVED_SESSION_KEY) ?? signedInAt;
+  if (found.data === null || found.data.deactivatedAt !== null || (invalidBefore !== null && carriedPast <= invalidBefore)) {
     revokeAuthSession(session);
     return null;
   }

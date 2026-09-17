@@ -2,7 +2,12 @@ import { describe, expect, it } from "bun:test";
 
 import { base64urlDecode, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
-import { AUTH_PASSKEY_CHALLENGE_MIN_BYTES, AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS } from "../config";
+import {
+  AUTH_PASSKEY_CHALLENGE_MAX_BYTES,
+  AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
+  AUTH_PASSKEY_TTL_MAX_SECONDS,
+  AUTH_PASSKEY_TTL_MIN_SECONDS,
+} from "../config";
 import { AuthStoreError } from "../errors";
 import type { AuthChallenge, AuthCredential, ChallengeStore, CredentialStore } from "../types";
 import { createPasskeyRegistrationOptions, createPasskeyRequestOptions, passkeyChallengeKey } from "./options";
@@ -234,6 +239,21 @@ describe("the challenge floor both builders hold", () => {
   it("accepts the floor itself, at the byte length it was asked for", async () => {
     const built = await createPasskeyRequestOptions(ceremony({ challengeBytes: AUTH_PASSKEY_CHALLENGE_MIN_BYTES }), { sessionId: SESSION });
     expect(built.ok && base64urlDecode(built.data.challenge).byteLength).toBe(AUTH_PASSKEY_CHALLENGE_MIN_BYTES);
+  });
+
+  it("refuses a challenge past the ceiling, which every ceremony would store and send", async () => {
+    const over = AUTH_PASSKEY_CHALLENGE_MAX_BYTES + 1;
+    await expect(createPasskeyRegistrationOptions(ceremony({ challengeBytes: over }), SUBJECT)).rejects.toThrow(
+      `createPasskeyRegistrationOptions: challengeBytes is ${over}, above the 64-byte ceiling — a challenge is stored and sent on every ceremony, and no authenticator asks for more.`,
+    );
+    await expect(createPasskeyRequestOptions(ceremony({ challengeBytes: over }), { sessionId: SESSION })).rejects.toThrow(
+      "above the 64-byte ceiling",
+    );
+  });
+
+  it("accepts the ceiling itself, at the byte length it was asked for", async () => {
+    const built = await createPasskeyRequestOptions(ceremony({ challengeBytes: AUTH_PASSKEY_CHALLENGE_MAX_BYTES }), { sessionId: SESSION });
+    expect(built.ok && base64urlDecode(built.data.challenge).byteLength).toBe(AUTH_PASSKEY_CHALLENGE_MAX_BYTES);
   });
 });
 

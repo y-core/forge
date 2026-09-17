@@ -23,8 +23,6 @@ const buttonBox = cva({
   defaultVariants: { size: "md", shape: "default" },
 });
 
-// Two cells only, applied over `toneVariants` rather than beside it: a neutral button rests on the
-// page's own chrome, so its outline and ghost take `--input` and `--accent` instead of the tone.
 const NEUTRAL_CHROME: Partial<Record<Appearance, string>> = {
   outline: "border-input text-foreground hover:bg-accent hover:text-accent-foreground",
   ghost: "text-foreground hover:bg-accent hover:text-accent-foreground",

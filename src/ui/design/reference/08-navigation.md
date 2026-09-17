@@ -55,6 +55,10 @@ primitive the rail is built from). The one-barrel rule in `06-forms.md` applies 
 | `NavSlot` | `slot`, `label?`, `filters?` | Anything that is not a destination — identity, a search box, a `ThemeToggle` |
 | `NavGroup` | `heading`, `group`, `filters?` | A heading over destinations that stay **visible**. Section level only |
 
+`filters` is a visibility convenience and never a permission: every filtered item's label and `href` reach every viewer, and only its painting is
+suppressed. Reach for it to keep a bar uncluttered, never to keep a destination secret — the route needs its own guard either way. An empty list
+hides, since no token can match it.
+
 `resolveHref` takes a route-map **key** and returns a URL, and nothing requires that URL to be a route: an in-page navigation resolves each key to a
 fragment, which is what lets one `Navbar` serve as a table of contents for a single long page.
 
@@ -379,7 +383,7 @@ navigation.
 | `THEME_STORAGE_KEY` | `"themePreference"` | The `localStorage` key |
 | `THEME_ATTR` | `"data-theme-preference"` | The `<html>` attribute recording the preference |
 | `DARK_CLASS` | `"dark"` | The class `<html>` carries when dark is active |
-| `DEFAULT_PREF` | `"system"` | The server-side default, resolved client-side |
+| `DEFAULT_THEME_PREF` | `"system"` | The server-side default, resolved client-side |
 | `FOUC_SCRIPT` | inline script | Sets both before first paint |
 
 **Default: embed `FOUC_SCRIPT` in a nonce'd `<script>` in the `<head>`.**

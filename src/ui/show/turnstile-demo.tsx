@@ -51,7 +51,7 @@ export const TURNSTILE_TEST_KEYS: readonly TurnstileTestKey[] = [
 export const SIZES = ["normal", "compact", "flexible"] as const;
 export const LOADS = ["eager", "focus"] as const;
 export const CHALLENGES = ["render", "submit"] as const;
-export const APPEARANCES = ["always", "execute", "interaction-only"] as const;
+export const TURNSTILE_APPEARANCES = ["always", "execute", "interaction-only"] as const;
 export const LANGUAGES = ["auto", "en", "de", "fr", "es", "ja", "ar"] as const;
 
 /** What the page renders when the query string says nothing. @public */
@@ -63,14 +63,12 @@ export const TURNSTILE_DEMO_DEFAULTS: TurnstileDemoOptions = {
   appearance: "always",
   action: "",
   cData: "",
-  responseFieldName: "",
   language: "auto",
   tabindex: null,
 };
 
 const ACTION_CHARS = /^[a-zA-Z0-9_-]{0,32}$/;
 const CDATA_CHARS = /^[a-zA-Z0-9_-]{0,255}$/;
-const FIELD_NAME_CHARS = /^[a-zA-Z0-9_-]{0,64}$/;
 
 function pick<T extends string>(params: URLSearchParams, name: string, allowed: readonly T[], fallback: T): T {
   const raw = params.get(name);
@@ -82,7 +80,6 @@ export function loadTurnstileOptions(params: URLSearchParams): TurnstileDemoOpti
   const key = TURNSTILE_TEST_KEYS.find((candidate) => candidate.id === params.get("key"));
   const action = params.get("action") ?? "";
   const cData = params.get("cData") ?? "";
-  const responseFieldName = params.get("responseFieldName") ?? "";
   const rawTab = params.get("tabindex");
   const tab = rawTab === null || rawTab.trim() === "" ? Number.NaN : Number(rawTab);
   return {
@@ -90,10 +87,9 @@ export function loadTurnstileOptions(params: URLSearchParams): TurnstileDemoOpti
     size: pick(params, "size", SIZES, TURNSTILE_DEMO_DEFAULTS.size),
     load: pick(params, "load", LOADS, TURNSTILE_DEMO_DEFAULTS.load),
     challenge: pick(params, "challenge", CHALLENGES, TURNSTILE_DEMO_DEFAULTS.challenge),
-    appearance: pick(params, "appearance", APPEARANCES, TURNSTILE_DEMO_DEFAULTS.appearance),
+    appearance: pick(params, "appearance", TURNSTILE_APPEARANCES, TURNSTILE_DEMO_DEFAULTS.appearance),
     action: ACTION_CHARS.test(action) ? action : "",
     cData: CDATA_CHARS.test(cData) ? cData : "",
-    responseFieldName: FIELD_NAME_CHARS.test(responseFieldName) ? responseFieldName : "",
     language: pick(params, "language", LANGUAGES, TURNSTILE_DEMO_DEFAULTS.language),
     tabindex: Number.isInteger(tab) && tab >= -1 && tab <= 32_767 ? tab : null,
   };
@@ -113,7 +109,6 @@ export function turnstileSnippet(options: TurnstileDemoOptions): string {
   if (options.appearance !== "always") props.push(`appearance='${options.appearance}'`);
   if (options.action !== "") props.push(`action='${options.action}'`);
   if (options.cData !== "") props.push(`cData='${options.cData}'`);
-  if (options.responseFieldName !== "") props.push(`responseFieldName='${options.responseFieldName}'`);
   if (options.language !== "auto") props.push(`language='${options.language}'`);
   if (options.tabindex !== null) props.push(`tabindex={${options.tabindex}}`);
   return `<Turnstile ${props.join(" ")} />`;
@@ -162,7 +157,7 @@ const OptionsForm: FC<{ data: TurnstileDemoOptions; path: string; icon: DemoIcon
       {options(CHALLENGES, data.challenge)}
     </OptionSelect>
     <OptionSelect name='appearance' label='appearance' icon={icon}>
-      {options(APPEARANCES, data.appearance)}
+      {options(TURNSTILE_APPEARANCES, data.appearance)}
     </OptionSelect>
     <OptionSelect name='language' label='language' icon={icon}>
       {options(LANGUAGES, data.language)}
@@ -178,11 +173,6 @@ const OptionsForm: FC<{ data: TurnstileDemoOptions; path: string; icon: DemoIcon
       <FormField.Description name='cData'>
         Returned by siteverify, so a token can be matched to a record. Up to 255 of the same charset.
       </FormField.Description>
-    </FormField>
-    <FormField name='responseFieldName' class={OPTION_FIELD}>
-      <FormField.Label name='responseFieldName'>responseFieldName</FormField.Label>
-      <Input name='responseFieldName' value={data.responseFieldName} placeholder='cf-turnstile-signup' field={{ name: "responseFieldName" }} />
-      <FormField.Description name='responseFieldName'>Renames the hidden token input, so two widgets can share one form.</FormField.Description>
     </FormField>
     <FormField name='tabindex' class={OPTION_FIELD}>
       <FormField.Label name='tabindex'>tabindex</FormField.Label>
@@ -218,7 +208,6 @@ const PlaygroundWidget: FC<{ data: TurnstileDemoOptions; paths: ShowcasePaths }>
       appearance={data.appearance}
       {...(data.action === "" ? {} : { action: data.action })}
       {...(data.cData === "" ? {} : { cData: data.cData })}
-      {...(data.responseFieldName === "" ? {} : { responseFieldName: data.responseFieldName })}
       {...(data.language === "auto" ? {} : { language: data.language })}
       {...(data.tabindex === null ? {} : { tabindex: data.tabindex })}
     />
@@ -269,8 +258,6 @@ const VariantsSection: FC = () => (
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} size='flexible' load='focus' />
         <Button type='submit'>Submit</Button>
       </Form>
-      {/* `hx-post`, because the deferred challenge is run from htmx's `htmx:confirm` seam and a
-        native form has no request to hold; `interaction-only` is Cloudflare's documented pairing. */}
       <Form action='#' method='post' hx-post='#' class='w-full max-w-xs space-y-3'>
         <Input type='email' name='turnstile-email-submit' placeholder='you@example.com' />
         <Turnstile siteKey={TURNSTILE_PASS_KEY.siteKey} challenge='submit' appearance='interaction-only' />

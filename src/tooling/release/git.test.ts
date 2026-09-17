@@ -17,6 +17,8 @@ const {
   readFileAtRef,
   tagIsAncestorOfHead,
   remoteTags,
+  currentBranch,
+  defaultBranch,
 } = await import("./git");
 
 describe("gitExec()", () => {
@@ -285,5 +287,36 @@ describe("tagExists()", () => {
   it("returns false when git tag --list returns an empty string", () => {
     mockExecSync.mockReturnValue("");
     expect(tagExists("/cwd", "v1.2.3")).toBe(false);
+  });
+});
+
+describe("currentBranch()", () => {
+  it("names the branch HEAD is on", () => {
+    mockExecSync.mockReturnValue("main\n");
+    expect(currentBranch("/cwd")).toBe("main");
+  });
+
+  it("answers null in a detached HEAD, which git names HEAD", () => {
+    mockExecSync.mockReturnValue("HEAD\n");
+    expect(currentBranch("/cwd")).toBe(null);
+  });
+});
+
+describe("defaultBranch()", () => {
+  it("strips the remote from the ref the remote publishes from", () => {
+    mockExecSync.mockReturnValue("origin/trunk\n");
+    expect(defaultBranch("/cwd")).toBe("trunk");
+  });
+
+  // `git clone` writes this ref; `git init` + `git remote add` + `git push -u` does not, so its
+  // absence is an unanswered question and never an answer of `main`.
+  it("answers null when the remote names no publishing branch", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("ref refs/remotes/origin/HEAD is not a symbolic ref");
+    });
+    expect(defaultBranch("/cwd")).toBe(null);
+
+    mockExecSync.mockReturnValue("");
+    expect(defaultBranch("/cwd")).toBe(null);
   });
 });

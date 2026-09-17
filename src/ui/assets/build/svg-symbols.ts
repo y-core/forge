@@ -51,32 +51,229 @@ function resolvedScheme(value: string): string {
     .toLowerCase();
 }
 
-const PASSES: readonly ((markup: string) => string)[] = [
-  (markup) => markup.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ""),
-  (markup) => markup.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, ""),
-  (markup) => markup.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ""),
-  (markup) => markup.replace(/<(?:animate|set)\b[^>]*\battributeName\s*=\s*["'](?:xlink:)?href["'][^>]*(?:\/>|>[\s\S]*?<\/(?:animate|set)>)/gi, ""),
-  (markup) =>
-    markup.replace(/\s+(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, (match, value: string) => {
-      const scheme = resolvedScheme(value);
-      return scheme.startsWith("javascript:") || scheme.startsWith("data:text/html") ? "" : match;
-    }),
-  (markup) => markup.replace(/\s+on[a-zA-Z]+\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, ""),
-];
+/** Elements dropped with everything they contain, whether or not their closing tag is present. */
+const DROPPED_ELEMENTS = new Set(["script", "style", "foreignobject"]);
 
-// Every pass only deletes, so a round that changes anything shortens the markup and the loop ends.
-// Reaching the cap means an adversarial nesting depth, and half-stripped markup is worse than none.
-const MAX_ROUNDS = 8;
+/** The dropped elements whose content is raw text, so no element can nest inside them. */
+const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
 
-/** Deletes every script, style, foreignObject, event handler and unsafe `href` from SVG markup, repeating until it stops changing. @public */
-export function sanitizeSVG(content: string): string {
-  let result = content;
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const next = PASSES.reduce((markup, pass) => pass(markup), result);
-    if (next === result) return result;
-    result = next;
+/** SMIL elements that retarget one attribute of the element they sit in. */
+const RETARGETING_ELEMENTS = new Set(["animate", "animatetransform", "set"]);
+
+/** The attribute names a SMIL animation may retarget: presentation and geometry, never a URL. */
+const ANIMATABLE_ATTRS = new Set([
+  "color",
+  "cx",
+  "cy",
+  "d",
+  "display",
+  "fill",
+  "fill-opacity",
+  "font-size",
+  "height",
+  "offset",
+  "opacity",
+  "points",
+  "r",
+  "rx",
+  "ry",
+  "stop-color",
+  "stop-opacity",
+  "stroke",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "stroke-opacity",
+  "stroke-width",
+  "transform",
+  "visibility",
+  "width",
+  "x",
+  "x1",
+  "x2",
+  "y",
+  "y1",
+  "y2",
+]);
+
+/** Attributes a browser resolves as a URL, so a scheme in one of them executes. */
+const URL_VALUED_ATTRS = new Set(["action", "data", "formaction", "href", "poster", "src", "xlink:base", "xlink:href", "xml:base"]);
+
+/** An event handler is spelled `on` plus letters and nothing else, which is what keeps `only-child` out. */
+const HANDLER_ATTR = /^on[a-z]+$/i;
+
+/** A tag name the serializer may re-emit; the tokenizer accepts `<` in one, and emitting that reopens a tag. */
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9:_.-]*$/;
+
+/** An attribute name the serializer may re-emit. */
+const ATTR_NAME = /^[A-Za-z_:][A-Za-z0-9_.:-]*$/;
+
+/** One attribute as the tokenizer read it, carrying the source text the serializer re-emits. */
+interface SvgAttr {
+  name: string;
+  value: string;
+  source: string;
+}
+
+/** Every construct the sanitizer understands; anything else in the source is dropped rather than re-emitted. */
+type SvgToken =
+  | { kind: "text"; text: string }
+  | { kind: "start"; name: string; attrs: readonly SvgAttr[]; selfClosing: boolean }
+  | { kind: "end"; name: string };
+
+/** Reads one tag's attributes from `start`, with the index just past the tag that closed them. */
+function readAttrs(markup: string, start: number): { attrs: SvgAttr[]; selfClosing: boolean; next: number } {
+  const attrs: SvgAttr[] = [];
+  let p = start;
+  let selfClosing = false;
+  while (p < markup.length) {
+    // `/` separates attributes as readily as a space does, so `<circle r="5"/onload=…>` carries two —
+    // and only a `/` immediately before the `>` closes the tag.
+    let slash = false;
+    while (/[\s/]/.test(markup.charAt(p))) {
+      if (markup.charAt(p) === "/") slash = true;
+      p++;
+    }
+    if (p >= markup.length) break;
+    if (markup.charAt(p) === ">") {
+      selfClosing = slash;
+      p++;
+      break;
+    }
+    const nameStart = p;
+    while (p < markup.length && !/[\s/>=]/.test(markup.charAt(p))) p++;
+    const name = markup.slice(nameStart, p);
+    while (/\s/.test(markup.charAt(p))) p++;
+    if (markup.charAt(p) !== "=") {
+      attrs.push({ name, value: "", source: name });
+      continue;
+    }
+    p++;
+    while (/\s/.test(markup.charAt(p))) p++;
+    const quote = markup.charAt(p);
+    if (quote === '"' || quote === "'") {
+      const end = markup.indexOf(quote, p + 1);
+      const value = markup.slice(p + 1, end === -1 ? markup.length : end);
+      attrs.push({ name, value, source: `${name}=${quote}${value}${quote}` });
+      p = end === -1 ? markup.length : end + 1;
+      continue;
+    }
+    const valueStart = p;
+    while (p < markup.length && !/[\s>]/.test(markup.charAt(p))) p++;
+    const value = markup.slice(valueStart, p);
+    attrs.push({ name, value, source: `${name}=${value}` });
   }
-  throw new Error(`sanitizeSVG: markup still changing after ${MAX_ROUNDS} rounds — refusing to emit partially sanitized SVG`);
+  return { attrs, selfClosing, next: p };
+}
+
+/** The index just past a dropped element's closing tag, or `null` when the markup carries none. */
+function skipElement(markup: string, from: number, name: string): number | null {
+  const lower = markup.toLowerCase();
+  let depth = 1;
+  let p = from;
+  while (p < markup.length) {
+    const closeAt = lower.indexOf(`</${name}`, p);
+    if (closeAt === -1) return null;
+    const openAt = RAW_TEXT_ELEMENTS.has(name) ? -1 : lower.indexOf(`<${name}`, p);
+    if (openAt !== -1 && openAt < closeAt) {
+      depth++;
+      p = openAt + name.length + 1;
+      continue;
+    }
+    depth--;
+    const gt = markup.indexOf(">", closeAt);
+    p = gt === -1 ? markup.length : gt + 1;
+    if (depth === 0) return p;
+  }
+  return null;
+}
+
+/** Whether a SMIL element names an attribute that is safe to animate. */
+function retargetsSafely(attrs: readonly SvgAttr[]): boolean {
+  const target = attrs.find((attr) => attr.name.toLowerCase() === "attributename");
+  return target !== undefined && ANIMATABLE_ATTRS.has(target.value.trim().toLowerCase());
+}
+
+/** Reads markup into tokens, dropping every element whose content may never be emitted. */
+function tokenize(markup: string): SvgToken[] {
+  const tokens: SvgToken[] = [];
+  let i = 0;
+  while (i < markup.length) {
+    const lt = markup.indexOf("<", i);
+    if (lt === -1) {
+      tokens.push({ kind: "text", text: markup.slice(i) });
+      break;
+    }
+    if (lt > i) tokens.push({ kind: "text", text: markup.slice(i, lt) });
+    const after = markup.charAt(lt + 1);
+
+    if (after === "!" || after === "?") {
+      const closer = markup.startsWith("<!--", lt) ? "-->" : markup.startsWith("<![CDATA[", lt) ? "]]>" : ">";
+      const end = markup.indexOf(closer, lt + 2);
+      i = end === -1 ? markup.length : end + closer.length;
+      continue;
+    }
+
+    if (after === "/") {
+      const gt = markup.indexOf(">", lt);
+      const name = markup.slice(lt + 2, gt === -1 ? markup.length : gt).trim();
+      if (TAG_NAME.test(name)) tokens.push({ kind: "end", name });
+      i = gt === -1 ? markup.length : gt + 1;
+      continue;
+    }
+
+    if (!/[A-Za-z]/.test(after)) {
+      tokens.push({ kind: "text", text: "<" });
+      i = lt + 1;
+      continue;
+    }
+
+    let p = lt + 1;
+    while (p < markup.length && !/[\s/>]/.test(markup.charAt(p))) p++;
+    const name = markup.slice(lt + 1, p);
+    const read = readAttrs(markup, p);
+    i = read.next;
+    if (!TAG_NAME.test(name)) continue;
+
+    const lower = name.toLowerCase();
+    if (DROPPED_ELEMENTS.has(lower) || (RETARGETING_ELEMENTS.has(lower) && !retargetsSafely(read.attrs))) {
+      const end = read.selfClosing ? i : skipElement(markup, i, lower);
+      // An unterminated raw-text element swallows the rest of the file as text, so dropping the tag
+      // alone would leave that text to be re-emitted; every other element parses on past its own tag.
+      i = end ?? (RAW_TEXT_ELEMENTS.has(lower) ? markup.length : i);
+      continue;
+    }
+    tokens.push({ kind: "start", name, attrs: read.attrs, selfClosing: read.selfClosing });
+  }
+  return tokens;
+}
+
+/** Whether one attribute may be re-emitted: a valid name, no handler, and no scheme that executes. */
+function admitsAttr(attr: SvgAttr): boolean {
+  if (!ATTR_NAME.test(attr.name) || HANDLER_ATTR.test(attr.name)) return false;
+  if (!URL_VALUED_ATTRS.has(attr.name.toLowerCase())) return true;
+  const scheme = resolvedScheme(attr.value);
+  return !scheme.startsWith("javascript:") && !scheme.startsWith("data:text/html");
+}
+
+/** Writes the tokens back out, keeping only the attributes `admitsAttr` allows. */
+function serialize(tokens: readonly SvgToken[]): string {
+  let out = "";
+  for (const token of tokens) {
+    if (token.kind === "text") {
+      out += token.text;
+    } else if (token.kind === "end") {
+      if (!DROPPED_ELEMENTS.has(token.name.toLowerCase())) out += `</${token.name}>`;
+    } else {
+      const kept = token.attrs.filter(admitsAttr).map((attr) => attr.source);
+      out += `<${token.name}${kept.length === 0 ? "" : ` ${kept.join(" ")}`}${token.selfClosing ? "/>" : ">"}`;
+    }
+  }
+  return out;
+}
+
+/** Re-serializes SVG markup from one tokenizer pass, emitting only what the allowlists admit. @public */
+export function sanitizeSVG(content: string): string {
+  return serialize(tokenize(content));
 }
 
 const PROPAGATABLE_ATTRS = ["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"] as const;

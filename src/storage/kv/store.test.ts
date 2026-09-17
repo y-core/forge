@@ -1,5 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
+import { createLogger } from "../../logging/logger";
+import type { LogRecord } from "../../logging/types";
 import { fakeKV } from "../../testing/fakes";
 import { bytesCodec, textCodec } from "./codec";
 import { createKVStore } from "./store";
@@ -210,5 +212,45 @@ describe("createKVStore — || key rejection", () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error.message).toContain("||");
+  });
+});
+
+describe("createKVStore() logging", () => {
+  it("writes nothing to the console when no logger is passed", async () => {
+    const written = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const store = createKVStore(makeKVStub());
+      await store.getOrSet("absent", () => "value");
+      expect(written).not.toHaveBeenCalled();
+    } finally {
+      written.mockRestore();
+    }
+  });
+
+  it("records the miss on a logger the caller passes", async () => {
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/kv", { channels: [{ write: (record) => void records.push(record) }] });
+    const store = createKVStore(makeKVStub(), { logger });
+
+    await store.getOrSet("absent", () => "value");
+
+    expect(records.map((record) => record.message)).toEqual(["kv.miss"]);
+  });
+
+  it("records a decode failure as a serialized error carrying the stack", async () => {
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/kv", { channels: [{ write: (record) => void records.push(record) }] });
+    const kv = makeKVStub();
+    await kv.put("broken", "{not json");
+    const store = createKVStore(kv, { logger });
+
+    const res = await store.get("broken");
+
+    expect(res.ok).toBe(false);
+    const error = records[0]?.data?.error as { name: string; message: string; stack?: string };
+    expect(records[0]?.message).toBe("kv.decode-error");
+    expect(error.name).toBe("SyntaxError");
+    expect(error.message).not.toBe("");
+    expect(error.stack).toContain("store.ts");
   });
 });

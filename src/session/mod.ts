@@ -4,7 +4,7 @@ export { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 export { createMemorySessionStorage } from "@remix-run/session/memory-storage";
 export type { AnonymousSessionOptions } from "./types";
 export { createAnonymousSession } from "./anonymous";
-export type { CookieAttributes, SignedCookie, UnsignedCookie } from "./types";
+export type { CookieAttributes, SignedCookie, SignedCookieAttributes, SignedCookieReading, UnsignedCookie } from "./types";
 export type { KVSessionStorageOptions, SessionKVBinding } from "./types";
 export { createKVSessionStorage } from "./kv-storage";
 export type { SessionCookieOptions } from "./types";

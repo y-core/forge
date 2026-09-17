@@ -713,4 +713,8 @@ export interface SsrBoundaryCheckConfig {
   sources: readonly string[];
   /** Basenames permitted to cross the boundary; the registration entry points. */
   entryPoints: readonly string[];
+  /** This package's own name, so a self-import by published subpath is recognised as one. */
+  packageName?: string;
+  /** The manifest's `exports` map, read for the subpaths that reach the browser runtime. */
+  exports?: ExportsMap;
 }

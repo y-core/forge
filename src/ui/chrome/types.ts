@@ -13,7 +13,7 @@ export interface DockItem<G extends string = string> {
   icon: G;
   /** Marks the destination the reader is on: `aria-current="page"` plus `data-selected`. */
   current?: boolean | undefined;
-  /** Auth tokens; the item shows only when one is in the active set. */
+  /** Presentational visibility tokens, not access control: the item is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
@@ -26,11 +26,11 @@ export interface DockProps<G extends string = string> extends Omit<JSX.Intrinsic
   /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
   resolveHref: (key: string) => string;
   icon: ForgeIcon<G>;
-  /** The bar's accessible name. @default "Primary" */
+  /** The bar's accessible name. @default LABEL_DEFAULTS.dock */
   label?: string | undefined;
   size?: Size | undefined;
   hideAbove?: DockHideAbove | undefined;
-  /** Initial auth tokens for correct first paint; server-hidden only, with no runtime re-sync. */
+  /** The tokens held at first paint; server-hidden only, with no runtime re-sync, and never a substitute for a route guard. */
   activeFilters?: string[] | undefined;
 }
 
@@ -41,7 +41,7 @@ export interface NavLink {
   href: string;
   /** This link is the page the reader is on. `BAR_LINK`'s `aria-[current]:*` utilities paint it. */
   current?: boolean | undefined;
-  /** Auth tokens; the item shows only when one is in the active set. */
+  /** Presentational visibility tokens, not access control: the item is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
@@ -49,7 +49,7 @@ export interface NavLink {
 export interface NavMenu {
   label: string;
   items: NavItem[];
-  /** Auth tokens; the menu shows only when one is in the active set. */
+  /** Presentational visibility tokens, not access control: the menu is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
@@ -57,7 +57,7 @@ export interface NavMenu {
 export interface NavSlot {
   slot: JSXNode | string;
   label?: string | undefined;
-  /** Auth tokens; the slot shows only when one is in the active set. */
+  /** Presentational visibility tokens, not access control: the slot is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
@@ -68,7 +68,7 @@ export interface NavMegaMenu {
   groups: NavGroup[];
   /** Which edge of the trigger the panel aligns to; `end` keeps a wide panel on the last bar item inside the viewport. */
   align?: Align | undefined;
-  /** Auth tokens; the megamenu shows only when one is in the active set. */
+  /** Presentational visibility tokens, not access control: the megamenu is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
@@ -80,7 +80,7 @@ export interface NavGroup {
   heading: string;
   /** The group's items. Renders as visible bar links; nests no further. */
   group: NavItem[];
-  /** Auth tokens; the group shows only when one is in the active set. */
+  /** Presentational visibility tokens, not access control: the group is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
@@ -121,10 +121,10 @@ export type NavPlacement = "top" | "bottom" | "left" | "right";
 /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. @public */
 export type NavCollapsedAs = "inline" | "drawer";
 
-/** The two a drawer's toggle draws instead. One pair, drawn and mirrored under `rtl:` */
+/** What a drawer's toggle draws instead of a hamburger, mirrored under `rtl:`. @public */
 export type NavDrawerGlyph = "panel-open" | "panel-close";
 
-/** Props for {@link Navbar}. `collapsedAs` and `collapsible` decide the glyphs owed: opens off-canvas. @public */
+/** Props for {@link Navbar}; `collapsedAs` and `collapsible` decide which glyphs the sprite owes. @public */
 export type NavbarProps = NavbarInlineProps | NavbarBarDrawerProps | NavbarRailDrawerProps;
 
 /** Props for {@link ThemeToggle}. @public */
@@ -133,6 +133,8 @@ export interface ThemeToggleProps {
   icon: ForgeIcon<"sun" | "moon" | "monitor">;
   /** Control size, mapped to a 16 / 20 / 24 px icon. @default "md" */
   size?: Size | undefined;
+  /** The name read for each pane, one per theme. @default LABEL_DEFAULTS.themeLight / .themeDark / .themeSystem */
+  labels?: { light?: string | undefined; dark?: string | undefined; system?: string | undefined } | undefined;
   /** Additional classes merged onto the toggle button. */
   class?: string | undefined;
 }
@@ -235,12 +237,14 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
   resolveHref: (key: string) => string;
   /** Fills string-keyed slots. */
   slots?: Record<string, JSXNode> | undefined;
-  /** Initial auth tokens for correct first paint. */
+  /** The tokens held at first paint, deciding which `filters` items render unhidden; never a substitute for a route guard. */
   activeFilters?: string[] | undefined;
   /** Desktop edge to pin the bar to; defaults to `"top"`, or `"left"` when `collapsible="always"`. */
   placement?: NavPlacement | undefined;
   /** Which breakpoints the bar collapses behind its toggle at. */
   collapsible?: NavCollapsible | undefined;
+  /** Accessible name for the collapse toggle. @default LABEL_DEFAULTS.navbarToggle */
+  toggleLabel?: string | undefined;
   /** Renders the underlying `<details>` open on first paint. Attribute-only; there is no controller. */
   defaultOpen?: boolean | undefined;
   /** DOM id for the bar; also namespaces the generated menu ids. */
@@ -250,7 +254,6 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
 
 /** The in-the-flow bar: the toggle is a hamburger, so the sprite owes nothing new. */
 interface NavbarInlineProps extends NavbarSharedProps {
-  /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. */
   collapsedAs?: "inline" | undefined;
   icon: ForgeIcon<NavGlyph>;
 }

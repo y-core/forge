@@ -151,10 +151,17 @@
    The cells are divided by a rule per boundary, in the field's own border colour, rather than filled:
    the frame's border already draws the two outer edges, so a filled cell would double them. The tile
    is `length − 1` cells wide and starts one cell in, which is what puts a rule at every *interior*
-   boundary and none at the edges. */
+   boundary and none at the edges.
+
+   All three of `width`, `min-width` and `max-width` pin that width, because a container that sizes
+   its children — `Field`'s vertical `[&>*]:w-full` is one, and outranks this rule — otherwise
+   stretches the frame past its grid, and the slack lands after the last rule as a wider final cell. */
 @utility otp-cells {
   --otp-cell: var(--spacing-control-md);
-  width: calc(var(--otp-length, 6) * var(--otp-cell) + 2 * var(--border-width));
+  --otp-frame: calc(var(--otp-length, 6) * var(--otp-cell) + 2 * var(--border-width));
+  width: var(--otp-frame);
+  min-width: var(--otp-frame);
+  max-width: var(--otp-frame);
   background-image: repeating-linear-gradient(to right, var(--color-input) 0 var(--border-width), transparent var(--border-width) var(--otp-cell));
   background-size: calc((var(--otp-length, 6) - 1) * var(--otp-cell)) 100%;
   background-position: var(--otp-cell) 0;

@@ -1,4 +1,4 @@
-import { asElement, closestAcross, contains, eventTarget, ownerDocument, ownerWindow, queryAcross } from "./dom";
+import { asElement, closestAcross, contains, eventTarget, ownerDocument, ownerWindow, queryTrees, shadowTrees } from "./dom";
 import { effect } from "./signal";
 import type { SignalRecord } from "./types";
 
@@ -110,8 +110,25 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
     signal.value = readControl(el, signal.value) as T[typeof field];
   };
 
+  // Discovery is the expensive half — a `querySelectorAll("*")` per tree — and `paintField` runs per
+  // pointermove frame, so the trees are re-walked only when a field matches nothing.
+  let trees = shadowTrees(root);
+
+  // Every shadow root under a bound root is a consumer's, forge authoring none (`UI_SSR_COMPONENTS.md` §1k); a detached one still answers
+  // `querySelectorAll`, so its stale hit would read as live and the control the swap put on screen would never be painted.
+  const isStale = (tree: Element | Document | DocumentFragment): boolean => {
+    const host = (tree as Partial<ShadowRoot>).host;
+    return host != null && !contains(root, host);
+  };
+
   const paintField = (field: keyof T, value: unknown) => {
-    for (const el of queryAcross<ControlElement>(root, `[data-field="${CSS.escape(String(field))}"]`)) paintControl(el, value);
+    const selector = `[data-field="${CSS.escape(String(field))}"]`;
+    let found = trees.some(isStale) ? [] : queryTrees<ControlElement>(trees, selector);
+    if (found.length === 0) {
+      trees = shadowTrees(root);
+      found = queryTrees<ControlElement>(trees, selector);
+    }
+    for (const el of found) paintControl(el, value);
   };
 
   // One effect per field, not one over all of them: a repaint then touches only the controls whose
@@ -124,6 +141,8 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
     const form = event.target as Node | null;
     if (!form || !contains(form, root)) return;
     ownerWindow(root).queueMicrotask(() => {
+      // A reset can revert a control the form swapped in, so the trees are re-read before repainting.
+      trees = shadowTrees(root);
       for (const field of Object.keys(signals) as Array<keyof T>) paintField(field, signals[field].value);
     });
   };

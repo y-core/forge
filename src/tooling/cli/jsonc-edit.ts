@@ -115,7 +115,9 @@ function resolveEdit(root: JsoncNode, edit: JsoncEdit): Result<Resolved, JsoncEd
     }
 
     if (node.kind !== "object") return editError(`expected an object at ${formatPath(path.slice(0, depth))}`, path);
-    const member: JsoncMember | undefined = node.members.find((m) => m.key === seg);
+    // The last duplicate wins, which is what `JSON.parse` and wrangler both read. Editing the first
+    // would report `ok` while the value the tool actually loads stayed exactly as it was.
+    const member: JsoncMember | undefined = node.members.findLast((m) => m.key === seg);
 
     if (member === undefined) {
       if (!last) return editError(`no such key: ${formatPath(path.slice(0, depth + 1))}`, path);

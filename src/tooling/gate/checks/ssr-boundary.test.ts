@@ -1,12 +1,18 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 
 import { fail } from "../finding";
-import { boundaryViolation, checkSsrBoundary, validateSsrBoundary } from "./ssr-boundary";
+import { gateFixtureRoot } from "./gate.fixture";
+import { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./ssr-boundary";
 
 const CONFIG = { clientDirs: ["src/ui/client", "src/auth/client"], entryPoints: ["client.ts"] } as const;
+
+// A subpath inside a client directory, one whose target is a registration entry point outside every
+// client directory, and one that stays on the server.
+const EXPORTS = {
+  "./http": { import: "./src/http/mod.ts", types: "./src/http/mod.ts" },
+  "./ui/client": { import: "./src/ui/client/mod.ts", types: "./src/ui/client/mod.ts" },
+  "./ui/core/client": { import: "./src/ui/core/client.ts", types: "./src/ui/core/client.ts" },
+};
 
 const violations = (file: string, source: string) => validateSsrBoundary(file, source, CONFIG);
 
@@ -67,20 +73,60 @@ describe("validateSsrBoundary", () => {
     expect(findings[0]?.detail).toHaveLength(3);
   });
 
-  it("ignores a bare package specifier, which resolves to no file in this tree", () => {
-    expect(violations("src/ui/core/button.tsx", 'import { x } from "@y-core/forge/ui/client";\n')).toEqual([]);
+  it("ignores a third party's bare specifier, which names no client subpath of this package", () => {
+    expect(violations("src/ui/core/button.tsx", 'import { x } from "valibot";\nimport { y } from "@remix-run/headers";\n')).toEqual([]);
+  });
+});
+
+// A self-import by published subpath resolves to no relative file, so `resolveSpecifier` answers
+// `null` for it exactly as it does for a third party's — the manifest is what tells the two apart.
+describe("validateSsrBoundary — a self-import by published subpath", () => {
+  const published = { ...CONFIG, packageName: "@y-core/forge", exports: EXPORTS } as const;
+  const judge = (file: string, source: string) => validateSsrBoundary(file, source, published);
+
+  it("reports a component reaching the browser runtime through the package's own name", () => {
+    const findings = judge("src/ui/core/button.tsx", 'import { mount } from "@y-core/forge/ui/core/client";\n');
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.detail).toEqual([
+      "a `.tsx` file renders on the server, so it may never import the browser runtime",
+      "line 1: `@y-core/forge/ui/core/client`",
+    ]);
+  });
+
+  it("reports a subpath whose target is inside a client directory as readily as an entry point's", () => {
+    expect(judge("src/ui/core/button.tsx", 'import { signal } from "@y-core/forge/ui/client";\n')).toHaveLength(1);
+  });
+
+  it("still passes a third party's bare specifier, which no published subpath names", () => {
+    expect(judge("src/ui/core/button.tsx", 'import { x } from "valibot";\n')).toEqual([]);
+  });
+
+  it("still passes a published subpath that stays on the server", () => {
+    expect(judge("src/ui/core/button.tsx", 'import { html } from "@y-core/forge/http";\n')).toEqual([]);
+  });
+
+  it("still passes a type-only self-import, which is erased before any bundle sees it", () => {
+    expect(judge("src/ui/core/button.tsx", 'import type { Signal } from "@y-core/forge/ui/client";\n')).toEqual([]);
+  });
+});
+
+describe("clientSubpaths", () => {
+  it("collects a subpath inside a client directory and one whose target is a registration entry point", () => {
+    const found = clientSubpaths({ ...CONFIG, packageName: "@y-core/forge", exports: EXPORTS });
+
+    expect(found.get("@y-core/forge/ui/client")).toBe("src/ui/client/mod.ts");
+    expect(found.get("@y-core/forge/ui/core/client")).toBe("src/ui/core/client.ts");
+    expect(found.has("@y-core/forge/http")).toBe(false);
+  });
+
+  it("collects nothing when the manifest was not supplied, which is what keeps the rule opt-in", () => {
+    expect(clientSubpaths(CONFIG).size).toBe(0);
   });
 });
 
 describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
-  function fixtureRoot(files: Record<string, string>): string {
-    const root = mkdtempSync(join(tmpdir(), "forge-ssr-boundary-"));
-    for (const [path, source] of Object.entries(files)) {
-      mkdirSync(dirname(join(root, path)), { recursive: true });
-      writeFileSync(join(root, path), source, "utf-8");
-    }
-    return root;
-  }
+  const fixtureRoot = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-ssr-boundary-");
 
   const config = (root: string) => ({ root, sources: ["src/ui"], clientDirs: ["src/ui/client"], entryPoints: ["client.ts"] });
 
@@ -98,5 +144,27 @@ describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
     expect(result.ok).toBe(false);
     expect(result.findings).toEqual([fail("`src/ui` matched no source — refusing to report a green ssr-boundary gate that scanned nothing")]);
     expect(result.summary).toBe("");
+  });
+
+  it("reports a server file that imports the browser runtime, from a subdirectory the walk must descend into", () => {
+    const root = fixtureRoot({
+      "src/ui/client/signal.ts": "export const signal = 1;\n",
+      "src/ui/server/deep/nested/panel.ts": 'import { signal } from "../../../client/signal";\nexport const panel = signal;\n',
+    });
+
+    const result = checkSsrBoundary(config(root));
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.file)).toEqual(["src/ui/server/deep/nested/panel.ts"]);
+    expect(result.findings[0]?.detail?.at(-1)).toBe("line 1: `../../../client/signal`");
+  });
+
+  it("passes the same nested file when the crossing import is type-only, which is erased at emit", () => {
+    const root = fixtureRoot({
+      "src/ui/client/signal.ts": "export type Signal = number;\n",
+      "src/ui/server/deep/nested/panel.ts": 'import type { Signal } from "../../../client/signal";\nexport const panel = (s: Signal) => s;\n',
+    });
+
+    expect(checkSsrBoundary(config(root)).findings).toEqual([]);
   });
 });

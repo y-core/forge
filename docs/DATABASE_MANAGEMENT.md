@@ -296,6 +296,11 @@ left. The lock is per checkout: two machines applying to the same remote databas
 The lock is taken against the app's own home, never against a generated one: it keys on the home's directory, and one under `.forge/scratch/` would
 exclude nothing.
 
+**A seed takes the same lock, for every target including a deployed one.** The file excludes nothing inside D1, but the runs it excludes are two
+local processes: a seed whose pending-migration check passed before a concurrent migration committed would otherwise write rows during that
+migration's `CREATE`/`INSERT…SELECT`/`DROP`/`RENAME` rebuild, and rows written after the copy and before the drop are lost — with the seed recorded
+as applied, so a re-run skips it.
+
 ### 6c. `status --check` Exit Conditions
 
 `forge db migrate status --check` exits non-zero when any of these holds, and zero otherwise:

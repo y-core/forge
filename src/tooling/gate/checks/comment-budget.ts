@@ -24,8 +24,6 @@ export function checkCommentBudget(config: CommentBudgetCheckConfig): CheckResul
     .filter(([, attribution]) => attribution.trim() === "")
     .map(([file]) => fail(`\`${file}\` is listed as carrying a licence notice with no attribution — name the upstream, or cut the header`));
 
-  // The attribution is what the allowance buys, so a blank one is no listing at all — the same
-  // terms the co-location exemption holds an owner to.
   const findings: Finding[] = files.flatMap((file) =>
     validateCommentBudget(file, readFileSync(resolve(config.root, file), "utf-8"), (licences.get(file) ?? "").trim() !== ""),
   );

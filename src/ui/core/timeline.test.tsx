@@ -147,3 +147,13 @@ describe("Timeline.Item — forge-ui-not-color-alone", () => {
     expect(rendered.map((html) => attrOf(html, "aria-current"))).toEqual(["", "", ""]);
   });
 });
+
+describe("Timeline.Item — stateLabel", () => {
+  it("replaces the shipped state word on the one entry given it, leaving its siblings alone", async () => {
+    const overridden = await render(<Timeline.Item state='current' stateLabel='En cours' />);
+    const shipped = await render(<Timeline.Item state='current' />);
+
+    expect(/<span class="sr-only">([^<]*)<\/span>/.exec(overridden)?.[1]).toBe("En cours");
+    expect(/<span class="sr-only">([^<]*)<\/span>/.exec(shipped)?.[1]).toBe("Current");
+  });
+});

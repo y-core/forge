@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import type { Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import type { FilterAppearance } from "./types";
@@ -81,7 +82,7 @@ const FilterReset: FC<FilterResetProps> = ({ size = "sm", class: cls, children, 
     aria-label={ariaLabel}
     class={buttonVariants({ tone: "neutral", appearance: "ghost", size, shape: "circle", class: cn(RESET_STATE, cls) })}
     {...rest}>
-    {children ?? [ariaLabel === undefined ? <span class='sr-only'>Clear</span> : null, <span aria-hidden='true'>×</span>]}
+    {children ?? [ariaLabel === undefined ? <span class='sr-only'>{LABEL_DEFAULTS.filterReset}</span> : null, <span aria-hidden='true'>×</span>]}
   </button>
 );
 

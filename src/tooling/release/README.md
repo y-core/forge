@@ -39,10 +39,12 @@ bun run release
 
 | Flag | Short | Effect |
 | --- | --- | --- |
-| `--dry` | `-n` | Print the resolution and the promotion that would happen, then stop. Skips the clean-tree check and nothing else |
+| `--dry` | `-n` | Print the resolution and the promotion that would happen, then stop. Skips the clean-tree check, the branch check and the gate |
 | `--allow-dirty` | — | Release with uncommitted changes in the tree |
 | `--allow-empty-changelog` | — | Release although `[Unreleased]` carries no entry |
 | `--allow-semver` | — | Release a patch although the public export surface shrank |
+| `--allow-branch` | — | Release from a branch other than the one the remote publishes from |
+| `--allow-unverified` | — | Tag without running the gate first |
 | `--config <path>` | — | Config module; the default `config/release.ts` is optional, a named one is not |
 | `--root <path>` | — | The repository to release, supplied as `cwd` (default: the working directory) |
 
@@ -99,10 +101,15 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 | The changelog does not parse | Fix the document — no flag reaches this one |
 | The previous tag is not an ancestor of HEAD | Recover the rewritten commits with `git reflog` and rebuild HEAD on the tag — no flag reaches this one |
 | A reachable remote does not carry the previous tag | `git push --tags`, then release |
+| HEAD is detached | Check out the branch you are releasing; `--allow-branch` if you meant it |
+| HEAD is not on the branch the remote publishes from | Switch branch; `--allow-branch` for a deliberate release branch |
+| The gate failed | Fix what it reported; `--allow-unverified` tags a tree no gate has passed |
+| The gate could not be run | Name this project's gate with `gateCommand`; `--allow-unverified` releases without one |
+| The commit failed with the version already written | `git checkout -- package.json CHANGELOG.md`, which the error names |
 
-**Every refusal except the clean-tree check fires under `--dry` too**, so a preview never hides the refusal it is previewing. A remote that cannot
-be reached at all is reported and non-fatal: releasing from a machine with no route out is ordinary, and an unanswerable question is not a failed
-one.
+**Every refusal except the clean-tree check, the branch check and the gate fires under `--dry` too**, so a preview never hides the refusal it is
+previewing. Those three are skipped because a dry run writes nothing for them to protect. A remote that cannot be reached at all is reported and
+non-fatal: releasing from a machine with no route out is ordinary, and an unanswerable question is not a failed one.
 
 The surface guard compares the exports the previous tag published against the working tree's and names each entry that has gone. It runs only on an
 auto-patch with a previous tag — an explicit version and a `minor:`/`major:` bump have already said what they are
@@ -134,6 +141,26 @@ absence is the zero-config case rather than a mistake.
 
 `forge release` commits and tags. Pushing the tag is what publishes: `.github/workflows/release.yml` re-runs the gate, packs the tag with
 `bun pm pack`, and attaches the tarball to a GitHub Release. The command's last line is the push to run.
+
+**The gate that decides the release runs here, before the tag exists.** CI's run is a backstop on a different machine: by the time it fails, the tag
+is already public and consumers resolving it get a codeload snapshot of whatever it points at, with no asset attached and no version left to reuse.
+
+The gate is `bun run verify` unless the release config names another, so a project whose script is called something else says so once:
+
+```ts
+// config/release.ts
+export default { gateCommand: ["bun", "run", "check"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
+```
+
+**A gate that could not be run is refused differently from a gate that failed**, because every package runner reports a missing script the same way
+a failing one exits. The refusal names `gateCommand` rather than telling you to fix what nothing reported.
+
+**The branch check reports rather than refuses when the remote names no publishing branch.** `refs/remotes/origin/HEAD` is written by `git clone`
+and by `git remote set-head`, so a repository created locally and pushed has none — and an unanswerable question is not a failed one, the same rule
+the previous-tag push check follows.
+
+**A detached HEAD is refused either way**, because whether HEAD is on a branch at all needs no remote to answer. Releasing from one commits to no
+branch: the printed `git push` would push nothing while `git push --tags` published a tag no branch carries.
 
 A consumer then depends on the artifact by URL:
 

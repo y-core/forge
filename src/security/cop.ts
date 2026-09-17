@@ -49,8 +49,8 @@ export function crossOriginProtection(options: CrossOriginProtectionOptions = {}
 export function originProtection<Bindings = Record<string, unknown>>(options: OriginProtectionOptions<Bindings>): Middleware {
   return async (context, next) => {
     if (SAFE_METHODS.has(context.method.toUpperCase())) return next();
-    // Not a relaxation a caller asked for: the Origin/Referer allowlist below is what judges a
-    // request with no Fetch Metadata, so the veto is read here without one.
+    // Not `dev.missingFetchMetadata`, which only `checkCrossOriginProtection` reads: the allowlist
+    // below is what judges a request with no Fetch Metadata, so the veto is read here without one.
     const cop = crossOriginVerdict(context.request, true);
     if (!cop.ok) return new Response("Forbidden", { status: 403 });
     // `Sec-Fetch-Site` is a veto, not a pass: a good value must not short-circuit the allowlist,
@@ -59,8 +59,8 @@ export function originProtection<Bindings = Record<string, unknown>>(options: Or
       typeof options.allowedOrigins === "function" ? options.allowedOrigins(getAppContext<Bindings>(context)) : options.allowedOrigins;
     const origin = verifyOrigin(context.request, allowed);
     if (origin.ok) return next();
-    // Neither Origin nor Referer was sent: accept only the browser's Fetch-Metadata vouching,
-    // since `Sec-Fetch-Site` is a forbidden header name that web content cannot set.
+    // The allowlist had nothing to judge, so fall back to the tier `SECURITY_HARDENING.md` §3e names:
+    // the veto above admits only `same-origin` and `none`, values page content cannot forge.
     if (origin.error === "missing" && context.request.headers.get("Sec-Fetch-Site") !== null) return next();
     return new Response("Forbidden", { status: 403 });
   };

@@ -62,10 +62,21 @@ function enclosingTag(source: string, index: number): string {
 
 const DIALOG_ATTR = /(?<![\w-])(role)\s*=\s*["'](?:alert)?dialog["']|(?<![\w-])(aria-modal)(?=[\s=])/g;
 
+const POPOVER_ATTR = /(?<![\w-])popover(?=[\s=])/;
+
+/** Whether the element enclosing `index` declares `popover`, and so already has the top layer the rule asks for. */
+function isPopoverElement(source: string, index: number): boolean {
+  const open = source.lastIndexOf("<", index);
+  if (open === -1) return false;
+  const close = source.indexOf(">", open);
+  return POPOVER_ATTR.test(source.slice(open, close === -1 ? source.length : close));
+}
+
 function findNativeDialog(out: Emitter): void {
   for (const match of out.scanned.matchAll(DIALOG_ATTR)) {
     const tag = enclosingTag(out.scanned, match.index);
     if (tag.toLowerCase() === "dialog") continue;
+    if (match[1] !== undefined && isPopoverElement(out.scanned, match.index)) continue;
     const attr = match[1] ?? match[2] ?? "";
     emit(
       out,

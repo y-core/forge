@@ -4,7 +4,7 @@ import { RequestContext } from "@remix-run/fetch-router";
 
 import type { AppContext } from "../../context/types";
 import { csrfMinterCtx } from "../../form/csrf";
-import { authNow, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
+import { authNow, authPasskeyContract, authReturnPath, authReturnQuery, authServices, authSettledPath } from "./options";
 import { fakeAuthServices, fakeAuthWebOptions } from "./web.fixture";
 
 function context(url: string): AppContext {
@@ -90,6 +90,32 @@ describe("authReturnPath", () => {
   it("reads the parameter name the consumer configured", () => {
     const options = fakeAuthWebOptions({ returnParam: "back" });
     expect(authReturnPath(context("http://localhost/auth/verify?back=%2Faccount%2Ftotp"), options)).toBe("/account/totp");
+  });
+});
+
+describe("authReturnQuery", () => {
+  it("carries a same-origin return-to onto the path, encoded as one parameter", () => {
+    const carried = authReturnQuery(context("http://localhost/auth/signin?next=%2Faccount%2Ftotp"), fakeAuthWebOptions(), "/auth/signin");
+    expect(carried).toBe("/auth/signin?next=%2Faccount%2Ftotp");
+  });
+
+  // The value lands in a rendered `action=`, so an off-origin one would be an open redirect the
+  // page itself offers.
+  it("drops an off-origin return-to rather than rendering it into a form action", () => {
+    const options = fakeAuthWebOptions();
+    expect(authReturnQuery(context("http://localhost/auth/signin?next=https%3A%2F%2Fevil.example"), options, "/auth/signin")).toBe("/auth/signin");
+    expect(authReturnQuery(context("http://localhost/auth/signin?next=%2F%2Fevil.example"), options, "/auth/signin")).toBe("/auth/signin");
+  });
+
+  it("leaves the path alone when this request asked to return nowhere", () => {
+    expect(authReturnQuery(context("http://localhost/auth/signin"), fakeAuthWebOptions(), "/auth/signin")).toBe("/auth/signin");
+  });
+
+  it("reads the parameter name the consumer configured", () => {
+    const options = fakeAuthWebOptions({ returnParam: "back" });
+    expect(authReturnQuery(context("http://localhost/auth/signin?back=%2Faccount%2Ftotp"), options, "/auth/signin")).toBe(
+      "/auth/signin?back=%2Faccount%2Ftotp",
+    );
   });
 });
 

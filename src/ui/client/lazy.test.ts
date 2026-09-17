@@ -1,52 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 
+import { installCssEscape } from "./dom.fixture";
 import { lazy } from "./lazy";
 
-// Polyfill the browser-only `CSS.escape` for the Bun test runtime (per the CSSOM spec algorithm).
-const cssGlobal = globalThis as unknown as { CSS?: { escape: (value: string) => string } };
-if (typeof cssGlobal.CSS === "undefined") {
-  cssGlobal.CSS = {
-    escape(value: string): string {
-      const string = String(value);
-      const length = string.length;
-      const firstCodeUnit = string.charCodeAt(0);
-      let result = "";
-      for (let index = 0; index < length; index++) {
-        const codeUnit = string.charCodeAt(index);
-        if (codeUnit === 0x0000) {
-          result += "�";
-          continue;
-        }
-        if (
-          (codeUnit >= 0x0001 && codeUnit <= 0x001f) ||
-          codeUnit === 0x007f ||
-          (index === 0 && codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
-          (index === 1 && codeUnit >= 0x0030 && codeUnit <= 0x0039 && firstCodeUnit === 0x002d)
-        ) {
-          result += `\\${codeUnit.toString(16)} `;
-          continue;
-        }
-        if (index === 0 && length === 1 && codeUnit === 0x002d) {
-          result += `\\${string.charAt(index)}`;
-          continue;
-        }
-        if (
-          codeUnit >= 0x0080 ||
-          codeUnit === 0x002d ||
-          codeUnit === 0x005f ||
-          (codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
-          (codeUnit >= 0x0041 && codeUnit <= 0x005a) ||
-          (codeUnit >= 0x0061 && codeUnit <= 0x007a)
-        ) {
-          result += string.charAt(index);
-          continue;
-        }
-        result += `\\${string.charAt(index)}`;
-      }
-      return result;
-    },
-  };
-}
+installCssEscape();
 
 /** The platform's own timer functions, captured before any block stubs them. */
 const realSetTimeout = globalThis.setTimeout;
@@ -97,9 +54,20 @@ describe("lazy", () => {
 
     // @ts-expect-error — intentionally replacing the global timer for test isolation
     globalThis.setTimeout = (fn: () => void, ms: number) => {
+      timers.scheduled += 1;
       capturedTimer = { fn, ms };
-      return 1;
+      return timers.scheduled;
     };
+
+    // Recorded, not merely restored: `clearTimeout` was left unstubbed, so the disposer's clear was
+    // unobservable by construction and deleting it failed nothing.
+    // @ts-expect-error — intentionally replacing the global timer for test isolation
+    globalThis.clearTimeout = (id: number) => {
+      if (id !== 0) timers.cleared += 1;
+    };
+
+    timers.scheduled = 0;
+    timers.cleared = 0;
 
     lg.IntersectionObserver = function (callback: IntersectionObserverCallback, options?: IntersectionObserverInit): MockObserver {
       capturedCallback = callback;
@@ -121,6 +89,9 @@ describe("lazy", () => {
     globalThis.setTimeout = realSetTimeout;
     globalThis.clearTimeout = realClearTimeout;
   });
+
+  /** What the mount armed and what it gave back, so a deleted `clearTimeout` has somewhere to show. */
+  const timers = { scheduled: 0, cleared: 0 };
 
   function makeEntry(isIntersecting: boolean): IntersectionObserverEntry {
     return { isIntersecting } as IntersectionObserverEntry;
@@ -370,6 +341,16 @@ describe("lazy", () => {
     elapseRetryDelay();
 
     expect(observedElements).toStrictEqual([mockElement]);
+  });
+
+  it("clears the armed retry on dispose rather than leaving one timer per disposed mount", async () => {
+    const dispose = lazy({ ref: "target", load: () => Promise.reject(new Error("boom")), init: () => {}, onError: () => {} });
+
+    intersect();
+    await flush();
+    dispose();
+
+    expect(timers).toEqual({ scheduled: 1, cleared: 1 });
   });
 
   it("does not re-observe when disposed while the load is in flight", async () => {

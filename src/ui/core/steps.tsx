@@ -1,12 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { STEP_STATE_LABELS } from "../contracts/labels";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { Orientation } from "../contracts/types";
 import type { Tone } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { STEP_MARKER, STEP_MARKER_STATE, STEP_STATE_LABEL } from "./utils/recipes";
+import { STEP_MARKER, STEP_MARKER_STATE } from "./utils/recipes";
 import { toneTokens } from "./utils/tone";
 import type { StepState } from "./utils/types";
 
@@ -20,6 +21,8 @@ interface StepProps extends Omit<JSX.IntrinsicElements["li"], "children"> {
   state?: StepState | undefined;
   /** What the marker circle shows — a number, a glyph, a tick. */
   marker?: JSXNode | undefined;
+  /** The word read for this step's state. @default STEP_STATE_LABELS[state] */
+  stateLabel?: string | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -33,7 +36,7 @@ const StepsRoot: FC<StepsRootProps> = ({ orientation = "horizontal", tone = "pri
   </ol>
 );
 
-const Step: FC<StepProps> = ({ state = "upcoming", marker, class: cls, children, "data-slot": inherited, ...rest }) => (
+const Step: FC<StepProps> = ({ state = "upcoming", marker, stateLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
   <li
     data-slot={slotToken("steps-step", inherited)}
     data-state={state}
@@ -45,7 +48,7 @@ const Step: FC<StepProps> = ({ state = "upcoming", marker, class: cls, children,
     </span>
     {/* The states differ only in colour, and the marker is `aria-hidden`. `aria-current` marks
         where the reader *is*; nothing else marked what is finished. */}
-    <span class='sr-only'>{STEP_STATE_LABEL[state]}</span>
+    <span class='sr-only'>{stateLabel ?? STEP_STATE_LABELS[state]}</span>
     <span data-slot='steps-label'>{children}</span>
   </li>
 );

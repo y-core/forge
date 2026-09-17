@@ -38,8 +38,8 @@
     "test:browser": "playwright test",
     "test:workerd": "bun test --parallel=2 tests/workerd/",
     "verify": "bun run src/tooling/root/bin.ts verify",
-    "verify:fast": "bun run src/tooling/root/bin.ts verify --mode fast",
     "verify:full": "bun run src/tooling/root/bin.ts verify --full",
+    "verify:quality": "bun run src/tooling/root/bin.ts verify --mode quality",
     "prepublishOnly": "bun run verify:full"
   },
   "sideEffects": [

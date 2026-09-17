@@ -12,6 +12,7 @@ import type { SyncNote, SyncResult } from "../types";
 import {
   createSyncAccountCommand,
   describeUntouchedZone,
+  failsRun,
   parseResources,
   pendingRows,
   printResults,
@@ -667,5 +668,27 @@ describe("describeUntouchedZone", () => {
     const dir = withSite(null);
     expect(describeUntouchedZone(dir, "site.ts")).toBeNull();
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("failsRun()", () => {
+  const row = (action: SyncResult["action"]): SyncResult => ({ resourceType: "secrets", binding: "B", action });
+
+  it("fails on a row the tool could not resolve", () => {
+    expect(failsRun([row("in-sync"), row("error")])).toBe(true);
+  });
+
+  // A refusal is the tool declining to write, which is a decision the run must carry out to its
+  // exit code — otherwise `--check` reports the conflict and still exits 0.
+  it("fails on a row the tool declined to write", () => {
+    expect(failsRun([row("in-sync"), row("refused")])).toBe(true);
+  });
+
+  it("passes when every row merely reports", () => {
+    expect(failsRun([row("in-sync"), row("remote-only"), row("would-create"), row("drift")])).toBe(false);
+  });
+
+  it("passes on no rows at all", () => {
+    expect(failsRun([])).toBe(false);
   });
 });

@@ -17,6 +17,14 @@ export function createAnonymousSession<Bindings = Record<string, unknown>>(optio
   if (cookieName === "") {
     throw new Error("createAnonymousSession: cookieName must not be empty");
   }
+  // Cookie storage is a stated choice, never what omitting `kv` falls back to: its session data rides
+  // on every request and cannot be revoked before the cookie expires, which nobody opts into silently.
+  if (options.kv === undefined && options.storage === undefined) {
+    throw new Error('createAnonymousSession: pass `kv` to hold session data server-side, or `storage: "cookie"` to serialize it into the cookie');
+  }
+  if (options.kv !== undefined && options.storage !== undefined) {
+    throw new Error('createAnonymousSession: pass either `kv` or `storage: "cookie"`, not both');
+  }
   // Keyed on `env` identity, never on `(cookieName, secure, secret)`: the cached middleware closes
   // over one tenant's KV namespace, so a value-keyed cache would serve tenant A's sessions to B.
   const cache = new WeakMap<object, Middleware>();

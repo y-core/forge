@@ -72,12 +72,12 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // Opt-in: `markdownStep` reads the prose oxfmt is told to ignore, so an app that takes it must add
   // `"**/*.md"` to its `.oxfmtrc.json` `ignorePatterns` — otherwise two tools own the same bytes.
   if (options.markdown !== undefined) {
-    steps.push(markdownStep({ root, ...options.markdown }, { tier: "standard" }));
+    steps.push(markdownStep({ root, ...options.markdown }));
   }
 
-  // After `format`, so the fast rows have already had their say, and before anything minutes long: a
-  // run that is going to fail a sub-second type-aware finding should not pay for a browser first.
-  steps.push(typeAwareLintStep({ sources, tier: "standard" }));
+  // After `format`, so the cheaper rows have already had their say, and before anything minutes long:
+  // a run that is going to fail a sub-second type-aware finding should not pay for a browser first.
+  steps.push(typeAwareLintStep({ sources }));
 
   // Opt-in: the step runs `warden`, which an app that does not clone the `.claude/` trees has no
   // reason to run even though forge ships it.
@@ -133,12 +133,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   // Default-on and not opt-out: the forbidden specifiers are read from forge's own installed manifest,
   // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
-  steps.push(
-    devBoundaryStep(
-      { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] },
-      { tier: "standard" },
-    ),
-  );
+  steps.push(devBoundaryStep({ root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] }));
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
   if (options.db) steps.push(...dbSchemaStep({ root }));

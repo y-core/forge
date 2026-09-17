@@ -42,7 +42,16 @@ describe("createReleaseBinCommand()", () => {
   });
 
   it("carries the release flags alongside the two config-loading ones", () => {
-    expect(Object.keys(RELEASE.flags).sort()).toEqual(["allow-dirty", "allow-empty-changelog", "allow-semver", "config", "dry", "root"]);
+    expect(Object.keys(RELEASE.flags).sort()).toEqual([
+      "allow-branch",
+      "allow-dirty",
+      "allow-empty-changelog",
+      "allow-semver",
+      "allow-unverified",
+      "config",
+      "dry",
+      "root",
+    ]);
   });
 
   it("keeps --dry's short form, which is what a release is most often invoked with", () => {

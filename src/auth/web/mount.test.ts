@@ -14,6 +14,7 @@ import type { KVNamespace } from "../../storage/kv/types";
 import { fakeAuthD1 } from "../../testing/auth-fakes";
 import { nullLogger } from "../../testing/context";
 import { fakeKV } from "../../testing/fakes";
+import { mapHandler } from "../../testing/route";
 import type { FakeAuthUser } from "../../testing/types";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService } from "../factors/types";
@@ -32,12 +33,12 @@ import { createCredentialStore } from "../stores/credentials";
 import { createFactorStore } from "../stores/factors";
 import { createUserStore } from "../stores/users";
 import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
-import { createAuthGuards } from "./guards";
+import { createAuthGuards, requireAuth } from "./guards";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
-import { fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./web.fixture";
+import { attrsOf, fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./web.fixture";
 
 // This file is the mount AUTH_MOUNTING.md §1 describes, written out with no ellipsis and no free
 // variable, so the documented wiring is held to the real signatures by the compiler.
@@ -144,9 +145,9 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
 
     const html = await res.text();
     expect(html.startsWith("<!DOCTYPE html><html")).toBe(true);
-    expect(html).toContain("<title>Sign in</title>");
-    expect(html).toContain('<link rel="stylesheet" href="/assets/app.css">');
-    expect(html).toContain('<script type="module" src="/assets/auth.js"></script>');
+    expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe("Sign in");
+    expect(attrsOf(html, 'rel="stylesheet"')).toEqual({ rel: "stylesheet", href: "/assets/app.css" });
+    expect(attrsOf(html, 'type="module"')).toEqual({ type: "module", src: "/assets/auth.js" });
   });
 
   it("sends an anonymous request for a guarded page to sign-in, carrying its return-to", async () => {
@@ -392,6 +393,14 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
   registerAccount(app, accountMap, flowOptions);
   registerAdmin(app, adminMap, flowOptions);
 
+  // A consumer's own page, guarded with `requireAuth` alone. Every shipped group lists an enrolment
+  // guard beside it, so this is the only place the guard's own step-up enforcement is observable.
+  app.use(
+    "/app/*",
+    requireAuth<MountEnv>({ users: () => users, signinPath: paths.auth.signin(), factors: () => factors, stepUpPath: paths.auth.verify.show() }),
+  );
+  mapHandler(app, "GET", "/app/dashboard", () => new Response("dashboard"));
+
   return {
     app,
     settle: async () => {
@@ -416,14 +425,22 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
     return res;
   }
 
-  /** Reads the page's own form token, so the token is minted for the path it is posted to. */
-  async function form(path: string, fields: Record<string, string>): Promise<Response> {
-    const page = await get(path);
-    const token = (await page.text()).match(/name="_csrf" value="([^"]+)"/)?.[1] ?? "";
+  /** Posts one of the page's forms, to its own action and with its own token, as a browser would. */
+  async function form(url: string, fields: Record<string, string>, posts?: string): Promise<Response> {
+    const page = await get(url);
+    // A page may render more than one form, and the resend is the second: `posts` picks which.
+    const path = posts ?? new URL(url, "http://localhost").pathname;
+    const html = await page.text();
+    // The rendered action rather than the page path: the return-to the guard minted travels on it,
+    // and a test that posts to the path instead proves nothing about whether it survives.
+    const block =
+      html.split("<form").find((part) => new URL(/action="([^"]*)"/.exec(part)?.[1] ?? "/", "http://localhost").pathname === path) ?? "";
+    const action = (/action="([^"]*)"/.exec(block)?.[1] ?? path).replaceAll("&amp;", "&");
+    const token = /name="_csrf" value="([^"]+)"/.exec(block)?.[1] ?? "";
     const body = new URLSearchParams({ ...fields, _csrf: token });
     const res = keep(
       await mounted.app.request(
-        path,
+        action,
         {
           method: "POST",
           headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie },
@@ -493,9 +510,85 @@ describe("a second factor, driven through the mount", () => {
 
       const settled = await ada.get("/account/factors");
       expect(settled.status).toBe(200);
-      expect(await settled.text()).toContain("<title>Sign-in methods</title>");
+      expect(/<title>([^<]*)<\/title>/.exec(await settled.text())?.[1]).toBe("Sign-in methods");
     });
   }
+
+  // `requireAuth` mints the return-to on the redirect it sends an anonymous visitor away with, and
+  // every later leg of the flow has to carry it or the last one has nothing to honour.
+  it("returns a signed-in visitor to the page they were refused, not to the settled page", async () => {
+    const mounted = flowMount("totp-app");
+    const bindings = env();
+
+    const ada = visitor(mounted, bindings);
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    await ada.form("/auth/enrol/totp", { code: CODE });
+
+    const returning = visitor(mounted, bindings);
+    const refused = await returning.get("/app/dashboard");
+    expect(refused.headers.get("location")).toBe("/auth/signin?next=%2Fapp%2Fdashboard");
+
+    const started = await returning.form(refused.headers.get("location") ?? "", { email: "ada@example.com" });
+    expect(started.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard");
+
+    const signedIn = await returning.form(started.headers.get("location") ?? "", { code: CODE });
+    expect(signedIn.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard");
+
+    const stepped = await returning.form(signedIn.headers.get("location") ?? "", { code: CODE });
+    expect(stepped.headers.get("location")).toBe("/app/dashboard");
+  });
+
+  // The branch a visitor takes when the first code never arrived: it reloads the same page, so it
+  // has to carry the return-to like every other leg or the flow settles somewhere else.
+  it("keeps the return-to across a resend", async () => {
+    const mounted = flowMount("totp-app");
+    const bindings = env();
+
+    const ada = visitor(mounted, bindings);
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    await ada.form("/auth/enrol/totp", { code: CODE });
+
+    const returning = visitor(mounted, bindings);
+    const refused = await returning.get("/app/dashboard");
+    const started = await returning.form(refused.headers.get("location") ?? "", { email: "ada@example.com" });
+    expect(started.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard");
+
+    const resent = await returning.form(started.headers.get("location") ?? "", {}, "/auth/verify/resend");
+    expect(resent.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard&resent");
+
+    const signedIn = await returning.form(resent.headers.get("location") ?? "", { code: CODE });
+    const stepped = await returning.form(signedIn.headers.get("location") ?? "", { code: CODE });
+    expect(stepped.headers.get("location")).toBe("/app/dashboard");
+  });
+
+  // The sign-in path, not the sign-up path: an account whose second factor is already confirmed
+  // completes its primary factor and owes a step-up, and `requireAuth` is on its own there.
+  it("refuses a `requireAuth`-only page to a session that signed in and ignored the step-up it owes", async () => {
+    const mounted = flowMount("totp-app");
+    const bindings = env();
+
+    // Ada enrols, so the account the second visitor signs into has a confirmed mandatory factor.
+    const ada = visitor(mounted, bindings);
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    await ada.form("/auth/enrol/totp", { code: CODE });
+
+    const returning = visitor(mounted, bindings);
+    expect((await returning.form("/auth/signin", { email: "ada@example.com" })).headers.get("location")).toBe("/auth/verify");
+    const signedIn = await returning.form("/auth/verify", { code: CODE });
+    expect(signedIn.status).toBe(303);
+    expect(signedIn.headers.get("location")).toBe("/auth/verify");
+
+    // The redirect is ignored, which is the whole attack: the session is established and the second
+    // factor is not proved, so the consumer's own page must not be served.
+    const refused = await returning.get("/app/dashboard");
+    expect(refused.status).toBe(303);
+    expect(refused.headers.get("location")).toBe("/auth/verify");
+
+    expect(await (await returning.get("/app/dashboard")).text()).not.toContain("dashboard");
+  });
 
   it("presents the verify page as a step-up rather than a sign-in once a session owes one", async () => {
     const mounted = flowMount("totp-app");

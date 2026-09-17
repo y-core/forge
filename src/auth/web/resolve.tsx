@@ -12,12 +12,21 @@ import { authFactorContext } from "../factors/registry";
 import type { TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
 import { authCtx } from "./identity";
-import { authNow, authCsrfHeader, authEnrollable, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
+import {
+  authNow,
+  authCsrfHeader,
+  authEnrollable,
+  authPasskeyContract,
+  authReturnPath,
+  authReturnQuery,
+  authServices,
+  authSettledPath,
+} from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
 import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
 import type { AuthIdentity } from "./types";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types";
 import type { AuthViewName, AuthViewProps } from "./types";
 import type { AuthGuardName } from "./types";
 import type { AuthVerifyDemand, AuthViewRequest, AuthViewResolved } from "./types";
@@ -48,6 +57,11 @@ export function notFound(): Response {
   return new Response(NOT_FOUND, { status: 404 });
 }
 
+/** The refusal an authenticated request without the role its target demands gets. @internal */
+export function forbidden(): Response {
+  return new Response(FORBIDDEN, { status: 403 });
+}
+
 // `authCtx` and nothing else: a page's data is read for whoever a guard established, so a route that
 // ran neither guard resolves nobody rather than reading the session the guards were meant to judge.
 /** Who this request is, as the guards established it. @internal */
@@ -56,7 +70,7 @@ export function resolveAuthViewer<Bindings>(c: AppContext<Bindings>): AuthIdenti
 }
 
 /** Factors other than the passkey that would still admit `userId` once every passkey is gone. */
-async function resolveFallbackFactors(services: AuthRequestServices, userId: string): Promise<AuthFactorKind[]> {
+async function resolveFallbackFactors(services: AuthRequestSurface, userId: string): Promise<AuthFactorKind[]> {
   const kinds: AuthFactorKind[] = [];
   for (const service of services.factors.offered) {
     if (service.kind === "passkey") continue;
@@ -72,7 +86,7 @@ async function resolveFallbackFactors(services: AuthRequestServices, userId: str
 }
 
 /** What the verify page is presenting, read off the request rather than off a query parameter. @internal */
-export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>, services: AuthRequestServices): Promise<AuthVerifyDemand> {
+export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>, services: AuthRequestSurface): Promise<AuthVerifyDemand> {
   const identity = resolveAuthViewer(c);
   const primary = services.factors.primary;
   if (identity === null) return { factor: primary.kind, digits: primary.codeDigits, identity: null, owed: null, kinds: [] };
@@ -128,7 +142,9 @@ async function resolveSignin<Bindings>(
   const submitPath = auth.signinSubmit();
 
   return ok({
-    submitPath,
+    // The action carries the return-to and the token is minted without it: `csrfProtection` binds a
+    // token to the path alone, so a query on the minted path is a 403 on every submission.
+    submitPath: authReturnQuery(c, options, submitPath),
     signupPath: auth.signup(),
     csrfToken: await mintCsrf(c, submitPath),
     ...authCsrfHeader(c),
@@ -141,7 +157,7 @@ async function resolveSignin<Bindings>(
 
 // `mandatoryForRoles` cannot count towards this: a sign-up has no identity, so it has no roles.
 /** The factor a new account is asked to enrol once the address is confirmed, or `undefined` for none. */
-function signupEnrols(services: AuthRequestServices): AuthFactorKind | undefined {
+function signupEnrols(services: AuthRequestSurface): AuthFactorKind | undefined {
   return services.factors.seconds.find((offer) => offer.requirement === "mandatory" && offer.service.enrolment === "explicit")?.service.kind;
 }
 
@@ -156,7 +172,7 @@ async function resolveSignup<Bindings>(
   const enrols = signupEnrols(services);
 
   return ok({
-    submitPath,
+    submitPath: authReturnQuery(c, options, submitPath),
     signinPath: auth.signin(),
     ...(enrols === undefined ? {} : { enrols }),
     csrfToken: await mintCsrf(c, submitPath),
@@ -190,8 +206,9 @@ async function resolveVerify<Bindings>(
     factor: demand.factor,
     ...(codeWidth(demand.digits) === undefined ? {} : { codeDigits: codeWidth(demand.digits) }),
     passkey: usesPasskey ? await authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, authReturnPath(c, options)) : undefined,
-    submitPath,
-    resendPath,
+    submitPath: authReturnQuery(c, options, submitPath),
+    // Carried like the submit path, and minted on the bare one for the same reason.
+    ...(resendPath === undefined ? {} : { resendPath: authReturnQuery(c, options, resendPath) }),
     signinPath: auth.signin(),
     csrfToken: await mintCsrf(c, submitPath),
     // Its own token, because `csrfProtection` binds one to the path it was minted for and this page
@@ -405,7 +422,7 @@ async function resolveEmailChange<Bindings>(
 }
 
 /** Every offered factor and where `userId` stands on it, read off the registry so the panel describes this deployment. */
-async function resolveFactorRows(services: AuthRequestServices, userId: string): Promise<AuthFactorRow[] | null> {
+async function resolveFactorRows(services: AuthRequestSurface, userId: string): Promise<AuthFactorRow[] | null> {
   const rows: AuthFactorRow[] = [];
   for (const service of services.factors.offered) {
     // An implicit factor keeps no enrolment row, so there is nothing to read and nothing owed.
@@ -532,7 +549,13 @@ async function adminUserPage<Bindings>(
 async function resolveAdminElevate<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  state: AuthPageState,
 ): Promise<Result<AuthViewProps["adminElevate"], Response>> {
+  // The same 404 `admin.elevate.submit` gives: a deployment with no configured secret has no claim
+  // endpoint, so rendering an enabled form here offers a POST that cannot succeed.
+  const configured = options.bootstrapSecret?.(c);
+  if (configured === undefined || configured === "") return err(notFound());
+
   const services = await authServices(c, options);
   const { admin } = options.paths;
   const counted = await services.admin.countAdmins();
@@ -543,6 +566,7 @@ async function resolveAdminElevate<Bindings>(
     paths: admin,
     csrfToken: await mintCsrf(c, admin.elevate.submit()),
     ...authCsrfHeader(c),
+    fieldError: state.fieldError,
     icon: options.icon,
   });
 }
@@ -598,7 +622,7 @@ function refuseUnguarded<Bindings>(c: AppContext<Bindings>, options: AuthWebOpti
   if (!guards.includes("require-auth")) return null;
   const identity = authCtx.getOptional(c);
   if (identity === undefined) return createRedirectResponse(options.paths.auth.signin());
-  if (guards.includes("require-admin") && !identity.isAdmin) return new Response(FORBIDDEN, { status: 403 });
+  if (guards.includes("require-admin") && !identity.isAdmin) return forbidden();
   return null;
 }
 

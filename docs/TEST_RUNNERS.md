@@ -195,8 +195,8 @@ orphan actually escapes through.
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same ground the browser set is held back on (§1c).
 `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
 
-**`test` is scoped to `src/` so that this set is not also the fast tier's.** A spec here costs a runtime start; a co-located test costs
-milliseconds, and the inner loop must stay the inner loop.
+**`test` is scoped to `src/` so that this set is not also `standard`'s.** A spec here costs a runtime start; a co-located test costs milliseconds,
+and the run a task closes on must not pay a runtime start per spec.
 
 ---
 
@@ -364,15 +364,20 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 ## 6. The Verification Gate
 
 See [`TESTING.md`][testing-6] §6 for the one-command-three-modes gate, the flag table, the prerequisite line, and the scoped-run rule.
-`config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a): `fast` holds `typecheck`, `lint`, `format` and
-`test`; `standard` adds every `validate-*` row plus `typecheck:workers-consumer`, `lint:types` and `governance`; `full` adds `validate-changelog`,
-`test:browser` and `test:workerd`.
+`config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
-`test` is scoped to `src/`, so the fast tier runs the co-located suites alone and the workerd set is reached only through its own step (§1d).
+**A step sits in `quality` unless it runs the code rather than judging it.** That rule, and not a speed estimate, is what decides a new row: every
+`validate-*` check, both typechecks, `lint`, `format`, `lint:types` and the digest comparison judge source, so `quality` holds them and costs about
+thirteen seconds. `standard` adds `test`, which is over half the gate's wall time on its own. `full` adds `validate-changelog` and the two runtime
+suites, `test:browser` and `test:workerd`.
 
-The table is not the running order: the selector sorts by tier after filtering, so every `fast` row runs before every `standard` one and both before
-`full`, with declared order preserved inside each tier. `config/steps.ts` is therefore read as a per-tier sequence — `browserStep` sitting above
-`dbSchemaStep` in the file does not put Chromium ahead of the standard-tier digest check.
+**So the tier a row declares marks what it costs, not what it is**: a table read top to bottom is `quality` except where it says otherwise, which is
+why `config/steps.ts` carries a `tier` key on four rows out of thirty-three. `test` is scoped to `src/`, so `standard` runs the co-located suites
+alone and the workerd set is reached only through its own step (§1d).
+
+The table is not the running order: the selector sorts by tier after filtering, so every `quality` row runs before `test` and both before `full`,
+with declared order preserved inside each tier. This is what makes a wrap or comment-budget failure surface in seconds rather than after the suite —
+and `browserStep` sitting above `dbSchemaStep` in the file does not put Chromium ahead of the digest check.
 
 ---
 
@@ -464,6 +469,17 @@ A type reference directive is resolved per file, so the Worker half of the same 
 the supported way to put `tests/workerd/**` in a consumer's type program; dropping the directory from `include`, or adding `node` to `types`, is
 not. Forge exercises it from `tests/fixtures/workers-consumer/workerd-suite.ts`, which compiles under `"types": []` the way a consumer's does.
 
+**It reaches ambient Node globals too, not only the `node:` imports above.** `process.env`, `process.kill`, `process.once` and `process.exit`, and
+Node's `Buffer`. They arrive without an import statement, so a grep for `node:` does not find them; `@y-core/forge/testing/node` declares them for
+the same reason it declares the modules.
+
+**What makes the file legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that checks for a
+non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the Workers lib set,
+where `node:child_process` does not resolve. `src/testing` stays out of a Worker by reachability instead: it is one of `devBoundaryStep`'s
+`devOnlyDirs`, so no deployed file may import it, and `buildTimeBoundaryStep`'s `buildTimeDirs` pointedly leaves it out. A new file that wants Node
+earns it the same way or not at all — the question to answer is whether anything shipped can reach it, and "it is only used in tests" is not that
+answer unless a boundary step says so.
+
 **`wrangler` is an optional peer dependency**, declared because the module resolves the CLI out of the importing package's own tree —
 `import.meta.resolve("wrangler/package.json")`, never a path relative to forge's checkout. A consumer that imports this subpath installs `wrangler`;
 one that does not, never loads the module and never needs it.
@@ -490,4 +506,4 @@ successive runs would then share a file; one recursive remove is the whole clean
 [testing-5b]: ../warden/canon/libs/TESTING.md#5b-negative-case-structure
 [testing-5c]: ../warden/canon/libs/TESTING.md#5c-no-mocking-of-security-primitives
 [testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
-[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-prerequisite-line
+[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-two-lines-between-the-modes

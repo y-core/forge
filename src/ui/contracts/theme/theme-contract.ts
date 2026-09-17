@@ -224,8 +224,6 @@ export const SCALE_ROW_ATTR = "data-scale-row";
 /** The `data-` attribute marking a printed hex, valued with the 0-indexed step. @public */
 export const HEX_ATTR = "data-hex";
 
-// Every id is family-prefixed, gray included: a bare `light` beside `accent-light` would make the
-// rows non-uniform and invite parsing the id to recover the family it already carries.
 /** The rows of the preview: each generated scale, drawn on the surface it belongs to. @public */
 export const SCALE_ROWS: readonly { readonly id: string; readonly family: ScaleFamily; readonly mode: Mode; readonly label: string }[] = [
   { id: "accent-light", family: "accent", mode: "light", label: "Accent scale, light surface" },

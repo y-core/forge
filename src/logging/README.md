@@ -161,8 +161,9 @@ app.get("/orders", (c) => {
 });
 ```
 
-The summary record carries `method`, `path` (no query string), `status` and `duration` in milliseconds, plus your `bindings`. Its level comes from
-the response status, so 404s and 422s do not page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4a's.
+The summary record's message is the static label `request.completed`, or `request.failed` when a throw escaped `next()`. It carries `method`, `path`
+(no query string), `status` and `duration` in milliseconds, plus your `bindings`. Its level comes from the response status, so 404s and 422s do not
+page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4a's.
 
 `prefix` defaults to `"request"` if you do not set one, and `minLevel` may be a level or a per-request function of the context.
 
@@ -334,8 +335,9 @@ applies `level` and `q` to that page, and returns `complete` plus a `cursor` whe
 matches.
 
 **`flush()` settles the writes already started — it is not a barrier.** Anything dispatched after the splice belongs to the next flush. This is why
-the error boundary schedules its own flush for the `unhandled error` record: `requestLogger`'s window has closed by then, and on an asynchronous
-channel the record would otherwise be lost to isolate teardown.
+the error boundary schedules its own flush for both records it writes on a 500 — the per-request `unhandled error` and the app logger's
+`Unhandled error`. `requestLogger`'s window has closed by then, and the logger passed to `createApp` has no middleware to flush it at all, so on an
+asynchronous channel either record would otherwise be lost to isolate teardown.
 
 **A selected purge is inside the `write` promise, not detached.** So `flush()` and `waitUntil()` hold the isolate open until the sweep finishes —
 the alternative is a sweep cancelled mid-pass, which is exactly when the soft cap stops being enforced. On the small fraction of writes that trigger
@@ -344,6 +346,10 @@ one, the flush window covers a `list` and a series of delete batches, post-respo
 **`record.data` is cloned into a JSON-faithful shape before it is persisted.** `Date`, `Map` and `Set` carry their payload outside enumerable own
 properties, so each gets an explicit form instead of flattening to `{}`; a reference that reappears on its own path becomes `"[circular]"`, so a
 cyclic structure stores rather than overflowing the stack.
+
+**A value's own `toJSON` decides its logged form, on every channel.** Give a domain object a `toJSON` that drops its secret, and what you verified
+on the console is what persists. A `URL` is the exception: it logs as `origin + pathname` everywhere, so log a query parameter you need as its own
+named field. [`STRUCTURED_LOGGING.md`][sl] §2h owns both rules.
 
 **Row metadata is bounded by KV's limit, not by your message.** A long message is truncated, then the prefix, then the request id is dropped — the
 list view degrades, the full record in the value does not.

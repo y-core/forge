@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 
 import type { FC, JSXNode } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { slotToken } from "../core/utils/as-child";
 import { cn } from "../core/utils/cn";
@@ -39,16 +40,12 @@ const railPlacementVariants = cva({
   defaultVariants: { placement: "left" },
 });
 
-/** What the boxes between the consumer's layout and the `<details>` carry in rail mode. */
 const RAIL_HEIGHT_CHAIN = "h-full";
 
-/** What the bar itself paints below `md` it would position against the bar, not the viewport. */
 const DRAWER_BAR_CLASS = "max-md:bg-transparent max-md:backdrop-blur-none";
 
-/** The rail's own scrolling box has to be released too, or the out-of-flow panel is clipped by it. */
 const DRAWER_RAIL_CLASS = cn(`${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`);
 
-/** The off-canvas panel below `md`, hidden with `visibility` rather than the untransitionable `display`. */
 const DRAWER_PANEL_BASE = cn(
   "max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[transform,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-reduce:max-md:transition-none",
 );
@@ -124,6 +121,7 @@ export const Navbar: FC<NavbarProps> = (props) => {
     activeFilters = [],
     placement,
     collapsible = "mobile",
+    toggleLabel = LABEL_DEFAULTS.navbarToggle,
     collapsedAs = "inline",
     defaultOpen = false,
     icon: Icon,
@@ -151,7 +149,10 @@ export const Navbar: FC<NavbarProps> = (props) => {
           {...(defaultOpen ? { open: true } : {})}
           {...(drawer ? { [NAVBAR_DRAWER_ATTR]: true } : {})}
           {...rest}>
-          <summary data-slot='navbar-toggle' aria-label='Menu' class={cn(SUMMARY_CLASS[collapsible], drawer ? DRAWER_SUMMARY_CLASS : undefined)}>
+          <summary
+            data-slot='navbar-toggle'
+            aria-label={toggleLabel}
+            class={cn(SUMMARY_CLASS[collapsible], drawer ? DRAWER_SUMMARY_CLASS : undefined)}>
             {renderToggleGlyphs(props, edge)}
           </summary>
           {drawer ? <div data-slot='navbar-backdrop' data-on-click='closeNav' aria-hidden='true' class={DRAWER_BACKDROP_CLASS} /> : null}

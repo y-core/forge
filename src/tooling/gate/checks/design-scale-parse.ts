@@ -38,6 +38,14 @@ export function deriveDesignScale(ds: DesignSystem): DesignScale {
     else if (name.startsWith("--color-")) tokens.push(name.slice("--color-".length));
   }
 
+  // `forge/spacing-scale-only` divides by this. An empty unit makes every comparison against `NaN`
+  // false, so the rule reports nothing and the gate stays green with the rule silently disabled.
+  if (spacingUnit === "") {
+    throw new Error(
+      "deriveDesignScale: the design system declares no --spacing, so forge/spacing-scale-only would have no unit to measure against",
+    );
+  }
+
   return {
     spacingUnit,
     spacingRoots: [...spacingRoots].sort(),

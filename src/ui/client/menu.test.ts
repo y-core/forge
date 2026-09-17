@@ -135,4 +135,46 @@ describe("mountMenu", () => {
 
     expect({ id: opened?.id ?? null, role: opened?.getAttribute("role") ?? null }).toEqual({ id: "row-0", role: MENU_ITEM_ROLES[0] });
   });
+
+  // A menu popup is swapped wholesale by HTMX, so a listener left behind accumulates one per swap.
+  // The pass case dispatches *after* dispose: a removed listener and an inert one look alike otherwise.
+  describe("mountMenu — disposing", () => {
+    const count = (el: FakeElement, type: string): number => el.listeners.get(type)?.length ?? 0;
+
+    // The roving focus controller adds its own keydown listener to the same popup, so the count is
+    // what tells `disposeFocus()` apart from the removals beside it.
+    it("listens for its own events and the roving ring's while mounted", () => {
+      const { popup } = navigableMenu();
+
+      mountMenu(popup as never);
+
+      expect({ before: count(popup, "beforetoggle"), toggle: count(popup, "toggle"), keydown: count(popup, "keydown") }).toEqual({
+        before: 1,
+        toggle: 1,
+        keydown: 2,
+      });
+    });
+
+    it("removes all three on dispose", () => {
+      const { popup } = navigableMenu();
+
+      mountMenu(popup as never)();
+
+      expect({ before: count(popup, "beforetoggle"), toggle: count(popup, "toggle"), keydown: count(popup, "keydown") }).toEqual({
+        before: 0,
+        toggle: 0,
+        keydown: 0,
+      });
+    });
+
+    it("releases the roving focus too, so an opened popup no longer steals focus after disposal", () => {
+      const { doc, popup } = navigableMenu();
+      mountMenu(popup as never)();
+      doc.activeElement = null;
+
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+
+      expect(doc.activeElement).toBe(null);
+    });
+  });
 });

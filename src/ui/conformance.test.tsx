@@ -501,3 +501,46 @@ describe("ui/controls conformance — the bound tier", () => {
     );
   });
 });
+
+describe("ui conformance — forge's default English has one home (decision-260918-49)", () => {
+  const sources = componentSources();
+
+  it("defaults no label-shaped prop to a string literal, which would be a second home for the name", () => {
+    const offenders = Object.entries(sources).flatMap(([file, source]) =>
+      [...source.matchAll(/\b\w*[Ll]abel\s*=\s*["'][^"']*["']/g)].map((match) => `${file}: ${match[0]}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("writes no literal text into an sr-only span, which is a name the table cannot reach", () => {
+    const offenders = Object.entries(sources).flatMap(([file, source]) =>
+      [...source.matchAll(/class='sr-only[^']*'>([^<{][^<]*)</g)].map((match) => `${file}: ${match[1]}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("writes no literal aria-label, so every name a consumer must translate is a key they can see", () => {
+    const offenders = Object.entries(sources).flatMap(([file, source]) =>
+      [...source.matchAll(/aria-label=['"][^'"]+['"]/g)].map((match) => `${file}: ${match[0]}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags a template-literal name when there is one, so the scan below is proof and not decoration", () => {
+    expect(templateNames("aria-label={`Slide ${index + 1}`} aria-label={`${caller.name}`}")).toEqual(["aria-label={`Slide ${index + 1}`}"]);
+  });
+
+  // A quoted-literal scan alone passes a template: `Slide ${n}` carries an English word an
+  // interpolation scan never sees, which is exactly how one shipped past the first version of this.
+  it("writes no English inside a template-literal name either, where a quoted-literal scan is blind", () => {
+    const offenders = Object.entries(sources).flatMap(([file, source]) => templateNames(source).map((hit) => `${file}: ${hit}`));
+    expect(offenders).toEqual([]);
+  });
+});
+
+/** Every `aria-label={\`…\`}` in `source` whose template holds a word outside its interpolations. */
+function templateNames(source: string): string[] {
+  return [...source.matchAll(/(?:aria-label|aria-roledescription)=\{`([^`]*)`\}/g)]
+    .filter((match) => /[A-Za-z]/.test((match[1] ?? "").replaceAll(/\$\{[^}]*\}/g, "")))
+    .map((match) => match[0]);
+}

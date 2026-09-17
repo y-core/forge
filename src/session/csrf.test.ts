@@ -6,13 +6,13 @@ import { Forge } from "../app/forge-app";
 import { csrfProtection, csrfTokenCtx, importCsrfKey } from "../form/csrf";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
-import { createSignedCookie, createUnsignedCookie } from "./cookie";
+import { createSignedCookie } from "./cookie";
 import { sessionCtx, sessionMiddleware } from "./session";
 import type { SessionKVBinding } from "./types";
 
 const HEX_SECRET = "c".repeat(64);
 const SESSION_SECRET = "s".repeat(48);
-const sessionCookie = createUnsignedCookie("__session", { path: "/" });
+const sessionCookie = createSignedCookie("__session", { path: "/", secrets: [SESSION_SECRET] });
 
 function fakeSessionKV(): SessionKVBinding {
   const data = new Map<string, string>();

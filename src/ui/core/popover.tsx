@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { nameAttrs } from "../contracts/dialog-contract";
 import { invokerAttrs, POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { PhysicalSide } from "../contracts/types";
@@ -19,13 +20,18 @@ interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   children?: JSXNode | undefined;
 }
 
-interface PopoverContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+// `role` is not forwardable: the trigger's `aria-haspopup` says `dialog` and has no way to say
+// otherwise, so a re-roled panel would leave the pair disagreeing. A menu popup is `Menu.Popup`.
+type PopoverContentBase = Omit<JSX.IntrinsicElements["div"], "children" | "role">;
+
+/** A panel is `role="dialog"`, which is `nameFrom: author`, so a name is required rather than optional. */
+type PopoverContentProps = PopoverContentBase & {
   /** Element id — the `commandfor` target named by the matching `Popover.Trigger`. */
   id: string;
   align?: PopoverAlign | undefined;
   side?: PhysicalSide | undefined;
   children?: JSXNode | undefined;
-}
+} & ({ label: string; labelledby?: undefined } | { labelledby: string; label?: undefined });
 
 const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, "data-slot": inherited, ...props }) => (
   <div data-slot={slotToken("popover", inherited)} class={cn("relative inline-block", cls)} {...props}>
@@ -39,7 +45,7 @@ const PopoverTrigger: FC<PopoverTriggerProps> = ({ for: target, class: cls, chil
     data-slot={slotToken("popover-trigger", inherited)}
     command='toggle-popover'
     commandfor={target}
-    {...invokerAttrs(target)}
+    {...invokerAttrs(target, "dialog")}
     class={cn("cursor-pointer list-none focus-ring", cls)}
     {...props}>
     {children}
@@ -50,6 +56,8 @@ const PopoverContent: FC<PopoverContentProps> = ({
   id,
   align = "start",
   side = "bottom",
+  label,
+  labelledby,
   class: cls,
   children,
   "data-slot": inherited,
@@ -57,6 +65,8 @@ const PopoverContent: FC<PopoverContentProps> = ({
 }) => (
   <div
     id={id}
+    role='dialog'
+    {...nameAttrs({ label, labelledby })}
     data-slot={slotToken("popover-content", inherited)}
     data-scope={POPOVER_SCOPE}
     popover='auto'

@@ -240,8 +240,11 @@ leaves nothing behind ([`TEST_RUNNERS.md`][testing-1f] §1f).
 
 ## Gotchas
 
-**`app.request` takes a `RequestInit`, not a `Request`.** A `buildRequest` result goes to `createTestContext`, or to `app.fetch(request, env)` when
-you want the whole chain — passing it as the second argument of `app.request` is the mistake that silently loses the body.
+**`app.request` takes a `RequestInit`, not a `Request`.** A `buildRequest` result goes to `createTestContext`, or to `app.fetch(request, env, ctx)`
+when you want the whole chain — passing it as the second argument of `app.request` is the mistake that silently loses the body. `app.fetch`
+requires an execution context: pass `mockExecutionContext()`, or `collectExecutionContext()` when the assertion is about the deferred work itself —
+its `pending` shows that work was handed over, and `drain()` is what lets it finish, so a test can assert the in-between state that `app.request`
+never exposes.
 
 **`fakeD1.calls` records at `bind`, not at `prepare`.** Everything `createD1Client` issues binds, so this only bites a test driving `db.prepare(…)`
 by hand, or one asserting on an `exec()` that was never a prepared statement.

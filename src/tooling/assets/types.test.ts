@@ -62,6 +62,18 @@ describe("AssetsConfigSchema — js bundles", () => {
   it("rejects a define value that is neither a literal nor a deferred read", () => {
     expect(parse({ js: { bundles: [{ entry: "a.ts", outdir: "out", define: { X: { __other: "y" } } }] } }).success).toBe(false);
   });
+
+  it("accepts a nested outdir", () => {
+    expect(parse({ js: { bundles: [{ entry: "a.ts", outdir: "js/islands" }] } }).success).toBe(true);
+  });
+
+  // The build cleans this directory before writing into it, so an outdir naming the asset root
+  // would delete every sibling group's output alongside its own.
+  it("rejects an outdir that is the asset root, empty, upward or absolute", () => {
+    for (const outdir of [".", "", "..", "../elsewhere", "/etc", "js/../.."]) {
+      expect(parse({ js: { bundles: [{ entry: "a.ts", outdir }] } }).success).toBe(false);
+    }
+  });
 });
 
 describe("AssetsConfigSchema — css, copy and fonts", () => {
@@ -79,8 +91,12 @@ describe("AssetsConfigSchema — css, copy and fonts", () => {
   });
 
   it("accepts a font download and rejects one missing its url", () => {
-    expect(parse({ fonts: { downloads: [{ url: "https://f/x.woff2", to: "fonts/x.woff2" }] } }).success).toBe(true);
-    expect(parse({ fonts: { downloads: [{ to: "fonts/x.woff2" }] } }).success).toBe(false);
+    expect(parse({ fonts: { downloads: [{ url: "https://f/x.woff2", to: "fonts/x.woff2", sha256: "a".repeat(64) }] } }).success).toBe(true);
+    expect(parse({ fonts: { downloads: [{ to: "fonts/x.woff2", sha256: "a".repeat(64) }] } }).success).toBe(false);
+  });
+
+  it("rejects a font download that pins no digest", () => {
+    expect(parse({ fonts: { downloads: [{ url: "https://f/x.woff2", to: "fonts/x.woff2" }] } }).success).toBe(false);
   });
 });
 
@@ -110,6 +126,18 @@ describe("AssetsConfigSchema — sprites and cursors", () => {
 
   it("rejects a sprite file entry that is an object without both key and file", () => {
     expect(parse({ sprites: { icons: { target: "s.svg", sources: [{ path: "svg", files: [{ key: "b" }] }] } } }).success).toBe(false);
+  });
+
+  it("accepts a remote sprite source whose every file pins a digest", () => {
+    const sources = [{ path: "https://cdn.example.com/icons/", files: [{ key: "a", file: "a.svg", sha256: "a".repeat(64) }] }];
+    expect(parse({ sprites: { icons: { target: "s.svg", sources } } }).success).toBe(true);
+  });
+
+  it("rejects a remote sprite source with a bare filename or an unpinned entry", () => {
+    const bare = [{ path: "https://cdn.example.com/icons/", files: ["a.svg"] }];
+    const unpinned = [{ path: "https://cdn.example.com/icons/", files: [{ key: "a", file: "a.svg" }] }];
+    expect(parse({ sprites: { icons: { target: "s.svg", sources: bare } } }).success).toBe(false);
+    expect(parse({ sprites: { icons: { target: "s.svg", sources: unpinned } } }).success).toBe(false);
   });
 
   it("rejects a sprite group missing its target", () => {
@@ -169,6 +197,19 @@ describe("AssetsConfigSchema — icons", () => {
       },
     };
     expect(parse(config).output).toEqual(config);
+  });
+
+  it("accepts the colour notations an icon may carry", () => {
+    for (const colour of ["#fff", "#ffff", "#163030", "#16303080", "currentColor", "rebeccapurple", "rgb(1 2 3 / 40%)", "hsla(210,50%,40%,.5)"]) {
+      expect(parse({ icons: { src: "a.svg", outDir: "p", lightColor: colour, outputs: [] } }).success).toBe(true);
+    }
+  });
+
+  it("rejects a colour that could break out of the style block it is interpolated into", () => {
+    for (const colour of ["#000}</style><script>alert(1)</script>", "red;}", "url(javascript:alert(1))", "#12345"]) {
+      expect(parse({ icons: { src: "a.svg", outDir: "p", lightColor: colour, outputs: [] } }).success).toBe(false);
+      expect(parse({ icons: { src: "a.svg", outDir: "p", lightColor: "#fff", darkColor: colour, outputs: [] } }).success).toBe(false);
+    }
   });
 
   it("rejects an app block missing shortName", () => {

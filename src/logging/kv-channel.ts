@@ -1,5 +1,6 @@
 import { bytesToHex, randomBytes } from "../crypto/mod";
 import type { KVNamespaceLike } from "../storage/kv/types";
+import { logSafeUrl } from "./log-value";
 import type { KvLogChannelOptions, KvLogMetadata, LogChannel, LogQuery, LogReadResult, LogRecord, LogRow } from "./types";
 import { parseLogLevel } from "./types";
 
@@ -36,10 +37,14 @@ function toPersistable(value: unknown, keepStacks: boolean): unknown {
     if (input === null || typeof input !== "object") return input;
     // An invalid Date has no representable instant, and `toISOString` would throw on the log path.
     if (input instanceof Date) return Number.isNaN(input.getTime()) ? null : input.toISOString();
+    // Ahead of the `toJSON` consult: `URL.prototype.toJSON` returns the full href, query string included.
+    if (input instanceof URL) return logSafeUrl(input);
     if (openPath.has(input)) return CIRCULAR_MARKER;
 
     openPath.add(input);
     try {
+      const toJson = (input as { toJSON?: () => unknown }).toJSON;
+      if (typeof toJson === "function") return walk(toJson.call(input));
       if (Array.isArray(input)) return input.map((item) => walk(item));
       if (input instanceof Map) return { type: "Map", entries: [...input].map(([key, val]) => [walk(key), walk(val)]) };
       if (input instanceof Set) return { type: "Set", values: [...input].map((item) => walk(item)) };

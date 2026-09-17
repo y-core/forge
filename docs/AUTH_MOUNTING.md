@@ -124,12 +124,14 @@ re-keys every live session silently — every signed-in visitor is anonymous on 
 verify a live session survives, not as a tidy-up.
 
 `applyMiddlewareChain` encodes the order inside a group — origin, then rate limit, then the guards — so a consumer never writes it, and
-`buildGuardChain` is that same expansion exported for anyone mounting a group by hand. `origin` and `rateLimit` on a group are **policy data, not
-middleware**: a consumer who spreads `group.guards` alone mounts neither, and on a guard-less group mounts nothing at all.
+`buildGuardChain` is that same expansion exported for anyone mounting a group by hand. `origin` and `rateLimit` on a group are **policy data the
+chain expands into middleware**: a consumer who spreads `group.guards` alone mounts neither, and on a guard-less group mounts nothing at all.
 
-**Pass `origin` or nothing is mounted on the guard-less group**: `["auth"]` declares no guards and is emitted only for the origin check, which is
-the sole cross-origin defence this layer gives the sign-in, sign-up and sign-out POSTs. (`["admin"]` also declares no
-guards, but it has no direct leaves of its own — only nested groups, which register their own stacks — so it is never emitted at all.)
+**`origin` is required, and omitting it throws.** `createAuthGuards` refuses to return at all once any group it is wiring answers a state-changing
+method with no allowlist behind it — the throw names the group, and it happens inside `app.use(…)`, which is isolate startup on a Worker. Forge
+cannot pick your origins and an absent allowlist is not an opt-out, so the alternative would be mounting the sign-in, sign-up and sign-out POSTs
+with no cross-origin defence at all and telling nobody. (`["admin"]` declares no guards and has no direct leaves of its own — only nested groups,
+which register their own stacks — so it is never emitted, and never reaches this check.)
 
 **`rateLimit` is keyed by the group's own dotted path** — the `path.join(".")` of each `AUTH_ROUTE_GROUPS` entry. Forge picks no numbers and ships
 no binding, since a window right for the sign-in POST is wrong for the admin console. A group nothing is named for is emitted as before, and a
@@ -185,9 +187,10 @@ all-`optional` one nobody has enrolled against, are admitted rather than sent to
 resolution per request through a context variable, so mounting them together costs no second registry query. An unreadable factor registry answers
 **503**, the same as the other enrolment guards, because an unknown demand has no remedy page to redirect to.
 
-**`auth` carries no guards and is still emitted, once you pass `origin` or name a rate limit.** Every mutating leaf of a group gets the allowlist
-check, and its sign-in and sign-up POSTs are exactly the mutations with no identity to check — so a group with an empty `guards` array is dropped
-only when neither was configured. `admin` never appears: its own level has no direct leaf, `users` and `elevate` registering their own.
+**`auth` carries no guards and is still emitted**, because `origin` is required and every mutating leaf of a group gets the allowlist check — its
+sign-in and sign-up POSTs are exactly the mutations with no identity to check. A group with an empty `guards` array is dropped only where it has no
+mutating leaf and no rate limit was named for it. `admin` never appears: its own level has no direct leaf, `users` and `elevate` registering their
+own.
 
 ---
 
@@ -204,9 +207,10 @@ Every item here is a seam with a contract and no implementation, and each is req
 | A scheduled call to `purgeAuthEphemera(db, Date.now())` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
 | A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
 | A key ring | Hex root secrets, newest first, each at least 32 bytes, held as a Worker secret. |
+| `AuthWebOptions.bootstrapSecret` — `(c) => string \| undefined`, if this deployment claims its first admin through the page | The claim grants the administrator role to whoever posts first, so it fails closed: with no secret configured, `GET` and `POST /admin/elevate` both answer **404** rather than offering an open endpoint. Read it off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` — `(userId) => string \| Promise<string>` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` — `(userId) => { name, displayName }` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
-| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**: the cookie carries only the session id, and the auth keys live server-side. `createCookieSessionStorage` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger. |
+| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**: the cookie carries only the session id, and the auth keys live server-side. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | An `@source` line covering the installed package's `src/auth/` directory | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The exact directive is in [`src/auth/README.md`][auth-readme]. |

@@ -93,9 +93,15 @@ describe("formatSummary()", () => {
     expect(formatSummary({ gate: "check", passed: 1, skipped: 0, selected: 1, total: 1, ms: 4200 })).toBe("✓ check — 1 step passed (4.2s)");
   });
 
-  it("reports the skipped steps beside the passed ones, never folding them into the count", () => {
+  it("refuses a green for a run that skipped a step, since a skip is work the gate did not do", () => {
     expect(formatSummary({ gate: "verify", passed: 5, skipped: 2, selected: 7, total: 7, ms: 4200 })).toBe(
-      "✓ verify — 5 steps passed, 2 skipped (4.2s)",
+      "○ verify — 5 steps passed, 2 steps skipped (4.2s) — not green: 2 steps never ran; install what each skip line above names",
+    );
+  });
+
+  it("says the same of a single skip, in the singular", () => {
+    expect(formatSummary({ gate: "verify", passed: 5, skipped: 1, selected: 6, total: 6, ms: 4200 })).toBe(
+      "○ verify — 5 steps passed, 1 step skipped (4.2s) — not green: 1 step never ran; install what each skip line above names",
     );
   });
 
@@ -126,7 +132,7 @@ describe("listLabel()", () => {
   const conditional: Step = { label: "validate-class-groups", run: () => checkResult([], ""), requires: { tool: "tailwindcss", hint: "x" } };
 
   it("marks a step with a dependency as conditional below the full tier, naming the dependency", () => {
-    expect(listLabel(conditional, "fast")).toBe("validate-class-groups (conditional — tailwindcss required)");
+    expect(listLabel(conditional, "quality")).toBe("validate-class-groups (conditional — tailwindcss required)");
     expect(listLabel(conditional, "standard")).toBe("validate-class-groups (conditional — tailwindcss required)");
   });
 
@@ -137,7 +143,7 @@ describe("listLabel()", () => {
   });
 
   it("leaves a step with no dependency its bare label in every mode", () => {
-    expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "fast")).toBe("lint");
+    expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "quality")).toBe("lint");
     expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "standard")).toBe("lint");
     expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "full")).toBe("lint");
   });
@@ -158,9 +164,9 @@ describe("formatFixSummary()", () => {
     expect(formatFixSummary({ gate: "verify", fixed: 2, unfixable: 0, skipped: 0 })).toBe("2 fixed — re-run `bun run verify` to confirm.");
   });
 
-  it("counts the steps that had no fixer apart from the ones a missing dependency skipped", () => {
+  it("counts the steps that had no fixer apart from the ones a missing dependency skipped, and names the skip as unfixed", () => {
     expect(formatFixSummary({ gate: "verify", fixed: 1, unfixable: 5, skipped: 1 })).toBe(
-      "1 fixed, 5 without a fixer, 1 skipped — re-run `bun run verify` to confirm.",
+      "1 fixed, 5 without a fixer, 1 step skipped — that step was not fixed; install what each skip line above names, then re-run `bun run verify`.",
     );
   });
 });
@@ -176,7 +182,7 @@ describe("formatMissingRequirement()", () => {
     expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "standard")).toBe(
       "○ validate-class-groups — skipped (tailwindcss not found; run `bun add -d tailwindcss`)",
     );
-    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "fast")).toBe(
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "quality")).toBe(
       "○ validate-class-groups — skipped (tailwindcss not found; run `bun add -d tailwindcss`)",
     );
   });

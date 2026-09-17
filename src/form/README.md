@@ -260,7 +260,9 @@ nothing downstream has to remember this, and `defineAction` answers a tripped bo
 
 **A raised `maxBytes` must be raised in both places.** A body is readable once, so the first caller meters the stream and every later caller
 re-checks the bytes actually read against its own cap. `csrfProtection` parses before the handler does, so a route that raises `defineAction`'s
-`maxBytes` must raise the guard's to match or the guard rejects first ([`INPUT_VALIDATION.md`][iv-2c] §2c).
+`maxBytes` must raise the guard's to match or the guard rejects first ([`INPUT_VALIDATION.md`][iv-2c] §2c). Forgetting it says so: once the shared
+parse has been **refused** at the smaller cap, a later, larger cap throws a wiring error naming both caps — `isFormCapConflict(error)` identifies
+it — which `csrfProtection`, the pipeline and `readAuthSubmission` all rethrow to the error boundary rather than replaying as a `413`.
 
 **A token is bound to a path, so `csrfTokenCtx` is wrong the moment the form posts elsewhere** — verification fails with `path-mismatch`. Mint one
 token per render and never cache one across requests.

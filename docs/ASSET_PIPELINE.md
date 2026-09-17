@@ -83,9 +83,12 @@ stated and one whose inputs depend on where the command was typed. [`BUILD_TOOLI
 None of these takes the whole config — each takes its own slice plus an output directory; `src/tooling/assets/README.md` teaches driving them.
 
 **There is no glob.** A sprite group names every file it contains: a `sources[].path` (a directory or an `http(s)` base) and a `files` list of bare
-names or `{ key, file }` pairs. A missing local file is a warning and a skipped symbol, not a failure, and a group producing no symbols writes
-nothing. The consequence is the point — the symbol set is stated in the config, so the glyph-name union generated from it (§4) changes only when a
-human edits that list, where a glob would let a file appearing on disk silently widen a published type.
+names or `{ key, file }` pairs. The consequence is the point — the symbol set is stated in the config, so the glyph-name union generated from it
+(§4) changes only when a human edits that list, where a glob would let a file appearing on disk silently widen a published type.
+
+**A missing local file fails the build, and so does a group that produces no symbol.** The union is generated from the config rather than from what
+was produced, so a skipped source would typecheck at every call site and render a blank `<use>` in production — the one shape a build must not exit
+0 on.
 
 **The same no-glob rule holds for the `_headers` rules `buildAll` writes**, and there for a second reason: Cloudflare applies _every_ matching rule
 and joins a repeated header with a comma, so one `/static/*` glob overlapping the per-file icon rules would hand the manifest a `Cache-Control`
@@ -206,8 +209,8 @@ be pinned in place of one the config can still be typechecked against. `buildAll
 
 **The guard keeps `gen types` from degrading the manifest; `validate-asset-manifest` catches it being ahead of the tree for any other reason** — a
 `public/` nobody rebuilt, a pruned hashed output, a hand-edited artifact. The check asserts one thing: every `DATA` value resolves to a file under
-`publicDir`. A types-only artifact passes a fast run, because its identity paths deliberately do not exist — that is what lets `tsc` run on a clean
-checkout — and fails a `standard` or `full` run, where a green on an artifact nobody built is the 404 it exists to prevent.
+`publicDir`. A types-only artifact passes a quality run, because its identity paths deliberately do not exist — that is what lets `tsc` run on a
+clean checkout — and fails a `standard` or `full` run, where a green on an artifact nobody built is the 404 it exists to prevent.
 
 ### 4c. The Emitted Glyph Union — the ForgeIcon Seam
 

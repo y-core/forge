@@ -5,7 +5,20 @@ export { mountCarouselDots } from "./carousel";
 export type { CarouselDotsOptions } from "./types";
 export { mountRovingFocus } from "./composite";
 export type { RovingFocusOptions } from "./types";
-export { activeElement, asElement, closestAcross, contains, eventTarget, isRtl, ownerDocument, ownerWindow, queryAcross, safeStorage } from "./dom";
+export {
+  activeElement,
+  asElement,
+  closestAcross,
+  contains,
+  eventTarget,
+  isRtl,
+  ownerDocument,
+  ownerWindow,
+  queryAcross,
+  queryTrees,
+  safeStorage,
+  shadowTrees,
+} from "./dom";
 export { mountNavDrawer } from "./drawer";
 export type { NavDrawerOptions } from "./types";
 export { lazy } from "./lazy";

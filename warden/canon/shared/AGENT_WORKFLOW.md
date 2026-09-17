@@ -20,6 +20,7 @@ description: "How an agent works in any repository: the posture it holds to, the
 
 - §1 Working Posture: only what was asked, and what needs approval first
 - §1a Scope of the Delivered Work: the asked-for scope is the deliverable
+- §1b Reduce Entropy, Never Add It: the primary directive, what entropy is, the four-question test, and how it sits with §1a
 - §2 Tool Selection: `rg` and `find` for discovery, LSP for definitions and references
 - §3 Shell Exit Checks: the one permitted `; echo "EXIT:$?"` spelling and the refusals it carries
 - §3a Commands the Parser Can Read: the shell shapes that force a permission prompt no allow rule suppresses
@@ -62,6 +63,35 @@ work if the guess were wrong. Scaling a task down is the requester's call, so a 
   not told was cut. Scaling the work down is their call.
 - **Do not exceed the scope either.** An unrequested improvement, a nearby refactor, or an extra abstraction is expensive to review and was not
   asked for. Note it; do not build it.
+
+### 1b. Reduce Entropy, Never Add It
+
+**The primary directive of any agent working in a repository is to reduce its entropy, not to increase it.** Every other rule in the canon — the
+comment budget, no shims, one home per fact, no duplicated capability, one spelling per concept, a test for every claim — is this directive applied
+to one kind of disorder. Where no rule covers the case and the index returns nothing (`AGENT_GUIDE.md` §1), this is the principle to reason from.
+
+**Entropy is disorder, not size.** It is the number of ways one thing can be done; a rule with no check behind it; prose that drifts from the code
+it describes; a claim no assertion holds; dead code; a file with no test; a name a reader has to decode; a configuration stated twice; a change
+landed in part. A diff can add lines and lower entropy, or delete lines and raise it, so the line count is never the measure.
+
+**The test is four questions, asked of the change before it is offered.** Does it add a second way to do something that already has one? Does it
+add a rule that nothing checks? Does it add prose that restates what a name, a type or a signature already says? Does it make a claim no test
+holds? A yes to any one is entropy added, and the change is not finished until the answer is no.
+
+**Addition is not forbidden; it is the move that has to justify itself.** A new capability arrives with its home, its test, its barrel entry and
+its doc in the same change, or it is disorder. A second pattern retires the first rather than sitting beside it. A workaround is a debt the next
+reader inherits, and it is named as one.
+
+**The reduction applies within the footprint of the task, and this is how it sits with §1a.** A file the task touches is left more ordered than it
+was found — the comment budget's rule for a touched file (`CODE_RULES.md` §5c) is one instance. Disorder noticed outside that footprint is filed
+as a task (§5), never fixed in passing: the directive is not a licence to widen the diff, and a reviewer who approved the stated subject has not
+agreed to a refactor beside it.
+
+**A deliverable landed whole is lower-entropy than one landed in parts.** A half-finished change is disorder living in the tree, which is why §1a
+requires every unblocked part finished and every cut part named.
+
+**A reviewer's verdict is reached against this directive.** The question a review answers is not only whether the change works but whether the
+repository is more ordered for it (`CODE_REVIEW.md` §3c).
 
 ---
 
@@ -180,6 +210,10 @@ The rhythm:
 - **Read before writing.** A read carries the revision a later edit must cite; an edit citing a stale one is refused, which is the mechanism that
   makes concurrent work safe.
 - **Record the resolution with, or before, the move to done.** A closed task with no resolution has lost the only account of why it could be closed.
+- **Handing a task on is a claim about a run, not about how finished the work feels.** Moving it to the lane that offers it for review asserts the
+  gate passed on the change as it stands, prose and comments included. A reviewer establishes their own green baseline (`CODE_REVIEW.md` §1a), and
+  that is a guard against misattributing a pre-existing failure — not a substitute for this one. Where it is the first run anyone made, the reviewer
+  spends it discovering what the author would have.
 - **Act on a refusal's payload rather than guessing past it.** It names the rule that was applied, the arguments a retry must add, and whether a
   retry could ever succeed. A refusal restating what was already tried is an answer, not an obstacle.
 

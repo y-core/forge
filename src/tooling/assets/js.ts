@@ -5,6 +5,12 @@ import { safeJoin } from "./paths";
 import { bundler } from "./peers";
 import type { ResolvedJsBundle } from "./types";
 
+/** Whether a file in the output directory is one of this group's own, hashed (`main-A1B2.js`) or not. */
+function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
+  const stem = basename(name, extname(name));
+  return stems.has(stem) || [...stems].some((own) => stem.startsWith(`${own}-`));
+}
+
 /** Bundles JavaScript entries with esbuild and writes them to `opts.outDir`. */
 export async function buildJS(
   bundles: ResolvedJsBundle[],
@@ -18,6 +24,11 @@ export async function buildJS(
   const byOutdir = new Map<string, ResolvedJsBundle[]>();
   for (const bundle of bundles) {
     const key = safeJoin(absPublicDir, bundle.outdir);
+    // The schema rejects this too. Repeated here because the clean below is destructive and a
+    // programmatic caller reaches this function without passing through the schema at all.
+    if (key === absPublicDir) {
+      throw new Error(`buildJS: outdir ${JSON.stringify(bundle.outdir)} resolves to the asset root, which this would clean before writing into it`);
+    }
     const group = byOutdir.get(key) ?? [];
     group.push(bundle);
     byOutdir.set(key, group);
@@ -27,9 +38,12 @@ export async function buildJS(
   const mapping: Record<string, string> = {};
 
   for (const [outdir, group] of byOutdir) {
+    // Only this group's own outputs: a sibling writing into the same directory must survive, which
+    // is what `css.ts` and `sprites.ts` already do.
+    const stems = new Set(group.map((bundle) => basename(bundle.entry, extname(bundle.entry))));
     try {
       for (const entry of readdirSync(outdir, { withFileTypes: true })) {
-        if (entry.isFile() && !entry.name.startsWith(".")) {
+        if (entry.isFile() && !entry.name.startsWith(".") && ownsOutput(entry.name, stems)) {
           rmSync(join(outdir, entry.name));
         }
       }

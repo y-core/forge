@@ -94,6 +94,20 @@ function makeRecord(
   return { level: "info" as const, prefix: "test", message: "hello", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
 }
 
+class RedactingSession {
+  readonly id: string;
+  readonly token: string;
+
+  constructor(id: string, token: string) {
+    this.id = id;
+    this.token = token;
+  }
+
+  toJSON(): Record<string, unknown> {
+    return { id: this.id };
+  }
+}
+
 function makeMeta(overrides?: Partial<KvLogMetadata>): KvLogMetadata {
   return { level: "info", prefix: "svc", message: "test message", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
 }
@@ -698,6 +712,38 @@ describe("kvLogChannel — structured value serialization", () => {
     expect(await storedData({ a: shared, b: shared })).toStrictEqual({ a: { id: 1 }, b: { id: 1 } });
   });
 
+  it("honours a redacting toJSON rather than persisting the raw own properties", async () => {
+    expect(await storedData({ session: new RedactingSession("s1", "SECRET") })).toStrictEqual({ session: { id: "s1" } });
+  });
+
+  it("strips a stack carried by a toJSON result under the persistStack default", async () => {
+    const failure = { toJSON: () => ({ message: "boom", stack: "trace" }) };
+    expect(await storedData({ failure })).toStrictEqual({ failure: { message: "boom" } });
+  });
+
+  it("marks a toJSON that returns its own holder as circular instead of recursing forever", async () => {
+    const looping: Record<string, unknown> = { id: 1 };
+    looping.toJSON = () => looping;
+    expect(await storedData({ looping })).toStrictEqual({ looping: "[circular]" });
+  });
+
+  it("persists a URL as origin and path, so a query-string token reaches no record", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(makeRecord({ data: { target: new URL("https://app.example.com/reset?token=SECRET#frag") } }));
+
+    const entry = [...stub._store.values()][0]!;
+    expect((JSON.parse(entry.value) as { data: Record<string, unknown> }).data).toStrictEqual({ target: "https://app.example.com/reset" });
+    expect(entry.value).not.toContain("SECRET");
+  });
+
+  it("prefers a Map's own toJSON over the tagged entry form, as JSON.stringify does", async () => {
+    const counts = new Map([["a", 1]]);
+    (counts as unknown as { toJSON: () => unknown }).toJSON = () => ({ kind: "counts", a: 1 });
+    expect(await storedData({ counts })).toStrictEqual({ counts: { kind: "counts", a: 1 } });
+  });
+
   it("serializes Date, Map and Set when persistStack is true as well", async () => {
     const data = { at: new Date("2026-05-31T10:00:00.000Z"), tags: new Set(["x"]), error: { message: "boom", stack: "trace" } };
     expect(await storedData(data, { persistStack: true })).toStrictEqual({
@@ -705,6 +751,42 @@ describe("kvLogChannel — structured value serialization", () => {
       tags: { type: "Set", values: ["x"] },
       error: { message: "boom", stack: "trace" },
     });
+  });
+});
+
+describe("kvLogChannel and consoleChannel — one value, one meaning", () => {
+  async function bothSinks(data: Record<string, unknown>): Promise<{ console: Record<string, unknown>; kv: Record<string, unknown> }> {
+    const captured: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => captured.push(args.map(String).join(" "));
+    const stub = makeKvStub();
+    try {
+      const { createLogger } = await import("./logger");
+      const { consoleChannel } = await import("./channels");
+      const log = createLogger("agreement", { channels: [consoleChannel(), kvLogChannel(stub, { purgeProbability: 0 })] });
+      log.info("both sinks", data);
+      await log.flush();
+    } finally {
+      console.log = originalLog;
+    }
+    return {
+      console: JSON.parse(captured[0]!) as Record<string, unknown>,
+      kv: (JSON.parse([...stub._store.values()][0]!.value) as { data: Record<string, unknown> }).data,
+    };
+  }
+
+  it("agree on a redacting toJSON, so a console-verified shape is the shape KV keeps", async () => {
+    const seen = await bothSinks({ session: new RedactingSession("s1", "SECRET") });
+
+    expect(seen.console.session).toStrictEqual(seen.kv.session);
+    expect(seen.kv.session).toStrictEqual({ id: "s1" });
+  });
+
+  it("agree on a URL, narrowing both records to origin and path", async () => {
+    const seen = await bothSinks({ target: new URL("https://app.example.com/reset?token=SECRET#frag") });
+
+    expect(seen.console.target).toStrictEqual(seen.kv.target);
+    expect(seen.kv.target).toBe("https://app.example.com/reset");
   });
 });
 

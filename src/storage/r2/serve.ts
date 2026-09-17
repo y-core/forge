@@ -1,3 +1,4 @@
+import { isActiveContentType } from "./content-type";
 import { UnsatisfiableRangeError } from "./errors";
 import type { ObjectBody, ObjectStorageBackend, ServeOptions } from "./types";
 
@@ -35,6 +36,10 @@ function asciiFallbackFilename(filename: string): string {
   return approximated === "" ? "download" : approximated;
 }
 
+function filenameOf(key: string): string {
+  return key.split("/").pop() ?? key;
+}
+
 function contentDisposition(type: "inline" | "attachment", filename: string): string {
   // encodeURIComponent leaves a few non-attr-chars unescaped; encode them too for a strict ext-value.
   const encoded = encodeURIComponent(filename).replace(/['()*!]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -48,14 +53,19 @@ function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   if (obj.contentLanguage) h.set("Content-Language", obj.contentLanguage);
   h.set("ETag", obj.httpEtag);
   h.set("Accept-Ranges", "bytes");
-  // The object's content type is caller-supplied at upload, so a stored `text/html` must never be
-  // sniffed into or out of by the browser.
+  // `nosniff` stops a sniff *into* a type and does nothing once the stored type already is one the
+  // browser executes, so an active type is downloaded under an empty sandbox instead of rendered.
   h.set("X-Content-Type-Options", "nosniff");
+  const active = obj.contentType !== undefined && isActiveContentType(obj.contentType);
+  if (active) h.set("Content-Security-Policy", "sandbox");
   const cc = opts?.cacheControl ?? obj.cacheControl;
   if (cc) h.set("Cache-Control", cc);
   if (opts?.contentDisposition) {
-    const filename = obj.key.split("/").pop() ?? obj.key;
-    h.set("Content-Disposition", contentDisposition(opts.contentDisposition, filename));
+    h.set("Content-Disposition", contentDisposition(opts.contentDisposition, filenameOf(obj.key)));
+  } else if (active) {
+    // A stored `inline` on an active type is the attack, so the caller states a disposition or gets
+    // this one.
+    h.set("Content-Disposition", contentDisposition("attachment", filenameOf(obj.key)));
   } else if (obj.contentDisposition !== undefined && PRINTABLE_ASCII.test(obj.contentDisposition)) {
     // A stored disposition carrying a non-Latin-1 byte throws from `Headers.set`, so it is dropped
     // rather than turned into a 500.

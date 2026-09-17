@@ -17,7 +17,7 @@ export interface MountOptions {
 export interface CarouselDotsOptions {
   /** The `Carousel.Dots` nav whose anchors point at the slides. */
   root: Element;
-  /** Selector for the dots to drive. */
+  /** Narrows which anchors under `root` are driven. @default "a[href^='#']" */
   dotSelector?: string;
 }
 
@@ -133,7 +133,7 @@ export interface ScopeDefinition<A extends string = string> {
 export interface ScrollSpyOptions {
   /** The nav subtree holding the fragment links. */
   root: Element;
-  /** Selector for the links to spy on. */
+  /** Narrows which links under `root` are spied on. @default "a[href^='#']" */
   linkSelector?: string;
   /** `rootMargin` for the observer; the default biases toward the section at the top of the viewport. */
   rootMargin?: string;

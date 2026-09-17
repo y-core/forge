@@ -16,7 +16,7 @@ import {
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "./constants";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
-import { parseFormData } from "./parse-form-data";
+import { isFormCapConflict, parseFormData } from "./parse-form-data";
 import type {
   CsrfKeyRing,
   CsrfMinterOptions,
@@ -261,6 +261,9 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
         const formData = await parseFormData(context, parseOptions);
         token = formData.get(tokenField)?.toString() ?? undefined;
       } catch (error) {
+        // A cap conflict is the app's wiring, not the client's request: swallowing it would answer 403
+        // and leave the route permanently broken with nothing naming why.
+        if (isFormCapConflict(error)) throw error;
         // A size failure is not a CSRF failure; reporting 403 would send the client after the wrong problem.
         if ((error as { status?: number }).status === 413) {
           return new Response("Payload Too Large", { status: 413 });

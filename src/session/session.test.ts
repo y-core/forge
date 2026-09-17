@@ -26,7 +26,10 @@ function fakeKV(): SessionKVBinding {
   };
 }
 
-const sessionCookie = createUnsignedCookie("__session", { path: "/" });
+const OLD_SECRET = "o".repeat(32);
+const NEW_SECRET = "n".repeat(32);
+
+const sessionCookie = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET] });
 
 describe("sessionMiddleware with cookie storage", () => {
   it("creates a new session for requests with no session cookie", async () => {
@@ -97,6 +100,27 @@ describe("sessionMiddleware with cookie storage", () => {
 
     const res = await app.request("/login", { method: "POST" });
     expect(res.headers.getSetCookie()).toHaveLength(1);
+  });
+});
+
+describe("sessionMiddleware cookie hardening", () => {
+  it("pins HttpOnly and Secure on the session cookie it emits", async () => {
+    const app = new Forge();
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
+    mapHandler(app, "POST", "/login", (c) => {
+      sessionCtx.get(c).set("userId", "42");
+      return new Response("ok");
+    });
+
+    const header = (await app.request("/login", { method: "POST" })).headers.get("set-cookie") ?? "";
+    expect(header).toContain("HttpOnly");
+    expect(header).toContain("Secure");
+  });
+
+  it("refuses an unsigned cookie at the type level", () => {
+    const unsigned = createUnsignedCookie("__session", { path: "/" });
+    // @ts-expect-error -- an UnsignedCookie has no `rotating`, so it cannot be a session cookie
+    expect(() => sessionMiddleware(createCookieSessionStorage(), unsigned)).not.toThrow();
   });
 });
 
@@ -228,8 +252,8 @@ describe("sessionMiddleware id observation", () => {
     expect(await second.text()).toBe(firstId);
   });
 
-  // Cookie storage never reproduces the id from its own cookie value — the value is `{"i":…,"d":…}`
-  // — so the re-issue is caught one layer up, where the serialized record equals the value received.
+  // Cookie storage never reproduces the id from its own value, so the re-issue is caught one layer up,
+  // comparing what `storage.save` returned against the payload `read` verified — not the signed bytes.
   it("emits nothing on the next request with cookie storage", async () => {
     const storage = createCookieSessionStorage();
     const app = new Forge();
@@ -261,22 +285,6 @@ describe("sessionMiddleware id observation", () => {
     expect(second.headers.get("set-cookie")).not.toBeNull();
   });
 
-  // The comparison is like-for-like only because `cookie.parse` returns the verified payload and
-  // `storage.save` returns the pre-signing one. Comparing against the raw signed header would not match.
-  it("emits nothing on the next request through a signed cookie", async () => {
-    const signed = createSignedCookie("__session", { secrets: ["s".repeat(32)] });
-    const storage = createCookieSessionStorage();
-    const app = new Forge();
-    app.use("*", sessionMiddleware(storage, signed));
-    mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
-
-    const first = await app.request("/");
-    const cookieValue = first.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
-
-    const second = await app.request("/", { headers: { cookie: `__session=${cookieValue}` } });
-    expect(second.headers.get("set-cookie")).toBeNull();
-  });
-
   it("still clears the cookie when a cookie-storage session is destroyed", async () => {
     const storage = createCookieSessionStorage();
     const app = new Forge();
@@ -291,7 +299,26 @@ describe("sessionMiddleware id observation", () => {
     const cookieValue = first.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
 
     const out = await app.request("/logout", { method: "POST", headers: { cookie: `__session=${cookieValue}` } });
-    expect(out.headers.get("set-cookie")).toBe("__session=; Path=/; SameSite=Lax");
+    expect(out.headers.get("set-cookie")).toBe("__session=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure");
+  });
+
+  // The construction lifetime surviving onto the clearing header is the defect: `Max-Age=31536000`
+  // over an empty value tells the browser to keep the cookie for a year rather than drop it.
+  it("clears with Max-Age=0 even where the cookie was built with a lifetime", async () => {
+    const yearly = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET], maxAge: 31_536_000 });
+    const app = new Forge();
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), yearly));
+    mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
+    mapHandler(app, "POST", "/logout", (c) => {
+      sessionCtx.get(c).destroy();
+      return new Response("bye");
+    });
+
+    const first = await app.request("/");
+    const cookieValue = first.headers.get("set-cookie")!.match(/__session=([^;]+)/)?.[1] ?? "";
+
+    const out = await app.request("/logout", { method: "POST", headers: { cookie: `__session=${cookieValue}` } });
+    expect(out.headers.get("set-cookie")).toBe("__session=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure");
   });
 
   it("emits nothing when a handler reads the session but never its id", async () => {
@@ -345,9 +372,6 @@ describe("sessionMiddleware id observation", () => {
   });
 });
 
-const OLD_SECRET = "o".repeat(32);
-const NEW_SECRET = "n".repeat(32);
-
 /** The `name=value` pair a browser would send back from a response's `Set-Cookie`. */
 function carry(res: Response): string {
   return (
@@ -359,8 +383,8 @@ function carry(res: Response): string {
 }
 
 /** No `rotating` anywhere: the cookie holds the secrets, so the middleware derives it. */
-function rotationApp(secrets: [string, ...string[]], storage: SessionStorage, options?: SessionCookieOptions) {
-  const cookie = createSignedCookie("__session", { path: "/", secrets });
+function rotationApp(secrets: [string, ...string[]], storage: SessionStorage, options?: SessionCookieOptions, maxAge?: number) {
+  const cookie = createSignedCookie("__session", { path: "/", secrets, ...(maxAge === undefined ? {} : { maxAge }) });
   const app = new Forge();
   app.use("*", sessionMiddleware(storage, cookie, options));
   mapHandler(app, "GET", "/id", (c) => new Response(sessionCtx.get(c).id));
@@ -395,6 +419,29 @@ describe("sessionMiddleware secret rotation", () => {
     const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
     const res = await serve.app.request("/id", { headers: { cookie: sent } });
     expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  // A configured lifetime puts an epoch second inside the signature, so re-signing to compare wire
+  // bytes can never match again: without this variant the emit-on-every-request regression ships green.
+  it("emits nothing for a current signature even where the cookie carries a lifetime", async () => {
+    const seed = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const sent = carry(await seed.app.request("/set", { method: "POST" }));
+
+    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const res = await serve.app.request("/id", { headers: { cookie: sent } });
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("stops re-issuing once a rotation has completed under a lifetime", async () => {
+    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const sent = carry(await seed.app.request("/set", { method: "POST" }));
+
+    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const rotated = carry(await serve.app.request("/quiet", { headers: { cookie: sent } }));
+    expect(rotated).not.toBe(sent);
+
+    const settled = await serve.app.request("/quiet", { headers: { cookie: rotated } });
+    expect(settled.headers.get("set-cookie")).toBeNull();
   });
 
   // The headline defect: a KV session that only reads `.id` is not dirty, so it never reaches
@@ -474,23 +521,6 @@ describe("sessionMiddleware secret rotation", () => {
   it("derives rotating from the cookie's own secrets", async () => {
     expect(createSignedCookie("__session", { secrets: [OLD_SECRET] }).rotating).toBe(false);
     expect(createSignedCookie("__session", { secrets: [NEW_SECRET, OLD_SECRET] }).rotating).toBe(true);
-  });
-
-  // An unsigned cookie has no secrets to rotate, so the derivation must not reach for a field it
-  // does not have — re-signing an unchanged value there would cost a comparison and buy nothing.
-  it("leaves an unsigned cookie's unchanged session alone", async () => {
-    const cookie = createUnsignedCookie("__session", { path: "/" });
-    const storage = createCookieSessionStorage();
-    const seedApp = new Forge();
-    seedApp.use("*", sessionMiddleware(storage, cookie));
-    mapHandler(seedApp, "POST", "/set", (c) => {
-      sessionCtx.get(c).set("role", "admin");
-      return new Response("ok");
-    });
-    mapHandler(seedApp, "GET", "/quiet", () => new Response("ok"));
-    const sent = carry(await seedApp.request("/set", { method: "POST" }));
-    const res = await seedApp.request("/quiet", { headers: { cookie: sent } });
-    expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("still emits on a genuine write when rotating is not set", async () => {

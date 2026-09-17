@@ -222,7 +222,7 @@ export interface StepRequirement {
 export interface StepBase {
   /** Stable identifier — the `--only` token, and the name reported on failure. */
   label: string;
-  /** The lowest mode this step runs in; omitted, it runs from `fast` up. */
+  /** The lowest mode this step runs in; omitted, it runs from `quality` up. */
   tier?: GateMode;
   /** Dependency probed before the step runs: absent, only a full run fails; the lower modes skip. */
   requires?: StepRequirement;

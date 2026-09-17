@@ -80,7 +80,7 @@ describe("markdownStep()", () => {
     expect(CHECK_STEPS.filter((step) => isCheckStep(step) && step.fix !== undefined)).toEqual([]);
   });
 
-  it("runs from the tier the caller states, defaulting to fast like every other check", () => {
+  it("runs from the tier the caller states, defaulting to quality like every other check", () => {
     expect(markdownStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
     expect(markdownStep({ root: "/nowhere" }).tier).toBeUndefined();
   });
@@ -160,8 +160,8 @@ describe("builders — the tool steps", () => {
 });
 
 describe("typeAwareLintStep()", () => {
-  it("defaults to the standard tier: it builds its own TypeScript program, so it stays off the fast loop", () => {
-    expect(typeAwareLintStep().tier).toBe("standard");
+  it("defaults to the quality tier: it judges the source rather than running it, whatever it costs", () => {
+    expect(typeAwareLintStep().tier).toBeUndefined();
   });
 
   // The type-aware run is a superset of the syntax run, so it is the only one that can tell a stale
@@ -241,7 +241,7 @@ describe("workerdStep()", () => {
 });
 
 describe("builders — tier", () => {
-  it("puts every check this namespace still builds on the fast tier", () => {
+  it("puts every check this namespace still builds on the quality tier", () => {
     expect(CHECK_STEPS.filter((step) => step.tier !== undefined)).toEqual([]);
   });
 
@@ -250,7 +250,7 @@ describe("builders — tier", () => {
     expect(jsxStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
   });
 
-  it('omits the key rather than writing "fast", so a fast-tier step carries no key at all', () => {
+  it('omits the key rather than writing "quality", so a quality-tier step carries no key at all', () => {
     expect(Object.hasOwn(typecheckStep(), "tier")).toBe(false);
   });
 });
@@ -263,7 +263,7 @@ describe("builders — conditional on tailwindcss", () => {
     cssTokensStep({ root: "/nowhere", stylesheet: "css/tailwind.css", cssDir: "css" }),
   ];
 
-  it("runs the four design-system steps from the fast tier up, naming tailwindcss and the command that installs it", () => {
+  it("runs the four design-system steps from the quality tier up, naming tailwindcss and the command that installs it", () => {
     expect(conditional().map((step) => [step.label, step.tier, step.requires?.tool, step.requires?.hint])).toEqual([
       ["validate-class-groups", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
       ["validate-design-scale", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],

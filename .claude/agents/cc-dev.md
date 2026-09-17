@@ -92,35 +92,30 @@ reopen mid-implementation.
 
 ## The Comment Budget — Binding
 
-**`CODE_RULES.md` §5 is binding on every line you write. It is a ceiling, not a floor.** Read §5a before your first edit in any session; it is the
-entire permitted budget and nothing outside it is a judgement call.
+**`CODE_RULES.md` §5 is binding on every line you write, and it is a ceiling rather than a floor.** Read §5a before your first edit in any session:
+it is the entire permitted budget, and nothing outside it is a judgement call. **Unbudgeted prose is deleted from any file you touch** — that is
+part of the change, not the adjacent refactor the scope rule forbids.
 
-These forms are allowed. Nothing else is:
+The rule text lives in the canon and is not repeated here. This is the index from what you are about to write to the section that governs it:
 
-1. **One line** of TSDoc on an exported symbol — one sentence, saying what it does.
-2. **`@public` / `@internal`** appended to that line.
-3. **A rare one-or-two-line inline *why*** — only under the conditions §5a names. Most files have zero.
+| About to… | Read |
+| --- | --- |
+| Write a TSDoc line, or ask whether a comment is permitted at all | §5a — and most files carry zero inline comments |
+| Gloss an interface field | §5f — a gate step fails a gloss that spells the field name back |
+| Write "two reasons", "the three steps", or any other tally | §5g, and `AGENT_GUIDE.md` §9b for the same rule in a document |
+| Delete a comment that claims behaviour | §5e — the assertion is the missing work, so write the test or name it for `cc-test` |
+| Keep rationale that is real and has nowhere else to go | §5c's routing table — and never the source |
+| Write a sentence into a `README.md` | `AGENT_GUIDE.md` §6c — what the budget evicts is deleted, never relocated into one |
 
-**Unbudgeted comments are deleted from any file you touch.** Multi-paragraph TSDoc, `@example` blocks, banners, commented-out code, TODO/FIXME, and
-restatements of the code go — in existing code as readily as in new. This is not scope creep and is not covered by the no-adjacent-refactor rule;
-deleting them is part of the change.
-
-**The first fix for an unclear line is a better name, a smaller function, or a named intermediate — never a comment.** When you have real rationale,
-route it per §5c: the canon for a portable architectural rule, `docs/` for a local ruling, the namespace `README.md` for usage, a _test_ for a
-behavioural claim, a ledger task for undone work, the commit message for history. Never the source.
-
-**A field is a symbol** (`CODE_RULES.md` §5f). An interface field earns at most one line, and nothing at all when its name and its type already say
-it. `/** Repository root. */ root: string` earns nothing; `/** Repository root; every reported path is relative to it. */` earns its place. A
-comment-budget gate step checks this, so a gloss that spells the field name back fails the gate rather than a review.
-
-**Deleting a behavioural claim without adding the assertion leaves the change incomplete** (`CODE_RULES.md` §5e). Where a comment you are removing
-asserts behaviour, find the test that pins it. If none does, the assertion is the missing work: the system has lost a statement of its own behaviour
-and gained nothing that holds it. Write the test, or name it for `cc-test` in your handoff — never let the claim evaporate silently.
+**The first fix for an unclear line is a better name, a smaller function, or a named intermediate — never a comment** (§5, §7a).
 
 ## Build Verification
 
 After every implementation batch, **the full gate goes to `cc-tester`**:
 
+- **Run the `quality` tier yourself first** — `bun run verify:quality`, or whatever the repository spells it. It is the run that judges what you
+  just wrote rather than what the code does: the comment budget, a field gloss, a count, the barrel, a new file's co-located test, and the wrap of
+  every document you edited. Sending those to `cc-tester` instead costs a whole round trip per finding, and a gate stops at the first one.
 - Ask `cc-tester` to run `bun run verify` and report the verdict. Never stream a full gate through this context — that is the whole reason the agent
   exists.
 - **A single scoped step is yours to run.** `bun run verify --only lint`, or one test file, is a handful of lines and you own the fix either way
@@ -173,7 +168,8 @@ Report back in this shape:
 <task id> → <lane>, or "no ledger item"
 ```
 
-**Update the ledger yourself** once the work the task describes is green. It is reached over MCP, never by editing files. There is no protocol
+**Update the ledger yourself** once the work the task describes is green — offering a task for review claims that run (`AGENT_WORKFLOW.md` §5),
+so a comment budget or a document that would fail it is not yet review-ready. It is reached over MCP, never by editing files. There is no protocol
 document to fetch: the tool descriptions carry every rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would
 satisfy it, and whether it is `retryable`. Act on that payload rather than guessing past it. Read before you write — a read carries the `revision` a
 later edit must cite — and record the resolution with, or before, the move to `done`.

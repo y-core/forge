@@ -203,7 +203,7 @@ export {
   resolveSources,
   suppressedBy,
 } from "./checks/source-scan";
-export { boundaryViolation, checkSsrBoundary, validateSsrBoundary } from "./checks/ssr-boundary";
+export { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./checks/ssr-boundary";
 export type { SsrBoundaryCheckConfig } from "./checks/types";
 export type { GateCommandConfig } from "./types";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";

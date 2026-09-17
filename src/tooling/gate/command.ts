@@ -28,7 +28,7 @@ import type { GateCommandConfig } from "./types";
 export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
 
 const gateFlags = {
-  mode: { type: "string" as const, description: "Which tier to run: fast, standard or full (default: standard)" },
+  mode: { type: "string" as const, description: "Which tier to run: quality, standard or full (default: standard)" },
   full: { type: "boolean" as const, description: "Also run the steps that may require a machine prerequisite" },
   only: {
     type: "string" as const,
@@ -59,12 +59,14 @@ function writeFullLog(label: string, output: string): string | undefined {
   }
 }
 
-// The probe is asked once, and what an absent dependency means is the mode's answer, not the step's:
-// a fast run has no failure to promise, a full run has no skip to allow.
-function absentRequirement(step: Step): StepRequirement | undefined {
+// Asked once per tool per run, because `hasTool` shells out and several steps name the same one.
+// What an absent dependency means is the mode's answer: no failure to promise below `full`.
+function absentRequirement(step: Step, probed: Map<string, boolean>): StepRequirement | undefined {
   const required = step.requires;
   if (required === undefined) return undefined;
-  const present = required.probe === undefined ? hasTool(required.tool) : required.probe();
+  const cached = probed.get(required.tool);
+  const present = cached ?? (required.probe === undefined ? hasTool(required.tool) : required.probe());
+  probed.set(required.tool, present);
   return present ? undefined : required;
 }
 
@@ -103,7 +105,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
   return createCommand({
     name: "verify",
-    description: "Run the verification gate (--mode fast|standard|full; default standard)",
+    description: "Run the verification gate (--mode quality|standard|full; default standard)",
     flags: gateFlags,
     args: { kind: "none" },
     async run(_args, flags, ctx) {
@@ -149,6 +151,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         let unfixable = 0;
         let skipped = 0;
         let broke = false;
+        const probed = new Map<string, boolean>();
         for (const step of steps) {
           // The fixer question comes first: a step with no fixer was never going to spawn, so probing
           // it would report a dependency this run does not need.
@@ -175,7 +178,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             }
             continue;
           }
-          const absent = absentRequirement(step);
+          const absent = absentRequirement(step, probed);
           if (absent !== undefined) {
             console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, mode, style));
             if (mode === "full") broke = true;
@@ -193,7 +196,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
           }
         }
         console.log(formatFixSummary({ gate: banner, fixed, unfixable, skipped }));
-        if (broke) quit(1);
+        if (broke || skipped > 0) quit(1);
         return;
       }
 
@@ -201,9 +204,10 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       let passed = 0;
       let skipped = 0;
       let failedAt: { label: string; at: number } | undefined;
+      const probed = new Map<string, boolean>();
 
       for (const [index, step] of steps.entries()) {
-        const absent = absentRequirement(step);
+        const absent = absentRequirement(step, probed);
         if (absent !== undefined) {
           console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, mode, style));
           if (mode === "full") {
@@ -253,7 +257,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         ),
       );
 
-      if (failedAt !== undefined || passed === 0) quit(1);
+      if (failedAt !== undefined || passed === 0 || skipped > 0) quit(1);
     },
   });
 }

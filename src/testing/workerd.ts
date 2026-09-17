@@ -1,3 +1,5 @@
+// The one file that reaches Node rather than Web APIs. Why that is legal, and what it costs the
+// barrel and a consumer's type program: `docs/TEST_RUNNERS.md` §7f.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";

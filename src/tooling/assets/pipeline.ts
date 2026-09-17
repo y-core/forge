@@ -9,9 +9,10 @@ import { buildCSS } from "./css";
 import { buildFonts } from "./fonts";
 import { buildIcons, iconLinks, iconTarget } from "./icons";
 import { buildJS } from "./js";
+import { deployRoot } from "./paths";
 import { buildRasters } from "./rasters";
 import { buildSite } from "./site";
-import { buildSprites } from "./sprites";
+import { buildSprites, SPRITE_CACHE_DIR } from "./sprites";
 import type { AssetsTypesOutcome, BuildOptions, IconsConfig, SpriteGroupResult } from "./types";
 import type { ResolvedConfig } from "./types";
 
@@ -37,7 +38,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   await buildRasters(config.rasters, publicDir);
 
   if (Object.keys(config.sprites).length > 0) {
-    const result = await buildSprites(config.sprites, publicDir, { hash: shouldHash });
+    const result = await buildSprites(config.sprites, publicDir, { hash: shouldHash, cacheDir: SPRITE_CACHE_DIR });
     Object.assign(manifest, result.mapping);
     spriteGroups = result.groups;
   }
@@ -72,7 +73,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
 
   await generateAssetsModule(spec(), outputPath);
 
-  emitHeaders(publicDir, publicPrefix, shouldHash, config.icons);
+  emitHeaders(config.root, publicDir, publicPrefix, shouldHash, config.icons);
 }
 
 /** Where the generated assets module is written when no path is stated. @internal */
@@ -288,8 +289,8 @@ function headerBlock(path: string, cache: CacheControlInit): string {
   return `${path}\n  Cache-Control: ${new CacheControl(cache).toString()}\n`;
 }
 
-function emitHeaders(publicDir: string, publicPrefix: string, hashed: boolean, icons: IconsConfig | null): void {
-  const headersPath = join(dirname(publicDir), "_headers");
+function emitHeaders(root: string, publicDir: string, publicPrefix: string, hashed: boolean, icons: IconsConfig | null): void {
+  const headersPath = join(deployRoot(root, publicDir), "_headers");
   // Same normalization `createManifest` applies, so the rule cannot disagree with the served URL.
   const base = publicPrefix.endsWith("/") ? publicPrefix.slice(0, -1) : publicPrefix;
   const blocks = [headerBlock(`${base}/*`, hashed ? HASHED_CACHE : { noCache: true })];

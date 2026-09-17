@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { copyAssets } from "./copy";
 import { buildFonts } from "./fonts";
-import { safeJoin } from "./paths";
+import { deployRoot, safeJoin } from "./paths";
 import { buildSprites } from "./sprites";
 
 describe("safeJoin()", () => {
@@ -67,11 +67,31 @@ describe("buildFonts() path containment", () => {
     const tmpDir = join(tmpdir(), `forge-font-traversal-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
     try {
-      await expect(buildFonts({ downloads: [{ url: "https://example.com/font.woff2", to: "../f.woff2" }] }, tmpDir)).rejects.toThrow(
-        "[forge-assets]",
-      );
+      const downloads = [{ url: "https://example.com/font.woff2", to: "../f.woff2", sha256: "a".repeat(64) }];
+      await expect(buildFonts({ downloads }, tmpDir)).rejects.toThrow("[forge-assets]");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("deployRoot()", () => {
+  it("takes the top-level segment of a nested publicDir", () => {
+    expect(deployRoot("/app", "/app/public/assets")).toBe("/app/public");
+    expect(deployRoot("/app", "/app/dist/static/assets")).toBe("/app/dist");
+  });
+
+  // `dirname` on a single-segment publicDir steps above the app entirely, which is where `_headers`
+  // was being written — outside the tree a deploy uploads.
+  it("stays inside the app root when publicDir is a single segment", () => {
+    expect(deployRoot("/app", "/app/public")).toBe("/app/public");
+  });
+
+  it("is the root itself when publicDir is the root", () => {
+    expect(deployRoot("/app", "/app")).toBe("/app");
+  });
+
+  it("is the root rather than a step above it when publicDir sits outside", () => {
+    expect(deployRoot("/app", "/elsewhere/assets")).toBe("/app");
   });
 });

@@ -1,4 +1,4 @@
-import { BIND_ATTR_ATTR, BIND_TEXT_ATTR, parseBindAttr } from "../contracts/bind-contract";
+import { BIND_ATTR_ATTR, BIND_TEXT_ATTR, isBindAttrRefused, parseBindAttr, safeBindAttrValue } from "../contracts/bind-contract";
 import { queryAcross } from "./dom";
 import { effect } from "./signal";
 import type { SignalRecord } from "./types";
@@ -52,6 +52,10 @@ export function bindAttr<T extends Record<string, unknown>>(root: HTMLElement, s
       console.warn(`[${BIND_ATTR_ATTR}] "${spec}" is not an "attribute:field" pair`);
       return undefined;
     }
+    if (isBindAttrRefused(parsed.attribute)) {
+      console.warn(`[${BIND_ATTR_ATTR}] "${parsed.attribute}" may not be bound to a signal`);
+      return undefined;
+    }
     const signal = resolve(signals, parsed.field, BIND_ATTR_ATTR);
     if (signal === undefined) return undefined;
     return effect(() => {
@@ -59,7 +63,7 @@ export function bindAttr<T extends Record<string, unknown>>(root: HTMLElement, s
       // `false`, `null` and `undefined` all remove the attribute, and `true` writes the empty
       // string, which is how HTML spells a present boolean attribute.
       if (value === false || value === null || value === undefined) el.removeAttribute(parsed.attribute);
-      else el.setAttribute(parsed.attribute, value === true ? "" : String(value));
+      else el.setAttribute(parsed.attribute, value === true ? "" : safeBindAttrValue(parsed.attribute, String(value)));
     });
   });
 }

@@ -129,6 +129,20 @@ describe("originProtection middleware", () => {
     expect(res.status).toBe(200);
   });
 
+  it("allows POST with Sec-Fetch-Site: none and no Origin/Referer, the other half of the admitted set", async () => {
+    const app = makeOriginApp();
+    const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "none" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for POST with a Sec-Fetch-Site value outside the admitted set and no Origin/Referer", async () => {
+    const app = makeOriginApp();
+    for (const value of ["same-site", "cross-site", "unknown", ""]) {
+      const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": value } });
+      expect(res.status).toBe(403);
+    }
+  });
+
   it("allows POST with Sec-Fetch-Site: same-origin and an allowed Origin", async () => {
     const app = makeOriginApp();
     const res = await app.request("/test", { method: "POST", headers: { "Sec-Fetch-Site": "same-origin", Origin: ALLOWED } });

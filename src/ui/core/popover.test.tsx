@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, classesOf } from "./core.fixture";
+import { attrOf, attrsOf, classesOf, tagOf } from "./core.fixture";
 import { Popover } from "./popover";
 
 const ALIGNS = ["start", "center", "end"] as const;
@@ -32,6 +32,7 @@ describe("Popover.Trigger", () => {
       commandfor: "menu-1",
       "aria-controls": "menu-1",
       "aria-expanded": "false",
+      "aria-haspopup": "dialog",
     });
   });
 
@@ -64,20 +65,31 @@ describe("Popover.Content", () => {
   it("renders the whole panel exactly, forwarded attributes escaped", async () => {
     expect(
       await render(
-        <Popover.Content id='menu-1' role='menu' data-note='a&b'>
+        <Popover.Content id='menu-1' label='Card & tools' data-note='a&b'>
           Items
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start"' +
-        ' class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md" role="menu"' +
+      '<div id="menu-1" role="dialog" aria-label="Card &amp; tools" data-slot="popover-content" data-scope="popover" popover="auto"' +
+        ' data-side="bottom" data-align="start"' +
+        ' class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md"' +
         ' data-note="a&amp;b">Items</div>',
     );
   });
 
   it("is a native popover carrying the scope its controller resumes from, placed bottom-start unless told otherwise", async () => {
-    expect(attrsOf(await render(<Popover.Content id='menu-1'>Items</Popover.Content>))).toEqual({
+    expect(
+      attrsOf(
+        await render(
+          <Popover.Content id='menu-1' label='Tools'>
+            Items
+          </Popover.Content>,
+        ),
+      ),
+    ).toEqual({
       id: "menu-1",
+      role: "dialog",
+      "aria-label": "Tools",
       "data-slot": "popover-content",
       "data-scope": "popover",
       popover: "auto",
@@ -88,13 +100,13 @@ describe("Popover.Content", () => {
 
   it("states the align it was given, which is all that distinguishes one placement from another", async () => {
     for (const align of ALIGNS) {
-      expect(attrOf(await render(<Popover.Content id='menu-1' align={align} />), "data-align")).toBe(align);
+      expect(attrOf(await render(<Popover.Content id='menu-1' label='Tools' align={align} />), "data-align")).toBe(align);
     }
   });
 
   it("states the side it was given on every physical axis", async () => {
     for (const side of SIDES) {
-      expect(attrOf(await render(<Popover.Content id='menu-1' side={side} />), "data-side")).toBe(side);
+      expect(attrOf(await render(<Popover.Content id='menu-1' label='Tools' side={side} />), "data-side")).toBe(side);
     }
   });
 
@@ -102,7 +114,7 @@ describe("Popover.Content", () => {
     expect(
       classesOf(
         await render(
-          <Popover.Content id='menu-1' class='w-64'>
+          <Popover.Content id='menu-1' label='Tools' class='w-64'>
             Items
           </Popover.Content>,
         ),
@@ -116,7 +128,7 @@ describe("Popover composition", () => {
     const html = await render(
       <Popover>
         <Popover.Trigger for='menu-file'>Open menu</Popover.Trigger>
-        <Popover.Content id='menu-file'>
+        <Popover.Content id='menu-file' label='File'>
           <div>Item 1</div>
         </Popover.Content>
       </Popover>,
@@ -124,5 +136,49 @@ describe("Popover composition", () => {
 
     expect([...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1])).toEqual(["popover", "popover-trigger", "popover-content"]);
     expect(attrOf(html, "commandfor", 'data-slot="popover-trigger"')).toBe(attrOf(html, "id", 'data-slot="popover-content"'));
+  });
+
+  it("gives the trigger an aria-haspopup naming the role its aria-controls target actually carries", async () => {
+    const html = await render(
+      <Popover>
+        <Popover.Trigger for='share-panel'>Share</Popover.Trigger>
+        <Popover.Content id='share-panel' label='Share'>
+          Link
+        </Popover.Content>
+      </Popover>,
+    );
+    const target = attrOf(html, "aria-controls", 'data-slot="popover-trigger"');
+
+    expect(attrOf(html, "role", `id="${target}"`)).toBe("dialog");
+    expect(attrOf(html, "aria-haspopup", 'data-slot="popover-trigger"')).toBe(attrOf(html, "role", `id="${target}"`));
+  });
+});
+
+describe("Popover.Content — the name a reader entering the panel gets", () => {
+  it("resolves a literal label into the name, which role=dialog takes only from the author", async () => {
+    expect(attrOf(await render(<Popover.Content id='p' label='Share link' />), "aria-label")).toBe("Share link");
+  });
+
+  it("points at an element the same output carries, when the name is a reference", async () => {
+    const html = await render(
+      <Popover>
+        <Popover.Trigger for='p'>
+          <span id='p-trigger'>Share</span>
+        </Popover.Trigger>
+        <Popover.Content id='p' labelledby='p-trigger'>
+          Link
+        </Popover.Content>
+      </Popover>,
+    );
+    const named = attrOf(html, "aria-labelledby", 'data-slot="popover-content"');
+
+    expect(named).toBe("p-trigger");
+    expect(tagOf(html, `id="${named}"`)).not.toBe("");
+  });
+
+  // The trigger's `aria-haspopup` is a fixed `dialog` with no way to say otherwise, so a re-roled
+  // panel would leave the pair disagreeing. A menu-role popup is `Menu.Popup`, which has a trigger.
+  it("keeps its role off the forwarded props, so the trigger's aria-haspopup cannot be made to lie", async () => {
+    expect(attrOf(await render(<Popover.Content id='p' label='Tools' />), "role")).toBe("dialog");
   });
 });

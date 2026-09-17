@@ -39,7 +39,9 @@ export class FakeElement {
   tabIndex = 0;
   id = "";
   focused = false;
-  shadowRoot: FakeElement | null = null;
+  /** The host of a shadow root, set when one is attached — a real `ShadowRoot` always carries it. */
+  host: FakeElement | null = null;
+  private shadow: FakeElement | null = null;
   ownerDocument: FakeDocument | null = null;
   /** A shadow root reports its own focused node; a plain element's stays null. */
   activeElement: FakeElement | null = null;
@@ -179,6 +181,15 @@ export class FakeElement {
     if (this.ownerDocument) this.ownerDocument.activeElement = this;
   }
 
+  get shadowRoot(): FakeElement | null {
+    return this.shadow;
+  }
+
+  set shadowRoot(root: FakeElement | null) {
+    this.shadow = root;
+    if (root) root.host = this;
+  }
+
   getRootNode(): FakeElement | FakeDocument {
     return this.ownerDocument ?? this;
   }
@@ -316,6 +327,11 @@ export class FakeWindow {
     this.timers.delete(id);
   }
 
+  /** The real one: a microtask is not a clock, so `await Promise.resolve()` drains it in order. */
+  queueMicrotask(fn: () => void): void {
+    queueMicrotask(fn);
+  }
+
   /** Runs every pending timer, in the order they were armed. */
   flush(): void {
     const pending = [...this.timers.entries()].sort(([a], [b]) => a - b);
@@ -373,4 +389,52 @@ export function fakeTree(): { doc: FakeDocument; el: (tag?: string, attrs?: Reco
       return element;
     },
   };
+}
+
+/** Installs the CSSOM spec's `CSS.escape` for the Bun test runtime, which ships no `CSS`. @internal */
+export function installCssEscape(): void {
+  const cssGlobal = globalThis as unknown as { CSS?: { escape: (value: string) => string } };
+  if (typeof cssGlobal.CSS === "undefined") {
+    cssGlobal.CSS = {
+      escape(value: string): string {
+        const string = String(value);
+        const length = string.length;
+        const firstCodeUnit = string.charCodeAt(0);
+        let result = "";
+        for (let index = 0; index < length; index++) {
+          const codeUnit = string.charCodeAt(index);
+          if (codeUnit === 0x0000) {
+            result += "�";
+            continue;
+          }
+          if (
+            (codeUnit >= 0x0001 && codeUnit <= 0x001f) ||
+            codeUnit === 0x007f ||
+            (index === 0 && codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
+            (index === 1 && codeUnit >= 0x0030 && codeUnit <= 0x0039 && firstCodeUnit === 0x002d)
+          ) {
+            result += `\\${codeUnit.toString(16)} `;
+            continue;
+          }
+          if (index === 0 && length === 1 && codeUnit === 0x002d) {
+            result += `\\${string.charAt(index)}`;
+            continue;
+          }
+          if (
+            codeUnit >= 0x0080 ||
+            codeUnit === 0x002d ||
+            codeUnit === 0x005f ||
+            (codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
+            (codeUnit >= 0x0041 && codeUnit <= 0x005a) ||
+            (codeUnit >= 0x0061 && codeUnit <= 0x007a)
+          ) {
+            result += string.charAt(index);
+            continue;
+          }
+          result += `\\${string.charAt(index)}`;
+        }
+        return result;
+      },
+    };
+  }
 }

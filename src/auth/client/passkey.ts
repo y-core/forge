@@ -241,11 +241,15 @@ export function mountPasskey(root: HTMLElement): () => void {
     if (running) return;
     running = true;
     trigger.setAttribute("aria-busy", "true");
-    void runPasskeyCeremony(ceremony, realm, nickname?.value || undefined).then((outcome) => {
-      running = false;
-      trigger.removeAttribute("aria-busy");
-      report(outcome);
-    });
+    // The encode and navigate steps run outside the ceremony's own try, so a throw there would
+    // otherwise leave the button busy and dead for the rest of the page, and say nothing.
+    void runPasskeyCeremony(ceremony, realm, nickname?.value || undefined)
+      .catch(() => ({ mode: ceremony.mode, reason: "ceremony-failed" }) as PasskeyOutcomeDetail)
+      .then(report)
+      .finally(() => {
+        running = false;
+        trigger.removeAttribute("aria-busy");
+      });
   };
 
   trigger.addEventListener("click", onClick);

@@ -70,5 +70,5 @@ const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "ce
   </div>
 );
 
-/** Compound tooltip whose trigger is described by a manual popover shown on hover or keyboard focus. @public */
+/** Compound tooltip whose trigger is described by a hint popover shown on hover or keyboard focus. @public */
 export const Tooltip = Object.assign(TooltipRoot, { Trigger: TooltipTrigger, Content: TooltipContent });

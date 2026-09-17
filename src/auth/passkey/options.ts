@@ -3,6 +3,7 @@ import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import {
   AUTH_PASSKEY_CHALLENGE_BYTES,
+  AUTH_PASSKEY_CHALLENGE_MAX_BYTES,
   AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
   AUTH_PASSKEY_TTL_MAX_SECONDS,
   AUTH_PASSKEY_TTL_MIN_SECONDS,
@@ -33,8 +34,10 @@ function challengeBytes(operation: string, requested: number | undefined): numbe
   return authLimit(operation, "challengeBytes", requested, {
     fallback: AUTH_PASSKEY_CHALLENGE_BYTES,
     min: AUTH_PASSKEY_CHALLENGE_MIN_BYTES,
+    max: AUTH_PASSKEY_CHALLENGE_MAX_BYTES,
     unit: "byte",
     floor: "the floor WebAuthn states for a ceremony challenge",
+    ceiling: "a challenge is stored and sent on every ceremony, and no authenticator asks for more",
   });
 }
 

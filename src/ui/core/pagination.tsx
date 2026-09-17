@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { currentAttrs } from "../contracts/state-attrs";
 import type { Size } from "../contracts/types";
 import { buttonVariants } from "./button";
@@ -37,12 +38,15 @@ interface PaginationNextProps extends Omit<JSX.IntrinsicElements["a"], "children
   children?: JSXNode | undefined;
 }
 
-type PaginationEllipsisProps = Omit<JSX.IntrinsicElements["li"], "children">;
+interface PaginationEllipsisProps extends Omit<JSX.IntrinsicElements["li"], "children"> {
+  /** Accessible name for the gap, rendered `sr-only`. @default LABEL_DEFAULTS.paginationEllipsis */
+  label?: string | undefined;
+}
 
 const LIST_BASE = "flex items-center gap-1";
 const ELLIPSIS_BASE = "inline-flex size-control-sm items-center justify-center";
 
-const PaginationRoot: FC<PaginationRootProps> = ({ label = "Pagination", class: cls, children, "data-slot": inherited, ...rest }) => {
+const PaginationRoot: FC<PaginationRootProps> = ({ label = LABEL_DEFAULTS.pagination, class: cls, children, "data-slot": inherited, ...rest }) => {
   return (
     <nav aria-label={label} data-slot={slotToken("pagination", inherited)} class={cls} {...rest}>
       <ul data-slot='pagination-list' class={LIST_BASE}>
@@ -112,8 +116,6 @@ const PaginationPrevious: FC<PaginationPreviousProps> = ({
           slot,
           class: className,
           props: { ...rest },
-          // The icon is a required prop, and rendering it only on the non-asChild branch left an
-          // `asChild` Previous with visible text and no chevron at all.
           prefix: <PreviousIcon name='chevron-left' width={16} height={16} />,
           suffix: <span class='sr-only'>{label}</span>,
           message:
@@ -174,13 +176,18 @@ const PaginationNext: FC<PaginationNextProps> = ({
   );
 };
 
-const PaginationEllipsis: FC<PaginationEllipsisProps> = ({ class: cls, "data-slot": inherited, ...rest }) => {
+const PaginationEllipsis: FC<PaginationEllipsisProps> = ({
+  label = LABEL_DEFAULTS.paginationEllipsis,
+  class: cls,
+  "data-slot": inherited,
+  ...rest
+}) => {
   return (
     <li data-slot={slotToken("pagination-ellipsis", inherited)} class={cls} {...rest}>
       <span aria-hidden='true' class={ELLIPSIS_BASE}>
         …
       </span>
-      <span class='sr-only'>More pages</span>
+      <span class='sr-only'>{label}</span>
     </li>
   );
 };

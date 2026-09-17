@@ -1,5 +1,5 @@
 export { resolveObjectStore, validateR2Binding } from "./bindings";
-export { CONTENT_TYPE_DEFAULT, inferContentType } from "./content-type";
+export { ACTIVE_CONTENT_EXTENSIONS, CONTENT_TYPE_DEFAULT, inferContentType, isActiveContentType } from "./content-type";
 export { r2Backend } from "./r2-backend";
 export { serveObject } from "./serve";
 export { UnsatisfiableRangeError } from "./errors";

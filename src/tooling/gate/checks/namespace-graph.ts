@@ -91,7 +91,10 @@ export function checkNamespaceGraph(config: NamespaceGraphCheckConfig): CheckRes
   const sourceDir = config.sourceDir ?? "src";
   const namespaces = resolveNamespaces(config.exports, config.sealedInternal ?? [], sourceDir);
   if (namespaces.length === 0) return scannedNothing(`\`${sourceDir}\` resolved no namespace from the export map`, "namespace-graph");
-  const observed = buildGraph(resolveSources(config.root, sourceDir), namespaces);
+
+  const sources = resolveSources(config.root, sourceDir);
+  if (sources.length === 0) return scannedNothing(`\`${sourceDir}\` matched no source`, "namespace-graph");
+  const observed = buildGraph(sources, namespaces);
 
   const findings: Finding[] = diffGraph(observed, config.graph, namespaces).map((finding) => {
     if (finding.file === undefined) return fail(finding.detail, { file: "edges" });

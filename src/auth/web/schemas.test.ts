@@ -146,16 +146,26 @@ describe("authAdminUserSchema", () => {
 });
 
 describe("authAdminElevateSchema", () => {
-  it("accepts the explicit confirmation", () => {
-    expect(output(authAdminElevateSchema(), { confirm: "yes" })).toEqual({ confirm: "yes" });
+  it("accepts the explicit confirmation carrying the bootstrap secret", () => {
+    expect(output(authAdminElevateSchema(), { confirm: "yes", secret: "s3cret" })).toEqual({ confirm: "yes", secret: "s3cret" });
   });
 
   it("rejects any other value, so a stray submit cannot mint an administrator", () => {
-    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "on" })).toEqual(["confirm"]);
+    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "on", secret: "s3cret" })).toEqual(["confirm"]);
+  });
+
+  // Required, not optional: the claim grants the role to whoever posts first, so a submission with
+  // no secret must never reach the write.
+  it("rejects a claim carrying no secret at all", () => {
+    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "yes" })).toEqual(["secret"]);
+  });
+
+  it("rejects a secret longer than the field's bound, rather than reading it", () => {
+    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "yes", secret: "x".repeat(513) })).toEqual(["secret"]);
   });
 
   it("rejects a missing confirmation", () => {
-    expect(fieldsRejected(authAdminElevateSchema(), {})).toEqual(["confirm"]);
+    expect(fieldsRejected(authAdminElevateSchema(), { secret: "s3cret" })).toEqual(["confirm"]);
   });
 });
 

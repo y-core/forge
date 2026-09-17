@@ -9,6 +9,7 @@ import type { Forge } from "../../app/forge-app";
 import { definePage } from "../../app/page";
 import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
+import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import { requireFormContentType } from "../../security/content-type";
 import { crossOriginProtection } from "../../security/cop";
 import { v } from "../../validation/validation";
@@ -37,8 +38,10 @@ import type { CustomiseData } from "./types";
 import type { ShowcaseData } from "./types";
 import type { ShowcaseOptions, ShowcaseUiRoutes } from "./types";
 
-/** The playground form's only declared field; the pipeline drops the token itself. */
-const TURNSTILE_VERIFY_SCHEMA = v.strictObject({ email: v.optional(v.string()) });
+// The token is declared as well as dropped: a configured pipeline strips it before validation, and
+// an unconfigured one hands it to this schema, where a strict object would refuse the whole post.
+/** The playground form's fields, as a configured and an unconfigured action present them. */
+const TURNSTILE_VERIFY_SCHEMA = v.strictObject({ email: v.optional(v.string()), [TURNSTILE_FIELD_DEFAULT]: v.optional(v.string()) });
 
 /** Builds the showcase route subtree under `base` (defaults to `"/showcase/ui"`). @public */
 export function showcaseRoutes(base = "/showcase/ui") {

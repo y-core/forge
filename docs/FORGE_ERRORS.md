@@ -266,6 +266,11 @@ of returning `Result`:
 - `Config.get` and config `resolve` (`config`)
 - `validateEnv` and the `validateBindings` middleware (`app`)
 - `resolveKVStore`, `resolveD1Client`, `resolveObjectStore` (`storage/*`)
+- `Forge.fetch` on a missing `executionCtx` (`app`)
+
+**`Forge.fetch`'s `executionCtx` check is the one that throws out of `fetch` itself.** It is raised before the `try`, so it escapes uncaught and the
+runtime renders its own error page rather than the app's — deliberate: the two-argument export form discards every `waitUntil`, and a handled
+response would hide a defect that costs the deployment its request logs, its D1 schema observation and its audit writes.
 
 **Env and config failures throw the normalized shape `Invalid environment: <field>: <reason>; …`** produced by `formatEnvIssues`
 (`src/validation/format-issues.ts`, `@internal`) — never hand-roll the formatting, and never reproduce `issue.message`, which embeds the rejected

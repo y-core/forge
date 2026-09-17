@@ -12,7 +12,7 @@ export type {
   VaryInit,
 } from "./headers";
 export { Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Range, SetCookie, Vary } from "./headers";
-export { html, isSafeHtml, rawHtml } from "./html";
+export { html, isSafeHtml, rawHtml, scriptJson, styleText } from "./html";
 export type { SafeHtml } from "./html";
 export { joinPath } from "./path";
 export { safeRedirectPath } from "./redirect-path";

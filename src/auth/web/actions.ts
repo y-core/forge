@@ -2,8 +2,9 @@ import type { Session } from "@remix-run/session";
 
 import { getAppContext } from "../../context/types";
 import type { AppContext, RequestHandler } from "../../context/types";
+import { timingSafeEqual } from "../../crypto/timing";
 import { csrfFieldCtx } from "../../form/csrf-context";
-import { parseFormData } from "../../form/parse-form-data";
+import { isFormCapConflict, parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
 import type { ReadonlyFormData } from "../../form/types";
 import { createRedirectResponse, jsonResponse } from "../../http/response";
@@ -35,9 +36,9 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import { authEnrollable, authNow, authReturnPath, authServices, authSettledPath } from "./options";
+import { authEnrollable, authNow, authReturnPath, authReturnQuery, authServices, authSettledPath } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
-import { authVerifyDetour, resolveAuthVerifyDemand, resolveAuthViewer } from "./resolve";
+import { authVerifyDetour, forbidden, resolveAuthVerifyDemand, resolveAuthViewer } from "./resolve";
 import {
   authAdminElevateSchema,
   authAdminUserSchema,
@@ -49,7 +50,7 @@ import {
   authVerifySchema,
 } from "./schemas";
 import type { AuthIdentity } from "./types";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types";
 
 const NO_SESSION =
   "auth/web action: no session on this request — mount `sessionMiddleware` before the auth routes, or a sign-in writes an identity nothing can read back.";
@@ -70,6 +71,7 @@ const FIELD_REFUSAL: Readonly<Record<string, string>> = {
   label: "Use a shorter name for this passkey.",
   confirm: "Confirm the claim before submitting it.",
   role: "Pick a role from the list.",
+  secret: "That is not the bootstrap secret this deployment was configured with.",
   status: "Pick a status from the list.",
 };
 
@@ -107,7 +109,9 @@ async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
   let form: ReadonlyFormData;
   try {
     form = await parseFormData(c);
-  } catch {
+  } catch (error) {
+    // The only throw here that is not about the submission: a field refusal would blame the visitor.
+    if (isFormCapConflict(error)) throw error;
     return err({ field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
   }
   const csrfField = csrfFieldCtx.getOptional(c);
@@ -145,6 +149,11 @@ type CeremonyBody = { readonly ok: true; readonly body: unknown } | { readonly o
 // then meter the stream, because a chunked body's header may be absent or lying.
 /** The JSON body a ceremony endpoint was posted, capped at `AUTH_CEREMONY_MAX_BYTES`. */
 async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<CeremonyBody> {
+  // `text/plain` is a form's `enctype` and needs no preflight, so a cross-site form can post a
+  // JSON-shaped body. Parsing on shape alone would read it; only the declared type refuses it.
+  const type = c.request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  if (type !== "application/json") return { ok: false, response: jsonResponse({ error: CEREMONY_REFUSED }, 415) };
+
   const declared = c.request.headers.get("content-length");
   if (declared !== null && Number.isFinite(Number(declared)) && Number(declared) > AUTH_CEREMONY_MAX_BYTES) {
     return { ok: false, response: jsonResponse({ error: CEREMONY_TOO_LARGE }, 413) };
@@ -170,7 +179,10 @@ async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<Cere
     const body: unknown = await new Response(c.request.body.pipeThrough(counter), { headers: c.request.headers }).json();
     return { ok: true, body };
   } catch {
-    return overflowed ? { ok: false, response: jsonResponse({ error: CEREMONY_TOO_LARGE }, 413) } : { ok: true, body: null };
+    // Malformed JSON is its own refusal, not an absent body: reporting them alike would answer a
+    // truncated envelope with the same 400 a client reads as "send the credential again".
+    if (overflowed) return { ok: false, response: jsonResponse({ error: CEREMONY_TOO_LARGE }, 413) };
+    return { ok: false, response: jsonResponse({ error: CEREMONY_REFUSED }, 400) };
   }
 }
 
@@ -211,7 +223,7 @@ export function createSigninActions<Bindings>(options: AuthWebOptions<Bindings>)
       // parameter carrying it lands in browser history, `Referer` and every proxy log on the way.
       services.signin.request(parsed.data.email, authNow(options));
       markAuthSigninPending(session, parsed.data.email);
-      return createRedirectResponse(options.paths.auth.verify.show(), REDIRECT_STATUS);
+      return createRedirectResponse(authReturnQuery(c, options, options.paths.auth.verify.show()), REDIRECT_STATUS);
     },
   };
 }
@@ -229,7 +241,7 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       services.signup.request(parsed.data.email, authNow(options));
       markAuthSigninPending(session, parsed.data.email);
-      return createRedirectResponse(options.paths.auth.verify.show(), REDIRECT_STATUS);
+      return createRedirectResponse(authReturnQuery(c, options, options.paths.auth.verify.show()), REDIRECT_STATUS);
     },
   };
 }
@@ -261,7 +273,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
         const stepped = await services.signin.stepUp(demand.identity.userId, demand.factor, parsed.data.code, at);
         if (!stepped.ok) return loadVerify(c, options, { error: SIGNIN_NOTICE[redactSigninReason(stepped.error)], status: 422 });
         // The only place a step-up is ever recorded: every other outcome leaves the mark alone.
-        markAuthStepUp(session, at);
+        markAuthStepUp(session, at, authNow(options));
         return createRedirectResponse(authReturnPath(c, options), REDIRECT_STATUS);
       }
 
@@ -273,12 +285,16 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
         return loadVerify(c, options, { email: pending, error: SIGNIN_NOTICE[redactSigninReason(completed.error)], status: 422 });
       }
 
-      establishAuthSession(session, completed.data.user.id, at);
+      establishAuthSession(session, completed.data.user.id, at, authNow(options));
       const resolution = completed.data.resolution;
       // A successful outcome of a correct sign-in, not a refusal of one: the visitor proved the
-      // primary factor and now owes an enrolment, which is a page to visit rather than a 4xx.
-      if (resolution.status === "enrolment-required") return createRedirectResponse(enrolTarget(options, resolution.kinds), REDIRECT_STATUS);
-      if (resolution.status === "step-up-required") return createRedirectResponse(options.paths.auth.verify.show(), REDIRECT_STATUS);
+      // primary factor and owes an enrolment, which is a page to visit — carrying the return-to on.
+      if (resolution.status === "enrolment-required") {
+        return createRedirectResponse(authReturnQuery(c, options, enrolTarget(options, resolution.kinds)), REDIRECT_STATUS);
+      }
+      if (resolution.status === "step-up-required") {
+        return createRedirectResponse(authReturnQuery(c, options, options.paths.auth.verify.show()), REDIRECT_STATUS);
+      }
       return createRedirectResponse(authReturnPath(c, options), REDIRECT_STATUS);
     },
 
@@ -289,7 +305,8 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const at = authNow(options);
       // Whether a code was actually issued is what a visitor may not learn: only a real account can
       // be inside the reissue window, so reporting it would bin an address list.
-      const resent = `${options.paths.auth.verify.show()}?${AUTH_RESENT_PARAM}`;
+      const verifyPath = authReturnQuery(c, options, options.paths.auth.verify.show());
+      const resent = `${verifyPath}${verifyPath.includes("?") ? "&" : "?"}${AUTH_RESENT_PARAM}`;
       const demand = await resolveAuthVerifyDemand(c, services);
       const detour = authVerifyDetour(c, options, demand);
       if (detour !== null) return detour;
@@ -358,7 +375,7 @@ export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bin
       const verified = await service.verifyChallenge(identity.userId, JSON.stringify(body.credential), at);
       if (!verified.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
-      markAuthStepUp(session, at);
+      markAuthStepUp(session, at, authNow(options));
       return jsonResponse({ redirect: authReturnPath(c, options) });
     },
   };
@@ -369,7 +386,7 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
   readonly begin: RequestHandler;
   readonly finish: RequestHandler;
 } {
-  async function enrolmentService(c: AppContext<Bindings>, services: AuthRequestServices) {
+  async function enrolmentService(c: AppContext<Bindings>, services: AuthRequestSurface) {
     const identity = resolveAuthViewer(c);
     const offered = authEnrollable(services, "passkey");
     if (identity === null || !offered.ok) return null;
@@ -465,10 +482,10 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
 // The barrier refuses every session established at or before it, this one included, so the acting
 // session is re-stamped past it: the visitor stays where they are and every other device does not.
 /** Raises this account's revocation barrier and carries the acting session over it. */
-async function revokeOtherSessions(services: AuthRequestServices, session: Session, userId: string, at: number): Promise<boolean> {
+async function revokeOtherSessions(services: AuthRequestSurface, session: Session, userId: string, at: number): Promise<boolean> {
   const revoked = await services.users.revokeSessions(userId, at);
   if (!revoked.ok) return false;
-  renewAuthSession(session, at);
+  renewAuthSession(session, at, at);
   return true;
 }
 
@@ -595,6 +612,11 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       // Unlike the last-admin guard this needs no in-statement race protection: the acting
       // administrator is fixed for this request, so no concurrent write can change who they are.
       const viewer = resolveAuthViewer(c);
+      if (viewer === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
+      // The role is judged here and not left to the group's `require-admin`: that guard runs on the
+      // loader this handler redirects to, which is after the write it was meant to refuse has landed.
+      if (!viewer.isAdmin) return forbidden();
+
       const parsed = await readAuthSubmission(c, authAdminUserSchema());
       if (!parsed.ok) return loadAdminUserEdit(c, options, { fieldError: parsed.error.message, status: 422 });
 
@@ -636,8 +658,17 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       const services = await authServices(c, options);
       const id = c.params.id;
       if (id === undefined) return notFound();
-      // Same reasoning as the deactivation above, and worse: this one is not reversible.
-      if (resolveAuthViewer(c)?.userId === id) return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
+
+      const viewer = resolveAuthViewer(c);
+      if (viewer === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (!viewer.isAdmin) return forbidden();
+
+      // The loaded row is compared and not the route parameter: a UUID is case-insensitive, so an
+      // uppercased one names the same account and would slip the deactivation guard's irreversible twin.
+      const found = await services.admin.view(id);
+      if (!found.ok) return unavailable();
+      if (found.data === null) return loadAdminUserEdit(c, options, { outcome: "not-found", status: 404 });
+      if (viewer.userId === found.data.id) return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
 
       const removed = await services.admin.remove(id);
       if (!removed.ok) return unavailable();
@@ -656,8 +687,16 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
       const identity = resolveAuthViewer(c);
       if (identity === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
 
+      // Fails closed: the claim grants the role to whoever posts first, so a deployment with no
+      // configured secret has no claim endpoint rather than an open one.
+      const expected = options.bootstrapSecret?.(c);
+      if (expected === undefined || expected === "") return notFound();
+
       const parsed = await readAuthSubmission(c, authAdminElevateSchema());
       if (!parsed.ok) return loadAdminElevate(c, options, { fieldError: parsed.error.message, status: 422 });
+      if (!timingSafeEqual(parsed.data.secret, expected)) {
+        return loadAdminElevate(c, options, { fieldError: FIELD_REFUSAL.secret ?? FIELD_REFUSAL_DEFAULT, status: 422 });
+      }
 
       const claimed = await services.admin.claimFirst(identity.userId, authNow(options));
       if (!claimed.ok) return unavailable();

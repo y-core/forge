@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
 import { ALERT_SCOPE } from "../contracts/alert-contract";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import type { Tone } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
@@ -14,7 +15,7 @@ type AlertProps = JSX.IntrinsicElements["div"] & {
   tone?: Tone | undefined;
   appearance?: PanelAppearance | undefined;
   dismissible?: boolean | undefined;
-  /** Accessible name for the dismiss button. @default "Dismiss" */
+  /** Accessible name for the dismiss button. @default LABEL_DEFAULTS.alertDismiss */
   dismissLabel?: string | undefined;
 };
 
@@ -22,7 +23,7 @@ const AlertRoot: FC<AlertProps> = ({
   tone = "neutral",
   appearance = "soft",
   dismissible = false,
-  dismissLabel = "Dismiss",
+  dismissLabel = LABEL_DEFAULTS.alertDismiss,
   class: cls,
   children,
   "data-slot": inherited,

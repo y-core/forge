@@ -31,13 +31,19 @@ function editor(page: Page): Promise<Editor> {
   });
 }
 
-async function mountOtp(page: Page, length: 4 | 6): Promise<void> {
+// `Field`'s own vertical arrangement, which sizes every direct child and outranks the frame's width.
+const STRETCHING_CONTAINER = ["flex", "w-160", "flex-col", "[&>*]:w-full"];
+
+async function mountOtp(page: Page, length: 4 | 6, container: readonly string[] = []): Promise<void> {
   const html = await render(OtpInput({ field: { name: "code" }, length }));
-  await mount(page, `<div class="bg-background p-4">${html}</div>`);
+  const classes = ["bg-background", "p-4", ...container];
+  await mount(page, `<div class="${classes.join(" ")}">${html}</div>`);
   // Both boxes: the frame owns `--otp-cell` and `--otp-length`, which the editor's geometry reads.
-  await page.addStyleTag({
-    content: await compiledCss([...classesOf(html, "otp-input-wrapper"), ...classesOf(html, "otp-input"), "bg-background", "p-4"]),
-  });
+  await page.addStyleTag({ content: await compiledCss([...classesOf(html, "otp-input-wrapper"), ...classesOf(html, "otp-input"), ...classes]) });
+}
+
+function frameWidth(page: Page): Promise<number> {
+  return page.evaluate(() => document.querySelector("[data-slot~='otp-input-wrapper']")?.getBoundingClientRect().width ?? 0);
 }
 
 test.describe("OtpInput", () => {
@@ -65,6 +71,16 @@ test.describe("OtpInput", () => {
     await page.keyboard.type("123456");
 
     expect(await page.evaluate(() => document.querySelector<HTMLElement>("[data-slot~='otp-input-wrapper']")?.scrollLeft)).toBe(0);
+  });
+
+  // The frame's width is a function of length and cell, never of its container: stretched, the slack
+  // would land after the last rule and paint a wider final cell.
+  test("a container that sizes its children cannot stretch the frame past its grid", async ({ page }) => {
+    await mountOtp(page, 6);
+    const intrinsic = await frameWidth(page);
+
+    await mountOtp(page, 6, STRETCHING_CONTAINER);
+    expect(await frameWidth(page)).toBe(intrinsic);
   });
 
   test("a seventh digit is refused by the native maxlength", async ({ page }) => {

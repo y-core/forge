@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import { CSRF_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
+import { parseFormData } from "../form/parse-form-data";
+import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
@@ -558,6 +560,28 @@ describe("defineAction behind csrfProtection — body size cap", () => {
 
     const again = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", key, 200_000) });
     expect(again.status).toBe(200);
+  });
+
+  // Without the rethrow the pipeline answers a 400 fragment and never logs what threw, so the route
+  // looks like it is refusing bad input rather than being mis-wired.
+  it("rethrows a cap conflict to the error boundary rather than answering a 400 fragment", async () => {
+    const app = new Forge();
+    app.use("*", async (c, next) => {
+      await parseFormData(c, { maxBytes: 64 }).catch(() => {});
+      return next();
+    });
+    mapHandler(app, "POST", "/upload", echoAction(RAISED));
+
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: `name=${"x".repeat(200)}` });
+    expect(res.status).toBe(500);
+  });
+
+  it("still answers a genuine oversize body with the pipeline's 413 fragment", async () => {
+    const app = new Forge();
+    mapHandler(app, "POST", "/upload", echoAction(64));
+
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: `name=${"x".repeat(200)}` });
+    expect(res.status).toBe(413);
   });
 });
 
@@ -1135,6 +1159,7 @@ describe("defineAction — a client that disconnects", () => {
       res = await app.fetch(
         new Request("http://localhost/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString(), signal: AbortSignal.abort() }),
         {},
+        mockExecutionContext(),
       );
     });
 

@@ -6,7 +6,7 @@ import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
 import { isDark } from "./client";
-import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
+import { DARK_CLASS, DEFAULT_THEME_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 class FakeClassList {
   readonly tokens = new Set<string>();
@@ -103,7 +103,7 @@ class FakeDocument {
   }
 
   addTheme(): FakeScopeRoot {
-    const root = new FakeScopeRoot(this, THEME_SCOPE, { pref: DEFAULT_PREF });
+    const root = new FakeScopeRoot(this, THEME_SCOPE, { pref: DEFAULT_THEME_PREF });
     this.roots.push(root);
     return root;
   }
@@ -308,11 +308,12 @@ function navbarTree(options: { drawer?: boolean; filters?: string[] } = {}) {
   const member = el("A", { "data-filter": "member" });
   const admin = el("A", { "data-filter": "admin" });
   const anyone = el("A", { "data-on-click": "closeNav" });
-  bar.append(member, admin, anyone);
+  const nobody = el("A", { "data-filter": "" });
+  bar.append(member, admin, anyone, nobody);
   root.append(bar);
   doc.root.append(root);
 
-  const hiddenByFilter = () => ({ member: member.hidden, admin: admin.hidden, anyone: anyone.hidden });
+  const hiddenByFilter = () => ({ member: member.hidden, admin: admin.hidden, anyone: anyone.hidden, nobody: nobody.hidden });
   return { doc, bar, anyone, hiddenByFilter };
 }
 
@@ -322,7 +323,7 @@ describe("navbar scope — auth filters", () => {
 
     const release = resume(tree.doc as never);
 
-    expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false });
+    expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false, nobody: true });
     release();
   });
 
@@ -340,7 +341,7 @@ describe("navbar scope — auth filters", () => {
 
     expect({ armed, live, released: tree.doc.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0 }).toEqual({
       armed: 1,
-      live: { member: true, admin: false, anyone: false },
+      live: { member: true, admin: false, anyone: false, nobody: true },
       released: 0,
     });
   });
@@ -351,7 +352,7 @@ describe("navbar scope — auth filters", () => {
 
     tree.doc.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: "admin" }));
 
-    expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false });
+    expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false, nobody: true });
     release();
   });
 });
@@ -396,7 +397,7 @@ describe("theme scope — the cycle", () => {
     for (const [step, expected] of cycle.entries()) {
       // Alternating roots is the regression: each used to advance its own signal from a stale value.
       const pref = prefOf(doc.roots[step % 2] as FakeScopeRoot);
-      if (pref) pref.value = { light: "dark", dark: "system", system: "light" }[pref.value as string] ?? DEFAULT_PREF;
+      if (pref) pref.value = { light: "dark", dark: "system", system: "light" }[pref.value as string] ?? DEFAULT_THEME_PREF;
       expect(doc.documentElement.getAttribute(THEME_ATTR)).toBe(expected);
     }
 

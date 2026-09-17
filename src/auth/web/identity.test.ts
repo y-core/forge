@@ -10,9 +10,11 @@ import {
   AUTH_SESSION_KEY,
   AUTH_SIGNED_IN_SESSION_KEY,
   AUTH_STEP_UP_SESSION_KEY,
+  AUTH_SURVIVED_SESSION_KEY,
   clearAuthSession,
   establishAuthSession,
   markAuthStepUp,
+  renewAuthSession,
   resolveAuthIdentity,
 } from "./identity";
 
@@ -54,7 +56,7 @@ describe("resolveAuthIdentity", () => {
 
   it("carries the session's step-up timestamp onto the identity", async () => {
     const session = signedInSession("u1");
-    markAuthStepUp(session, 1_700_000_000_000);
+    markAuthStepUp(session, 1_700_000_000_000, Date.now());
     const identity = await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW);
     expect(identity?.stepUpAt).toBe(1_700_000_000_000);
   });
@@ -72,7 +74,7 @@ describe("resolveAuthIdentity", () => {
 
   it("returns null when the session names a user the store does not have, and drops the auth keys", async () => {
     const session = signedInSession("ghost");
-    markAuthStepUp(session, 1_700_000_000_000);
+    markAuthStepUp(session, 1_700_000_000_000, Date.now());
     session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, "ada@example.com");
 
     expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
@@ -83,7 +85,7 @@ describe("resolveAuthIdentity", () => {
 
   it("returns null for a deactivated user, so a live session cannot outlive the account", async () => {
     const session = signedInSession("u1");
-    markAuthStepUp(session, 1_700_000_000_000);
+    markAuthStepUp(session, 1_700_000_000_000, Date.now());
     session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, "ada@example.com");
 
     expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser({ deactivatedAt: 99 })]), NOW)).toBeNull();
@@ -173,7 +175,7 @@ describe("resolveAuthIdentity", () => {
 describe("establishAuthSession", () => {
   it("stores the user id and rotates the session id, so a fixated id cannot survive the sign-in", () => {
     const session = createSession("sid-1");
-    establishAuthSession(session, "u1", NOW);
+    establishAuthSession(session, "u1", NOW, Date.now());
     expect(session.get(AUTH_SESSION_KEY)).toBe("u1");
     expect(session.id).not.toBe("sid-1");
     expect(session.deleteId).toBe("sid-1");
@@ -181,45 +183,123 @@ describe("establishAuthSession", () => {
 
   it("stamps when the session was established, which is what the lifetime and the barrier are read against", () => {
     const session = createSession("sid-1");
-    establishAuthSession(session, "u1", NOW);
+    establishAuthSession(session, "u1", NOW, Date.now());
     expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBe(NOW);
   });
 
   it("clamps a stamp dated into the future to now, so a skewed clock cannot make a session last forever", () => {
     const session = createSession("sid-1");
-    establishAuthSession(session, "u1", Date.now() + 3_600_000);
+    establishAuthSession(session, "u1", Date.now() + 3_600_000, Date.now());
     expect(session.get(AUTH_SIGNED_IN_SESSION_KEY) as number).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("clamps against the caller's own clock, so an injected clock ahead of wall time stores what it was given", () => {
+    const session = createSession("sid-1");
+    const injected = Date.now() + 3_600_000;
+    establishAuthSession(session, "u1", injected, injected);
+    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBe(injected);
   });
 
   it("clears a previous step-up, so a new sign-in cannot inherit a demand it never met", () => {
     const session = createSession("sid-1");
-    markAuthStepUp(session, Date.now());
-    establishAuthSession(session, "u1", NOW);
+    markAuthStepUp(session, Date.now(), Date.now());
+    establishAuthSession(session, "u1", NOW, Date.now());
     expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeUndefined();
+  });
+
+  it("clears a previous barrier stamp, so a fresh sign-in starts owing the barriers already raised", () => {
+    const session = createSession("sid-1");
+    renewAuthSession(session, Date.now(), Date.now());
+    establishAuthSession(session, "u1", NOW, Date.now());
+    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBeUndefined();
+  });
+});
+
+// The actor raising a revocation barrier has to survive it, and one stamp cannot mean both "when
+// this session began" and "which barriers it has been carried past".
+describe("renewAuthSession", () => {
+  it("leaves the sign-in stamp alone, so the absolute lifetime is not restarted", () => {
+    const session = signedInSession("u1", NOW);
+    renewAuthSession(session, NOW + 5_000, Date.now());
+
+    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBe(NOW);
+  });
+
+  it("records the barrier it was carried past, one millisecond after it, so the barrier's own `<=` admits it", () => {
+    const session = signedInSession("u1", NOW);
+    renewAuthSession(session, NOW - 1_000, Date.now());
+
+    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBe(NOW - 999);
+  });
+
+  it("clamps against the caller's own clock, so an injected clock ahead of wall time stores what it was given", () => {
+    const session = signedInSession("u1");
+    const injected = Date.now() + 3_600_000;
+    renewAuthSession(session, injected, injected);
+    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBe(injected + 1);
+  });
+
+  it("clamps a barrier stamp dated into the future, so a skewed clock cannot carry a session past every later revocation", () => {
+    const session = signedInSession("u1", NOW);
+    renewAuthSession(session, Date.now() + 3_600_000, Date.now());
+
+    expect(session.get(AUTH_SURVIVED_SESSION_KEY) as number).toBeLessThanOrEqual(Date.now() + 1);
+  });
+
+  it("keeps the renewed session signed in across the barrier it raised", async () => {
+    const raisedAt = NOW + 1_000;
+    const session = signedInSession("u1", NOW);
+    renewAuthSession(session, raisedAt, Date.now());
+    const users = fakeUsers([fakeAuthUser({ sessionsInvalidBefore: raisedAt })]);
+
+    expect(await resolveAuthIdentity(session, users, NOW + 2_000)).not.toBeNull();
+  });
+
+  it("does not renew the session's expiry: one that is already over stays over", async () => {
+    const session = signedInSession("u1", NOW);
+    renewAuthSession(session, NOW + 1_000, Date.now());
+
+    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW + AUTH_SESSION_MAX_MS)).toBeNull();
+  });
+
+  it("leaves every session it did not renew behind the barrier", async () => {
+    const raisedAt = NOW + 1_000;
+    const other = signedInSession("u1", NOW);
+    const users = fakeUsers([fakeAuthUser({ sessionsInvalidBefore: raisedAt })]);
+
+    expect(await resolveAuthIdentity(other, users, NOW + 2_000)).toBeNull();
   });
 });
 
 describe("markAuthStepUp", () => {
   it("records the moment the step-up passed, which is the memory `resolve` has not got", () => {
     const session = signedInSession("u1");
-    markAuthStepUp(session, 42);
+    markAuthStepUp(session, 42, Date.now());
     expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBe(42);
   });
 
   it("clamps a mark dated into the future to now, so a skewed clock cannot make one last forever", () => {
     const session = signedInSession("u1");
-    markAuthStepUp(session, Date.now() + 3_600_000);
+    markAuthStepUp(session, Date.now() + 3_600_000, Date.now());
     expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("clamps against the caller's own clock, not the wall clock, so an injected clock stays coherent", () => {
+    const session = signedInSession("u1");
+    const injected = Date.now() + 3_600_000;
+    markAuthStepUp(session, injected, injected);
+    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBe(injected);
   });
 });
 
 describe("clearAuthSession", () => {
   it("drops the user id and the step-up mark, and rotates the session id", () => {
     const session = signedInSession("u1");
-    markAuthStepUp(session, Date.now());
+    markAuthStepUp(session, Date.now(), Date.now());
     clearAuthSession(session);
     expect(session.get(AUTH_SESSION_KEY)).toBeUndefined();
     expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBeUndefined();
+    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBeUndefined();
     expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeUndefined();
     expect(session.id).not.toBe("sid-1");
   });

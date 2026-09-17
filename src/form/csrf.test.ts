@@ -816,3 +816,53 @@ describe("csrfMinter()", () => {
     );
   });
 });
+
+describe("csrfProtection — body cap conflicts", () => {
+  const body = (bytes: number) => `name=${"x".repeat(bytes)}`;
+
+  // An earlier guard that swallows its own 413 is what leaves csrf holding a stream it cannot re-meter;
+  // without the rethrow the refusal reads as 403, blaming a token that was never even looked for.
+  it("rethrows a cap conflict to the error boundary instead of collapsing it to 403", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const app = new Forge();
+    app.use("*", async (c, next) => {
+      await parseFormData(c, { maxBytes: 64 }).catch(() => {});
+      return next();
+    });
+    app.use("*", csrfProtection({ secret: () => key, subject: false, maxBytes: 5000 }));
+    mapHandler(app, "POST", "/upload", () => new Response("ok"));
+
+    const res = await app.request("/upload", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body(200) });
+    expect(res.status).toBe(500);
+  });
+
+  it("still answers a genuine oversize body 413, with both caps at the same value", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key, subject: false, maxBytes: 64 }));
+    mapHandler(app, "POST", "/upload", () => new Response("ok"));
+
+    const res = await app.request("/upload", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body(200) });
+    expect(res.status).toBe(413);
+  });
+
+  it("serves a route with a raised cap normally while the body fits inside the smaller csrf cap", async () => {
+    const key = await importCsrfKey(HEX_SECRET);
+    const app = new Forge();
+    app.use("*", csrfProtection({ secret: () => key, subject: false, maxBytes: 5000 }));
+    mapHandler(app, "GET", "/mint", async (c) => new Response(await mintCsrf(c, "/upload")));
+    mapHandler(app, "POST", "/upload", async (c) => {
+      const fd = await parseFormData(c, { maxBytes: 50_000 });
+      return new Response(fd.get("name") as string);
+    });
+
+    const token = await (await app.request("/mint")).text();
+    const res = await app.request("/upload", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "X-CSRF-Token": token },
+      body: "name=Alice",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("Alice");
+  });
+});

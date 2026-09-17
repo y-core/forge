@@ -7,7 +7,6 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { Forge } from "../../app/forge-app";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
-import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
@@ -18,15 +17,13 @@ import type { AuthUser, UserStore } from "../types";
 import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment, resolveAuth } from "./guards";
 import { AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
-import { accountRoutes, adminRoutes, authRoutes, AUTH_ROUTE_GROUPS } from "./routes";
-import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore } from "./web.fixture";
+import { accountRoutes, adminRoutes, authRoutes } from "./routes";
+import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore, fakeSessionCookie } from "./web.fixture";
 
 const authMap = authRoutes("/auth");
 const accountMap = accountRoutes("/account");
 const adminMap = adminRoutes("/admin");
 const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) };
-
-const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   return {
@@ -82,10 +79,14 @@ function perRequest<T>(value: T): () => T {
 
 const satisfied = perRequest(fakeFactors({ status: "satisfied" }));
 
+const stepUpOwed = perRequest(fakeFactors({ status: "step-up-required", kinds: ["totp-app"] }));
+
 const enrolment = { enrolmentPaths: authEnrolmentPaths(paths.auth), stepUpPath: paths.auth.verify.show(), settledPath: paths.account.passkeys() };
 
-function guardOptions(users: Pick<UserStore, "findById">) {
-  return { users: perRequest(users), signinPath: paths.auth.signin() };
+// `satisfied` by default, so a test about the identity says nothing about the factor policy: the
+// tests that are about an owed step-up pass their own registry.
+function guardOptions(users: Pick<UserStore, "findById">, factors: () => FakeRegistry = satisfied) {
+  return { users: perRequest(users), signinPath: paths.auth.signin(), factors, stepUpPath: paths.auth.verify.show() };
 }
 
 interface SessionSeed {
@@ -97,7 +98,7 @@ interface SessionSeed {
 /** A `Forge` app with session middleware, a seeded session, `guards`, and one handler per guarded path. */
 function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: SessionSeed = {}): Forge {
   const app = new Forge();
-  app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
+  app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
   app.use("*", (context, next) => {
     const session = sessionCtx.get(context);
     // Both keys, because `establishAuthSession` writes both: without the stamp there is no bound
@@ -118,10 +119,14 @@ function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: Sessio
   return app;
 }
 
-/** The session values the response's own `Set-Cookie` carries, which cookie storage stores verbatim. */
-function sessionOf(res: Response): Record<string, unknown> {
-  const value = /__session=([^;]*)/.exec(res.headers.get("set-cookie") ?? "")?.[1] ?? "";
-  const decoded = JSON.parse(atob(decodeURIComponent(value))) as { d: [Record<string, unknown>, unknown] };
+/** The session values the response's own `Set-Cookie` carries, read back through the cookie that signed them. */
+async function sessionOf(res: Response): Promise<Record<string, unknown>> {
+  const pair =
+    res.headers
+      .getSetCookie()
+      .find((header) => header.startsWith("__session="))
+      ?.split(";")[0] ?? "";
+  const decoded = JSON.parse((await fakeSessionCookie.parse(pair)) ?? "") as { d: [Record<string, unknown>, unknown] };
   return decoded.d[0];
 }
 
@@ -161,7 +166,7 @@ describe("requireAuth", () => {
     const res = await app.request("/account/passkeys");
 
     expect(res.status).toBe(302);
-    expect(sessionOf(res)).toEqual({});
+    expect(await sessionOf(res)).toEqual({});
   });
 
   it("denies when the user store is unavailable, rather than admitting an unverified request", async () => {
@@ -171,7 +176,7 @@ describe("requireAuth", () => {
 
     expect(res.status).toBe(302);
     // An outage is transient, so it must not sign the visitor out: the identity survives the denial.
-    expect(sessionOf(res)).toEqual({ [AUTH_SESSION_KEY]: "u1", [AUTH_SIGNED_IN_SESSION_KEY]: signedInAt });
+    expect(await sessionOf(res)).toEqual({ [AUTH_SESSION_KEY]: "u1", [AUTH_SIGNED_IN_SESSION_KEY]: signedInAt });
   });
 
   it("throws when no session middleware ran, rather than reading as a correct denial", async () => {
@@ -180,6 +185,88 @@ describe("requireAuth", () => {
     expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
       "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",
     );
+  });
+});
+
+// `establishAuthSession` runs before the step-up is proved, so until `requireAuth` asks, a session
+// that signed in and skipped `/verify` carries a full identity everywhere the enrolment guards are absent.
+describe("requireAuth — the second factor a session still owes", () => {
+  const users = fakeUsers([fakeAuthUser()]);
+
+  it("sends a session owing a mandatory second factor to the step-up page rather than admitting it", async () => {
+    const app = guardedApp([requireAuth(guardOptions(users, stepUpOwed))], { userId: "u1" });
+    const res = await app.request("/account/passkeys");
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/verify");
+  });
+
+  it("admits the same session once it has completed the step-up", async () => {
+    const app = guardedApp([requireAuth(guardOptions(users, stepUpOwed))], { userId: "u1", stepUpAt: Date.now() });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  // The mark is written by the request's own clock, so reading it against the wall clock makes an
+  // injected clock's mark stale the instant it is written.
+  it("measures the mark against the clock it was given, not the wall clock", async () => {
+    const injected = Date.now() + 86_400_000;
+    const options = { ...guardOptions(users, stepUpOwed), stepUpMaxAgeMs: 30_000, now: () => injected };
+    const app = guardedApp([requireAuth(options)], { userId: "u1", signedInAt: injected, stepUpAt: injected });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  it("demands it again once the completed step-up is older than the configured lifetime", async () => {
+    const options = { ...guardOptions(users, stepUpOwed), stepUpMaxAgeMs: 30_000 };
+    const app = guardedApp([requireAuth(options)], { userId: "u1", stepUpAt: Date.now() - 60_000 });
+
+    expect((await app.request("/account/passkeys")).headers.get("location")).toBe("/auth/verify");
+  });
+
+  it("admits a session the policy demands no step-up of, which is every account without a second factor", async () => {
+    const app = guardedApp([requireAuth(guardOptions(users, satisfied))], { userId: "u1" });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  it("admits a session owing an enrolment, which is a page to visit and not a refusal", async () => {
+    const owing = perRequest(fakeFactors({ status: "enrolment-required", kinds: ["totp-app"] }));
+    const app = guardedApp([requireAuth(guardOptions(users, owing))], { userId: "u1" });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  // Otherwise the endpoints that satisfy a step-up are the ones a session owing it cannot reach.
+  it("admits a group declared `clearsStepUp`, which is how `/verify` stays reachable", async () => {
+    const app = guardedApp([requireAuth({ ...guardOptions(users, stepUpOwed), clearsStepUp: true })], { userId: "u1" });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  it("refuses a `json` group with a body rather than a redirect a controller cannot read", async () => {
+    const app = guardedApp([requireAuth({ ...guardOptions(users, stepUpOwed), medium: "json" })], { userId: "u1" });
+    const res = await app.request("/account/passkeys");
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "This account owes a step-up verification." });
+  });
+
+  it("refuses rather than admits when the registry cannot read its store", async () => {
+    const app = guardedApp([requireAuth(guardOptions(users, perRequest(unavailableFactors)))], { userId: "u1" });
+
+    expect((await app.request("/account/passkeys")).status).toBe(503);
+  });
+
+  it("resolves the demand once, so a later enrolment guard on the same request costs no second read", async () => {
+    const factors = recordingFactors({ status: "step-up-required", kinds: ["totp-app"] });
+    const app = guardedApp(
+      [requireAuth(guardOptions(users, perRequest(factors))), requireEnrolment({ factors: perRequest(factors), ...enrolment })],
+      { userId: "u1", stepUpAt: Date.now() },
+    );
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+    expect(factors.calls).toHaveLength(1);
   });
 });
 
@@ -282,19 +369,38 @@ function protectedApp(resolution: AuthFactorResolution, seed: SessionSeed = {}, 
     maxAgeMs === undefined
       ? { factors: perRequest(fakeFactors(resolution)), ...enrolment }
       : { factors: perRequest(fakeFactors(resolution)), ...enrolment, stepUpMaxAgeMs: maxAgeMs };
-  return guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))), requireEnrolment(options)], { userId: "u1", ...seed });
+  // One registry for both guards, as `createAuthGuards` wires it: the demand is resolved once and
+  // memoised, so a second registry here would answer for neither guard predictably.
+  return guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), options.factors)), requireEnrolment(options)], {
+    userId: "u1",
+    ...seed,
+  });
 }
 
 describe("requireEnrolment", () => {
   it("redirects to the enrolment page rather than refusing, because owing an enrolment is a success", async () => {
     const res = await protectedApp({ status: "enrolment-required", kinds: ["totp-app"] }).request("/account/passkeys");
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(303);
     // The kind that is owed, and not a fixed page: a passkey page cannot clear an authenticator-app enrolment.
     expect(res.headers.get("location")).toBe("/auth/enrol/totp");
   });
 
   it("redirects a step-up demand to the verify page", async () => {
     const res = await protectedApp({ status: "step-up-required", kinds: ["email-otp"] }).request("/account/passkeys");
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/verify");
+  });
+
+  // The only wiring that reaches this guard's own step-up branch: with `requireAuth` judging the
+  // same demand, it refuses first and `requireEnrolment` never sees a step-up.
+  it("answers its own step-up redirect with 303, behind a `clearsStepUp` require-auth", async () => {
+    const factors = perRequest(fakeFactors({ status: "step-up-required", kinds: ["totp-app"] }));
+    const app = guardedApp(
+      [requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }), requireEnrolment({ factors, ...enrolment })],
+      { userId: "u1" },
+    );
+    const res = await app.request("/account/passkeys");
+    expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/verify");
   });
 
@@ -304,7 +410,10 @@ describe("requireEnrolment", () => {
 
   it("refuses rather than redirects when the registry cannot read its store, because every remedy page asks the same store", async () => {
     const app = guardedApp(
-      [requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))), requireEnrolment({ factors: perRequest(unavailableFactors), ...enrolment })],
+      [
+        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(unavailableFactors))),
+        requireEnrolment({ factors: perRequest(unavailableFactors), ...enrolment }),
+      ],
       { userId: "u1" },
     );
     expect((await app.request("/account/passkeys")).status).toBe(503);
@@ -351,13 +460,11 @@ describe("requireEnrolment step-up memory", () => {
 
 /** The enrolment page, guarded as `AUTH_ROUTE_GROUPS` declares it, under one factor verdict. */
 function enrolmentApp(resolution: AuthFactorResolution, seed: SessionSeed = {}) {
-  return guardedApp(
-    [
-      requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
-      requirePendingEnrolment({ factors: perRequest(fakeFactors(resolution)), ...enrolment }),
-    ],
-    { userId: "u1", ...seed },
-  );
+  const factors = perRequest(fakeFactors(resolution));
+  return guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), factors)), requirePendingEnrolment({ factors, ...enrolment })], {
+    userId: "u1",
+    ...seed,
+  });
 }
 
 describe("requirePendingEnrolment", () => {
@@ -367,12 +474,29 @@ describe("requirePendingEnrolment", () => {
 
   it("sends a session owing a step-up to verify, so a compromised primary factor cannot mint the second one", async () => {
     const res = await enrolmentApp({ status: "step-up-required", kinds: ["totp-app"] }).request("/auth/enrol/passkey");
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/verify");
+  });
+
+  // Same wiring as the sibling guard's: `requireAuth` refuses an owed step-up first unless the group
+  // is the one that clears it, so this branch is only reachable behind `clearsStepUp`.
+  it("answers its own step-up redirect with 303, behind a `clearsStepUp` require-auth", async () => {
+    const factors = perRequest(fakeFactors({ status: "step-up-required", kinds: ["totp-app"] }));
+    const app = guardedApp(
+      [
+        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }),
+        requirePendingEnrolment({ factors, ...enrolment }),
+      ],
+      { userId: "u1" },
+    );
+    const res = await app.request("/auth/enrol/passkey");
+    expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/verify");
   });
 
   it("sends a settled user off the enrolment page rather than leaving it reachable", async () => {
     const res = await enrolmentApp({ status: "satisfied" }).request("/auth/enrol/passkey");
+    expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/account/passkeys");
   });
 
@@ -383,7 +507,10 @@ describe("requirePendingEnrolment", () => {
 
   it("refuses when the registry cannot read its store", async () => {
     const app = guardedApp(
-      [requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))), requirePendingEnrolment({ factors: perRequest(unavailableFactors), ...enrolment })],
+      [
+        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(unavailableFactors))),
+        requirePendingEnrolment({ factors: perRequest(unavailableFactors), ...enrolment }),
+      ],
       { userId: "u1" },
     );
     expect((await app.request("/auth/enrol/passkey")).status).toBe(503);
@@ -392,12 +519,8 @@ describe("requirePendingEnrolment", () => {
   it("refuses a `json` group owing a step-up with a body rather than a redirect", async () => {
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
-        requirePendingEnrolment({
-          factors: perRequest(fakeFactors({ status: "step-up-required", kinds: ["totp-app"] })),
-          ...enrolment,
-          medium: "json",
-        }),
+        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), stepUpOwed), medium: "json" }),
+        requirePendingEnrolment({ factors: stepUpOwed, ...enrolment, medium: "json" }),
       ],
       { userId: "u1" },
     );
@@ -420,11 +543,13 @@ describe("requireFreshStepUp", () => {
   const owing: AuthFactorResolution = { status: "step-up-required", kinds: ["totp-app"] };
 
   /** The account group's stack, with the freshness window this test is about, under one factor verdict. */
+  // `clearsStepUp`, so the subject is the freshness window alone: `requireAuth`'s own refusal of an
+  // unmarked owed step-up is asserted where it belongs, and would otherwise pre-empt every case here.
   function freshApp(seed: SessionSeed, freshStepUpMaxAgeMs?: number | null, resolution: AuthFactorResolution = owing) {
     const factors = perRequest(fakeFactors(resolution));
     return guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))),
+        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]), factors), clearsStepUp: true }),
         requireFreshStepUp({ factors, ...enrolment, ...(freshStepUpMaxAgeMs === undefined ? {} : { freshStepUpMaxAgeMs }) }),
       ],
       seed,
@@ -484,7 +609,10 @@ describe("requireFreshStepUp", () => {
 
   it("refuses rather than admits when the registry cannot read its store", async () => {
     const app = guardedApp(
-      [requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))), requireFreshStepUp({ factors: perRequest(unavailableFactors), ...enrolment })],
+      [
+        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(unavailableFactors))),
+        requireFreshStepUp({ factors: perRequest(unavailableFactors), ...enrolment }),
+      ],
       { userId: "u1" },
     );
     expect((await app.request("/account/passkeys", { method: "POST" })).status).toBe(503);
@@ -494,7 +622,7 @@ describe("requireFreshStepUp", () => {
     const factors = recordingFactors(owing);
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
+        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(factors))),
         requireEnrolment({ factors: perRequest(factors), ...enrolment }),
         requireFreshStepUp({ factors: perRequest(factors), ...enrolment, freshStepUpMaxAgeMs: HOUR }),
       ],
@@ -511,7 +639,7 @@ describe("requireFreshStepUp", () => {
     const app = (seed: SessionSeed) => {
       const built = guardedApp(
         [
-          requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))),
+          requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]), perRequest(fakeFactors(owing)))),
           requireEnrolment({ factors: perRequest(fakeFactors(owing)), ...enrolment }),
           requireAdmin(),
           requireFreshStepUp({ factors: perRequest(fakeFactors(owing)), ...enrolment, freshStepUpMaxAgeMs: HOUR }),
@@ -534,7 +662,7 @@ describe("requireFreshStepUp", () => {
     const factors = perRequest(fakeFactors(owing));
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
+        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true, medium: "json" }),
         requireFreshStepUp({ factors, ...enrolment, freshStepUpMaxAgeMs: HOUR, medium: "json" }),
       ],
       { userId: "u1" },
@@ -581,7 +709,10 @@ describe("the roles both enrolment guards resolve against", () => {
       ] as const) {
         const factors = recordingFactors({ status: "enrolment-required", kinds: ["totp-app"] });
         const app = guardedApp(
-          [requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]))), guard.build({ factors: perRequest(factors), ...enrolment })],
+          [
+            requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]), perRequest(factors))),
+            guard.build({ factors: perRequest(factors), ...enrolment }),
+          ],
           { userId: "u1" },
         );
         await app.request(guard.path);
@@ -601,23 +732,37 @@ describe("the roles both enrolment guards resolve against", () => {
     });
     const app = (isAdmin: boolean) =>
       guardedApp(
-        [requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]))), requireEnrolment({ factors: perRequest(factors), ...enrolment })],
+        [
+          requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]), perRequest(factors))),
+          requireEnrolment({ factors: perRequest(factors), ...enrolment }),
+        ],
         { userId: "u1" },
       );
 
     const admin = await app(true).request("/account/passkeys");
-    expect(admin.status).toBe(302);
+    expect(admin.status).toBe(303);
     expect(admin.headers.get("location")).toBe("/auth/enrol/totp");
     expect(await (await app(false).request("/account/passkeys")).text()).toBe("passkeys");
   });
 });
 
 describe("createAuthGuards", () => {
+  const origin = { allowedOrigins: ["https://app.example.com"] };
+
+  // `origin` is part of the base fixture because a mutating group with no allowlist is refused: every
+  // group of the shipped table carries a mutating leaf, so no chain without one wires at all.
   const chain = {
     routes: { auth: authMap, account: accountMap, admin: adminMap },
     auth: guardOptions(fakeUsers([fakeAuthUser()])),
     enrolment: { factors: satisfied, ...enrolment },
+    origin,
   };
+
+  // `origin` is a required field, so omitting it is what an untyped consumer does and the cast is
+  // how a typed test reproduces it — the throw below is the only thing that catches them.
+  /** The same chain with no origin allowlist, which only a group of read-only routes may be wired from. */
+  const { origin: _omitted, ...rest } = chain;
+  const chainWithoutOrigin = rest as typeof chain;
 
   it("throws when a group lists `require-admin` before the `require-auth` it reads", () => {
     expect(() =>
@@ -657,7 +802,8 @@ describe("createAuthGuards", () => {
     const groups = createAuthGuards(chain);
     expect(groups.map((group) => group.paths.length > 0)).toEqual(groups.map(() => true));
     expect(groups.flatMap((group) => group.paths)).toContain("/admin/users/:id");
-    expect(groups.flatMap((group) => group.paths)).not.toContain("/auth/signin");
+    // `/auth/signin` is here for its origin protection alone: its group declares no guard middleware.
+    expect(groups.find((group) => group.paths.includes("/auth/signin"))?.guards).toBeUndefined();
   });
 
   it("registers a nested group's own leaves only, so a shared guard never runs twice", () => {
@@ -666,14 +812,49 @@ describe("createAuthGuards", () => {
     expect(enrol?.paths).toEqual(["/auth/enrol/passkey", "/auth/enrol/totp"]);
   });
 
-  it("skips a builder that was never called", () => {
-    const groups = createAuthGuards({ ...chain, routes: { admin: adminMap } });
-    expect(groups.flatMap((group) => group.paths).some((path) => path.startsWith("/account"))).toBe(false);
+  // The admin map specifically: `admin.users` carries every guard standing between a session and an
+  // account deletion, and dropping it is exactly the wiring error that used to ship silently.
+  it("throws when the admin map is missing, rather than mounting the admin write routes unguarded", () => {
+    expect(() => createAuthGuards({ ...chain, routes: { auth: authMap, account: accountMap } })).toThrow(
+      "createAuthGuards: group `admin.users` declares 4 guards but `routes` holds no `admin.users` map",
+    );
+  });
+
+  it("throws when a builder a guarded group names was never called, rather than mounting its routes unguarded", () => {
+    expect(() => createAuthGuards({ ...chain, routes: { admin: adminMap } })).toThrow(
+      "createAuthGuards: group `auth.verify` declares 1 guards but `routes` holds no `auth.verify` map",
+    );
+  });
+
+  it("still skips a group that declares no guard and has no map, which is not a wiring error", () => {
+    const groups = createAuthGuards({
+      ...chain,
+      routes: { account: accountMap },
+      groups: [
+        { path: ["admin"], guards: [], medium: "html" },
+        { path: ["account"], guards: ["require-auth"], medium: "html" },
+      ],
+    });
+
+    expect(groups.flatMap((group) => group.paths)).toContain("/account/passkeys");
+    expect(groups.flatMap((group) => group.paths).some((path) => path.startsWith("/admin"))).toBe(false);
+  });
+
+  it("throws when a guarded group finds its map but the map holds no route of its own", () => {
+    expect(() =>
+      createAuthGuards({ ...chain, routes: { admin: adminMap }, groups: [{ path: ["admin"], guards: ["require-auth"], medium: "html" }] }),
+    ).toThrow("createAuthGuards: group `admin` declares 1 guards but its `routes` map holds no route of its own");
+  });
+
+  it("throws when a mutating group is wired with no origin policy, rather than accepting a cross-site POST", () => {
+    expect(() => createAuthGuards(chainWithoutOrigin)).toThrow(
+      "createAuthGuards: group `auth` answers a state-changing method but no `origin` policy was passed",
+    );
   });
 
   it("hands each group its own medium down, so the JSON ceremony refuses in JSON while an HTML group still redirects", async () => {
     const app = new Forge();
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
     for (const group of createAuthGuards(chain)) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "POST", "/auth/enrol/passkey/register/finish", () => new Response("finished"));
     mapHandler(app, "GET", "/account/passkeys", () => new Response("passkeys"));
@@ -687,15 +868,19 @@ describe("createAuthGuards", () => {
     expect(account.headers.get("location")).toBe("/auth/signin?next=%2Faccount%2Fpasskeys");
   });
 
-  it("wires a stack for every group that declares one, and nothing at all for a guard-less group with no allowlist", () => {
-    const guarded = AUTH_ROUTE_GROUPS.filter((group) => group.guards.length > 0);
-    expect(createAuthGuards(chain)).toHaveLength(guarded.length);
+  // The count is written out rather than derived from `AUTH_ROUTE_GROUPS`: a count read off the same
+  // table cannot tell a group that was dropped from a group that was never declared.
+  it("wires a stack for each of the eight groups the shipped table mounts a route for", () => {
+    const groups = createAuthGuards(chain);
+
+    expect(groups).toHaveLength(8);
+    expect(groups.flatMap((group) => group.paths)).toContain("/admin/users/:id");
+    expect(groups.flatMap((group) => group.paths)).toContain("/admin/elevate");
+    expect(groups.flatMap((group) => group.paths)).toContain("/auth/verify/passkey/finish");
   });
 
-  const origin = { allowedOrigins: ["https://app.example.com"] };
-
   it("collects a guard-less mutating group once an allowlist is configured, carrying origin protection and no middleware", () => {
-    const groups = createAuthGuards({ ...chain, origin });
+    const groups = createAuthGuards(chain);
     const signin = groups.find((group) => group.paths.includes("/auth/signin"));
     expect(signin?.origin).toBe(origin);
     expect(signin?.guards).toBeUndefined();
@@ -714,10 +899,16 @@ describe("createAuthGuards", () => {
 
   // Forge picks no numbers, so a guard-less group is emitted for a rate limit alone the same way it
   // is for an origin allowlist — otherwise the sign-in POSTs would have nowhere to carry one.
-  it("collects a guard-less group for a rate limit alone, with no allowlist configured", () => {
+  it("collects a guard-less group for a rate limit alone, on a read-only map that needs no allowlist", () => {
     const limit = { limiter: () => undefined, required: false };
-    const groups = createAuthGuards({ ...chain, rateLimit: { auth: limit } });
-    const unguarded = groups.find((group) => group.paths.includes("/auth/signin"));
+    const readOnly = route("/read", { show: get("/thing") });
+    const groups = createAuthGuards({
+      ...chainWithoutOrigin,
+      routes: { auth: readOnly },
+      groups: [{ path: ["auth"], guards: [], medium: "html" }],
+      rateLimit: { auth: limit },
+    });
+    const unguarded = groups.find((group) => group.paths.includes("/read/thing"));
 
     expect(unguarded?.rateLimit).toBe(limit);
     expect(unguarded?.origin).toBeUndefined();
@@ -732,17 +923,16 @@ describe("createAuthGuards", () => {
       ...chain,
       routes: { auth: readOnly },
       groups: [{ path: ["auth"], guards: ["require-auth"], medium: "html" }],
-      origin,
     });
     expect(groups.find((group) => group.paths.includes("/read/thing"))?.origin).toBeUndefined();
     // `admin`'s own level has no direct leaf: `users` and `elevate` are nested groups registering their own.
-    expect(createAuthGuards({ ...chain, origin }).flatMap((group) => group.paths)).not.toContain("/admin");
+    expect(createAuthGuards(chain).flatMap((group) => group.paths)).not.toContain("/admin");
   });
 
   it("checks a mutating request's origin while leaving the safe method on the same path reachable", async () => {
     const app = new Forge();
-    app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
-    for (const group of createAuthGuards({ ...chain, origin })) {
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+    for (const group of createAuthGuards(chain)) {
       if (group.origin) app.use([...group.paths], originProtection(group.origin));
       if (group.guards) app.use([...group.paths], ...group.guards);
     }
@@ -768,6 +958,16 @@ describe("the enrolment guards — the step-up window they hold at construction"
   it("refuses a window no step-up mark could ever be inside, naming the guard that was built", () => {
     expect(() => requireEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: 0 })).toThrow(`requireEnrolment: ${FLOOR}`);
     expect(() => requirePendingEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: 0 })).toThrow(`requirePendingEnrolment: ${FLOOR}`);
+  });
+
+  // `requireAuth` enforces the owed step-up itself, so it reads the same window the enrolment pair
+  // does and has to refuse the same numbers — otherwise a zero there silently owes one every request.
+  it("holds `requireAuth` to the same window, which it now enforces the step-up against", () => {
+    const options = guardOptions(fakeUsers([fakeAuthUser()]));
+
+    expect(() => requireAuth({ ...options, stepUpMaxAgeMs: 0 })).toThrow(`requireAuth: ${FLOOR}`);
+    expect(() => requireAuth({ ...options, stepUpMaxAgeMs: 1_000 })).not.toThrow();
+    expect(() => requireAuth(options)).not.toThrow();
   });
 
   it("refuses a fraction", () => {

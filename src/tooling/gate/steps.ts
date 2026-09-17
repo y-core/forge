@@ -2,7 +2,7 @@ import { splitList } from "../cli/parse";
 import type { CheckStep, GateMode, Selection, Step } from "./types";
 
 /** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
-export const GATE_MODES = ["fast", "standard", "full"] as const;
+export const GATE_MODES = ["quality", "standard", "full"] as const;
 
 /** Narrows a step to the in-process variant. @public */
 export function isCheckStep(step: Step): step is CheckStep {
@@ -37,8 +37,8 @@ export function selectSteps(steps: readonly Step[], opts: { mode: GateMode; only
   // A rank comparison, so each mode is a superset of the one below it by construction. The sort is
   // stable, so every intra-tier ordering the table states — `lint` before `format` — survives it.
   const inMode = steps
-    .filter((step) => rank(step.tier ?? "fast") <= rank(opts.mode))
-    .sort((a, b) => rank(a.tier ?? "fast") - rank(b.tier ?? "fast"));
+    .filter((step) => rank(step.tier ?? "quality") <= rank(opts.mode))
+    .sort((a, b) => rank(a.tier ?? "quality") - rank(b.tier ?? "quality"));
   const known = inMode.map((step) => step.label);
 
   const only = opts.only !== undefined && opts.only.length === 0 ? undefined : opts.only;

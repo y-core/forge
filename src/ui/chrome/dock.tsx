@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { currentAttrs } from "../contracts/state-attrs";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
@@ -25,7 +26,7 @@ export const Dock = <G extends string = string>({
   items,
   resolveHref,
   icon: Icon,
-  label = "Primary",
+  label = LABEL_DEFAULTS.dock,
   size = "md",
   hideAbove = "md",
   activeFilters = [],

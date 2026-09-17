@@ -226,6 +226,11 @@ signature, or a test does not?_ A per-field gloss, a per-symbol restatement, and
 different scales ([`CODE_RULES.md`][cr-5b] §5b, [`AGENT_GUIDE.md`][ag-6c] §6c). Where the sentence asserts behaviour, the question is sharper:
 _which test pins this?_ — and where none does, the finding is the missing assertion ([`CODE_RULES.md`][cr-5e] §5e).
 
+**Net entropy.** Read the change as a whole, after the items above. _Is the repository more ordered for it, or less?_ A second way to do a thing
+that had one, a rule nothing checks, a claim no test holds, or a pattern added beside the one it should have retired is entropy added, and a green
+gate does not clear it. The reverse holds too: disorder fixed outside the change's footprint is a widened diff, not a merit
+(`AGENT_WORKFLOW.md` §1b).
+
 ---
 
 ## 4. Severity Calibration

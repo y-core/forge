@@ -43,7 +43,7 @@ import { SigninView } from "./views/signin";
 import type { SigninViewProps } from "./views/types";
 import type { AuthViewChrome } from "./views/types";
 import {
-  fakeAdminUserService,
+  fakeAdminUserStore,
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthServices,
@@ -227,12 +227,12 @@ const CASES: readonly Case[] = [
     state: { sentTo: "new@example.com" },
     identity: admin,
   },
-  { label: "adminUsers", name: "adminUsers", load: loadAdminUsers, options: optionsWith({ admin: fakeAdminUserService(roster) }), identity: admin },
+  { label: "adminUsers", name: "adminUsers", load: loadAdminUsers, options: optionsWith({ admin: fakeAdminUserStore(roster) }), identity: admin },
   {
     label: "adminUsers+search",
     name: "adminUsers",
     load: loadAdminUsers,
-    options: optionsWith({ admin: fakeAdminUserService(roster) }),
+    options: optionsWith({ admin: fakeAdminUserStore(roster) }),
     path: "/page?q=zz",
     identity: admin,
   },
@@ -240,7 +240,7 @@ const CASES: readonly Case[] = [
     label: "adminUser",
     name: "adminUser",
     load: loadAdminUser,
-    options: optionsWith({ admin: fakeAdminUserService(roster) }),
+    options: optionsWith({ admin: fakeAdminUserStore(roster) }),
     pattern: "/page/:id",
     path: "/page/u2",
     identity: admin,
@@ -249,7 +249,7 @@ const CASES: readonly Case[] = [
     label: "adminUserEdit",
     name: "adminUserEdit",
     load: loadAdminUserEdit,
-    options: optionsWith({ admin: fakeAdminUserService(roster) }),
+    options: optionsWith({ admin: fakeAdminUserStore(roster) }),
     pattern: "/page/:id",
     path: "/page/u2",
     state: { outcome: "last-admin-demote", status: 409 },
@@ -266,7 +266,7 @@ const CASES: readonly Case[] = [
     label: "adminUserFactors",
     name: "adminUserFactors",
     load: loadAdminUserFactors,
-    options: optionsWith({ admin: fakeAdminUserService(roster), factors: totpRegistry, credentials: fakeAuthCredentialStore(credentials) }),
+    options: optionsWith({ admin: fakeAdminUserStore(roster), factors: totpRegistry, credentials: fakeAuthCredentialStore(credentials) }),
     pattern: "/page/:id",
     path: "/page/u2",
     identity: admin,
@@ -275,14 +275,14 @@ const CASES: readonly Case[] = [
     label: "adminElevate",
     name: "adminElevate",
     load: loadAdminElevate,
-    options: optionsWith({ admin: fakeAdminUserService([viewer]) }),
+    options: optionsWith({ admin: fakeAdminUserStore([viewer]) }),
     identity: admin,
   },
   {
     label: "adminElevate+taken",
     name: "adminElevate",
     load: loadAdminElevate,
-    options: optionsWith({ admin: fakeAdminUserService([fakeAuthUser({ isAdmin: true })]) }),
+    options: optionsWith({ admin: fakeAdminUserStore([fakeAuthUser({ isAdmin: true })]) }),
     identity: admin,
   },
 ];
@@ -418,13 +418,13 @@ describe("resolveAuthView refusals", () => {
     expect((await refusalOf(loadPasskeyList, downCredentials, admin)).status).toBe(503);
     expect((await refusalOf(loadPasskeyEdit, downCredentials, admin, "/page/:id", "/page/c1")).status).toBe(503);
 
-    const downAdmin = optionsWith({ admin: fakeAdminUserService(roster, { list: async () => err(new Error("db down") as never) }) });
+    const downAdmin = optionsWith({ admin: fakeAdminUserStore(roster, { list: async () => err(new Error("db down") as never) }) });
     expect((await refusalOf(loadAdminUsers, downAdmin, admin)).status).toBe(503);
 
-    const downView = optionsWith({ admin: fakeAdminUserService(roster, { view: async () => err(new Error("db down") as never) }) });
+    const downView = optionsWith({ admin: fakeAdminUserStore(roster, { findById: async () => err(new Error("db down") as never) }) });
     expect((await refusalOf(loadAdminUser, downView, admin, "/page/:id", "/page/u2")).status).toBe(503);
 
-    const downCount = optionsWith({ admin: fakeAdminUserService(roster, { countAdmins: async () => err(new Error("db down") as never) }) });
+    const downCount = optionsWith({ admin: fakeAdminUserStore(roster, { countAdmins: async () => err(new Error("db down") as never) }) });
     expect((await refusalOf(loadAdminUserEdit, downCount, admin, "/page/:id", "/page/u2")).status).toBe(503);
     expect((await refusalOf(loadAdminElevate, downCount, admin)).status).toBe(503);
 
@@ -445,7 +445,7 @@ describe("resolveAuthView refusals", () => {
   });
 
   it("answers 404 for an account, a credential and a path segment that are not there", async () => {
-    const empty = optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore([]), admin: fakeAdminUserService([]) });
+    const empty = optionsWith({ users: fakeAuthUserStore([viewer]), credentials: fakeAuthCredentialStore([]), admin: fakeAdminUserStore([]) });
     expect((await refusalOf(loadPasskey, empty, admin, "/page/:id", "/page/c1")).status).toBe(404);
     expect((await refusalOf(loadPasskey, empty, admin)).status).toBe(404);
     expect((await refusalOf(loadPasskeyEdit, empty, admin)).status).toBe(404);
@@ -454,7 +454,7 @@ describe("resolveAuthView refusals", () => {
   });
 
   it("sends a malformed administrative query back to the plain listing", async () => {
-    const options = optionsWith({ admin: fakeAdminUserService(roster) });
+    const options = optionsWith({ admin: fakeAdminUserStore(roster) });
     const res = await loaderApp(loadAdminUsers, options, admin).request(`/page?after=${"x".repeat(500)}`);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/admin/users");
@@ -523,7 +523,7 @@ describe("a deployment offering no passkey factor serves no passkey management p
 // `loadAdminUsers` reads `services.admin.list` having read no identity, so an auth view embedded on
 // an unguarded consumer route would serve the whole user table to a visitor.
 describe("resolveAuthView holds a host to the guards the page's data assumes", () => {
-  const options = optionsWith({ admin: fakeAdminUserService(roster) });
+  const options = optionsWith({ admin: fakeAdminUserStore(roster) });
 
   it("throws rather than resolving a guarded page for a route that claims no guards", async () => {
     const c = getAppContext(await contextOf());

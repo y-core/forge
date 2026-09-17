@@ -3,28 +3,28 @@ import { describe, expect, it } from "bun:test";
 import { TURNSTILE, TURNSTILE_ABANDONED_EVENT } from "../contracts/turnstile-contract";
 import type { TurnstileAbandonedDetail } from "../contracts/types";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./dom.fixture";
-import { findWidget, hasApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
+import { findWidget, hasTurnstileApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
 
 const win = (turnstile?: unknown) => ({ turnstile }) as unknown as Window;
 
-describe("hasApi", () => {
+describe("hasTurnstileApi", () => {
   it("is true only for an object that can actually render", () => {
-    expect(hasApi(win({ render: () => "widget-1" }))).toBe(true);
+    expect(hasTurnstileApi(win({ render: () => "widget-1" }))).toBe(true);
   });
 
   it("is false when nothing has been assigned", () => {
-    expect(hasApi(win())).toBe(false);
+    expect(hasTurnstileApi(win())).toBe(false);
   });
 
   it("is false for an element the DOM exposed under the name", () => {
     // Any element with `id="turnstile"` becomes `window.turnstile`, and a truthiness test would
     // take it for the API and try to render into it.
     const { el } = fakeTree();
-    expect(hasApi(win(el("DIV", { id: "turnstile" })))).toBe(false);
+    expect(hasTurnstileApi(win(el("DIV", { id: "turnstile" })))).toBe(false);
   });
 
   it("is false when render is present but is not callable", () => {
-    expect(hasApi(win({ render: "yes" }))).toBe(false);
+    expect(hasTurnstileApi(win({ render: "yes" }))).toBe(false);
   });
 });
 

@@ -333,6 +333,9 @@ export function decodeReadRow(columns: readonly string[], row: Readonly<Record<s
 
 const DUMP_PREAMBLE = "PRAGMA defer_foreign_keys=TRUE;";
 
+/** The preamble as a statement the splitter yields it — the terminator is the split, so it is not in the text. */
+const PREAMBLE_STATEMENT = DUMP_PREAMBLE.slice(0, -1);
+
 const ROW_REMOVAL = /(?:DELETE\s+FROM|TRUNCATE)\b/i;
 
 const INSERT_LINE = /^\s*INSERT\b/i;
@@ -344,16 +347,6 @@ function insertTarget(line: string): string | null {
   if (match === null) return null;
   const quoted = match[1];
   return (quoted === undefined ? (match[2] ?? "") : quoted.replaceAll('""', '"')).toLowerCase();
-}
-
-// Every value this tool writes is escaped onto a single line, so a line beginning `INSERT` is one
-// whole row — which is what lets a scan tell a statement from prose that discusses statements.
-function isStatement(line: string): boolean {
-  return !INSERT_LINE.test(line);
-}
-
-function isRowRemoval(line: string): boolean {
-  return isStatement(line) && new RegExp(`^\\s*(?:${ROW_REMOVAL.source})`, "i").test(line);
 }
 
 /** Whether `schema.sql` declares the tables route `full` loads before `data.sql`, and carries no row of its own. @internal */
@@ -410,26 +403,34 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
   const allowed = new Set(appTables.map((table) => table.toLowerCase()));
   if (lines[0] !== DUMP_PREAMBLE) faults.push({ line: 1, reason: `the first line is not ${DUMP_PREAMBLE} — this is not a wrangler dump` });
 
-  for (const [index, line] of lines.entries()) {
-    const number = index + 1;
-    // The table is read from the INSERT's own syntax rather than by searching the line, because a
-    // row's data legitimately contains any string at all — including these two table names.
-    if (INSERT_LINE.test(line)) {
-      const table = insertTarget(line);
-      if (table === null) {
-        faults.push({ line: number, reason: `an INSERT naming no table this scan can read: ${line.trim().slice(0, 80)}` });
-      } else if (table === "sqlite_sequence") faults.push({ line: number, reason: SEQUENCE_FAULT });
+  for (const statement of splitSqlStatements(sql)) {
+    const lead = statement.masked.search(/\S/);
+    const number = sqlLineAt(sql, statement.offset + Math.max(lead, 0));
+    const text = `${statement.raw.trim()};`.slice(0, 80);
+    if (statement.offset === 0 && statement.raw.trim() === PREAMBLE_STATEMENT) continue;
+    // Matched against the masked text, so a leading comment cannot walk a statement past the arm
+    // that judges it. The table is read off the raw INSERT for the reason `insertTarget` gives.
+    if (INSERT_LINE.test(statement.masked)) {
+      const table = insertTarget(statement.raw);
+      if (table === null) faults.push({ line: number, reason: `an INSERT naming no table this scan can read: ${text}` });
+      else if (table === "sqlite_sequence") faults.push({ line: number, reason: SEQUENCE_FAULT });
       else if (!allowed.has(table)) faults.push({ line: number, reason: `${table} is not one of the tables this artifact may carry` });
       continue;
     }
-    if (/^\s*CREATE\s+/i.test(line)) {
+
+    const said = faults.length;
+    if (/^\s*(?:CREATE|DROP|ALTER)\s+/i.test(statement.masked)) {
       faults.push({
         line: number,
         reason: "a data-only artifact declares no schema — the migrations route applies the migrations directory first",
       });
     }
-    if (isRowRemoval(line)) faults.push({ line: number, reason: `a data-only artifact removes nothing: ${line.trim().slice(0, 80)}` });
-    if (/\bsqlite_sequence\b/.test(line)) faults.push({ line: number, reason: SEQUENCE_FAULT });
+    if (new RegExp(`^\\s*(?:${ROW_REMOVAL.source})`, "i").test(statement.masked))
+      faults.push({ line: number, reason: `a data-only artifact removes nothing: ${text}` });
+    if (/\bsqlite_sequence\b/.test(statement.masked)) faults.push({ line: number, reason: SEQUENCE_FAULT });
+    // Nothing reached the allowlist, so it is refused for that and not for having been enumerated:
+    // REPLACE, UPDATE and ATTACH are all statements no arm above names and wrangler never dumps.
+    if (faults.length === said) faults.push({ line: number, reason: `a data artifact carries only the preamble and INSERTs: ${text}` });
   }
   return faults;
 }
@@ -568,24 +569,72 @@ function refuseFaults(file: string, what: string, faults: readonly ArtifactFault
   );
 }
 
+/** The `.sql` files a backup is, and the check each one is held to. `takeBackup` writes every one of them, always. */
+const REQUIRED_ARTIFACTS: Readonly<Record<string, (text: string, carried: readonly string[]) => readonly ArtifactFault[]>> = {
+  "schema.sql": (text) => checkSchemaArtifact(text),
+  "data.sql": (text, carried) => checkDataArtifact(text, carried),
+};
+
+const ARTIFACT_CHECKS: Readonly<Record<string, string>> = {
+  "schema.sql": "a schema-only artifact must be",
+  "data.sql": "a data-only artifact must be",
+};
+
 /** The whole artifact checked against its own manifest — the bar a restore loads one at, and a reset relies on one at. @internal */
 export function verifyBackupArtifact(io: DbIo, directory: string, manifest: BackupManifest): void {
   const manifestPath = join(directory, "manifest.json");
   if (manifestSelfDigest(manifest) !== manifest.selfDigest) {
     throw new CliError("invalid-args", `${manifestPath} does not hash to the selfDigest it carries — this artifact is damaged`);
   }
+
+  // Driven by what a route loads rather than by what the manifest lists, because a manifest listing
+  // nothing would otherwise verify by having nothing to check.
+  const declared = new Map(manifest.artifacts.map((entry) => [entry.file, entry]));
+  const undeclaredRequired = Object.keys(REQUIRED_ARTIFACTS).filter((file) => !declared.has(file));
+  if (undeclaredRequired.length > 0) {
+    throw new CliError(
+      "invalid-args",
+      `${manifestPath} declares no ${undeclaredRequired.join(" and no ")} — every backup this tool writes carries schema.sql and data.sql, so this artifact was not written by it`,
+    );
+  }
+
   // The companion tables ride in `data.sql` beside the app's own, and route `migrations` creates them.
   const carried = [...manifest.tables.map((table) => table.name), ...COMPANION_TABLES];
   for (const entry of manifest.artifacts) {
+    const check = REQUIRED_ARTIFACTS[entry.file];
+    if (check === undefined) {
+      throw new CliError(
+        "invalid-args",
+        `${join(directory, entry.file)} is declared in the manifest and is not a file any restore route loads — this artifact was not written by this tool`,
+      );
+    }
     const path = join(directory, entry.file);
     if (!io.exists(path)) throw new CliError("invalid-args", `${path} is declared in the manifest and missing from the artifact`);
     const text = io.readText(path);
     if (sha256(text) !== entry.sha256) {
       throw new CliError("invalid-args", `${path} does not hash to what the manifest declares for it — this artifact is damaged`);
     }
-    if (entry.file === "schema.sql") refuseFaults(entry.file, "a schema-only artifact must be", checkSchemaArtifact(text));
-    if (entry.file === "data.sql") refuseFaults(entry.file, "a data-only artifact must be", checkDataArtifact(text, carried));
+    refuseFaults(entry.file, ARTIFACT_CHECKS[entry.file] as string, check(text, carried));
   }
+
+  refuseUndeclaredSql(io, directory, "", new Set(Object.keys(REQUIRED_ARTIFACTS)));
+  // Route `migrations` executes whatever is in here, so the same rule has to reach one directory down.
+  const migrationNames = new Set(manifest.migrations.map((migration) => `${migration.name}.sql`));
+  if (io.exists(join(directory, "migrations"))) refuseUndeclaredSql(io, directory, "migrations", migrationNames);
+}
+
+/** Refuses a `.sql` the manifest never declared, in a directory something later executes by listing it. */
+function refuseUndeclaredSql(io: DbIo, directory: string, subdirectory: string, declared: ReadonlySet<string>): void {
+  const path = subdirectory === "" ? directory : join(directory, subdirectory);
+  const undeclared = io
+    .readDir(path)
+    .filter((name) => name.endsWith(".sql") && !declared.has(name))
+    .sort();
+  if (undeclared.length === 0) return;
+  throw new CliError(
+    "invalid-args",
+    `${path} holds ${undeclared.join(", ")}, which the manifest does not declare — a restore executes what it finds here, so an undeclared statement file is refused`,
+  );
 }
 
 /** Why this target may not be restored into, or nothing — a restore adds rows and never removes them. @internal */

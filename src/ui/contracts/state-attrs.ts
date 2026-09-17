@@ -45,8 +45,6 @@ export function stateAttrs(state: StateAttrsProps): Record<string, string> {
   };
 }
 
-// `forge-ui-a11y-aria-beside-data` requires the two to move together, and four components had
-// written the pair by hand — an invariant that held by vigilance rather than by construction.
 /** The current-page pair: `aria-current="page"` beside `data-selected`. @public */
 export function currentAttrs(current: boolean): Record<string, string> {
   return { ...(current ? { "aria-current": "page" } : {}), ...stateAttrs({ selected: current }) };
@@ -55,8 +53,6 @@ export function currentAttrs(current: boolean): Record<string, string> {
 /** Reconciles the attributes owned by each present state key on a live element. @public */
 export function applyStateAttrs(el: Element, state: StateAttrsProps): void {
   const next = stateAttrs(state);
-  // Read straight off the table each key is declared in. A second map of key→attribute had no
-  // compile-time link to it, so a key omitted there threw here rather than failing the build.
   for (const key of Object.keys(state) as Array<keyof StateAttrsProps>) {
     if (state[key] === undefined) continue;
     const name = STATE_ATTRS[key];

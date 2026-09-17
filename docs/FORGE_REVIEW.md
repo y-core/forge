@@ -269,12 +269,15 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`FORGE_ERRORS.md`][eh-5e] §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACES.md`][namespaces-5b] §5b |
 | `@public` / `@internal` on a TSDoc line | Machine-readable visibility markers, explicitly budgeted — [`CODE_RULES.md`][cr-5a] §5a |
-| A one-line inline comment carrying an external _why_ | The third budgeted form, subject to the conditions in [`CODE_RULES.md`][cr-5a] §5a |
+| An inline comment of one or two lines carrying an external _why_ | The third budgeted form, subject to the conditions in [`CODE_RULES.md`][cr-5a] §5a |
 | A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`CODE_RULES.md`][cr-5d] §5d |
 | A `page.evaluate` callback whose destructured parameter repeats an outer name | The callback runs in the browser realm and _cannot_ close over the Node-side binding; the repeated name is what documents the marshalled argument — §7b |
 | `[--tone:var(--color-…)]` arbitrary-property classes, and `bg-(--tone)` reading them | The tone mechanism, not a stray arbitrary value: `toneVariants` sets the properties and one recipe per appearance reads them — [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e |
 | `state-invalid` or `cursor-pointer` passed as a separate `cn` argument, outside the base literal | Not an untidy call: the narrower recipe's group is a subset of an earlier one's, so folding it into the literal deletes it — [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e |
 | `data-size` on `Avatar`, `Turnstile`, or a field control | A presentational attribute carrying a chosen value, not a state hook — it is declared beside the state table rather than in it — [`STATE_ATTRIBUTES.md`][sa-2] §2 |
+| `hx-on:*` emitted verbatim while every bare `on*` attribute is dropped, and a `js:`-prefixed `hx-vals`/`hx-headers` left as a raw string | A ratified fail-open exception: the renderer's handler filter tests the lowercased name for a leading `on`, which `hx-on:click` does not carry, and a `js:` value is an attribute value htmx evaluates rather than a name. Written into [`HTMX.md`][htmx-7b] §7b, whose control is that the value be developer-authored — [`BOUNDARIES.md`][boundaries-5c] §5c |
+| A `navbar:filters` document event accepted from any script on the page | A ratified fail-open exception: `filters` repaints already-delivered items and never decides what a viewer may reach, so a forged event degrades presentation only — route guards are the enforcement point. Written into [`UI_CLIENT_RUNTIME.md`][ucr-2b] §2b — [`BOUNDARIES.md`][boundaries-5c] §5c |
+| A URL-valued `hx-*` attribute left unsanitized beside an `href` that is not | Deliberate: `safeUrl`'s `"#"` is a live same-origin request once htmx fetches it, so sanitizing converts a refusal into a silent wrong request — [`HTMX.md`][htmx-7a] §7a |
 
 ---
 
@@ -355,6 +358,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [boundaries-5]: ../warden/canon/libs/BOUNDARIES.md#5-fail-closed
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
+[boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
 [cr]: ../warden/canon/libs/CODE_REVIEW.md
 [cr-1]: ../warden/canon/libs/CODE_REVIEW.md#1-review-workflow
 [cr-1c]: ../warden/canon/shared/CODE_RULES.md#1c-constants-are-acceptable
@@ -369,6 +373,8 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [floor]: ../src/ui/design/floor.md
+[htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
+[htmx-7b]: ./HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [iv-1a]: ./INPUT_VALIDATION.md#1a-v-namespace--complete-valibot-re-export
 [iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
@@ -392,6 +398,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-7f]: ./TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
+[ucr-2b]: ./UI_CLIENT_RUNTIME.md#2b-theme-controller-and-fouc-prevention
 [ucr-2d]: ./UI_CLIENT_RUNTIME.md#2d-the-disposer-contract
 [ucr-4]: ./UI_CLIENT_RUNTIME.md#4-htmx-bundle-import
 [udg-4a]: ./UI_DESIGN_GUIDANCE.md#4a-gate-enforcement-across-both-tiers

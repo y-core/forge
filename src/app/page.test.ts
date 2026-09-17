@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { CSRF_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
 import { escapeHtml } from "../http/escape";
+import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
@@ -68,8 +69,15 @@ describe("definePage", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("sets public max-age cache header", async () => {
+  it("defaults an unscoped cache directive to private, not public", async () => {
     const app = makeApp(definePage({ cache: { maxAge: 3600 }, view: () => new Response("ok") }));
+
+    const res = await app.request("/test");
+    expect(res.headers.get("cache-control")).toBe("private, max-age=3600");
+  });
+
+  it("sets a public cache header when the page asks for edge caching explicitly", async () => {
+    const app = makeApp(definePage({ cache: { maxAge: 3600, scope: "public" }, view: () => new Response("ok") }));
 
     const res = await app.request("/test");
     expect(res.headers.get("cache-control")).toBe("public, max-age=3600");
@@ -103,7 +111,7 @@ describe("definePage", () => {
 
     const res = await app.request("/test");
     expect(res.status).toBe(302);
-    expect(res.headers.get("cache-control")).toBe("public, max-age=300");
+    expect(res.headers.get("cache-control")).toBe("private, max-age=300");
   });
 
   it("lets `headers` override a response's own cache-control", async () => {
@@ -867,7 +875,7 @@ describe("definePage — a client that disconnects", () => {
 
     let res: Response | undefined;
     const logs = await captureLogs(async () => {
-      res = await app.fetch(new Request("http://localhost/test", { signal: AbortSignal.abort() }), {});
+      res = await app.fetch(new Request("http://localhost/test", { signal: AbortSignal.abort() }), {}, mockExecutionContext());
     });
 
     expect(res!.status).toBe(499);

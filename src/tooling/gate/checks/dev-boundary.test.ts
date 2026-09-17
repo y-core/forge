@@ -1,20 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { checkDevBoundary, devOnlySpecifiers, isDevEntry } from "./dev-boundary";
+import { gateFixtureRoot } from "./gate.fixture";
 import type { DevBoundaryCheckConfig } from "./types";
 
 const WRANGLER = '{\n  // the production entry\n  "main": "src/worker.ts",\n}\n';
 
 function project(files: Record<string, string>, config: Partial<DevBoundaryCheckConfig> = {}): DevBoundaryCheckConfig {
-  const root = mkdtempSync(join(tmpdir(), "forge-dev-"));
-  for (const [path, source] of Object.entries(files)) {
-    mkdirSync(join(root, dirname(path)), { recursive: true });
-    writeFileSync(join(root, path), source);
-  }
-  return { root, sources: ["src"], devOnlyDirs: ["src/dev"], ...config };
+  return { root: gateFixtureRoot(files, "forge-dev-"), sources: ["src"], devOnlyDirs: ["src/dev"], ...config };
 }
 
 describe("isDevEntry", () => {

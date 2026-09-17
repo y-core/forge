@@ -17,7 +17,7 @@ describe("the gate's step table", () => {
   });
 
   it("selects each mode as a superset of the one below it", () => {
-    expect(labels("fast").every((label) => labels("standard").includes(label))).toBe(true);
+    expect(labels("quality").every((label) => labels("standard").includes(label))).toBe(true);
     expect(labels("standard").every((label) => labels("full").includes(label))).toBe(true);
   });
 

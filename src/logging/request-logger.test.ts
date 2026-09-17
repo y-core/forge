@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
 import type { KVNamespace } from "../storage/kv/types";
+import { collectExecutionContext, mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { consoleChannel, withLevels } from "./channels";
 import { kvLogChannel } from "./kv-channel";
@@ -104,13 +105,7 @@ describe("requestLogger", () => {
   });
 
   it("flush is invoked — waitUntil receives the flush promise", async () => {
-    const flushed: Promise<void>[] = [];
-    const mockCtx: ExecutionContext = {
-      waitUntil: (p: Promise<void>) => {
-        flushed.push(p);
-      },
-      passThroughOnException: () => {},
-    };
+    const { executionCtx: mockCtx, pending: flushed, drain } = collectExecutionContext();
 
     const { channel } = makeCapture();
     const app = new Forge();
@@ -123,7 +118,7 @@ describe("requestLogger", () => {
     await app.fetch(new Request("http://localhost/test"), {}, mockCtx);
 
     expect(flushed.length).toBeGreaterThan(0);
-    await Promise.all(flushed);
+    await drain();
   });
 
   it("async channel writes are included in the flush", async () => {
@@ -168,21 +163,22 @@ describe("requestLogger — per-request summary record", () => {
 
     expect(records).toHaveLength(1);
     const summary = records[0]!;
-    expect(summary.message).toBe("GET /thing");
+    expect(summary.message).toBe("request.completed");
     expect(summary.data?.method).toBe("GET");
     expect(summary.data?.path).toBe("/thing");
     expect(summary.data?.status).toBe(200);
     expect(typeof summary.data?.duration).toBe("number");
   });
 
-  it("strips the query string from the recorded path", async () => {
+  it("keeps a query-string secret out of both the message and the recorded path", async () => {
     const { records, channel } = makeCapture();
     const app = makeStatusApp(channel, 200);
 
     await app.request("/thing?token=secret&x=1");
 
-    expect(records[0]!.message).toBe("GET /thing");
+    expect(records[0]!.message).toBe("request.completed");
     expect(records[0]!.data?.path).toBe("/thing");
+    expect(JSON.stringify(records[0])).not.toContain("secret");
   });
 
   it("logs 2xx responses at info level", async () => {
@@ -239,7 +235,7 @@ describe("requestLogger — per-request summary record", () => {
 
     const summary = records[1]!;
     expect(summary.level).toBe("error");
-    expect(summary.message).toBe("GET /boom");
+    expect(summary.message).toBe("request.completed");
     expect(summary.data?.status).toBe(500);
   });
 
@@ -267,7 +263,7 @@ describe("requestLogger — per-request summary record", () => {
 
     await app.request("/boom").catch(() => undefined);
 
-    expect(records.map((r) => r.message)).toStrictEqual(["GET /boom", "unhandled error"]);
+    expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "unhandled error"]);
     const rec = records[0]!;
     expect(rec.level).toBe("error");
     const error = rec.data?.error as { name: string; message: string; stack?: string };
@@ -285,7 +281,7 @@ describe("requestLogger — per-request summary record", () => {
       throw new Error("handler exploded");
     });
 
-    const res = await app.fetch(new Request("http://localhost/boom", { signal: AbortSignal.abort() }), {});
+    const res = await app.fetch(new Request("http://localhost/boom", { signal: AbortSignal.abort() }), {}, mockExecutionContext());
 
     expect(res.status).toBe(499);
     expect(records).toStrictEqual([]);
@@ -309,7 +305,7 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
     const res = await makeGuardThrowApp(channel).request("/boom");
 
     expect(res.status).toBe(500);
-    expect(records.map((r) => r.message)).toStrictEqual(["GET /boom", "unhandled error"]);
+    expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "unhandled error"]);
   });
 
   it("keeps the two records correlated by requestId across the separate flush windows", async () => {
@@ -331,7 +327,7 @@ describe("requestLogger — flush windows under an asynchronous channel", () => 
     const res = await app.request("/boom");
 
     expect(res.status).toBe(500);
-    expect(records.map((r) => r.message)).toStrictEqual(["unhandled error", "GET /boom"]);
+    expect(records.map((r) => r.message)).toStrictEqual(["unhandled error", "request.completed"]);
   });
 });
 
@@ -362,20 +358,14 @@ describe("requestLogger — a failing channel never changes the request outcome"
   }
 
   it("returns the response unchanged when the flush is handed to waitUntil", async () => {
-    const flushed: Promise<void>[] = [];
-    const mockCtx: ExecutionContext = {
-      waitUntil: (p: Promise<void>) => {
-        flushed.push(p);
-      },
-      passThroughOnException: () => {},
-    };
+    const { executionCtx: mockCtx, pending: flushed, drain } = collectExecutionContext();
 
     const res = await makeFailingChannelApp().fetch(new Request("http://localhost/test"), {}, mockCtx);
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
     expect(flushed.length).toBeGreaterThan(0);
-    await expect(Promise.all(flushed)).resolves.toBeDefined();
+    await expect(drain()).resolves.toBeUndefined();
   });
 
   it("returns the response unchanged on the no-executionCtx fallback branch", async () => {
@@ -472,13 +462,7 @@ describe("requestLogger — minLevel", () => {
 describe("requestLogger — per-channel level allowlists", () => {
   it("a channels factory wrapping in withLevels([]) suppresses every record, response and flush intact", async () => {
     const { records, channel } = makeCapture();
-    const flushed: Promise<void>[] = [];
-    const mockCtx: ExecutionContext = {
-      waitUntil: (p: Promise<void>) => {
-        flushed.push(p);
-      },
-      passThroughOnException: () => {},
-    };
+    const { executionCtx: mockCtx, pending: flushed, drain } = collectExecutionContext();
     const app = new Forge();
     app.use("*", requestLogger({ channels: () => [withLevels(channel, [])] }));
     mapHandler(app, "GET", "/test", (c) => {
@@ -491,7 +475,7 @@ describe("requestLogger — per-channel level allowlists", () => {
     expect(res.status).toBe(200);
     expect(records).toHaveLength(0);
     expect(flushed.length).toBeGreaterThan(0);
-    await Promise.all(flushed);
+    await drain();
   });
 
   it("a withLevels(['warn','error']) channel drops a 200 summary and keeps 404 and 500 — the e2e posture", async () => {
@@ -664,7 +648,7 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload", (
 
     expect(capturedLogs).toHaveLength(1);
     const summary = JSON.parse(capturedLogs[0]!);
-    expect(summary.message).toBe("GET /cyclic");
+    expect(summary.message).toBe("request.completed");
     expect(summary.level).toBe("info");
     expect(summary.status).toBe(200);
   });

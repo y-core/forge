@@ -17,7 +17,7 @@ function labelsOf(steps: readonly Step[]): string[] {
 
 describe("GATE_MODES", () => {
   it("is the three tiers in ascending order, which is what the selector ranks against", () => {
-    expect([...GATE_MODES]).toEqual(["fast", "standard", "full"]);
+    expect([...GATE_MODES]).toEqual(["quality", "standard", "full"]);
   });
 });
 
@@ -42,7 +42,7 @@ describe("isCheckStep()", () => {
   });
 
   it("selects check and command steps alike, since the distinction is how they run, not whether", () => {
-    const result = selectSteps([...FIXTURE, check], { mode: "fast" });
+    const result = selectSteps([...FIXTURE, check], { mode: "quality" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -51,15 +51,15 @@ describe("isCheckStep()", () => {
 
   it("holds a check step back to its tier exactly as a command step is", () => {
     const table: readonly Step[] = [{ ...check, tier: "full" }];
-    const result = selectSteps(table, { mode: "fast" });
+    const result = selectSteps(table, { mode: "quality" });
 
     expect(result.ok).toBe(false);
   });
 });
 
 describe("selectSteps() — tier membership", () => {
-  it("holds a fast run to the steps declaring no tier", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast" });
+  it("holds a quality run to the steps declaring no tier", () => {
+    const result = selectSteps(FIXTURE, { mode: "quality" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -86,20 +86,20 @@ describe("selectSteps() — tier membership", () => {
     expect(result.total).toBe(4);
   });
 
-  it("makes fast ⊆ standard ⊆ full for any table", () => {
-    const fast = selectSteps(FIXTURE, { mode: "fast" });
+  it("makes quality ⊆ standard ⊆ full for any table", () => {
+    const quality = selectSteps(FIXTURE, { mode: "quality" });
     const standard = selectSteps(FIXTURE, { mode: "standard" });
     const full = selectSteps(FIXTURE, { mode: "full" });
 
-    expect(fast.ok && standard.ok && full.ok).toBe(true);
-    if (!fast.ok || !standard.ok || !full.ok) return;
-    expect(labelsOf(fast.steps).every((label) => labelsOf(standard.steps).includes(label))).toBe(true);
+    expect(quality.ok && standard.ok && full.ok).toBe(true);
+    if (!quality.ok || !standard.ok || !full.ok) return;
+    expect(labelsOf(quality.steps).every((label) => labelsOf(standard.steps).includes(label))).toBe(true);
     expect(labelsOf(standard.steps).every((label) => labelsOf(full.steps).includes(label))).toBe(true);
   });
 
-  it('treats an explicit `tier: "fast"` as the same as declaring none', () => {
-    const table: readonly Step[] = [{ label: "alpha", tier: "fast", tail: 10, cmd: ["a"] }];
-    const result = selectSteps(table, { mode: "fast" });
+  it('treats an explicit `tier: "quality"` as the same as declaring none', () => {
+    const table: readonly Step[] = [{ label: "alpha", tier: "quality", tail: 10, cmd: ["a"] }];
+    const result = selectSteps(table, { mode: "quality" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -172,7 +172,7 @@ describe("selectSteps() — --only filtering", () => {
   });
 
   it("tolerates surrounding whitespace and empty entries between labels", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: [" alpha , , beta "] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: [" alpha , , beta "] });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -180,7 +180,7 @@ describe("selectSteps() — --only filtering", () => {
   });
 
   it("is not scoped when --only happens to name every step in the mode", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: ["alpha", "beta"] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: ["alpha", "beta"] });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -190,35 +190,35 @@ describe("selectSteps() — --only filtering", () => {
 
 describe("selectSteps() — refusals", () => {
   it("rejects an unknown label and names every label the mode knows", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: ["nope"] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: ["nope"] });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe('Unknown --only label: "nope". Known labels for a fast run: alpha, beta');
+    expect(result.error).toBe('Unknown --only label: "nope". Known labels for a quality run: alpha, beta');
   });
 
-  it("rejects a higher-tier label in a fast run, pointing at what a fast run does hold", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: ["gamma"] });
+  it("rejects a higher-tier label in a quality run, pointing at what a quality run does hold", () => {
+    const result = selectSteps(FIXTURE, { mode: "quality", only: ["gamma"] });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe('Unknown --only label: "gamma". Known labels for a fast run: alpha, beta');
+    expect(result.error).toBe('Unknown --only label: "gamma". Known labels for a quality run: alpha, beta');
   });
 
   it("rejects an --only list that names nothing at all", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: [" , "] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: [" , "] });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe('No steps selected for a fast run from --only " , " — refusing to report a green gate that ran nothing.');
+    expect(result.error).toBe('No steps selected for a quality run from --only " , " — refusing to report a green gate that ran nothing.');
   });
 
   it("rejects a mode with no steps rather than reporting an empty run green", () => {
-    const result = selectSteps([], { mode: "fast" });
+    const result = selectSteps([], { mode: "quality" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe("No steps selected for a fast run — refusing to report a green gate that ran nothing.");
+    expect(result.error).toBe("No steps selected for a quality run — refusing to report a green gate that ran nothing.");
   });
 
   it("names the standard mode in its refusal, so the message says which run was resolved", () => {
@@ -244,7 +244,7 @@ describe("selectSteps() — table validity", () => {
       { label: "lint", tail: 10, cmd: ["a"] },
       { label: "lint", tail: 10, cmd: ["b"] },
     ];
-    const result = selectSteps(table, { mode: "fast" });
+    const result = selectSteps(table, { mode: "quality" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -261,18 +261,18 @@ describe("selectSteps() — table validity", () => {
       { label: "b", tail: 10, cmd: ["x"] },
       { label: "b", tail: 10, cmd: ["x"] },
     ];
-    const result = selectSteps(table, { mode: "fast" });
+    const result = selectSteps(table, { mode: "quality" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.startsWith("Duplicate step label: a, b.")).toBe(true);
   });
 
-  it("selects a step carrying a dependency in a fast run, where an absent one is skipped rather than failed", () => {
+  it("selects a step carrying a dependency in a quality run, where an absent one is skipped rather than failed", () => {
     const table: readonly Step[] = [
       { label: "class-groups", run: () => checkResult([], ""), requires: { tool: "tailwindcss", hint: "install it" } },
     ];
-    const result = selectSteps(table, { mode: "fast" });
+    const result = selectSteps(table, { mode: "quality" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -304,7 +304,7 @@ describe("selectSteps() — table validity", () => {
       },
     ];
 
-    expect(selectSteps(table, { mode: "fast" }).ok).toBe(true);
+    expect(selectSteps(table, { mode: "quality" }).ok).toBe(true);
   });
 
   it("holds a check step to the label rule, since it is not about how a step runs", () => {
@@ -313,25 +313,25 @@ describe("selectSteps() — table validity", () => {
       { label: "validate-docs", run: () => checkResult([], "") },
     ];
 
-    expect(selectSteps(table, { mode: "fast" }).ok).toBe(false);
+    expect(selectSteps(table, { mode: "quality" }).ok).toBe(false);
   });
 });
 
 describe("selectSteps() — the repeatable --only", () => {
   it("takes the array a repeated flag produces", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: ["alpha", "beta"] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: ["alpha", "beta"] });
     expect(result.ok && result.steps.map((s) => s.label)).toEqual(["alpha", "beta"]);
   });
 
   it("splits a comma-joined element of that array, so both spellings name the same steps", () => {
-    const result = selectSteps(FIXTURE, { mode: "fast", only: ["alpha,beta"] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: ["alpha,beta"] });
     expect(result.ok && result.steps.map((s) => s.label)).toEqual(["alpha", "beta"]);
   });
 
   it("reads an empty array as the flag's absence, not as a request for nothing", () => {
     // What a repeatable flag resolves to when it was never given. Reading it the other way
     // refuses every unscoped run.
-    const result = selectSteps(FIXTURE, { mode: "fast", only: [] });
+    const result = selectSteps(FIXTURE, { mode: "quality", only: [] });
     expect(result.ok && result.scoped).toBe(false);
   });
 });

@@ -465,8 +465,8 @@ describe("CustomiseContent", () => {
   it("builds each copy control out of Button at the smallest size the scale offers", async () => {
     const out = await page();
     const classes = buttonVariants({ tone: "neutral", appearance: "outline", size: "sm" });
-    for (const button of out.match(/<button[^>]*data-copy-target[^>]*>/g) ?? []) {
-      expect(button).toContain(`class="${classes}"`);
+    for (const target of COPY_TARGETS) {
+      expect(attrOf(out, `${COPY_TARGET_ATTR}="${target.id}"`, "class")).toBe(classes);
     }
     expect(out.match(/<button[^>]*data-copy-target[^>]*>/g) ?? []).toHaveLength(COPY_TARGETS.length);
   });

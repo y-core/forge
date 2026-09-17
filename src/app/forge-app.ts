@@ -19,8 +19,6 @@ import { shellCtx } from "./shell";
 import type { PageShell } from "./types";
 import type { GlobalMiddlewareEntry, MethodMismatch, RequestState } from "./types";
 
-const MOCK_CTX: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
-
 // Baseline hardening: a response built where the consumer's security middleware cannot reach it —
 // an out-of-chain throw, or a no-match — carries these and nothing else.
 const BASELINE_HEADERS = {
@@ -40,12 +38,23 @@ const MATCHER_LIMITS: MatcherLimits = { maxPatternSize: 4096, maxMatcherSize: 10
 /** Rewrites a `use()` path convention into a route-pattern source. */
 function toPatternSource(path: string): string {
   if (path.endsWith("/*")) return `${path.slice(0, -2)}(/*)`;
-  if (path.endsWith("*")) return `${path.slice(0, -1)}(/*)`;
   return path;
+}
+
+/** Refuses a `use()` path whose wildcard is neither a bare `"*"` nor a `/*` suffix. */
+function assertGuardPattern(path: string): void {
+  if (path === "*") return;
+  if (!(path.endsWith("/*") ? path.slice(0, -2) : path).includes("*")) return;
+  throw new Error(
+    `Forge.use: "${path}" is not a supported guard pattern. Use "*" to guard every path, or a "/prefix/*" suffix to guard a prefix; a "*" anywhere else matches only the prefix and its descendants, never a longer sibling segment.`,
+  );
 }
 
 /** Compiles `use()` paths into one matcher, or `null` when any of them is the catch-all. */
 function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiMatcher<null> | null {
+  // Every path is checked before the catch-all short-circuit: otherwise `["*", "/bad*"]` would
+  // register a guard on every path and never look at the typo sitting beside it.
+  for (const path of paths) assertGuardPattern(path);
   if (paths.includes("*")) return null;
   if (paths.length === 1) return createMatcher(toPatternSource(paths[0] as string), { limits: MATCHER_LIMITS });
   const multi = createMultiMatcher<null>({ limits: MATCHER_LIMITS });
@@ -194,7 +203,15 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   }
 
   /** Handles a Workers `fetch` event. */
-  async fetch(request: Request, env: Bindings, executionCtx: ExecutionContext = MOCK_CTX): Promise<Response> {
+  async fetch(request: Request, env: Bindings, executionCtx: ExecutionContext): Promise<Response> {
+    // Thrown rather than stubbed: a no-op `waitUntil` drops the request-log flush, the schema
+    // observation and every consumer `waitUntil` with no signal of any kind.
+    if (executionCtx === undefined || executionCtx === null) {
+      throw new Error(
+        "Forge.fetch: `executionCtx` is required — export `{ fetch: (req, env, ctx) => app.fetch(req, env, ctx) }`, not the two-argument form. Without it every `waitUntil` is discarded: request logs never flush, the D1 schema observation never lands, and audit writes are lost.",
+      );
+    }
+
     const isHead = request.method.toUpperCase() === "HEAD";
     // Copy-construct rather than rebuild from url + headers, so `signal`, `cf`, `redirect` and
     // `credentials` carry into the handler. Safe only because HEAD carries no body.
@@ -234,18 +251,16 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       }
     }
     const reqLog = requestLog.getOptional(context);
-    if (reqLog) {
-      reqLog.error("unhandled error", { error: serializeError(err) });
-      // Flushed here, not left to `requestLogger`: on the guard-throw path its `finally` has already
-      // run, so a record appended afterwards would sit in a buffer nobody awaits.
-      const flush = reqLog.flush();
-      try {
-        context.executionCtx.waitUntil(flush);
-      } catch {
-        await flush;
-      }
-    }
+    if (reqLog) reqLog.error("unhandled error", { error: serializeError(err) });
     this._logger.error("Unhandled error", { error: serializeError(err) });
+    // Nothing else covers either core: `requestLogger`'s `finally` has already run on the guard-throw path,
+    // and the app logger has no middleware to flush it at all.
+    const flush = Promise.all([reqLog?.flush(), this._logger.flush()]);
+    try {
+      context.executionCtx.waitUntil(flush);
+    } catch {
+      await flush;
+    }
     const detail = this._errorDetail ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
     // Only ever echoed, never generated here: an id exists only where `requestId` middleware ran.
     const reference = requestIdCtx.getOptional(context);

@@ -52,8 +52,6 @@ export function mountCarouselDots(options: CarouselDotsOptions): () => void {
         const cls = current ? on : off;
         if (current) entry.link.setAttribute(CURRENT_ATTR, CURRENT_VALUE);
         else entry.link.removeAttribute(CURRENT_ATTR);
-        // `forge-ui-a11y-state-attrs-source`: the contract owns the spelling, so this is the only place
-        // in `ui/client` that used to write one by hand.
         applyStateAttrs(entry.link, { selected: current });
         // A single-slide carousel has no unselected dot to lift `off` from, and nothing to clear either.
         if (cls !== null && cls !== undefined) entry.link.setAttribute("class", cls);

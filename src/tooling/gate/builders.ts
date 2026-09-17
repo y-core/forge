@@ -49,9 +49,9 @@ import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./types"
 import type { SourceStepOptions, StepOptions } from "./types";
 
 // The key is omitted when the value is the default, so a table reads as the tiers it departs from.
-function tier(value: GateMode | undefined, fallback: GateMode = "fast"): { tier: GateMode } | Record<string, never> {
+function tier(value: GateMode | undefined, fallback: GateMode = "quality"): { tier: GateMode } | Record<string, never> {
   const resolved = value ?? fallback;
-  return resolved === "fast" ? {} : { tier: resolved };
+  return resolved === "quality" ? {} : { tier: resolved };
 }
 
 function prerequisite(
@@ -102,7 +102,7 @@ export function formatStep(options: SourceStepOptions = {}): CommandStep {
   return { label: "format", tail: 20, cmd: ["oxfmt", "--check", ...sources], fix: ["oxfmt", ...sources], ...tier(options.tier) };
 }
 
-/** `oxlint --type-aware` over `sources` (default `src/`); defaults to `standard`: it builds its own TypeScript program, so it is too slow for the inner loop. @public */
+/** `oxlint --type-aware` over `sources` (default `src/`), the slowest row of the `quality` tier at a few seconds. @public */
 export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
   return {
@@ -111,15 +111,15 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
     // The unused-directive check rides here, not on `lint`: this run is a superset, so it is the only
     // one that can tell a stale directive from one that only a type-aware rule redeems.
     cmd: ["oxlint", "--type-aware", "--deny-warnings", "--report-unused-disable-directives-severity", "error", ...sources],
-    ...tier(options.tier, "standard"),
+    ...tier(options.tier),
   };
 }
 
-/** `bun test` over `sources`, or the whole project when none are named. @public */
+/** `bun test` over `sources`, or the whole project when none are named; defaults to `standard`, the tier that runs the code rather than judging it. @public */
 export function testStep(options: SourceStepOptions & { label?: string } = {}): CommandStep {
   // `label` is a parameter because a suite split by the question each set answers needs one row per
   // set, and `selectSteps` refuses a duplicate label.
-  return { label: options.label ?? "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier) };
+  return { label: options.label ?? "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier, "standard") };
 }
 
 /** `playwright test` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
@@ -164,12 +164,12 @@ export function workerdStep(options: { hint?: string; parallel?: number } & Sour
   };
 }
 
-/** The two `forge db schema check` rows: digests in `standard`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
+/** The two `forge db schema check` rows: digests in `quality`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
 export function dbSchemaStep(options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string } = {}): [CommandStep, CommandStep] {
   const forge = options.forge ?? ["forge"];
   const root = options.root === undefined ? [] : ["--root", options.root];
   return [
-    { label: "db:schema:digests", tier: "standard", tail: 40, cmd: [...forge, "db", "schema", "check", ...root] },
+    { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root] },
     {
       label: "db:schema",
       tier: "full",

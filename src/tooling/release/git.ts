@@ -32,6 +32,25 @@ export function isWorkingTreeClean(cwd: string): boolean {
   return output === "";
 }
 
+/** The branch HEAD is on, or `null` in a detached HEAD. */
+export function currentBranch(cwd: string): string | null {
+  const name = gitExec(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+  return name === "HEAD" ? null : name;
+}
+
+/** The branch the remote publishes from, or `null` when the remote names none. */
+export function defaultBranch(cwd: string, remote = "origin"): string | null {
+  // `git clone` writes this ref; `git init` + `git remote add` + `git push -u` does not, and no
+  // fetch adds it — so its absence is an unanswered question rather than an answer of `main`.
+  try {
+    const ref = gitExec(["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`], cwd);
+    if (ref === "") return null;
+    return ref.startsWith(`${remote}/`) ? ref.slice(remote.length + 1) : ref;
+  } catch {
+    return null;
+  }
+}
+
 /** Returns the most recent release tag matching `prefix`, or `null` when there are none. */
 export function getLatestTag(cwd: string, prefix: string): string | null {
   const output = gitExec(["tag", "--list", `${prefix}*`, "--sort=-v:refname"], cwd);

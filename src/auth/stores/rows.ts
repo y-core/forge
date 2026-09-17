@@ -150,8 +150,11 @@ export function readIdentityLink(row: IdentityLinkRow): AuthIdentityLink {
   };
 }
 
-/** Joins values into one parenthesised `IN` list, each still a bind parameter. @internal */
+/** Joins values into a comma-separated list, each still a bind parameter; the caller supplies the parentheses. @internal */
 export function inList(values: readonly unknown[]): SqlFragment {
+  // `reduce` with no seed throws on an empty array, and a seed would emit a leading comma. The
+  // caller still has to skip the query: `IN ()` is a syntax error, not an empty match.
+  if (values.length === 0) return sql``;
   return values.map((value) => sql`${value}`).reduce((left, right) => sql`${left}, ${right}`);
 }
 

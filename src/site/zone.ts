@@ -70,17 +70,15 @@ export function buildRedirectRule(spec: RedirectSpec): ZoneRule {
 
   const expression = `(http.host in {${hosts.map(quote).join(" ")}})`;
   assertWithinLimit(expression, "buildRedirectRule");
+  // The apex is quoted as part of the whole literal rather than inside one: a `"` in the apex
+  // would otherwise close the string and let the rest of it run as Ruleset Engine expression.
+  const target = `concat(${quote(`https://${spec.apex}`)}, http.request.uri.path)`;
+  assertWithinLimit(target, "buildRedirectRule");
   return {
     action: "redirect",
     expression,
     description: `Redirect ${hosts.join(", ")} to ${spec.apex}`,
     enabled: true,
-    action_parameters: {
-      from_value: {
-        status_code: spec.statusCode ?? 301,
-        target_url: { expression: `concat("https://${spec.apex}", http.request.uri.path)` },
-        preserve_query_string: true,
-      },
-    },
+    action_parameters: { from_value: { status_code: spec.statusCode ?? 301, target_url: { expression: target }, preserve_query_string: true } },
   };
 }

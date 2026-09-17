@@ -1,9 +1,15 @@
 import { describe, expect, it, spyOn } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildFonts } from "./fonts";
+
+/** The pin a caller would write into config for `content`. */
+function pin(content: string | Uint8Array): string {
+  return createHash("sha256").update(content).digest("hex");
+}
 
 describe("buildFonts()", () => {
   it("downloads each font and writes it under publicDir", async () => {
@@ -19,8 +25,8 @@ describe("buildFonts()", () => {
       await buildFonts(
         {
           downloads: [
-            { url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2" },
-            { url: "https://fonts.example.com/mono.woff2", to: "fonts/mono.woff2" },
+            { url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2", sha256: pin(bytesA) },
+            { url: "https://fonts.example.com/mono.woff2", to: "fonts/mono.woff2", sha256: pin(bytesB) },
           ],
         },
         publicDir,
@@ -47,7 +53,10 @@ describe("buildFonts()", () => {
     writeFileSync(dest, "CACHED");
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Uint8Array([0]), { status: 200 }));
     try {
-      await buildFonts({ downloads: [{ url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2" }] }, publicDir);
+      await buildFonts(
+        { downloads: [{ url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2", sha256: pin("CACHED") }] },
+        publicDir,
+      );
 
       expect(fetchSpy).toHaveBeenCalledTimes(0);
       expect(readFileSync(dest, "utf-8")).toBe("CACHED");
@@ -64,7 +73,10 @@ describe("buildFonts()", () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 404, statusText: "Not Found" }));
     try {
       await expect(
-        buildFonts({ downloads: [{ url: "https://fonts.example.com/missing.woff2", to: "fonts/missing.woff2" }] }, publicDir),
+        buildFonts(
+          { downloads: [{ url: "https://fonts.example.com/missing.woff2", to: "fonts/missing.woff2", sha256: pin("missing") }] },
+          publicDir,
+        ),
       ).rejects.toThrow("fetch https://fonts.example.com/missing.woff2: 404 Not Found");
       expect(existsSync(join(publicDir, "fonts", "missing.woff2"))).toBe(false);
     } finally {
@@ -79,9 +91,9 @@ describe("buildFonts()", () => {
     mkdirSync(publicDir, { recursive: true });
     const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Uint8Array([0]), { status: 200 }));
     try {
-      await expect(buildFonts({ downloads: [{ url: "https://fonts.example.com/x.woff2", to: "../escape.woff2" }] }, publicDir)).rejects.toThrow(
-        /escapes the asset root/,
-      );
+      await expect(
+        buildFonts({ downloads: [{ url: "https://fonts.example.com/x.woff2", to: "../escape.woff2", sha256: pin("x") }] }, publicDir),
+      ).rejects.toThrow(/escapes the asset root/);
       expect(fetchSpy).toHaveBeenCalledTimes(0);
     } finally {
       fetchSpy.mockRestore();

@@ -1,11 +1,13 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 
 import { bytesToHex, base32Decode, hotpCode, totpCounter, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import type { AuthFactor, AuthFactorInput, AuthKeyRing, FactorStore } from "../types";
+import { installTimingProbe } from "./factors.fixture";
 import { createTotpAppFactor } from "./totp-app";
+import type { TimingProbeHandle } from "./types";
 
 const USER_ID = uuidv7();
 const PERIOD = 30;
@@ -215,6 +217,18 @@ describe("createTotpAppFactor — enrolment", () => {
     expect(bytesToHex(second)).not.toBe(bytesToHex(first));
   });
 
+  it("reports a lost enrolment race as `already-enrolled`, the same reason the non-racing case gives", async () => {
+    const spy = fakeFactors();
+    spy.store.enrol = () => Promise.resolve(err(new AuthStoreError("conflict", "factors.enrol")));
+    expect(await build(spy).beginEnrolment(USER_ID, AT)).toEqual({ ok: false, error: "already-enrolled" });
+  });
+
+  it("still reports a store outage on that same write as `unavailable`", async () => {
+    const spy = fakeFactors();
+    spy.store.enrol = () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol")));
+    expect(await build(spy).beginEnrolment(USER_ID, AT)).toEqual({ ok: false, error: "unavailable" });
+  });
+
   it("refuses to re-enrol over a confirmed factor, which would disable a working one", async () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);
@@ -285,9 +299,16 @@ describe("createTotpAppFactor — the ranges it holds at construction", () => {
     );
   });
 
-  it("accepts the secret floor itself, and any length above it", () => {
+  it("accepts both ends of the secret range themselves", () => {
     expect(factory({ secretBytes: 16 })).not.toThrow();
     expect(factory({ secretBytes: 64 })).not.toThrow();
+  });
+
+  it("refuses a secret past the 64-byte ceiling, which HMAC would hash back down anyway", () => {
+    expect(factory({ secretBytes: 65 })).toThrow(
+      "createTotpAppFactor: secretBytes is 65, above the 64-byte ceiling — HMAC hashes a longer key down to its block size, so the extra bytes carry no entropy.",
+    );
+    expect(factory({ secretBytes: 4096 })).toThrow("above the 64-byte ceiling");
   });
 
   it("refuses a code narrower than RFC 4226 allows", () => {
@@ -417,5 +438,37 @@ describe("createTotpAppFactor — the challenge and the enrolment list", () => {
   it("reports `not-enrolled` for a user who has no row at all", async () => {
     const spy = fakeFactors();
     expect(await build(spy).verifyChallenge(USER_ID, "000000", AT)).toEqual({ ok: false, error: "not-enrolled" });
+  });
+});
+
+// A code comparison that `===` would satisfy too cannot be witnessed by accept/reject alone. The
+// probe installs a real constant-time primitive after enrolment, so only the verify is counted.
+describe("createTotpAppFactor — the code comparison is constant-time", () => {
+  let handle: TimingProbeHandle | null = null;
+
+  afterEach(() => {
+    handle?.restore();
+    handle = null;
+  });
+
+  it("asks the constant-time primitive once per drift step, and is told no by every one", async () => {
+    const spy = fakeFactors();
+    const secret = await confirmed(spy);
+    const wrong = await wrongCode(secret);
+    handle = installTimingProbe();
+    const outcome = await build(spy).verifyChallenge(USER_ID, wrong, AT);
+    expect({ compared: handle.probe.compared, outcome }).toEqual({
+      compared: [false, false, false],
+      outcome: { ok: false, error: "unrecognised" },
+    });
+  });
+
+  it("stops at the step it is told yes by, so the current code is answered by the primitive", async () => {
+    const spy = fakeFactors();
+    const secret = await confirmed(spy);
+    const code = await hotpCode(secret, CURRENT);
+    handle = installTimingProbe();
+    const outcome = await build(spy).verifyChallenge(USER_ID, code, AT);
+    expect({ compared: handle.probe.compared, accepted: outcome.ok }).toEqual({ compared: [false, true], accepted: true });
   });
 });

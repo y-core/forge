@@ -12,7 +12,7 @@ export {
   verifyCsrfToken,
 } from "./csrf";
 export { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
-export { parseFormData } from "./parse-form-data";
+export { isFormCapConflict, parseFormData } from "./parse-form-data";
 export { formToObject } from "./to-object";
 export { verifyTurnstile } from "./turnstile";
 export type {

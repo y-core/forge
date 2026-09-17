@@ -17,6 +17,7 @@ import type { AuthFactorRequirement } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
+import type { AdminUserStore } from "../types";
 import type { AuthFactorKind } from "../types";
 import type { UserStore } from "../types";
 import type { AdminUserOutcome } from "../types";
@@ -45,12 +46,22 @@ import type { VerifyViewProps } from "./views/types";
 /** Builds one of a guard's dependencies from the request it is guarding. @public */
 export type AuthGuardResolver<Bindings, T> = (c: AppContext<Bindings>) => T | Promise<T>;
 
-/** What `requireAuth` needs to turn a session into an identity. @public */
+/** What `requireAuth` needs to turn a session into an identity, and to refuse one owing a mandatory second factor. @public */
 export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
   /** Built per request, and so re-read every request: a demotion or deactivation lands on the next one rather than the next sign-in. */
   readonly users: AuthGuardResolver<Bindings, Pick<UserStore, "findById">>;
   /** Where an anonymous request is sent — read off `authPaths`, never written as a literal. */
   readonly signinPath: string;
+  // Required, not optional: a session that owes a second factor is a session that has not finished
+  // signing in, and an option that could be left out is a deployment that silently admits one.
+  /** Built per request, as the user store is; `requireAuth` asks it whether this identity still owes a factor. */
+  readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve">>;
+  /** Where a session owing a step-up is sent to clear it — read off `authPaths`. */
+  readonly stepUpPath: string;
+  /** How long a completed step-up satisfies a later demand, in milliseconds. Omit to last the session. */
+  readonly stepUpMaxAgeMs?: number;
+  /** Set on a group that exists to clear an owed step-up, which would otherwise be unreachable while one is owed. */
+  readonly clearsStepUp?: boolean;
   /** Query parameter carrying the return-to path onto the sign-in page. Defaults to `next`. */
   readonly returnParam?: string;
   /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
@@ -89,14 +100,16 @@ export interface AuthRouteMaps {
 /** What `createAuthGuards` needs to wire `AUTH_ROUTE_GROUPS` onto a middleware chain. @public */
 export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   readonly routes: AuthRouteMaps;
-  readonly auth: AuthGuardOptions<Bindings>;
+  // The step-up half of `AuthGuardOptions` is omitted because `enrolment` already states it: the
+  // chain reads it from there, so a consumer writes the factor registry and its paths once.
+  readonly auth: Omit<AuthGuardOptions<Bindings>, "factors" | "stepUpPath" | "stepUpMaxAgeMs" | "clearsStepUp">;
   readonly enrolment: AuthEnrolmentGuardOptions<Bindings>;
   /** Group table to wire. Defaults to `AUTH_ROUTE_GROUPS`. */
   readonly groups?: readonly AuthRouteGroup[];
   // Reached through `MiddlewareGuardGroup` rather than imported from `security/types`: `auth/web`
   // declares no edge to `security`, and the direct import fails `validate-namespace-graph`.
-  /** Origin/Referer allowlist for every group carrying a mutating leaf; forge cannot pick your origins, so without it none is mounted. */
-  readonly origin?: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
+  /** Origin/Referer allowlist for every group carrying a mutating leaf; forge cannot pick your origins, so omitting it throws rather than mounting one unchecked. */
+  readonly origin: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
   /** Rate limits per group, keyed by `path.join(".")` — `"auth"`, `"auth.verify"`, `"account"`. Forge picks no numbers. */
   readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>>>;
 }
@@ -123,6 +136,16 @@ export interface AuthRequestServices {
   readonly signin: AuthSigninFlow;
   readonly signup: AuthSignupFlow;
   readonly emailChange: AuthEmailChangeFlow;
+  // The store, not the service forge builds from it: the service is the administrative surface, and
+  // handing one in leaves the consumer able to substitute a surface the write path never authorised.
+  /** The administrative store; forge builds `AdminUserService` over it, per request. */
+  readonly admin: AdminUserStore;
+}
+
+// The one service forge builds rather than receives: `AdminUserService` is the shape the write path
+// is written against, and deriving it here is what keeps a consumer from substituting another.
+/** This request's services, with the administrative surface built over the store. @internal */
+export interface AuthRequestSurface extends Omit<AuthRequestServices, "admin"> {
   readonly admin: AdminUserService;
 }
 
@@ -147,6 +170,10 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   readonly returnParam?: string | undefined;
   /** The clock every flow call is made against. Defaults to `Date.now`. */
   readonly now?: (() => number) | undefined;
+  // Read off `env` per request, because a Worker has no secret until one is carrying bindings. A
+  // deployment that configures none has no claim endpoint at all, rather than an open one.
+  /** The secret a first-admin claim must present; without it `admin.elevate.submit` answers 404. */
+  readonly bootstrapSecret?: ((c: AppContext<Bindings>) => string | undefined) | undefined;
 }
 
 /** Refusal copy and kept input one page render carries; the view owns everything else it says. @public */
@@ -271,6 +298,10 @@ export interface AuthRouteGroup {
   readonly path: readonly string[];
   readonly guards: readonly AuthGuardName[];
   readonly medium: AuthMedium;
+  // Declared here rather than left out of the guard list, so a reader sees which endpoints are
+  // exempt and `routes.test.ts` asserts the set rather than trusting it.
+  /** Set on a group whose routes exist to clear an owed step-up, which `require-auth` would otherwise lock a session out of. */
+  readonly clearsStepUp?: boolean;
 }
 
 /** One requirement assignment the factor matrix crosses, read by position among the second factors. @internal */

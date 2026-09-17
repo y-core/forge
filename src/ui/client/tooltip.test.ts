@@ -130,6 +130,29 @@ describe("mountTooltip", () => {
     expect(content.calls).toEqual([]);
   });
 
+  // The existing dispose test runs with `timer === 0`, so the `clearTimeout` is vacuous. Arming the
+  // show delay first is what makes the clear the thing under test.
+  it("clears an armed show timer on dispose, so a pending tooltip never opens", () => {
+    const { root, trigger, content, win } = tooltip();
+    const dispose = mountTooltip(root as never);
+
+    pointer(trigger, "pointerenter");
+    expect(win.timers.size).toBe(1);
+    dispose();
+    win.flush();
+
+    expect({ pending: win.timers.size, calls: content.calls }).toEqual({ pending: 0, calls: [] });
+  });
+
+  it("removes every listener it put on the trigger and the content", () => {
+    const { root, trigger, content } = tooltip();
+
+    mountTooltip(root as never)();
+
+    const counts = (el: FakeElement) => [...el.listeners.values()].reduce((total, list) => total + list.length, 0);
+    expect({ trigger: counts(trigger), content: counts(content) }).toEqual({ trigger: 0, content: 0 });
+  });
+
   it("does nothing at all when aria-describedby resolves to no content", () => {
     const { doc, el } = fakeTree();
     const root = el("DIV", { "data-slot": "tooltip" });

@@ -116,8 +116,7 @@ const PresetPicker: FC<{ dials: DialValues; icon: CustomiseIcon }> = ({ dials, i
   return (
     <div class='w-64 space-y-1.5'>
       <Label for={fieldId(PRESET_PARAM)}>Theme preset</Label>
-      {/* Not a bound control: which preset the dials name is derived, and a signal behind it would
-          have to be written from the repaint effect, which the reactive rule forbids. */}
+      {/* Not a bound control: a signal here would be written from the repaint effect, which the reactive rule forbids. */}
       <Select data-on-change={PRESET_ACTION} data-preset-picker='' field={{ name: PRESET_PARAM }} icon={icon}>
         <Select.Option value={PRESET_CUSTOM} disabled {...(current === undefined ? { selected: true } : {})}>
           custom
@@ -228,8 +227,6 @@ const ScalePreviewSection: FC<{ theme: GeneratedTheme }> = ({ theme }) => (
             ))}
           </tr>
         </thead>
-        {/* The label rides its own `<tbody>`, so every `[data-scale-row] tr:first-child` selector
-            still names a swatch row and its `colspan` leaves the column widths alone. */}
         {SCALE_ROWS.map((row, i) => (
           <>
             <tbody>

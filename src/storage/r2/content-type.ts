@@ -34,10 +34,41 @@ const MIME_MAP: Record<string, string> = {
   zip: "application/zip",
 };
 
-/** Infers MIME type from the file extension in `key`; falls back to CONTENT_TYPE_DEFAULT. @public */
+/** Extensions whose mapped MIME type a browser executes as a document on the serving origin. @public */
+export const ACTIVE_CONTENT_EXTENSIONS: ReadonlySet<string> = new Set(["htm", "html", "js", "mjs", "svg", "xml"]);
+
+// The spellings a caller may store explicitly for the same content, which `MIME_MAP` never emits.
+// The `+xml` family is a suffix rule below instead, because its membership is open-ended.
+const ACTIVE_TYPE_ALIASES = [
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-javascript",
+  "application/xhtml+xml",
+  "text/ecmascript",
+  "text/xml",
+  "text/xsl",
+];
+
+const ACTIVE_ESSENCES = new Set([
+  ...[...ACTIVE_CONTENT_EXTENSIONS].map((ext) => (MIME_MAP[ext] as string).split(";")[0] as string),
+  ...ACTIVE_TYPE_ALIASES,
+]);
+
+/** Whether a stored MIME type is one a browser would render as a document rather than download. @public */
+export function isActiveContentType(contentType: string): boolean {
+  const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  // Any `+xml` essence, not an enumeration of them: a browser parses `application/atom+xml` and
+  // every other structured-syntax sibling as a document, in which an XHTML `<script>` runs.
+  return ACTIVE_ESSENCES.has(essence) || essence.endsWith("+xml");
+}
+
+/** Infers MIME type from the file extension in `key`, refusing to guess an active one. @public */
 export function inferContentType(key: string): string {
   const ext = key.split(".").pop()?.toLowerCase();
   // `hasOwn` rather than a truthiness test: `"upload.constructor"` otherwise reads `Object` off the
   // prototype, which is not nullish, so the fallback never fires and a non-string reaches `put`.
-  return ext !== undefined && Object.hasOwn(MIME_MAP, ext) ? (MIME_MAP[ext] as string) : CONTENT_TYPE_DEFAULT;
+  if (ext === undefined || !Object.hasOwn(MIME_MAP, ext)) return CONTENT_TYPE_DEFAULT;
+  // A key is routinely user-chosen, so inferring an active type here is what turns an upload into a
+  // same-origin document; an explicit `contentType` on `put` still wins.
+  return ACTIVE_CONTENT_EXTENSIONS.has(ext) ? CONTENT_TYPE_DEFAULT : (MIME_MAP[ext] as string);
 }

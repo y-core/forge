@@ -28,9 +28,12 @@ const MEGA_LIST_CLASS: Record<NavCollapsible, string> = { mobile: "flex flex-col
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). @internal */
 export function filterAttrs(item: { filters?: string[] | undefined }, activeFilters: string[]): Record<string, unknown> {
-  if (!item.filters?.length) return {};
-  const visible = item.filters.some((f) => activeFilters.includes(f));
-  const base: Record<string, unknown> = { "data-filter": item.filters.join(" ") };
+  // An absent list is "not filtered"; an empty one is "no token can ever match", which must hide.
+  // Collapsing the two showed a `requiredRoles()` lookup miss to every viewer.
+  const filters = item.filters;
+  if (filters === undefined) return {};
+  const visible = filters.some((f) => activeFilters.includes(f));
+  const base: Record<string, unknown> = { "data-filter": filters.join(" ") };
   if (!visible) base.hidden = true;
   return base;
 }
@@ -58,11 +61,7 @@ function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
   const fattrs = filterAttrs(item, ctx.activeFilters);
   if (!item.label && !("data-filter" in fattrs)) return node ?? null;
   return (
-    <span
-      data-slot={slotToken("navbar-slot", fattrs["data-slot"])}
-      {...(depth === 0 ? {} : { role: "none" })}
-      class='inline-flex items-center gap-2'
-      {...fattrs}>
+    <span data-slot={slotToken("navbar-slot")} {...(depth === 0 ? {} : { role: "none" })} class='inline-flex items-center gap-2' {...fattrs}>
       {item.label ? <span>{item.label}</span> : null}
       {node ?? null}
     </span>
@@ -80,7 +79,7 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
         <span>{item.label}</span>
         {chevron(ctx)}
       </Menu.SubmenuTrigger>,
-      <Menu.Popup id={id} side='inline-end'>
+      <Menu.Popup id={id} side='inline-end' {...fattrs}>
         {item.groups.map((group) => {
           const labelId = `navbar-group-${ctx.idBase}-${ctx.seq.n++}`;
           return (
@@ -95,7 +94,7 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
   }
 
   const list = () => (
-    <div data-slot={slotToken("navbar-megamenu-list", fattrs["data-slot"])} class={MEGA_LIST_CLASS[ctx.collapsible]} {...fattrs}>
+    <div data-slot={slotToken("navbar-megamenu-list")} class={MEGA_LIST_CLASS[ctx.collapsible]} {...fattrs}>
       {item.groups.map((group) => renderGroup(group, ctx))}
     </div>
   );
@@ -104,12 +103,12 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
   const id = `navbar-menu-${ctx.idBase}-${ctx.seq.n++}`;
   const cols = MEGA_COLS[Math.min(item.groups.length, 4)] ?? "grid-cols-1";
   return [
-    <Popover data-slot={slotToken("navbar-megamenu", fattrs["data-slot"])} class='max-md:hidden' {...fattrs}>
+    <Popover data-slot={slotToken("navbar-megamenu")} class='max-md:hidden' {...fattrs}>
       <Popover.Trigger for={id} class={BAR_ITEM}>
         <span>{item.label}</span>
         {chevron(ctx)}
       </Popover.Trigger>
-      <Popover.Content id={id} side='bottom' align={item.align ?? "start"} class={MEGA_PANEL}>
+      <Popover.Content id={id} label={item.label} side='bottom' align={item.align ?? "start"} class={MEGA_PANEL}>
         <div class={cn("grid gap-6", cols)}>{item.groups.map((group) => renderGroup(group, ctx))}</div>
       </Popover.Content>
     </Popover>,
@@ -136,7 +135,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
           <span>{item.label}</span>
           {chevron(ctx)}
         </Menu.SubmenuTrigger>,
-        <Menu.Popup id={id} side='inline-end'>
+        <Menu.Popup id={id} side='inline-end' {...fattrs}>
           {children}
         </Menu.Popup>,
       ];
@@ -156,14 +155,14 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
   const href = ctx.resolveHref(item.href);
   if (depth > 0) {
     return (
-      <Menu.LinkItem href={href} {...fattrs}>
+      <Menu.LinkItem href={href} {...currentAttrs(item.current ?? false)} {...fattrs}>
         {item.label}
       </Menu.LinkItem>
     );
   }
 
   return (
-    <a href={href} data-slot={slotToken("navbar-link", fattrs["data-slot"])} {...currentAttrs(item.current ?? false)} class={BAR_LINK} {...fattrs}>
+    <a href={href} data-slot={slotToken("navbar-link")} {...currentAttrs(item.current ?? false)} class={BAR_LINK} {...fattrs}>
       {item.label}
     </a>
   );
@@ -174,12 +173,7 @@ function renderGroup(item: NavGroup, ctx: NavRenderCtx): JSXNode {
   const headingId = `navbar-group-${ctx.idBase}-${ctx.seq.n++}`;
   const fattrs = filterAttrs(item, ctx.activeFilters);
   return (
-    <div
-      data-slot={slotToken("navbar-group", fattrs["data-slot"])}
-      role='group'
-      aria-labelledby={headingId}
-      class='flex flex-col gap-1'
-      {...fattrs}>
+    <div data-slot={slotToken("navbar-group")} role='group' aria-labelledby={headingId} class='flex flex-col gap-1' {...fattrs}>
       <p id={headingId} data-slot='navbar-group-heading' class='px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
         {item.heading}
       </p>

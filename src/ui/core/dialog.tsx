@@ -1,12 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
+import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
+import type { DialogNaming } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
 
-interface DialogProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
+interface DialogProps extends DialogNaming, Omit<JSX.IntrinsicElements["dialog"], "children"> {
   /** Element id — the `commandfor` target named by `Dialog.Trigger` / `Dialog.Close`. */
   id: string;
   // The `open` attribute always yields a non-modal dialog — no backdrop, no inertness, no top layer
@@ -42,11 +43,11 @@ interface DialogTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" 
   children?: JSXNode | undefined;
 }
 
-const DialogRoot: FC<DialogProps> = ({ id, open, openModal, class: cls, children, "data-slot": inherited, ...props }) => (
+const DialogRoot: FC<DialogProps> = ({ id, label, labelledby, open, openModal, class: cls, children, "data-slot": inherited, ...props }) => (
   <dialog
     id={id}
     data-slot={slotToken("dialog", inherited)}
-    aria-labelledby={`${id}-title`}
+    {...dialogNameAttrs(id, { label, labelledby })}
     {...(open && !openModal ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
     closedby='any'

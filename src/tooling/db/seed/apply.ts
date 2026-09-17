@@ -121,8 +121,9 @@ export async function runSeedApply(
   enforceSeedLint(run, seedFindings(plan.apply, expanded), options.allowWarnings);
   if (remote && plan.apply.length > 0) await confirmSeed(run, plan);
 
-  // The lock is a file under the checkout, so it excludes nothing on a deployed database and is not taken for one.
-  const release = remote ? () => {} : acquireApplyLock(run.io, run.home, "seed");
+  // Taken for every place, as `migrate` does: both verbs contend on one file under the checkout, and
+  // rows a seed writes during a remote migration's table rebuild are lost with the table it drops.
+  const release = acquireApplyLock(run.io, run.home, "seed");
   let bookmark: Bookmark | undefined;
   const applied: string[] = [];
   try {
@@ -175,7 +176,7 @@ export function runSeedStatus(run: DbRunContext, options: { dir?: string | undef
 
 /** Forgets one directory's seed records, or every one, so the next apply runs them again. @internal */
 export function runSeedReset(run: DbRunContext, source?: string | undefined): void {
-  const release = isRemotePlace(run.config.target.place) ? () => {} : acquireApplyLock(run.io, run.home, "seed");
+  const release = acquireApplyLock(run.io, run.home, "seed");
   try {
     ensureCompanionTables(run.io, run.home);
     const where = source === undefined ? "" : ` WHERE source = ${quoteSqlLiteral(source)}`;

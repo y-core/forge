@@ -72,6 +72,21 @@ import { html, rawHtml } from "@y-core/forge/http";
 html`<div>${rawHtml(trustedMarkupFromAnotherRenderer)} ${userInput}</div>`; // only userInput is escaped
 ```
 
+**Inside a `<script>` or `<style>` element, reach for `scriptJson` or `styleText` rather than `rawHtml`.** Those two elements hold _raw text_: the
+parser decodes no character reference inside them, so escaping a child does not protect it — it corrupts it, and `JSON.parse(el.textContent)` throws
+on the result. `rawHtml` has the opposite problem, emitting a `</script>` in your data byte for byte and ending the element early.
+
+```ts
+import { scriptJson, styleText } from "@y-core/forge/http";
+
+<script type='application/json'>{scriptJson(payload)}</script>; // every `<` becomes `\u003c`
+<style>{styleText(generatedCss)}</style>; // every `<` becomes the CSS hex escape `\3c `
+```
+
+Neutralising `<` is what closes `</script`, `</style>` and `<!--` at once, since all three contain it. `scriptJson` also escapes U+2028 and U+2029,
+which are legal inside a JSON string but are line terminators to a script parser, and **throws** on a value `JSON.stringify` cannot represent — a
+function or `undefined` — rather than emitting an element whose content is the word `undefined`.
+
 Outside a template — an error page assembled by hand, a mail body, a string you are concatenating — `escapeHtml` does the same escaping as a plain
 function, and `isSafeHtml` tells you whether a value came from this toolkit. `escapeHtml` covers HTML text nodes and double-quoted attribute values;
 [`FORGE_ERRORS.md`][eh-3c] §3c owns the character map it applies.

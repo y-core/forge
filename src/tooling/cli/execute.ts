@@ -80,7 +80,11 @@ export async function execute(root: CommandBase, argv?: string[], io?: CliIO): P
       );
     }
 
-    if (remaining.includes("--help") || remaining.includes("-h")) {
+    // Only the flag segment: past a `--` the caller has said the rest is data, and `parseArgs`
+    // already honours that — reading a flag there would disagree with what the command then gets.
+    const terminator = remaining.indexOf("--");
+    const flagSegment = terminator === -1 ? remaining : remaining.slice(0, terminator);
+    if (flagSegment.includes("--help") || flagSegment.includes("-h")) {
       resolvedIO.stdout(formatHelp(current, { width: ctx.width, style: ctx.out }));
       return;
     }

@@ -6,6 +6,11 @@
 
 ## Behavioral Rules (always enforced)
 
+- **The primary directive is to reduce entropy, never to add it** — every rule below is this one applied to one kind of disorder, and it is the
+  principle to reason from where the index returns nothing. Before offering a change, ask four questions: does it add a second way to do a thing
+  that has one, a rule nothing checks, prose that restates a name or a type, or a claim no test holds? A yes means the change is not finished.
+  Entropy is disorder and not size, so the line count is never the measure. The reduction is bounded by the task's footprint: leave every file you
+  touch more ordered than you found it, and file disorder noticed beyond it as a task rather than fixing it in passing (`AGENT_WORKFLOW.md` §1b)
 - ONLY do what has been asked, and never add a runtime dependency without approval (`AGENT_WORKFLOW.md` §1)
 - NEVER use runtime-specific or Node.js APIs in runtime source files (standard Web APIs only)
 - NEVER hardcode API keys, secrets, or credentials in source files

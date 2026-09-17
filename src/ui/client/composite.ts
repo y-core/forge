@@ -17,9 +17,14 @@ const NO_CURRENT = -1;
 
 const mountedComposites = new WeakMap<HTMLElement, () => void>();
 
-/** Whether an item is disabled by either `disabled` or `aria-disabled`. @internal */
+/** Whether an item is inert — disabled by either `disabled` or `aria-disabled`. @internal */
 export function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLButtonElement).disabled === true || el.getAttribute("aria-disabled") === "true";
+}
+
+/** Whether an item is out of the navigation ring entirely, which only the native `disabled` is. @internal */
+export function leavesRing(el: HTMLElement): boolean {
+  return (el as HTMLButtonElement).disabled === true;
 }
 
 /** Whether a target is a real text field, whose caret owns the arrow keys. @internal */
@@ -53,6 +58,12 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
   // descendant, and an unfiltered query would splice its items into the parent's ring.
   const listItems = (): HTMLElement[] => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((el) => el.checkVisibility?.() !== false);
 
+  // Composed per part, because `items` may be a comma list and one suffix would qualify the last.
+  const tabStopSelector = selector
+    .split(",")
+    .map((part) => `${part.trim()}[tabindex='0']`)
+    .join(",");
+
   function setTabStop(items: HTMLElement[], index: number): void {
     for (let i = 0; i < items.length; i += 1) {
       const item = items[i];
@@ -69,11 +80,11 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     return items.findIndex((item) => contains(item, node));
   }
 
-  /** The next enabled item's index in `stride`'s direction, or `-1` when every one of them is disabled. */
+  /** The next item in the ring in `stride`'s direction, or `-1` when every one of them has left it. */
   function nextEnabled(items: HTMLElement[], from: number, stride: number): number {
     for (let i = from; i >= 0 && i < items.length; i += stride) {
       const item = items[i];
-      if (item && !isDisabled(item)) return i;
+      if (item && !leavesRing(item)) return i;
     }
     return -1;
   }
@@ -127,7 +138,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     for (let offset = 1; offset <= items.length; offset += 1) {
       const index = (Math.max(current, 0) + offset) % items.length;
       const item = items[index];
-      if (!item || isDisabled(item)) continue;
+      if (!item || leavesRing(item)) continue;
       if ((item.textContent ?? "").trim().toLowerCase().startsWith(buffer)) {
         focusItem(items, index);
         return true;
@@ -198,7 +209,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
   function initialIndex(items: HTMLElement[]): number {
     const marked = items.findIndex((item) => item.hasAttribute(ACTIVE_COMPOSITE_ITEM));
     const markedItem = items[marked];
-    if (markedItem && !isDisabled(markedItem)) return marked;
+    if (markedItem && !leavesRing(markedItem)) return marked;
     const enabled = firstEnabled(items);
     return enabled === -1 ? 0 : enabled;
   }
@@ -219,12 +230,20 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
   }
   const observer = hasObserver
     ? new win.MutationObserver(() => {
+        // The cheap facts first: focus still inside with a visible tab stop standing is the whole of
+        // what the scan below would conclude, and that scan costs a `checkVisibility()` per item.
+        const focused = activeElement(root);
+        const inside = focused !== null && contains(root, focused);
+        if (inside) {
+          const stop = root.querySelector<HTMLElement>(tabStopSelector);
+          if (stop && stop.checkVisibility?.() !== false) return;
+        }
+
         const items = listItems();
         if (items.length === 0) return;
         if (tabStopIndex(items) === -1) setTabStop(items, initialIndex(items));
 
-        const focused = activeElement(root);
-        if (focused && contains(root, focused)) return;
+        if (inside) return;
         if (lastFocusedIndex === -1) return;
 
         const target = Math.min(lastFocusedIndex, items.length - 1);

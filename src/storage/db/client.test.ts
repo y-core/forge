@@ -1,5 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
+import { createLogger } from "../../logging/logger";
+import type { LogRecord } from "../../logging/types";
 import { createD1Client } from "./client";
 import { requireRowsWritten, sql } from "./sql";
 import type { D1Database, D1PreparedStatement, D1Result } from "./types";
@@ -227,5 +229,28 @@ describe("createD1Client — batch with requireRowsWritten", () => {
         { results: [], rowsWritten: 0 },
       ],
     });
+  });
+});
+
+describe("createD1Client() logging", () => {
+  it("writes nothing to the console when no logger is passed", async () => {
+    const written = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { db } = makeD1Stub([{ id: 1 }]);
+      await createD1Client(db).query(sql`SELECT 1`);
+      expect(written).not.toHaveBeenCalled();
+    } finally {
+      written.mockRestore();
+    }
+  });
+
+  it("records the query on a logger the caller passes", async () => {
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/db", { channels: [{ write: (record) => void records.push(record) }] });
+    const { db } = makeD1Stub([{ id: 1 }]);
+
+    await createD1Client(db, { logger }).query(sql`SELECT 1`);
+
+    expect(records.map((record) => record.message)).toEqual(["d1.query"]);
   });
 });

@@ -56,9 +56,7 @@ describe("loadTurnstileOptions", () => {
   it("reads every option the panel can set", () => {
     expect(
       loadTurnstileOptions(
-        params(
-          "key=block&size=compact&load=focus&challenge=submit&appearance=execute&action=sign_up&cData=order-4821&responseFieldName=signup-token&language=de&tabindex=3",
-        ),
+        params("key=block&size=compact&load=focus&challenge=submit&appearance=execute&action=sign_up&cData=order-4821&language=de&tabindex=3"),
       ),
     ).toEqual({
       key: "block",
@@ -68,7 +66,6 @@ describe("loadTurnstileOptions", () => {
       appearance: "execute",
       action: "sign_up",
       cData: "order-4821",
-      responseFieldName: "signup-token",
       language: "de",
       tabindex: 3,
     });
@@ -90,12 +87,6 @@ describe("loadTurnstileOptions", () => {
     expect(loadTurnstileOptions(params("cData=order 4821")).cData).toBe("");
     expect(loadTurnstileOptions(params(`cData=${"a".repeat(256)}`)).cData).toBe("");
     expect(loadTurnstileOptions(params(`cData=${"a".repeat(255)}`)).cData).toBe("a".repeat(255));
-  });
-
-  it("drops a response field name the demo's own charset refuses", () => {
-    expect(loadTurnstileOptions(params("responseFieldName=signup token")).responseFieldName).toBe("");
-    expect(loadTurnstileOptions(params(`responseFieldName=${"a".repeat(65)}`)).responseFieldName).toBe("");
-    expect(loadTurnstileOptions(params("responseFieldName=cf-turnstile-signup")).responseFieldName).toBe("cf-turnstile-signup");
   });
 
   it("drops a tabindex that is not a whole number in range", () => {
@@ -140,26 +131,22 @@ describe("turnstileSnippet", () => {
         appearance: "interaction-only",
         action: "sign_up",
         cData: "order-4821",
-        responseFieldName: "signup-token",
         language: "de",
         tabindex: 0,
       }),
     ).toBe(
-      "<Turnstile siteKey='2x00000000000000000000AB' size='compact' load='focus' challenge='submit' appearance='interaction-only' action='sign_up' cData='order-4821' responseFieldName='signup-token' language='de' tabindex={0} />",
+      "<Turnstile siteKey='2x00000000000000000000AB' size='compact' load='focus' challenge='submit' appearance='interaction-only' action='sign_up' cData='order-4821' language='de' tabindex={0} />",
     );
   });
 
-  it("omits both token-scoping strings while they are empty, printing neither prop", () => {
-    const snippet = turnstileSnippet({ ...TURNSTILE_DEMO_DEFAULTS, cData: "", responseFieldName: "" });
+  it("omits the token-scoping string while it is empty, printing no prop for it", () => {
+    const snippet = turnstileSnippet({ ...TURNSTILE_DEMO_DEFAULTS, cData: "" });
     expect(snippet).toBe("<Turnstile siteKey='1x00000000000000000000AA' />");
   });
 
-  it("prints each token-scoping string on its own once it is set", () => {
+  it("prints the token-scoping string once it is set", () => {
     expect(turnstileSnippet({ ...TURNSTILE_DEMO_DEFAULTS, cData: "order-4821" })).toBe(
       "<Turnstile siteKey='1x00000000000000000000AA' cData='order-4821' />",
-    );
-    expect(turnstileSnippet({ ...TURNSTILE_DEMO_DEFAULTS, responseFieldName: "signup-token" })).toBe(
-      "<Turnstile siteKey='1x00000000000000000000AA' responseFieldName='signup-token' />",
     );
   });
 });
@@ -174,7 +161,6 @@ describe("the Turnstile playground", () => {
       appearance: "interaction-only",
       action: "sign_up",
       cData: "order-4821",
-      responseFieldName: "signup-token",
       language: "de",
       tabindex: 2,
     };
@@ -187,11 +173,10 @@ describe("the Turnstile playground", () => {
     expect(attrOf(widget, "data-appearance")).toBe("interaction-only");
     expect(attrOf(widget, "data-action")).toBe("sign_up");
     expect(attrOf(widget, "data-cdata")).toBe("order-4821");
-    expect(attrOf(widget, "data-response-field-name")).toBe("signup-token");
     expect(attrOf(widget, "data-language")).toBe("de");
     expect(attrOf(widget, "data-tabindex")).toBe("2");
     expect(snippetsIn(body)).toEqual([
-      "&lt;Turnstile siteKey=&#39;3x00000000000000000000FF&#39; size=&#39;flexible&#39; load=&#39;focus&#39; challenge=&#39;submit&#39; appearance=&#39;interaction-only&#39; action=&#39;sign_up&#39; cData=&#39;order-4821&#39; responseFieldName=&#39;signup-token&#39; language=&#39;de&#39; tabindex={2} /&gt;",
+      "&lt;Turnstile siteKey=&#39;3x00000000000000000000FF&#39; size=&#39;flexible&#39; load=&#39;focus&#39; challenge=&#39;submit&#39; appearance=&#39;interaction-only&#39; action=&#39;sign_up&#39; cData=&#39;order-4821&#39; language=&#39;de&#39; tabindex={2} /&gt;",
     ]);
   });
 
@@ -202,7 +187,6 @@ describe("the Turnstile playground", () => {
     expect(attrOf(widget, "data-appearance")).toBeNull();
     expect(attrOf(widget, "data-action")).toBeNull();
     expect(attrOf(widget, "data-cdata")).toBeNull();
-    expect(attrOf(widget, "data-response-field-name")).toBeNull();
     expect(attrOf(widget, "data-language")).toBeNull();
     expect(attrOf(widget, "data-tabindex")).toBeNull();
   });
@@ -213,18 +197,7 @@ describe("the Turnstile playground", () => {
     expect(forms.map((form) => attrOf(form, "method"))).toEqual(["get", "post"]);
     expect(attrOf(forms[0] ?? "", "action")).toBe("/showcase/turnstile");
     const names = [...body.matchAll(/<(?:select|input)[^>]*\sname="([^"]*)"[^>]*>/g)].map((match) => match[1]);
-    expect(names.slice(0, 10)).toEqual([
-      "key",
-      "size",
-      "load",
-      "challenge",
-      "appearance",
-      "language",
-      "action",
-      "cData",
-      "responseFieldName",
-      "tabindex",
-    ]);
+    expect(names.slice(0, 9)).toEqual(["key", "size", "load", "challenge", "appearance", "language", "action", "cData", "tabindex"]);
   });
 
   it("posts the widget's form to the verify endpoint, swapping the verdict into its own target", async () => {
@@ -263,7 +236,6 @@ describe("the Turnstile variants band", () => {
     expect(forms.map((form) => attrOf(`<form${form[1]}>`, "data-scope"))).toEqual([null, null, null, null]);
     const widgets = forms.map((form) => (form[2] ?? "").match(/<div[^>]*data-ref="turnstile"[^>]*>/)?.[0] ?? "");
     expect(widgets.map((widget) => attrOf(widget, "data-scope"))).toEqual(["turnstile", "turnstile", "turnstile", "turnstile"]);
-    // The deferred challenge needs an htmx submission to hold, which is the fourth form's `hx-post`.
     expect(widgets.map((widget) => attrOf(widget, "data-challenge"))).toEqual([null, null, null, "submit"]);
     expect(forms.map((form) => attrOf(`<form${form[1]}>`, "hx-post"))).toEqual([null, null, null, "#"]);
 

@@ -52,6 +52,9 @@ export const AUTH_PASSKEY_CHALLENGE_BYTES = 32;
 /** Fewest bytes a configured challenge may carry — the WebAuthn specification's own floor. @public */
 export const AUTH_PASSKEY_CHALLENGE_MIN_BYTES = 16;
 
+/** Most bytes a configured challenge may carry — past this the stored row and the ceremony payload grow for no added entropy. @public */
+export const AUTH_PASSKEY_CHALLENGE_MAX_BYTES = 64;
+
 /** How long a stored ceremony challenge stays valid, in seconds. @public */
 export const AUTH_PASSKEY_TTL_SECONDS = 300;
 

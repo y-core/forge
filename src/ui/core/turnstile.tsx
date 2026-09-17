@@ -1,15 +1,11 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { TURNSTILE, TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
 import type { TurnstileProps } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-
-const DEFAULT_FALLBACK = "The security challenge couldn't load. Please disable any ad or script blockers for this site and reload the page.";
-
-const DEFAULT_UNSUPPORTED =
-  "This browser cannot run the security challenge. Please try again in a current version of Chrome, Edge, Firefox or Safari.";
 
 // Cloudflare's published widget dimensions, held only for `appearance="always"`: the other two modes
 // show nothing until they must, so a reservation there would leave a permanent hole.
@@ -50,10 +46,10 @@ export const Turnstile: FC<TurnstileProps> = ({
     class={cn(appearance === "always" ? RESERVED_BOX[size] : undefined, cls)}
     {...rest}>
     <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-destructive-text'>
-      {children ?? DEFAULT_FALLBACK}
+      {children ?? LABEL_DEFAULTS.turnstileFallback}
     </p>
     <p data-ref={TURNSTILE.unsupported} role='alert' hidden={true} class='text-sm text-destructive-text'>
-      {unsupported ?? DEFAULT_UNSUPPORTED}
+      {unsupported ?? LABEL_DEFAULTS.turnstileUnsupported}
     </p>
   </div>
 );

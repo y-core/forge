@@ -1,14 +1,14 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
+import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
 import { stateAttrs } from "../contracts/state-attrs";
-import type { PhysicalSide } from "../contracts/types";
+import type { DialogNaming, PhysicalSide } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
 
-interface DrawerProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
+interface DrawerProps extends DialogNaming, Omit<JSX.IntrinsicElements["dialog"], "children"> {
   /** Element id — the `commandfor` target named by `Drawer.Trigger` / `Drawer.Close`. */
   id: string;
   /** Viewport edge the panel is anchored to; physical because a drawer must not mirror with direction. */
@@ -46,8 +46,6 @@ interface DrawerTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" 
 
 const DRAWER_BASE = "fixed m-0 flex flex-col border-field border-border bg-popover p-0 text-popover-foreground shadow-lg";
 
-// The panel's own axis, not the caller's: the inline sides fill the block axis and the block sides
-// fill the inline one, and a utility is the only spelling a caller's `w-96` can still beat.
 const DRAWER_AXIS: Record<PhysicalSide, string> = {
   left: "h-dvh max-h-none w-80 max-w-[85vw]",
   right: "h-dvh max-h-none w-80 max-w-[85vw]",
@@ -55,11 +53,22 @@ const DRAWER_AXIS: Record<PhysicalSide, string> = {
   bottom: "h-auto max-h-[85vh] w-full max-w-none",
 };
 
-const DrawerRoot: FC<DrawerProps> = ({ id, side = "left", open, openModal, class: cls, children, "data-slot": inherited, ...props }) => (
+const DrawerRoot: FC<DrawerProps> = ({
+  id,
+  side = "left",
+  label,
+  labelledby,
+  open,
+  openModal,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...props
+}) => (
   <dialog
     id={id}
     data-slot={slotToken("drawer", inherited)}
-    aria-labelledby={`${id}-title`}
+    {...dialogNameAttrs(id, { label, labelledby })}
     {...(open ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
     closedby='any'
@@ -92,8 +101,6 @@ const DrawerClose: FC<DrawerCloseProps> = ({ for: target, request = false, class
   );
 };
 
-// The root's `aria-labelledby` is derived from its required `id`, so the heading's id is derived the
-// same way from the `for` the compound's other statics already take.
 const DrawerTitle: FC<DrawerTitleProps> = ({ for: target, level, class: cls, children, "data-slot": inherited, ...rest }) => {
   const Heading = `h${level ?? 2}` as "h2";
   return (

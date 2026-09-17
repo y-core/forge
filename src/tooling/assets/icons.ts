@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 import type { IconLink } from "../../assets/types";
+import { safeJoin } from "./paths";
 import { rasterizer } from "./peers";
 import type { IconOutput, IconsConfig } from "./types";
 
@@ -13,7 +14,7 @@ function normalisePrefix(prefix: string | undefined): string {
 /** Where an icon output is written and the URL path it is served from, given the config's prefix. @public */
 export function iconTarget(config: IconsConfig, output: IconOutput): { dir: string; path: string } {
   const prefix = output.root ? "" : normalisePrefix(config.publicPrefix);
-  return { dir: `${config.outDir}${prefix}`, path: `${prefix}/${output.file}` };
+  return { dir: safeJoin(config.outDir, prefix.slice(1)), path: `${prefix}/${output.file}` };
 }
 
 /** The head links a configured icon set needs, so the markup and the files derive from one list. @public */
@@ -71,7 +72,7 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
   const manifestPngs = config.outputs.filter((o): o is Extract<IconOutput, { kind: "png" }> => o.kind === "png" && !!o.manifest);
 
   for (const o of config.outputs) {
-    const dest = `${iconTarget(config, o).dir}/${o.file}`;
+    const dest = safeJoin(iconTarget(config, o).dir, o.file);
     switch (o.kind) {
       case "svg":
         writeFileSync(dest, faviconSvg);

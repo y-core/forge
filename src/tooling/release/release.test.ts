@@ -3,6 +3,7 @@ import type { Mock } from "bun:test";
 
 import { createReleaseCommand } from "./release";
 import { ReleaseError } from "./types";
+import type { GateOutcome } from "./types";
 import type { VersionResult } from "./types";
 
 /** A written `[Unreleased]` — the ordinary case, where release has an entry to promote. */
@@ -27,6 +28,9 @@ interface MockDeps {
   removedSurfaceSince: Mock<(cwd: string, ref: string) => string[]>;
   tagIsAncestorOfHead: Mock<(cwd: string, tag: string) => boolean>;
   remoteTags: Mock<(cwd: string) => string[] | null>;
+  currentBranch: Mock<(cwd: string) => string | null>;
+  defaultBranch: Mock<(cwd: string) => string | null>;
+  runGate: Mock<(cwd: string, command: readonly string[]) => GateOutcome>;
   now: Mock<() => Date>;
 }
 
@@ -44,6 +48,9 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     removedSurfaceSince: mock((_cwd: string, _ref: string): string[] => []),
     tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => true),
     remoteTags: mock((_cwd: string): string[] | null => ["v1.0.0"]),
+    currentBranch: mock((_cwd: string): string | null => "main"),
+    defaultBranch: mock((_cwd: string): string | null => "main"),
+    runGate: mock((_cwd: string, _command: readonly string[]): GateOutcome => "passed"),
     now: mock((): Date => new Date(2026, 1, 3)),
     ...overrides,
   };
@@ -73,21 +80,42 @@ describe("createReleaseCommand()", () => {
   it("respects tagPrefix config", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project", tagPrefix: "pkg-v" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.resolveVersion.mock.calls[0]![0]).toMatchObject({ tagPrefix: "pkg-v" });
   });
 
   it("passes cwd to resolveVersion", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/my/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.resolveVersion.mock.calls[0]![0]).toMatchObject({ cwd: "/my/project" });
   });
 
   it("dry-run mode does not call updatePackageVersion, commit, or createTag", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: true,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
     expect(deps.commit.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(0);
@@ -96,7 +124,14 @@ describe("createReleaseCommand()", () => {
   it("non-dry-run calls updatePackageVersion, commit, and createTag", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(1);
     expect(deps.commit.mock.calls).toHaveLength(1);
     expect(deps.createTag.mock.calls).toHaveLength(1);
@@ -114,7 +149,14 @@ describe("createReleaseCommand()", () => {
       }),
     });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(callOrder).toEqual(["commit", "createTag"]);
   });
 
@@ -136,14 +178,28 @@ describe("createReleaseCommand()", () => {
       }),
     });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(callOrder).toEqual(["updatePackageVersion", "writeChangelog", "commit", "createTag"]);
   });
 
   it("commit receives the correct message and stageFiles", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     const [cwd, message, files] = deps.commit.mock.calls[0]!;
     expect(cwd).toBe("/project");
     expect(message).toBe("chore: release 1.1.0");
@@ -153,7 +209,14 @@ describe("createReleaseCommand()", () => {
   it("in-sync returns early without tagging", () => {
     const deps = makeDeps({ resolveVersion: mock(() => ({ version: "1.0.0", reason: "in-sync" as const, previous: "v1.0.0" })) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(0);
   });
@@ -165,7 +228,14 @@ describe("createReleaseCommand()", () => {
     console.log = (msg: string) => logs.push(msg);
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+      void cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      });
     } finally {
       console.log = origLog;
     }
@@ -176,21 +246,42 @@ describe("createReleaseCommand()", () => {
   it("checks dirty tree when allow-dirty is false", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": false, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": false,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(1);
   });
 
   it("skips dirty tree check when allow-dirty is true", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(0);
   });
 
   it("skips dirty tree check in dry-run mode", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: true, "allow-dirty": false, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: true,
+      "allow-dirty": false,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.isWorkingTreeClean.mock.calls).toHaveLength(0);
   });
 
@@ -201,7 +292,14 @@ describe("createReleaseCommand()", () => {
     const deps = makeDeps({ tagExists: mock((_cwd: string, _tag: string): boolean => true) });
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+      void cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      });
     } finally {
       console.log = origLog;
     }
@@ -218,7 +316,14 @@ describe("createReleaseCommand()", () => {
     const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => false) });
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+      void cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      });
     } finally {
       console.log = origLog;
     }
@@ -235,7 +340,14 @@ describe("createReleaseCommand()", () => {
     const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => true) });
     try {
       const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-      void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+      void cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      });
     } finally {
       console.log = origLog;
     }
@@ -245,7 +357,14 @@ describe("createReleaseCommand()", () => {
 });
 
 describe("createReleaseCommand() — the bump's evidence", () => {
-  const FLAGS = { dry: true, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false };
+  const FLAGS = {
+    dry: true,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": true,
+  };
 
   it("names the commit that won the bump", () => {
     const deps = makeDeps({
@@ -293,7 +412,14 @@ describe("createReleaseCommand() — the bump's evidence", () => {
 });
 
 describe("createReleaseCommand() — a tag that fails after the commit", () => {
-  const FLAGS = { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false };
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": true,
+  };
 
   it("names the commit that landed", () => {
     const deps = makeDeps({
@@ -320,7 +446,14 @@ describe("createReleaseCommand() — a tag that fails after the commit", () => {
 });
 
 describe("createReleaseCommand() — the shrinking-surface guard", () => {
-  const FLAGS = { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false };
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": true,
+  };
 
   function shrinking(overrides: Partial<MockDeps> = {}): MockDeps {
     return makeDeps({
@@ -402,7 +535,14 @@ describe("createReleaseCommand() — the shrinking-surface guard", () => {
 });
 
 describe("createReleaseCommand() — amend floor preflight", () => {
-  const FLAGS = { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false };
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": true,
+  };
 
   it("releases when the previous tag is an ancestor of HEAD and the remote carries it", () => {
     const deps = makeDeps();
@@ -481,7 +621,14 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("promotes [Unreleased] into a dated section using the injected clock", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     const [cwd, file, source] = deps.writeChangelog.mock.calls[0] as [string, string, string];
     expect(cwd).toBe("/project");
     expect(file).toBe("CHANGELOG.md");
@@ -513,14 +660,28 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("reads the clock exactly once", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.now.mock.calls).toHaveLength(1);
   });
 
   it("omits the link definition when the repository URL is unknown", () => {
     const deps = makeDeps({ readRepositoryUrl: mock((_cwd: string): string | null => null) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     const [, , source] = deps.writeChangelog.mock.calls[0] as [string, string, string];
     expect(source.includes("[1.1.0]: ")).toBe(false);
   });
@@ -528,7 +689,14 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("honours a configured changelogFile", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project", changelogFile: "docs/CHANGES.md" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.readChangelog.mock.calls[0]?.[1]).toBe("docs/CHANGES.md");
     expect(deps.writeChangelog.mock.calls[0]?.[1]).toBe("docs/CHANGES.md");
   });
@@ -536,7 +704,16 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("refuses an empty [Unreleased] and names the escape hatch", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => EMPTY) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    expect(() => cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false })).toThrow(
+    expect(() =>
+      cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      }),
+    ).toThrow(
       "CHANGELOG.md has an empty [Unreleased] section, but commits exist since v1.0.0. " +
         "Write the entry, or use --allow-empty-changelog for a genuinely entry-free release.",
     );
@@ -545,7 +722,16 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("the empty refusal precedes every mutation", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => EMPTY) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    expect(() => cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false })).toThrow(ReleaseError);
+    expect(() =>
+      cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      }),
+    ).toThrow(ReleaseError);
     expect(deps.updatePackageVersion.mock.calls).toHaveLength(0);
     expect(deps.writeChangelog.mock.calls).toHaveLength(0);
     expect(deps.commit.mock.calls).toHaveLength(0);
@@ -555,13 +741,29 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("refuses an empty [Unreleased] under --dry too, before reporting anything", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => EMPTY) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    expect(() => cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false })).toThrow(ReleaseError);
+    expect(() =>
+      cmd.run?.([], {
+        dry: true,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      }),
+    ).toThrow(ReleaseError);
   });
 
   it("--allow-empty-changelog proceeds and still promotes, carrying the placeholder through", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => EMPTY) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": true, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": true,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.writeChangelog.mock.calls).toHaveLength(1);
     const [, , source] = deps.writeChangelog.mock.calls[0] as [string, string, string];
     expect(source.split("\n")[8]).toBe("## [1.1.0] — 2026-02-03");
@@ -571,13 +773,31 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("refuses a malformed changelog", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => MALFORMED) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    expect(() => cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false })).toThrow(ReleaseError);
+    expect(() =>
+      cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      }),
+    ).toThrow(ReleaseError);
   });
 
   it("--allow-empty-changelog does not license a malformed changelog", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => MALFORMED) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    expect(() => cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": true, "allow-semver": false })).toThrow(ReleaseError);
+    expect(() =>
+      cmd.run?.([], {
+        dry: false,
+        "allow-dirty": true,
+        "allow-empty-changelog": true,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      }),
+    ).toThrow(ReleaseError);
     expect(deps.writeChangelog.mock.calls).toHaveLength(0);
   });
 
@@ -585,7 +805,15 @@ describe("createReleaseCommand() — changelog promotion", () => {
     const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => null) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     const logs = runCapturingLogs(
-      () => void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false }),
+      () =>
+        void cmd.run?.([], {
+          dry: false,
+          "allow-dirty": true,
+          "allow-empty-changelog": false,
+          "allow-semver": false,
+          "allow-branch": false,
+          "allow-unverified": true,
+        }),
     );
     expect(deps.writeChangelog.mock.calls).toHaveLength(0);
     expect(deps.createTag.mock.calls).toHaveLength(1);
@@ -596,7 +824,15 @@ describe("createReleaseCommand() — changelog promotion", () => {
     const deps = makeDeps();
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     const logs = runCapturingLogs(
-      () => void cmd.run?.([], { dry: true, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false }),
+      () =>
+        void cmd.run?.([], {
+          dry: true,
+          "allow-dirty": true,
+          "allow-empty-changelog": false,
+          "allow-semver": false,
+          "allow-branch": false,
+          "allow-unverified": true,
+        }),
     );
     expect(deps.readChangelog.mock.calls).toHaveLength(1);
     expect(deps.writeChangelog.mock.calls).toHaveLength(0);
@@ -606,22 +842,43 @@ describe("createReleaseCommand() — changelog promotion", () => {
   it("in-sync returns before the changelog is read", () => {
     const deps = makeDeps({ resolveVersion: mock(() => ({ version: "1.0.0", reason: "in-sync" as const, previous: "v1.0.0" })) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    void cmd.run?.([], { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false });
+    void cmd.run?.([], {
+      dry: false,
+      "allow-dirty": true,
+      "allow-empty-changelog": false,
+      "allow-semver": false,
+      "allow-branch": false,
+      "allow-unverified": true,
+    });
     expect(deps.readChangelog.mock.calls).toHaveLength(0);
   });
 
   it("a dirty working tree refuses before the changelog is read", () => {
     const deps = makeDeps({ isWorkingTreeClean: mock((_cwd: string): boolean => false) });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
-    expect(() => cmd.run?.([], { dry: false, "allow-dirty": false, "allow-empty-changelog": false, "allow-semver": false })).toThrow(
-      "Working tree is not clean. Commit or stash changes first, or use --allow-dirty.",
-    );
+    expect(() =>
+      cmd.run?.([], {
+        dry: false,
+        "allow-dirty": false,
+        "allow-empty-changelog": false,
+        "allow-semver": false,
+        "allow-branch": false,
+        "allow-unverified": true,
+      }),
+    ).toThrow("Working tree is not clean. Commit or stash changes first, or use --allow-dirty.");
     expect(deps.readChangelog.mock.calls).toHaveLength(0);
   });
 });
 
 describe("createReleaseCommand — the derived stageFiles default", () => {
-  const FLAGS = { dry: false, "allow-dirty": true, "allow-empty-changelog": false, "allow-semver": false };
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": true,
+  };
 
   it("stages the changelog it promoted, so the bump and the promotion land in one commit", () => {
     const deps = makeDeps();
@@ -661,5 +918,174 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
     void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps).run?.([], FLAGS);
 
     expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json"]);
+  });
+});
+
+describe("createReleaseCommand() — the branch and gate preflight", () => {
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": false,
+  };
+
+  it("runs the gate before the version write, and tags once it passes", () => {
+    const order: string[] = [];
+    const deps = makeDeps({
+      runGate: mock((_cwd: string, _command: readonly string[]): GateOutcome => {
+        order.push("gate");
+        return "passed";
+      }),
+      updatePackageVersion: mock((_version: string, _cwd: string): void => {
+        order.push("write");
+      }),
+      createTag: mock((_cwd: string, _tag: string): void => {
+        order.push("tag");
+      }),
+    });
+
+    runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS));
+
+    expect(order).toEqual(["gate", "write", "tag"]);
+  });
+
+  it("refuses a red gate with nothing written and no tag cut", () => {
+    const deps = makeDeps({ runGate: mock((_cwd: string, _command: readonly string[]): GateOutcome => "failed") });
+
+    expect(() => runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS))).toThrow(ReleaseError);
+    expect(deps.updatePackageVersion).not.toHaveBeenCalled();
+    expect(deps.writeChangelog).not.toHaveBeenCalled();
+    expect(deps.commit).not.toHaveBeenCalled();
+    expect(deps.createTag).not.toHaveBeenCalled();
+  });
+
+  it("refuses a branch the remote does not publish from, before running the gate", () => {
+    const deps = makeDeps({ currentBranch: mock((_cwd: string): string | null => "feature/x") });
+
+    expect(() => runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS))).toThrow(
+      "HEAD is on feature/x, and the remote publishes from main",
+    );
+    expect(deps.runGate).not.toHaveBeenCalled();
+    expect(deps.updatePackageVersion).not.toHaveBeenCalled();
+  });
+
+  // A tag on a commit no branch carries is the failure this guard exists for, and whether HEAD is
+  // detached is answerable without the remote — so it is refused even when the remote answers nothing.
+  it("refuses a detached HEAD, whether or not the remote names a publishing branch", () => {
+    for (const publishesFrom of ["main", null]) {
+      const deps = makeDeps({
+        currentBranch: mock((_cwd: string): string | null => null),
+        defaultBranch: mock((_cwd: string): string | null => publishesFrom),
+      });
+
+      expect(() => runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS))).toThrow(
+        "HEAD is detached, so the release commit would sit on no branch",
+      );
+      expect(deps.runGate).not.toHaveBeenCalled();
+      expect(deps.updatePackageVersion).not.toHaveBeenCalled();
+      expect(deps.commit).not.toHaveBeenCalled();
+      expect(deps.createTag).not.toHaveBeenCalled();
+    }
+  });
+
+  it("releases from a detached HEAD under --allow-branch, which is the same escape as any other", () => {
+    const deps = makeDeps({
+      currentBranch: mock((_cwd: string): string | null => null),
+      defaultBranch: mock((_cwd: string): string | null => null),
+    });
+
+    runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], { ...FLAGS, "allow-branch": true }));
+
+    expect(deps.createTag).toHaveBeenCalled();
+  });
+
+  it("releases from another branch under --allow-branch, and skips the gate under --allow-unverified", () => {
+    const deps = makeDeps({ currentBranch: mock((_cwd: string): string | null => "release/1.1") });
+
+    runCapturingLogs(
+      () => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], { ...FLAGS, "allow-branch": true, "allow-unverified": true }),
+    );
+
+    expect(deps.runGate).not.toHaveBeenCalled();
+    expect(deps.createTag).toHaveBeenCalled();
+  });
+
+  it("runs neither check on a dry run, which writes nothing to check for", () => {
+    const deps = makeDeps();
+
+    runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], { ...FLAGS, dry: true }));
+
+    expect(deps.runGate).not.toHaveBeenCalled();
+    expect(deps.currentBranch).not.toHaveBeenCalled();
+  });
+
+  it("names the exact recovery when the commit fails with the version and changelog already written", () => {
+    const deps = makeDeps({
+      commit: mock((_cwd: string, _message: string, _files: string[]): boolean => {
+        throw new Error("pre-commit hook failed");
+      }),
+    });
+
+    expect(() => runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS))).toThrow(
+      "git checkout -- package.json CHANGELOG.md",
+    );
+    expect(deps.createTag).not.toHaveBeenCalled();
+  });
+});
+
+describe("createReleaseCommand() — an unanswerable branch question and a gate that cannot run", () => {
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": false,
+  };
+
+  // `refs/remotes/origin/HEAD` is written by `git clone` alone, so a repository created locally and
+  // pushed has none — releasing there must not be refused against a branch nobody named.
+  it("releases from any branch when the remote names no publishing branch, saying the question went unanswered", () => {
+    const deps = makeDeps({
+      currentBranch: mock((_cwd: string): string | null => "develop"),
+      defaultBranch: mock((_cwd: string): string | null => null),
+    });
+
+    const logs = runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS));
+
+    expect(deps.createTag).toHaveBeenCalled();
+    expect(logs.join("\n")).toContain("remote names no publishing branch — could not confirm develop");
+  });
+
+  it("refuses a gate that could not be run in its own words, naming the config field that fixes it", () => {
+    const deps = makeDeps({ runGate: mock((_cwd: string, _command: readonly string[]): GateOutcome => "unrunnable") });
+
+    expect(() => runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS))).toThrow(
+      "`bun run verify` could not be run",
+    );
+    expect(deps.updatePackageVersion).not.toHaveBeenCalled();
+    expect(deps.createTag).not.toHaveBeenCalled();
+  });
+
+  it("runs the gate command the config names, rather than the default", () => {
+    const deps = makeDeps();
+
+    runCapturingLogs(() => void createReleaseCommand({ cwd: "/project", gateCommand: ["make", "check"] }, deps).run?.([], FLAGS));
+
+    expect(deps.runGate.mock.calls[0]).toEqual(["/project", ["make", "check"]]);
+  });
+
+  it("names the configured command in both refusals, since the default is not what ran", () => {
+    const failing = makeDeps({ runGate: mock((_cwd: string, _command: readonly string[]): GateOutcome => "failed") });
+    expect(() =>
+      runCapturingLogs(() => void createReleaseCommand({ cwd: "/project", gateCommand: ["make", "check"] }, failing).run?.([], FLAGS)),
+    ).toThrow("`make check` failed");
+
+    const absent = makeDeps({ runGate: mock((_cwd: string, _command: readonly string[]): GateOutcome => "unrunnable") });
+    expect(() =>
+      runCapturingLogs(() => void createReleaseCommand({ cwd: "/project", gateCommand: ["make", "check"] }, absent).run?.([], FLAGS)),
+    ).toThrow("`make check` could not be run");
   });
 });

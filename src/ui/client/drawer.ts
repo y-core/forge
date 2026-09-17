@@ -14,6 +14,38 @@ const FOCUSABLE =
 
 const mountedDrawers = new WeakMap<Element, () => void>();
 
+/** The page's own `overflow`, saved once for a document and restored when the last drawer lets go. */
+interface ScrollLock {
+  saved: string;
+  holders: number;
+}
+
+const scrollLocks = new WeakMap<Document, ScrollLock>();
+
+/** Takes a share of the document's scroll lock, saving the page's own `overflow` on the first hold. */
+function acquireScrollLock(doc: Document): void {
+  const existing = scrollLocks.get(doc);
+  if (existing) {
+    existing.holders += 1;
+    return;
+  }
+  // Through CSSOM rather than a class: forge ships `style-src 'self'` with no style nonce, and the
+  // property has to be restored to whatever the page itself set, not merely removed.
+  scrollLocks.set(doc, { saved: doc.documentElement.style.getPropertyValue("overflow"), holders: 1 });
+  doc.documentElement.style.setProperty("overflow", "hidden");
+}
+
+/** Drops one share; the page's own `overflow` returns only once no drawer holds the lock. */
+function releaseScrollLock(doc: Document): void {
+  const lock = scrollLocks.get(doc);
+  if (!lock) return;
+  lock.holders -= 1;
+  if (lock.holders > 0) return;
+  scrollLocks.delete(doc);
+  if (lock.saved === "") doc.documentElement.style.removeProperty("overflow");
+  else doc.documentElement.style.setProperty("overflow", lock.saved);
+}
+
 /** Gives an open off-canvas disclosure its modal behaviour — Escape, scroll lock, focus trap — while `query` matches, and returns a disposer. @public */
 export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   const noop = () => {};
@@ -55,21 +87,20 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   // alone leaves it outside the cycle — a keyboard trap under WCAG 2.1.2.
   const trapped = (): HTMLElement[] => (summary === null ? focusables() : [summary, ...focusables()]);
 
-  let lockedOverflow: string | null = null;
+  // Per mount, so this drawer's own lock/unlock stay idempotent and `dispose` releases exactly its
+  // own hold; the saved value itself belongs to the document, which is shared.
+  let held = false;
 
   const lock = () => {
-    if (lockedOverflow !== null) return;
-    // Through CSSOM rather than a class: forge ships `style-src 'self'` with no style nonce, and the
-    // property has to be restored to whatever the page itself set, not merely removed.
-    lockedOverflow = doc.documentElement.style.getPropertyValue("overflow");
-    doc.documentElement.style.setProperty("overflow", "hidden");
+    if (held) return;
+    held = true;
+    acquireScrollLock(doc);
   };
 
   const unlock = () => {
-    if (lockedOverflow === null) return;
-    if (lockedOverflow === "") doc.documentElement.style.removeProperty("overflow");
-    else doc.documentElement.style.setProperty("overflow", lockedOverflow);
-    lockedOverflow = null;
+    if (!held) return;
+    held = false;
+    releaseScrollLock(doc);
   };
 
   const applyState = () => {

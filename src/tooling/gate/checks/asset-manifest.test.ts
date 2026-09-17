@@ -47,7 +47,7 @@ function writeAsset(relative: string): void {
   writeFileSync(path, "built");
 }
 
-const run = (mode: GateMode = "fast") => checkAssetManifest({ root, assetConfig: "assets.config.ts" }, mode);
+const run = (mode: GateMode = "quality") => checkAssetManifest({ root, assetConfig: "assets.config.ts" }, mode);
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "forge-asset-manifest-"));
@@ -104,10 +104,10 @@ describe("checkAssetManifest", () => {
     expect(result.findings.map((f) => f.message)).toEqual(["`js/main.js` maps to `../../elsewhere/main.js`, which is not under `public/assets`"]);
   });
 
-  it("passes a types-only artifact in a fast run, whose paths no build has produced", async () => {
+  it("passes a types-only artifact in a quality run, whose paths no build has produced", async () => {
     writeModule({ "js/main.js": "js/main.js" }, TYPES_HEADER);
 
-    const result = await run("fast");
+    const result = await run("quality");
 
     expect(result.ok).toBe(true);
     expect(result.findings).toEqual([]);
@@ -126,7 +126,7 @@ describe("checkAssetManifest", () => {
       "`.forge/assets.ts` is the types-only artifact, whose paths are logical names no build has produced",
     ]);
     expect(result.findings.map((f) => f.detail)).toEqual([
-      ["run `forge assets build --minify` — only a fast run accepts an artifact that was never built"],
+      ["run `forge assets build --minify` — only a quality run accepts an artifact that was never built"],
     ]);
     expect(result.summary).toBe("asset manifest: types-only artifact");
   });
@@ -134,7 +134,7 @@ describe("checkAssetManifest", () => {
   it("passes an empty manifest in every mode, since an icons-only config emits no entries", async () => {
     writeModule({});
 
-    for (const mode of ["fast", "standard", "full"] as const) {
+    for (const mode of ["quality", "standard", "full"] as const) {
       const result = await run(mode);
       expect(result.ok).toBe(true);
       expect(result.findings).toEqual([]);

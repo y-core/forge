@@ -296,6 +296,13 @@ describe("parseCallableExports() — the claim a declaration file makes", () => 
     ["a const bound to an async function expression", "export const alpha = async function () {};", "alpha"],
     ["a const bound to a single-parameter arrow", "export const alpha = (a) => a;", "alpha"],
     ["a const whose annotation is itself a function type", "export const alpha: (a: number) => void = (a) => {};", "alpha"],
+    ["a generator declaration, which is a function and not an unnamed default", "export function* alpha(): Generator<number> {}", "alpha"],
+    ["an async generator declaration", "export async function* alpha(): AsyncGenerator<number> {}", "alpha"],
+    ["a generator whose star hugs its name", "export function *alpha(): Generator<number> {}", "alpha"],
+    ["a function exported by a separate block", "function alpha(): void {}\nexport { alpha };", "alpha"],
+    ["a class exported by a separate block", "class Alpha {}\nexport { Alpha };", "Alpha"],
+    ["an arrow const exported by a separate block", "const alpha = () => {};\nexport { alpha };", "alpha"],
+    ["a generator exported by a separate block", "function* alpha(): Generator<number> {}\nexport { alpha };", "alpha"],
   ];
 
   for (const [label, source, name] of callable) {
@@ -311,6 +318,9 @@ describe("parseCallableExports() — the claim a declaration file makes", () => 
     ["a type alias of a function", "export type Handler = (a: number) => void;"],
     ["a string constant", 'export const NAME = "alpha";'],
     ["an array of records", "export const PAIRS = [{ a: 1 }];"],
+    ["an object literal exported by a separate block", "const TABLE = { a: 1 };\nexport { TABLE };"],
+    ["a type exported by a separate block", "type Handler = (a: number) => void;\nexport type { Handler };"],
+    ["a block re-exporting a name this file never declared", 'export { alpha } from "./other";'],
   ];
 
   for (const [label, source] of declared) {
@@ -325,5 +335,9 @@ describe("parseCallableExports() — the claim a declaration file makes", () => 
 
   it("finds an unnamed default export by its kind, so it is still reported", () => {
     expect([...parseCallableExports(fixture("export default function () {}"))]).toEqual(["default function"]);
+  });
+
+  it("publishes a block export under the name it was aliased to, which is the one a barrel names", () => {
+    expect([...parseCallableExports(fixture("function alpha(): void {}\nexport { alpha as beta };"))]).toEqual(["beta"]);
   });
 });

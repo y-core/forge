@@ -1,25 +1,23 @@
 import type { Middleware } from "@remix-run/fetch-router";
-import { Cookie as CookieHeader } from "@remix-run/headers/cookie";
-import { SetCookie } from "@remix-run/headers/set-cookie";
 import type { Session, SessionStorage } from "@remix-run/session";
 
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { trackSessionId } from "./tracked";
-import type { SessionCookieOptions, SignedCookie, UnsignedCookie } from "./types";
+import type { SessionCookieOptions, SignedCookie } from "./types";
 
 /** Typed accessor for the session variable set by `sessionMiddleware`. @public */
 export const sessionCtx = contextVar<Session>("session");
 
-/** Reads the session cookie on the way in and persists it on the way out only when the cookie would differ from the one the client holds, comparing wire bytes under `rotating` so a retired signature is upgraded. @public */
-export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie | UnsignedCookie, options?: SessionCookieOptions): Middleware {
+/** Reads the session cookie on the way in and persists it on the way out only when the cookie would differ from the one the client holds, re-issuing under `rotating` so a retired signature is upgraded. @public */
+export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie, options?: SessionCookieOptions): Middleware {
   const reissue = options?.reissue ?? false;
   // The cookie already knows whether a rotation is in flight, so the default is right without being
   // remembered; the option survives as an override, for a retired secret kept in the array long-term.
-  const rotating = options?.rotating ?? ("rotating" in cookie && cookie.rotating);
+  const rotating = options?.rotating ?? cookie.rotating;
   return async (context, next) => {
-    const cookieHeader = context.request.headers.get("cookie") ?? null;
-    const cookieValue = await cookie.parse(cookieHeader);
+    const reading = await cookie.read(context.request.headers.get("cookie") ?? null);
+    const cookieValue = reading?.value ?? null;
     const session = trackSessionId(await storage.read(cookieValue), cookieValue);
     sessionCtx.set(context, session);
 
@@ -31,21 +29,15 @@ export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie 
     const value = saved ?? (cookieValue !== null && cookieValue !== "" ? cookieValue : null);
     if (value === null) return res;
 
-    // HMAC is deterministic, so an unchanged payload re-signs to the bytes the client holds unless the
-    // signing secret moved — which cannot arise off rotation, so the payload decides on its own.
     const unchanged = !reissue && value === cookieValue;
-    if (unchanged && !rotating) return res;
+    // The cookie reports which secret verified the value outright: re-signing to compare wire bytes
+    // could never see it once an embedded expiry makes those bytes differ every second.
+    const retired = rotating && reading !== null && !reading.current;
+    if (unchanged && !retired) return res;
 
-    const fresh = await cookie.serialize(value);
-    if (unchanged) {
-      // The wire bytes, not the payload: `parse` verifies against every secret, so this is the one
-      // comparison that can see a retired signature — which is why a rotation could never complete.
-      const sent = cookieHeader === null ? null : new CookieHeader(cookieHeader).get(cookie.name);
-      if (new SetCookie(fresh).value === sent) return res;
-    }
     // One emit point: `setPendingHeader` and `applyPendingHeaders` both append without deduping
     // by cookie name, so a second site would double-emit under `reissue`.
-    setPendingHeader(context, "set-cookie", fresh, { append: true });
+    setPendingHeader(context, "set-cookie", await cookie.serialize(value, value === "" ? { maxAge: 0 } : undefined), { append: true });
     return res;
   };
 }

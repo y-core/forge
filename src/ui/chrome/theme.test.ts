@@ -1,23 +1,23 @@
 import { describe, expect, it } from "bun:test";
 
-import { DARK_CLASS, DEFAULT_PREF, FOUC_SCRIPT, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
+import { DARK_CLASS, DEFAULT_THEME_PREF, FOUC_SCRIPT, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 describe("theme constants", () => {
   it("exposes the documented constant values", () => {
     expect(THEME_STORAGE_KEY).toBe("themePreference");
     expect(THEME_ATTR).toBe("data-theme-preference");
     expect(DARK_CLASS).toBe("dark");
-    expect(DEFAULT_PREF).toBe("system");
+    expect(DEFAULT_THEME_PREF).toBe("system");
   });
 });
 
 describe("FOUC_SCRIPT", () => {
   it("interpolates every theme constant value (no drift from the constants)", () => {
     expect(FOUC_SCRIPT).toContain(`localStorage.getItem("${THEME_STORAGE_KEY}")`);
-    expect(FOUC_SCRIPT).toContain(`||"${DEFAULT_PREF}"`);
+    expect(FOUC_SCRIPT).toContain(`||"${DEFAULT_THEME_PREF}"`);
     expect(FOUC_SCRIPT).toContain(`setAttribute("${THEME_ATTR}",e)`);
     expect(FOUC_SCRIPT).toContain(`e==="${DARK_CLASS}"`);
-    expect(FOUC_SCRIPT).toContain(`e==="${DEFAULT_PREF}"`);
+    expect(FOUC_SCRIPT).toContain(`e==="${DEFAULT_THEME_PREF}"`);
     expect(FOUC_SCRIPT).toContain(`classList.add("${DARK_CLASS}")`);
   });
 

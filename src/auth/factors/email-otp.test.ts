@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { uuidv7 } from "../../crypto/mod";
 import { ok } from "../../result/result";
@@ -6,6 +6,8 @@ import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import type { AuthMessage, AuthNotifier, NonceStore, OtpState, OtpStateStore } from "../types";
 import { createEmailOtpFactor } from "./email-otp";
+import { installTimingProbe } from "./factors.fixture";
+import type { TimingProbeHandle } from "./types";
 
 const SECRET = "17bd3b2b6521b7cfde60fad521de43d2860704680c51641152e6e05aa786d162";
 const USER_ID = uuidv7();
@@ -188,12 +190,20 @@ describe("createEmailOtpFactor — issuing", () => {
 });
 
 describe("createEmailOtpFactor — verifying", () => {
-  it("accepts the right code once, then refuses it as consumed", async () => {
+  it("accepts the right code once, then has nothing left to verify it against", async () => {
     const { factor, notifier } = await harness();
     await factor.createChallenge(USER_ID, NOW);
     const code = lastCode(notifier);
     expect(await factor.verifyChallenge(USER_ID, code, NOW)).toEqual({ ok: true, data: { kind: "email-otp", userId: USER_ID, verifiedAt: NOW } });
     expect(await factor.verifyChallenge(USER_ID, code, NOW)).toEqual({ ok: false, error: "expired" });
+  });
+
+  it("refuses a code the nonce store has already seen, even with its state row intact", async () => {
+    const spent: NonceStore = { markConsumed: () => Promise.resolve(ok(false)) };
+    const { factor, notifier, state } = await harness({ nonces: spent });
+    await factor.createChallenge(USER_ID, NOW);
+    expect(await factor.verifyChallenge(USER_ID, lastCode(notifier), NOW)).toEqual({ ok: false, error: "consumed" });
+    expect(await state.read(USER_ID, NOW)).toMatchObject({ ok: true, data: { attempts: 1 } });
   });
 
   it("refuses a code issued for one identity when presented for another", async () => {
@@ -206,10 +216,14 @@ describe("createEmailOtpFactor — verifying", () => {
     expect(await factor.verifyChallenge(other, lastCode(notifier), NOW)).toEqual({ ok: false, error: "unrecognised" });
   });
 
-  it("refuses once the code's own lifetime has passed", async () => {
+  it("refuses once the code's own lifetime has passed, and not the instant before", async () => {
     const { factor, notifier } = await harness();
     await factor.createChallenge(USER_ID, NOW);
     expect(await factor.verifyChallenge(USER_ID, lastCode(notifier), NOW + TTL_MS)).toEqual({ ok: false, error: "expired" });
+
+    const { factor: second, notifier: sent } = await harness();
+    await second.createChallenge(USER_ID, NOW);
+    expect(await second.verifyChallenge(USER_ID, lastCode(sent), NOW + TTL_MS - 1)).toMatchObject({ ok: true });
   });
 
   it("refuses when nothing was ever issued", async () => {
@@ -407,5 +421,34 @@ describe("createEmailOtpFactor — the ranges it holds at construction", () => {
 
   it("accepts every knob omitted", async () => {
     expect(await factory({})).not.toThrow();
+  });
+});
+
+// The comparison is the one guard here that `===` would satisfy too, so the outcome cannot witness
+// it. Installing a real constant-time primitive and counting the platform's own calls can.
+describe("createEmailOtpFactor — the code comparison is constant-time", () => {
+  let handle: TimingProbeHandle;
+
+  beforeEach(() => {
+    handle = installTimingProbe();
+  });
+
+  afterEach(() => {
+    handle.restore();
+  });
+
+  it("asks the constant-time primitive, and is told no, for a wrong code", async () => {
+    const { factor, notifier } = await harness();
+    await factor.createChallenge(USER_ID, NOW);
+    const wrong = lastCode(notifier) === "000000" ? "111111" : "000000";
+    const outcome = await factor.verifyChallenge(USER_ID, wrong, NOW);
+    expect({ compared: handle.probe.compared, outcome }).toEqual({ compared: [false], outcome: { ok: false, error: "unrecognised" } });
+  });
+
+  it("asks the constant-time primitive, and is told yes, for the right code", async () => {
+    const { factor, notifier } = await harness();
+    await factor.createChallenge(USER_ID, NOW);
+    const outcome = await factor.verifyChallenge(USER_ID, lastCode(notifier), NOW);
+    expect({ compared: handle.probe.compared, accepted: outcome.ok }).toEqual({ compared: [true], accepted: true });
   });
 });

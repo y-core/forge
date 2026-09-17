@@ -2,6 +2,7 @@ import { chmodSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, 
 import { basename, dirname, join, resolve } from "node:path";
 import process from "node:process";
 
+import { CliError } from "../../../cli/errors";
 import type { DevVar, DevVarKind } from "./types";
 
 /** The comment marking the next key as one this project generates, so a fresh value may replace it. */
@@ -52,14 +53,15 @@ export function parseDevVars(content: string): DevVar[] {
   return vars;
 }
 
-/** Read and parse `.dev.vars`, or an empty list when it is absent or unreadable. */
+/** Read and parse `.dev.vars`, or an empty list when it is absent; a present file that cannot be read is an error. */
 export function readDevVars(path: string): DevVar[] {
   if (!existsSync(path)) return [];
   try {
     return parseDevVars(readFileSync(path, "utf-8"));
   } catch (err) {
-    console.warn(`[forge] could not read ${path}: ${(err as Error).message}`);
-    return [];
+    // An empty list reads as "declares no keys", which every caller acts on by doing nothing and
+    // reporting success — so a file that is there but unreadable has to stop the run.
+    throw new CliError("external", `could not read ${path}: ${(err as Error).message}`);
   }
 }
 

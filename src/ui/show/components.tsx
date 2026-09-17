@@ -502,8 +502,6 @@ const ButtonSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
       </div>
     </div>
 
-    {/* `square` is `aspect-square w-full`, so its cell is the width it reads from — the control width
-        for its own size, not the column's. */}
     <div class='w-full space-y-2'>
       <h3 class='text-sm font-semibold text-foreground'>Shape × size</h3>
       <div class='grid grid-cols-[5rem_repeat(3,minmax(0,1fr))] items-center gap-2'>
@@ -658,13 +656,9 @@ const InputSection: FC = () => (
     <Input type='email' name='email-input' placeholder='Email input' class='max-w-xs' />
     <Input type='password' name='pw-input' placeholder='Password input' class='max-w-xs' />
     <Input type='text' name='disabled-input' placeholder='Disabled' disabled class='max-w-xs' />
-    {/* The descriptor, not the raw attribute: `field` is what derives the id, the name and
-        `aria-invalid` together, so the control and its label cannot disagree. */}
     <Input type='text' field={{ name: "invalid-input", invalid: true }} placeholder='Invalid' class='max-w-xs' />
     <Input type='text' name='readonly-input' value='Read only' readonly class='max-w-xs' />
     <Input type='text' name='required-input' placeholder='Required' required class='max-w-xs' />
-    {/* `format` only regroups the value on blur, and the `value` here arrives already grouped from
-        the server. */}
     <Input
       type='text'
       inputmode='numeric'
@@ -681,8 +675,6 @@ const InputSection: FC = () => (
 
 const LabelSection: FC = () => (
   <CatalogSection id='label' title='Label'>
-    {/* A plain wrapper, so the band keeps a pair on one wrap line: the section demonstrates `Label`'s
-        own `for`/`required` API, which `Field`'s span and `FormField`'s fieldset would both replace. */}
     <div class='space-y-2'>
       <Label for='demo-label-input'>Standalone Label</Label>
       <Input id='demo-label-input' type='text' name='demo-label' placeholder='Paired input' class='max-w-xs' />
@@ -792,8 +784,6 @@ const FileInputSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
     <FileInput name='show-file' class='max-w-xs' />
     <FileInput name='show-file-lg' size='lg' class='max-w-xs' />
     <FileInput name='show-file-invalid' invalid class='max-w-xs' />
-    {/* `FileInput` takes no children and `FILE_INPUT_BASE` styles the native
-        `::file-selector-button`, so a glyph inside the box is a composition over it. */}
     <div class='relative max-w-xs'>
       <FileInput name='show-file-icon' class='pe-10' />
       <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 end-3 flex items-center text-muted-foreground'>
@@ -1289,8 +1279,6 @@ const NumberFieldSection: FC = () => (
       <NumberField.Input name='show-count' value='1' min='0' max='10' />
       <NumberField.Increment />
     </NumberField>
-    {/* `step` and a stepper `label` are both the caller's: the steppers name what they move, which
-        "Increment" alone does not when two fields sit side by side. */}
     <NumberField>
       <NumberField.Decrement label='Decrease quantity' />
       <NumberField.Input name='show-quantity' value='10' min='0' max='100' step='5' />
@@ -1361,8 +1349,6 @@ const AccordionSection: FC<{ icon: ShowIcon; page: string }> = ({ icon, page }) 
           </Accordion.Content>
         </Accordion.Item>
       </Accordion>
-      {/* A shared `name` is what makes a native disclosure group exclusive — opening one closes the
-          others, with no controller involved at all. */}
       <Accordion class='w-full max-w-md gap-2'>
         <Accordion.Item name='exclusive-demo' open>
           <Accordion.Trigger icon={icon}>Exclusive: first</Accordion.Trigger>
@@ -1411,8 +1397,7 @@ const DialogSection: FC<{ page: string }> = ({ page }) => (
         </Dialog.Close>
       </Dialog.Footer>
     </Dialog>
-    {/* `open` is the platform's non-modal spelling — no backdrop, no top layer, the page stays live —
-        which is why it sits in the band rather than over the catalog. */}
+    {/* `open` is the platform's non-modal spelling: no backdrop, no top layer, the page behind stays live. */}
     <Dialog id='show-dialog-inline' open class='max-w-sm'>
       <Dialog.Header>
         <Dialog.Title for='show-dialog-inline' class='text-foreground'>
@@ -1445,14 +1430,13 @@ const PopoverSection: FC<{ page: string }> = ({ page }) => (
         { when: "offering a list of commands from a trigger", id: "menu" },
       ]}
     />
-    {/* A row of its own with a gutter above it: `side=top` opens over whatever sits directly above the
-        trigger, and the band's note is what that would be. */}
+    {/* `side=top` opens over whatever sits directly above the trigger, so this row keeps a gutter above it. */}
     <div class='mt-6 flex w-full flex-wrap items-start justify-between gap-4'>
       <Popover>
         <Popover.Trigger for='show-popover' class='rounded-md border border-border px-3 py-1.5 text-sm'>
           Details
         </Popover.Trigger>
-        <Popover.Content id='show-popover' class='p-3 text-sm text-muted-foreground'>
+        <Popover.Content id='show-popover' label='Details' class='p-3 text-sm text-muted-foreground'>
           An anchored surface with light-dismiss, and no JavaScript to open it.
         </Popover.Content>
       </Popover>
@@ -1460,7 +1444,7 @@ const PopoverSection: FC<{ page: string }> = ({ page }) => (
         <Popover.Trigger for='show-popover-top' class='rounded-md border border-border px-3 py-1.5 text-sm'>
           side=top
         </Popover.Trigger>
-        <Popover.Content id='show-popover-top' side='top' class='p-3 text-sm text-muted-foreground'>
+        <Popover.Content id='show-popover-top' label='side=top' side='top' class='p-3 text-sm text-muted-foreground'>
           Opens above the trigger instead of below it.
         </Popover.Content>
       </Popover>
@@ -1468,7 +1452,7 @@ const PopoverSection: FC<{ page: string }> = ({ page }) => (
         <Popover.Trigger for='show-popover-center' class='rounded-md border border-border px-3 py-1.5 text-sm'>
           align=center
         </Popover.Trigger>
-        <Popover.Content id='show-popover-center' align='center' class='p-3 text-sm text-muted-foreground'>
+        <Popover.Content id='show-popover-center' label='align=center' align='center' class='p-3 text-sm text-muted-foreground'>
           Centred on the trigger along the bottom side.
         </Popover.Content>
       </Popover>
@@ -1476,7 +1460,7 @@ const PopoverSection: FC<{ page: string }> = ({ page }) => (
         <Popover.Trigger for='show-popover-end' class='rounded-md border border-border px-3 py-1.5 text-sm'>
           align=end
         </Popover.Trigger>
-        <Popover.Content id='show-popover-end' align='end' class='p-3 text-sm text-muted-foreground'>
+        <Popover.Content id='show-popover-end' label='align=end' align='end' class='p-3 text-sm text-muted-foreground'>
           Right edges aligned, so it grows leftward.
         </Popover.Content>
       </Popover>
@@ -1734,8 +1718,6 @@ const CollapsibleSection: FC<{ icon: ShowIcon; page: string }> = ({ icon, page }
           <Collapsible.Trigger icon={icon}>Already open</Collapsible.Trigger>
           <Collapsible.Content>Rendered open by the server, with no client work at all.</Collapsible.Content>
         </Collapsible>
-        {/* `name` reaches `<details>` through the root's rest props: exclusivity without Accordion,
-            for two disclosures that are siblings but not a list. */}
         <Collapsible name='collapsible-exclusive' open>
           <Collapsible.Trigger icon={icon}>Exclusive: first</Collapsible.Trigger>
           <Collapsible.Content>A shared `name` makes the platform close the other one.</Collapsible.Content>
@@ -1929,8 +1911,6 @@ const ThemeSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
       <ThemeToggle icon={icon} />
       <span class='text-sm text-muted-foreground'>Click to cycle themes</span>
     </div>
-    {/* `size` is the icon's pixel size, not a variant token: the control's own box is unchanged, so
-        the hit target holds at every size the caller picks. */}
     <div class='flex items-center gap-4'>
       <ThemeToggle icon={icon} size='sm' />
       <ThemeToggle icon={icon} size='lg' />

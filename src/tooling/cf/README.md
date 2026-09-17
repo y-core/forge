@@ -278,8 +278,8 @@ exists but is the deprecated _zone_ WAF product, unrelated to the Workers `ratel
 Worker**, as a `ratelimit` entry in its settings, and on Worker targets only — a Pages config declaring one is rejected outright and binds nothing.
 
 **Vars are reported, never written.** A var lives in the wrangler config and `wrangler deploy` is what puts it on the remote, so `sync` compares and
-stops there, `--commit` included. A var that is absent or has drifted is reported as `skipped` with both values in the detail, and the next deploy
-pushes it. Writing one here would only be undone by that deploy.
+stops there, `--commit` included. A var that is absent is reported as `deploy-pushes` and one that has drifted as `drift`, with both values in the
+detail, and the next deploy pushes it. Writing one here would only be undone by that deploy.
 
 **A Pages `secret_text` value is not readable.** `pages secret list` filters `env_vars` to `type === "secret_text"` and prints the literal "Value
 Encrypted"; only a `plain_text` entry has a readable `value`. So on a Pages target a secret is compared by name and nothing more, and the row says

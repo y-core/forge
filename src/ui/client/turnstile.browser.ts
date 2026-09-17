@@ -43,6 +43,8 @@ declare global {
     turnstileFocusActs: string[];
     /** Fires the on-cue fake's focus grab, so the steal can be placed after a deliberate focus. */
     turnstileSteal?: () => void;
+    /** What the mount put on the form and gave back, so a dropped removal has somewhere to show. */
+    turnstileTeardown: { listeners: Record<string, number>; disconnects: number; timers: Array<{ id: number; delay: number }>; cleared: number[] };
   }
 }
 
@@ -361,6 +363,46 @@ const buttonState = (page: Page, selector: string) =>
 /** Real engagement: a bubbling `focusin` from the form's own field, which is what gates the load. */
 async function engage(page: Page): Promise<void> {
   await page.evaluate(() => document.querySelector("#field")?.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+}
+
+// A `disposed` flag inside every handler, the theme observer's callback included, makes a dropped
+// removal behaviourally invisible — so the removal itself is the only thing left to assert.
+/** Records the form's listener balance per type, observer disconnects, and every timer armed and cleared. */
+async function recordTeardown(page: Page, selector = "#form"): Promise<void> {
+  await page.evaluate((root) => {
+    window.turnstileTeardown = { listeners: {}, disconnects: 0, timers: [], cleared: [] };
+    const record = window.turnstileTeardown;
+
+    const form = document.querySelector(root) as HTMLElement;
+    const add = form.addEventListener.bind(form);
+    const remove = form.removeEventListener.bind(form);
+    form.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+      record.listeners[type] = (record.listeners[type] ?? 0) + 1;
+      add(type, listener, options);
+    };
+    form.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+      record.listeners[type] = (record.listeners[type] ?? 0) - 1;
+      remove(type, listener, options);
+    };
+
+    const disconnect = MutationObserver.prototype.disconnect;
+    MutationObserver.prototype.disconnect = function patched(this: MutationObserver) {
+      record.disconnects += 1;
+      disconnect.call(this);
+    };
+
+    const setTimer = window.setTimeout.bind(window);
+    const clearTimer = window.clearTimeout.bind(window);
+    window.setTimeout = ((fn: TimerHandler, delay?: number, ...rest: unknown[]) => {
+      const id = setTimer(fn, delay, ...rest);
+      record.timers.push({ id: id as unknown as number, delay: delay ?? 0 });
+      return id;
+    }) as typeof window.setTimeout;
+    window.clearTimeout = ((id?: number) => {
+      if (id !== undefined) record.cleared.push(id);
+      clearTimer(id);
+    }) as typeof window.clearTimeout;
+  }, selector);
 }
 
 const EXPOSE = { expose: { forgeTurnstile: "./ui/client/turnstile" } };
@@ -1076,6 +1118,36 @@ test.describe("mountTurnstile — fails visible", () => {
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
   });
 
+  // `clearTimers()` on the poll's success path retires the give-up timer armed beside the poll.
+  // Narrowed to a bare `clearInterval`, it fires under a rendered widget and shows "could not load".
+  test("keeps the fallback hidden after a widget renders off the poll rather than the load event", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page, "hang");
+    await mount(page, await formMarkup(), EXPOSE);
+    await seedRecorder(page);
+
+    await page.evaluate((src) => {
+      const script = document.createElement("script");
+      script.src = src;
+      document.head.appendChild(script);
+    }, TURNSTILE_SCRIPT_SRC);
+
+    await mountController(page);
+    await engage(page);
+    expect(await scriptCount(page)).toBe(1);
+
+    // The pre-existing script finally defines the API, some way into the poll rather than at load.
+    await page.clock.fastForward(300);
+    await page.addScriptTag({ content: FAKE_SCRIPT });
+    await page.clock.fastForward(100);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    await page.clock.fastForward(TURNSTILE_SCRIPT_TIMEOUT_MS);
+
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
+    expect(await page.evaluate(() => window.turnstileCalls.renders.length)).toBe(1);
+  });
+
   test("reveals the fallback when Turnstile's error-callback fires, reporting the code and claiming the error", async ({ page }) => {
     const warnings: string[] = [];
     page.on("console", (message) => {
@@ -1787,5 +1859,83 @@ test.describe("mountTurnstile — lifecycle", () => {
 
     expect(threw).toBe(false);
     expect(await scriptCount(page)).toBe(0);
+  });
+});
+
+test.describe("mountTurnstile — the teardown surface", () => {
+  test("gives back every listener it put on the form", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await submitModeMarkup(), EXPOSE);
+    await recordTeardown(page);
+    await mountController(page);
+    await engage(page);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    const added = await page.evaluate(() => ({ ...window.turnstileTeardown.listeners }));
+    await page.evaluate(() => window.turnstileCleanup?.());
+    const left = await page.evaluate(() => ({ ...window.turnstileTeardown.listeners }));
+
+    expect(Object.keys(added).sort()).toEqual(["focusin", "focusout", "htmx:afterRequest", "htmx:confirm"]);
+    expect(left).toEqual({ focusin: 0, focusout: 0, "htmx:afterRequest": 0, "htmx:confirm": 0 });
+  });
+
+  test("disconnects the theme observer on dispose", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await formMarkup(), EXPOSE);
+    await recordTeardown(page);
+    await mountController(page);
+    await engage(page);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    const before = await page.evaluate(() => window.turnstileTeardown.disconnects);
+    await page.evaluate(() => window.turnstileCleanup?.());
+
+    expect({ before, after: await page.evaluate(() => window.turnstileTeardown.disconnects) }).toEqual({ before: 0, after: 1 });
+  });
+
+  // Without the clear in `releaseHeld`, which cleanup runs, the timer outlives the mount and fires
+  // `onExecuteFailure` against a form htmx has already swapped away.
+  test("clears the execute budget of a held press on dispose", async ({ page }) => {
+    await page.clock.install();
+    await serveScript(page);
+    await mount(page, await submitModeMarkup(), EXPOSE);
+    await recordTeardown(page);
+    await mountController(page);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+    await pressSubmit(page);
+
+    const budget = await page.evaluate(
+      (delay) => window.turnstileTeardown.timers.find((timer) => timer.delay === delay)?.id ?? null,
+      TURNSTILE_EXECUTE_TIMEOUT_MS,
+    );
+    expect(budget).not.toBeNull();
+
+    await page.evaluate(() => window.turnstileCleanup?.());
+
+    expect(await page.evaluate(() => window.turnstileTeardown.cleared)).toContain(budget);
+  });
+
+  // The settle tick's callback bails on `disposed`, so only the clear itself distinguishes a retired
+  // timer from an inert one.
+  test("clears the focus-guard settle tick that is still pending at dispose", async ({ page }) => {
+    await serveScript(page);
+    await mount(page, await twoFieldFormMarkup(), EXPOSE);
+    await recordTeardown(page);
+    await mountController(page);
+    await engage(page);
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+
+    // Both in one task, because the settle tick is armed at zero delay: let the page breathe between
+    // them and it fires, and there is nothing pending left for the disposer to clear.
+    const settle = await page.evaluate(() => {
+      const before = window.turnstileTeardown.timers.length;
+      document.querySelector("#field-b")?.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+      const armed = window.turnstileTeardown.timers.slice(before).find((timer) => timer.delay === 0)?.id ?? null;
+      window.turnstileCleanup?.();
+      return { armed, cleared: window.turnstileTeardown.cleared };
+    });
+
+    expect(settle.armed).not.toBeNull();
+    expect(settle.cleared).toContain(settle.armed);
   });
 });

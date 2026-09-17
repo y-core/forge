@@ -41,8 +41,24 @@ describe("base32Decode", () => {
 
   it("rejects a character outside the alphabet rather than skipping it", () => {
     expect(() => base32Decode("MZXW6YTB0I")).toThrow('base32Decode: "0" is not a base32 character');
-    expect(() => base32Decode("MZXW6!")).toThrow('base32Decode: "!" is not a base32 character');
-    expect(() => base32Decode("MZXW 6")).toThrow('base32Decode: " " is not a base32 character');
+    expect(() => base32Decode("MZXW6Y!")).toThrow('base32Decode: "!" is not a base32 character');
+    expect(() => base32Decode("MZXW 6Y")).toThrow('base32Decode: " " is not a base32 character');
+  });
+
+  it("rejects a non-canonical spelling whose trailing bits are not zero", () => {
+    expect(utf8Decode(base32Decode("MZXW6YQ"))).toBe("foob");
+    expect(() => base32Decode("MZXW6YR")).toThrow("base32Decode: trailing bits are not zero");
+  });
+
+  it("rejects a body length no byte count can encode rather than decoding to nothing", () => {
+    for (const text of ["M", "MZX", "MZXW6Y"]) {
+      expect(() => base32Decode(text)).toThrow("cannot encode whole bytes");
+    }
+  });
+
+  it("rejects a padding run that does not close the block", () => {
+    expect(() => base32Decode("MZXW6YQ===")).toThrow("padding characters do not close the block");
+    expect(() => base32Decode("MZXW6YTB=")).toThrow("padding characters do not close the block");
   });
 
   it("round-trips arbitrary bytes for every length that changes the trailing-bit case", () => {

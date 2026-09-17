@@ -1,5 +1,6 @@
 export {
   createSyncAccountCommand,
+  failsRun,
   parseResources,
   pendingRows,
   printResults,

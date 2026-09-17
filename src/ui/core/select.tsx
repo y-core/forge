@@ -69,4 +69,5 @@ const SelectOptGroup: FC<PropsWithChildren<SelectOptGroupProps>> = ({ class: cls
   );
 };
 
+/** Compound native `<select>` whose `.Option` and `.OptGroup` statics carry the field's slot tokens. @public */
 export const Select = Object.assign(SelectRoot, { Option: SelectOption, OptGroup: SelectOptGroup });

@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
@@ -55,13 +56,25 @@ const NumberFieldInput: FC<NumberFieldInputProps> = ({
   />
 );
 
-const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({ label = "Decrement", class: cls, children, "data-slot": inherited, ...rest }) => (
+const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({
+  label = LABEL_DEFAULTS.numberFieldDecrement,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <button type='button' data-slot={slotToken("number-field-decrement", inherited)} aria-label={label} class={cn(BUTTON_BASE, cls)} {...rest}>
     {children ?? "−"}
   </button>
 );
 
-const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({ label = "Increment", class: cls, children, "data-slot": inherited, ...rest }) => (
+const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({
+  label = LABEL_DEFAULTS.numberFieldIncrement,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <button type='button' data-slot={slotToken("number-field-increment", inherited)} aria-label={label} class={cn(BUTTON_BASE, cls)} {...rest}>
     {children ?? "+"}
   </button>

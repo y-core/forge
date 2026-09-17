@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -133,6 +133,15 @@ describe("readDevVars() and writeDevVars()", () => {
 
   it("returns an empty list when the file is absent", () => {
     expect(readDevVars(join(tmpdir(), "definitely-absent", ".dev.vars"))).toEqual([]);
+  });
+
+  // An empty list reads as "declares no keys", which `forge cf sync --commit` acts on by pushing
+  // nothing and exiting 0.
+  it("refuses a file that is there but cannot be read, rather than reading as one declaring nothing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-devvars-"));
+    const path = join(dir, ".dev.vars");
+    mkdirSync(path);
+    expect(() => readDevVars(path)).toThrow(`could not read ${path}`);
   });
 
   it("round-trips an edit through the file", () => {

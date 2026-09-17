@@ -14,7 +14,7 @@ export { buildAll, generateAssetsTypes } from "./pipeline";
 export { buildRasters } from "./rasters";
 export { buildSite } from "./site";
 export type { SpriteBuildResult, SpriteGroupResult } from "./types";
-export { buildSprites } from "./sprites";
+export { buildSprites, SPRITE_CACHE_DIR } from "./sprites";
 export type { BuildState } from "./types";
 export { hasChanged, loadState, markBuilt, saveState } from "./state";
 export type {

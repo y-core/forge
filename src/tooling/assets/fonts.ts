@@ -6,6 +6,6 @@ import type { FontDownload } from "./types";
 export async function buildFonts(fonts: { downloads: FontDownload[] }, publicDir: string): Promise<void> {
   for (const download of fonts.downloads) {
     const dest = safeJoin(publicDir, download.to);
-    await fetchURL(download.url, dest);
+    await fetchURL(download.url, dest, { sha256: download.sha256 });
   }
 }

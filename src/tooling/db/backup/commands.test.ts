@@ -188,6 +188,19 @@ describe("forge db backup", () => {
   });
 });
 
+const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
+
+/** What `manifest.artifacts` declares for one file this tool wrote. */
+function declares(file: string, text: string): { file: string; bytes: number; sha256: string } {
+  return { file, bytes: new TextEncoder().encode(text).length, sha256: sha256(text) };
+}
+
+/** Writes the two `.sql` files every backup carries into an artifact directory. */
+function writeArtifactFiles(io: { writeText(path: string, text: string): void }, directory: string): void {
+  io.writeText(join(directory, "schema.sql"), SCHEMA_SQL);
+  io.writeText(join(directory, "data.sql"), DATA_SQL);
+}
+
 /** A manifest as an artifact directory holds it: the digest over everything else in it, filled in. */
 function written(manifest: BackupManifest): BackupManifest {
   const blank = { ...manifest, selfDigest: "" };
@@ -210,7 +223,7 @@ const MANIFEST: BackupManifest = {
       digest: sha256((ROWS.tasks ?? []).map((row) => canonicaliseRow(["uuid", "lane"], "uuid", row).canonical).join("\n")),
     },
   ],
-  artifacts: [],
+  artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL)],
   warnings: [],
   verified: [{ route: "full", divergent: 0 }],
   selfDigest: "",
@@ -222,7 +235,7 @@ describe("forge db restore", () => {
     const artifact = join(root, "artifact");
     const io = fakeWrangler();
     io.writeText(join(artifact, "manifest.json"), JSON.stringify(written(MANIFEST)));
-    io.writeText(join(artifact, "data.sql"), "PRAGMA defer_foreign_keys=TRUE;\n");
+    writeArtifactFiles(io, artifact);
     const buffer = await runCli(io, ["restore", "--root", root, "--artifact", artifact, "--expect", "app-db", "--yes"]);
 
     expect(buffer.err).toEqual(["Error: --expect app-db does not match this artifact, which was taken from other-db"]);
@@ -242,7 +255,7 @@ describe("forge db restore", () => {
     const artifact = join(root, "artifact");
     const io = fakeWrangler();
     io.writeText(join(artifact, "manifest.json"), JSON.stringify(written({ ...MANIFEST, database: { ...MANIFEST.database, name: "app-db" } })));
-    io.writeText(join(artifact, "data.sql"), "PRAGMA defer_foreign_keys=TRUE;\n");
+    writeArtifactFiles(io, artifact);
     const buffer = await runCli(io, ["restore", "--root", root, "--artifact", artifact, "--yes"]);
 
     expect(buffer.err).toEqual([
@@ -255,7 +268,7 @@ describe("forge db restore", () => {
     const artifact = join(root, "artifact");
     const io = fakeWrangler();
     io.writeText(join(artifact, "manifest.json"), JSON.stringify(written({ ...MANIFEST, database: { ...MANIFEST.database, name: "app-db" } })));
-    io.writeText(join(artifact, "data.sql"), "PRAGMA defer_foreign_keys=TRUE;\n");
+    writeArtifactFiles(io, artifact);
     const buffer = await runCli(io, ["restore", "--root", root, "--artifact", artifact]);
 
     expect(buffer.out).toEqual([]);
@@ -339,6 +352,7 @@ describe("forge db reset", () => {
     io.writeText(join(state, "db.sqlite"), "");
     const backup = join(root, ".forge/backups", "app-db-20260911T090000Z");
     io.writeText(join(backup, "manifest.json"), JSON.stringify(written({ ...MANIFEST, database: { ...MANIFEST.database, name: "app-db" } })));
+    writeArtifactFiles(io, backup);
     const buffer = await runCli(io, ["reset", "--root", root, "--expect", "app-db", "--yes"]);
 
     expect(buffer.out).toEqual(["  backed up by app-db-20260911T090000Z", `✓ removed ${state} (2 rows) — miniflare recreates it on next use`]);

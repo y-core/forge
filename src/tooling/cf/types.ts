@@ -50,6 +50,7 @@ export type SyncAction =
   | "rotated"
   | "remote-only"
   | "unavailable"
+  | "refused"
   | "error";
 
 /** How each action is spelled in a table cell. */
@@ -65,6 +66,7 @@ export const ACTION_LABELS: Record<SyncAction, string> = {
   rotated: "rotated",
   "remote-only": "remote only",
   unavailable: "unavailable",
+  refused: "refused",
   error: "error",
 };
 

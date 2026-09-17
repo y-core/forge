@@ -1,3 +1,6 @@
+/** What asking the gate answered: it passed, it ran and failed, or it never ran at all. */
+export type GateOutcome = "passed" | "failed" | "unrunnable";
+
 /** The category of failure a release operation raised. */
 export type ReleaseErrorKind =
   | "invalid-version"
@@ -11,7 +14,11 @@ export type ReleaseErrorKind =
   | "manifest-malformed"
   | "surface-shrink"
   | "history-rewritten"
-  | "tag-unpushed";
+  | "tag-unpushed"
+  | "wrong-branch"
+  | "gate-failed"
+  | "gate-unrunnable"
+  | "release-part-written";
 
 /** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
 export class ReleaseError extends Error {
@@ -49,6 +56,8 @@ export interface ReleaseCommandConfig {
   stageFiles?: string[];
   /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. */
   changelogFile?: string;
+  /** The gate run before the tag is cut, as argv. Defaults to `["bun", "run", "verify"]`. */
+  gateCommand?: string[];
 }
 
 /** Injectable dependencies of {@link createReleaseCommand}, faked in tests. */
@@ -71,6 +80,12 @@ export interface ReleaseDeps {
   tagIsAncestorOfHead: (cwd: string, tag: string) => boolean;
   /** Tag names the remote carries, or `null` when it could not be reached. */
   remoteTags: (cwd: string) => string[] | null;
+  /** The branch HEAD is on, or `null` in a detached HEAD. */
+  currentBranch: (cwd: string) => string | null;
+  /** The branch the remote publishes from, or `null` when the remote names none. */
+  defaultBranch: (cwd: string) => string | null;
+  /** Runs the verification gate and answers what it did. */
+  runGate: (cwd: string, command: readonly string[]) => GateOutcome;
   /** The release moment. Injected so a test needs no clock. */
   now: () => Date;
 }

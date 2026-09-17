@@ -4,7 +4,7 @@ import type { AppContext } from "../context/types";
 export interface SessionCookieOptions {
   /** Re-issues the cookie on every request that carries one — the only way to push changed attributes (`Secure`, `SameSite`, `Path`, `Max-Age`) to clients holding a valid session; a deploy-window setting, since it makes every such response uncacheable. */
   reissue?: boolean;
-  /** Overrides the cookie's own `rotating`: on, an unchanged session is re-signed so the wire bytes can be compared, which is what upgrades a cookie still carrying a retired signature; off, it costs no HMAC and a retired signature is left in place. */
+  /** Overrides the cookie's own `rotating`: on, an unchanged session whose cookie the current secret did not sign is re-issued, which is what completes a rotation; off, a retired signature is left in place. */
   rotating?: boolean;
 }
 
@@ -13,9 +13,11 @@ export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> ext
   cookieName?: string;
   /** Resolves the signing secret, or a rotation array whose first element signs, from the request env; secrets shorter than 32 characters throw. */
   secret: (c: AppContext<Bindings>) => string | [string, ...string[]];
-  /** Resolves the KV binding; when omitted, all session data is serialized into the cookie. */
+  /** Resolves the KV binding that holds the session data; exactly one of this and `storage` must be given. */
   kv?: (c: AppContext<Bindings>) => SessionKVBinding;
-  /** Cookie lifetime in seconds; also the default KV TTL when `ttlSeconds` is not set. */
+  /** Serializes all session data into the cookie itself, accepting that it rides on every request and cannot be revoked before its expiry. */
+  storage?: "cookie";
+  /** Cookie lifetime in seconds, enforced by the signature as well as announced by `Max-Age`; also the default KV TTL when `ttlSeconds` is not set. */
   maxAge?: number;
 }
 
@@ -55,10 +57,25 @@ export interface UnsignedCookie {
   serialize(value: string, attributes?: CookieAttributes): Promise<string>;
 }
 
+/** Per-call `Set-Cookie` attributes a signed cookie takes, minus the three it fixes itself. @public */
+export type SignedCookieAttributes = Omit<CookieAttributes, "httpOnly" | "sameSite" | "secure">;
+
 /** A cookie whose value is HMAC-signed, verified against every secret on the way in. @public */
-export interface SignedCookie extends UnsignedCookie {
+export interface SignedCookie extends Omit<UnsignedCookie, "serialize"> {
+  /** Builds the `Set-Cookie` header value, merging `attributes` over the construction-time defaults. */
+  serialize(value: string, attributes?: SignedCookieAttributes): Promise<string>;
   /** True while more than one secret is held, i.e. a rotation is in flight. */
   readonly rotating: boolean;
+  /** Reads this cookie off a `Cookie` header, answering `null` where it is absent — which `parse` cannot tell apart from a value that failed to verify. */
+  read(header: string | null): Promise<SignedCookieReading | null>;
+}
+
+/** What a `Cookie` header carried for a signed cookie, once the signature has been checked. @public */
+export interface SignedCookieReading {
+  /** The payload `parse` would answer, or `null` where the value was tampered with, has passed its embedded expiry, or was signed by a secret the array no longer holds. */
+  readonly value: string | null;
+  /** Whether the secret that signs now is the one that signed this value; false is what a rotation has left to finish. */
+  readonly current: boolean;
 }
 
 /** Options for `createSignedCookie`, minus the flags it fixes itself. @public */

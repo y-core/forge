@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { v } from "../validation/mod";
-import { applyMapping, createConfig, env, optionalGroup, resolveConfig } from "./config";
+import { applyMapping, createConfig, env, optionalGroup, requiredGroup, resolveConfig } from "./config";
 
 describe("applyMapping", () => {
   it("returns a literal string value as-is", () => {
@@ -68,9 +68,9 @@ describe("optionalGroup — null when required fields missing", () => {
     expect(result).toBeNull();
   });
 
-  it("treats an empty string as a present value (not null) for required fields", () => {
+  it("treats a blank required field as absent, so an unset secret does not switch the feature on", () => {
     const result = v.parse(emailGroup, { apiKey: "key", from: "", to: "to@example.com" });
-    expect(result).not.toBeNull();
+    expect(result).toBeNull();
   });
 
   it("returns null when required: all and any field is missing", () => {
@@ -84,7 +84,7 @@ describe("optionalGroup — null when required fields missing", () => {
   });
 });
 
-describe("optionalGroup — falsy required field values are treated as present, not absent", () => {
+describe("optionalGroup — a falsy required value is present, but a blank one is absent", () => {
   const group = optionalGroup({ count: v.unknown(), flag: v.unknown(), label: v.unknown() }, { required: "all" });
 
   it("treats the value 0 as present (not absent)", () => {
@@ -93,10 +93,9 @@ describe("optionalGroup — falsy required field values are treated as present, 
     expect((result as { count: number }).count).toBe(0);
   });
 
-  it("treats an empty string as present (not absent)", () => {
+  it("treats an empty string as absent", () => {
     const result = v.parse(group, { count: 1, flag: true, label: "" });
-    expect(result).not.toBeNull();
-    expect((result as { label: string }).label).toBe("");
+    expect(result).toBeNull();
   });
 
   it("treats false as present (not absent)", () => {
@@ -132,6 +131,11 @@ describe("optionalGroup — returns group when required fields present", () => {
     expect(result?.senderName).toBe("Default Sender");
   });
 
+  it("fills a blank optional field from its default rather than carrying the blank through", () => {
+    const result = v.parse(emailGroup, { apiKey: "key", apiUrl: "", from: "from@example.com", to: "to@example.com" }) as { apiUrl: string };
+    expect(result.apiUrl).toBe("https://api.mailchannels.net/tx/v1/send");
+  });
+
   it("uses provided value over default when field is present", () => {
     const result = v.parse(emailGroup, { apiKey: "key", apiUrl: "https://custom.api.com", from: "from@example.com", to: "to@example.com" }) as {
       apiUrl: string;
@@ -142,6 +146,96 @@ describe("optionalGroup — returns group when required fields present", () => {
   it("passes through all fields when all are present", () => {
     const result = v.parse(turnstileGroup, { secretKey: "sk", siteKey: "site" });
     expect(result).toEqual({ secretKey: "sk", siteKey: "site" });
+  });
+});
+
+describe("requiredGroup — a missing key is an error, never a silent absence", () => {
+  // A bot guard that can vanish is the case the builder exists for: the same entries as
+  // `turnstileGroup` above, resolving to a thrown env error instead of `null`.
+  const turnstile = requiredGroup({ secretKey: v.string(), siteKey: v.string() });
+
+  it("throws at the config boundary naming the missing key, not just the group", () => {
+    const schema = v.object({ turnstile });
+    const cfg = createConfig({ turnstile: { secretKey: env("TURNSTILE_SECRET_KEY"), siteKey: env("TURNSTILE_SITE_KEY") } }, schema);
+    expect(() => cfg.get({ TURNSTILE_SITE_KEY: "site" })).toThrow(new Error("Invalid environment: turnstile.secretKey: missing"));
+  });
+
+  it("names every missing key when more than one is absent", () => {
+    const schema = v.object({ turnstile });
+    const cfg = createConfig({ turnstile: { secretKey: env("TURNSTILE_SECRET_KEY"), siteKey: env("TURNSTILE_SITE_KEY") } }, schema);
+    expect(() => cfg.get({})).toThrow(new Error("Invalid environment: turnstile.secretKey: missing; turnstile.siteKey: missing"));
+  });
+
+  it("resolves the group when every key is present", () => {
+    expect(v.parse(turnstile, { secretKey: "sk", siteKey: "site" })).toEqual({ secretKey: "sk", siteKey: "site" });
+  });
+
+  it("fills a missing key from its default rather than failing", () => {
+    const group = requiredGroup({ apiKey: v.string(), apiUrl: v.string() }, { defaults: { apiUrl: "https://api.example.com" } });
+    expect(v.parse(group, { apiKey: "key" })).toEqual({ apiKey: "key", apiUrl: "https://api.example.com" });
+  });
+
+  it("reports a blank key as missing, by the same message an absent one gets", () => {
+    const schema = v.object({ turnstile });
+    const cfg = createConfig({ turnstile: { secretKey: env("TURNSTILE_SECRET_KEY"), siteKey: env("TURNSTILE_SITE_KEY") } }, schema);
+    expect(() => cfg.get({ TURNSTILE_SECRET_KEY: "", TURNSTILE_SITE_KEY: "site" })).toThrow(
+      new Error("Invalid environment: turnstile.secretKey: missing"),
+    );
+  });
+
+  it("fills a blank key from its default, as it does an absent one", () => {
+    const group = requiredGroup({ apiKey: v.string(), apiUrl: v.string() }, { defaults: { apiUrl: "https://api.example.com" } });
+    expect(v.parse(group, { apiKey: "key", apiUrl: "" })).toEqual({ apiKey: "key", apiUrl: "https://api.example.com" });
+  });
+
+  it("validates each entry against its own schema", () => {
+    const result = v.safeParse(requiredGroup({ apiKey: v.string() }), { apiKey: 42 });
+    expect(result.success).toBe(false);
+    expect(result.issues?.[0]?.message).toBe("Invalid type: Expected string but received 42");
+  });
+
+  it("does not resolve to null when the group is absent entirely", () => {
+    const result = v.safeParse(turnstile, undefined);
+    expect(result.success).toBe(false);
+    expect(result.output).not.toBeNull();
+  });
+});
+
+describe("requiredGroup — the absence boundary matches optionalGroup's", () => {
+  const group = requiredGroup({ count: v.unknown(), flag: v.unknown(), label: v.unknown() });
+
+  it("treats the value 0 as present", () => {
+    expect(v.parse(group, { count: 0, flag: true, label: "x" })).toEqual({ count: 0, flag: true, label: "x" });
+  });
+
+  it("treats an empty string as absent and refuses", () => {
+    expect(v.safeParse(group, { count: 1, flag: true, label: "" }).success).toBe(false);
+  });
+
+  // `optionalGroup` and `requiredGroup` differ in what absence costs, not in what counts as absent:
+  // the same blank input gates the one to null and refuses here.
+  it("differs from optionalGroup on a blank required key only in the answer", () => {
+    const lenient = optionalGroup({ count: v.unknown(), flag: v.unknown(), label: v.unknown() }, { required: "all" });
+    expect(v.parse(lenient, { count: 1, flag: true, label: "" })).toBeNull();
+    expect(v.safeParse(group, { count: 1, flag: true, label: "" }).success).toBe(false);
+  });
+
+  it("treats false as present", () => {
+    expect(v.parse(group, { count: 1, flag: false, label: "x" })).toEqual({ count: 1, flag: false, label: "x" });
+  });
+
+  it("treats null as absent and refuses", () => {
+    expect(v.safeParse(group, { count: null, flag: true, label: "x" }).success).toBe(false);
+  });
+
+  it("treats undefined as absent and refuses", () => {
+    expect(v.safeParse(group, { count: undefined, flag: true, label: "x" }).success).toBe(false);
+  });
+
+  it("differs visibly from optionalGroup, which gates the same input to null", () => {
+    const lenient = optionalGroup({ count: v.unknown(), flag: v.unknown(), label: v.unknown() }, { required: "all" });
+    expect(v.parse(lenient, { count: null, flag: true, label: "x" })).toBeNull();
+    expect(v.safeParse(group, { count: null, flag: true, label: "x" }).success).toBe(false);
   });
 });
 

@@ -7,7 +7,6 @@ import { getAppContext } from "../../context/types";
 import { csrfMinterCtx, csrfProtection, importCsrfKey } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
-import { createUnsignedCookie } from "../../session/cookie";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
@@ -39,12 +38,11 @@ import {
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
+  fakeSessionCookie,
   valuesOf,
 } from "./web.fixture";
 
 const CSRF_SECRET = "b".repeat(64);
-
-const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
 interface AppSeed {
   readonly userId?: string;
@@ -61,7 +59,7 @@ interface AppSeed {
 
 function authApp(seed: AppSeed = {}): Forge {
   const app = new Forge();
-  app.use("*", sessionMiddleware(createCookieSessionStorage(), sessionCookie));
+  app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
   app.use("*", (context, next) => {
     const session = sessionCtx.get(context);
     // These files mount the routes without `createAuthGuards`, so the identity the guards would have

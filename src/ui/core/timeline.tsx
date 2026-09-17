@@ -1,12 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { STEP_STATE_LABELS } from "../contracts/labels";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { Orientation } from "../contracts/types";
 import type { Tone } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { RULE, STEP_MARKER, STEP_MARKER_STATE, STEP_STATE_LABEL } from "./utils/recipes";
+import { RULE, STEP_MARKER, STEP_MARKER_STATE } from "./utils/recipes";
 import { toneTokens } from "./utils/tone";
 import type { StepState } from "./utils/types";
 
@@ -20,6 +21,8 @@ interface TimelineItemProps extends Omit<JSX.IntrinsicElements["li"], "children"
   state?: StepState | undefined;
   /** What the marker circle shows — a number, a glyph, a tick. */
   marker?: JSXNode | undefined;
+  /** The word read for this entry's state. @default STEP_STATE_LABELS[state] */
+  stateLabel?: string | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -52,7 +55,7 @@ const TimelineRoot: FC<TimelineRootProps> = ({
   </ol>
 );
 
-const TimelineItem: FC<TimelineItemProps> = ({ state = "upcoming", marker, class: cls, children, "data-slot": inherited, ...rest }) => (
+const TimelineItem: FC<TimelineItemProps> = ({ state = "upcoming", marker, stateLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
   <li data-slot={slotToken("timeline-item", inherited)} data-state={state} class={cn(ITEM, cls)} {...rest}>
     <span data-slot='timeline-marker-column' aria-hidden='true' class={MARKER_COLUMN}>
       <span data-slot='timeline-marker' class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>
@@ -62,7 +65,7 @@ const TimelineItem: FC<TimelineItemProps> = ({ state = "upcoming", marker, class
     </span>
     {/* Outside the `aria-hidden` marker, and not `aria-current`: a record is not a wizard, so
         `current` stays visual — but completion must not be colour alone. */}
-    <span class='sr-only'>{STEP_STATE_LABEL[state]}</span>
+    <span class='sr-only'>{stateLabel ?? STEP_STATE_LABELS[state]}</span>
     <div data-slot='timeline-body' class={BODY}>
       {children}
     </div>

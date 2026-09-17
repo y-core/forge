@@ -188,6 +188,12 @@ readable once, so a stricter caller gets its own `413` off the shared parse rath
 raises `defineAction`'s `maxBytes` must raise `csrfProtection`'s to match, because the guard parses first and would otherwise reject before the
 handler runs.
 
+Forgetting that rule now reports itself. When the cached parse **rejected** at a smaller cap and a later caller asks for a larger one, the stream is
+already gone and no cap can serve it — so `parseFormData` throws a distinct wiring error naming both caps and the remedy, rather than replaying the
+`413` as though the uploader had sent too much. `isFormCapConflict(error)` identifies it, and `csrfProtection`, the submission pipeline and
+`readAuthSubmission` each rethrow it instead of collapsing it into a `403`, a `400` fragment or a field refusal; it reaches the error boundary as a
+`500`. A cached parse that **succeeded** is unaffected: a body inside the smaller cap is still served to every later caller, at any cap.
+
 ---
 
 ## 3. CSRF Protection — Middleware, Keys, Token Minting

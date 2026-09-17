@@ -223,7 +223,7 @@ describe("db seed apply --target remote", () => {
     const order = io.calls.map((call) => (argvHas(call.slice(1), "time-travel", "info") ? "bookmark" : call.includes("--file") ? "seed" : "other"));
     expect(order.indexOf("bookmark")).toBeLessThan(order.indexOf("seed"));
     expect(cli.out).toEqual([
-      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
+      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
       "applied seeds:001_ops",
       "1 applied, 0 already in",
     ]);
@@ -236,7 +236,7 @@ describe("db seed apply --target remote", () => {
 
     expect(io.logs).toEqual([
       "excluded from remote: seeds:002_dev — add `-- forge:places remote` on line 1 to include it",
-      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
+      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
     ]);
     expect(sent(io, "--file")).toEqual([join(root, ".forge", "scratch", "seed", "seeds", "001_ops.sql")]);
     expect(JSON.parse(cli.out[0] ?? "")).toEqual({
@@ -248,7 +248,7 @@ describe("db seed apply --target remote", () => {
       excluded: ["seeds:002_dev"],
       bookmark: {
         bookmark: "bm-1",
-        restoreCommand: `forge db bookmark restore --target remote --bookmark bm-1 --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
+        restoreCommand: `forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
       },
     });
   });
@@ -259,7 +259,7 @@ describe("db seed apply --target remote", () => {
     const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
 
     expect(cli.out).toEqual([
-      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
+      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
       "excluded seeds:002_dev",
       "applied seeds:001_ops",
       "1 applied, 0 already in",
@@ -349,8 +349,8 @@ describe("db seed apply --target remote", () => {
 
     expect(cli.code).toBe(1);
     expect(cli.out).toEqual([
-      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
-      `the database may be part-seeded — undo with: forge db bookmark restore --target remote --bookmark bm-1 --root ${root} --config ${join(root, "wrangler.jsonc")} --db DB`,
+      `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
+      `the database may be part-seeded — undo with: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
     ]);
   });
 
@@ -502,6 +502,20 @@ describe("db seed apply locking", () => {
     const io = seedIo(root, []);
     io.files.set(lockPath(root), heldLock);
     const cli = await run(io, ["seed", "apply", "--root", root]);
+
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain(heldMessage(root));
+    expect(sent(io, "--file")).toEqual([]);
+    expect(io.files.get(lockPath(root))).toBe(heldLock);
+  });
+
+  // A migrate takes this same file whatever its target, so the lock is what stops a seed writing
+  // rows into the table a remote migration is in the middle of rebuilding.
+  it("refuses a deployed apply while another verb holds the lock, loading nothing", async () => {
+    const root = appRoot();
+    const io = seedIo(root, [], { "001_ops.sql": "-- forge:places remote\nINSERT OR IGNORE INTO users (email) VALUES ('ops@example.com');" });
+    io.files.set(lockPath(root), heldLock);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(heldMessage(root));

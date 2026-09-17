@@ -18,7 +18,7 @@ audience: consumer
 
 - §7 Trust Posture: selector and JSON values must be developer-supplied
 - §7a URL-Valued hx Attributes Are Deliberately Unsanitized: why `"#"` is the wrong refusal here
-- §7b hx-on:* Is the One Family htmx Evaluates: the construction rule, and why it stays untyped
+- §7b What htmx Evaluates: `hx-on:*` and a `js:`-prefixed `hx-vals`/`hx-headers` — the construction rule, and why `hx-on:*` stays untyped
 - §8 The Form-Independent sync Default: why `closest form` is not a safe default
 
 ---
@@ -77,20 +77,32 @@ a URL the available one is rejected above rather than missing.
 an element carrying one value on both `href` and `hx-push-url` must render `href="#"` beside an unchanged `hx-push-url`, an assertion that fails the
 moment the two are treated alike.
 
-### 7b. hx-on:* Is the One Family htmx Evaluates
+### 7b. What htmx Evaluates: hx-on:* and a js:-Prefixed hx-vals or hx-headers
 
-`hx-on:*` is the exception to both sections above. htmx does not match it as a selector (§7) or hand it to a request builder (§7a) — it **evaluates
-it as JavaScript**. So unlike an `hx-target` the value is not merely uncheckable, and unlike an `hx-get` it is not merely a string: it is script,
-and the only thing that decides whether it is safe is who wrote it.
+What htmx evaluates is the exception to both sections above. htmx does not match these as a selector (§7) or hand them to a request builder
+(§7a) — it **evaluates** them as JavaScript. So unlike an `hx-target` the value is not merely uncheckable, and unlike an `hx-get` it is not merely a
+string: it is script, and the only thing that decides whether it is safe is who wrote it.
 
-**Constructing an `hx-on:*` value from anything other than literal, developer-authored source is the defect this section names.** That is the
-control. It is not a stronger version of §7's trust obligation but the same one at the point where it carries the most weight, because here a broken
-obligation is direct evaluation rather than a misrouted swap.
+- **`hx-on:*`**, whose whole value is an event-handler body.
+- **`hx-vals` and `hx-headers` whose value begins `js:`** (`javascript:` is the accepted alias). The rest of the attribute is then an expression
+  htmx evaluates per request rather than the JSON it otherwise parses. `src/jsx/types.ts` types both as a raw `string`, so nothing in the type
+  surface tells the two forms apart.
 
-**The renderer emits `hx-on:*` verbatim, and its type surface does not stop it either.** There is no `on*` filter anywhere in the JSX renderer; the
-only name-based gate is the attribute-name validity regex owned by `src/jsx/render-to-string.ts`, which `hx-on:click` satisfies, so the value is
-escaped and written like any other attribute. Escaping does not help: htmx reads the attribute from the DOM _after_ the parser has decoded entities,
-so an escaped payload is decoded again before evaluation.
+**Constructing any of these values from anything other than literal, developer-authored source is the defect this section names.** That is the one
+control, and it is the same for all three. It is not a stronger version of §7's trust obligation but the same one at the point where it carries the
+most weight, because here a broken obligation is direct evaluation rather than a misrouted swap.
+
+**`hxAttrs` cannot emit a `js:` value**, so the exposure is a hand-written attribute: its `values` and `headers` are `Record<string, string>` and
+are JSON-encoded (`src/html/htmx/htmx-attrs.ts`). Forge's own code already treats the prefix as the evaluated form — `<Form>` refuses to merge a
+CSRF token into an `hx-headers` value it cannot parse as a JSON object, rather than shipping a form whose token silently went missing
+(`src/ui/core/form.tsx`).
+
+**The renderer emits `hx-on:*` verbatim, and its type surface does not stop it either.** There _is_ an `on*` filter in the JSX renderer — it drops
+any attribute whose lowercased name begins `on`, so an untrusted spread key cannot inject `onclick` — and `hx-on:click` lowercases to a name
+beginning `hx-`, which places it deliberately outside that filter. Past the filter the only name-based gate is the attribute-name validity regex
+owned by `src/jsx/render-to-string.ts`, which `hx-on:click` satisfies, so the value is escaped and written like any other attribute. Escaping does
+not help: htmx reads the attribute from the DOM _after_ the parser has decoded entities, so an escaped payload is decoded again before evaluation.
+The exemption is listed as a known pattern in [`FORGE_REVIEW.md`][fr-6] §6, which is the other half [`BOUNDARIES.md`][boundaries-5c] §5c requires.
 
 A CSP without `'unsafe-eval'` is the **second** layer — a backstop, not a permission model. htmx compiles an `hx-on:*` body with `new Function`,
 which only `'unsafe-eval'` would permit, and forge's emitted policy carries that source in no directive by default. The **string** `'unsafe-eval'`
@@ -127,6 +139,8 @@ invisible at exactly the call site that got it wrong. A caller that _is_ inside 
 
 ---
 
+[boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
+[fr-6]: ./FORGE_REVIEW.md#6-valid-patterns--do-not-flag
 [sh-2a]: ./SECURITY_HARDENING.md#2a-createsecurityheaders-factory-pattern
 [sh-2e]: ./SECURITY_HARDENING.md#2e-default-header-set
 [sh-3e]: ./SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when

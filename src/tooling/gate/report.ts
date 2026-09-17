@@ -52,7 +52,12 @@ export function formatSummary(input: SummaryInput, style: Colorize = PLAIN): str
     return `${style.red("✗")} ${input.gate} — every step skipped (0 of ${input.selected} ran, ${formatDuration(input.ms)}) — refusing to report a green gate that ran nothing${scoped}`;
   }
   const plural = input.passed === 1 ? "step" : "steps";
-  return `${style.green("✓")} ${input.gate} — ${input.passed} ${plural} passed${skipped} (${formatDuration(input.ms)})${scoped}`;
+  if (input.skipped > 0) {
+    const which = input.skipped === 1 ? "step" : "steps";
+    const head = `${input.passed} ${plural} passed, ${input.skipped} ${which} skipped (${formatDuration(input.ms)})`;
+    return `${style.yellow("○")} ${input.gate} — ${head} — not green: ${input.skipped} ${which} never ran; install what each skip line above names${scoped}`;
+  }
+  return `${style.green("✓")} ${input.gate} — ${input.passed} ${plural} passed (${formatDuration(input.ms)})${scoped}`;
 }
 
 /** Formats the `--list` output: the resolved selection, one label per line. */
@@ -71,8 +76,11 @@ export function listLabel(step: Step, mode: GateMode): string {
 /** Formats the `--fix` closing line, which always points at the run that confirms it. */
 export function formatFixSummary(input: { gate: string; fixed: number; unfixable: number; skipped: number }): string {
   const detail = input.unfixable === 0 ? "" : `, ${input.unfixable} without a fixer`;
-  const skipped = input.skipped === 0 ? "" : `, ${input.skipped} skipped`;
-  return `${input.fixed} fixed${detail}${skipped} — re-run \`bun run ${input.gate}\` to confirm.`;
+  if (input.skipped > 0) {
+    const which = input.skipped === 1 ? "step" : "steps";
+    return `${input.fixed} fixed${detail}, ${input.skipped} ${which} skipped — that ${which === "step" ? "step was" : "steps were"} not fixed; install what each skip line above names, then re-run \`bun run ${input.gate}\`.`;
+  }
+  return `${input.fixed} fixed${detail} — re-run \`bun run ${input.gate}\` to confirm.`;
 }
 
 /** Formats the line shown when a step's dependency is absent: skipped below the `full` tier, failed by it. */

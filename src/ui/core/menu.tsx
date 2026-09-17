@@ -78,8 +78,7 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, class: cls, children, 
     data-slot={slotToken("menu-trigger", inherited)}
     command='toggle-popover'
     commandfor={target}
-    aria-haspopup='menu'
-    {...invokerAttrs(target)}
+    {...invokerAttrs(target, "menu")}
     class={cn("cursor-pointer focus-ring", cls)}
     {...rest}>
     {children}
@@ -159,8 +158,7 @@ const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ for: target, class: c
     data-slot={slotToken("menu-submenu-trigger", inherited)}
     command='toggle-popover'
     commandfor={target}
-    aria-haspopup='menu'
-    {...invokerAttrs(target)}
+    {...invokerAttrs(target, "menu")}
     class={cn(ITEM_BASE, cls)}
     {...rest}>
     {children}

@@ -2,11 +2,22 @@ import { v } from "../validation/mod";
 
 const ChangefreqSchema = v.picklist(["always", "hourly", "daily", "weekly", "monthly", "yearly", "never"] as const);
 
+// A robots.txt line ends at a newline, so a control character in a value forges a directive the
+// config never wrote — a `Disallow` entry carrying one can append its own `Allow: /`.
+const RobotsTextSchema = v.pipe(
+  v.string(),
+  v.check((value) => !/\p{Cc}/u.test(value), "must not contain a control character"),
+);
+
+// The apex is interpolated into a Cloudflare expression, and it is the one host the derived path
+// never supplies — `new URL(origin).hostname` cannot produce a quote, and an explicit apex can.
+const HostnameSchema = v.pipe(v.string(), v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i, "must be a bare hostname"));
+
 const RobotsRuleSchema = v.object({
-  userAgent: v.string(),
-  allow: v.optional(v.array(v.string())),
-  disallow: v.optional(v.array(v.string())),
-  crawlDelay: v.optional(v.pipe(v.number(), v.minValue(0))),
+  userAgent: RobotsTextSchema,
+  allow: v.optional(v.array(RobotsTextSchema)),
+  disallow: v.optional(v.array(RobotsTextSchema)),
+  crawlDelay: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
 });
 
 const RobotsConfigSchema = v.object({ rules: v.array(RobotsRuleSchema), sitemap: v.optional(v.boolean()) });
@@ -38,7 +49,7 @@ const ZoneConfigSchema = v.object({
   zoneId: v.optional(v.string()),
   // Omitted, it is the origin's hostname. Stating it twice is how the two drift, and there is no
   // case for a zone whose apex is not the host the site declares itself served from.
-  apex: v.optional(v.string()),
+  apex: v.optional(HostnameSchema),
   redirect: v.optional(ZoneRedirectSchema),
   allow: v.optional(ZoneAllowSchema),
 });

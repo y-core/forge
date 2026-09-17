@@ -118,3 +118,13 @@ describe("Steps.Step — forge-ui-not-color-alone", () => {
     expect(words).toEqual(["Completed", "Current", "Not started"]);
   });
 });
+
+describe("Steps.Step — stateLabel", () => {
+  it("replaces the shipped state word on the one step given it, leaving its siblings alone", async () => {
+    const overridden = await render(<Steps.Step state='complete' stateLabel='Terminé' />);
+    const shipped = await render(<Steps.Step state='complete' />);
+
+    expect(/<span class="sr-only">([^<]*)<\/span>/.exec(overridden)?.[1]).toBe("Terminé");
+    expect(/<span class="sr-only">([^<]*)<\/span>/.exec(shipped)?.[1]).toBe("Completed");
+  });
+});

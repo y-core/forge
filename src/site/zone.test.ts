@@ -102,6 +102,22 @@ describe("buildRedirectRule", () => {
     expect(() => buildRedirectRule({ from: ["example.com"], apex: "example.com" })).toThrow(/apex itself/);
   });
 
+  it("escapes a quote in the apex rather than letting it close the target literal", () => {
+    const apex = 'example.com") or true or concat("';
+    const rule = buildRedirectRule({ from: [`www.${apex}`], apex });
+    const fromValue = rule.action_parameters?.from_value as { target_url: { expression: string } } | undefined;
+    const target = fromValue?.target_url.expression;
+    expect(target).toBe('concat("https://example.com\\") or true or concat(\\"", http.request.uri.path)');
+  });
+
+  it("holds the target expression to the same per-rule limit as the match expression", () => {
+    // Long enough that the target expression is over the limit while the match expression, which is
+    // eighteen characters shorter, is still under it.
+    const apex = `${"a".repeat(EXPRESSION_MAX_CHARS - 40)}.com`;
+    expect(`(http.host in {"www.${apex}"})`.length).toBeLessThanOrEqual(EXPRESSION_MAX_CHARS);
+    expect(() => buildRedirectRule({ from: [`www.${apex}`], apex })).toThrow(/over Cloudflare's per-rule limit/);
+  });
+
   it("accepts a deeper subdomain", () => {
     expect(buildRedirectRule({ from: ["old.www.example.com"], apex: "example.com" }).expression).toContain("old.www.example.com");
   });

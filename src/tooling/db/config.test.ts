@@ -160,6 +160,15 @@ describe("resolveDbConfig()", () => {
     );
   });
 
+  it("refuses an --env naming a prototype member rather than falling through to the top-level entry", () => {
+    const root = appRoot({ env: { staging: { vars: { TIER: "staging" } } } });
+    for (const name of ["toString", "constructor", "hasOwnProperty", "valueOf"]) {
+      expect(() => resolveDbConfig({ root, config: "wrangler.jsonc", env: name, target: "remote" })).toThrow(
+        `--env ${name} names no \`env.${name}\` block in the wrangler config`,
+      );
+    }
+  });
+
   it("reads the env block's own d1_databases when it declares them", () => {
     const root = appRoot({ env: { staging: { d1_databases: [{ binding: "DB", database_name: "app-db-staging", database_id: "id-staging" }] } } });
     const resolved = resolveDbConfig({ root, config: "wrangler.jsonc", env: "staging", target: "local" });

@@ -5,10 +5,10 @@ import type { AuthRouteGroup } from "./types";
 /** Every group the builders below produce — a nested group exists only where its guards or medium differ from its parent's. @public */
 export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [
   { path: ["auth"], guards: [], medium: "html" },
-  // The one group that admits both an anonymous visitor and a signed-in one: the page serves the
-  // second half of a sign-in and a step-up owed by a session, and only the identity tells them apart.
-  { path: ["auth", "verify"], guards: ["resolve-auth"], medium: "html" },
-  { path: ["auth", "verify", "ceremony"], guards: ["require-auth"], medium: "json" },
+  // Both admit an anonymous visitor and a signed-in one, and both are where a session clears an
+  // owed step-up — so `clearsStepUp`, or a `require-auth` that refused one would deadlock it.
+  { path: ["auth", "verify"], guards: ["resolve-auth"], medium: "html", clearsStepUp: true },
+  { path: ["auth", "verify", "ceremony"], guards: ["require-auth"], medium: "json", clearsStepUp: true },
   { path: ["auth", "enrol"], guards: ["require-auth", "require-pending-enrolment"], medium: "html" },
   { path: ["auth", "enrol", "ceremony"], guards: ["require-auth", "require-pending-enrolment"], medium: "json" },
   { path: ["account"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "html" },

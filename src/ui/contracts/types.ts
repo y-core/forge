@@ -3,8 +3,6 @@ import type { STATE_ATTRS } from "./state-attrs";
 import type { APPEARANCES } from "./vocabulary";
 import type { PRESENTATION_ATTRS } from "./vocabulary";
 import type { TONES } from "./vocabulary";
-// Two fields per control, not one: the second instance is what shows the binding is per-field
-// rather than per-component.
 /** The signal fields the bound-control band renders and resumes. @internal */
 export interface ControlsDemoState {
   text: string;
@@ -45,6 +43,17 @@ export interface MenuItemAttrsOptions {
   /** Initial checked state of a `menuitemcheckbox` or `menuitemradio`. @default false */
   readonly checked?: boolean;
 }
+
+/** A caller's own name for a `<dialog>` root, which suppresses the reference derived from its `.Title`. @public */
+export interface DialogNaming {
+  /** Literal accessible name, for a root that renders no `.Title`. */
+  readonly label?: string | undefined;
+  /** id of an element elsewhere on the page that names this root — a titleless drawer's trigger, say. */
+  readonly labelledby?: string | undefined;
+}
+
+/** The role the popup an invoker targets actually carries, which is what its `aria-haspopup` must say. @public */
+export type PopupKind = "dialog" | "menu";
 
 /** Typed `data-on-<event>` props for a `Resumable` scope, keyed by action name from `A`. @public */
 export type ScopeAttrsProps<A extends string = string> = {

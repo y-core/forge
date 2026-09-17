@@ -50,8 +50,6 @@ export const FlashSection: FC<{ paths: ShowcasePaths }> = ({ paths }) => (
       </div>
     </CatalogGroup>
     <CatalogGroup title='FlashOob — one message, swapped into the live container'>
-      {/* `hidden`, because an out-of-band wrapper is an instruction to htmx rather than page content:
-          showing it inline would put a second copy of the toast on screen. */}
       <div hidden>
         <FlashOob messages={[{ type: "info", text: "Swapped in without a reload." }]} />
       </div>

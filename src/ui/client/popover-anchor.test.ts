@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { axis, clamp } from "./popover-anchor";
+import { fakeTree } from "./dom.fixture";
+import { axis, clamp, openPopoverAt } from "./popover-anchor";
 
 describe("clamp", () => {
   it("passes a value already inside the range through", () => {
@@ -43,5 +44,45 @@ describe("axis", () => {
 
   it("clamps instead of flipping when flip is off", () => {
     expect(axis(450, 100, 500, 8, false)).toBe(392);
+  });
+});
+
+// The deferred arm is the only listener this module leaves outside the element, and it sits on the
+// document in capture phase — so a disposer that stopped removing it would leak one per right-click.
+describe("openPopoverAt — the deferred arm", () => {
+  function panel() {
+    const { doc, el } = fakeTree();
+    const popup = el("DIV", { popover: "auto" });
+    doc.root.append(popup);
+    return { doc, popup };
+  }
+
+  const armed = (doc: { listeners: Map<string, unknown[]> }): number => doc.listeners.get("pointerup")?.length ?? 0;
+
+  it("arms one capture listener on the document when the show is deferred", () => {
+    const { doc, popup } = panel();
+
+    openPopoverAt(popup as never, 10, 20, { afterPointerUp: true });
+
+    expect(armed(doc)).toBe(1);
+  });
+
+  it("removes that listener when the returned disposer cancels the arm", () => {
+    const { doc, popup } = panel();
+
+    openPopoverAt(popup as never, 10, 20, { afterPointerUp: true })();
+
+    expect(armed(doc)).toBe(0);
+  });
+
+  it("supersedes an earlier arm rather than stacking a second one on the document", () => {
+    const { doc, popup } = panel();
+
+    openPopoverAt(popup as never, 10, 20, { afterPointerUp: true });
+    const second = openPopoverAt(popup as never, 30, 40, { afterPointerUp: true });
+
+    expect(armed(doc)).toBe(1);
+    second();
+    expect(armed(doc)).toBe(0);
   });
 });

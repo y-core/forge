@@ -24,6 +24,13 @@ export function checkSchema(run: DbRunContext, options: { replay: boolean; cache
   const inputs = readSchemaInputs(run);
   const report = { snapshotPath: inputs.snapshotPath, schemas: inputs.schemas.map((source) => source.declared) };
 
+  // An absent file is dropped on the way in, so a declaration naming one is indistinguishable from
+  // no declaration at all by the time the states are counted — and "clean" is the wrong answer.
+  const missing = inputs.schemas.filter((source) => !inputs.states.some((state) => state.source === source.declared));
+  if (missing.length > 0) {
+    return { ...report, problems: missing.map((source) => `${source.declared} is declared in config/db.ts and no file is there to read`) };
+  }
+
   if (inputs.snapshot === null) {
     if (inputs.states.length === 0) return { ...report, problems: null };
     if (inputs.migrations.length > 0)

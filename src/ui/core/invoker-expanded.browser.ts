@@ -77,7 +77,7 @@ test.describe("popover invokers expose their expanded state", () => {
 
   test("Popover.Trigger tracks its content the same way", async ({ page }) => {
     const html = await render(
-      Popover({ children: [Popover.Trigger({ for: "p", children: "Open" }), Popover.Content({ id: "p", children: "Panel" })] }),
+      Popover({ children: [Popover.Trigger({ for: "p", children: "Open" }), Popover.Content({ id: "p", label: "Panel", children: "Panel" })] }),
     );
     await mount(page, html, EXPOSE);
     await start(page);

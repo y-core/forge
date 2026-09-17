@@ -19,6 +19,9 @@ const TOTP_MAX = 8;
 
 const SEARCH_MAX = 200;
 
+/** Bounds the bootstrap secret a claim carries, so a hostile field cannot become an unbounded read. */
+const BOOTSTRAP_SECRET_MAX = 512;
+
 /** The page cursor is a user id, so anything else is a crafted parameter rather than a page. */
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -74,7 +77,7 @@ export function authAdminUserSchema() {
 
 /** The first-admin elevation form, whose only field is the explicit confirmation. @public */
 export function authAdminElevateSchema() {
-  return v.strictObject({ confirm: v.literal("yes") });
+  return v.strictObject({ confirm: v.literal("yes"), secret: v.pipe(formText(), v.maxLength(BOOTSTRAP_SECRET_MAX)) });
 }
 
 /** The admin user-list query: a search term and a page cursor, both optional. @public */

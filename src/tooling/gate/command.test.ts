@@ -81,14 +81,14 @@ describe("createGateCommand() — the mode reaches a check", () => {
 
   it("hands a check the mode of the run, which a check may vary its strictness on", async () => {
     seen.length = 0;
-    await run([recording], { mode: "fast" });
+    await run([recording], { mode: "quality" });
     await run([recording]);
     await run([recording], { full: true });
 
-    expect(seen).toEqual(["fast", "standard", "full"]);
+    expect(seen).toEqual(["quality", "standard", "full"]);
   });
 
-  it("resolves a bare run to standard, so `verify` is the gate and fast is opt-in", async () => {
+  it("resolves a bare run to standard, so `verify` is the gate and quality is opt-in", async () => {
     seen.length = 0;
     await run([recording]);
 
@@ -108,7 +108,7 @@ describe("createGateCommand() — resolving the mode", () => {
   const trivial: Step = { label: "alpha", run: () => checkResult([], "") };
 
   it("refuses --mode and --full together rather than inventing a precedence", async () => {
-    const { logs, code } = await run([trivial], { mode: "fast", full: true });
+    const { logs, code } = await run([trivial], { mode: "quality", full: true });
 
     expect(logs).toContain("Pass --mode or --full, not both.");
     expect(code).toBe(1);
@@ -117,27 +117,36 @@ describe("createGateCommand() — resolving the mode", () => {
   it("refuses an unrecognised --mode, naming the three it knows", async () => {
     const { logs, code } = await run([trivial], { mode: "nope" });
 
-    expect(logs).toContain('Unknown --mode: "nope". Known modes: fast, standard, full.');
+    expect(logs).toContain('Unknown --mode: "nope". Known modes: quality, standard, full.');
     expect(code).toBe(1);
   });
 
   it("names the mode canonically in the banner, since --full is an input spelling only", async () => {
-    expect((await run([trivial], { mode: "fast", list: true })).logs).toEqual(["verify --mode fast — 1 step\n  alpha"]);
+    expect((await run([trivial], { mode: "quality", list: true })).logs).toEqual(["verify --mode quality — 1 step\n  alpha"]);
     expect((await run([trivial], { list: true })).logs).toEqual(["verify — 1 step\n  alpha"]);
     expect((await run([trivial], { full: true, list: true })).logs).toEqual(["verify --mode full — 1 step\n  alpha"]);
   });
 });
 
 describe("createGateCommand() — a step whose dependency is absent", () => {
-  it("skips it in a fast run and counts it apart from the steps that passed", async () => {
+  it("skips it in a quality run but refuses to call the run green, and exits non-zero", async () => {
     const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)]);
 
     expect(logs).toContain("○ delta — skipped (tailwindcss not found; run `bun add -d tailwindcss`)");
-    expect(logs.at(-1)?.startsWith("✓ verify — 1 step passed, 1 skipped")).toBe(true);
-    expect(code).toBeUndefined();
+    expect(logs.at(-1)?.startsWith("○ verify — 1 step passed, 1 step skipped")).toBe(true);
+    expect(logs.at(-1)).toContain("not green: 1 step never ran");
+    expect(code).toBe(1);
   });
 
-  it("runs it when the probe finds the dependency, in a fast run as much as a full one", async () => {
+  it("probes one tool once however many steps name it, since the probe shells out", async () => {
+    let probes = 0;
+    const counted = { tool: "tailwindcss", probe: () => ((probes += 1), false), hint: "run `bun add -d tailwindcss`" };
+    await run([passing("alpha", counted), passing("beta", counted), passing("gamma", counted)]);
+
+    expect(probes).toBe(1);
+  });
+
+  it("runs it when the probe finds the dependency, in a quality run as much as a full one", async () => {
     const { logs, code } = await run([passing("delta", PRESENT)]);
 
     expect(logs.some((line) => line.startsWith("✓ delta"))).toBe(true);
@@ -182,8 +191,10 @@ describe("createGateCommand() — --fix", () => {
 
     expect(logs.some((line) => line.startsWith("✓ fix:alpha"))).toBe(true);
     expect(logs.some((line) => line.startsWith("✓ fix:delta") || line.startsWith("✗ fix:delta"))).toBe(false);
-    expect(logs.at(-1)).toBe("1 fixed, 1 skipped — re-run `bun run verify` to confirm.");
-    expect(code).toBeUndefined();
+    expect(logs.at(-1)).toBe(
+      "1 fixed, 1 step skipped — that step was not fixed; install what each skip line above names, then re-run `bun run verify`.",
+    );
+    expect(code).toBe(1);
   });
 
   // A step with no fixer was never going to spawn, so probing it would report a dependency this run
@@ -283,7 +294,7 @@ describe("createGateCommand() — --list", () => {
     requires: { tool: "tailwindcss", probe: () => false, hint: "run `bun add -d tailwindcss`" },
   };
 
-  it("marks a step with a dependency conditional in a fast run, executing none of them", async () => {
+  it("marks a step with a dependency conditional in a quality run, executing none of them", async () => {
     const { logs, code } = await run([passing("alpha"), exploding], { list: true });
 
     expect(logs).toEqual(["verify — 2 steps\n  alpha\n  validate-class-groups (conditional — tailwindcss required)"]);

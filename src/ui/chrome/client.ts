@@ -10,7 +10,7 @@ import { mountViewportCollapse } from "../client/viewport-collapse";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
 import type { ThemeAction } from "../contracts/types";
-import { DARK_CLASS, DEFAULT_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
+import { DARK_CLASS, DEFAULT_THEME_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 
 const CONSTANT_FALSE: ReadonlySignal<boolean> = {
   get value() {
@@ -41,7 +41,7 @@ function createThemeDocument(doc: Document): ThemeDocument {
   const storage = safeStorage(win);
   // The FOUC script already applied the stored preference, so the signal is seeded from storage
   // rather than the other way round.
-  const pref = createSignal(storage?.getItem(THEME_STORAGE_KEY) ?? DEFAULT_PREF);
+  const pref = createSignal(storage?.getItem(THEME_STORAGE_KEY) ?? DEFAULT_THEME_PREF);
 
   // A realm without `matchMedia` still gets a working explicit light/dark preference; only the
   // `system` branch degrades, so this reports and carries on with a signal nothing ever moves.
@@ -54,7 +54,7 @@ function createThemeDocument(doc: Document): ThemeDocument {
   };
   mql?.addEventListener("change", onMediaChange);
 
-  const dark = computed(() => pref.value === "dark" || (pref.value === DEFAULT_PREF && mqlDark.value));
+  const dark = computed(() => pref.value === "dark" || (pref.value === DEFAULT_THEME_PREF && mqlDark.value));
 
   // Nested inside the owner the resuming scope installed, so these effects land in a bag that scope's
   // disposal does not empty — the first of two toggles to go away must not stop the painting.
@@ -111,7 +111,7 @@ registerScope<ThemeAction>(THEME_SCOPE, {
       const theme = themes.get(ownerDocument(root));
       if (!theme) return;
       const cycle: Record<string, string> = { dark: "system", light: "dark", system: "light" };
-      theme.pref.value = cycle[theme.pref.value] ?? DEFAULT_PREF;
+      theme.pref.value = cycle[theme.pref.value] ?? DEFAULT_THEME_PREF;
     },
   },
 });
@@ -126,7 +126,9 @@ registerScope<"closeNav">(NAVBAR_SCOPE, {
       const active = new Set(((filters?.value as string[] | undefined) ?? []).map(String));
       for (const el of root.querySelectorAll<HTMLElement>("[data-filter]")) {
         const tokens = (el.getAttribute("data-filter") ?? "").split(/\s+/).filter(Boolean);
-        el.hidden = tokens.length > 0 && !tokens.some((t) => active.has(t));
+        // Carrying `data-filter` at all is the opt-in: an empty token list can match nothing, so it
+        // stays hidden rather than being unhidden back over the `hidden` the server rendered.
+        el.hidden = !tokens.some((t) => active.has(t));
       }
     });
 

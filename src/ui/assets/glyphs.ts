@@ -28,14 +28,30 @@ export function parseSpriteGlyphs(svgText: string, prefix = "icon-"): GlyphSourc
   return result;
 }
 
+/** The in-flight or settled read per sprite, keyed by the URL and prefix that produced it. */
+const spriteReads = new Map<string, Promise<GlyphSource>>();
+
+// Memoized for the isolate's life, which a deploy resets; a failure is not kept, or one transient
+// error would blank every glyph until the isolate is replaced.
 /** Fetches the sprite from `url` and parses it into a `GlyphSource`, empty on any failure. */
 export async function loadSpriteGlyphs(url: string, prefix = "icon-"): Promise<GlyphSource> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return {};
-    const text = await res.text();
-    return parseSpriteGlyphs(text, prefix);
-  } catch {
-    return {};
-  }
+  const key = `${prefix}\u0000${url}`;
+  const cached = spriteReads.get(key);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return {};
+      const text = await res.text();
+      return parseSpriteGlyphs(text, prefix);
+    } catch {
+      return {};
+    }
+  })();
+
+  spriteReads.set(key, pending);
+  const glyphs = await pending;
+  if (Object.keys(glyphs).length === 0) spriteReads.delete(key);
+  return glyphs;
 }

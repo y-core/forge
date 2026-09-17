@@ -25,7 +25,7 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -48,10 +48,15 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      # `verify`, not `verify:full`: the browser set's prerequisite is a launchable Chromium, which
-      # this runner does not provision.
+      # The browser set's prerequisite. Workerd arrives transitively with wrangler, so Chromium is
+      # the only thing `verify:full` needs that `bun install` does not already bring.
+      - name: install chromium
+        run: bunx playwright install --with-deps chromium
+
+      # A backstop, not the gate that decides the release: `forge release` runs this same command
+      # before it cuts the tag, because by the time it fails here the tag is already fetchable.
       - name: verify
-        run: bun run verify
+        run: bun run verify:full
 
       - name: pack
         run: bun pm pack --filename "y-core-forge-${VERSION}.tgz"

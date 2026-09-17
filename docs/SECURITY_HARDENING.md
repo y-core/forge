@@ -113,17 +113,25 @@ must never appear in the production CSP** — keeping it in the dev entry only m
 **It never throws: when the middleware has not run it returns `""`**, which renders an empty `nonce` the CSP will not honour. **Register
 `createSecurityHeaders` before any nonce consumer** (see [`ROUTING_AND_MIDDLEWARE.md`][ram-3d] §3d).
 
-**URL attributes in JSX are sanitized automatically at render time.** The renderer routes `href`, `src`, `action`, and the other URL-bearing
-attribute values through `safeUrl` (`@y-core/forge/http`), which admits an allow-list of schemes and collapses everything else — `javascript:`,
-`vbscript:`, `data:` — to `"#"`. Before matching the scheme it strips control characters and whitespace, so `java\tscript:` and a leading-newline
-variant are caught. **It does not decode HTML entities**, and does not need to: the same pass escapes the value, so an entity-encoded payload is
-emitted with its `&` escaped and never re-decodes into a scheme in the browser. `safeUrl` picks the scheme; escaping is what closes the entity
-route. **Consumers never call either.** Together they are the render-layer complement to the nonce: a user-controlled URL cannot become script
-execution even if it reaches an attribute.
+**URL attributes in JSX are sanitized automatically at render time.** The renderer routes `href`, `src`, `action`, `formaction`, `poster`, `cite`,
+`background`, `data` and the namespaced `xlink:href` / `xml:base` through `safeUrl` (`@y-core/forge/http`), which admits an allow-list of schemes
+and collapses everything else — `javascript:`, `vbscript:`, `data:` — to `"#"`. **`<object data>` is in that set**, so a `javascript:` pseudo-URL
+there is neutralised by the renderer rather than left to `object-src`. Before matching the scheme it strips control characters and whitespace, so
+`java\tscript:` and a leading-newline variant are caught. **It does not decode HTML entities**, and does not need to: the same pass escapes the
+value, so an entity-encoded payload is emitted with its `&` escaped and never re-decodes into a scheme in the browser. `safeUrl` picks the scheme;
+escaping is what closes the entity route. **Consumers never call either.** Together they are the render-layer complement to the nonce: a
+user-controlled URL cannot become script execution even if it reaches an attribute.
+
+**A handler drop and a double escape sit beside the URL pass.** An attribute whose lowercased name begins `on` is dropped outright, as `style`
+already was, so an untrusted spread key cannot inject a handler. A **string** `srcdoc` is escaped twice, because the browser decodes an attribute
+value once before parsing the frame document — a single escape would cancel exactly, and the payload would parse as markup on the parent's origin. A
+`SafeHtml` `srcdoc` is escaped once, so that cancellation is exactly what delivers it: trusted markup reaches the frame as a document, and the
+`SafeHtml` type is the statement that it is trusted. `data-bind-attr` refuses `srcdoc` outright, so no signal can reach one.
 
 **No `hx-*` attribute is covered by this**, in either half. Selector and JSON values cannot be sanitized at all ([`HTMX.md`][htmx-7] §7); URL-valued
 `hx-*` attributes deliberately are not, because `"#"` is a live same-origin request rather than a dead link once htmx fetches it
-([`HTMX.md`][htmx-7a] §7a).
+([`HTMX.md`][htmx-7a] §7a). `hx-on:*` is outside the handler drop for the same reason its name is outside the test — it begins `hx-`, not `on` — and
+a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both are held by who wrote the value ([`HTMX.md`][htmx-7b] §7b).
 
 ### 2e. Default Header Set
 
@@ -162,7 +170,9 @@ The emitted defaults, and the reasoning where a choice was available:
   reaches for rather than `UNSAFE_EVAL`. What each one costs in practice, and the pairing the validator refuses because CSP Level 3 would
   ignore it, are `src/security/README.md`'s, at the point a caller reaches for it.
 - **`Cache-Control` is deliberately not a blanket default.** Caching is a per-route decision (`definePage({ cache })`), and a namespace-wide value
-  would either over-cache a private page or defeat caching everywhere.
+  would either over-cache a private page or defeat caching everywhere. Within that per-route decision, `cache.scope` defaults to `"private"`: a page
+  that states a `maxAge` and no scope is browser-cacheable and never shared-cacheable, so forgetting the field on a personalised page cannot let an
+  edge serve one reader's HTML to another. Edge caching is opted into with `scope: "public"`.
 
 ---
 
@@ -378,7 +388,7 @@ namespace, and why identity is application-layer.
 [eh-2d]: ./FORGE_ERRORS.md#2d-fragment-options-and-escaping
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
-[htmx-7b]: ./HTMX.md#7b-hx-on-is-the-one-family-htmx-evaluates
+[htmx-7b]: ./HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [iv]: ./INPUT_VALIDATION.md
 [namespaces-5i]: ./NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
 [ram]: ./ROUTING_AND_MIDDLEWARE.md

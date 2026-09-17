@@ -33,7 +33,6 @@ needs a binding off `c.env`. That per-request builder is the one function you wr
 ```ts
 import {
   type AuthIssueOutcome,
-  createAdminUserService,
   createAdminUserStore,
   createCredentialStore,
   createEmailChangeFlow,
@@ -84,7 +83,7 @@ async function resolveServices(c: AppContext<Env>): Promise<AuthRequestServices>
     signin: createSigninFlow({ keys, users, state, nonces, factors, defer }),
     signup: createSignupFlow({ users, factors, defer }),
     emailChange: createEmailChangeFlow({ keys, users, nonces, notifier, defer, confirmUrl: (token) => `${c.env.ORIGIN}/email/confirm?t=${token}` }),
-    admin: createAdminUserService({ users: createAdminUserStore(db) }),
+    admin: createAdminUserStore(db),
   };
 }
 ```
@@ -225,8 +224,10 @@ shell the auth pages use ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) and it comes
 
 ## Managing accounts from an admin page
 
-`createAdminUserService({ users })` takes an `AdminUserStore` and is the read-and-write surface an admin route holds: `list`, `search`, `view`,
-`countAdmins`, `claimFirst`, `elevate` / `demote`, `deactivate` / `reactivate`, `remove`.
+Hand `resolveServices` an **`AdminUserStore`** as its `admin`. Forge builds the `AdminUserService` over it, per request — the read-and-write
+surface the admin routes hold: `list`, `search`, `view`, `countAdmins`, `claimFirst`, `elevate` / `demote`, `deactivate` / `reactivate`, `remove`.
+The service is forge's, not yours to substitute: the admin write path is written against it, and a surface passed in is a surface that write path
+never authorised.
 
 **`UserStore` and `AdminUserStore` are two contracts on purpose.** A sign-in service given a `UserStore` cannot delete a user or set the admin
 flag, because neither method is on the type it was given — not merely unused. Build the administrative one only where an administrative route
@@ -236,6 +237,15 @@ Every write answers an `AdminUserOutcome` rather than a boolean, so a refusal sa
 `self`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. The service adds no guard of its own — each is
 decided in the statement that writes, so two concurrent demotions leave one admin standing rather than none. What each refusal means to a
 visitor, the prefix-only search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
+
+**The first-admin claim needs `AuthWebOptions.bootstrapSecret`, and both halves answer 404 without one.** It grants the administrator role to
+whoever posts first, so it fails closed: a deployment that configures no secret has no claim endpoint at all rather than an open one, and the
+page is not rendered either. Give it a resolver reading the secret off `c.env` per request — a Worker has none until a request carries bindings —
+and the claim form then asks for it alongside the confirmation.
+
+```ts
+const options: AuthWebOptions<Env> = { ...rest, bootstrapSecret: (c) => c.env.ADMIN_BOOTSTRAP_SECRET };
+```
 
 **Deactivation takes effect on the next request, not the next sign-in.** `resolveAuthIdentity` re-reads the user every request and answers `null`
 for a deactivated one, dropping that session's auth keys as it does — so reactivating the account does not revive the cookies issued before it,
@@ -250,7 +260,7 @@ from). The guard primitives are exported for a page you route yourself:
 
 | Guard | Admits |
 | --- | --- |
-| `resolveAuth` | Everyone, establishing the identity where the session carries one — for a page that serves anonymous and signed-in visitors alike |
+| `resolveAuth` | Everyone. It establishes the identity where the session carries one and refuses nothing — including a session that still owes a step-up |
 | `requireAuth` | A signed-in, non-deactivated visitor. It is what puts the identity on `authCtx` |
 | `requireAdmin` | An administrator. Anyone else gets a plain 403, and it throws if `requireAuth` did not run first |
 | `requireEnrolment` | A visitor who owes no factor. An owed enrolment or step-up is a redirect; an unreadable factor store is a 503 |
@@ -263,6 +273,13 @@ before it, so a wrong order fails on the first request rather than at constructi
 
 Read the identity through `authCtx` — `authCtx.get(c)` where a guard has run, `authCtx.getOptional(c)` otherwise. The store is read once per
 request however many guards run, so mounting `resolveAuth` globally costs the guarded routes nothing extra.
+
+**`resolveAuth` is not a gate, and an identity on `authCtx` is not a finished sign-in.** A session is established when the primary factor lands, so
+a visitor who proved one factor of two carries a full identity while the step-up is still owed — which is exactly what the verify page needs, and
+why that group carries `resolveAuth` rather than `requireAuth`. Anything that renders member data must be behind `requireAuth`, which resolves the
+demand and refuses a session owing one; `resolveAuth` in front of it costs nothing. Use `resolveAuth` for what it is for: a nav that greets a
+visitor by name, a page whose anonymous and signed-in renders differ. A page mixing the two needs `requireAuth` on the half that is not public, or
+its own check of `authCtx.get(c).stepUpAt`.
 
 **`requireFreshStepUp` is on unless you turn it off**, and `freshStepUpMaxAgeMs` is its window: omit it for `AUTH_FRESH_STEP_UP_MS`, or pass
 `null`, which is the only opt-out. It demands nothing of a user whose own resolution owes no step-up, so a deployment offering no second factor
@@ -293,7 +310,11 @@ Mark each item in your own nav definition with the tokens that may see it — `f
 item marked for members does not vanish for them. Which items carry which tokens is yours to decide; the token names are not, or two apps spell
 them differently.
 
-`authNav` returns a **factory**, so call it at module scope and the resolver it hands back per request: the signing key is then imported per
+**Marking an item does not gate the route.** `filters` only decides what the bar paints — the item's `href` is in the delivered HTML whatever the
+viewer holds. The destination still needs its own guard (`requireSignedIn`, `requireAdmin`); the token is there so the bar does not offer a link it
+would only refuse.
+
+`authNav` returns a **factory**, so call it at module scope and reuse the resolver it hands back per request: the signing key is then imported per
 isolate rather than on every render. It reads the identity off `authCtx`, so `resolveAuth` or a `requireAuth` must run before the layout renders.
 An anonymous request gets `activeFilters` and an empty slot map, and no key is imported and no token signed.
 

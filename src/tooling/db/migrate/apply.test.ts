@@ -421,10 +421,10 @@ describe("runMigrate()", () => {
 
     expect(outcome.bookmark).toEqual({
       bookmark: "bm-1",
-      restoreCommand: "forge db bookmark restore --target remote --bookmark bm-1 --root /app --config /app/wrangler.jsonc --db DB",
+      restoreCommand: "forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'",
     });
     expect(trace(io)).toEqual(["read-recorded", "read-inventory", "bookmark", "write", "stage:0001_init.sql", "read-inventory", "write"]);
-    expect(out).toEqual(["undo: forge db bookmark restore --target remote --bookmark bm-1 --root /app --config /app/wrangler.jsonc --db DB"]);
+    expect(out).toEqual(["undo: forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'"]);
   });
 
   it("skips the bookmark when the run said not to capture one", async () => {
@@ -460,8 +460,8 @@ describe("runMigrate()", () => {
     );
     expect(io.files.has(LOCK)).toBe(false);
     expect(out).toEqual([
-      "undo: forge db bookmark restore --target remote --bookmark bm-1 --root /app --config /app/wrangler.jsonc --db DB",
-      "the database may be part-migrated — undo with: forge db bookmark restore --target remote --bookmark bm-1 --root /app --config /app/wrangler.jsonc --db DB",
+      "undo: forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'",
+      "the database may be part-migrated — undo with: forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'",
     ]);
   });
 

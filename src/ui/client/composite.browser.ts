@@ -11,6 +11,8 @@ declare global {
     styleReads: string[];
     /** Selectors `Element.prototype.querySelectorAll` was asked for, recorded by the item-scan instrumentation. */
     itemScans: string[];
+    /** Elements `checkVisibility()` was called on, recorded by the observer-cost instrumentation. */
+    visibilityChecks: number;
   }
 }
 
@@ -342,7 +344,9 @@ test.describe("disabled items", () => {
     expect(await focusedId(page)).toBe("b2");
   });
 
-  test("skips an aria-disabled item, which stays focusable but inert", async ({ page }) => {
+  // `disabled` leaves the ring; `aria-disabled` stays in it, focusable but inert. That is the WAI-ARIA
+  // authoring-practices split, and what `ui/README.md` promises for every composite this mounts.
+  test("keeps an aria-disabled item in the ring, where it is focusable but inert", async ({ page }) => {
     await mount(
       page,
       '<div id="root"><button id="b0" data-item>a</button><button id="b1" data-item aria-disabled="true">b</button><button id="b2" data-item>c</button></div>',
@@ -352,7 +356,7 @@ test.describe("disabled items", () => {
 
     await page.focus("#b0");
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(page)).toBe("b2");
+    expect(await focusedId(page)).toBe("b1");
   });
 
   test("does not hang when every item is disabled", async ({ page }) => {
@@ -698,6 +702,55 @@ test.describe("idempotence per root", () => {
     await page.focus("#b0");
     await page.keyboard.press("ArrowRight");
 
+    expect(await focusedId(page)).toBe("b1");
+  });
+});
+
+// `listItems()` costs a `checkVisibility()` per item, each forcing style resolution, while a
+// `{childList, subtree}` observer gets a batch for every unrelated write under the root.
+test.describe("the observer defers the visibility scan behind the cheap facts", () => {
+  async function instrumentVisibility(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      window.visibilityChecks = 0;
+      const real = Element.prototype.checkVisibility;
+      Element.prototype.checkVisibility = function (this: Element, options?: CheckVisibilityOptions) {
+        window.visibilityChecks += 1;
+        return real.call(this, options);
+      } as typeof Element.prototype.checkVisibility;
+    });
+  }
+
+  test("costs nothing per unrelated mutation while focus is inside and a tab stop stands", async ({ page }) => {
+    await mount(page, toolbar({ count: 20 }), EXPOSE);
+    await install(page);
+    await page.focus("#b0");
+    await instrumentVisibility(page);
+
+    await page.evaluate(async () => {
+      const root = document.querySelector("#root") as HTMLElement;
+      for (let write = 0; write < 10; write += 1) {
+        root.appendChild(document.createElement("span"));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    });
+
+    // One read of the standing tab stop per batch, not one per item: 10 batches over a 20-item
+    // composite cost 10 rather than the 200 the unconditional scan in front of them cost.
+    expect(await page.evaluate(() => window.visibilityChecks)).toBe(10);
+  });
+
+  test("still runs the full scan for the removal it exists for", async ({ page }) => {
+    await mount(page, toolbar({ count: 20 }), EXPOSE);
+    await install(page);
+    await page.focus("#b0");
+    await instrumentVisibility(page);
+
+    await page.evaluate(async () => {
+      document.querySelector("#b0")?.remove();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(await page.evaluate(() => window.visibilityChecks)).toBeGreaterThan(0);
     expect(await focusedId(page)).toBe("b1");
   });
 });

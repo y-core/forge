@@ -10,7 +10,7 @@ export function isLastAdminRefusal(outcome: AdminUserOutcome): boolean {
 
 // No count-then-decide step in this layer, deliberately: two concurrent demotions each reading "two
 // admins remain" is how a deployment ends with none, and the store's guarded write has no such read.
-/** Builds the administrative service over the store a sign-in path is not given. @public */
+/** Builds the administrative service over the store a sign-in path is not given. @internal */
 export function createAdminUserService(options: AdminUserServiceOptions): AdminUserService {
   return {
     list: (page) => options.users.list(page),

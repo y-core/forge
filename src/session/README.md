@@ -83,16 +83,23 @@ The cookie is signed, `httpOnly`, `Secure` and `SameSite=Lax` in every configura
 
 ## Choosing a storage backend
 
-|  | KV storage (`kv` given) | Cookie storage (`kv` omitted) |
+|  | KV storage (`kv` given) | Cookie storage (`storage: "cookie"`) |
 | --- | --- | --- |
 | Data location | Server-side (Workers KV) | Serialized into the cookie |
-| Size limit | KV value limits (MBs) | ~4 KB total cookie budget |
+| Size limit | KV value limits (MBs) | 4096 bytes, enforced — see below |
 | Client data exposure | None — opaque id only | Data rides on every request |
-| Revocation | Delete the KV key | Impossible until cookie expiry |
+| Revocation | Delete the KV key | Impossible until the cookie expires |
 | Extra infrastructure | One KV namespace | None |
+
+**Exactly one of `kv` and `storage` must be given, and `createAnonymousSession` throws at mount time otherwise.** Naming `storage: "cookie"` is the
+only way to reach cookie storage: a developer who forgot their KV binding gets the throw rather than the weaker backend in silence.
 
 **Prefer KV for anything beyond a couple of tiny values.** Cookie storage signs the payload, which prevents tampering but not reading — store an
 opaque user id rather than a user object.
+
+**A `Set-Cookie` over 4096 bytes throws where it is built.** RFC 6265 §6.1 measures name, value and attributes together, and a browser over that
+discards the whole header without a word: the client silently loses its session, and the next mutation answers 403 from `csrfProtection` with
+nothing in the logs to connect the two. `serialize` refuses instead, naming the cookie and the size it measured. The failure lands at the write.
 
 `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` is also exported standalone for use with `sessionMiddleware` directly. `prefix` defaults to
 `session`, and an empty string is refused because it would key every session under a bare `:id`.
@@ -125,9 +132,9 @@ const cookie = createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NE
 
 `createAnonymousSession` takes the same array from its `secret` resolver, and each element is length-checked individually.
 
-**Suppressing the re-signing is the deliberate act, not enabling it.** `{ rotating: false }` makes the middleware compare payloads only, which
-cannot see a signature at all — old cookies keep verifying and are never upgraded, so step 2 would sign every remaining holder out. Pass it only to
-stop paying for a retired secret you are keeping in the array long-term.
+**Suppressing the re-issue is the deliberate act, not enabling it.** `{ rotating: false }` makes the middleware decide on the payload alone — old
+cookies keep verifying and are never upgraded, so step 2 would sign every remaining holder out. Pass it only to stop re-issuing for a retired secret
+you are keeping in the array long-term.
 
 ---
 
@@ -182,7 +189,8 @@ custom storage that loses it breaks sign-in.
 ## Storing a non-sensitive value
 
 `createUnsignedCookie` has the same `parse`/`serialize` surface, base64 on the wire and no authentication. Use it for a theme or a locale — never
-for anything a client must not forge.
+for anything a client must not forge. `sessionMiddleware` will not take one: it accepts a `SignedCookie`, so that mistake is a compile error rather
+than a review note.
 
 ```ts
 const themeCookie = createUnsignedCookie("theme", { maxAge: 60 * 60 * 24 * 365, sameSite: "Lax" });
@@ -208,9 +216,12 @@ Flashing marks the session dirty, so the value is persisted, surfaced once, and 
 Session and cookie management is deliberately **out of scope for `@y-core/forge/security`**, which covers transport-layer hardening only. The split
 is [`NAMESPACES.md`][namespaces-5a] §5a's, and the boundary behind it [`BOUNDARIES.md`][boundaries-2] §2's.
 
-**Sign the session cookie, always.** `createSignedCookie` guarantees three things `createUnsignedCookie` does not: `httpOnly` (not readable from
-JavaScript, mitigating theft via XSS), `secure` (HTTPS only), and an HMAC signature (a tampered value is rejected on parse). Neither flag is an
-option, so neither can be relaxed by a mistyped config.
+**The session cookie is signed, and that is enforced rather than advised.** `sessionMiddleware` accepts a `SignedCookie` and nothing else.
+`createSignedCookie` guarantees three things `createUnsignedCookie` does not: `httpOnly` (not readable from JavaScript, mitigating theft via XSS),
+`secure` (HTTPS only), and an HMAC signature (a tampered value is rejected on parse). `httpOnly`, `secure` and `sameSite: "None"` are none of them a
+construction option, and `SignedCookieAttributes` keeps all three off `serialize` too, so a caller that tries to relax one gets a compile error
+rather than a line that is accepted and quietly discarded. The signed `serialize` still re-forces `httpOnly` and `secure` at runtime, which is what
+catches an `as any` or a decorating wrapper the type never saw.
 
 **`Secure` is not configurable, and that is the point.** A session cookie that loses `Secure` fails silently in every way that would otherwise catch
 it: no test goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and replays the session. The option
@@ -219,12 +230,26 @@ is https at every hop**, so `Secure` is already correct locally and an option to
 server cannot hold a session, the fix is its transport. An in-process test harness never needed the option either: `Secure` is enforced by a
 _browser_ deciding whether to send a cookie back over http, and `app.request(…)` has no browser in it.
 
-**Regenerate the id after any privilege change.** `session.regenerateId()` after a login prevents session fixation, and marks the session dirty so a
-fresh `Set-Cookie` is written.
+**A configured lifetime is enforced by the signature, not announced by `Max-Age`.** Where `createSignedCookie` is given `maxAge` or `expires`, the
+expiry is embedded in the value and covered by the HMAC, so a captured cookie stops verifying on the server at the instant its header claimed —
+`Max-Age` alone is a request a client may ignore, and a cookie lifted out of a proxy log or a browser profile ignores it by construction. There is
+no clock-skew grace and no legacy format: a value carrying no expiry where one is configured is not a value of that cookie, and `parse` answers
+`null` — the same answer a tampered value gets. This is what makes cookie storage's revocation story finite rather than "never". A lifetime that
+would bind nothing throws instead of quietly minting an unbounded value: an already-elapsed `expires` at construction, and, on a cookie that carries
+a lifetime, a per-call override that zeroes it for a non-empty value. Clearing the cookie — `serialize("", { maxAge: 0 })` — is unaffected.
 
-**`SameSite` is defence in depth, not a CSRF defence.** `createSignedCookie` defaults to `"Lax"` and the type rejects `"None"`, so a session cookie
-cannot ride a cross-site request. Pair it with `csrfProtection` from `@y-core/forge/form` on state-changing routes, binding the token to the session
-id so one minted in one browser cannot be replayed from another — the wiring is [`src/form/README.md`][form-readme]'s.
+**The enforced expiry is absolute from the last emit, not from login.** It is re-armed on exactly the events that re-arm `Max-Age` — a session write
+or `reissue: true` — so an active visitor is never signed out mid-session. Bounding a session from the moment it was created is a different
+guarantee, and this is not it: store the login instant in the session and check it yourself if you need one.
+
+**Regenerate the id after any privilege change.** `session.regenerateId()` after a login prevents session fixation, and marks the session dirty so a
+fresh `Set-Cookie` is written. Under cookie storage it cannot delete the old record, because there is no record — the enforced expiry is what bounds
+the old value, so keep `maxAge` short there.
+
+**`SameSite` is defence in depth, not a CSRF defence.** `createSignedCookie` defaults to `"Lax"` and rejects `"None"` at construction and per call
+alike, so a session cookie cannot ride a cross-site request. Pair it with `csrfProtection` from `@y-core/forge/form` on state-changing routes,
+binding the token to the session id so one minted in one browser cannot be replayed from another — the wiring is
+[`src/form/README.md`][form-readme]'s.
 
 **Source secrets from bindings.** `env.SESSION_SECRET`, never a literal; each must be at least 32 characters or the factory throws.
 
@@ -232,14 +257,15 @@ id so one minted in one browser cannot be replayed from another — the wiring i
 
 ## Gotchas
 
-**The payload decides whether a cookie is written, except under rotation, where the wire bytes do.** HMAC is deterministic, so an unchanged payload
-re-signs to exactly the bytes the client already holds — unless the signing secret moved. Off rotation an unchanged session costs no HMAC at all;
-under rotation the middleware re-signs and compares bytes, so a cookie carrying the old signature is re-issued on any request it makes, under either
-storage, including one that touches nothing. A cookie that fails to parse — tampered, or signed with a secret the array does not carry — is never
-re-signed back into validity.
+**The payload decides whether a cookie is written, except under rotation, where the signing secret does.** An unchanged payload means the client
+already holds what would be written. Under rotation the cookie reports which of its secrets verified the incoming value, so one still carrying the
+old signature is re-issued on any request it makes, under either storage, including one that touches nothing — no re-signing and no byte comparison,
+which an embedded expiry would make useless anyway. A cookie that fails to parse — tampered, expired, or signed with a secret the array does not
+carry — is never re-signed back into validity.
 
 **A sliding window needs a change each request.** Neither reading `session.id` nor re-serializing an unchanged session emits a cookie on its own, so
-nothing re-arms `Max-Age`. Use `session.set(…)` or `reissue: true`.
+nothing re-arms `Max-Age` — and since the expiry is inside the signature, nothing re-arms the server's copy of it either. Use `session.set(…)` or
+`reissue: true`.
 
 **Reading `session.id` can itself mark the session dirty** — when the value the client presented would not reproduce that id, as on a first visit.
 Without that, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id no cookie carried forward, and every

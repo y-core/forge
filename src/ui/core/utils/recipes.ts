@@ -18,8 +18,6 @@ export const FIELD_SIZE = { sm: "h-control-sm text-sm", md: "h-control-md text-s
 export const STEP_MARKER = "inline-flex size-control-sm items-center justify-center rounded-selector border-field text-sm font-medium";
 
 /** The word a screen reader gets for each `StepState`, since the marker differs only in colour. @internal */
-export const STEP_STATE_LABEL: Record<StepState, string> = { complete: "Completed", current: "Current", upcoming: "Not started" };
-
 /** The marker's paint per `StepState`, read from the `--tone` properties the root hands down. @internal */
 export const STEP_MARKER_STATE: Record<StepState, string> = {
   complete: "border-transparent bg-(--tone) text-(--tone-fg)",

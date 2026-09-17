@@ -47,6 +47,25 @@ function tasksDigest(rows: readonly Record<string, unknown>[] = ROWS): string {
   return sha256(rows.map((row) => canonicaliseRow(["uuid", "lane"], "uuid", row).canonical).join("\n"));
 }
 
+const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
+
+const SCHEMA_SQL = [
+  "PRAGMA defer_foreign_keys=TRUE;",
+  "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);",
+  "DELETE FROM sqlite_sequence;",
+  "",
+].join("\n");
+
+/** What `manifest.artifacts` declares for one file this tool wrote. */
+function declares(file: string, text: string): { file: string; bytes: number; sha256: string } {
+  return { file, bytes: new TextEncoder().encode(text).length, sha256: sha256(text) };
+}
+
+/** The two `.sql` files every backup carries, seeded under the directory the manifest sits in. */
+function artifactFiles(directory: string): Record<string, string> {
+  return { [join(directory, "schema.sql")]: SCHEMA_SQL, [join(directory, "data.sql")]: DATA_SQL };
+}
+
 function manifest(database: string, over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
@@ -58,7 +77,7 @@ function manifest(database: string, over: Partial<BackupManifest> = {}): BackupM
     schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
     migrations: [{ name: "0001_init", sha256: "d".repeat(64) }],
     tables: [{ name: "tasks", rows: 2, digest: tasksDigest() }],
-    artifacts: [],
+    artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL)],
     warnings: [],
     verified: [{ route: "full", divergent: 0 }],
     ...over,
@@ -199,6 +218,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({
       [join(state, "db.sqlite")]: "",
       [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
+      ...artifactFiles(join(root, ".forge/backups", "app-db-20260911T090000Z")),
     });
 
     expect(runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
@@ -208,6 +228,26 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
       backedUpBy: "app-db-20260911T090000Z",
     });
     expect(io.exists(join(state, "db.sqlite"))).toBe(false);
+  });
+
+  // `takeBackup` writes both `.sql` files for every backup, so a manifest declaring none was never
+  // one this tool wrote and cannot hold the rows this reset is about to destroy.
+  it("refuses an artifact whose manifest declares no files, before it removes anything", async () => {
+    const root = appRoot();
+    const state = join(root, ".wrangler", "state", ...STATE);
+    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
+    const io = fakeDatabase({
+      [join(state, "db.sqlite")]: "",
+      [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db", { artifacts: [] })),
+      ...artifactFiles(directory),
+    });
+    const run = await context(root, io);
+
+    const refused = refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }));
+
+    expect(refused.kind).toBe("invalid-args");
+    expect(refused.message).toContain("declares no schema.sql and no data.sql");
+    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
   });
 
   it("refuses an artifact whose declared file is truncated, before it removes anything", async () => {
@@ -311,10 +351,10 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const root = appRoot();
     const state = join(root, ".wrangler", "state", ...STATE);
     const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")) }, [
-      ...ROWS,
-      { uuid: "t3", lane: "done" },
-    ]);
+    const io = fakeDatabase(
+      { [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")), ...artifactFiles(directory) },
+      [...ROWS, { uuid: "t3", lane: "done" }],
+    );
     const run = await context(root, io);
 
     expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
@@ -329,10 +369,13 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const root = appRoot();
     const state = join(root, ".wrangler", "state", ...STATE);
     const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")) }, [
-      { uuid: "t1", lane: "todo" },
-      { uuid: "t2", lane: "done" },
-    ]);
+    const io = fakeDatabase(
+      { [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")), ...artifactFiles(directory) },
+      [
+        { uuid: "t1", lane: "todo" },
+        { uuid: "t2", lane: "done" },
+      ],
+    );
     const run = await context(root, io);
 
     expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false })).message).toBe(
@@ -348,6 +391,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({
       [join(state, "db.sqlite")]: "",
       [join(chosen, "manifest.json")]: JSON.stringify(manifest("app-db")),
+      ...artifactFiles(chosen),
       // Newer, and the one `findVerifiedBackup` would have taken.
       [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
     });

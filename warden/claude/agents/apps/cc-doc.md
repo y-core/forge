@@ -175,8 +175,9 @@ Report back in this shape:
 When the doc pass closes a task, close it yourself over MCP, never by editing files. There is no protocol document to fetch: the tool descriptions
 carry every rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would satisfy it, and whether it is
 `retryable`. Act on that payload rather than guessing past it. Read before you write — a read carries the `revision` a later edit must cite — and
-record the resolution with, or before, the move to `done`. A docs-only change runs no code gate, so what was written, and the source claims
-verified, are themselves the evidence the close rests on.
+record the resolution with, or before, the move to `done`. **Offering a task for review is a claim about a run** (`AGENT_WORKFLOW.md` §5): for a
+docs-only change the `quality` tier is that run, and it judges the wrap, the link style and every structural rule of what you just wrote. The source
+claims you verified are the evidence it cannot check.
 
 ## Delegation
 

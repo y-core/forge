@@ -3,7 +3,8 @@ import { loadConfigModule } from "../cli/config-module";
 import type { Command } from "../cli/types";
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "../gate/changelog";
 import { definitionList } from "../term/grid";
-import { commit, createTag, isWorkingTreeClean, remoteTags, tagExists, tagIsAncestorOfHead } from "./git";
+import { DEFAULT_GATE_COMMAND, runGate } from "./gate";
+import { commit, createTag, currentBranch, defaultBranch, isWorkingTreeClean, remoteTags, tagExists, tagIsAncestorOfHead } from "./git";
 import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog } from "./pkg-json";
 import { removedSurfaceSince } from "./surface";
 import type { BumpEvidence, ReleaseCommandConfig, ReleaseDeps } from "./types";
@@ -15,6 +16,8 @@ const releaseFlags = {
   "allow-dirty": { type: "boolean" as const, description: "Skip clean working tree check" },
   "allow-empty-changelog": { type: "boolean" as const, description: "Release even though [Unreleased] carries no entry" },
   "allow-semver": { type: "boolean" as const, description: "Release despite a shrinking public export surface" },
+  "allow-branch": { type: "boolean" as const, description: "Release from a branch other than the one the remote publishes from" },
+  "allow-unverified": { type: "boolean" as const, description: "Release without running the verification gate first" },
 };
 
 function becauseRow(evidence: BumpEvidence, previous: string | null): string {
@@ -39,10 +42,13 @@ export function createReleaseCommand(
     removedSurfaceSince,
     tagIsAncestorOfHead,
     remoteTags,
+    currentBranch,
+    defaultBranch,
+    runGate,
     now: () => new Date(),
   },
 ): Command<typeof releaseFlags> {
-  const { cwd, tagPrefix = "v", stageFiles, changelogFile = "CHANGELOG.md" } = config;
+  const { cwd, tagPrefix = "v", stageFiles, changelogFile = "CHANGELOG.md", gateCommand = [...DEFAULT_GATE_COMMAND] } = config;
 
   return createCommand({
     name: "release",
@@ -55,6 +61,8 @@ export function createReleaseCommand(
       const allowDirty = Boolean(flags["allow-dirty"]);
       const allowEmptyChangelog = Boolean(flags["allow-empty-changelog"]);
       const allowSemver = Boolean(flags["allow-semver"]);
+      const allowBranch = Boolean(flags["allow-branch"]);
+      const allowUnverified = Boolean(flags["allow-unverified"]);
 
       if (!dry && !allowDirty && !deps.isWorkingTreeClean(cwd)) {
         throw new ReleaseError("working-tree-dirty", "Working tree is not clean. Commit or stash changes first, or use --allow-dirty.");
@@ -161,13 +169,69 @@ export function createReleaseCommand(
         return;
       }
 
-      deps.updatePackageVersion(result.version, cwd);
-      if (promoted !== null) deps.writeChangelog(cwd, changelogFile, promoted);
+      // The tag is the publish trigger and CI runs the gate only after it is public, so a red gate
+      // there leaves a fetchable tag with no asset and a version that cannot be reused.
+      if (!allowBranch) {
+        const branch = deps.currentBranch(cwd);
+        // Answered without the remote, so it is answered whether or not the remote answers its own.
+        if (branch === null) {
+          throw new ReleaseError(
+            "wrong-branch",
+            "HEAD is detached, so the release commit would sit on no branch.\n" +
+              "`git push` would then push nothing while `git push --tags` published a tag no branch carries. " +
+              "Check out the branch you are releasing, or use --allow-branch.",
+          );
+        }
+        const publishesFrom = deps.defaultBranch(cwd);
+        if (publishesFrom === null) {
+          console.log(`  (remote names no publishing branch — could not confirm ${branch} is the one it publishes from)`);
+        } else if (branch !== publishesFrom) {
+          throw new ReleaseError(
+            "wrong-branch",
+            `HEAD is on ${branch}, and the remote publishes from ${publishesFrom}.\n` +
+              `A tag cut here publishes commits ${publishesFrom} does not carry. Switch branch, or use --allow-branch.`,
+          );
+        }
+      }
+
+      if (!allowUnverified) {
+        const spelled = gateCommand.join(" ");
+        console.log(`\nRunning \`${spelled}\` before tagging ${tag}…`);
+        const outcome = deps.runGate(cwd, gateCommand);
+        if (outcome === "unrunnable") {
+          throw new ReleaseError(
+            "gate-unrunnable",
+            `\`${spelled}\` could not be run, so ${tag} was not cut and nothing was written.\n` +
+              "Name this project's gate with `gateCommand` in the release config, or use --allow-unverified to tag without one.",
+          );
+        }
+        if (outcome === "failed") {
+          throw new ReleaseError(
+            "gate-failed",
+            `\`${spelled}\` failed, so ${tag} was not cut and nothing was written.\n` +
+              "Fix what it reported and run the release again, or use --allow-unverified to tag anyway.",
+          );
+        }
+      }
+
       // Default to exactly what this command wrote: `commit` runs `git add`, so naming a changelog
       // that was never promoted would fail on a project that has none.
       const staged = stageFiles ?? (promoted !== null ? ["package.json", changelogFile] : ["package.json"]);
       const message = `chore: release ${result.version}`;
-      const committed = deps.commit(cwd, message, staged);
+      let committed: boolean;
+      try {
+        deps.updatePackageVersion(result.version, cwd);
+        if (promoted !== null) deps.writeChangelog(cwd, changelogFile, promoted);
+        committed = deps.commit(cwd, message, staged);
+      } catch (err) {
+        // Without the recovery named here, the next run refuses as dirty, and forcing it past that
+        // promotes the changelog a second time under the same heading.
+        throw new ReleaseError(
+          "release-part-written",
+          `${staged.join(" and ")} may hold the ${result.version} release uncommitted: ${err instanceof Error ? err.message : String(err)}\n` +
+            `Undo the write before releasing again:\n  git checkout -- ${staged.join(" ")}`,
+        );
+      }
       if (!committed) {
         console.log(`  package.json already at ${result.version} — skipping commit.`);
       }

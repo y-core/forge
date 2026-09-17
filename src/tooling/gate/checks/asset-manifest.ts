@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 
 import { loadConfig } from "../../assets/config";
 import { readEmittedManifest } from "../../assets/pipeline";
@@ -30,12 +30,12 @@ export async function checkAssetManifest(config: AssetManifestCheckConfig, mode:
   }
 
   if (typesOnly) {
-    if (mode === "fast") return checkResult([], "asset manifest: types-only artifact, nothing to verify");
+    if (mode === "quality") return checkResult([], "asset manifest: types-only artifact, nothing to verify");
     return checkResult(
       [
         fail(`\`${assetsPath}\` is the types-only artifact, whose paths are logical names no build has produced`, {
           file: assetsPath,
-          detail: ["run `forge assets build --minify` — only a fast run accepts an artifact that was never built"],
+          detail: ["run `forge assets build --minify` — only a quality run accepts an artifact that was never built"],
         }),
       ],
       "asset manifest: types-only artifact",
@@ -43,7 +43,7 @@ export async function checkAssetManifest(config: AssetManifestCheckConfig, mode:
   }
 
   const resolved = await loadConfig({ root, configPath: config.assetConfig });
-  const publicDir = resolved.paths.publicDir;
+  const publicDir = relative(root, resolved.paths.publicDir);
 
   const entries = Object.entries(data).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   if (entries.length === 0) return checkResult([], "asset manifest: empty, nothing to verify");

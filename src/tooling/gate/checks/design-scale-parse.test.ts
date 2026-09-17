@@ -3,8 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { deriveDesignScale, renderDesignScale } from "./design-scale-parse";
 import type { DesignSystem } from "./types";
 
-/** A design system that answers only what `deriveDesignScale` asks. */
-function fakeDesignSystem(classes: Record<string, string>, theme: Record<string, string>): DesignSystem {
+/** A design system that answers only what `deriveDesignScale` asks; `--spacing` is there unless a case removes it. */
+function fakeDesignSystem(classes: Record<string, string>, theme: Record<string, string> = {}): DesignSystem {
+  const declared = { "--spacing": "0.25rem", ...theme };
   return {
     candidatesToAst: () => [],
     candidatesToCss: (candidates) => candidates.map((name) => classes[name] ?? null),
@@ -15,7 +16,7 @@ function fakeDesignSystem(classes: Record<string, string>, theme: Record<string,
     },
     getClassList: () => Object.keys(classes).map((name) => [name, {}] as const),
     utilities: { keys: () => [] },
-    theme: { entries: () => Object.entries(theme).map(([name, value]) => [name, { value }] as const) },
+    theme: { entries: () => Object.entries(declared).map(([name, value]) => [name, { value }] as const) },
   };
 }
 
@@ -52,6 +53,14 @@ describe("deriveDesignScale()", () => {
     const ds = fakeDesignSystem({ "bg-primary": ".bg-primary { background: var(--color-primary) }", "p-4": ".p-4 { padding: 1rem }" }, {});
 
     expect(deriveDesignScale(ds).colorRoots).toEqual(["bg"]);
+  });
+
+  // `spacingUnit` is what `forge/spacing-scale-only` divides by. An empty one makes `unitPx` NaN,
+  // every comparison against it false, and the rule reports nothing with the gate still green.
+  it("refuses a design system that declares no --spacing, rather than disabling the rule silently", () => {
+    const ds = fakeDesignSystem({ "p-4": ".p-4 { padding: calc(var(--spacing) * 4) }" }, { "--spacing": "" });
+
+    expect(() => deriveDesignScale(ds)).toThrow(/declares no --spacing/);
   });
 
   it("strips the `--color-` prefix off every token and sorts them", () => {

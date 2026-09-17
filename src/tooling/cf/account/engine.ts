@@ -32,7 +32,6 @@ export async function syncBindings(
   const dryRun = syncConfig.dryRun ?? false;
   const target = detectTarget(config, scriptName);
 
-  // Filter to requested resource types if specified
   const resourceFilter = syncConfig.resources;
   const activeHandlers = resourceFilter ? handlers.filter((h) => resourceFilter.includes(h.type as ResourceType)) : handlers;
 
@@ -40,7 +39,6 @@ export async function syncBindings(
   const allResults: SyncOutput["results"] = [];
   const allNotes: SyncOutput["notes"] = [];
 
-  // Identical for every handler, so it is built once rather than per iteration.
   const ctx = { auth: syncConfig.auth, scriptName, prefix, dryRun, fetch: fetchFn, target, rotate: new Set(syncConfig.rotate ?? []) };
 
   for (const handler of activeHandlers) {

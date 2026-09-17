@@ -22,10 +22,14 @@ export function createFlash(options: FlashCookieOptions): Flasher {
 
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   async function get(c: RequestContext<any, any>): Promise<FlashMessage[]> {
-    const raw = await cookie.parse(c.request.headers.get("cookie") ?? null);
-    if (raw == null) return [];
+    const reading = await cookie.read(c.request.headers.get("cookie") ?? null);
+    // The clear is keyed on the cookie being present, not on its value verifying: one past its expiry
+    // reads as `null`, and leaving it uncleared means the browser re-sends and re-fails it forever.
+    if (reading === null) return [];
     const clearCookie = await cookie.serialize("", { maxAge: 0, path });
     setPendingHeader(c, "set-cookie", clearCookie, { append: true });
+    const raw = reading.value;
+    if (raw === null) return [];
     try {
       const v = JSON.parse(raw);
       return Array.isArray(v) ? (v as FlashMessage[]) : [];

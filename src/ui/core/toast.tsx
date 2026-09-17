@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX } from "../../jsx/types";
 import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
 import type { Tone } from "../contracts/types";
@@ -14,7 +15,7 @@ import { toneVariants } from "./utils/tone";
 
 type ToastContainerProps = JSX.IntrinsicElements["section"] & {
   position?: ToastPosition | undefined;
-  /** Accessible name for the notification region. @default "Notifications" */
+  /** Accessible name for the notification region. @default LABEL_DEFAULTS.toast */
   label?: string | undefined;
 };
 
@@ -23,7 +24,7 @@ type ToastProps = JSX.IntrinsicElements["div"] & {
   appearance?: PanelAppearance | undefined;
   dismissible?: boolean | undefined;
   duration?: number | undefined;
-  /** Accessible name for the dismiss button. @default "Dismiss notification" */
+  /** Accessible name for the dismiss button. @default LABEL_DEFAULTS.toastDismiss */
   dismissLabel?: string | undefined;
 };
 
@@ -40,7 +41,7 @@ const positionClasses: Record<ToastPosition, string> = {
 // behaviour, and only the container announces a toast inserted after load.
 const ToastContainer: FC<ToastContainerProps> = ({
   position = "bottom-right",
-  label = "Notifications",
+  label = LABEL_DEFAULTS.toast,
   class: cls,
   children,
   "data-slot": inherited,
@@ -63,7 +64,7 @@ const ToastRoot: FC<ToastProps> = ({
   appearance = "soft",
   dismissible = false,
   duration,
-  dismissLabel = "Dismiss notification",
+  dismissLabel = LABEL_DEFAULTS.toastDismiss,
   class: cls,
   children,
   "data-slot": inherited,

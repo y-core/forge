@@ -1,22 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 
+import { gateFixtureRoot } from "./gate.fixture";
 import { checkModernCss } from "./modern-css";
 import type { ModernCssCheckConfig } from "./types";
 import type { DeferredFinding } from "./types";
 
-/** A throwaway repository root holding exactly the files given. */
-function fixtureRoot(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "forge-modern-css-check-"));
-  for (const [path, source] of Object.entries(files)) {
-    const full = join(root, path);
-    mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, source, "utf-8");
-  }
-  return root;
-}
+const fixtureRoot = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-modern-css-check-");
 
 function run(root: string, extra: Partial<ModernCssCheckConfig> = {}) {
   return checkModernCss({ root, sources: ["src/ui"], deferred: [], ...extra });

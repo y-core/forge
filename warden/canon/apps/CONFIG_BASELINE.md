@@ -176,7 +176,7 @@ same bytes.
 | Script | Runs |
 | --- | --- |
 | `verify` | `forge verify` — the gate a task closes on |
-| `verify:fast` | `forge verify --mode fast` |
+| `verify:quality` | `forge verify --mode quality` — every row that judges the source rather than running it |
 | `verify:full` | `forge verify --full` |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |

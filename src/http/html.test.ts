@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { html, isSafeHtml, rawHtml, SafeHtml } from "./html";
+import { html, isSafeHtml, rawHtml, SafeHtml, scriptJson, styleText } from "./html";
 
 describe("rawHtml", () => {
   it("marks a string as SafeHtml so the html tag interpolates it unescaped", () => {
@@ -106,6 +106,71 @@ describe("SafeHtml", () => {
 
   it("is the class the html tag produces", () => {
     expect(html`<i>x</i>`).toBeInstanceOf(SafeHtml);
+  });
+});
+
+/** U+2028 and U+2029, built by code point so the source carries no invisible line terminator. */
+const LINE_SEP = String.fromCharCode(0x2028);
+const PARA_SEP = String.fromCharCode(0x2029);
+
+describe("scriptJson", () => {
+  it("round-trips an ordinary value", () => {
+    const out = String(scriptJson({ "@type": "Organization", name: "Acme" }));
+    expect(out).toBe('{"@type":"Organization","name":"Acme"}');
+    expect(JSON.parse(out)).toEqual({ "@type": "Organization", name: "Acme" });
+  });
+
+  it("leaves no < for a payload closing the script element to use", () => {
+    const payload = "</script><script>alert(1)</script>";
+    const out = String(scriptJson({ name: payload }));
+    expect(out).not.toContain("<");
+    expect(JSON.parse(out)).toEqual({ name: payload });
+  });
+
+  it("leaves no < for a payload opening an HTML comment to use", () => {
+    const out = String(scriptJson({ name: "<!--" }));
+    expect(out).not.toContain("<");
+    expect(JSON.parse(out)).toEqual({ name: "<!--" });
+  });
+
+  it("escapes the two JSON-legal characters a script parser reads as line terminators", () => {
+    const payload = `a${LINE_SEP}b${PARA_SEP}c`;
+    const out = String(scriptJson({ s: payload }));
+    expect(out).not.toContain(LINE_SEP);
+    expect(out).not.toContain(PARA_SEP);
+    expect(JSON.parse(out)).toEqual({ s: payload });
+  });
+
+  it("throws on a value with no JSON representation, rather than emitting a broken element", () => {
+    expect(() => scriptJson(() => {})).toThrow(/no JSON representation/);
+    expect(() => scriptJson(undefined)).toThrow(/no JSON representation/);
+  });
+
+  it("produces SafeHtml, so the renderer emits it without re-escaping", () => {
+    expect(scriptJson({ a: 1 })).toBeInstanceOf(SafeHtml);
+  });
+});
+
+describe("styleText", () => {
+  it("leaves ordinary CSS unchanged", () => {
+    expect(String(styleText(".a{color:red}"))).toBe(".a{color:red}");
+  });
+
+  it("leaves no < for a payload closing the style element to use", () => {
+    expect(String(styleText("a{}</style><script>alert(1)</script>"))).not.toContain("<");
+  });
+
+  it("leaves no < for a payload opening an HTML comment to use", () => {
+    expect(String(styleText('a{content:"<!--"}'))).not.toContain("<");
+  });
+
+  it("emits a CSS hex escape whose trailing space stops the next character joining it", () => {
+    const backslash = String.fromCharCode(92);
+    expect(String(styleText("<a"))).toBe(`${backslash}3c a`);
+  });
+
+  it("produces SafeHtml, so the renderer emits it without re-escaping", () => {
+    expect(styleText(".a{}")).toBeInstanceOf(SafeHtml);
   });
 });
 

@@ -310,6 +310,24 @@ const className = buttonVariants({ tone, appearance, size, shape, class: cls });
 name shared across call sites is worth more than the cache. The `tone` × `appearance` paint every toned component composes over is published as
 `toneVariants`, for markup of your own that must sit in the same palette ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e).
 
+### Put a glyph inside a file input
+
+`FileInput` takes no children, and `FILE_INPUT_BASE` styles the native `::file-selector-button` — a pseudo-element nothing can be placed inside. So
+an icon in the box is a composition _over_ the control rather than a child of it: position the input `relative`, reserve the gutter with a padding
+class (`class='pe-10'`), and lay the glyph over that gutter as an `aria-hidden`, `pointer-events-none` sibling.
+
+```tsx
+<div class='relative max-w-xs'>
+  <FileInput name='avatar' class='pe-10' />
+  <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 end-3 flex items-center text-muted-foreground'>
+    <Icon name='upload' width={16} height={16} />
+  </span>
+</div>
+```
+
+`pointer-events-none` is what keeps the glyph from swallowing the click that opens the file picker, and `aria-hidden` keeps it out of a name the
+control's own label already carries.
+
 ### Group a card or phone number as the reader leaves the field
 
 `Input`'s `format` is a template whose `#` are the slots the value fills and whose every other character is a literal:
@@ -473,6 +491,48 @@ in a repository forge's gate cannot see.
 **Import the modules, not the barrel, in code you bundle** — forge's own components import each module directly, so a bundle retains one table
 rather than every table.
 
+### Name a popover panel
+
+`Popover.Content` is `role="dialog"`, which takes its name only from the author, so one of `label` or `labelledby` is **required** — a nameless
+panel will not compile. Prefer `labelledby` pointing at the trigger's own text, which is the name the reader saw before they opened it:
+
+```tsx
+<Popover>
+  <Popover.Trigger for='share'>
+    <span id='share-trigger'>Share</span>
+  </Popover.Trigger>
+  <Popover.Content id='share' labelledby='share-trigger'>
+    …
+  </Popover.Content>
+</Popover>
+```
+
+`role` is not forwardable either. The trigger always says `aria-haspopup="dialog"`, so a re-roled panel would leave the pair disagreeing; a
+menu-role popup is `Menu.Popup`, which comes with a trigger that agrees with it.
+
+### Translate the names forge falls back to
+
+Forge ships no i18n surface, so every English name it emits is a default you can override by a prop. `LABEL_DEFAULTS` is where all of them live —
+one table for the whole library, so a translation layer has one seam rather than one per component. `STEP_STATE_LABELS` sits beside it for the
+table
+indexed by a runtime value, a `Steps.Step` or `Timeline.Item` state.
+
+```ts
+import { LABEL_DEFAULTS } from "@y-core/forge/ui/contracts";
+
+// Key on the key. A new site in a later forge release is a compile error here, not a missed string.
+const fr: Record<keyof typeof LABEL_DEFAULTS, string> = { alertDismiss: "Fermer", breadcrumbs: "Fil d'Ariane" /* … */ };
+
+<Alert dismissible dismissLabel={fr.alertDismiss} />;
+```
+
+**Key your catalogue on the key, never on the English value.** Matching `"Dismiss"` to decide what to render makes every wording fix in forge a
+silent breaking change for you, and one forge's gate cannot detect. The key is the stable name; the value is the thing you are replacing.
+
+One name has no default and takes none: `Navbar`'s `<nav>` landmark. An unnamed `<nav>` already announces as "navigation", so a constant default
+would replace a correct platform default with a guess — and give two Navbars on one page the same name. Pass `aria-label` or `aria-labelledby`
+yourself wherever a page renders more than one.
+
 ### Assert on forge's markup in your own tests
 
 **Boolean states are emitted by presence with an empty value — `data-selected=""`, never `"true"`** — while `aria-*` keeps its string form because
@@ -569,9 +629,11 @@ and cursor baking. It computes; it drives no external builder, which is why it l
 ### Assemble a sprite, read a theme token, bake a cursor
 
 Reach here from a build script, not from a route. `svgToSymbol` converts an SVG document into a sanitized `<symbol>` and `sanitizeSVG` is the
-sanitizer it applies, so an SVG from a designer is safe to inline; `extractViewBoxes` maps each `<symbol>` id in assembled sprite markup to its
-viewBox. `readThemeTokens` pulls per-theme custom properties out of compiled CSS and `resolveToken` follows a `var()` chain to a literal, which is
-what `buildCursors` needs to bake each cursor × theme into a CSS `cursor` value carrying an inline data-URI SVG.
+sanitizer it applies — a tokenizer and an allowlist serializer, so a construct it does not recognise is dropped rather than carried through. That
+makes an SVG from a designer safe to inline; it is defence in depth for a source you already trust, not a substitute for a DOM sanitizer on one you
+do not. `extractViewBoxes` maps each `<symbol>` id in assembled sprite markup to its viewBox. `readThemeTokens` pulls per-theme custom properties
+out of compiled CSS and `resolveToken` follows a `var()` chain to a literal, which is what `buildCursors` needs to bake each cursor × theme into a
+CSS `cursor` value carrying an inline data-URI SVG.
 
 ---
 
@@ -593,6 +655,10 @@ result by the bare name.
 
 **Both degrade to `{}` and never throw** — on empty input, unparseable markup, a non-`ok` response, or a network error — because a missing glyph map
 must leave the app on its stylesheet default rather than break boot. Guard on an empty map, not on a rejection.
+
+**`loadSpriteGlyphs` is a boot-time read.** A successful result is memoized per URL and prefix for the life of the isolate, which a deploy resets,
+so calling it inside a handler costs a subrequest and a parse on the first request alone. A failure is never memoized: one transient error would
+otherwise blank every glyph until the isolate is replaced.
 
 The name tuple published here is the one to narrow or validate against when a glyph name arrives from outside your code.
 
@@ -678,6 +744,12 @@ pressed state, guarded by a differs-check so a paint never fights a drag in prog
 after its markup was replaced wholesale ([`UI_SSR_COMPONENTS.md`][usc-2a] §2a). A `data-field` naming no signal reports and is skipped.
 
 `bindText` and `bindAttr` are the one-way siblings, for markup that only _displays_ a signal — text content, or one named attribute.
+
+**`bindAttr` sanitizes exactly as the renderer does**, because a signal is seeded from `data-island-state` and so is as reachable as a request
+parameter. A value bound to `href`, `src`, `data` or any other URL attribute has a scheme outside http/https/mailto/tel collapsed to `"#"`; a bare
+`on*` name, `srcdoc`, or `style` — which the renderer drops under the shipped `style-src 'self'` — is refused outright, reported and skipped.
+`bindAttrAttr` throws on those names instead, since it runs at author time. No
+`hx-*` attribute is sanitized, for the reason [`HTMX.md`][htmx-7a] §7a gives.
 
 ### Write a controller that survives an iframe, a shadow root or a foreign realm
 
@@ -875,6 +947,10 @@ to a submenu of groups. Its `align` is `Popover`'s physical alignment — pass `
 and at runtime the app dispatches the navbar filters event on `document` with the new tokens as `detail` — the `navbar` scope re-syncs from it.
 `Dock` takes the same prop but is server-hidden only: there is no runtime re-sync for it.
 
+**`filters` is presentation, not access control.** A filtered item's markup — its label and its `href` — is rendered and sent to every viewer;
+`hidden` only stops it being painted, and the filters event is one any script on the page can dispatch. Gate the route itself. An empty list
+therefore hides the item rather than showing it, so a token lookup that misses cannot reveal what it was meant to conceal.
+
 ### Choose how the bar collapses
 
 `collapsible` decides which breakpoints the bar hides behind its toggle. `"mobile"` (the default) expands the panel and hides the toggle from `md:`
@@ -1054,6 +1130,7 @@ stamps an action of its own.
 
 [ap-2c]: ../../docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
 [cr-1]: ../../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
+[htmx-7a]: ../../docs/HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [navigation]: ./design/reference/08-navigation.md
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value

@@ -1,8 +1,19 @@
 export { ALERT_SCOPE } from "./alert-contract";
-export { BIND_ATTR_ATTR, BIND_TEXT_ATTR, bindAttrAttr, bindTextAttr, parseBindAttr } from "./bind-contract";
+export {
+  BIND_ATTR_ATTR,
+  BIND_TEXT_ATTR,
+  bindAttrAttr,
+  bindTextAttr,
+  isBindAttrRefused,
+  parseBindAttr,
+  safeBindAttrValue,
+  URL_BOUND_ATTRS,
+} from "./bind-contract";
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
-export { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "./dialog-contract";
+export { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs, nameAttrs } from "./dialog-contract";
+export type { DialogNaming } from "./types";
 export { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "./island-contract";
+export { LABEL_DEFAULTS, STEP_STATE_LABELS } from "./labels";
 export { MENU_GROUP_SELECTOR, MENU_ITEM_CLASS, MENU_ITEM_SELECTOR, MENU_RADIO_SELECTOR, MENU_SCOPE, menuItemAttrs } from "./menu-contract";
 export type { MenuAction } from "./types";
 export type { MenuItemAttrsOptions } from "./types";
@@ -10,6 +21,7 @@ export { applyFormat, INPUT_FORMAT_ATTR, INPUT_FORMAT_SCOPE, stripFormat } from 
 export { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "./navbar-contract";
 export { NUMBER_FIELD_SCOPE } from "./number-field-contract";
 export { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, invokerAttrs, POPOVER_COORDS_ATTR, POPOVER_SCOPE } from "./overlay-contract";
+export type { PopupKind } from "./types";
 export { scopeAttrs } from "./scope-attrs";
 export type { ScopeAttrsProps } from "./types";
 export { SCOPE_EVENTS } from "./scope-events";

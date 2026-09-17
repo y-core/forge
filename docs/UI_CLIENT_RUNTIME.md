@@ -113,8 +113,15 @@ computed whose sources are dead.
 **Runtime auth filtering of the bar arrives as a document event, not through an exported setter.** The `navbar` scope applies the token list the
 event carries to every filterable descendant; the server seeds the same set at render, so the first paint is already correct. A channel rather than
 a forge-held signal for two reasons: the emitter — a login, an htmx swap, an app's own router — need not hold a reference to any forge module, and
-and bars on one page each resume their own scope while all must follow one push. The listener is removed by the disposer `setup` returns (§2d).
+every bar on a page resumes its own scope while all of them must follow one push. The listener is removed by the disposer `setup` returns (§2d).
 `src/ui/README.md` owns the event's name and payload shape.
+
+**Any script on the page may dispatch it, and that is a ratified fail-open, not a hole** ([`BOUNDARIES.md`][boundaries-5c] §5c). The listener is on
+the document and the payload is unauthenticated, so a forged `navbar:filters` can repaint the bar with any token set. What it cannot do is widen
+what the viewer may reach: `filters` decides which of the **already-delivered** items are painted, and the server put every one of those hrefs in
+the HTML before the event existed. Reaching a destination is the route guard's decision — `requireSignedIn`, `requireAdmin` — which runs on the
+server and never consults the bar. **The degradation is presentational:** the worst outcome is a navigation bar showing links the viewer's own
+requests will be refused at, which is the same outcome as a stale first paint.
 
 ### 2c. The `turnstile` Scope — CAPTCHA Controller
 
@@ -476,6 +483,7 @@ covers are catalogued in [`NAMESPACES.md`][namespaces-3a] §3a.
 
 [boundaries-1]: ../warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-1a]: ../warden/canon/libs/BOUNDARIES.md#1a-what-may-be-imported-where
+[boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
 [interaction]: ../src/ui/design/reference/09-interaction.md
 [iv-4a]: ./INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [namespaces-3a]: ./NAMESPACES.md#3a-public-export-paths

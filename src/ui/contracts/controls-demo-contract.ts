@@ -1,5 +1,4 @@
 import type { ControlsDemoState } from "./types";
-// Internal by design: this is the showcase's own demo state, not a contract a consumer implements.
 /** Resumable-scope name the bound-control band stamps and the client scope registers. @internal */
 export const CONTROLS_DEMO_SCOPE = "show-controls";
 

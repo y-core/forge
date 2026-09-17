@@ -17,10 +17,10 @@ import type { Forge } from "./forge-app";
 import type { definePage } from "./page";
 import type { PIPELINE_ONLY_KEYS } from "./pipeline";
 
-/** Options for `createApp`; the wiring hooks run in the order they are numbered. @public */
 /** How an app answers a method mismatch: `"notFound"` keeps the route unacknowledged, `"advertise"` returns the RFC 9110 `405` with `Allow`. @public */
 export type MethodMismatch = "notFound" | "advertise";
 
+/** Options for `createApp`; the wiring hooks run in the order they are numbered. @public */
 export interface AppOptions<Bindings = Record<string, unknown>> {
   config?: object;
   /** A development entry's token: with `errorDetail` the boundary's 500 page prints the thrown message. */
@@ -47,6 +47,7 @@ export interface AppOptions<Bindings = Record<string, unknown>> {
 /** A route's `Cache-Control` policy. @public */
 export interface CacheDirective {
   maxAge: number;
+  /** Who may store the response; defaults to `"private"`, so only `"public"` lets a shared cache hold it. */
   scope?: "public" | "private";
 }
 

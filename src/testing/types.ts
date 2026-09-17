@@ -45,6 +45,16 @@ export interface TestContextOptions<Bindings = Record<string, unknown>, ConfigDa
   logger?: Logger;
 }
 
+/** An `ExecutionContext` paired with the drain that settles the deferred work it retained. @public */
+export interface CollectedExecutionContext {
+  /** Passed as `app.fetch`'s third argument. */
+  executionCtx: ExecutionContext;
+  /** The live list of promises `waitUntil` has been handed and `drain` has not yet settled — read it to assert that work was deferred at all. */
+  pending: readonly Promise<unknown>[];
+  /** Settles every promise handed to `waitUntil` so far, so deferred work is assertable. */
+  drain: () => Promise<void>;
+}
+
 /** Options for `fakeKV`. @public */
 export interface FakeKVOptions {
   /** Millisecond clock the expiry of every write is resolved and judged against; defaults to `Date.now`. */

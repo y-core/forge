@@ -194,6 +194,62 @@ function fixture(matches: boolean, open = false, links = 3): Fixture {
   return { el, doc, media, queries, element: el as unknown as Element, overflow: () => doc.documentElement.style.properties.get("overflow") };
 }
 
+/** A second drawer in the same document — a nav drawer and a filter drawer on one mobile page. */
+function siblingDrawer(f: Fixture, open = false): { el: FakeDetails; element: Element } {
+  const el = new FakeDetails(open, f.doc, 3);
+  return { el, element: el as unknown as Element };
+}
+
+describe("mountNavDrawer — two drawers sharing one document", () => {
+  it("keeps the page locked while either drawer is open and restores it when both close", () => {
+    const f = fixture(true);
+    const b = siblingDrawer(f);
+    mountNavDrawer({ element: f.element });
+    mountNavDrawer({ element: b.element });
+
+    f.el.userToggle();
+    b.el.userToggle();
+    expect(f.overflow()).toBe("hidden");
+
+    f.el.userToggle();
+    expect(f.overflow()).toBe("hidden");
+
+    b.el.userToggle();
+    expect(f.overflow()).toBeUndefined();
+    expect(f.doc.documentElement.style.properties.size).toBe(0);
+  });
+
+  it("restores the page's own overflow, not the value the first drawer wrote", () => {
+    const f = fixture(true);
+    f.doc.documentElement.style.setProperty("overflow", "clip");
+    const b = siblingDrawer(f);
+    mountNavDrawer({ element: f.element });
+    mountNavDrawer({ element: b.element });
+
+    f.el.userToggle();
+    b.el.userToggle();
+    f.el.userToggle();
+    b.el.userToggle();
+
+    expect(f.overflow()).toBe("clip");
+  });
+
+  it("releases only its own hold when one of the two is disposed while open", () => {
+    const f = fixture(true);
+    const b = siblingDrawer(f);
+    const disposeA = mountNavDrawer({ element: f.element });
+    mountNavDrawer({ element: b.element });
+
+    f.el.userToggle();
+    b.el.userToggle();
+    disposeA();
+    expect(f.overflow()).toBe("hidden");
+
+    b.el.userToggle();
+    expect(f.overflow()).toBeUndefined();
+  });
+});
+
 describe("mountNavDrawer", () => {
   it("locks the document's scroll when the drawer opens at drawer width", () => {
     const f = fixture(true);

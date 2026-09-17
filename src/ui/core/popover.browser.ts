@@ -22,7 +22,7 @@ function markup(): Promise<string> {
     Popover({
       children: [
         Popover.Trigger({ for: "tips", "data-ref": "trigger", children: "Tips" }),
-        Popover.Content({ id: "tips", side: "top", align: "end", children: "Body" }),
+        Popover.Content({ id: "tips", label: "Tips", side: "top", align: "end", children: "Body" }),
       ],
     }),
   );

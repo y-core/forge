@@ -4,6 +4,7 @@ import { Forge } from "../../app/forge-app";
 import type { AppContext } from "../../context/types";
 import { createLogger } from "../../logging/logger";
 import type { LogRecord } from "../../logging/types";
+import { collectExecutionContext } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import { mapHandler } from "../../testing/route";
 import { checkSchemaHealth, schemaHealthCheck, schemaHealthMonitor } from "./health";
@@ -121,6 +122,27 @@ describe("schemaHealthCheck()", () => {
     expect(database.reads).toEqual([RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
   });
 
+  it("recovers once a migration repairs the schema, without waiting for the isolate to recycle", async () => {
+    const reads: string[] = [];
+    let recorded = EMPTY_FINGERPRINT;
+    const database = fakeD1((sql) => {
+      reads.push(sql);
+      if (sql === RECORDED_FINGERPRINT_SELECT) return [{ fingerprint: recorded }];
+      if (sql === INVENTORY_SELECT) return [USERS_ROW];
+      throw new Error(`unexpected statement: ${sql}`);
+    });
+    const recovering = schemaHealthCheck<Env>((c) => c.env.DB);
+    const env = { env: { DB: database } } as unknown as AppContext<Env>;
+
+    expect(await recovering(env)).toBe(false);
+    expect(reads).toEqual([RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+
+    recorded = USERS_FINGERPRINT;
+
+    expect(await recovering(env)).toBe(true);
+    expect(reads).toEqual([RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+  });
+
   it("forgets a rejected probe, so the next request under the same env reads again rather than failing for the isolate's life", async () => {
     const reads: string[] = [];
     let failures = 1;
@@ -217,16 +239,15 @@ describe("schemaHealthMonitor()", () => {
     };
 
     // `request()` drains `waitUntil` before it returns, which is what this test must not do.
-    const deferred: Promise<unknown>[] = [];
-    const ctx = { waitUntil: (p: Promise<unknown>) => deferred.push(p), passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const { executionCtx, pending: deferred, drain } = collectExecutionContext();
 
-    const res = await app(logger).fetch(new Request("http://localhost/"), { DB: slow }, ctx);
+    const res = await app(logger).fetch(new Request("http://localhost/"), { DB: slow }, executionCtx);
     expect(res.status).toBe(200);
     expect(records).toEqual([]);
     expect(deferred).toHaveLength(1);
 
     answer();
-    await Promise.all(deferred);
+    await drain();
     expect(records.map((record) => record.message)).toEqual(["d1.schema.health"]);
   });
 
@@ -242,6 +263,25 @@ describe("schemaHealthMonitor()", () => {
     const error = new Error("D1_ERROR: database is locked");
     const res = await app(logger).request("/", {}, { DB: fakeD1(() => [], { failOn: () => error }) });
     expect(res.status).toBe(200);
-    expect(records).toEqual([{ level: "warn", message: "d1.schema.health.failed", data: { error } }]);
+    expect(records).toEqual([
+      { level: "warn", message: "d1.schema.health.failed", data: { error: { name: "Error", message: error.message, stack: error.stack } } },
+    ]);
+  });
+
+  // The monitor's whole product is one record per isolate, and it rides `waitUntil`. A channel that
+  // writes asynchronously loses that record unless `observe()` waits for it.
+  it("holds waitUntil open until an asynchronous channel has written the record", async () => {
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/db", {
+      channels: [{ write: (record: LogRecord) => new Promise<void>((resolve) => setTimeout(() => (records.push(record), resolve()), 5)) }],
+    });
+    const { executionCtx, drain } = collectExecutionContext();
+
+    const res = await app(logger).fetch(new Request("http://localhost/"), { DB: db([{ fingerprint: USERS_FINGERPRINT }]) }, executionCtx);
+    expect(res.status).toBe(200);
+    expect(records).toEqual([]);
+
+    await drain();
+    expect(records.map((record) => record.message)).toEqual(["d1.schema.health"]);
   });
 });

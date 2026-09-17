@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { base64Encode, hmacSign, importHmacKey, utf8Encode } from "../crypto/mod";
 import { createSignedCookie, createUnsignedCookie } from "./cookie";
+import type { SignedCookie } from "./types";
 
 const SECRET_32 = "a".repeat(32);
 const SECRET_64 = "b".repeat(64);
@@ -10,6 +12,12 @@ const OTHER = "o".repeat(32);
 /** The `name=value` pair a browser would send back from a `Set-Cookie`. */
 function back(setCookieHeader: string): string {
   return setCookieHeader.split(";")[0] as string;
+}
+
+/** A wire value carrying `covered` verbatim under a valid signature — the only way to reach a segment `serialize` would never emit. */
+async function forgeWire(covered: string): Promise<string> {
+  const signature = await hmacSign(await importHmacKey(utf8Encode(SECRET)), covered);
+  return `c=${covered}.${base64Encode(signature).replace(/=+$/, "")}`;
 }
 
 // Captured from a differential run against `@remix-run/cookie` 0.5.4, the implementation this file
@@ -58,7 +66,7 @@ describe("wire format — golden vectors", () => {
 });
 
 describe("round trip", () => {
-  const values = ["", "hello", "café", "日本語", "🎉🚀", "a+b/c=d", "semi;colon", 'quotes "x"', "x".repeat(4096)];
+  const values = ["", "hello", "café", "日本語", "🎉🚀", "a+b/c=d", "semi;colon", 'quotes "x"', "x".repeat(2048)];
 
   it("round-trips through an unsigned cookie", async () => {
     const cookie = createUnsignedCookie("c");
@@ -152,10 +160,20 @@ describe("serialize — attribute override", () => {
 
   it("leaves untouched fields at their construction defaults", async () => {
     const cookie = createSignedCookie("c", { secrets: [SECRET], path: "/app", maxAge: 60, sameSite: "Strict" });
-    const header = await cookie.serialize("v", { maxAge: 0 });
+    const header = await cookie.serialize("v", { maxAge: 30 });
     expect(header).toContain("Path=/app");
     expect(header).toContain("SameSite=Strict");
-    expect(header).toContain("Max-Age=0");
+    expect(header).toContain("Max-Age=30");
+  });
+
+  it("refuses the three attributes it forces, so a caller cannot be quietly ignored", async () => {
+    const cookie = createSignedCookie("c", { secrets: [SECRET] });
+    // @ts-expect-error -- `sameSite` is not part of SignedCookieAttributes
+    await cookie.serialize("v", { sameSite: "None" });
+    // @ts-expect-error -- `httpOnly` is not part of SignedCookieAttributes
+    await cookie.serialize("v", { httpOnly: false });
+    // @ts-expect-error -- `secure` is not part of SignedCookieAttributes
+    expect(await cookie.serialize("v", { secure: false })).toContain("SameSite=Lax");
   });
 
   it("overrides every attribute it names", async () => {
@@ -166,6 +184,131 @@ describe("serialize — attribute override", () => {
     expect(header).toContain("SameSite=None");
     expect(header).toContain("Secure");
     expect(header).toContain("HttpOnly");
+  });
+});
+
+describe("createSignedCookie — read", () => {
+  const cookie = createSignedCookie("c", { secrets: [SECRET, OTHER] });
+
+  it("tells an absent cookie apart from one whose value did not verify", async () => {
+    expect(await cookie.read(null)).toBeNull();
+    expect(await cookie.read("d=value")).toBeNull();
+    expect(await cookie.read("c=aGVsbG8=.AAAA")).toEqual({ value: null, current: false });
+  });
+
+  it("reports which secret signed a value it verified", async () => {
+    const mine = back(await cookie.serialize("hello"));
+    const retired = back(await createSignedCookie("c", { secrets: [OTHER] }).serialize("hello"));
+    expect(await cookie.read(mine)).toEqual({ value: "hello", current: true });
+    expect(await cookie.read(retired)).toEqual({ value: "hello", current: false });
+  });
+});
+
+describe("createSignedCookie — the signed expiry", () => {
+  const bounded = createSignedCookie("c", { secrets: [SECRET], maxAge: 600 });
+
+  /** The wire value `bounded` would emit for `value`, with its expiry segment replaced by `expiry`. */
+  async function restamp(value: string, expiry: string): Promise<string> {
+    const wire = back(await bounded.serialize(value)).slice(2);
+    return `c=${expiry}${wire.slice(wire.indexOf("."))}`;
+  }
+
+  it("parses a value still inside its window", async () => {
+    expect(await bounded.parse(back(await bounded.serialize("hello")))).toBe("hello");
+  });
+
+  it("round-trips the destroy sentinel under a configured lifetime", async () => {
+    expect(await bounded.parse(back(await bounded.serialize("")))).toBe("");
+  });
+
+  it("answers null once the value is past its expiry", async () => {
+    const brief = createSignedCookie("c", { secrets: [SECRET], maxAge: 1 });
+    const wire = back(await brief.serialize("hello"));
+    expect(await brief.parse(wire)).toBe("hello");
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(await brief.parse(wire)).toBeNull();
+  });
+
+  it("answers null for an expiry pushed forward, because the HMAC covers it", async () => {
+    expect(await bounded.parse(await restamp("hello", "4102444800"))).toBeNull();
+  });
+
+  it("answers null for a value carrying no expiry at all", async () => {
+    const unbounded = createSignedCookie("c", { secrets: [SECRET] });
+    expect(await bounded.parse(back(await unbounded.serialize("hello")))).toBeNull();
+  });
+
+  it("accepts a correctly signed decimal expiry, so the forging helper below proves what it claims", async () => {
+    expect(await bounded.parse(await forgeWire("4102444800.aGVsbG8="))).toBe("hello");
+  });
+
+  // Every one of these is a second spelling of an instant that `Number` would accept, and therefore
+  // a second wire form for one expiry.
+  it("answers null for a signed but non-decimal expiry segment", async () => {
+    for (const spelling of ["0x7fffffff", "1e12", "+1789000000", " 1789000000 ", "Infinity", "17890000000000"]) {
+      expect(await bounded.parse(await forgeWire(`${spelling}.aGVsbG8=`))).toBeNull();
+    }
+  });
+
+  it("moves the embedded expiry with a per-call maxAge override, so the header never outlives the value", async () => {
+    const wire = back(await bounded.serialize("hello", { maxAge: 1 })).slice(2);
+    const embedded = Number(wire.slice(0, wire.indexOf(".")));
+    expect(embedded - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(1);
+  });
+
+  it("honours expires where no maxAge is given", async () => {
+    const future = createSignedCookie("c", { secrets: [SECRET], expires: new Date(Date.now() + 60_000) });
+    const wire = back(await future.serialize("hello")).slice(2);
+    expect(wire.slice(0, wire.indexOf("."))).toMatch(/^\d{10}$/);
+    expect(await future.parse(`c=${wire}`)).toBe("hello");
+  });
+
+  // The segment count, not `parse`: a cookie that silently lost its expiry parses its own output
+  // perfectly well, and every value it ever signed then verifies forever.
+  it("puts an expiry segment on the wire of a bounded cookie, and none on an unbounded one", async () => {
+    expect(
+      back(await bounded.serialize("hello"))
+        .slice(2)
+        .split("."),
+    ).toHaveLength(3);
+    const unbounded = createSignedCookie("c", { secrets: [SECRET] });
+    expect(
+      back(await unbounded.serialize("hello"))
+        .slice(2)
+        .split("."),
+    ).toHaveLength(2);
+  });
+
+  it("refuses an elapsed expires rather than signing values that verify forever", () => {
+    expect(() => createSignedCookie("c", { secrets: [SECRET], expires: new Date(Date.now() - 60_000) })).toThrow(
+      "createSignedCookie: expires must be in the future",
+    );
+  });
+
+  it("refuses a per-call override that leaves a bounded cookie nothing to embed", async () => {
+    await expect(bounded.serialize("hello", { maxAge: 0 })).rejects.toThrow('serialize: "c" carries a lifetime');
+    const byExpires = createSignedCookie("c", { secrets: [SECRET], expires: new Date(Date.now() + 60_000) });
+    await expect(byExpires.serialize("hello", { expires: new Date(Date.now() - 60_000) })).rejects.toThrow("expires must be in the future");
+    expect(back(await bounded.serialize("", { maxAge: 0 }))).toBe("c=");
+  });
+
+  it("refuses a non-finite maxAge rather than signing NaN", () => {
+    expect(() => createSignedCookie("c", { secrets: [SECRET], maxAge: Number.NaN })).toThrow("must be a finite number");
+    expect(() => createSignedCookie("c", { secrets: [SECRET], expires: new Date("nonsense") })).toThrow("must be a valid date");
+  });
+
+  // A year in milliseconds is the slip this catches: the expiry would overflow ten digits, every
+  // value minted under it would fail its own format check, and nothing would say why.
+  it("refuses a maxAge whose expiry would not fit the segment", async () => {
+    expect(() => createSignedCookie("c", { secrets: [SECRET], maxAge: 60 * 60 * 24 * 365 * 1000 })).toThrow("at most 9999999999 epoch seconds");
+    const brief = createSignedCookie("c", { secrets: [SECRET], maxAge: 60 });
+    await expect(brief.serialize("hello", { maxAge: 60 * 60 * 24 * 365 * 1000 })).rejects.toThrow("at most 9999999999 epoch seconds");
+  });
+
+  it("clears with Max-Age=0 rather than carrying the construction lifetime onto the clearing header", async () => {
+    const yearly = createSignedCookie("c", { secrets: [SECRET], maxAge: 31_536_000 });
+    expect(await yearly.serialize("", { maxAge: 0 })).toBe("c=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure");
+    expect(await yearly.serialize("")).toContain("Max-Age=31536000");
   });
 });
 
@@ -232,6 +375,16 @@ describe("createSignedCookie — returned cookie", () => {
     expect(await relaxed.serialize("value")).toContain("Secure");
   });
 
+  // The per-call override wins everywhere else in the merge, so without the re-force a decorated
+  // `serialize` — or one line of consumer code — drops `httpOnly` and `secure` back off.
+  it("re-forces HttpOnly and Secure over a serialize-time override that drops them", async () => {
+    const cookie = createSignedCookie("session", { secrets: [SECRET_32] });
+    // @ts-expect-error -- neither is part of SignedCookieAttributes; this is the untyped caller
+    const header = await cookie.serialize("value", { httpOnly: false, secure: false });
+    expect(header).toContain("HttpOnly");
+    expect(header).toContain("Secure");
+  });
+
   it("reports rotating only when more than one secret is held", () => {
     expect(createSignedCookie("c", { secrets: [SECRET_32] }).rotating).toBe(false);
     expect(createSignedCookie("c", { secrets: [SECRET_32, SECRET_64] }).rotating).toBe(true);
@@ -241,6 +394,54 @@ describe("createSignedCookie — returned cookie", () => {
     const seeded = back(await createSignedCookie("c", { secrets: [OTHER] }).serialize("payload"));
     expect(await createSignedCookie("c", { secrets: [SECRET, OTHER] }).parse(seeded)).toBe("payload");
     expect(await createSignedCookie("c", { secrets: [SECRET] }).parse(seeded)).toBeNull();
+  });
+});
+
+describe("serialize — the browser's size cap", () => {
+  /** The longest value `cookie` still serializes, found by bisection because each attempt costs an HMAC. */
+  async function largestFitting(cookie: SignedCookie): Promise<string> {
+    let low = 0;
+    let high = 4096;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      try {
+        await cookie.serialize("x".repeat(mid));
+        low = mid;
+      } catch {
+        high = mid - 1;
+      }
+    }
+    return "x".repeat(low);
+  }
+
+  it("serializes a payload that still fits, and reads it back whole", async () => {
+    const cookie = createSignedCookie("session", { secrets: [SECRET] });
+    const value = await largestFitting(cookie);
+    expect(value.length).toBeGreaterThan(2048);
+    expect(await cookie.parse(back(await cookie.serialize(value)))).toBe(value);
+  });
+
+  it("throws naming the measured size once one character more is asked for", async () => {
+    const cookie = createSignedCookie("session", { secrets: [SECRET] });
+    const over = `${await largestFitting(cookie)}x`;
+    const message = await cookie.serialize(over).then(
+      () => "",
+      (thrown: Error) => thrown.message,
+    );
+    expect(message).toContain('the Set-Cookie for "session" must be at most 4096 bytes');
+    expect(Number(/\(got (\d+)\)/.exec(message)?.[1])).toBeGreaterThan(4096);
+  });
+
+  it("caps an unsigned cookie by the same measure", async () => {
+    const cookie = createUnsignedCookie("theme");
+    await expect(cookie.serialize("x".repeat(4096))).rejects.toThrow("must be at most 4096 bytes");
+  });
+
+  // The clearing header is a name and a handful of attributes, so no session can be large enough to
+  // leave its own holder unable to sign out.
+  it("never trips on the destroy path, however large the value it replaces", async () => {
+    const cookie = createSignedCookie("session", { secrets: [SECRET], maxAge: 600 });
+    expect(await cookie.serialize("", { maxAge: 0 })).toContain("Max-Age=0");
   });
 });
 

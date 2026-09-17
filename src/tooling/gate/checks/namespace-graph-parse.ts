@@ -11,13 +11,17 @@ const MODULE_EXTENSIONS = [".ts", ".tsx", ".js"];
 
 const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
 
+// A masked comment is a run of `MASK`, so a clause and a `from` that hold one stay matchable.
 /** Characters an import/export clause may contain between the keyword and its `from`. */
-const CLAUSE = "[A-Za-z0-9_$,{}\\s*]*?";
+const CLAUSE = `[A-Za-z0-9_$,{}\\s*${MASK}]*?`;
+
+/** What may separate `from` from its specifier: whitespace, or a masked comment. */
+const GAP = `[\\s${MASK}]*`;
 
 /** The import and export forms, each capturing the opening quote because literal interiors are masked. */
 const SITE_PATTERNS = [
-  new RegExp(`\\bimport\\b(${CLAUSE})\\bfrom\\s*(["'\`])`, "gd"),
-  new RegExp(`\\bexport\\b(${CLAUSE})\\bfrom\\s*(["'\`])`, "gd"),
+  new RegExp(`\\bimport\\b(${CLAUSE})\\bfrom${GAP}(["'\`])`, "gd"),
+  new RegExp(`\\bexport\\b(${CLAUSE})\\bfrom${GAP}(["'\`])`, "gd"),
   /\bimport\s+()(["'`])/dg,
   /\bimport\s*\(\s*()(["'`])/dg,
 ];

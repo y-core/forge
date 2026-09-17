@@ -1,20 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 
 import { fail } from "../finding";
 import { checkCommentBudget } from "./comment-budget";
+import { gateFixtureRoot } from "./gate.fixture";
 
-/** A throwaway root holding exactly the files given. */
-function fixtureRoot(files: Record<string, string> = {}): string {
-  const root = mkdtempSync(join(tmpdir(), "forge-comment-budget-"));
-  for (const [path, contents] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    writeFileSync(join(root, path), contents, "utf-8");
-  }
-  return root;
-}
+const fixtureRoot = (files: Record<string, string> = {}): string => gateFixtureRoot(files, "forge-comment-budget-");
 
 const messages = (files: Record<string, string>, licences: ReadonlyMap<string, string> = new Map()): string[] =>
   checkCommentBudget({ root: fixtureRoot(files), sources: ["src"], licences }).findings.map((finding) => finding.message);

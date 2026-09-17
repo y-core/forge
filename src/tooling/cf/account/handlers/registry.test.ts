@@ -62,7 +62,7 @@ describe("buildHandlers()", () => {
 
     const handlers = buildHandlers({ configPath: join(dir, "wrangler.jsonc") });
     const secrets = handlers.find((h) => h.type === "secrets");
-    expect(secrets?.extract({ name: "t" })).toEqual([{ name: "FROM_THAT_DIR", value: "1" }]);
+    expect(secrets?.extract({ name: "t" })).toEqual([{ name: "FROM_THAT_DIR", value: "1", conflictsWithVar: false }]);
   });
 
   it("threads configPath into the vars handler too, so it can see the override", async () => {

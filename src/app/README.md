@@ -98,6 +98,9 @@ app.use("*", requestId());
 app.use(["/admin/*", "/internal/*"], adminOnly);
 ```
 
+Those two are the only wildcard forms, and `use` throws on any other. `"/admin*"` looks like it guards `/administrator` and `/admin-api/export`; it
+would not, so it is refused at registration rather than left to under-cover in silence.
+
 `buildGuardChain(group)` expands one guard group into the ordered array `app.use` takes, for a group you want to register yourself.
 
 ---
@@ -165,7 +168,11 @@ Either the loader or the view may return a `Response` to short-circuit — a red
 still apply to it.
 
 **`cache` and `headers` answer different questions.** `cache` is the page's _default_ policy, set only on a response that states none of its own, so
-a redirect or a `no-store` refusal keeps what it said. `headers` is applied last and overrides everything, including `cache`. The full lifecycle,
+a redirect or a `no-store` refusal keeps what it said. `headers` is applied last and overrides everything, including `cache`.
+
+**`scope` defaults to `"private"`** — the browser may store the page, a shared cache may not. Write `scope: "public"` when the page is the same for
+every reader and you want an edge or proxy to serve it. The default is the safe one because forgetting it on a personalised page would let
+a shared cache hand one reader's HTML to another, while forgetting it on a public page costs only a cache hit. The full lifecycle,
 including what a `schema` on a page changes, is [`ROUTING_AND_MIDDLEWARE.md`][ram-2a] §2a's.
 
 A page that also accepts a submission declares a `schema` and an `action`; the options that come with it are the next section's, and they mean the
@@ -419,6 +426,16 @@ expect(res.status).toBe(200);
 ```
 
 A bare path is resolved against `http://localhost`; a full URL is used as given. `env` defaults to `{}`, and `executionCtx` is supplied for you.
+
+`app.fetch` supplies nothing: it takes all three Workers arguments, and the entry point you export must pass them all on.
+
+```ts
+export default { fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx) };
+```
+
+Dropping `ctx` is a deployment defect, so `fetch` refuses rather than degrading — a stubbed no-op `waitUntil` would discard the request-log flush,
+the D1 schema observation and every `c.executionCtx.waitUntil(auditLog(…))` a route defers, with nothing written and nothing logged. Outside a
+Worker, `@y-core/forge/testing` supplies `mockExecutionContext()` and `collectExecutionContext()`.
 
 ---
 

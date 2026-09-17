@@ -142,7 +142,9 @@ Default: open a modal with `Dialog`, which renders a native `<dialog>` and takes
 enter the top layer, as a non-modal inspector docked beside the content it describes must not. <!-- rule:forge-ui-platform-native-dialog -->
 `showModal()` is three behaviours at once — the top layer, page-wide inertness, and the Escape key — and re-declaring the role on a positioned `div`
 claims all three in the accessibility tree while implementing none of them. That gap is the failure: a screen-reader user is told the page behind is
-unavailable, and can still tab into it.
+unavailable, and can still tab into it. A `popover` element is the case where the gap does not open, so `role="dialog"` on one is not this defect
+and is not flagged: the platform is already giving it the top layer, Escape and light dismiss, and `aria-modal` — the one claim a popover still
+cannot make good on — stays flagged wherever it appears.
 
 Default: declare a floating panel through the Popover API, as `Popover.Content` does with `popover='auto'` against a trigger carrying
 `command='toggle-popover'`, rather than absolutely positioning a menu, tooltip or dropdown that declares no popover at all — unless the panel must

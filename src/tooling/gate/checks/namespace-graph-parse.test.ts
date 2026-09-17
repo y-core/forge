@@ -136,6 +136,28 @@ describe("parseImports() — the scanner must not go blind (the drift gate itsel
   });
 });
 
+describe("parseImports() — a comment inside the statement (the masked interior the clause must cross)", () => {
+  it("finds the site through a comment in every place one may be written between `import` and its specifier", () => {
+    const cases = [
+      'import { a /* x */ } from "./x";',
+      'import { a } from /* x */ "./x";',
+      'export { a /* x */ } from "./x";',
+      'import d /* x */, { a } from "./x";',
+      ["import {", "  /** What a is. */", "  a,", '} from "./x";'].join("\n"),
+    ];
+
+    expect(cases.map(sites)).toEqual([[["./x", "value"]], [["./x", "value"]], [["./x", "value"]], [["./x", "value"]], [["./x", "value"]]]);
+  });
+
+  it("keeps a commented type-only clause a type edge, since the comment erases with the bindings around it", () => {
+    expect(sites('import type { A /* x */ } from "./x";')).toEqual([["./x", "type"]]);
+  });
+
+  it("reads a member commented with the word `type` as a value, since prose binds nothing", () => {
+    expect(sites('import { /* type */ A } from "./x";')).toEqual([["./x", "value"]]);
+  });
+});
+
 describe("isTestSource() — test exclusion (the leaf classification)", () => {
   it("marks the six test suffixes and nothing that merely reads like one", () => {
     const cases = [

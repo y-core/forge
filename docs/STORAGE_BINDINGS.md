@@ -163,8 +163,13 @@ These surfaces build on the read:
   binding logs `d1.schema.health.skipped`, a thrown read logs `d1.schema.health.failed`; every path calls `next()`. **The observation is handed to
   `executionCtx.waitUntil` and the request is never held for it**, so the record may land after the response — it gates nothing, and the first
   request of an isolate must not pay for two D1 reads and a hash. Read the log as "this isolate saw this", not as a fact about one request.
+  **Drift beginning after that observation is invisible until the isolate recycles:** it reads once, so a `CREATE INDEX` run against the database
+  mid-life is never seen by an isolate that already logged `match`, however long that isolate lives. A deployment is the reliable boundary, not an
+  interval.
 - `schemaHealthCheck(binding)` is a `healthCheck` predicate that fails only on `mismatch`; `unrecorded` and `unavailable` pass, mirroring the
-  `status --check` clause ([`DATABASE_MANAGEMENT.md`][dm-6c] §6c).
+  `status --check` clause ([`DATABASE_MANAGEMENT.md`][dm-6c] §6c). It keeps its own per-isolate cache and inherits that limitation in one direction
+  only: a healthy verdict is held for the isolate's life, so later drift is invisible there; a `mismatch` is never cached, so a repair lands on the
+  next poll rather than shedding traffic until the isolate recycles.
 
 ### 1g. Transactions — batch() Is the Boundary
 
@@ -246,8 +251,8 @@ channel.
 `serveObject(backend, request, key, options?)` retrieves an object and returns a fully-formed `Response` ready to return from a handler: `200` with
 the body, `206` for a satisfied `Range`, `304` for a matching `If-None-Match`, `404` when absent, `416` for an unsatisfiable range. It sets
 `Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`, `Content-Length`, `Cache-Control` and
-`X-Content-Type-Options: nosniff` — the last unconditionally, because an object's content type is caller-supplied at upload and is the only
-non-prose mitigation against a stored active type being sniffed.
+`X-Content-Type-Options: nosniff` — the last unconditionally, because it is what stops an object being sniffed _into_ a type its bytes merely
+resemble.
 
 **No `null` check is needed** — a missing object yields a `404` `Response`, never an unhandled rejection.
 
@@ -266,9 +271,19 @@ is a non-safe number reaching `R2GetOptions`, which R2 answers with a `TypeError
 carrying a non-Latin-1 byte is dropped rather than set, for the same reason the ASCII fallback exists: `Headers.set` throws on it, turning a
 legitimate download into a 500.
 
-**An object's content type is caller-supplied.** A route that lets a caller choose the key, and therefore the inferred type, can store `text/html`
-and have it served back from the app's own origin; `nosniff` bounds the damage but does not remove it. Serve untrusted uploads from a separate
-origin, or force `contentDisposition: "attachment"`.
+**An active content type is neutralised at both ends, and neither end is the caller's to remember.** `nosniff` does nothing once the declared type
+already _is_ `text/html`, so the two ends are these:
+
+- **`put` never infers one.** `inferContentType` returns `application/octet-stream` for every extension in `ACTIVE_CONTENT_EXTENSIONS` — `html`,
+  `htm`, `svg`, `xml`, `js`, `mjs` — because a key is routinely a user-chosen filename. `MIME_MAP` holds the honest mapping and the inference
+  declines to act on it. An explicit `contentType` on `put` wins, which is how a trusted asset keeps its real type.
+- **`serveObject` downloads one.** When the _stored_ type is active (`isActiveContentType`, matched on the essence so casing and a `charset`
+  parameter cannot hide one), the response carries `Content-Security-Policy: sandbox` and — unless the caller passed a `contentDisposition` —
+  `Content-Disposition: attachment`, overriding a stored `inline`. This is what closes the case the put-side default cannot see: an app that stored
+  an attacker-supplied MIME type explicitly.
+
+Serving untrusted uploads from a separate origin is still the stronger arrangement, and `contentDisposition: "attachment"` is still available for
+types forge does not class as active.
 
 **When a disposition is set, `Content-Disposition` carries an RFC 5987 `filename*=UTF-8''…` parameter with the exact name plus an ASCII
 `filename="…"` fallback** for clients that ignore it. The fallback is an approximation, never a strip: accents fold to their base letter, every

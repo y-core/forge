@@ -25,6 +25,8 @@ export type AdminElevateViewProps = AuthViewChrome & {
   readonly csrfToken: string;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
+  /** A refused bootstrap secret, in the web layer's words. */
+  readonly fieldError?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
 

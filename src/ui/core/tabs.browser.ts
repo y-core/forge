@@ -80,7 +80,9 @@ test.describe("Tabs", () => {
     expect(await focusedId(page)).toBe("p-a");
   });
 
-  test("arrow keys move focus, skip a disabled tab, and selection follows", async ({ page }) => {
+  // A disabled tab is an `<a>` carrying `aria-disabled` — an anchor has no native `disabled` — so it
+  // stays in the ring, focusable but inert, which is the WAI-ARIA split `ui/README.md` promises.
+  test("arrow keys move focus, reach a disabled tab without selecting it, and selection otherwise follows", async ({ page }) => {
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);
 
@@ -90,7 +92,12 @@ test.describe("Tabs", () => {
     expect(await tabsState(page)).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"] });
 
     await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("t-c");
+    expect(await tabsState(page)).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"] });
+
+    await page.keyboard.press("ArrowRight");
     expect(await focusedId(page)).toBe("t-d");
+    expect(await tabsState(page)).toEqual({ selected: ["t-d"], dataSelected: ["t-d"], visiblePanels: ["p-d"] });
   });
 
   test("Home and End reach the first and last enabled tabs", async ({ page }) => {
@@ -155,8 +162,9 @@ test.describe("Tabs — the boot tab stop follows the selection", () => {
     await page.keyboard.press("Tab");
     await page.keyboard.press("ArrowRight");
 
-    expect(await focusedId(page)).toBe("t-d");
-    expect(await tabsState(page)).toEqual({ selected: ["t-d"], dataSelected: ["t-d"], visiblePanels: ["p-d"] });
+    // One step from the selected tab lands on the disabled one, which holds focus and not selection.
+    expect(await focusedId(page)).toBe("t-c");
+    expect(await tabsState(page)).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"] });
   });
 });
 

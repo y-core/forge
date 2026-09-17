@@ -34,12 +34,21 @@ These primitives look interchangeable and are not.
 | A settings row — a labelled control with no validation and no error | `Field` | A layout row with a decorative `<span>` label; no form semantics at all |
 | Several checkboxes or radios answering one question | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
 | A one-time code the reader types or pastes | `OtpInput` inside `FormField` | One `<input autocomplete="one-time-code">` painted as cells; the value is the platform's, not assembled |
+| A `<label>` you place yourself, beside a control you have already wired | `Label` | A real `<label for>` with a `required` marker and nothing else — no row, no fieldset, no id derivation |
 
 **Default: reach for `FormField` whenever the value is submitted and can be rejected.**
 <!-- rule:forge-ui-form-formfield-default -->
 
 `Field` is not a lighter `FormField`; it has no error slot, so choosing it for a validated control means the error has nowhere to render. Override
 for a control whose value is applied immediately and cannot fail — a theme preference, a viewport slider.
+
+**Default: reach for `Label` only when you are placing the label yourself and own the control's id.**
+<!-- rule:forge-ui-form-bare-label -->
+
+`Label` is the one primitive that wires nothing: it renders a `<label for>` and a `required` marker, and the `for` is yours to get right. `Field`
+replaces it with a decorative `<span>` in a layout row, and `FormField` replaces it again with a `<fieldset>` that derives the id — so reaching for
+`Label` inside either is two labels for one control. Override for markup forge does not shape at all, where there is no row and no fieldset to put
+the label in.
 
 **Default: use `CheckboxGroup` / `RadioGroup` rather than a `FormField` wrapping loose inputs.**
 <!-- rule:forge-ui-form-group-primitive -->

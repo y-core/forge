@@ -228,4 +228,60 @@ describe("bindAttr", () => {
 
     expect(el.getAttribute("title")).toBe("first");
   });
+
+  // The island seeds `data-island-state` from the query string, so a signal's value is attacker
+  // reachable: the client write has to neutralise a scheme exactly as the SSR write of it does.
+  it("neutralizes a javascript: scheme a signal carries into href", () => {
+    const el = new FakeElement({ "data-bind-attr": "href:next" });
+    const state = signals({ next: "javascript:alert(1)" });
+
+    bindAttr(root(el), state);
+    expect(el.getAttribute("href")).toBe("#");
+
+    state.next.value = "/safe";
+    expect(el.getAttribute("href")).toBe("/safe");
+  });
+
+  it("neutralizes a javascript: scheme on src and on a namespaced xlink:href", () => {
+    const src = new FakeElement({ "data-bind-attr": "src:url" });
+    const xlink = new FakeElement({ "data-bind-attr": "xlink:href:url" });
+
+    bindAttr(root(src, xlink), signals({ url: "javascript:alert(1)" }));
+
+    expect([src.getAttribute("src"), xlink.getAttribute("xlink:href")]).toEqual(["#", "#"]);
+  });
+
+  it("leaves an hx-get value alone — `#` would be a live same-origin request (docs/HTMX.md §7a)", () => {
+    const el = new FakeElement({ "data-bind-attr": "hx-get:url" });
+
+    bindAttr(root(el), signals({ url: "javascript:alert(1)" }));
+
+    expect(el.getAttribute("hx-get")).toBe("javascript:alert(1)");
+  });
+
+  it("refuses a handler name, srcdoc and style, and leaves the rest bound", () => {
+    const handler = new FakeElement({ "data-bind-attr": "onclick:payload" });
+    const frame = new FakeElement({ "data-bind-attr": "srcdoc:payload" });
+    // The renderer drops `style` under the shipped `style-src 'self'`; writing one here is the
+    // browser runtime disagreeing with the markup it was handed.
+    const styled = new FakeElement({ "data-bind-attr": "style:payload" });
+    const good = new FakeElement({ "data-bind-attr": "title:payload" });
+
+    const warnings: unknown[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args[0]);
+    try {
+      bindAttr(root(handler, frame, styled, good), signals({ payload: "alert(1)" }));
+    } finally {
+      console.warn = original;
+    }
+
+    expect(warnings).toEqual([
+      '[data-bind-attr] "onclick" may not be bound to a signal',
+      '[data-bind-attr] "srcdoc" may not be bound to a signal',
+      '[data-bind-attr] "style" may not be bound to a signal',
+    ]);
+    expect([handler.attrs.has("onclick"), frame.attrs.has("srcdoc"), styled.attrs.has("style")]).toEqual([false, false, false]);
+    expect(good.getAttribute("title")).toBe("alert(1)");
+  });
 });

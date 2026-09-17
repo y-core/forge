@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import type { Size } from "../contracts/types";
 import { Pagination } from "./pagination";
 import type { CarouselSnap } from "./types";
@@ -11,7 +12,7 @@ interface CarouselRootProps extends Omit<JSX.IntrinsicElements["div"], "children
   snap?: CarouselSnap | undefined;
   /** Accessible name; with it the root announces itself as a carousel, without it as a plain region of slides. */
   label?: string | undefined;
-  /** Accessible name for the scrolling strip itself, which is a keyboard tab stop. @default the root's `label`, else `"Slides"` */
+  /** Accessible name for the scrolling strip itself, which is a keyboard tab stop. @default the root's `label`, else `LABEL_DEFAULTS.carouselStrip` */
   stripLabel?: string | undefined;
   children?: JSXNode | undefined;
 }
@@ -26,6 +27,8 @@ interface CarouselItemProps extends Omit<JSX.IntrinsicElements["div"], "children
 interface CarouselDotsProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   /** The `id` of each item, in strip order — every dot is an anchor to one. */
   ids: readonly string[];
+  /** Names one dot from its one-based position. @default a position after `LABEL_DEFAULTS.carouselSlide` */
+  slideLabel?: ((position: number) => string) | undefined;
   /** Zero-based index of the item on show. */
   current?: number | undefined;
   size?: Size | undefined;
@@ -46,20 +49,16 @@ const CarouselRoot: FC<CarouselRootProps> = ({ snap = "start", label, stripLabel
     class={cn("relative", cls)}
     {...rest}>
     {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow. */}
-    <div data-slot='carousel-strip' role='group' aria-label={stripLabel ?? label ?? "Slides"} tabindex={0} class={STRIP}>
+    <div data-slot='carousel-strip' role='group' aria-label={stripLabel ?? label ?? LABEL_DEFAULTS.carouselStrip} tabindex={0} class={STRIP}>
       {children}
     </div>
   </div>
 );
 
-// A dot is a real fragment link, so the browser scrolls the document as well as the strip — a page
-// with fixed chrome above the carousel has to supply its own `scroll-margin-top` here.
 const CarouselItem: FC<CarouselItemProps> = ({ snap = "start", label, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     data-slot={slotToken("carousel-item", inherited)}
     role='group'
-    // All-or-nothing, mirroring the root: `aria-roledescription` renames a role a reader is then
-    // told nothing else about, so an unnamed slide stays a plain group rather than an anonymous one.
     {...(label !== undefined ? { "aria-roledescription": "slide", "aria-label": label } : {})}
     class={cn(ITEM, SNAP[snap], cls)}
     {...rest}>
@@ -67,17 +66,29 @@ const CarouselItem: FC<CarouselItemProps> = ({ snap = "start", label, class: cls
   </div>
 );
 
-// `current` is a public `number`, so an out-of-range index left unclamped would mark no dot at all
-// and leave the controller no selected paint to lift off the row.
 function currentIndex(current: number, count: number): number {
   if (!Number.isFinite(current) || count === 0) return 0;
   return Math.min(Math.max(Math.trunc(current), 0), count - 1);
 }
 
-const CarouselDots: FC<CarouselDotsProps> = ({ ids, current = 0, size = "sm", label = "Slides", class: cls, "data-slot": inherited, ...rest }) => (
+/** Word order is a caller's to change, so the default is a function and not a template the table holds. */
+const defaultSlideLabel = (position: number): string => `${LABEL_DEFAULTS.carouselSlide} ${position}`;
+
+// A dot is a real fragment link, so the browser scrolls the document as well as the strip: a page
+// with fixed chrome above the carousel supplies its own `scroll-margin-top` on the items.
+const CarouselDots: FC<CarouselDotsProps> = ({
+  ids,
+  current = 0,
+  size = "sm",
+  label = LABEL_DEFAULTS.carouselDots,
+  slideLabel = defaultSlideLabel,
+  class: cls,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <Pagination label={label} data-slot={slotToken("carousel-dots", inherited)} class={cn("mt-3 flex justify-center", cls)} {...rest}>
     {ids.map((id, index) => (
-      <Pagination.Item href={`#${id}`} current={index === currentIndex(current, ids.length)} size={size} aria-label={`Slide ${index + 1}`}>
+      <Pagination.Item href={`#${id}`} current={index === currentIndex(current, ids.length)} size={size} aria-label={slideLabel(index + 1)}>
         {index + 1}
       </Pagination.Item>
     ))}

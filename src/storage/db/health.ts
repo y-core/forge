@@ -4,6 +4,7 @@ import { getAppContext } from "../../context/types";
 import type { AppContext } from "../../context/types";
 import { bytesToHex, sha256 } from "../../crypto/mod";
 import { createLogger } from "../../logging/logger";
+import { serializeError } from "../../logging/serialize-error";
 import { INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT, schemaFingerprintInput, toSchemaObjects } from "./schema";
 import type { D1DatabaseLike, SchemaHealth, SchemaHealthMonitorOptions } from "./types";
 
@@ -42,7 +43,13 @@ export function schemaHealthCheck<Bindings = Record<string, unknown>>(
     if (c.env !== cachedEnvRef || healthy === undefined) {
       cachedEnvRef = c.env;
       healthy = checkSchemaHealth(db).then(
-        (health) => health.state !== "mismatch",
+        (health) => {
+          // Only a healthy verdict is kept. A mismatch repaired by a migration would otherwise shed
+          // traffic for the rest of the isolate's life with no way for an operator to force a recheck.
+          const ok = health.state !== "mismatch";
+          if (!ok) healthy = undefined;
+          return ok;
+        },
         (error: unknown) => {
           healthy = undefined;
           throw error;
@@ -60,16 +67,20 @@ export function schemaHealthMonitor<Bindings = Record<string, unknown>>(options:
   let observed: Promise<void> | undefined;
 
   async function observe(c: AppContext<Bindings>): Promise<void> {
-    const db = options.binding(c);
-    if (!db) {
-      logger.warn("d1.schema.health.skipped", { reason: "binding absent" });
-      return;
-    }
     try {
-      const { state, recorded, actual } = await checkSchemaHealth(db);
-      logger[state === "mismatch" || state === "unavailable" ? "warn" : "info"]("d1.schema.health", { state, recorded, actual });
-    } catch (error) {
-      logger.warn("d1.schema.health.failed", { error });
+      const db = options.binding(c);
+      if (!db) {
+        logger.warn("d1.schema.health.skipped", { reason: "binding absent" });
+        return;
+      }
+      try {
+        const { state, recorded, actual } = await checkSchemaHealth(db);
+        logger[state === "mismatch" || state === "unavailable" ? "warn" : "info"]("d1.schema.health", { state, recorded, actual });
+      } catch (error) {
+        logger.warn("d1.schema.health.failed", { error: serializeError(error) });
+      }
+    } finally {
+      await logger.flush();
     }
   }
 

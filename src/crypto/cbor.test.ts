@@ -96,4 +96,22 @@ describe("cborDecodeFirst — refusals", () => {
   it("refuses a reserved additional-information value", () => {
     expect(() => cborDecodeFirst(hexToBytes("1c"))).toThrow("cborDecodeFirst: unsupported additional information 28");
   });
+
+  it("refuses nesting past the depth limit while accepting the limit itself", () => {
+    expect(cborDecodeFirst(hexToBytes("81".repeat(16) + "00")).bytesRead).toBe(17);
+    expect(() => cborDecodeFirst(hexToBytes("81".repeat(17) + "00"))).toThrow("cborDecodeFirst: nesting deeper than 16 items");
+  });
+
+  it("refuses a map that repeats a key, whether the key dedupes by identity or not", () => {
+    expect(() => cborDecodeFirst(hexToBytes("a201020103"))).toThrow("cborDecodeFirst: map repeats a key");
+    expect(() => cborDecodeFirst(hexToBytes("a2" + "4101" + "02" + "4101" + "03"))).toThrow("cborDecodeFirst: map repeats a key");
+    expect(cborDecodeFirst(hexToBytes("a2" + "6161" + "02" + "6162" + "03")).bytesRead).toBe(7);
+  });
+
+  it("refuses an argument encoded wider than the value needs", () => {
+    expect(() => cborDecodeFirst(hexToBytes("1805"))).toThrow("cborDecodeFirst: 5 is not in its shortest form");
+    expect(() => cborDecodeFirst(hexToBytes("190018"))).toThrow("cborDecodeFirst: 24 is not in its shortest form");
+    expect(() => cborDecodeFirst(hexToBytes("1a000003e8"))).toThrow("cborDecodeFirst: 1000 is not in its shortest form");
+    expect(() => cborDecodeFirst(hexToBytes("1b00000000000f4240"))).toThrow("cborDecodeFirst: 1000000 is not in its shortest form");
+  });
 });

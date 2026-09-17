@@ -127,6 +127,14 @@ describe("checkSchema()", () => {
     expect(checkSchema(run, NO_REPLAY)).toEqual({ snapshotPath: SNAPSHOT, schemas: [], problems: null });
   });
 
+  // An absent file is dropped on the way in, so the states count alone cannot tell a declaration
+  // naming a missing file from no declaration at all — and reporting clean is the wrong answer.
+  it("reports a schema config/db.ts declares with no file behind it, rather than reporting clean", () => {
+    const { run } = context(migration);
+
+    expect(checkSchema(run, NO_REPLAY).problems).toEqual([`${SCHEMA} is declared in config/db.ts and no file is there to read`]);
+  });
+
   it("names the compose that writes the first snapshot when a schema is declared and none exists", () => {
     const { run } = context({ ...migration, ...schemaAt(SCHEMA, [USERS]) });
 

@@ -154,3 +154,35 @@ describe("Drawer sections", () => {
     ]);
   });
 });
+
+describe("Drawer — the name the root resolves to", () => {
+  it("points at the trigger a titleless drawer was opened from, and drops the derived reference", async () => {
+    const byRef = attrsOf(
+      await render(
+        <Drawer id='filters' labelledby='filters-trigger'>
+          Body
+        </Drawer>,
+      ),
+    );
+    const byLabel = attrsOf(
+      await render(
+        <Drawer id='filters' label='Filters'>
+          Body
+        </Drawer>,
+      ),
+    );
+
+    expect(byRef["aria-labelledby"]).toBe("filters-trigger");
+    expect(byLabel["aria-labelledby"]).toBeUndefined();
+    expect(byLabel["aria-label"]).toBe("Filters");
+  });
+
+  it("is provably nameless with neither a title nor a name prop, its reference resolving to nothing", async () => {
+    const html = await render(<Drawer id='filters'>Body</Drawer>);
+    const named = attrOf(html, "aria-labelledby", 'data-slot="drawer"');
+
+    expect(named).toBe("filters-title");
+    expect(tagOf(html, `id="${named}"`)).toBe("");
+    expect(attrsOf(html)["aria-label"]).toBeUndefined();
+  });
+});

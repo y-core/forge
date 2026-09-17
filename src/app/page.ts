@@ -14,7 +14,9 @@ const logger = createLogger("page");
 function buildCacheHeader(cache: "no-store" | CacheDirective | undefined): string | undefined {
   if (cache === "no-store") return new CacheControl({ noStore: true }).toString();
   if (cache && typeof cache === "object") {
-    const scope = cache.scope ?? "public";
+    // `private` by default: the field spans personalised and shared pages alike, and marking a
+    // dashboard shared-cacheable lets an edge serve one reader's HTML to another.
+    const scope = cache.scope ?? "private";
     return new CacheControl({ [scope]: true, maxAge: cache.maxAge }).toString();
   }
   return undefined;

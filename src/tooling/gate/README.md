@@ -56,7 +56,7 @@ Then wire the scripts:
 {
   "scripts": {
     "verify": "forge verify",
-    "verify:fast": "forge verify --mode fast",
+    "verify:quality": "forge verify --mode quality",
     "verify:full": "forge verify --full",
     "lint": "forge verify --only lint",
     "fix": "forge verify --fix"
@@ -141,8 +141,9 @@ Most rows are opt-in, and each option is a question about your repository rather
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing` — whose fakes lose every write — or
 `@y-core/forge/dev`, whose token is what opens each dev-only relaxation ([`NAMESPACES.md`][namespaces-5i] §5i).
 
-**Only `lint:types` and `validate-dev-boundary` default above the `fast` tier**, both to `standard`; the type-aware lint row sits immediately after
-`format` so a run that is going to fail a sub-second finding never pays for a browser first. `design.sources` deliberately does not fall back to the
+**Only `test` defaults above the `quality` tier**, to `standard`: every other row judges the source rather than running it. The type-aware lint
+row sits immediately after `format` so a run that is going to fail a sub-second finding never pays for a browser first. `design.sources`
+deliberately does not fall back to the
 table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should inherit deferrals keyed to
 `src/ui/…` paths.
 
@@ -222,7 +223,7 @@ Every rule id, its tier, its severity and the feature that replaces it are owned
 
 ```bash
 bun run verify                     # the `standard` tier, fail-fast — what a task closes on
-bun run verify:fast                # the inner loop (`--mode fast`)
+bun run verify:quality             # the writing loop (`--mode quality`)
 bun run verify:full                # everything, prerequisites included (`--full`)
 bun run verify --list              # print the resolved selection, run nothing
 bun run verify --only lint,test    # narrow the run (branded as scoped)
@@ -231,7 +232,7 @@ bun run verify --fix               # run each selected step's fixer instead
 
 | Flag | Effect |
 | --- | --- |
-| `--mode <m>` | Which tier to run: `fast`, `standard` or `full`. Default `standard`; an unrecognised value is refused. |
+| `--mode <m>` | Which tier to run: `quality`, `standard` or `full`. Default `standard`; an unrecognised value is refused. |
 | `--full` | Sugar for `--mode full`. Passing both is refused rather than given a precedence. |
 | `--only <a,b>` | Run only those steps, in the run's own order. Repeatable and comma-separated; an unknown label is refused with the known ones listed. |
 | `--list` | Print the resolved selection and exit, running nothing. |
@@ -327,15 +328,15 @@ are [`BUILD_TOOLING.md`][bt-2i] §2i's. The barrel parsers (`parseBarrelExports`
 import { type GateMode, selectSteps } from "@y-core/forge/tooling/gate";
 import { STEPS } from "./steps";
 
-const result = selectSteps(STEPS, { mode: "fast" });
-if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint", "test"]);
+const result = selectSteps(STEPS, { mode: "quality" });
+if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint"]);
 
 // Each mode is a superset of the one below it, by construction — selection is a rank comparison.
 const labels = (mode: GateMode) => {
   const selection = selectSteps(STEPS, { mode });
   return selection.ok ? selection.steps.map((s) => s.label) : [];
 };
-expect(labels("fast").every((label) => labels("standard").includes(label))).toBe(true);
+expect(labels("quality").every((label) => labels("standard").includes(label))).toBe(true);
 
 // Selection calls no probe, so what a table selects never depends on the machine it runs on.
 expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
@@ -389,8 +390,9 @@ formatSemVer(bumpSemVer(parseSemVer("v1.2.3")!, "minor")); // "1.3.0"
 running `validate-markdown` must put `**/*.md` in `.oxfmtrc.json`'s `ignorePatterns` — otherwise each tool reverses the other on every
 `bun run fix`.
 
-**A types-only assets artifact passes a fast run alone.** `gen types` maps every logical name to itself and those files deliberately do not exist,
-which is what lets `tsc` run on a clean checkout — so `validate-asset-manifest` lets it through on `fast` and fails it on `standard` and `full`. A
+**A types-only assets artifact passes a quality run alone.** `gen types` maps every logical name to itself and those files deliberately do not
+exist, which is what lets `tsc` run on a clean checkout — so `validate-asset-manifest` lets it through on `quality` and fails it on `standard` and
+`full`. A
 release gate has no such excuse: passing there on an artifact nobody built is exactly the 404 the check exists to prevent.
 
 **Import `resolveChromiumPath` from `@y-core/forge/tooling/gate/chromium`, not from the barrel.** Node refuses to strip types from a file under

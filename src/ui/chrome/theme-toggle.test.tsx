@@ -3,13 +3,30 @@
 import { describe, expect, it } from "bun:test";
 
 import { renderToString } from "../../jsx/render-to-string";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
+import { attrOf } from "../core/core.fixture";
 import { createIcon } from "../core/icon";
 import { ThemeToggle } from "./theme-toggle";
 
 const icon = createIcon("/sprite.svg", { "icon-sun": "0 0 24 24", "icon-moon": "0 0 24 24", "icon-monitor": "0 0 24 24" });
 
+const TOGGLE_CLASS = "rounded-field p-2 text-foreground focus-ring hover:bg-accent motion-safe:transition";
+
 describe("ThemeToggle", () => {
+  it("leaves the button box untouched at every size, so the hit target holds while only the glyph shrinks", async () => {
+    const boxes: string[] = [];
+    const glyphs: string[] = [];
+    for (const size of ["sm", "md", "lg"] as const) {
+      const html = String(await renderToString(<ThemeToggle icon={icon} size={size} />));
+      boxes.push(attrOf(html, "class", 'type="button"'));
+      glyphs.push(attrOf(html, "width", 'data-slot="icon"'));
+    }
+
+    expect(boxes).toEqual([TOGGLE_CLASS, TOGGLE_CLASS, TOGGLE_CLASS]);
+    expect(glyphs).toEqual(["16", "20", "24"]);
+  });
+
   it("renders the resumable theme scope with the cycleTheme button and sun/moon/monitor sprite icons", async () => {
     const html = String(await renderToString(<ThemeToggle icon={icon} />));
     expect(html).toBe(
@@ -43,5 +60,17 @@ describe("ThemeToggle", () => {
     expect(html).toBe(
       `<div data-scope="${THEME_SCOPE}" data-island-state="{&quot;pref&quot;:&quot;system&quot;}"><button type="button" class="rounded-field p-2 text-foreground focus-ring hover:bg-accent motion-safe:transition ms-2" data-on-click="cycleTheme"><span class="theme-light-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-sun"></use></svg><span class="sr-only">Switch theme — currently light</span></span><span class="theme-dark-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-moon"></use></svg><span class="sr-only">Switch theme — currently dark</span></span><span class="theme-system-icon"><svg data-slot="icon" width="20" height="20" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-monitor"></use></svg><span class="sr-only">Switch theme — currently system</span></span></button></div>`,
     );
+  });
+});
+
+describe("ThemeToggle — labels", () => {
+  it("replaces the one pane it was given and leaves the other two at forge's English", async () => {
+    const html = String(await renderToString(<ThemeToggle icon={icon} labels={{ dark: "Modo oscuro" }} />));
+
+    expect([...html.matchAll(/<span class="sr-only">([^<]*)<\/span>/g)].map((match) => match[1])).toEqual([
+      LABEL_DEFAULTS.themeLight,
+      "Modo oscuro",
+      LABEL_DEFAULTS.themeSystem,
+    ]);
   });
 });

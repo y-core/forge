@@ -13,7 +13,7 @@ function definedEntries(candidates: Record<string, unknown>): Record<string, unk
 }
 
 /** Compose a compound's own `data-slot` token with one it inherited through its props, own first. */
-export function slotToken(own: string, inherited: unknown): string {
+export function slotToken(own: string, inherited?: unknown): string {
   return typeof inherited === "string" && inherited ? `${own} ${inherited}` : own;
 }
 

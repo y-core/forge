@@ -218,8 +218,23 @@ export default defineAssetsConfig({
 forge upgrade that adds icons never requires editing a hand-written `node_modules/` path — see [src/ui/README.md][ui-readme].
 
 A bare filename takes its basename as the symbol key; a `{ key, file }` pair names the key itself. The symbol id is `<prefix><key>`, where `prefix`
-defaults to `icon-`. A `path` starting with `http://` or `https://` is fetched and cached beside the sheet; anything else is read from disk, and a
-missing local file is a warning and a skipped symbol rather than a failed build.
+defaults to `icon-`. A local `path` is read from disk, and a file the config names but disk does not have fails the build — the generated name union
+comes from the config, so a skipped symbol would typecheck and render blank.
+
+**A remote `path` is a supply-chain edge, so every file under one must pin its bytes**: `{ key, file, sha256 }`, with a full 64-character SHA-256. A
+bare filename is refused under a remote source, the URL must be `https://`, and a digest that does not match what the host served fails the build
+rather than being cached. The fetched bytes land in `node_modules/.cache/forge-assets/sprites`, named by digest — **never under `publicDir`**, which
+a build deploys whole and `_headers` serves `immutable` for a year. Pass `cacheDir` to `buildSprites` to put them somewhere else.
+
+```ts
+sources: [{ path: "https://cdn.example.com/icons/", files: [{ key: "arrow", file: "arrow.svg", sha256: "9f64…806a" }] }];
+```
+
+A font download pins its bytes the same way, under the same rules:
+
+```ts
+fonts: { downloads: [{ url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2", sha256: "06df…c9b3" }] }
+```
 
 Each source SVG is normalised on the way in, which is why an icon set authored at mixed origins still lines up: a non-zero `viewBox` origin is
 rewritten to `0 0 w h` with a compensating `translate`, and root presentation attributes (`fill`, `stroke`, `stroke-width`, `stroke-linecap`,
@@ -228,12 +243,15 @@ boundary, so `data-stroke="…"` on the root contributes no `stroke`.
 
 ### Choosing which SVGs to trust
 
-Sanitisation here is **best-effort defence in depth for sources you already trust** — the icon libraries you name in config. It strips `<script>`,
-`<foreignObject>`, `<style>`, SMIL `<animate>`/`<set>` href retargeting, `javascript:` and `data:text/html` href schemes, and `on*` handler
-attributes in any casing and with whitespace around the `=`. Root-`<svg>` handlers are gone anyway, because the root tag is discarded.
+Sanitisation here **tokenizes the markup and re-serializes what an allowlist admits**, rather than deleting matches from a string — so a construct
+the tokenizer does not recognise is dropped rather than carried through. It drops `<script>`, `<style>` and `<foreignObject>` with everything inside
+them, terminated or not; every `on*` handler attribute in any casing and with whitespace around the `=`; every URL-valued attribute whose scheme
+resolves to `javascript:` or `data:text/html` once character references and control characters are undone; and every SMIL `<animate>`/`<set>` whose
+`attributeName` is outside a fixed presentation-and-geometry list. `/` counts as an attribute separator, exactly as the HTML tokenizer counts it, so
+`<circle r="5"/onload="…">` carries two attributes and loses the second. Root-`<svg>` handlers are gone anyway, because the root tag is discarded.
 
-**For untrusted or user-supplied SVGs this is not sufficient.** Run a full DOM-based sanitizer such as DOMPurify before the file reaches the config.
-The production CSP remains the primary runtime control.
+**For untrusted or user-supplied SVGs this is still not sufficient.** Run a full DOM-based sanitizer such as DOMPurify before the file reaches the
+config. The production CSP remains the primary runtime control.
 
 ---
 
@@ -352,6 +370,12 @@ await buildAll(config, { minify: true, assetsPath: "src/generated/assets.ts" });
 `root` is required and `configPath` resolves against it; `env` is the source `env()` and `flag()` read, and defaults to nothing at all rather than
 to `process.env`, so a caller states what the build may see.
 
+**Every path the config reads from comes back absolute, and every path it writes to comes back relative.** A CSS `input`, a bundle `entry`, a copy
+or raster `from`, and a local sprite or cursor source are resolved against `root`, so a build run from a subdirectory reads the tree `--root` names
+rather than its own working directory; an already-absolute path — what `forgeUiSpriteSources()` returns — and a remote sprite source are left alone.
+A `to`, an `output`, an `outdir` and a sprite `target` stay relative because each is a manifest key that `safeJoin` contains under the asset root at
+build time.
+
 Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildSprites`, `buildIcons`, `buildFonts`, `buildRasters`, `buildSite`,
 `copyAssets` — and each takes its own slice of the config plus an output directory rather than the whole config
 ([`ASSET_PIPELINE.md`][ap-2a] §2a). `createAssetsCommands` returns the `forge assets` subtree, for registering inside a CLI of your own.
@@ -382,8 +406,10 @@ what they do, and the error names the config key that demanded the package, the 
 [forge-assets] icons.outputs asks for a rasterized PNG, which needs the optional peer "sharp". Install it: bun add -d sharp
 ```
 
-**Output paths are contained; source paths are not.** `safeJoin` throws if a config-supplied output path — a copy or raster `to`, a sprite `target`,
-a font `to`, a JS `outdir` — resolves outside the asset root. Reads are deliberately unrestricted: `from`, a font `url`, a remote sprite source.
+**Output paths are contained; local source paths are not.** `safeJoin` throws if a config-supplied output path — a copy or raster `to`, a sprite
+`target`, a font `to`, a JS `outdir` — resolves outside the asset root. A local read is deliberately unrestricted: `from`, or a sprite source on
+disk. **A remote read is not**: a font `url` and a remote sprite source must be `https://`, must pin a full SHA-256, and are re-verified on every
+build rather than trusted because a file of that name is already cached.
 
 ---
 

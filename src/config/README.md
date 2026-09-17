@@ -106,6 +106,37 @@ The choice you are making is which keys make the integration _viable_: `required
 rest. A key that is neither required nor defaulted is still validated — declare it `v.optional(…)` if it may legitimately be absent, and make sure
 each `defaults` value satisfies its own entry schema.
 
+**A blank value is an absent one.** `""` an unset Workers secret and an empty `.dev.vars` are both empty. `0` and `false` are values, and stay
+present.
+
+---
+
+## Insisting an integration is configured
+
+`optionalGroup` is for a feature that may genuinely be off. Reach for `requiredGroup` whenever the group's absence removes a guard rather than a
+feature — a bot check, a signing key, a webhook secret. A consumer that writes `...(config.turnstile ? { turnstile: … } : {})` registers the route
+with no bot guard at all when the group gates to `null`, and nothing anywhere reports it.
+
+```ts
+import { requiredGroup } from "@y-core/forge/config";
+
+const schema = v.object({
+  turnstile: requiredGroup({ secretKey: v.string(), siteKey: v.string() }),
+});
+
+// TURNSTILE_SECRET_KEY absent → throws `Invalid environment: turnstile.secretKey: missing`
+```
+
+The throw names the key, not just the group, and it surfaces through the app's error boundary as a 500 on the **first** request and every request
+after it — a deployment that forgot a secret cannot serve unguarded traffic while looking healthy. `defaults` works exactly as it does on
+`optionalGroup`; there is no `required` option, because every key is.
+
+The absence boundary is the same one: a key holding `""` is reported `missing`, and a `defaults` entry fills it:
+
+```ts
+requiredGroup({ secretKey: v.pipe(v.string(), v.minLength(32)), siteKey: v.pipe(v.string(), v.trim(), v.minLength(1)) });
+```
+
 ---
 
 ## Patching config for development

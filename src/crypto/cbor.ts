@@ -1,4 +1,8 @@
+import { bytesToHex } from "./bytes";
 import type { CborDecoded, CborValue } from "./types";
+
+/** How deep a nested item may go before the decoder refuses it. */
+const MAX_DEPTH = 16;
 
 interface Cursor {
   readonly bytes: Uint8Array<ArrayBuffer>;
@@ -16,25 +20,32 @@ function readByte(cursor: Cursor): number {
   return cursor.bytes[cursor.offset++]!;
 }
 
+/** Refuses an argument encoded wider than it needs, which CTAP2 canonical CBOR forbids. */
+function requireShortestForm(value: number | bigint, minimum: number): number | bigint {
+  if (value < minimum) throw new Error(`cborDecodeFirst: ${value} is not in its shortest form`);
+  return value;
+}
+
 function readArgument(cursor: Cursor, additional: number): number | bigint {
   if (additional < 24) return additional;
-  if (additional === 24) return readByte(cursor);
+  if (additional === 24) return requireShortestForm(readByte(cursor), 24);
   if (additional === 25) {
     need(cursor, 2);
     const value = cursor.view.getUint16(cursor.offset, false);
     cursor.offset += 2;
-    return value;
+    return requireShortestForm(value, 0x100);
   }
   if (additional === 26) {
     need(cursor, 4);
     const value = cursor.view.getUint32(cursor.offset, false);
     cursor.offset += 4;
-    return value;
+    return requireShortestForm(value, 0x10000);
   }
   if (additional === 27) {
     need(cursor, 8);
     const value = cursor.view.getBigUint64(cursor.offset, false);
     cursor.offset += 8;
+    requireShortestForm(value, 0x100000000);
     return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value;
   }
   // 28–30 are reserved and 31 is the indefinite-length form, which CTAP2 canonical CBOR forbids.
@@ -78,7 +89,14 @@ function readFloat(cursor: Cursor, additional: number): CborValue {
   throw new Error(`cborDecodeFirst: unsupported simple value ${additional}`);
 }
 
-function readItem(cursor: Cursor): CborValue {
+function readNested(cursor: Cursor, depth: number): CborValue {
+  // One byte of input buys one stack frame, so an unbounded decoder overflows the stack on a
+  // payload small enough to be a rounding error against the form-body limit.
+  if (depth > MAX_DEPTH) throw new Error(`cborDecodeFirst: nesting deeper than ${MAX_DEPTH} items`);
+  return readItem(cursor, depth);
+}
+
+function readItem(cursor: Cursor, depth: number): CborValue {
   const initial = readByte(cursor);
   const major = initial >> 5;
   const additional = initial & 0x1f;
@@ -105,7 +123,7 @@ function readItem(cursor: Cursor): CborValue {
   if (major === 4) {
     const length = readLength(cursor, additional);
     const items: CborValue[] = [];
-    for (let i = 0; i < length; i++) items.push(readItem(cursor));
+    for (let i = 0; i < length; i++) items.push(readNested(cursor, depth + 1));
     return items;
   }
   if (major === 5) {
@@ -113,15 +131,22 @@ function readItem(cursor: Cursor): CborValue {
     // A `Map` and not an object: COSE labels are integers, and an object would stringify them,
     // collapsing the key `-1` and the key `"-1"` a hostile authenticator can also send.
     const entries = new Map<CborValue, CborValue>();
+    const seen = new Set<string>();
     for (let i = 0; i < length; i++) {
-      const key = readItem(cursor);
-      entries.set(key, readItem(cursor));
+      const start = cursor.offset;
+      const key = readNested(cursor, depth + 1);
+      // Keyed on the encoded bytes rather than the decoded key: `Map` compares a `Uint8Array` by
+      // identity, so a repeated byte-string key would never collide and the last one would win.
+      const encoded = bytesToHex(cursor.bytes.subarray(start, cursor.offset));
+      if (seen.has(encoded)) throw new Error("cborDecodeFirst: map repeats a key");
+      seen.add(encoded);
+      entries.set(key, readNested(cursor, depth + 1));
     }
     return entries;
   }
   if (major === 6) {
     readArgument(cursor, additional);
-    return readItem(cursor);
+    return readNested(cursor, depth + 1);
   }
   return readFloat(cursor, additional);
 }
@@ -129,6 +154,6 @@ function readItem(cursor: Cursor): CborValue {
 /** Decodes the first CBOR item in `bytes`, reporting where it ended so trailing bytes stay reachable. @internal */
 export function cborDecodeFirst(bytes: Uint8Array<ArrayBuffer>): CborDecoded {
   const cursor: Cursor = { bytes, view: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), offset: 0 };
-  const value = readItem(cursor);
+  const value = readItem(cursor, 0);
   return { value, bytesRead: cursor.offset };
 }

@@ -177,7 +177,10 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
       return ok({ ...existing.data, confirmedAt: at, updatedAt: at });
     }
     const enrolled = await options.factors.enrol({ userId, kind: "passkey", confirmedAt: at }, at);
-    return enrolled.ok ? ok(enrolled.data) : err("unavailable");
+    // A concurrent enrolment raced the `find` above and reached the unique index first, which is the
+    // account's own second attempt rather than an outage.
+    if (!enrolled.ok) return err(enrolled.error.code === "conflict" ? "already-enrolled" : "unavailable");
+    return ok(enrolled.data);
   }
 
   async function listEnrolments(userId: string): Promise<AuthStoreResult<readonly AuthFactor[]>> {

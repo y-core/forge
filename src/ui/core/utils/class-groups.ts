@@ -607,7 +607,7 @@ const STATIC_GROUPS: ReadonlyMap<string, string> = new Map<string, string>([
   ["oldstyle-nums", "--tw-numeric-figure"],
   ["order-none", "order"],
   ["ordinal", "--tw-ordinal"],
-  ["otp-cells", "background-image,background-position,background-repeat,background-size,width"],
+  ["otp-cells", "background-image,background-position,background-repeat,background-size,max-width,min-width,width"],
   ["otp-editor", "box-sizing,letter-spacing,padding-inline,width"],
   ["outline", "outline-style,outline-width"],
   ["outline-dashed", "--tw-outline-style"],
@@ -1638,8 +1638,8 @@ export const GROUP_OVERRIDES: ReadonlyMap<string, readonly string[]> = new Map<s
     ],
   ],
   [
-    "background-image,background-position,background-repeat,background-size,width",
-    ["background-image", "background-position", "background-repeat", "background-size", "width"],
+    "background-image,background-position,background-repeat,background-size,max-width,min-width,width",
+    ["background-image", "background-position", "background-repeat", "background-size", "max-width", "max-width,width", "min-width", "width"],
   ],
   ["border-block-color", ["border-block-end-color", "border-block-start-color", "border-bottom-color", "border-top-color"]],
   [

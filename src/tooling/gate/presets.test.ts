@@ -52,13 +52,10 @@ describe("cloudflareWorkerSteps() — shape", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("holds back only the type-aware lint row, so a fast run is every other step of the default table", () => {
+  it("holds back only the test rows, so a quality run is every other step of the default table", () => {
     const held = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }).filter((step) => step.tier !== undefined);
 
-    expect(held.map((step) => [step.label, step.tier])).toEqual([
-      ["lint:types", "standard"],
-      ["validate-dev-boundary", "standard"],
-    ]);
+    expect(held.map((step) => [step.label, step.tier])).toEqual([["test", "standard"]]);
   });
 
   it("makes test:browser the only full-tier row once the browser opt-in is taken", () => {
@@ -115,10 +112,10 @@ describe("cloudflareWorkerSteps() — the exposure row", () => {
 describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
   // Default-on: the forbidden specifiers come from forge's own installed manifest, so an app that
   // configures nothing still fails on `@y-core/forge/testing` in a deployed module.
-  it("emits validate-dev-boundary at the standard tier for an app that configures nothing", () => {
+  it("emits validate-dev-boundary on the quality tier for an app that configures nothing", () => {
     const row = cloudflareWorkerSteps().find((step) => step.label === "validate-dev-boundary");
 
-    expect(row?.tier).toBe("standard");
+    expect(row?.tier).toBeUndefined();
     expect(labelsOf(cloudflareWorkerSteps()).at(-1)).toBe("validate-dev-boundary");
   });
 
@@ -173,11 +170,11 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the db rows", () => {
-  it("emits the digests row in standard and the replay row in full, behind the installed runtime", () => {
+  it("emits the digests row on quality and the replay row in full, behind the installed runtime", () => {
     const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:schema"));
 
     expect(rows.map((step) => [step.label, step.tier])).toEqual([
-      ["db:schema:digests", "standard"],
+      ["db:schema:digests", undefined],
       ["db:schema", "full"],
     ]);
     expect(rows.at(-1)?.requires?.tool).toBe("workerd");
@@ -235,12 +232,12 @@ describe("cloudflareWorkerSteps() — the test rows", () => {
     const steps = cloudflareWorkerSteps({ testSets: [] });
 
     expect(labelsOf(steps).filter((label) => label.startsWith("test"))).toEqual([]);
-    expect(selectSteps(steps, { mode: "fast", only: ["test"] })).toMatchObject({ ok: false });
+    expect(selectSteps(steps, { mode: "quality", only: ["test"] })).toMatchObject({ ok: false });
   });
 
   it("leaves a label colliding with another row to selectSteps, which refuses the whole table", () => {
     const steps = cloudflareWorkerSteps({ testSets: [{ label: "lint", sources: ["tests/unit/"] }] });
-    const selection = selectSteps(steps, { mode: "fast" });
+    const selection = selectSteps(steps, { mode: "quality" });
 
     expect(selection.ok).toBe(false);
     expect(selection.ok ? "" : selection.error).toContain("Duplicate step label: lint");
@@ -360,7 +357,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
 async function classOrderResult(options: Parameters<typeof cloudflareWorkerSteps>[0]): Promise<boolean> {
   const step = cloudflareWorkerSteps(options).find((s) => s.label === "validate-class-order");
   if (step === undefined || !isCheckStep(step)) throw new Error("validate-class-order missing");
-  return (await step.run("fast")).ok;
+  return (await step.run("quality")).ok;
 }
 
 describe("cloudflareWorkerSteps() — the generated-type commands", () => {
@@ -451,11 +448,11 @@ describe("cloudflareWorkerSteps() — options", () => {
 });
 
 describe("cloudflareWorkerSteps() — the type-aware lint row", () => {
-  it("emits lint:types at the standard tier, immediately after format", () => {
+  it("emits lint:types on the quality tier, immediately after format", () => {
     const steps = cloudflareWorkerSteps({ sources: ["src/", "tests/"] });
     const row = steps.find((step) => step.label === "lint:types");
 
-    expect(row?.tier).toBe("standard");
+    expect(row?.tier).toBeUndefined();
     expect(row?.cmd).toEqual([
       "oxlint",
       "--type-aware",
@@ -484,11 +481,11 @@ describe("cloudflareWorkerSteps() — the type-aware lint row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the markdown row", () => {
-  it("emits validate-markdown at the standard tier, between format and lint:types", () => {
+  it("emits validate-markdown on the quality tier, between format and lint:types", () => {
     const steps = cloudflareWorkerSteps({ markdown: { sources: ["docs"] } });
     const row = steps.find((step) => step.label === "validate-markdown");
 
-    expect(row?.tier).toBe("standard");
+    expect(row?.tier).toBeUndefined();
     expect(labelsOf(steps)).toEqual([
       "types:cf-runtime",
       "types:cf-bindings",
@@ -565,8 +562,10 @@ describe("forgeChecks() — shape", () => {
     ]);
   });
 
-  it("puts every step on the fast tier, so the whole preset is a fast-run assurance", () => {
-    expect(forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.tier !== undefined)).toEqual([]);
+  it("holds back only the test row, so every check it emits is a quality-run assurance", () => {
+    const held = forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.tier !== undefined);
+
+    expect(held.map((step) => [step.label, step.tier])).toEqual([["test", "standard"]]);
   });
 
   it("omits the checks carrying project-specific policy, which a table must name explicitly", () => {
@@ -578,7 +577,7 @@ describe("forgeChecks() — shape", () => {
     expect(labels).not.toContain("validate-css-sources");
   });
 
-  it("carries no machine prerequisite, so the whole preset is legal in a fast run", () => {
+  it("carries no machine prerequisite, so the whole preset is legal in a quality run", () => {
     expect(forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.requires !== undefined)).toEqual([]);
   });
 });

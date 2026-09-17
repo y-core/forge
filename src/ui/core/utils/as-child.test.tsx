@@ -138,6 +138,10 @@ describe("slotToken", () => {
     expect(slotToken("menu-trigger", "tooltip-trigger")).toBe("menu-trigger tooltip-trigger");
   });
 
+  it("returns the own token alone when called with no inherited argument", () => {
+    expect(slotToken("menu-trigger")).toBe("menu-trigger");
+  });
+
   it("appends a whole inherited token list, not just its first token", () => {
     expect(slotToken("menu-trigger", "toolbar-button tooltip-trigger")).toBe("menu-trigger toolbar-button tooltip-trigger");
   });
@@ -171,7 +175,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 
@@ -184,7 +188,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="popover-trigger tooltip-trigger" command="toggle-popover" commandfor="panel" ' +
-        'aria-controls="panel" aria-expanded="false" ' +
+        'aria-controls="panel" aria-expanded="false" aria-haspopup="dialog" ' +
         `class="${POPOVER_WITH_TOOLTIP_CLASS}" aria-describedby="tip">Panel</button>`,
     );
   });
@@ -227,7 +231,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" role="menuitem" data-slot="menu-submenu-trigger tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="more" aria-haspopup="menu" aria-controls="more" aria-expanded="false" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip">More</button>`,
+        `commandfor="more" aria-controls="more" aria-expanded="false" aria-haspopup="menu" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip">More</button>`,
     );
   });
 
@@ -242,7 +246,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger toolbar-button tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="file-menu" aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS}" ` +
+        `commandfor="file-menu" aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS}" ` +
         'data-toolbar-item="" aria-describedby="tip">File</button>',
     );
   });
@@ -256,7 +260,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-haspopup="menu" aria-controls="file-menu" aria-expanded="false" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
     );
   });
 });

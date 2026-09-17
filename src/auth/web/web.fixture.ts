@@ -1,6 +1,6 @@
 import { err, ok } from "../../result/result";
+import { createSignedCookie } from "../../session/cookie";
 import type { ForgeIcon } from "../../ui/core/types";
-import type { AdminUserService } from "../admin/types";
 import { AUTH_ADMIN_ROLE, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
 import { authIdentifies, createFactorRegistry } from "../factors/registry";
 import type {
@@ -13,6 +13,7 @@ import type {
 } from "../factors/types";
 import type { AuthEmailChangeFlow, AuthSigninFlow, AuthSignupFlow } from "../flows/types";
 import type {
+  AdminUserStore,
   AuthChallenge,
   AuthCredential,
   AuthFactor,
@@ -99,6 +100,9 @@ export const HOSTILE_TEXT = `Ada & "Bob" <script>'x'`;
 
 /** `HOSTILE_TEXT` exactly as the renderer emits it in a text node or an attribute value. @internal */
 export const HOSTILE_TEXT_ESCAPED = "Ada &amp; &quot;Bob&quot; &lt;script&gt;&#39;x&#39;";
+
+/** The session cookie every web unit mounts `sessionMiddleware` with. @internal */
+export const fakeSessionCookie = createSignedCookie("__session", { path: "/", secrets: ["o".repeat(32)] });
 
 /** Which kinds carry an enrolment row; email-OTP's enrolment is a verified email, so it has none. @internal */
 export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "totp-app"];
@@ -320,18 +324,18 @@ export function fakeAuthCredentialStore(credentials: readonly AuthCredential[]):
   };
 }
 
-/** An administrative service over `users`, with every write reporting `changed`. @internal */
-export function fakeAdminUserService(users: readonly AuthUser[], overrides: Partial<AdminUserService> = {}): AdminUserService {
+/** An administrative store over `users`, with every write reporting `changed`. @internal */
+export function fakeAdminUserStore(users: readonly AuthUser[], overrides: Partial<AdminUserStore> = {}): AdminUserStore {
   return {
     list: async () => ok(users),
     search: async (query) => ok(users.filter((user) => user.email.startsWith(query))),
-    view: async (id) => ok(users.find((user) => user.id === id) ?? null),
+    // Case-insensitively, as the real store is: it keys on a UUID's bytes, so an uppercased id
+    // reaches the same row — and a fixture that missed it would hide the guard that must catch it.
+    findById: async (id) => ok(users.find((user) => user.id.toLowerCase() === id.toLowerCase()) ?? null),
     countAdmins: async () => ok(users.filter((user) => user.isAdmin && user.deactivatedAt === null).length),
-    claimFirst: async () => ok(users.some((user) => user.isAdmin && user.deactivatedAt === null) ? "admin-exists" : "changed"),
-    elevate: async () => ok("changed" as const),
-    demote: async () => ok("changed" as const),
-    deactivate: async () => ok("changed" as const),
-    reactivate: async () => ok("changed" as const),
+    claimFirstAdmin: async () => ok(users.some((user) => user.isAdmin && user.deactivatedAt === null) ? "admin-exists" : "changed"),
+    setAdmin: async () => ok("changed" as const),
+    setDeactivated: async () => ok("changed" as const),
     remove: async () => ok("changed" as const),
     ...overrides,
   };
@@ -377,13 +381,25 @@ export function fakeAuthServices(overrides: Partial<AuthRequestServices> = {}): 
     signin: fakeAuthSigninFlow(),
     signup: fakeAuthSignupFlow(),
     emailChange: fakeAuthEmailChangeFlow(),
-    admin: fakeAdminUserService(users),
+    admin: fakeAdminUserStore(users),
     ...overrides,
   };
 }
 
+/** The first-admin claim secret a test deployment is configured with. @internal */
+export const FAKE_BOOTSTRAP_SECRET = "bootstrap-secret";
+
 /** The options every loader, action factory and `register*` is called with in a test. @internal */
 export function fakeAuthWebOptions(overrides: Partial<AuthWebOptions> = {}): AuthWebOptions {
   const services = fakeAuthServices();
-  return { resolveServices: () => services, paths: fakeAuthWebPaths(), icon: fakeAuthIcon, now: () => 1_000, ...overrides };
+  return {
+    resolveServices: () => services,
+    paths: fakeAuthWebPaths(),
+    icon: fakeAuthIcon,
+    now: () => 1_000,
+    // Configured, because both halves of the claim page 404 without one — a test wanting that case
+    // overrides this with a function answering `undefined`.
+    bootstrapSecret: () => FAKE_BOOTSTRAP_SECRET,
+    ...overrides,
+  };
 }

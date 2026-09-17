@@ -67,9 +67,13 @@ describe("expandSeedEnv()", () => {
     );
   });
 
-  it("refuses a value outside a literal that is neither identifier-like nor a number, naming the variable", () => {
-    expect(() => expandSeedEnv("INSERT INTO t (a) VALUES (${COUNT});", { COUNT: "1); DROP TABLE t; --" })).toThrow(
-      "COUNT is substituted outside a SQL string literal, where its value is the SQL itself, and `1); DROP TABLE t; --` is neither an identifier-like token nor a number — quote the placeholder in the seed ('${COUNT}'), or set a value matching [A-Za-z_][A-Za-z0-9_.]* or -?\\d+(\\.\\d+)?",
+  // The message names the variable and the shape, never the value: this comes from the environment
+  // and the refusal goes to a terminal, a CI log and whatever scrapes one.
+  it("refuses a value outside a literal that is neither identifier-like nor a number, without printing it", () => {
+    const attack = "1); DROP TABLE t; --";
+
+    expect(() => expandSeedEnv("INSERT INTO t (a) VALUES (${COUNT});", { COUNT: attack })).toThrow(
+      `COUNT is substituted outside a SQL string literal, where its value is the SQL itself, and its value (${attack.length} characters) is neither an identifier-like token nor a number — quote the placeholder in the seed ('\${COUNT}'), or set a value matching [A-Za-z_][A-Za-z0-9_.]* or -?\\d+(\\.\\d+)?`,
     );
   });
 

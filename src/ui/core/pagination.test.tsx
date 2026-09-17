@@ -249,6 +249,10 @@ describe("Pagination.Ellipsis", () => {
     expect(attrsOf(html, 'aria-hidden="true"')).toEqual({ "aria-hidden": "true" });
     expect(spansOf(html)).toEqual(["…", "More pages"]);
   });
+
+  it("names the gap from the prop instead, replacing the English forge falls back to", async () => {
+    expect(spansOf(await render(<Pagination.Ellipsis label='Plus de pages' />))).toEqual(["…", "Plus de pages"]);
+  });
 });
 
 describe("Pagination — the whole control", () => {

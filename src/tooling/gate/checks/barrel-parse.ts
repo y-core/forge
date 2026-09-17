@@ -40,6 +40,30 @@ export function parseBarrelExports(source: string): { values: string[]; hasExpor
   return { values, hasExportStar, hasTypeExports };
 }
 
+/** The names an `export { … }` block publishes for callables the file declared separately. */
+function blockExportedCallables(stripped: string): Set<string> {
+  const local = new Set<string>();
+  const localDeclRe = /(?:^|[\s;{}])(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class)\b\s*\*?\s*([A-Za-z_$]\w*)/g;
+  for (const match of stripped.matchAll(localDeclRe)) if (match[1] !== undefined) local.add(match[1]);
+
+  const localConstRe =
+    /(?:^|[\s;{}])(?:export\s+)?const\s+([A-Za-z_$]\w*)\s*(?::[^=;]*(?:=>[^=;]*)*)?=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*(?::[^=]*)?=>|[A-Za-z_$]\w*\s*=>)/g;
+  for (const match of stripped.matchAll(localConstRe)) if (match[1] !== undefined) local.add(match[1]);
+
+  const names = new Set<string>();
+  for (const block of stripped.matchAll(/export\s+(type\s+)?\{([^}]*)\}/gs)) {
+    if (block[1]) continue;
+    for (const part of (block[2] ?? "").split(",")) {
+      const trimmed = part.trim();
+      if (trimmed === "" || trimmed.startsWith("type ")) continue;
+      const asIdx = trimmed.indexOf(" as ");
+      const source = asIdx >= 0 ? trimmed.slice(0, asIdx).trim() : trimmed;
+      if (local.has(source)) names.add(asIdx >= 0 ? trimmed.slice(asIdx + 4).trim() : source);
+    }
+  }
+  return names;
+}
+
 // Deliberately narrower than "has behaviour": its only job is to falsify a declaration-file claim,
 // so a const bound to an object literal — a schema, a lookup table — is not callable.
 /** Every exported binding that is callable or instantiable — a function, a class, or a const bound to either. @public */
@@ -47,7 +71,9 @@ export function parseCallableExports(source: string): Set<string> {
   const stripped = blankSourceComments(source);
   const names = new Set<string>();
 
-  const declRe = /export\s+(?:default\s+)?(?:async\s+)?(function|class)(?:\s+([A-Za-z_$]\w*))?/g;
+  // `\b\s*\*?` so a generator is read as the function it is; without it the `*` denies the name
+  // group its leading space and every `export function*` is reported as `default function`.
+  const declRe = /export\s+(?:default\s+)?(?:async\s+)?(function|class)\b\s*\*?\s*([A-Za-z_$]\w*)?/g;
   for (const match of stripped.matchAll(declRe)) names.add(match[2] ?? `default ${match[1]}`);
 
   // `:[^=]+` stops at the first `=`, so an arrow-typed annotation (`(x: T) => U`) ends the match
@@ -59,6 +85,7 @@ export function parseCallableExports(source: string): Set<string> {
     if (name !== undefined) names.add(name);
   }
 
+  for (const name of blockExportedCallables(stripped)) names.add(name);
   return names;
 }
 

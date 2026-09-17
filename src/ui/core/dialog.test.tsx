@@ -167,3 +167,37 @@ describe("Dialog composition", () => {
     expect(attrOf(html, "commandfor", 'data-slot="dialog-close"')).toBe("confirm");
   });
 });
+
+describe("Dialog — the name the root resolves to", () => {
+  it("takes the caller's own name and drops the derived reference, which would name a heading they did not write", async () => {
+    const byRef = attrsOf(
+      await render(
+        <Dialog id='confirm' labelledby='filters-trigger'>
+          Body
+        </Dialog>,
+      ),
+    );
+    const byLabel = attrsOf(
+      await render(
+        <Dialog id='confirm' label='Filters'>
+          Body
+        </Dialog>,
+      ),
+    );
+
+    expect(byRef["aria-labelledby"]).toBe("filters-trigger");
+    expect(byLabel["aria-labelledby"]).toBeUndefined();
+    expect(byLabel["aria-label"]).toBe("Filters");
+  });
+
+  // Single-pass SSR cannot see whether a `.Title` child exists, so the derived reference is still
+  // written and dangles. The name is absent either way; this pins the gap rather than hiding it.
+  it("is provably nameless with neither a title nor a name prop, its reference resolving to nothing", async () => {
+    const html = await render(<Dialog id='confirm'>Body</Dialog>);
+    const named = attrOf(html, "aria-labelledby", 'data-slot="dialog"');
+
+    expect(named).toBe("confirm-title");
+    expect(tagOf(html, `id="${named}"`)).toBe("");
+    expect(attrsOf(html)["aria-label"]).toBeUndefined();
+  });
+});
