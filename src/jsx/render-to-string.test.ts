@@ -353,6 +353,18 @@ describe("renderToString — URL attribute sanitization", () => {
     expect(String(await renderToString(node))).toBe('<div id="javascript:notaurl"></div>');
   });
 
+  // `srcdoc` and `data` are outside `URL_ATTRS` by decision, not omission: `srcdoc` is markup rather
+  // than a URL, and `object-src 'none'` with CSP inheritance into the frame is what answers both.
+  it("escapes `srcdoc` as markup and applies no URL sanitization to it", async () => {
+    const node = el("iframe", { srcdoc: "<script>alert(1)</script>" });
+    expect(String(await renderToString(node))).toBe('<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>');
+  });
+
+  it("leaves an `object` `data` attribute to the content policy rather than to `safeUrl`", async () => {
+    const node = el("object", { data: "javascript:alert(1)" });
+    expect(String(await renderToString(node))).toBe('<object data="javascript:alert(1)"></object>');
+  });
+
   it("neutralizes xlink:href with javascript: scheme to '#'", async () => {
     const node = el("a", { "xlink:href": "javascript:alert(1)", children: "icon" });
     expect(String(await renderToString(node))).toBe('<a xlink:href="#">icon</a>');

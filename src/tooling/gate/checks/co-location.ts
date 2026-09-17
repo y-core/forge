@@ -41,10 +41,10 @@ export function declaredByName(file: string): boolean {
   return DECLARED_NAMES.includes(basename(file) as (typeof DECLARED_NAMES)[number]);
 }
 
-/** Whether a file is itself a test, a spec, or a barrel — none of which need a test of their own. */
+/** Whether a file is itself a test, a spec, a fixture, or a barrel — none of which need a test of their own. */
 function needsTest(name: string): boolean {
   if (!MODULE_EXTENSIONS.some((ext) => name.endsWith(ext))) return false;
-  if (/\.(test|browser)\.tsx?$/.test(name)) return false;
+  if (/\.(test|browser|fixture)\.tsx?$/.test(name)) return false;
   // A barrel re-exports and declares nothing, so its coverage is the coverage of what it names.
   return name !== "mod.ts";
 }

@@ -8,7 +8,7 @@ import { createIcon } from "../../../ui/core/icon";
 import type { ForgeIcon } from "../../../ui/core/types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
-import { attrOf, attrsOf, elementOf, tagOf, textOf } from "../test-support";
+import { attrOf, attrsOf, elementOf, tagOf, textOf } from "../web.fixture";
 import { TotpEnrolView } from "./totp-enrol";
 import type { TotpEnrolViewProps } from "./types";
 

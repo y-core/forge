@@ -18,11 +18,11 @@ it is a large dependency bought for a SQLite index and a CLI, and the exchange i
 
 A repository outside that set keeps its governing documents as plain markdown it owns, reached by reading: a directory listing picks the document,
 its `## 0. Quick Reference` picks the section. Such a repository may still follow the canon's _shape_ — numbered sections, a Quick Reference, the
-single-home rule — without being served by warden. `devctl` is the standing example: single-purpose, in maintenance, and deliberately a
+single-home rule — without being served by warden. A single-purpose tool in maintenance is the standing example: it follows the shape and stays a
 non-consumer.
 
-Two consequences worth stating. A non-consumer gets no `warden sync`, so its agent definitions and skills are its own to maintain, and they will
-drift from the fleet's unless someone reconciles them. And `docs/` is only warden's corpus convention where warden is in use — a repository
+That has consequences worth stating. A non-consumer gets no `warden sync`, so its agent definitions and skills are its own to maintain, and they
+will drift from the fleet's unless someone reconciles them. And `docs/` is only warden's corpus convention where warden is in use — a repository
 already using that directory name for something else is not obliged to rename it.
 
 ## Layout
@@ -100,169 +100,51 @@ target inside `node_modules`.
 
 **`--write` reads the canon off disk; printing reads the index.** An index holds `shared` plus its repository's own kind by design, so a catalogue
 rendered from one could never carry the other tree — and the committed file's claim to cover the fleet canon would be false. The written file walks
-all three trees instead.
+every tree instead.
 
 Search, read, outline and related also take `--gate`, which reads the gate's own index rather than the working one.
 
-**An empty search result is an answer.** Search refuses a question the corpus does not cover rather than returning its ten least-bad matches, so
+**An empty search result is an answer.** Search refuses a question the corpus does not cover rather than returning its least-bad matches, so
 nothing governs a subject that comes back empty.
 
 **A chunk id names the corpus and the path.** `canon:CODE_RULES.md#5c` is the fleet's law; `project:docs/TESTING.md#3b` is this repository's own. A
 filename and a section number exist in both corpora, so the prefix is what says which one a hit came from.
 
-## Published Surface
+## Choosing a subpath
 
-Four subpaths of `@y-core/forge` are warden's, and each is a barrel whose table below is held against it by the `validate-readme-exports` gate step.
+Warden's subpaths of `@y-core/forge` are each a barrel. `validate-exports` proves every `@public` symbol reaches the barrel it belongs
+to, in both directions, so the barrel is the export list — there is no table here to go stale beside it.
 
-**The root subpath is the whole of warden, and nothing consumes it but forge's own command.**
-`import { createWardenCommands } from "@y-core/forge/warden"` reaches every module — the corpus parser, the sync, the index and the CLI alike —
-which is what `warden/src/bin.ts` needs and more than any consumer should take. A consuming repository imports the four narrow subpaths instead: a
-gate that pulls the root barrel for `docsStep` drags the MCP server and the SQLite index in behind it.
+**`@y-core/forge/warden/steps`** is the one to reach for: gate steps ready to drop into a repository's `config/steps.ts`.
 
-## `@y-core/forge/warden/checks`
+**`@y-core/forge/warden/checks`** publishes each check as a pure function from a config to a result, plus the document parsers they are built out of
+— link definitions, numbered sections, fence stripping, frontmatter, the no-rot scan. Take it when you are calling a check outside a step, or
+building a repository-specific check on the same parsers rather than writing a second markdown reader.
 
-> Import path: `@y-core/forge/warden/checks` → `warden/src/checks/mod.ts`
+**`@y-core/forge/warden/knowledge`** is everything the CLI and the MCP server are both written against: building the index, opening it, and querying
+it. Take it to embed retrieval somewhere neither of those reaches. Ranking is BM25 scaled by document weight and held to a coverage floor, which is
+what makes an empty result an answer rather than a failure to match.
 
-The gate checks warden owns, each a pure function from a config to a result, plus the parsers they are built out of.
+**`@y-core/forge/warden/mcp`** is the server: the tool and resource surface, the JSON-RPC framing, and the stdio transport. Its request handler is
+separate from its transport, so the protocol is testable without one.
 
-### Exports
+**Take `steps` unless you have a reason not to.** It is the whole of what a consuming repository needs: `wardenAppSteps` spreads the rows every
+application appends, and `cloudflareWorkerSteps()` cannot emit them because it lives under `src/`, where nothing may import warden.
 
-| Symbol | Kind | Summary |
-| --- | --- | --- |
-| `checkDocs` | function | Holds the governing documents against the subpath catalog, the numbering, the frontmatter and the citations. |
-| `DocsCheckConfig` | type | What `checkDocs` needs: the root, the package name, the exports map, and the extra directories to hold. |
-| `DocKind` | type | Which canon tree a directory's documents are read as — `shared`, `libs` or `apps`. |
-| `ExtraDir` | type | One directory outside `docs/` to hold, with the kind its citations resolve against, and whether its documents are numbered governing prose. |
-| `CitableDir` | type | One citable directory and the prefix its documents are cited under, for a tree whose own directory name is not that prefix. |
-| `FrontmatterRule` | type | One extra frontmatter key a directory's documents must carry, and the values it may take. |
-| `linkDefinitions` | function | Every `[id]: destination` a document defines, which is where a reference-style citation keeps its path. |
-| `parseSections` | function | A document's numbered sections, with the line each opens on. |
-| `stripFences` | function | The prose of a document with every fenced block removed, so a rule never fires on a code sample. |
-| `validateFrontmatter` | function | Holds a document's frontmatter to `title`, `description` and whichever extra keys the caller requires. |
-| `validateNoRot` | function | Reports historical phrasing — a governing document carries no history. |
-| `findSubpathCitations` | function | Every published subpath a markdown source cites. |
-| `SubpathCitation` | type | One cited subpath, and the line it was cited on. |
-| `quickReference` | function | The `## 0. Quick Reference` block of a document, parsed into one entry per section. |
-| `uncitedSubpaths` | function | The published subpaths no governing document cites. |
-| `checkReadmeExports` | function | Holds a README's per-subpath export tables against the barrels they document. |
-| `ReadmeExportsCheckConfig` | type | What `checkReadmeExports` needs: the root, the READMEs, and the subpaths exempt from a table. |
-| `discoverReadmes` | function | Every README under the walked sources carrying at least one `> Import path:` anchor. |
-| `checkChangelog` | function | Holds the changelog's headings against the current package version. |
-| `validateChangelog` | function | The changelog rules alone, over a parsed source. |
-| `ChangelogCheckConfig` | type | What `checkChangelog` needs: the root and the package version. |
-| `checkDesign` | function | Holds the design corpus against the tree it governs. |
-| `DesignCheckConfig` | type | What `checkDesign` needs: the root, the package name, and the corpus layout. |
+```ts
+import { wardenAppSteps } from "@y-core/forge/warden/steps";
 
-## `@y-core/forge/warden/steps`
+export const steps = [...cloudflareWorkerSteps({ root: ROOT }), ...wardenAppSteps({ root: ROOT, packageName: pkg.name, golden: GOLDEN })];
+```
 
-> Import path: `@y-core/forge/warden/steps` → `warden/src/steps.ts`
+Each step's label is fixed, because a label is the `--only` token a developer types.
 
-The same checks as gate steps, ready to drop into a repository's `config/steps.ts`. Each label is fixed, because a label is the `--only` token a
-developer types.
+**The root subpath is the whole of warden, and nothing consumes it but forge's own command.** `import { createWardenCommands } from
+"@y-core/forge/warden"` reaches every module — the corpus parser, the sync, the index and the CLI alike — which is what `warden/src/bin.ts` needs
+and more than any consumer should take. A gate that pulls the root barrel for `docsStep` drags the MCP server and the SQLite index in behind it.
 
-### Exports
-
-| Symbol | Kind | Summary |
-| --- | --- | --- |
-| `docsStep` | function | `validate-docs` — the governing documents against the subpaths they must cite. |
-| `readmeExportsStep` | function | `validate-readme-exports` — a README's export tables against the barrels. |
-| `changelogStep` | function | `validate-changelog` — the changelog against the package version. Defaults to the `full` tier. |
-| `designStep` | function | `validate-design` — the design corpus against the tree it governs. |
-| `wardenStep` | function | `warden:index` — rebuilds the knowledge index and asserts what retrieval depends on. Its `catalogue` option is opt-in and belongs to the canon's home repository alone. |
-| `wardenQueriesStep` | function | `warden:queries` — the golden retrieval set against a freshly built index. |
-| `duplicatesStep` | function | `warden:duplicates` — two sections saying the same thing, which the single-home rule forbids. |
-| `wardenAppSteps` | function | The four rows above that every consuming application appends, as one spread — `cloudflareWorkerSteps()` cannot emit them, because it lives under `src/` where nothing may import warden. |
-| `WardenAppStepOptions` | type | What an application states to take those four rows: its root, its package name, its golden set, the citable trees, and the `docs/` it keeps if it keeps one. |
-
-## `@y-core/forge/warden/knowledge`
-
-> Import path: `@y-core/forge/warden/knowledge` → `warden/src/search/mod.ts`
-
-Building, opening and querying the index — everything the CLI and the MCP server are both written against.
-
-### Exports
-
-| Symbol | Kind | Summary |
-| --- | --- | --- |
-| `search` | function | BM25 over the index, scaled by the document's weight and held to a coverage floor. |
-| `Hit` | type | One ranked hit: its chunk id, its corpus and path, its heading trail, its score, its coverage and — on request — one line to judge it by. |
-| `SearchOptions` | type | What a search may be narrowed by — corpus, path, limit, floor, the bridge table and whether an excerpt is carried. |
-| `FLOOR` | const | The least of a query's information a hit may carry and still be offered as an answer. |
-| `MARGIN` | const | The least room the floor may have between the thinnest answer and the loudest refusal. |
-| `corpusLabel` | function | Which corpus a section belongs to, in words rather than as an id prefix. |
-| `renderHit` | function | One hit as a reader is shown it, on both the CLI and the MCP tool. |
-| `HitFormat` | type | What a rendering of a hit may add beyond the hit itself. |
-| `excerptOf` | function | The one line a reader judges a hit by: its gloss, its rule clause, or its prose cut around the query. |
-| `Excerptable` | type | The columns an excerpt is drawn from. |
-| `headingTrail` | function | A heading trail as a reader reads it, without the slugs that only ever addressed it. |
-| `coverage` | function | The share of a query's information each candidate chunk carries. |
-| `documentFrequency` | function | How many chunks contain each term of a query. |
-| `idf` | function | One term's inverse document frequency over the indexed corpus. |
-| `readSection` | function | One section by chunk id, with its children or its neighbours when either is what makes it readable. |
-| `readDocument` | function | Every section of one document, whole. |
-| `outline` | function | Every section of one document with its one-line summary. |
-| `Section` | type | One section read whole: its id, corpus, path, title, heading trail and body. |
-| `OutlineEntry` | type | One outline line: the section, its title, its summary and its nesting level. |
-| `related` | function | What a section defers to, what it cites, and what cites it. |
-| `unresolved` | function | The citations that resolved to no indexed document, optionally scoped to the corpora a repository owns. |
-| `Related` | type | One edge, resolved or raw. |
-| `aliasTerms` | function | A query's terms with the corpus's own synonyms folded in. |
-| `ALIASES` | const | Every bridge in the file, whatever tree it belongs to — the default for a caller naming none. |
-| `AliasTable` | type | A bridge table: each term a reader might type, mapped to the terms the corpus files it under. |
-| `aliasesFor` | function | The bridges a repository of one tree is served — the shared table plus its own. |
-| `SHARED` | const | The bridges every repository earns, whatever tree it is subject to. |
-| `LIBS` | const | The bridges whose targets are the library's own vocabulary. |
-| `APPS` | const | The bridges an application's corpus earns and a library's does not. |
-| `matchExpression` | function | An FTS match expression for a natural-language question. |
-| `terms` | function | A query reduced to its searchable terms. |
-| `openIndex` | function | Opens the index, rebuilding it when it is stale, and carries an advisory when it could not. |
-| `rebuild` | function | Rebuilds the index from disk and reports what it wrote. |
-| `Knowledge` | type | An open index: the database, its bridge table, the advisory, and the handle that closes it. |
-| `OpenOptions` | type | Where the index lives, which canon root to read, the canon version to stamp, and whether the installed library is served. |
-| `build` | function | Writes documents, chunks and relations into an open database. |
-| `load` | function | Reads and chunks one document from disk. |
-| `BuildReport` | type | What a build wrote: documents, chunks, relations, how many citations resolved to nothing, and which named more than one document. |
-| `openDatabase` | function | Opens a database at a path, creating the schema when it is absent. |
-| `indexPath` | function | Where the working index lives for a repository. |
-| `gateIndexPath` | function | Where the gate's own index lives, kept apart from the working one. |
-| `freshness` | function | Whether the index still matches the documents and the canon version on disk. |
-| `Freshness` | type | The verdict, and the reason behind it. |
-| `advisory` | function | The one line a stale index says about itself, or nothing when it is fresh. |
-
-## `@y-core/forge/warden/mcp`
-
-> Import path: `@y-core/forge/warden/mcp` → `warden/src/mcp/mod.ts`
-
-The MCP server: the tool and resource surface, the JSON-RPC framing, and the stdio transport.
-
-### Exports
-
-| Symbol | Kind | Summary |
-| --- | --- | --- |
-| `knowledgeTools` | function | The declared tools — search, read, outline, related and impact — described against the corpus an index holds. |
-| `callTool` | function | Runs one tool against an open index. |
-| `ToolSpec` | type | A tool's declared shape, as `tools/list` returns it. |
-| `ToolAnnotations` | type | What a host may assume about a tool without calling it. |
-| `ToolResult` | type | One tool's result, in MCP's content shape. |
-| `truncate` | function | Caps one response, naming the narrower path to what was cut. |
-| `RESOURCES` | const | The one fixed resource: the catalogue. |
-| `TEMPLATES` | const | The two parameterised resources, one per corpus. |
-| `readResource` | function | Reads one resource by URI, or nothing when the URI names none. |
-| `ResourceSpec` | type | A fixed resource, as `resources/list` returns it. |
-| `ResourceTemplate` | type | A parameterised resource, as the template list returns it. |
-| `ResourceContents` | type | One resource's contents, in MCP's shape. |
-| `serveStdio` | function | Serves the corpus over MCP on stdio. |
-| `serve` | function | Serves over any transport, stdio being one of them. |
-| `handle` | function | Answers one request, so the protocol is testable without a transport. |
-| `Transport` | type | What `serve` reads from and writes to. |
-| `parseRequest` | function | Parses one JSON-RPC request, or reports why it is not one. |
-| `encode` | function | Encodes one response as a framed line. |
-| `takeLines` | function | Splits a buffer into whole lines, keeping the partial tail. |
-| `ok` | function | A successful JSON-RPC response. |
-| `err` | function | A JSON-RPC error response. |
-| `RPC_ERRORS` | const | The JSON-RPC error codes the server answers with. |
-| `RpcRequest` | type | One parsed request. |
-| `RpcResponse` | type | One response, successful or not. |
+**`wardenStep`'s `catalogue` option belongs to the canon's home repository alone.** Configure it and the step asserts the committed catalogue; leave
+it out and it does not, which is what every consumer wants.
 
 ## Selecting the Tree
 

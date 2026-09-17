@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { ThemeToggle } from "../chrome/theme-toggle";
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 import { createIcon } from "../core/icon";
 import { Menu } from "../core/menu";
 import { Toast } from "../core/toast";

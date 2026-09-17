@@ -56,14 +56,7 @@ function rule(slots: [BorderSlot, BorderSlot, BorderSlot, BorderSlot], widths: r
   return (left.width > 0 ? left.char : "") + segments.join(separator) + (right.width > 0 ? right.char : "");
 }
 
-/**
- * Renders `rows` as an aligned grid, one string per physical line.
- *
- * The single column engine behind every aligned block forge prints: the `forge sync` tables, the
- * `--help` command and flag lists, and the release summary. Each of those was its own padding
- * expression before, and a fifth would have been written the next time one was needed.
- * @public
- */
+/** Renders `rows` as an aligned grid, one string per physical line. @public */
 export function renderGrid(rows: readonly Readonly<Record<string, string>>[], options: GridOptions = {}): string[] {
   if (rows.length === 0) return [];
 
@@ -74,8 +67,6 @@ export function renderGrid(rows: readonly Readonly<Record<string, string>>[], op
   const withHeader = options.header ?? true;
 
   const declared = (options.columns ?? Object.keys(rows[0] ?? {})).map(toColumn);
-  // Which columns a caller *offers* is a question about the data; which of them carry anything is a
-  // question about this particular grid, and the header text is not an answer to it.
   const columns = options.dropEmptyColumns === false ? declared : declared.filter((c) => rows.some((row) => (row[c.key] ?? "") !== ""));
   if (columns.length === 0) return [];
 
@@ -91,8 +82,6 @@ export function renderGrid(rows: readonly Readonly<Record<string, string>>[], op
   const separator = pad + (border.bodyJoin.width > 0 ? border.bodyJoin.char : " ".repeat(gap)) + pad;
   const open = (border.bodyLeft.width > 0 ? border.bodyLeft.char : "") + pad;
   const close = pad + (border.bodyRight.width > 0 ? border.bodyRight.char : "");
-  // Without a right border there is nothing for the last column's padding to align against, so it
-  // would only ever show up as trailing whitespace.
   const finish = (line: string) => indent + (border.bodyRight.width > 0 ? line : line.trimEnd());
   const body = (cells: readonly string[]) =>
     finish(open + cells.map((cell, i) => padAlign(cell, widths[i] ?? 0, columns[i]?.align)).join(separator) + close);
@@ -123,13 +112,7 @@ export function renderGrid(rows: readonly Readonly<Record<string, string>>[], op
   return lines;
 }
 
-/**
- * Renders `term` and `description` as two aligned columns, with descriptions wrapping to `width`.
- *
- * The shape `--help` needs twice and the release summary once — a borderless two-column grid — so
- * that a label's own length is data the engine measures rather than padding a caller hard-codes.
- * @public
- */
+/** Renders `term` and `description` as two aligned columns, with descriptions wrapping to `width`. @public */
 export function definitionList(entries: readonly DefinitionEntry[], options: DefinitionOptions = {}): string[] {
   return renderGrid(
     entries.map((entry) => ({ term: entry.term, description: entry.description })),

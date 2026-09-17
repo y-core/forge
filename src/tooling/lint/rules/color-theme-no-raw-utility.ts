@@ -9,8 +9,7 @@ const COLOR_UTILITIES = "bg|text|border|ring|from|via|to|fill|stroke|divide|outl
 
 const PALETTE_UTILITY = new RegExp(`(?<![\\w-])((?:[a-z][a-z0-9-]*:)*)(${COLOR_UTILITIES})-(${PALETTE_HUES})-(?:50|[1-9]00|950)(?![\\w-])`, "g");
 
-/** A raw Tailwind palette utility with no `dark:` counterpart in the same class expression, which
- *  is what makes it survive the theme switch unchanged. */
+/** A raw Tailwind palette utility with no `dark:` counterpart in the same class expression. */
 export const colorThemeNoRawUtility: LintRule = {
   meta: { type: "problem", docs: { description: "A raw palette utility is paired with its `dark:` counterpart, or replaced by a theme token." } },
   create(context) {

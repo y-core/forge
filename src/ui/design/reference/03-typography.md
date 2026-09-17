@@ -1,6 +1,6 @@
 ---
 title: Typography
-description: "The four decisions that separate type that reads well from type that reads as machine-composed: sizes, weights, measure and rhythm."
+description: "The decisions that separate type that reads well from type that reads as machine-composed: sizes, weights, measure and rhythm."
 ---
 
 # Typography
@@ -87,8 +87,8 @@ import { Card } from "@y-core/forge/ui/core";
 </Card.Header>;
 ```
 
-Untouched, `Card.Title` is `font-semibold` on `--card-foreground` and `Card.Description` is `text-sm` on `--muted-foreground`. Two weights, two
-colours, and the relationship is already correct.
+Untouched, `Card.Title` is `font-semibold` on `--card-foreground` and `Card.Description` is `text-sm` on `--muted-foreground`. The weights differ,
+the colours differ, and the relationship is already correct.
 
 ## 3. Measure
 
@@ -96,7 +96,7 @@ Default: a body-copy column targets a line length of 45–75 characters — `max
 region is a table or a code block, where wrapping costs more than the long line does. <!-- rule:forge-ui-type-measure-target -->
 
 `forge-ui-measure-cap` is the Floor that requires _some_ ceiling. This rule is the aesthetic target inside it: a column much narrower than 45
-characters breaks the reading rhythm as badly as one much wider than 75 loses the return sweep.
+characters breaks the reading rhythm as badly as one much wider than 75 loses the eye's return to the next line.
 
 ## 4. Leading runs inverse to size
 

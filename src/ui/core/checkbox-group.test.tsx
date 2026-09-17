@@ -4,7 +4,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { CheckboxGroup } from "./checkbox-group";
-import { attrOf, attrsOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 
 const INPUT = 'data-slot="checkbox-group-input"';
 const DESCRIPTION = 'data-slot="field-description"';

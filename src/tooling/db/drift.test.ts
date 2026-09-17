@@ -4,11 +4,11 @@ import { INVENTORY_SELECT } from "../../storage/db/schema";
 import type { WranglerConfig } from "../cf/types";
 import { CliError } from "../cli/errors";
 import { PLAIN } from "../term/color";
+import { argvHas, fakeDbIo } from "./db.fixture";
 import { readDrift, refuseSchemaDrift, schemaDrift } from "./drift";
 import { appHome } from "./home";
 import { RECORDED_CHECKSUM_SELECT } from "./migrate/checksum";
 import { schemaFingerprint } from "./migrate/fingerprint";
-import { argvHas, fakeDbIo } from "./test-support";
 import type { DbConfig, DbRunContext, FakeDbIo, RecordedChecksum, SchemaObject, Spawned } from "./types";
 
 const USERS_SQL = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT";

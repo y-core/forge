@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { DARK_CLASS } from "../chrome/theme";
-import { mount, paintedHex, paintedToken, THEME_TOKEN_CSS } from "../client/browser-test-helper";
+import { mount, paintedHex, paintedToken, THEME_TOKEN_CSS } from "../client/browser.fixture";
 import {
   buildTheme,
   COPY_CONFIRM_MS,
@@ -393,7 +393,7 @@ test.describe("the customiser's levers", () => {
   });
 });
 
-// The two writes below are deferred to one frame, so the pre-frame state is observable only from
+// The writes below are deferred to one frame, so the pre-frame state is observable only from
 // inside the task that dispatched the event — hence the inlined dispatch rather than `drag()`.
 test.describe("the customiser's text output", () => {
   // The share URL is built from `location.pathname`, and the harness mounts the markup on the

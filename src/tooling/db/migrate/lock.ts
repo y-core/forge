@@ -62,7 +62,7 @@ export function acquireApplyLock(io: DbIo, home: Home, verb = "apply"): () => vo
   const held = readLock(io, path);
   if (held !== null && now - held.startedAt < APPLY_LOCK_TTL_MS) throw heldError(verb, path, `pid ${held.pid}, since ${iso(held.startedAt)}`);
   if (held === null) {
-    // A lock that says nothing about itself is dated by the file; an absent one vanished between the two calls.
+    // A lock that says nothing about itself is dated by the file; an absent one vanished between the read and this stat.
     const modified = io.mtime(path);
     if (modified !== null && now - modified < APPLY_LOCK_TTL_MS) throw heldError(verb, path, `unreadable lock, modified ${iso(modified)}`);
   }

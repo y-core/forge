@@ -1,4 +1,5 @@
 import type { AppContext } from "../context/types";
+import { safeUrl } from "../http/escape";
 import { renderError } from "../http/fragment";
 import { html } from "../http/html";
 import { htmlResponse } from "../http/response";
@@ -29,13 +30,13 @@ export function createErrorPage<Bindings = Record<string, unknown>>(
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>${title}</title>
-        ${stylesheetHref ? html`<link rel="stylesheet" href="${stylesheetHref}" />` : ""}
+        ${stylesheetHref ? html`<link rel="stylesheet" href="${safeUrl(stylesheetHref)}" />` : ""}
       </head>
       <body>
         <main class="error-page mx-auto max-w-xl p-8">
           <h1 class="mb-4 text-xl font-semibold">${title}</h1>
           ${renderError(message)} ${reference ? html`<p class="mt-4 text-sm">Reference: ${reference}</p>` : ""}
-          ${options.homeHref ? html`<p class="mt-4"><a href="${options.homeHref}">Back to safety</a></p>` : ""}
+          ${options.homeHref ? html`<p class="mt-4"><a href="${safeUrl(options.homeHref)}">Back to safety</a></p>` : ""}
         </main>
       </body>
     </html>`;

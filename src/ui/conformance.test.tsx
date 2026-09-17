@@ -9,7 +9,7 @@ import { render } from "../testing/render";
 import { ISLAND_STATE_ATTR } from "./contracts/island-contract";
 import { STATE_ATTRS } from "./contracts/state-attrs";
 import { PRESENTATION_ATTRS } from "./contracts/vocabulary";
-import { WIRING_ATTRS, WIRING_PREFIXES } from "./contracts/wiring-attrs";
+import { WIRING_ATTRS, WIRING_PREFIXES } from "./contracts/wiring-attrs.fixture";
 import * as controls from "./controls/mod";
 import { createIcon } from "./core/icon";
 import * as core from "./core/mod";

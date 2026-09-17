@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../../testing/render";
 import { authPaths } from "../paths";
 import { authRoutes } from "../routes";
-import { attrOf, attrsOf, textOf } from "../test-support";
+import { attrOf, attrsOf, textOf } from "../web.fixture";
 import { AuthSignout } from "./signout";
 
 const AUTH = authPaths(authRoutes("/auth"));

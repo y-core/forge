@@ -9,7 +9,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 > cross-references, and where a rule is allowed to live. It does not govern any domain; every domain rule belongs to the document that owns it.
 >
 > All new and updated documents in the canon and in `docs/` must follow these rules. Where a repository ships a documentation check, mechanically
-> checkable subsets of §2, §4, §5, §6a, and §9 are enforced by it; where it does not, they are enforced by review.
+> checkable subsets of §2, §4, §5, §6a, and §9a are enforced by it; where it does not, they are enforced by review.
 >
 > Defers to: [`PLAIN_LANGUAGE.md`][pl] for the quality of the prose inside that form — whether a heading says what is beneath it, and whether the
 > reader can act on what they find. This guide decides that a `## 0. Quick Reference` exists; that one decides that it orients.
@@ -35,12 +35,14 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 - §6 Document Size and Scope: what belongs in a governing document at all
 - §6a Size Targets and the Split-or-Cut Threshold: 200–600 target, 800 hard fail
 - §6b Subsection Citability Test: a `###` exists to be cited, not to be long
-- §6c Decisions Versus Usage — the README Boundary: examples live beside the source
+- §6c Decisions Versus Usage — the README Boundary: a README teaches use, shaped by tasks, and is not the comment budget's overflow
 - §6d The Canon Versus This Repository's Docs: portable rule or local fact
 - §6e No Two Governing Documents Share a Filename: per-index uniqueness, and which side renames
 - §7 Quick Reference Convention: one line per `##` and `###`
 - §8 Single Home Rule and the Source-of-Truth Register: where each fact is allowed to live
-- §9 No Dated or Ticketed Content: no dates, task IDs, or changelog notes
+- §9 Content That Rots: the present state only — neither the history nor the inventory
+- §9a No Dated or Ticketed Content: no dates, task IDs, or changelog notes
+- §9b No Inventory Counts: write the list or name its owner, never the tally
 - §10 `CLAUDE.md` — What Belongs In It: the non-obvious only, one line each, and nothing a document owns
 
 ---
@@ -58,7 +60,7 @@ the warden knowledge tools:
 **`knowledge_outline`** takes a document path and lists every section with its one-line summary: the answer to "this file is 62 KB and I need one
 section". Outline, then read.
 
-**An empty result is an answer.** Search refuses a question the corpus does not cover rather than returning its ten least-bad matches, so nothing is
+**An empty result is an answer.** Search refuses a question the corpus does not cover rather than returning its least-bad matches, so nothing is
 governing a subject that comes back empty — write what the task needs and do not infer a rule from a near miss. That refusal is what makes the tool
 safe to trust, and it is why searching is instructed rather than merely permitted. The converse does not hold: a non-empty result is not proof of
 coverage, so when the hits come back but none of them addresses what was asked, that is no rule either — say so rather than stretching the nearest
@@ -272,6 +274,9 @@ middle produces two documents nobody can predict the contents of.
 Prefer cutting to splitting. Most oversized documents are oversized because they restate things that live elsewhere (§8), not because they govern
 too much.
 
+**These bands govern `docs/` documents and the canon. A `README.md` is not held to them** — its length tracks the use it teaches, and what makes one
+long is the number of tasks, never the number of symbols (§6c).
+
 ### 6b. Subsection Citability Test
 
 **A `###` anchor exists to be cited, not to be long.** Length is not the test — being cited is. A three-line subsection that four other documents
@@ -288,6 +293,19 @@ examples**: how to call the thing, in what order, with what arguments.
 **A usage sample in `docs/` is a defect unless it disambiguates a rule.** The carve-out is real and load-bearing — an exact field name, an exact
 encoded output, or a flag whose default inverts the rule is clearer shown than described. A sample that would read equally well as "see the README"
 is not disambiguating anything.
+
+**A README teaches use, not workings.** It answers one question: how do I use this? Not what it does — the code says that. Not how it does it — that
+is the implementation's business, and it changes. Not what is forbidden — the governing document owns that. Prose that does not, in some shape, help
+a reader call the thing does not belong there.
+
+So a README is shaped by tasks, not by the export list. Sections are named for what a developer wants to _do_; a per-symbol catalogue of purpose,
+parameters and return values is the shape this rule rejects, because every one of those is in the signature already and the catalogue goes stale the
+first time one changes. Where an options bag needs explaining, explain the _choice_ the caller is making, never the field list. A ruling is a link
+to the document that owns it, not a paragraph restating it here.
+
+**A README is not where the comment budget's evictions go to live.** Prose deleted from a source file under `CODE_RULES.md` §5 is deleted, not
+relocated: it failed the test of earning its place, and moving it to a different file does not change that. The routing table in `CODE_RULES.md` §5c
+names the one home for each kind of rationale, and "the unit's `README.md`" appears there for consumer-facing usage only.
 
 ### 6d. The Canon Versus This Repository's Docs
 
@@ -362,8 +380,8 @@ and the duplication will drift. Add sections here as they are written — a stal
 source file named there is authoritative over any prose about it anywhere in `docs/` or `CLAUDE.md`, and a governing document contradicting one is
 wrong by default.
 
-The register is implementation, not governance — its rows name real paths — so this section carries the rule and not the rows (§5d). Two properties
-of a good row are worth stating, because both are routinely got wrong:
+The register is implementation, not governance — its rows name real paths — so this section carries the rule and not the rows (§5d). These
+properties of a good row are worth stating, because both are routinely got wrong:
 
 - **A row may name more than one file when the concern genuinely spans them.** Splitting policy from the matchers it decides on is more honest than
   naming an entry point and sending half of its readers to the wrong place.
@@ -379,14 +397,29 @@ homes fits it: a budgeted comment at the code it governs, or a `CLAUDE.md` line 
 
 ---
 
-## 9. No Dated or Ticketed Content
+## 9. Content That Rots
 
-Governing documents describe the current state of the system. They carry no history.
+A governing document describes the current state of the system. It carries neither its history nor its inventory.
 
-Forbidden: calendar dates in `YYYY-MM-DD` form, "as of" qualifiers, task or ticket identifiers, and changelog notes (`renamed from…`, `fixed by…`,
-`previously…`).
+### 9a. No Dated or Ticketed Content
+
+**A governing document carries no history.** Forbidden: calendar dates in `YYYY-MM-DD` form, "as of" qualifiers, task or ticket identifiers, and
+changelog notes (`renamed from…`, `fixed by…`, `previously…`).
 
 A rule that needs a date to make sense is not a rule yet. `CHANGELOG.md` and git history own the past; a governing document owns only the present.
+
+### 9b. No Inventory Counts
+
+**A governing document records that a thing exists, not how many exist.** The reader needs the thing and what it is for; the tally is a second copy
+of a fact the code already owns, and it is wrong as soon as one is added. §8 already forbids putting a step count or a file inventory into prose —
+this is that rule stated as the writer meets it.
+
+Forbidden: a spelled-out count standing in for the things counted — "five agents", "three runners", "the same seven flags", "Four namespaces sit
+below the split" — and the "there are N" and "one of the N" constructions. Write the list, or name the file that owns it.
+
+A number stays when it **is** the rule: a limit, a protocol or format constant, a version, a section number, an ordinal identifying one item, a
+bound the reader must supply, or a closed set the document argues is closed ("exactly two", "one of exactly four things"). The test: would the
+sentence be _wrong_ if the number changed, or merely _out of date_? Out of date means delete it.
 
 ---
 

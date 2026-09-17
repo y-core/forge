@@ -80,7 +80,7 @@ The canonical case is a content-security policy: a dev server injects a live-rel
 exist in production. A separate dev entry that merges the extra source onto the base policy makes the guarantee **structural**: the production
 default export cannot contain the dev allowance, because it is not in that file.
 
-Two properties follow, and both are the reason for the shape:
+These properties follow, and both are the reason for the shape:
 
 - A build flag can be set wrongly; a module that does not import the value cannot leak it.
 - Upgrading the tool that injects the script means editing one constant in the dev entry, with the production policy provably unaffected.
@@ -105,7 +105,7 @@ Two properties follow, and both are the reason for the shape:
 **The domain directory is `model/`, in every repository.** It names what the directory holds; `core/` names a location, and a location is what every
 directory in the tree has. A repository on another name renames, carrying its own architecture document and growth-rules table with it.
 
-**Two further directories are permitted optional members of `src/`, available to any application rather than one repository's exception:**
+**Further optional members of `src/` are permitted, available to any application rather than one repository's exception:**
 
     types/                 ← ambient or shared type declarations with no runtime
     vendor/                ← third-party code and the glue that adapts it
@@ -145,8 +145,8 @@ const res = await fetch("https://api.example.com/send", { body: JSON.stringify(p
 await emailService.send(c, config, formData);
 ```
 
-Two things the boundary buys, and both are lost the moment a handler calls out directly: the handler becomes testable against a fake service rather
-than a network, and the integration becomes reusable from a second route without being copied.
+What the boundary buys is lost the moment a handler calls out directly: the handler becomes testable against a fake service rather than a network,
+and the integration becomes reusable from a second route without being copied.
 
 ### 2d. Views Are Pure
 

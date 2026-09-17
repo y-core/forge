@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, compiledCss, mount } from "../client/browser-test-helper";
+import { classesOf, compiledCss, mount } from "../client/browser.fixture";
 import { Filter } from "./filter";
 
 // Server-rendered with `b` chosen: the reset must restore that, not clear it.

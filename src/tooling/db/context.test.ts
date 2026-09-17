@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { CliContext } from "../cli/types";
 import { createColorize, PLAIN } from "../term/color";
 import { confirmPrinter, DEFAULT_DB_CONFIG, resolveDbContext, sharedDbFlags } from "./context";
-import { fakeDbIo, minimalWranglerConfig } from "./test-support";
+import { fakeDbIo, minimalWranglerConfig } from "./db.fixture";
 import type { SharedDbFlags } from "./types";
 
 const roots: string[] = [];

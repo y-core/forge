@@ -57,8 +57,8 @@ describe("buildHandlers()", () => {
   });
 
   it("threads configPath into the secrets handler's .dev.vars lookup", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "foundry-registry-"));
-    writeFileSync(join(dir, ".dev.vars"), "# foundry:push\nFROM_THAT_DIR=1\n", "utf-8");
+    const dir = mkdtempSync(join(tmpdir(), "forge-registry-"));
+    writeFileSync(join(dir, ".dev.vars"), "# forge:push\nFROM_THAT_DIR=1\n", "utf-8");
 
     const handlers = buildHandlers({ configPath: join(dir, "wrangler.jsonc") });
     const secrets = handlers.find((h) => h.type === "secrets");
@@ -66,7 +66,7 @@ describe("buildHandlers()", () => {
   });
 
   it("threads configPath into the vars handler too, so it can see the override", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "foundry-registry-vars-"));
+    const dir = mkdtempSync(join(tmpdir(), "forge-registry-vars-"));
     writeFileSync(join(dir, ".dev.vars"), "BASE_URL=http://localhost:8787\n", "utf-8");
 
     const handlers = buildHandlers({ configPath: join(dir, "wrangler.jsonc") });

@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { Toolbar } from "../chrome/toolbar";
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 import { createIcon } from "./icon";
 import { Menu } from "./menu";
 import { Popover } from "./popover";

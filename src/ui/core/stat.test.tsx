@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, variantClasses } from "./core.fixture";
 import { Stat } from "./stat";
-import { attrsOf, variantClasses } from "./test-support";
 
 const compounds = (html: string) => [...html.matchAll(/<([a-z]+) data-slot="(stat-[a-z]+)"[^>]*>([^<]*)</g)].map((m) => [m[1], m[2], m[3]]);
 

@@ -5,24 +5,12 @@ import type { ResourceType, SyncResult } from "../../types";
 import type { HandlerContext } from "./types";
 import type { FailureRowOptions, RowIdentity } from "./types";
 
-/**
- * The note a row carries when the config named an id that the account does not have.
- *
- * Falling back to a name match is the pragmatic behaviour — the id is usually stale
- * from a deleted resource or another account — but it is never silent: the row says
- * which id failed to resolve, since that is the one fact the config is wrong about.
- */
+/** The note a row carries when the config named an id that the account does not have. */
 export function staleIdDetail(localId: string | undefined): string | undefined {
   return localId ? `local id ${localId} not found on this account` : undefined;
 }
 
-/**
- * The rows for a lookup that failed before any per-binding work could happen.
- *
- * Shared because the three handlers that do this were drifting: the point is that a
- * missing target and a rejected token land on *different actions*, not merely on
- * different prose, and that is worth stating once.
- */
+/** The rows for a lookup that failed before any per-binding work could happen. */
 export function failureRows(
   resourceType: ResourceType,
   identities: RowIdentity[],

@@ -113,7 +113,7 @@ computed whose sources are dead.
 **Runtime auth filtering of the bar arrives as a document event, not through an exported setter.** The `navbar` scope applies the token list the
 event carries to every filterable descendant; the server seeds the same set at render, so the first paint is already correct. A channel rather than
 a forge-held signal for two reasons: the emitter — a login, an htmx swap, an app's own router — need not hold a reference to any forge module, and
-two bars on one page each resume their own scope while both must follow one push. The listener is removed by the disposer `setup` returns (§2d).
+and bars on one page each resume their own scope while all must follow one push. The listener is removed by the disposer `setup` returns (§2d).
 `src/ui/README.md` owns the event's name and payload shape.
 
 ### 2c. The `turnstile` Scope — CAPTCHA Controller
@@ -153,7 +153,7 @@ Its deliberate behaviours:
 - **The token is scoped to the form's own action, and to its own submission.** `action` and `cData` reach `turnstile.render` and are the halves of
   `verifyTurnstile`'s `expectedAction` and `expectedCData`; without `action` a token minted on one form verifies at any endpoint on the host.
   `responseFieldName` reaches Cloudflare as `response-field-name` and renames the hidden input the server's `tokenField` reads, which is what lets
-  two widgets share a form. A value outside `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the
+  widgets share a form. A value outside `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the
   server stays the one enforcement point; `responseFieldName` carries no pattern, being an HTML field name forge has no charset ruling for. **One
   predicate decides both htmx seams — the `htmx:confirm` hold and the `htmx:afterRequest` reset — by testing the element htmx issued the request
   from**, so a descendant field's own request is neither held nor reset and cannot burn the single-use token. **The test is structural because the
@@ -163,7 +163,7 @@ Its deliberate behaviours:
   both default to `auto`, so a `reset()` of forge's own was redundant at best and a second challenge at worst.
 - **Fails visible, and the message comes back down.** Two message slots, each overridable by prop: the general one (`children`) and an `unsupported`
   sibling for the one cause the general text misleads on — a browser Turnstile cannot run, where "disable your ad blocker" is advice the visitor
-  cannot act on. **Two slots and not one per cause**, because the text is the app's and the controller cannot invent English of its own. `retry`
+  cannot act on. **Those slots, and not one per cause**, because the text is the app's and the controller cannot invent English of its own. `retry`
   defaults to `auto`, so a transient fault the widget then solves takes its own message back down.
 - **A theme flip re-renders the widget, but never at the cost of a solved token.** Once a token has been issued the widget keeps the colour it
   rendered in, rather than making the visitor pay for a second challenge to change a colour. It observes the `dark` class deliberately —
@@ -213,7 +213,7 @@ computation is alive while an author's teardown mutates the DOM those effects wr
 `setup` returned, is owned by nothing and must be disposed by whoever created it — per-invocation ownership would be wrong more often than right,
 since an effect an action installs is normally meant to outlive that action.
 
-Four consequences follow, each the rule rather than a special case:
+These consequences follow, each the rule rather than a special case:
 
 - **A `setup` that returns nothing is legal**, and is not treated as a disposer.
 - **A disposer must be idempotent-safe to call after its element is gone.** Removing a listener from a detached node is a no-op, which is why
@@ -239,7 +239,7 @@ the same path Escape already takes, so focus restoration is one `toggle` handler
 open submenu to the panel containing it and without the bail both controllers act on one press; and it calls `preventDefault()` on every key it
 consumes, which is the other half of that contract.
 
-Three further rulings: this lives in a controller mounted on the popup, **never in the scope system**, whose delegated vocabulary carries no
+Further rulings: this lives in a controller mounted on the popup, **never in the scope system**, whose delegated vocabulary carries no
 `keydown` by decision (§3c). **The opener is captured, not derived from `commandfor`** — a menu can be opened by any invoker, and a context menu has
 no single trigger button. And **it does no anchoring at all**: an invoker-opened popup gets an implicit anchor, so every panel and submenu is placed
 by CSS alone (§2i).
@@ -275,7 +275,7 @@ popup shown by `showPopover()` rather than by an invoker has no implicit anchor 
 has no trigger**. Nothing carries the anchor name, every anchored rule resolves to nothing, and the UA's `[popover]` default centres the panel, the
 one place a context menu must never be.
 
-`openPopoverAt` shows the popup with its top-left corner on the point, clamped so the whole box stays on screen. Four properties are load-bearing:
+`openPopoverAt` shows the popup with its top-left corner on the point, clamped so the whole box stays on screen. These properties are load-bearing:
 
 - **The coordinates go through CSSOM** (`el.style.setProperty`), never a generated `style` attribute — for the CSP-and-dropped-`style` pair owned by
   [`UI_SSR_COMPONENTS.md`][usc-1a] §1a.
@@ -362,7 +362,7 @@ property rather than through `instanceof`, for the cross-realm reason `src/ui/RE
 `createSignal`, `computed` and `effect` are the whole seam. **Use signals for lightweight client state that does not justify an HTMX round trip** —
 state that must survive navigation or be authoritative belongs on the server.
 
-**The engine is deliberately in-house, and those three names are the migration boundary.** Three exports over roughly two hundred lines is below the
+**The engine is deliberately in-house, and those names are the migration boundary.** Exports over roughly two hundred lines sit below the
 cost of a facade over a third-party graph; swapping the implementation behind them is the whole migration if that ever inverts.
 
 **By the time a write returns, every dependent has observed the settled value.** A write enqueues its subscribers and the queue drains synchronously

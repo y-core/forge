@@ -31,6 +31,7 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §3c The Entity Encoding Map: character to entity
 - §3d Headers and Status Are Always Exact: no range assertions
 - §3e Assert the Contract, Not the Implementation Restated: the deletion check, and the copied-literal ban
+- §3f A Deleted Claim Lands in a Test: the receiving end of the comment budget
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Stubbing an Outbound Call: the network seam, not the service
@@ -131,7 +132,7 @@ const MINIMUM_ENV = {
 };
 ```
 
-Two properties make it useful rather than ceremonial:
+These properties make it useful rather than ceremonial:
 
 - **Every value is obviously a test value.** A secret that looks like a real secret will eventually be treated as one ([`CODE_REVIEW.md`][cr-3c]
   §3c).
@@ -179,7 +180,7 @@ substring match. Substring matching stays legitimate on non-markup strings — a
 A full page contains per-request values — a CSP nonce, a CSRF token, a generated id — so a whole-document exact assertion would break on every run.
 **The answer is to remove the nondeterminism, not to weaken the assertion.**
 
-Two accepted shapes, in order of preference:
+The accepted shapes, in order of preference:
 
 1. **Normalise, then assert exactly.** Replace each nondeterministic token with a fixed placeholder, then assert the whole document with one exact
    comparison. This keeps every surrounding character under test, including the encoding.
@@ -219,7 +220,7 @@ exists to keep.
 
 ### 3e. Assert the Contract, Not the Implementation Restated
 
-**Two checks, both applied before a test is counted as written. Each catches what the other misses.**
+**Both checks are applied before a test is counted as written, and each catches what the other misses.**
 
 **The deletion check: delete the mechanism the test names; a test that still passes was never testing it.** The failure shape is always the same —
 the subject is a _mechanism_, and the assertion reads an _outcome_ that a second, independent mechanism also produces. A guard clause is the usual
@@ -230,7 +231,7 @@ absent outright, so it asserts nothing at all.
 
 **The copied-literal check: a literal copied from the source under test is not an expected value.** This is the case the deletion check cannot
 reach. A transcription goes red the moment the source changes, so it is never vacuous by that measure — it merely records that two files agree with
-each other, which is a fact about the repository rather than about the software. Three shapes, all common:
+each other, which is a fact about the repository rather than about the software. These shapes are all common:
 
 - **A transcribed constant map.** A frozen array or lookup table read out of the module and asserted back, entry by entry, often with further cases
   that are derivable from the first. Test what _reads_ the table: the behaviour its entries were chosen to produce.
@@ -262,6 +263,23 @@ cap or a limit defined by the shared library is imported, so a library change su
 
 **Negative space is evidence.** A refusal that asserts status and body _and_ that nothing downstream ran — no statement issued, no row written, no
 outbound call made — pins what the refusal cost, which no restatement of the guard's own constants can.
+
+### 3f. A Deleted Claim Lands in a Test
+
+**A claim removed from a comment is not removed from the system until an assertion holds it.** `CODE_RULES.md` §5e is this rule seen from the source
+side: a comment asserting behaviour is prose standing in for a test, and the fix is the test. This section is the receiving end.
+
+So a change that deletes such a comment carries work here, and the work is scoped, not incidental:
+
+- **The claim names the assertion.** "Redirects to the login route when the session cookie is absent" is already a test name and an expectation; it
+  does not need to be redesigned, only written.
+- **Check first whether it is already pinned.** Frequently it is, and the comment was a second, unexecuted copy — a restatement, not a missing test.
+  Deleting it then costs nothing and adds nothing.
+- **Where it is not pinned, the test is part of the change.** Not a follow-up, not a ledger task: the claim was load-bearing enough to be written
+  down once, and the change is not done while the system has lost it and gained nothing.
+
+§3e applies to the test that results. A claim rewritten as an assertion that reads an outcome a second mechanism also produces, or as a literal
+copied back out of the source, has not landed — it has been restated in a new syntax.
 
 ---
 
@@ -372,7 +390,7 @@ warning" — is a failure.
 dependencies installed. A step needing a fetched browser binary or a live service is `full`-only. "This suite got slow" has no bearing on the
 question. An absent prerequisite is a skip below `full` and a failure in a `full` run, because a release may not be assured by a step nobody ran.
 
-**The mode is part of the verdict**, since the three are different assurances — and so is a skipped step: a green that skipped one is not the green
+**The mode is part of the verdict**, since the modes are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
 
 **Execution order is tier-stable, not table order: within a tier the table's declared order holds, and across tiers the cheaper tier runs first.**
@@ -399,7 +417,7 @@ is refused outright**: a gate that ran nothing must never be indistinguishable f
 
 ### 6d. Local Ports Are Slots, and a Slot Is a Port and a Bind Address
 
-**Three slots, each declaring both halves:**
+**Each slot declares both halves:**
 
 | Slot | Port | Bind address | Used by |
 | --- | --- | --- | --- |

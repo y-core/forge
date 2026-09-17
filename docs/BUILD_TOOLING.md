@@ -60,7 +60,7 @@ a config whose first field is `cwd`; the `bin.ts` a package script points at res
 **Flags are a record keyed by long name, not an array of definitions.** The key _is_ the `--long` form and `short` is a field on the definition, so
 a flag cannot be declared with a name that disagrees with the one that reads it.
 
-**There are two flag types — `"boolean"` and `"string"`.** `ResolvedFlags<F>` derives the handler's flag argument from the declaration: a `string`
+**The flag types are `"boolean"` and `"string"`.** `ResolvedFlags<F>` derives the handler's flag argument from the declaration: a `string`
 flag with a `default` or `required: true` resolves to `string`, every other `string` flag to `string | undefined`, and a boolean to `boolean`. No
 handler casts, and a renamed flag fails to typecheck at its reader.
 
@@ -99,10 +99,10 @@ gate's own changelog and export-surface checks both read them. Declaring the dep
 value, which `validateNoMutualValuePairs` rejects.
 
 **What the barrel publishes is decided by one question: would a consuming app plausibly call this itself?** A symbol that exists only to serve the
-two command factories stays out of `mod.ts` — the git and `package.json` helpers in `src/tooling/release/` (§2c), the gate's formatters (§2f). The
+command factories stays out of `mod.ts` — the git and `package.json` helpers in `src/tooling/release/` (§2c), the gate's formatters (§2f). The
 test is the _caller_, not difficulty or stability: a helper is unpublished because nobody outside would reach for it.
 
-**Two subpaths are prebuilt JavaScript, and each publishes exactly the one thing a foreign loader needs.** `@y-core/forge/tooling/gate/chromium` is
+**The prebuilt-JavaScript subpaths each publish exactly the one thing a foreign loader needs.** `@y-core/forge/tooling/gate/chromium` is
 what a consumer's `playwright.config.ts` imports and `@y-core/forge/tooling/lint/plugin` is what a consumer's `.oxlintrc.json` names, because both
 are loaded by node rather than by the Worker runtime and node will not strip types from a file under `node_modules`. Neither may grow a symbol the
 source barrel does not already own: they are generated copies held against it by `validate-chromium-bundle` and `validate-lint-plugin`, so anything
@@ -131,7 +131,7 @@ fail the release outright.
 **`stageFiles` is an override, not an addition.** Naming it replaces the derived list. It exists for what a release touches _beyond_ its own writes
 — a lockfile, a monorepo's sibling manifests, a version constant in source — and those callers state the full list deliberately.
 
-Five refusals are guards, not conveniences:
+The refusals are guards, not conveniences:
 
 | Refusal | Why, and when it is reached | Override |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ from the working tree, so a `--dry` run reflects uncommitted work. An entry the 
 barrel names, so this check never demands one — its whole job is catching an accidental patch across the patch→minor line, which is where a `^`
 range silently breaks.
 
-Three things are deliberately not compared: **subpath patterns** (a `*` specifier names no barrel, and forge's two publish files, not symbols),
+Deliberately not compared: **subpath patterns** (a `*` specifier names no barrel, and forge's patterns name publish files, not symbols),
 **non-barrel targets** (an entry pointing at anything but `.../mod.ts`), and **type-level narrowing** — a symbol surviving with a tighter signature
 needs a type checker, not a name set, and that gap is why the guard has an override rather than a veto.
 
@@ -251,7 +251,7 @@ Failing invariants:
 
 A heading with _no_ link definition is a warning only — promotion writes the definition, and some entries legitimately lack one.
 
-Three things are deliberately not checked, each because the file disproves them: **`---` separators between sections** (not a per-section invariant
+Deliberately not checked, each because the file disproves it: **`---` separators between sections** (not a per-section invariant
 — consecutive released versions carry none), **version contiguity** (a resolved version that never shipped leaves a hole the next compare link
 simply spans), and **a trailing newline** (the file has none, and promotion round-trips that exactly, §2d).
 
@@ -280,7 +280,7 @@ because `verify` is "the gate": the cheap run is the one that has to be asked fo
 **A dependency's absence is answered by the mode, not the table.** A step carries one `requires` — tool, probe, install hint — and the runner asks
 the probe once: a `fast` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the four design-system
 steps run on every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips, because it is the
-release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could state only one of the two. `--list` words a step's dependency per
+release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could state only one of them. `--list` words a step's dependency per
 mode: conditional, or required.
 
 **`GateMode` is a closed union derived from the ordered `GATE_MODES` tuple, and `Step.tier` names the lowest mode a step runs in.** Together they
@@ -407,7 +407,7 @@ only knowable at the end the refusal also requires no findings — a check alrea
 **Not every check has a scan set, and a few reach zero legitimately** — a single-artifact diff, a Worker with no static assets, an opt-in anchor, a
 project before its first release. Each records that at the branch, which is where a reader tempted to add a guard is standing.
 
-**Two levels, not a scale.** `fail` fails the check; `warn` is reported and does not. A third level invites "does `major` fail the gate?", which is
+**A level is not a scale.** `fail` fails the check; `warn` is reported and does not. A third level invites "does `major` fail the gate?", which is
 the question a level should answer.
 
 **A drift check over a generated module compares content, not layout.** Layout is the formatter's business — every `gen:*` script pipes its written
@@ -442,7 +442,7 @@ unpushed tag does not exist for a consumer, and `getLatestTag` would cut the nex
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
 an offline `verify:full` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal.
 
-Three habits carry the rest:
+These habits carry the rest:
 
 1. **Commit per verified unit** — one coherent change, at the point `bun run verify` is green for it. A later fix to that same unit is `--amend`; a
    different concern is a new commit. Below the tag the log is the only bisect surface there is.

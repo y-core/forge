@@ -37,7 +37,7 @@ That rationale is also the boundary:
 - **The full cross-cutting gate comes here.** `bun run verify`, the release gate, any suite whose output is voluminous or whose failure could belong
   to more than one owner.
 - **A single scoped step does not have to.** An owning agent may run `bun run verify --only lint` or one test file itself: the output is small and
-  it owns the fix either way. Routing four lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
+  it owns the fix either way. Routing a few lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
 - **A scoped green is never a green gate**, whoever ran it.
 
 ## The Step List Is Not Yours to Know
@@ -45,7 +45,7 @@ That rationale is also the boundary:
 **Never hardcode or recite the gate's steps.** The step-list config owns them. Run `bun run verify` and report what it does; if you need the step
 list, read that file — or run `bun run verify --list`, which prints the selection and runs nothing.
 
-A verdict that names a step the gate no longer runs is worse than no verdict. You do not have to infer the failing step: the runner names it on its
+A verdict that names a step the gate does not run is worse than no verdict. You do not have to infer the failing step: the runner names it on its
 own summary line, and that name is what your verdict quotes.
 
 ## Verdict Format (rigid)
@@ -107,8 +107,8 @@ because you were told to, not one a mechanism imposes on you.
 in order to double-check your own work** — a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole context
 (`AGENT_WORKFLOW.md` §4a). One agent where one suffices.
 
-You may spawn sub-agents to parallelise segmentable work — for example, running independent suites concurrently and collecting their verdicts. Three
-standing conditions:
+You may spawn sub-agents to parallelise segmentable work — for example, running independent suites concurrently and collecting their verdicts.
+Standing conditions:
 
 1. **You stay in control of the split and the synthesis** — sub-agents report to you; you produce the single verdict.
 2. **You verify every returned result before acting on it** — a sub-agent claiming green is a claim, not a fact.

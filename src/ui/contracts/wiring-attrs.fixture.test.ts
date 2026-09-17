@@ -10,7 +10,7 @@ import { TABS_MOUNTED_ATTR } from "./tabs-contract";
 import { COPY_LABEL_ATTR, COPY_STATUS_ATTR, COPY_TARGET_ATTR, HEX_ATTR, SCALE_ROW_ATTR } from "./theme/theme-contract";
 import { TOOLTIP_MOUNTED_ATTR } from "./toggle-contract";
 import { TOOLBAR_ITEM_ATTR } from "./toolbar-contract";
-import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs";
+import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs.fixture";
 
 const EXPECTED = [
   "data-action",

@@ -6,153 +6,104 @@ audience: consumer
 
 # `@y-core/forge/logging`
 
-Structured, channel-based logging for forge apps on Cloudflare Workers. A logger fans each log record out to one or more **channels** — write-only
-`consoleChannel` for development, read/write `kvLogChannel` for production persistence — plus a `requestLogger` middleware that records every
-request/response and an optional SSR **log viewer** for browsing persisted logs.
+A log line on Workers is only useful if something kept it. This namespace gives you a structured record, a set of **channels** to fan it out to —
+`console` for a `wrangler tail`, KV for anything you want to read back tomorrow — and a middleware that records every request without you writing
+the call.
 
 ```ts
-import { createLogger, consoleChannel } from "@y-core/forge/logging";
+import { consoleChannel, createLogger } from "@y-core/forge/logging";
 
 const log = createLogger("app", { channels: [consoleChannel()] });
 log.info("server started", { port: 8787 });
 ```
 
-## Features
+---
 
-- **Structured records** — every entry carries `level`, `prefix`, `message`, ISO `timestamp`, and an arbitrary `data` field. Pass data as discrete
-  fields, never interpolated into the message.
-- **Channel fan-out** — one logger writes to any number of channels; `console` and KV in parallel.
-- **Symmetric channels** — a channel exposes `write` and an optional `read`, so the same `kvLogChannel` that persists logs also backs the log viewer
-  UI.
-- **Child loggers** — `child(bindings)` clones a logger with merged context fields (e.g. a per-request `requestId`) sharing the same channels and
-  pending-flush queue.
-- **Min-level filtering** — a logger-wide `minLevel` (inherited by children) drops records before any channel sees them, and
-  `withMinLevel(channel, min)` gates a single channel so e.g. console gets the full stream while KV keeps only `warn`+. `parseLogLevel` turns a
-  `LOG_LEVEL` env var into a `LogLevel`.
-- **Per-channel level allowlists** — `withLevels(channel, levels)` names the accepted set outright rather than a floor, so it can express a
-  non-contiguous selection and — with an empty array — silence one channel entirely by configuration. `parseLogLevels` turns a comma-separated env
-  var (including the literal `"none"`) into that set.
-- **Per-channel redaction** — `withRedaction(channel, redact)` transforms each record before write, so sensitive fields can be stripped for a
-  persisting channel while the console stream stays intact. Independently, `kvLogChannel` strips error `stack` from persisted `data` by default
-  (`persistStack: false`), keeping stacks out of KV retention.
-- **Error serialization** — `serializeError(err)` converts any thrown value into a JSON-safe `{ name, message, stack? }` for structured `data`
-  fields; it never throws.
-- **Async-safe flushing** — pending KV writes are tracked and awaited via `flush()`; `requestLogger` flushes them through `executionCtx.waitUntil`
-  so the response is not blocked. `flush()` never rejects, so a failed write is reported through `onChannelError` instead — by default one
-  `console.error` line, visible in `wrangler tail` without configuration.
-- **Request logging middleware** — one record per request with method, path, status, and duration, with the level derived from the response status
-  code.
-- **KV persistence** — time-ordered keys, per-entry metadata for zero-cost listing, TTL retention, and a probabilistic soft-cap purge.
-- **SSR log viewer** — a single auth-gated `loadLogViewer` loader from `@y-core/forge/logging/show` that returns a fully rendered `Response` (viewer
-  content inside the shell your app registered, HTMX `<tbody>` partial, append fragment, or record-detail row) for browsing persisted logs; built
-  from `ui/core` primitives and semantic tokens, so it themes with the rest of your app. The JSX components are internal so records cannot render
-  without passing the access check.
+## Getting started
 
-## Usage
-
-### Create a logger
-
-`createLogger(prefix, options?)` returns a `Logger`. The `prefix` labels every record (it appears as the `prefix` field); `options.channels` selects
-where records go (defaults to a single `consoleChannel()`).
+`createLogger(prefix, options?)` returns a logger with one method per level — `debug`, `info`, `warn`, `error` — each taking a static message and an
+optional field bag. The `prefix` labels every record it writes.
 
 ```ts
-import { createLogger, consoleChannel, kvLogChannel } from "@y-core/forge/logging";
+import { consoleChannel, createLogger, kvLogChannel } from "@y-core/forge/logging";
 
-const log = createLogger("billing", { channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)], bindings: { region: "weur" } });
+const log = createLogger("billing", {
+  channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)],
+  bindings: { region: "weur" }, // merged into every record
+});
 
-log.debug("cache miss", { key: "plan:42" });
 log.info("invoice issued", { invoiceId: "inv_1" });
 log.warn("retrying webhook", { attempt: 2 });
-log.error("charge failed", { code: "card_declined" });
 
-await log.flush(); // await pending async channel writes
+await log.flush(); // settle the writes already started
 ```
 
-### Log levels
+Every record carries `level`, `prefix`, `message`, an ISO `timestamp`, and whatever `data` you passed merged over the logger's `bindings`. The
+message stays a static, greppable label and the variable part goes in fields — that is the rule, and it is also a PII control
+([`BOUNDARIES.md`][boundaries-4] §4).
 
-`LogLevel` is `"debug" | "info" | "warn" | "error"`. Each is a method on `Logger` with the same signature
-`(message: string, data?: Record<string, unknown>) => void`.
-
-### Child loggers and context fields
-
-`child(bindings)` returns a new logger that merges `bindings` into every record's `data`, sharing channels and the pending-write queue with the
-parent.
+`child(bindings)` clones a logger with extra fields, sharing its channels and its pending-write queue. This is how per-request context travels:
 
 ```ts
 const requestLog = log.child({ requestId: "req_abc" });
-requestLog.info("handler entered"); // record.data includes requestId: "req_abc"
+requestLog.info("handler entered"); // record.data carries requestId
 ```
 
-## Core Components & APIs
+An asynchronous channel write does not block the call — the logger tracks it and `flush()` awaits what it is holding.
 
-### `createLogger(prefix, options?)`
+---
 
-Creates a structured logger that dispatches records to its channels.
+## Sending records to more than one place
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `prefix` | `string` | Label written to every record's `prefix` field. |
-| `options.channels` | `LogChannel[]` | Channels to fan records out to. Defaults to `[consoleChannel()]`. |
-| `options.bindings` | `Record<string, unknown>` | Static fields merged into every record's `data`. |
-| `options.minLevel` | `LogLevel` | Records below this level are dropped before any channel sees them. Children inherit it. |
-| `options.onChannelError` | `(error: unknown) => void` | Called with the rejection reason when a channel write fails. Defaults to one structured `console.error` line. A hook that throws is swallowed. Children inherit it. See [Flush semantics](#flush-semantics). |
+A logger writes to every channel in its list. The usual production pair is console plus KV: the console stream is what you watch live, the KV
+stream is what you read back. Neither one waits for the other.
 
-Returns a `Logger`:
-
-| Member | Signature | Description |
-| --- | --- | --- |
-| `debug` / `info` / `warn` / `error` | `(message, data?) => void` | Emit a record at that level. |
-| `flush` | `() => Promise<void>` | Await all pending async channel writes, then clear the queue. |
-| `child` | `(bindings) => Logger` | Clone with merged `bindings`, same channels and pending queue. |
-
-### `LogChannel`
-
-A channel is an object, not a function. The logger calls `write`; the viewer calls the optional `read`.
+Resolve the list from the request context so a missing binding degrades instead of throwing — locally, without `wrangler`, `LOGS_KV` is unbound.
+That fallback is the canonical form and [`STRUCTURED_LOGGING.md`][sl-2d] §2d owns it:
 
 ```ts
-interface LogChannel {
-  write(record: LogRecord): void | Promise<void>;
-  read?(query?: LogQuery): Promise<LogReadResult>;
-  readEntry?(key: string): Promise<LogRecord | null>;
-}
+channels: (c) => (c.env.LOGS_KV ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)] : [consoleChannel()]);
 ```
 
-A channel without `read` (such as `consoleChannel`) is write-only; the log viewer renders an empty table for it rather than erroring. `readEntry`
-returns the full stored record for one row key — the viewer's detail view uses it to show fields (such as a stack trace in `data`) that don't fit in
-list metadata.
+`consoleChannel()` is write-only: one JSON line per record, with `level`, `prefix`, `message` and `timestamp` winning over anything of the same name
+in your `data`, so a caller cannot forge them. `kvLogChannel(kv, options?)` is read/write — the same object the log viewer reads back through.
 
-A promise returned by `write` must cover **every** operation the write starts, maintenance work included — `flush()` awaits what it is handed and
-nothing else, so anything left outside can be cancelled when the isolate suspends. A maintenance failure still stays inside the channel: only a
-failure of the record write itself may reject.
+---
 
-### `LogRecord`
+## Persisting logs to KV
+
+`kvLogChannel(env.LOGS_KV, options?)` persists each record under a time-ordered key and stores a small metadata blob alongside it, so the viewer can
+list rows without reading each one. Keys sort newest-first by construction; the format and what a purge deletes are
+[`STRUCTURED_LOGGING.md`][sl-2g] §2g's.
 
 ```ts
-interface LogRecord {
-  level: LogLevel; // "debug" | "info" | "warn" | "error"
-  prefix: string; // logger prefix
-  message: string; // static, grep-friendly label
-  timestamp: string; // ISO 8601
-  data?: Record<string, unknown>; // bindings + call-site fields
-}
+const channel = kvLogChannel(env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 });
 ```
 
-### `consoleChannel()`
+The options are two independent decisions.
 
-Returns a write-only channel that emits each record as a single JSON line to `console.log`, shaped `{ ...data, level, prefix, message, timestamp }`.
-Reserved fields win over caller `data`, so a caller cannot forge `level`, `message`, or `timestamp`. Use in development.
+**How long an entry may live.** `defaultTtl` is a hard per-entry expiry — the backstop, always enforced. `maxLogs` is a soft cap on how many entries
+you want to keep around; the channel trims towards it on a small, random fraction of writes (`purgeProbability`), and only once the stored count
+passes `highWater`. Raising `maxLogs` buys history at the cost of a longer listing per sweep; lowering `defaultTtl` is the only change that
+_guarantees_ an entry is gone.
 
-```ts
-import { consoleChannel } from "@y-core/forge/logging";
+**Which key space it is.** `prefix` is captured once and used for **both** write and read, so a channel built with `prefix: "app-logs"` never reads
+the default space. Apps sharing one KV namespace need a prefix each.
 
-const log = createLogger("dev", { channels: [consoleChannel()] });
-```
+`persistStack` is the one option whose default reverses what you might expect: it is `false`, so `stack` is stripped from a _clone_ of `record.data`
+before the put. Your record is untouched, so the console still shows the full stack — see [Keeping sensitive data out of logs][pii-section].
 
-### `withMinLevel(channel, min)`
+The defaults for all of these live in `src/logging/kv-channel.ts`.
 
-Wraps a channel so only records at or above `min` are written; `read`/`readEntry` pass through unchanged. Use it to fan one logger out at different
-verbosities per channel — the typical production split keeps the full stream on console (`wrangler tail`) while a capped KV namespace retains only
-`warn`+:
+---
+
+## Controlling how much each channel keeps
+
+Cut the stream at the logger or at a single channel; the two places answer different questions.
+
+**`minLevel` on the logger** drops a record before any channel sees it. Children inherit it. Use it when the record should not exist at all.
+
+**A wrapper on one channel** lets the same record reach one sink and not another. Use it when the console should stay verbose while KV stays cheap:
 
 ```ts
 import { consoleChannel, kvLogChannel, withMinLevel } from "@y-core/forge/logging";
@@ -160,75 +111,72 @@ import { consoleChannel, kvLogChannel, withMinLevel } from "@y-core/forge/loggin
 const channels = [consoleChannel(), withMinLevel(kvLogChannel(env.LOGS_KV), "warn")];
 ```
 
-### `withLevels(channel, levels)`
-
-Wraps a channel so only records whose level is in `levels` are written; `read`/`readEntry` pass through unchanged. It is the set-shaped sibling of
-`withMinLevel`: where `withMinLevel` names a **floor** (and so always accepts everything above it), `withLevels` names the **set** outright. That
-buys two things a floor cannot express — a non-contiguous selection, and silence:
+`withMinLevel(channel, min)` names a floor. `withLevels(channel, levels)` names the set outright, which buys two things a floor cannot express — a
+non-contiguous selection, and silence from an empty array. Why "off" is a _value_ here rather than a different config shape is
+[`STRUCTURED_LOGGING.md`][sl-4c] §4c's.
 
 ```ts
-import { consoleChannel, kvLogChannel, withLevels } from "@y-core/forge/logging";
+import { consoleChannel, kvLogChannel, LOG_LEVELS, parseLogLevels, withLevels } from "@y-core/forge/logging";
 
-// Only failures on console; the KV history stays complete.
+// Failures only on the console; the KV history stays complete.
 const channels = [withLevels(consoleChannel(), ["warn", "error"]), kvLogChannel(env.LOGS_KV)];
 
-// An empty allowlist silences the channel — logging turned off by configuration.
-const quiet = [withLevels(consoleChannel(), [])];
+// LOG_LEVEL="warn,error" → failures only; "none" → silent; unset or unrecognised → the fallback.
+const fromEnv = [withLevels(consoleChannel(), parseLogLevels(env.LOG_LEVEL, LOG_LEVELS))];
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `channel` | `LogChannel` | The channel to wrap. |
-| `levels` | `readonly LogLevel[]` | Levels the channel accepts. An empty array drops every record; `read`/`readEntry` still work. |
+`parseLogLevel(value, fallback)` is the single-level form, for a `minLevel` driven by a `LOG_LEVEL` variable. Both parsers are case-insensitive and
+fall back rather than failing, so a typo degrades to the configured default instead of to silence. `levelAtLeast(level, min)` compares two levels in
+the `debug < info < warn < error` ordering, and `LOG_LEVELS` is that ordering as a tuple.
 
-Because it applies per channel, a quiet console can sit beside a complete KV history — the empty-allowlist case is how a deployment turns a sink off
-by configuration rather than by omitting the channel from the list, so the wiring stays identical across environments and only the value changes.
-Pair it with `parseLogLevels` to drive the set from an env var.
+Both wrappers pass `read` and `readEntry` through untouched — writes go quiet, history stays readable.
 
-### `withRedaction(channel, redact)`
+---
 
-Wraps a channel so each record passes through `redact` before `write`; `read`/`readEntry` pass through unchanged. It mirrors `withMinLevel` — a
-composable, per-channel transform for stripping or masking sensitive fields (PII, secrets) before a persisting channel, while the console stream
-keeps the full record:
+## Logging every request
+
+`requestLogger(options)` builds a per-request child logger, puts it on the context, emits one summary record per request/response, and flushes
+pending writes through `executionCtx.waitUntil` so the response is never held up. `requestLog` is the accessor handlers read it back with.
+
+Register `requestId()` **before** it, or the `bindings` callback has no id to read ([`STRUCTURED_LOGGING.md`][sl-3c] §3c):
 
 ```ts
-import { consoleChannel, kvLogChannel, withRedaction } from "@y-core/forge/logging";
+import { consoleChannel, kvLogChannel, parseLogLevel, requestLog, requestLogger } from "@y-core/forge/logging";
+import { requestId, requestIdCtx } from "@y-core/forge/security";
 
-const channels = [
-  consoleChannel(),
-  withRedaction(kvLogChannel(env.LOGS_KV), (r) => ({ ...r, data: r.data ? { ...r.data, email: undefined } : r.data })),
-];
+app.use("*", requestId());
+app.use(
+  "*",
+  requestLogger<AppEnv>({
+    channels: (c) => (c.env.LOGS_KV ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)] : [consoleChannel()]),
+    bindings: (c) => ({ requestId: requestIdCtx.getOptional(c) }),
+    minLevel: (c) => parseLogLevel(c.env.LOG_LEVEL, "info"),
+  }),
+);
+
+app.get("/orders", (c) => {
+  const log = requestLog.get(c);
+  log.info("listing orders", { count: 12 });
+  return Response.json([]);
+});
 ```
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `channel` | `LogChannel` | The channel to wrap. |
-| `redact` | `(record: LogRecord) => LogRecord` | Called on each record before `write`; return the record to persist. Never mutate the input. |
+The summary record carries `method`, `path` (no query string), `status` and `duration` in milliseconds, plus your `bindings`. Its level comes from
+the response status, so 404s and 422s do not page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4a's.
 
-Independent of `withRedaction`, `kvLogChannel` applies a built-in stack-redaction default — see `persistStack` under
-[`kvLogChannel`](#kvlogchannelkv-options).
+`prefix` defaults to `"request"` if you do not set one, and `minLevel` may be a level or a per-request function of the context.
 
-### `parseLogLevel(value, fallback)`, `parseLogLevels(value, fallback)` and `levelAtLeast(level, min)`
+**A 500 persists as two correlated records.** The app's error boundary sits below this middleware, so a throwing handler is already a 500 response
+by the time the summary is written — the summary shows `status: 500` and no error detail. The boundary publishes the detail separately on the same
+per-request logger, as an `error` record with the message `unhandled error` carrying the serialized error under `data.error`. Deduplicating the
+pair is out of scope; `message === "unhandled error"` tells them apart.
 
-`parseLogLevel` turns an untrusted string (typically a `LOG_LEVEL` env var) into a `LogLevel`, case-insensitively, returning `fallback` when unset
-or invalid. `parseLogLevels` is its list form for `withLevels`: it parses a comma-separated value, tolerates whitespace and case, drops unknown
-entries, and parses the literal `"none"` to `[]` — the spelling for "log nothing". It returns `fallback` when the value is unset or names no known
-level, so a typo degrades to the configured default rather than to silence. `levelAtLeast` compares two levels in the `debug < info < warn < error`
-ordering. `LOG_LEVELS` is the ordered tuple of all levels.
+---
 
-```ts
-import { LOG_LEVELS, parseLogLevel, parseLogLevels, withLevels } from "@y-core/forge/logging";
+## Logging a caught error
 
-const minLevel = parseLogLevel(env.LOG_LEVEL, "info");
-
-// LOG_LEVEL="warn,error" → failures only; "none" → silent; unset → everything.
-const channels = [withLevels(consoleChannel(), parseLogLevels(env.LOG_LEVEL, LOG_LEVELS))];
-```
-
-### `serializeError(err)`
-
-Converts any thrown value into a JSON-safe `SerializedError` — `{ name, message, stack? }`. Safe on non-`Error` values (thrown strings, numbers,
-`null`) and never throws, so it is usable directly on a `catch` binding:
+`serializeError(err)` turns any thrown value — including a thrown string, number or `null` — into a JSON-safe `{ name, message, stack? }`. It never
+throws, so it is safe directly on a `catch` binding:
 
 ```ts
 import { serializeError } from "@y-core/forge/logging";
@@ -241,197 +189,72 @@ try {
 }
 ```
 
-### `kvLogChannel(kv, options?)`
+---
 
-Returns a read/write channel that persists records to a Cloudflare KV namespace and reads them back for the log viewer. Keys are
-`${prefix}||v2||${inverted}||${rand}`, which makes a lexicographic list newest-first and gives same-millisecond writes distinct keys — the
-inversion, the `v2` segment, and which end `purge` slices are [`STRUCTURED_LOGGING.md`][sl-2g] §2g's. Per-entry metadata (level, prefix, message,
-timestamp, requestId) lets the viewer list rows without per-row reads.
+## Keeping sensitive data out of logs
+
+The field classes that must never reach a record, and why console output counts as a retained log exactly as KV does, are
+[`BOUNDARIES.md`][boundaries-4] §4's. Two things in this namespace enforce it.
+
+**`withRedaction(channel, redact)`** runs each record through your function before that channel's `write`, so you can strip a field for a persisting
+channel while the console stream stays intact. Return a new record; never mutate the input.
 
 ```ts
-import { kvLogChannel } from "@y-core/forge/logging";
+import { consoleChannel, kvLogChannel, withRedaction } from "@y-core/forge/logging";
 
-const channel = kvLogChannel(env.LOGS_KV, { prefix: "app-logs", maxLogs: 1000 });
+const channels = [
+  consoleChannel(),
+  withRedaction(kvLogChannel(env.LOGS_KV), (r) => ({ ...r, data: r.data ? { ...r.data, email: undefined } : r.data })),
+];
 ```
 
-`KvLogChannelOptions`:
+**`kvLogChannel` strips stacks by default**, independently of any wrapper — a stack embeds argument values and file paths, and a persisted log
+outlives a console line. Set `persistStack: true` only for a short-retention debug namespace; the posture is
+[`STRUCTURED_LOGGING.md`][sl-2e] §2e's.
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `prefix` | `string` | `"logs"` | Key prefix used for **both** write and read. |
-| `defaultTtl` | `number` | `604800` (7 days) | KV `expirationTtl` per entry — the hard retention backstop. |
-| `maxLogs` | `number` | `500` | Soft cap; purge trims down to this count. |
-| `highWater` | `number` | `Math.floor(maxLogs * 1.2)` | Purge only runs once stored keys exceed this. |
-| `purgeProbability` | `number` | `0.02` | Chance per write that a best-effort purge sweep runs. A selected sweep is covered by the `write` promise, so it is flushed rather than abandoned. |
-| `persistStack` | `boolean` | `false` | When `false`, `stack` is recursively stripped from a **cloned** `record.data` before persistence, keeping error stacks out of the KV retention window. The caller's record is never mutated, so `consoleChannel` keeps the stack for local debugging. Set `true` to persist stacks. |
-
-The prefix captured at construction is used for both `write` and `read`, so a channel configured with `prefix: "app-logs"` always reads
-`app-logs||…` keys — never the default.
-
-`record.data` is cloned into a JSON-faithful shape before it is stored. `Date`, `Map` and `Set` keep their payload outside enumerable own
-properties, so each is given an explicit form rather than being flattened to `{}`: a `Date` becomes its ISO 8601 string, a `Map` becomes
-`{ type: "Map", entries: [[key, value], …] }`, and a `Set` becomes `{ type: "Set", values: […] }`. A reference that reappears on its own path
-becomes `"[circular]"`, so a cyclic structure stores rather than overflowing the stack.
-
-### `requestLogger(options)` and `requestLog`
-
-`requestLogger(options)` is middleware that creates a per-request child logger, stores it on the context, and flushes pending channel writes through
-`executionCtx.waitUntil` once the response is produced. `requestLog` is the context accessor for that logger inside handlers.
+The call-site half is yours, and it is the one no wrapper can fix — a value interpolated into the message is inside an opaque string no redaction
+pass can reach into:
 
 ```ts
-import { requestLogger, requestLog, consoleChannel, kvLogChannel } from "@y-core/forge/logging";
-import { requestId, requestIdCtx } from "@y-core/forge/security";
-
-// requestId must run BEFORE requestLogger so its bindings callback can read the id.
-app.use("*", requestId());
-app.use(
-  "*",
-  requestLogger<AppEnv>({
-    channels: (c) => (c.env.LOGS_KV ? [consoleChannel(), kvLogChannel(c.env.LOGS_KV)] : [consoleChannel()]),
-    bindings: (c) => ({ requestId: requestIdCtx.getOptional(c) }),
-  }),
-);
-
-// Inside a handler:
-app.get("/orders", (c) => {
-  const log = requestLog.get(c);
-  log.info("listing orders", { count: 12 });
-  return Response.json([]);
-});
-```
-
-`RequestLoggerOptions`:
-
-| Option | Type | Description |
-| --- | --- | --- |
-| `prefix` | `string` | Record prefix. Defaults to `"request"`. |
-| `channels` | `(c) => LogChannel[]` | Per-request factory returning the channels to write to. |
-| `bindings` | `(c) => Record<string, unknown>` | Per-request fields merged into every record (e.g. `requestId`). |
-| `minLevel` | `LogLevel \| ((c) => LogLevel \| undefined)` | Logger-wide floor, static or resolved per request (e.g. `(c) => parseLogLevel(c.env.LOG_LEVEL, "info")`). `undefined` means no filtering. |
-| `onChannelError` | `(error: unknown) => void` | Passed through to the per-request logger; see `createLogger`'s option of the same name. |
-
-## Integration Guide
-
-### Wire request logging into an app
-
-1. Register `requestId()` **before** `requestLogger` so the request id is set when the `bindings` callback runs ([`STRUCTURED_LOGGING.md`][sl-3c]
-   §3c).
-2. Resolve channels per-request from the environment — fall back to console-only when `LOGS_KV` is unbound (local dev without wrangler).
-3. Read the per-request logger with `requestLog.get(c)` in handlers and middleware.
-
-`requestLogger` emits one record per request/response cycle containing `method`, `path` (no query string), `status`, `duration` (ms), and any
-`bindings` such as `requestId`. The level is derived from the response status code:
-
-| Status range | Level |
-| --- | --- |
-| `< 400` | `info` |
-| `4xx` | `warn` |
-| `5xx` | `error` |
-
-What each level is meant to signal, and why `requestLogger` never emits `debug`, are [`STRUCTURED_LOGGING.md`][sl-4a] §4a's and §4b's.
-
-A throwing route handler never reaches `requestLogger` — the app's error boundary sits below it and converts the throw into a 500 first, so the
-summary shows `status: 500` with no error detail. The boundary itself publishes that detail on the same per-request logger as a separate `error`
-record, message `unhandled error`, carrying `serializeError(err)` under `data.error` and the same `bindings`. A 500 therefore persists as two
-correlated records.
-
-If `next()` throws (an error escaping the app's own boundaries — middleware registered below `requestLogger`), `requestLogger` emits one `error`
-record with `serializeError(err)` under `data.error` (no `status` field) and rethrows; the flush still runs. The outer boundary then catches the
-rethrow and appends its own `unhandled error` record, so this path also persists **two** correlated records.
-
-Because `flush()` splices the pending buffer, `requestLogger`'s flush window has already closed by the time that second record is written. The
-boundary therefore schedules its **own** flush at the point of write — without it the record would sit in a buffer nobody awaits and, on an
-asynchronous channel such as `kvLogChannel`, could be lost to isolate teardown. Deduplicating the pair is out of scope; they are distinguishable by
-`message === "unhandled error"`.
-
-### No PII in logs
-
-The prohibited field classes are [`BOUNDARIES.md`][boundaries-4a] §4a's, and they bind every channel — worker `console` output is retained and
-searchable exactly as a persisted channel is. The call-site half is to keep the message a static label and put variable data in fields:
-
-```ts
-// BAD — interpolates a value into the message
+// BAD — the id is now part of the message
 log.error(`process failed for ${userId}: ${err.message}`);
 
 // GOOD — static label, variable data in fields
 log.error("contact: process failed", { requestId, error: err.message });
 ```
 
-## `@y-core/forge/logging/show` — Log Viewer
+---
 
-The `show` sub-path is a single auth-gated route loader, `loadLogViewer`, that renders a server-side log viewer. The public surface is deliberately
-small — the loader plus its two option types:
+## Knowing when a log write failed
+
+`flush()` **never rejects**, and that is deliberate: logging describes work and must not fail the work it describes. The consequence is that
+`onChannelError` is the only thing that ever sees a failed write — the full contract is [`STRUCTURED_LOGGING.md`][sl-2f] §2f's.
+
+You get one for free. With no hook configured, a failed write prints a single structured `console.error` line, so a `LOGS_KV` outage shows up in
+`wrangler tail` with no setup at all. Pass a hook when you want it somewhere else — a counter, a health route, an alerting channel:
 
 ```ts
-import { loadLogViewer } from "@y-core/forge/logging/show";
-import type { LogViewerAccess, LogViewerOptions } from "@y-core/forge/logging/show";
+let droppedWrites = 0;
+
+const log = createLogger("billing", {
+  channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)],
+  onChannelError: (error) => {
+    droppedWrites++;
+    console.error(JSON.stringify({ event: "log_write_failed", error: serializeError(error) }));
+  },
+});
 ```
 
-The HTMX-driven JSX components (viewer content, table body, filter bar, level badges, detail row) and the fragment renderers are **internal**:
-records can only be rendered by going through `loadLogViewer`, which enforces the access check first — so an unguarded viewer is impossible by
-construction.
+`requestLogger` takes the same option and threads it into the per-request logger. A hook that throws is swallowed, so reporting a logging failure
+cannot become a second failure on the request path.
 
-### `loadLogViewer(context, options)`
+---
 
-A route loader returning `Promise<Response>` for **every** path. It renders inside the loader, so there is no view branch in app code. In order:
+## Mounting the log viewer
 
-1. Evaluates the **required** `access` option. A denial (`false`) returns `403 Forbidden` before the channel is touched; a throwing predicate
-   propagates to the error boundary (fail closed). A deliberately public mount opts out with the greppable literal
-   `access: "allow-unauthenticated"`.
-2. For `?detail=<key>` (a row's message toggle), reads the full stored record via `channel.readEntry?.(key)` and returns the expanded detail `<tr>`
-   fragment — including fields like `data.stack` that never fit in list metadata. A missing entry (expired TTL, purged, or a channel without
-   `readEntry`) renders a not-found row, not an error.
-3. For an HTMX request (`HX-Request: true`) carrying a `?cursor=`, returns the next page of `<tr>`s for a `beforeend` append into `#log-tbody`,
-   **followed by a replacement load-more row carrying the new cursor out of band**. The control lives in the table's `<tfoot>`, outside the region
-   it appends into, so the swap never destroys the button that triggered it; its URL carries the active `?level=` and `?q=` so page two is drawn
-   from the same filtered set.
-4. For any other HTMX request — a filter submit — returns the whole `<tbody>` partial, filtered via `?level=` and `?q=`. An unrecognised `?level=`
-   is dropped and the view renders unfiltered; the filter only narrows rows `access` already permits, so falling back cannot widen exposure.
-5. Otherwise returns the viewer content rendered inside the shell the app registered, under the slot
-   `{ mount: "logs", page: "logs", meta: { title: "Logs", robots: "noindex" } }` — a log viewer names request paths and error messages, so it states
-   `noindex` for itself.
-
-If the channel has no `read` method, the table renders empty rather than erroring. A `read` that **rejects** is caught and rendered in place as a
-`destructive` `Alert` with a retry, with the table's shape preserved around it — it is deliberately not allowed to reach the error boundary, because
-for a fragment request that boundary answers with a page and HTMX would swap that page's body into the table. The reason is not shown to the reader:
-a channel error can name a binding or a key prefix.
-
-Logs expose request paths, request ids, and error messages, so `access` is required at the type level — forgetting a guard is a compile error.
-
-`LogViewerOptions`:
-
-| Option | Type | Description |
-| --- | --- | --- |
-| `channel` | `(c) => LogChannel` | Per-request factory for the channel to read from. |
-| `access` | `((c) => boolean \| Promise<boolean>) \| "allow-unauthenticated"` | **Required.** Access decision, run before the channel is touched; `false` → `403 Forbidden`. A throwing predicate propagates to the error boundary (fail closed). |
-| `icon` | `ForgeIcon<"chevron-down">` | **Required.** App-bound icon rendered in the filter bar's level select. The app injects its own icon so `logging/show` need not own an icon set. |
-| `basePath` | `string` | URL prefix the viewer is mounted at, used for HTMX targets. Defaults to `/admin/logs`. |
-
-#### Why the viewer builds no document
-
-The document is where the theme lives: `<html>` carries the dark class, the head carries the script that sets it before first paint, and `<body>`
-carries `bg-background`. A viewer that built its own bare `<html>`/`<head>`/`<body>` would put dark mode out of reach whatever classes its
-components carried. So the viewer takes no chrome options at all and renders into the shell the app registered with `createApp({ shell })` — the
-same one every other forge mount renders into ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6), which is what puts the viewer inside your chrome, with your
-nav and your theme toggle. With no shell registered it renders a bare, unstyled document.
-
-#### Making the table fill the viewport
-
-The viewer's `<main>` is `flex-1 min-h-0` and carries `data-fill-viewport`, so it fills the height the layout leaves it and scrolls the table inside
-that box rather than growing the document. To get that, make the shell's content a direct child of a flex column that goes _definite_ for a filling
-page:
-
-```html
-<body class="flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden"></body>
-```
-
-`min-h-dvh` alone is not enough: an indefinite column takes its height from its items' content, so a long table grows the page. Any other layout
-still renders correctly — the table then falls back to a `max-h-dvh` box instead of filling the space between header and footer.
-
-### Mounting the viewer
-
-The single call is the entire mount. Because a loader that returns a `Response` short-circuits rendering (see `definePage`), the page `view` never
-runs:
+`@y-core/forge/logging/show` exports one loader, `loadLogViewer`, plus the two types it takes. Everything that renders a record is internal, so a
+viewer that skipped the access check cannot be built. A single call in a `definePage` loader is the entire mount — a loader returning a `Response`
+short-circuits rendering, so the `view` never runs:
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -445,90 +268,109 @@ export const logsPage = definePage<AppEnv, AppConfig>({
     loadLogViewer(c, {
       channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),
       access: (cc) => isAdmin(sessionCtx.getOptional(cc)), // required — 403 when false
-      icon: chevronDownIcon, // required — app-bound ForgeIcon<"chevron-down">
+      icon: chevronDownIcon, // required — your own ForgeIcon<"chevron-down">
       basePath: "/admin/logs",
     }),
-  // Unreachable: the loader always returns a Response, which short-circuits rendering.
+  // Unreachable: the loader always returns a Response.
   view: () => new Response(null, { status: 404 }),
 });
 ```
 
-The rendered viewer wires the HTMX interactions itself: the filter bar issues an `hx-get` to `basePath` and swaps the table body; the load-more
-control in the `<tfoot>` appends `?cursor=` into the tbody and replaces itself out of band; each row's message control issues `?detail=<key>` and
-swaps the sibling detail `<tr>` that shipped with the initial render — never a region containing itself, so keyboard focus survives every swap.
+`access` and `icon` are required at the type level rather than defaulted, and [`STRUCTURED_LOGGING.md`][sl-5b] §5b says why: logs expose request
+paths, request ids and error messages — a deliberately public mount opts out with the greppable literal `"allow-unauthenticated"` — and this
+namespace need not own an icon set. `basePath` is the URL the viewer is mounted at and is what its own HTMX requests target.
 
-The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts the viewer must add
-`@source "…/@y-core/forge/src/logging";` to its own stylesheet.
+The loader answers every path itself — the page, the filtered `<tbody>`, the next page of rows, the expanded detail row — in the order
+[`STRUCTURED_LOGGING.md`][sl-5a] §5a sets out. Behaviours worth knowing before you mount it: a channel with no `read` renders an empty
+table rather than an error, and a `read` that _rejects_ is caught and drawn in place as an alert with a retry, with the reason withheld because a
+channel error can name a binding or a key prefix.
 
-### Types
+The viewer renders into the shell you registered with `createApp({ shell })` ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) and builds no document of its
+own. That is what puts it inside your nav and your theme — a viewer with its own bare `<html>` would put dark mode out of reach, since the dark
+class and the pre-paint script live on the document. With no shell registered it renders bare and unstyled.
 
-`LogViewerAccess` and `LogViewerOptions` are the two exported types. The row/query/result shapes that describe the channel read contract — `LogRow`,
-`LogQuery`, `LogReadResult` — are exported from the main entry `@y-core/forge/logging`, not from `show`.
+For the table to fill the viewport instead of growing the page, the shell's content must be a direct child of a flex column that goes _definite_:
 
-## Advanced
-
-### Flush semantics
-
-`flush()` awaits and clears the pending queue and **never rejects** — a failed channel write is absorbed, so `onChannelError` is the only observer
-of one. With no hook configured it prints a single structured `console.error` line, so a `LOGS_KV` outage is visible in `wrangler tail` with no
-configuration. Pass a hook to route failures somewhere else:
-
-```ts
-let droppedWrites = 0;
-
-const log = createLogger("billing", {
-  channels: [consoleChannel(), kvLogChannel(env.LOGS_KV)],
-  onChannelError: (error) => {
-    droppedWrites++; // e.g. surfaced on a health route
-    console.error(JSON.stringify({ event: "log_write_failed", error: serializeError(error) }));
-  },
-});
+```html
+<body class="flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden"></body>
 ```
 
-`requestLogger` flushes in a `finally` and hands the guarded promise to `executionCtx.waitUntil`, falling back to an inline await when no execution
-context is available. Why the contract is best-effort, what the hook observes that `flush` does not, and the pending-queue cap it covers are
-[`STRUCTURED_LOGGING.md`][sl-2f] §2f's; the cap and its eviction policy are `src/logging/logger.ts`'s.
+`min-h-dvh` alone is not enough — an indefinite column takes its height from its content, so a long table grows the document. Any other layout still
+renders correctly; the table just falls back to a `max-h-dvh` box.
 
-### KV key layout and retention
+The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts it must add
+`@source "…/@y-core/forge/src/logging";` to its own stylesheet or every class renders unstyled.
 
-`kvLogChannel` keys are `${prefix}||v2||${inverted}||${rand}`, where `inverted` is a fixed-width descending timestamp that makes a KV listing open
-on the newest record and `rand` is 8 hex chars (32 bits) of crypto randomness, avoiding the same-millisecond collisions that last-write-wins KV
-would otherwise drop. The inversion, its two clamps, the `v2` segment and the end `purge` slices are [`STRUCTURED_LOGGING.md`][sl-2g] §2g's. Each
-`write` stores `KvLogMetadata` (`level`, `prefix`, `message` truncated to 256 chars, `timestamp`, optional `requestId` truncated to 64 chars) so the
-viewer lists rows from list metadata alone. Retention is enforced two ways: `defaultTtl` is the hard backstop on every entry, and a probabilistic
-purge (running with `purgeProbability` per write, only once stored keys exceed `highWater`) trims the oldest entries down to `maxLogs` in batches.
-The purge is best-effort and swallows errors; the TTL is authoritative.
+---
 
-Best-effort describes _whether_ the purge runs and what it does with a failure — not whether it is tracked. A selected purge is part of the promise
-`write` returns, so `flush()` and `waitUntil()` hold the isolate open until the sweep finishes; a detached purge could be cancelled mid-pass the
-moment the tracked work completed, which is precisely when the soft cap would stop being enforced. The cost is that on `purgeProbability` of writes
-the flush window also covers one `list` and up to `⌈(PURGE_LIST_LIMIT − maxLogs) / PURGE_BATCH⌉` delete batches — 25 with the shipped defaults —
-post-response under `waitUntil`, inline on the fallback path.
+## Writing your own channel
 
-That coverage holds **even when the record write itself fails**. `write` awaits `allSettled` over the put and the sweep and then rethrows only the
-put's rejection, so a failing put cannot cut the sweep it already started loose — the case in which a sweep is most likely to still be mid-flight.
-Both halves of the channel contract above therefore hold at once: the promise covers every operation the write started, and only a failure of the
-record write may reject.
+A channel is an object, not a function. `write` is the only required member; implement `read` and `readEntry` when there is a store behind it and
+you want the viewer to show it. The full contract is [`STRUCTURED_LOGGING.md`][sl-2a] §2a's.
 
-### Reading with filters and pagination
+```ts
+import type { LogChannel } from "@y-core/forge/logging";
 
-`read(query)` lists up to `query.limit` keys (default 50) from the channel prefix, optionally continuing from `query.cursor`. It applies
-`query.level` and `query.q` (case-insensitive substring over message, prefix, and requestId) as in-memory filters over the listed page, and returns
-`complete` plus an optional `cursor` for the next page. Because filtering is per-page, a narrow `level`/`q` filter may return fewer than `limit`
-rows — or none at all — even when more matching entries exist on later pages; follow the cursor to continue. The viewer's empty state says exactly
-this when a further page exists, rather than claiming there were no matches.
+const channel: LogChannel = {
+  write(record) {
+    return fetch(SINK, { method: "POST", body: JSON.stringify(record) }).then(() => undefined);
+  },
+};
+```
+
+Returning a promise carries obligations. **It must cover every operation the write started**, maintenance included — `flush()` awaits what it
+is handed and nothing else, so anything left outside it can be cancelled when the isolate suspends. And **only a failure of the record write itself
+may reject**: a maintenance failure stays inside the channel.
+
+`LogRow`, `LogQuery` and `LogReadResult` describe the read side and are exported from `@y-core/forge/logging`, not from `show`. A read lists a page,
+applies `level` and `q` to that page, and returns `complete` plus a `cursor` when more remain.
+
+---
+
+## Gotchas
+
+**A filtered read can come back short, or empty, with matches still ahead.** Filtering happens per listed page, not across the store, so a narrow
+`level` or `q` may match nothing on page one. Follow the cursor. The viewer's empty state says exactly this rather than claiming there were no
+matches.
+
+**`flush()` settles the writes already started — it is not a barrier.** Anything dispatched after the splice belongs to the next flush. This is why
+the error boundary schedules its own flush for the `unhandled error` record: `requestLogger`'s window has closed by then, and on an asynchronous
+channel the record would otherwise be lost to isolate teardown.
+
+**A selected purge is inside the `write` promise, not detached.** So `flush()` and `waitUntil()` hold the isolate open until the sweep finishes —
+the alternative is a sweep cancelled mid-pass, which is exactly when the soft cap stops being enforced. On the small fraction of writes that trigger
+one, the flush window covers a `list` and a series of delete batches, post-response under `waitUntil`.
+
+**`record.data` is cloned into a JSON-faithful shape before it is persisted.** `Date`, `Map` and `Set` carry their payload outside enumerable own
+properties, so each gets an explicit form instead of flattening to `{}`; a reference that reappears on its own path becomes `"[circular]"`, so a
+cyclic structure stores rather than overflowing the stack.
+
+**Row metadata is bounded by KV's limit, not by your message.** A long message is truncated, then the prefix, then the request id is dropped — the
+list view degrades, the full record in the value does not.
+
+**`readEntry` refuses a key outside the channel's prefix.** Without that, a viewer mounted on a shared namespace would be a read oracle for any key
+in it.
+
+---
 
 ## See also
 
-- [`STRUCTURED_LOGGING.md`][sl] — the channel contract and its wrappers (§2), the flush contract (§2f), `requestLogger` and its ordering (§3), the
-  status-to-level mapping (§4), and the log viewer's ordered contract (§5).
-- [`BOUNDARIES.md`][boundaries-4] §4 — the no-PII rule, the prohibited field classes, and structured fields over interpolation.
+- [`docs/STRUCTURED_LOGGING.md`][sl] — the channel contract and its wrappers (§2), the flush contract (§2f), key ordering (§2g), `requestLogger` and
+  its ordering (§3), the status-to-level mapping (§4), and the viewer's ordered contract (§5)
+- [`BOUNDARIES.md`][boundaries-4] §4 — the no-PII rule, the prohibited field classes, and structured fields over interpolation
+- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram-6] §6 — the shell the viewer renders into
 
 [boundaries-4]: ../../warden/canon/libs/BOUNDARIES.md#4-no-pii-in-logs
-[boundaries-4a]: ../../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
+[pii-section]: #keeping-sensitive-data-out-of-logs
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sl]: ../../docs/STRUCTURED_LOGGING.md
+[sl-2a]: ../../docs/STRUCTURED_LOGGING.md#2a-logchannel-object-interface
+[sl-2d]: ../../docs/STRUCTURED_LOGGING.md#2d-channel-selection-by-environment
+[sl-2e]: ../../docs/STRUCTURED_LOGGING.md#2e-withredaction-and-stack-redaction-posture
 [sl-2f]: ../../docs/STRUCTURED_LOGGING.md#2f-channel-write-failures-and-flushs-error-contract
 [sl-2g]: ../../docs/STRUCTURED_LOGGING.md#2g-log-ordering--newest-first-by-inverted-key
 [sl-3c]: ../../docs/STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger
 [sl-4a]: ../../docs/STRUCTURED_LOGGING.md#4a-level-mapping-convention
+[sl-4c]: ../../docs/STRUCTURED_LOGGING.md#4c-silencing-and-level-allowlists
+[sl-5a]: ../../docs/STRUCTURED_LOGGING.md#5a-loadlogviewer--auth-gated-response-for-every-path
+[sl-5b]: ../../docs/STRUCTURED_LOGGING.md#5b-why-access-and-icon-are-required-options

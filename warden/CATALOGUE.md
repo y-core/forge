@@ -31,5 +31,5 @@ Generated — run `warden catalogue --write` after adding, removing or re-descri
 
 - `AGENT_GUIDE.md` — Governing Document Guide: How docs/ documents are structured, numbered, sized, cross-referenced, split between governance and implementation, and kept free of duplication.
 - `AGENT_WORKFLOW.md` — Agent Workflow: How an agent works in any repository: the posture it holds to, the tools it reaches for, the exit-status spelling, when the gate is delegated, and the ledger rhythm.
-- `CODE_RULES.md` — Code Rules: Seven non-negotiable coding rules: zero global state, explicit errors, validation first, testability, the comment budget, declarative style, and name distinctiveness.
+- `CODE_RULES.md` — Code Rules: The non-negotiable coding rules: zero global state, explicit errors, validation first, testability, the comment budget, declarative style, and name distinctiveness.
 - `PLAIN_LANGUAGE.md` — Plain Language: Reader-centred prose for governing documents and for what an agent says to a person: relevant, findable, understandable, usable — plus length, narration, and scope.

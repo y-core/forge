@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, posix, relative, resolve, sep } from "node:path";
 
-/** Every file under `dir` matching `accept`, repo-relative to `root`, posix-separated and sorted —
- *  so a finding's order and its path spelling do not depend on the filesystem. @public */
+import type { CommentSpan } from "./types";
+
+/** Every file under `dir` matching `accept`, repo-relative to `root`, posix-separated and sorted. @public */
 export function collectFiles(root: string, dir: string, accept: (name: string) => boolean): string[] {
   const base = resolve(root, dir);
   if (!existsSync(base)) return [];
@@ -63,12 +64,9 @@ export function lineAt(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;
 }
 
-/** A suppression reader for one marker word — a `/* <marker>: <rule> — <reason> *​/` comment on the
- *  line or the one above it. The reason is mandatory; a bare marker does not suppress. @public */
+/** A suppression reader for one marker word — a `/* <marker>: <rule> — <reason> *​/` comment on the line or the one above it. @public */
 export function suppressedBy(marker: string): (lines: readonly string[], line: number, ruleId: string) => boolean {
   return (lines, line, ruleId) => {
-    // `\S` alone is satisfied by the `*` of the closing `*/`, which would let a reasonless marker
-    // suppress; the lookahead excludes it so the mandatory reason cannot be bypassed.
     const pattern = new RegExp(`/\\*\\s*${marker}:\\s*${ruleId}\\s+—\\s+(?!\\*/)\\S`);
     return [lines[line - 1], lines[line - 2]].some((candidate) => candidate !== undefined && pattern.test(candidate));
   };
@@ -91,40 +89,110 @@ function endOfQuoted(source: string, start: number): number {
   return -1;
 }
 
-// One pass over strings and comments together, so neither can start inside the other: a `/*` inside
-// a string literal opens no comment, and a quote inside a comment opens no string.
-function blank(source: string, lineComments: boolean): string {
-  // Split by code unit, never by code point: every index in this file is a UTF-16 offset, and an
-  // astral character reassembled from a code-point split would move every offset after it.
-  const out = source.split("");
+/** The index just past a regex literal opened at `start`, or -1 when it is a division sign after all. */
+function endOfRegex(source: string, start: number): number {
+  let inClass = false;
+  for (let i = start + 1; i < source.length; i++) {
+    const char = source[i];
+    if (char === "\\") {
+      i++;
+      continue;
+    }
+    if (char === "\n") return -1;
+    if (char === "[") inClass = true;
+    else if (char === "]") inClass = false;
+    else if (char === "/" && !inClass) {
+      let end = i + 1;
+      while (end < source.length && /[a-z]/i.test(source[end] ?? "")) end++;
+      return end;
+    }
+  }
+  return -1;
+}
+
+// `<` and `>` are not openers, whatever they are in JavaScript: in a `.tsx` file the `/` after one
+// closes a JSX tag, and reading `</p>` as a regex swallows the `//` comment on the same line.
+/** Whether a `/` opens a regex literal rather than dividing, decided from the token before it. */
+const OPENS_REGEX = /(?:=>|[({[,;:=!&|?+\-*%~^]|\b(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*$/;
+
+// One pass over strings, regex literals and comments together, so none can start inside another —
+// including the odd backtick inside a regex, which a regex-blind lexer reads as a template opener.
+function scan(source: string, lineComments: boolean): CommentSpan[] {
+  const spans: CommentSpan[] = [];
+  let line = 1;
+  let counted = 0;
+  const lineOf = (index: number): number => {
+    for (; counted < index; counted++) {
+      if (source[counted] === "\n") line++;
+    }
+    return line;
+  };
+
+  // The last 16 code characters, which is all `OPENS_REGEX` needs and all a comment leaves untouched.
+  let tail = "";
 
   for (let i = 0; i < source.length; i++) {
     const char = source[i];
     if (char === "'" || char === '"' || char === "`") {
       const end = endOfQuoted(source, i);
-      if (end !== -1) i = end - 1;
+      if (end !== -1) {
+        i = end - 1;
+        tail = "x";
+        continue;
+      }
+      tail = (tail + char).slice(-16);
       continue;
     }
-    if (char !== "/") continue;
+    if (char !== "/") {
+      tail = (tail + char).slice(-16);
+      continue;
+    }
 
     const next = source[i + 1];
     if (next === "*") {
       const close = source.indexOf("*/", i + 2);
       const end = close === -1 ? source.length : close + 2;
-      for (let j = i; j < end; j++) {
-        if (out[j] !== "\n") out[j] = " ";
-      }
+      spans.push({ kind: "block", start: i, end, line: lineOf(i), text: source.slice(i, end) });
       i = end - 1;
       continue;
     }
-    if (!lineComments || next !== "/") continue;
+    if (lineComments && next === "/") {
+      const lineEnd = source.indexOf("\n", i);
+      const end = lineEnd === -1 ? source.length : lineEnd;
+      spans.push({ kind: "line", start: i, end, line: lineOf(i), text: source.slice(i, end) });
+      i = end - 1;
+      continue;
+    }
 
-    const lineEnd = source.indexOf("\n", i);
-    const end = lineEnd === -1 ? source.length : lineEnd;
-    for (let j = i; j < end; j++) out[j] = " ";
-    i = end - 1;
+    // Only for TypeScript: a CSS `url(/path/x.png)` would read as one, and CSS has no regex literal.
+    if (lineComments && (tail.trim() === "" || OPENS_REGEX.test(tail))) {
+      const end = endOfRegex(source, i);
+      if (end !== -1) {
+        i = end - 1;
+        tail = "x";
+        continue;
+      }
+    }
+    tail = (tail + char).slice(-16);
+  }
+  return spans;
+}
+
+function blank(source: string, lineComments: boolean): string {
+  // Split by code unit, never by code point: every index in this file is a UTF-16 offset, and an
+  // astral character reassembled from a code-point split would move every offset after it.
+  const out = source.split("");
+  for (const span of scan(source, lineComments)) {
+    for (let j = span.start; j < span.end; j++) {
+      if (out[j] !== "\n") out[j] = " ";
+    }
   }
   return out.join("");
+}
+
+/** Every comment in `source`, in source order, each with its 1-indexed opening line. @public */
+export function findComments(source: string): CommentSpan[] {
+  return scan(source, true);
 }
 
 /** Replaces every block-comment body with spaces, so offsets and line numbers survive the blanking. @public */

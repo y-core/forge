@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { FakeDocument, fakeTree } from "./dom.fixture";
+import type { FakeElement } from "./dom.fixture";
 import { findScopes, hydrateState, scanRoot } from "./resume";
-import { FakeDocument, fakeTree } from "./test-dom";
-import type { FakeElement } from "./test-dom";
 
 const asParent = (el: FakeElement) => el as unknown as ParentNode;
 

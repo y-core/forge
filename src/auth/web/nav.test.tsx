@@ -11,8 +11,8 @@ import { sessionCtx } from "../../session/session";
 import { render } from "../../testing/render";
 import { authCtx } from "./identity";
 import { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
-import { attrOf, attrsOf, tagOf, textOf } from "./test-support";
 import type { AuthIdentity, AuthNavContext, AuthNavOptions } from "./types";
+import { attrOf, attrsOf, tagOf, textOf } from "./web.fixture";
 
 const HEX_SECRET = "b".repeat(64);
 const SIGNOUT_PATH = "/auth/signout";

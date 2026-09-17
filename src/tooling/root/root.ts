@@ -10,8 +10,7 @@ import { createReleaseBinCommand } from "../release/release";
 /** Where `forge` looks for an application's own command table. @public */
 export const DEFAULT_COMMANDS_CONFIG = "config/commands.ts";
 
-/** Assembles the `forge` command tree: the first-party commands, then whatever `config/commands.ts`
- *  default-exports. An app without that file gets the first-party tree unchanged. @public */
+/** Assembles the `forge` command tree: the first-party commands, then whatever `config/commands.ts` default-exports. @public */
 export async function createRootCommand(cwd: string = process.cwd()): Promise<CommandBase> {
   const root = createCommand({ name: "forge", description: "Build, verify, release, and provision a @y-core/forge application" });
 

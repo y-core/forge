@@ -88,10 +88,9 @@ a gate never reaches a registry to find what it runs.
 legitimate ground for holding a step back. Cost never is. It runs under `bun run verify:full`, the release gate, which is permitted to carry one
 ([`TESTING.md`][testing-6c] §6c).
 
-**The browser comes from the workspace image, so forge ships no install script.** Every devbox toolchain image bakes Chromium and sets
-`CHROME_PATH`, which is what `hasChromium` resolves first — the prerequisite is met before anyone runs anything, and the probe never fails in a
-devbox session. `browserStep`'s hint is therefore reached only from outside such a container, and it names both routes a reader there has — the
-direct download, or a devbox container — rather than a script this repository would otherwise have to define.
+**The browser comes from the environment, so forge ships no install script.** `CHROME_PATH` is what `hasChromium` resolves first, so an environment
+that sets it at an installed Chromium satisfies the probe before anyone runs anything. `browserStep`'s hint is reached only where it is unset, and
+it names `bunx playwright install chromium` rather than a script this repository would otherwise have to define.
 
 **So the browser set is verified manually and at publish, not in the default gate — a ruling, not an oversight.** forge runs no CI, so
 `bun run test:browser` before a commit that touches `src/ui/client/` or a controller is the check, and `prepublishOnly` is the backstop: a full run
@@ -106,11 +105,9 @@ Demanding a second unit file would buy a fake one, which is worse.
 `fetch` semantics stay exactly as the runtime ships them — which matters, because forge is a Workers framework and those semantics _are_ the
 product. File discovery cannot collide either: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is neither.
 
-**This is why a DOM shim was rejected.** Registering one defines hundreds of globals and shadows Bun natives the rest of the suite exercises, and
-the shim available did not implement the Popover API at all — so the platform features these components are _built on_ would have been certified
-against a model of the platform that did not have them. Worse, its shadow-root retargeting was backwards, which would have made the central
-assertion about `event.target` pass for the wrong reason. The browser set guarantees isolation **by construction**: a separate process, and no
-global ever redefined.
+**This is also why forge registers no DOM shim.** Registering one defines hundreds of globals and shadows Bun natives the rest of the suite
+exercises, and a shim that models the platform imperfectly certifies a component against features the real browser has and the model does not. The
+browser set guarantees isolation **by construction**: a separate process, and no global ever redefined.
 
 **What each runner is sufficient evidence for:**
 
@@ -153,14 +150,14 @@ load-dependent rather than reproducible. `showcase.browser.ts` counts `htmx:afte
 
 ### 1e. Media Options Playwright Does Not Implement
 
-**Take `test` from `src/ui/client/browser-test-helper.ts`, not from `@playwright/test`, in any spec that emulates reduced motion, forced colours or
+**Take `test` from `src/ui/client/browser.fixture.ts`, not from `@playwright/test`, in any spec that emulates reduced motion, forced colours or
 contrast.** playwright 1.62 declares `reducedMotion`, `forcedColors` and `contrast` in `types/test.d.ts` but builds none of them into
 `_combinedContextOptions` (`playwright/lib/index.js`), so `test.use({ reducedMotion: "reduce" })` type-checks and emulates nothing at all. A spec
 written against the reduced-motion branch of `forge-ui.css` would silently exercise the `no-preference` branch and pass for the wrong reason.
 
-The harness `test` reinstates the three as real options and applies them through an overridden `page` fixture, which is the one form that does reach
-the browser; the runtime `page.emulateMedia({ … })` call is equally sound and is what the five existing motion-sensitive specs use. **Nothing
-enforces the import** — `browser-test-helper.browser.ts` is the regression that would catch the option silently reverting to a no-op, not a check on
+The harness `test` reinstates them as real options and applies them through an overridden `page` fixture, which is the one form that does reach
+the browser; the runtime `page.emulateMedia({ … })` call is equally sound and is what the existing motion-sensitive specs use. **Nothing
+enforces the import** — `browser.fixture.browser.ts` is the regression that would catch the option silently reverting to a no-op, not a check on
 call sites.
 
 ### 1f. The Workerd Set
@@ -185,7 +182,7 @@ would be wrong if it were computed from this file's own location. §7f owns why 
 
 **`stop()` kills the process group, not the CLI.** wrangler spawns workerd and esbuild as its own children, so a signal to the CLI alone leaves a
 `workerd` pair reparented to PID 1, ignoring `SIGTERM` and holding a core each. The helper spawns `detached`, kills `-pid` with `SIGKILL`, and binds
-the same sweep to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP` — the interrupted run never reaches `afterAll`, and that is the path an
+that same kill to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP` — the interrupted run never reaches `afterAll`, and that is the path an
 orphan actually escapes through.
 
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same ground the browser set is held back on (§1c).
@@ -201,7 +198,7 @@ milliseconds, and the inner loop must stay the inner loop.
 See [`TESTING.md`][testing-2] §2 for co-location, the naming convention, the publish exclusion, and the concrete-file import rule with its two
 exceptions. forge's browser set follows the same rule under its own suffix (§1c).
 
-**Two filenames need no test, and neither is taken on trust.** A module named `types.ts` or `bin.ts` is exempt by name: the first declares, the
+**Certain filenames need no test, and none is taken on trust.** A module named `types.ts` or `bin.ts` is exempt by name: the first declares, the
 second is argv in and `process.exit` out, and what it wires is tested where that lives. `validate-co-location` then re-checks the claim the name
 makes — **one that exports a function, a class, or a const bound to either fails**, naming the callable. Give it a test, or move the function to a
 module that has one. There is no third state: a module that needs a nomination goes in `config/exemptions.ts` with the reason it needs one, and a
@@ -258,7 +255,7 @@ it("renders the exact button markup", async () => {
 single entity-aware `toBe` on the full output is the only accepted shape.
 
 **One whole-element assertion per `ui/core` component test file, and it is the HTML-escaping case.** Every other case in the file reads back only
-the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/ui/core/test-support.ts`.
+the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/ui/core/core.fixture.ts`.
 The escaping case is the one that has to see the whole string, because entity encoding is a property of the output as a whole and §3a is what it
 holds the output to; a second whole-markup assertion in the same file buys no coverage and turns every unrelated class or slot change into a
 multi-file diff. §3e enforces the half of this a rule can see — that a substring assertion never stands in for either shape — but which case earns
@@ -376,7 +373,7 @@ The table is not the running order: the selector sorts by tier after filtering, 
 
 The `testing` namespace ships the fixtures every consumer suite would otherwise hand-roll. **Import them from the barrel** — consumer test code sits
 outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f is the one stated exception, and it is a
-second published subpath rather than a file reached past a barrel. `src/testing/README.md` documents each fixture with its signature and options.
+second published subpath rather than a file reached past a barrel. `src/testing/README.md` teaches the fixtures by the task each one serves.
 
 ### 7a. Declared Integration Edge — testing Imports app and jsx
 
@@ -449,7 +446,7 @@ makes visibly. `checkExports` supports this directly: a non-`mod.ts` export targ
 "published but off the barrel" is a shape the gate holds rather than one it tolerates.
 
 **A suite that imports it references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a types-only subpath declaring exactly
-the node surface `workerd.ts` reaches — the six `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
+the node surface `workerd.ts` reaches — the `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
 file that reaches `startDevServer`:
 
 ```ts
@@ -466,7 +463,7 @@ one that does not, never loads the module and never needs it.
 
 **Everything the process leaves behind is removed by `stop()`** — the process group (§1f) and the temp directory holding the `--env-file` it was
 started with. The env file is written per start into a fresh `mkdtemp` directory rather than under a per-port name, because the OS reuses a port and
-two runs would then share a file; one recursive remove is the whole cleanup.
+successive runs would then share a file; one recursive remove is the whole cleanup.
 
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [namespaces-3c]: NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin

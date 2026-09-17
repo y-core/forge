@@ -31,7 +31,7 @@ function blockBodies(css: string, selector: string): { body: string; offset: num
 
 // Depth-aware on the top-level comma alone: an argument is routinely `var(--x)` and may be
 // `rgba(0, 0, 0, 0.4)`, whose own commas must not split the value.
-/** The two branches of a `light-dark(a, b)` value, or `undefined` when the value is not one. */
+/** The branches of a `light-dark(a, b)` value, or `undefined` when the value is not one. */
 export function splitLightDark(value: string): readonly [string, string] | undefined {
   const trimmed = value.trim();
   if (!/^light-dark\s*\(/i.test(trimmed) || !trimmed.endsWith(")")) return undefined;
@@ -47,7 +47,7 @@ export function splitLightDark(value: string): readonly [string, string] | undef
   return undefined;
 }
 
-// The two maps are derived from one block rather than from two: a `light-dark()` value splits into
+// The light and dark maps are derived from one block rather than from two: a `light-dark()` value splits into
 // them, and a mode-free value lands in `light` alone, which `resolveStep` already falls back to.
 /** Every custom-property declaration in the `:root` block of a stylesheet, split per mode. */
 export function parseThemeDeclarations(css: string): ParsedTheme {

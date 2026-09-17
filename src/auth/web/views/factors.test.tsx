@@ -9,7 +9,7 @@ import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthCredential } from "../../types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
-import { attrOf, elementOf, elementsOf } from "../test-support";
+import { attrOf, elementOf, elementsOf } from "../web.fixture";
 import { AuthFactorsTrigger, AuthFactorsView } from "./factors";
 import type { AuthFactorRow, AuthFactorsViewProps } from "./types";
 

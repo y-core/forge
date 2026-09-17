@@ -24,13 +24,7 @@ import type { ResourceHandler } from "./types";
 import type { HandlerBuildOptions } from "./types";
 import { createVarsHandler } from "./vars";
 
-/**
- * Build the full handler set for one invocation.
- *
- * A factory rather than a constant because four handlers — local vars, vars, and the
- * two kinds of secret — are a function of where the config lives, all reading the
- * `.dev.vars` beside it, and a module-level singleton could only ever guess at that.
- */
+/** Builds the full handler set for one invocation, binding the `.dev.vars` readers to the config's directory. */
 export function buildHandlers(opts: HandlerBuildOptions): ResourceHandler[] {
   return [
     kvHandler,
@@ -57,13 +51,7 @@ export function buildHandlers(opts: HandlerBuildOptions): ResourceHandler[] {
   ];
 }
 
-/**
- * The handler set for a caller that has not said where its config is.
- *
- * `"wrangler.jsonc"` is not a placeholder — it is the CLI's own default, and
- * `dirname(resolve("wrangler.jsonc"))` is the current working directory, which is
- * the correct place to look for `.dev.vars`.
- */
+/** The handler set for a caller that has not said where its config is, defaulting to the CLI's own `wrangler.jsonc`. */
 export const defaultHandlers: ResourceHandler[] = buildHandlers({ configPath: "wrangler.jsonc" });
 
 export function findHandler(type: ResourceType): ResourceHandler | undefined {

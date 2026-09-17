@@ -3,20 +3,19 @@ import { describe, expect, it } from "bun:test";
 import { isCheckStep } from "../../src/tooling/gate/steps";
 import { libraryDocsDir } from "./corpus/dependency";
 import { GOLDEN, NEGATIVE } from "./gate/golden";
-import { changelogStep, designStep, docsStep, readmeExportsStep, wardenAppSteps, wardenQueriesStep } from "./steps";
+import { changelogStep, designStep, docsStep, wardenAppSteps, wardenQueriesStep } from "./steps";
 
 const EXPORTS = { ".": "./src/mod.ts" };
 
 const STEPS = [
   docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }),
-  readmeExportsStep({ root: "/nowhere", readmes: [] }),
   changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }),
   designStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, designDir: "design", cssDir: "css" }),
 ];
 
 describe("warden steps", () => {
   it("gives every step the label that is its `--only` token", () => {
-    expect(STEPS.map((step) => step.label)).toEqual(["validate-docs", "validate-readme-exports", "validate-changelog", "validate-design"]);
+    expect(STEPS.map((step) => step.label)).toEqual(["validate-docs", "validate-changelog", "validate-design"]);
   });
 
   it("builds check steps, never command steps", () => {
@@ -24,7 +23,7 @@ describe("warden steps", () => {
   });
 
   it("puts the changelog on the `full` tier alone, and leaves the rest on `fast`", () => {
-    expect(STEPS.map((step) => step.tier)).toEqual([undefined, undefined, "full", undefined]);
+    expect(STEPS.map((step) => step.tier)).toEqual([undefined, "full", undefined]);
   });
 
   it("lets a project pull the changelog into the fast run, overriding the default", () => {
@@ -75,7 +74,7 @@ describe("wardenAppSteps()", () => {
     citableDirs: ["node_modules/@y-core/forge/warden/canon/shared"],
   };
 
-  it("appends the four rows a consuming application takes, in order", () => {
+  it("appends the rows a consuming application takes, in order", () => {
     expect(wardenAppSteps(options).map((step) => step.label)).toEqual(["validate-docs", "warden:index", "warden:queries", "warden:duplicates"]);
   });
 

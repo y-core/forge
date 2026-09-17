@@ -48,8 +48,7 @@ export async function checkClassGroups(config: ClassGroupsCheckConfig): Promise<
   );
 }
 
-/** Writes the derived table over the committed module. The caller formats it — `gen:class-groups`
- *  runs `oxfmt` over the written file, which is why the drift check compares content, not layout. @public */
+/** Writes the derived table over the committed module. @public */
 export async function writeClassGroups(config: ClassGroupsCheckConfig): Promise<void> {
   writeFileSync(resolve(config.root, config.table), renderClassGroups(await deriveTable(config)), "utf-8");
 }

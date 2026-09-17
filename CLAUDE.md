@@ -1,7 +1,7 @@
 # CLAUDE.md — Architectural Constitution
 
-> Namespace-based shared library for Cloudflare Workers. Ships raw TypeScript. No build step. Consumed via the `@y-core/forge/{namespace}` export
-> map.
+> Web standards platform for server-rendered web applications, built on a foundation of Web APIs for deployment on Cloudflare Workers. Ships raw
+> TypeScript. No build step. Consumed via the `@y-core/forge/{namespace}` export map.
 
 ---
 
@@ -11,7 +11,11 @@
 - NEVER use Bun-specific or Node.js APIs in runtime source files (standard Web APIs only)
 - NEVER hardcode API keys, secrets, or credentials in source files
 - NEVER provide deprecation shims or backward-compatible paths before v1.0.0 ([`FORGE_STRUCTURE.md`][la-7] §7)
-- NEVER exceed the comment budget, and delete unbudgeted comments from any file you touch ([`CODE_RULES.md`][cr-5] §5, [§5c][cr-5c])
+- NEVER exceed the comment budget, and delete unbudgeted comments from any file you touch — a TSDoc block closes on the line it opens on, and prose
+  the budget evicts is deleted rather than relocated ([`CODE_RULES.md`][cr-5] §5, [§5a][cr-5a], [§5c][cr-5c])
+- NEVER gloss an interface field with words that spell its own name back ([`CODE_RULES.md`][cr-5f] §5f)
+- ALWAYS land a deleted behavioural claim as an assertion before the change is done ([`CODE_RULES.md`][cr-5e] §5e, [`TESTING.md`][tl-3f] §3f)
+- ALWAYS write a README to teach use, shaped by tasks and never by the export list ([`AGENT_GUIDE.md`][ag-6c] §6c)
 - ALWAYS give an exported symbol a domain word ([`CODE_RULES.md`][cr-7] §7)
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS co-locate tests (`*.test.ts` / `*.test.tsx`) with the source they test ([`TESTING.md`][tl-2] §2)
@@ -38,14 +42,14 @@
 | `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
 | `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 
-A bare `bun run verify` is the `standard` tier — the run a task closes on. Two flags are not findable from `package.json`:
+A bare `bun run verify` is the `standard` tier — the run a task closes on. These flags are not findable from `package.json`:
 
 ```bash
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps of the selected mode, run none
 ```
 
-Gate philosophy, the three modes, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. The step list itself is `config/steps.ts`.
+Gate philosophy, the modes, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. The step list itself is `config/steps.ts`.
 
 **Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), `biome` (retired — use `oxfmt`).
 
@@ -53,7 +57,7 @@ Gate philosophy, the three modes, and the flags: [`TEST_RUNNERS.md`][testing-6] 
 
 ## Agents
 
-Five, in `.claude/agents/`: `cc-plan` → `cc-dev` → `cc-test`, with `cc-doc` outside that pipeline and `cc-tester` as the runner of the full gate.
+The roster is `.claude/agents/`: `cc-plan` → `cc-dev` → `cc-test`, with `cc-doc` outside that pipeline. `cc-tester` is the full gate runner.
 `warden sync --check` reconciles the names here against the directory in both directions.
 
 ---
@@ -105,12 +109,16 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 | Developer-facing tool — a command, a gate check, a lint rule, a release step, a D1 verb | `src/tooling/{cli,term,gate,lint,release,cf,assets,db}` — never Worker-reachable | [`NAMESPACES.md`][namespaces-5g] §5g |
 
 [ag-5c]: warden/canon/shared/AGENT_GUIDE.md#5c-the-agent-roster-is-reconciled-both-ways
+[ag-6c]: warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-6d]: warden/canon/shared/AGENT_GUIDE.md#6d-the-canon-versus-this-repositorys-docs
 [ap-2c]: docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
 [boundaries-1]: warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-2]: warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [cr-5]: warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
+[cr-5a]: warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
 [cr-5c]: warden/canon/shared/CODE_RULES.md#5c-where-rationale-belongs-instead
+[cr-5e]: warden/canon/shared/CODE_RULES.md#5e-a-behavioural-claim-is-an-assertion
+[cr-5f]: warden/canon/shared/CODE_RULES.md#5f-a-field-is-a-symbol
 [cr-7]: warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
 [la-7]: docs/FORGE_STRUCTURE.md#7-pre-10-api-evolution
 [namespaces-5a]: docs/NAMESPACES.md#5a-security--transport-layer-hardening-only
@@ -122,6 +130,7 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 [nd-3]: warden/canon/libs/NAMESPACE_DESIGN.md#3-namespace-classification
 [testing-6]: docs/TEST_RUNNERS.md#6-the-verification-gate
 [tl-2]: warden/canon/libs/TESTING.md#2-co-located-test-files
+[tl-3f]: warden/canon/libs/TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [ucr-2]: docs/UI_CLIENT_RUNTIME.md#2-mount-controllers
 [udg-5a]: docs/UI_DESIGN_GUIDANCE.md#5a-routing-rule-for-a-new-design-rule
 [usc]: docs/UI_SSR_COMPONENTS.md

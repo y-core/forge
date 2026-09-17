@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { DARK_CLASS, THEME_STORAGE_KEY } from "../chrome/theme";
-import { mount, paintedToken, THEME_TOKEN_CSS } from "../client/browser-test-helper";
+import { mount, paintedToken, THEME_TOKEN_CSS } from "../client/browser.fixture";
 import { CONTROLS_DEMO_SCOPE, CONTROLS_DEMO_STATE, controlsReadout } from "../contracts/controls-demo-contract";
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY } from "../contracts/overlay-contract";
 import { TURNSTILE, TURNSTILE_SCRIPT_SRC } from "../contracts/turnstile-contract";
@@ -81,7 +81,7 @@ const icon = createIcon("/sprite.svg", {
 
 // A scheme declares each step once with `light-dark()`, which resolves at used-value time, so
 // `getPropertyValue` on a token returns the same unresolved function in both modes.
-/** The two tokens the theme cases read back, as the mode-resolved colour a reader actually sees. */
+/** The tokens the theme cases read back, as the mode-resolved colour a reader actually sees. */
 const TOKENS = { light: { background: "#f9f9f9", ring: "#646464" }, dark: { background: "#111111", ring: "#b4b4b4" } } as const;
 
 // The harness runs no Tailwind build, so the utilities the markup names style nothing unless a case
@@ -437,7 +437,7 @@ test.describe("the showcase's Turnstile page", () => {
     await mountShowcase(page, "turnstile");
 
     // Two widgets are up from page load: the playground, and the deferred-challenge demo whose
-    // `execution: "execute"` holds only the challenge back. The four focus demos have rendered nothing.
+    // `execution: "execute"` holds only the challenge back. The focus demos have rendered nothing.
     await expect.poll(() => renderSignatures(page)).toEqual(["normal/execute", "normal/render"]);
     await expect.poll(async () => (await turnstileState(page)).fallbackHidden).toBe(true);
 
@@ -741,7 +741,7 @@ test.describe("the table of contents as a column", () => {
 });
 
 // The harness runs no Tailwind build, so the drawer's `max-md:` utilities style nothing unless the
-// case supplies them; these are the rules the two rails' overlay geometry is measured against.
+// case supplies them; these are the rules the rails' overlay geometry is measured against.
 const DRAWER_STYLE = `<style>
   @media (max-width: 47.99rem) {
     .max-md\\:w-auto { width: auto }

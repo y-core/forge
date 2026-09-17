@@ -5,8 +5,6 @@ import { join } from "node:path";
 
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
-import { sha256 } from "../digest";
-import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import {
   argvHas,
   bufferedIO,
@@ -20,7 +18,9 @@ import {
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
-} from "../test-support";
+} from "../db.fixture";
+import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import type { BackupManifest, FakeDbIo } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 

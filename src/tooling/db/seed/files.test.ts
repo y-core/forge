@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../../cli/errors";
+import { fakeDbIo } from "../db.fixture";
 import { sha256 } from "../digest";
-import { fakeDbIo } from "../test-support";
 import { discoverSeeds, expandSeedEnv, parseSeed, parseSeedPlaces, readSeedFiles, SEED_BARE_VALUE, seedVariablesIn } from "./files";
 
 describe("SEED_BARE_VALUE", () => {

@@ -22,13 +22,7 @@ export function scannedNothing(what: string, gate: string, verb = "scanned"): Ch
   return checkResult([fail(`${what} — refusing to report a green ${gate} gate that ${verb} nothing`)], "");
 }
 
-/**
- * Renders one finding as a level tag, its location, and its message with evidence indented.
- *
- * `style` defaults to `PLAIN`, which is what keeps every exact-match assertion on this output
- * true without an edit: colour is something a caller asks for, never something the formatter
- * decides on its own.
- */
+/** Renders one finding as a level tag, its location, and its message with evidence indented. */
 export function formatFinding(finding: Finding, style: Colorize = PLAIN): string {
   const tag = finding.level === "fail" ? style.red("FAIL") : style.yellow("warn");
   const at = finding.file === undefined ? "" : ` ${finding.file}${finding.line === undefined ? "" : `:${finding.line}`}`;

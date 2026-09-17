@@ -12,12 +12,8 @@ interface Call {
   dest: string;
 }
 
-/** Stands in for `sharp`, recording the resize each entry asks for and writing the file it would.
- *
- *  `png()` answers both `toFile` and `toBuffer` so this stub stays a superset of the one
- *  `icons.test.ts` registers — `mock.module` is process-global, so a narrower stub leaking into
- *  that file would break it.
- */
+/** Stands in for `sharp`, recording the resize each entry asks for and writing the file it would. */
+// `mock.module` is process-global, so this stub answers both `toFile` and `toBuffer` to stay a superset of the one `icons.test.ts` registers.
 async function stubSharp(): Promise<Call[]> {
   const calls: Call[] = [];
   await mock.module("sharp", () => ({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeTree } from "./test-dom";
+import { fakeTree } from "./dom.fixture";
 import { dismissToast } from "./toast";
 
 /** A container holding `count` toasts, each with a dismiss button, plus the focus helpers. */

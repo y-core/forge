@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 import { Tabs } from "./tabs";
 import { Toggle } from "./toggle";
 import { ToggleGroup } from "./toggle-group";

@@ -205,8 +205,8 @@ describe("browserStep()", () => {
     expect(browserStep().requires?.probe).toBe(hasChromium);
   });
 
-  it("names both routes, since a reader who sees it is by definition outside a devbox container", () => {
-    expect(browserStep().requires?.hint).toBe("run `bunx playwright install chromium`, or use a devbox container — `devctl up`");
+  it("names the install command, since a reader who sees it has no browser downloaded", () => {
+    expect(browserStep().requires?.hint).toBe("run `bunx playwright install chromium`");
   });
 
   it("takes a hint of its own, for a project installing the browser some other way", () => {

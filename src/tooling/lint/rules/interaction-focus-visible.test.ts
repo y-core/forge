@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, element, literal, runRule } from "../test-support.ts";
+import { attribute, element, literal, runRule } from "../lint.fixture.ts";
 import { interactionFocusVisible } from "./interaction-focus-visible.ts";
 
 const classes = (text: string) => element("div", attribute("class", literal(text)));

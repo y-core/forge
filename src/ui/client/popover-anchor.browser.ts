@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { Menu } from "../core/menu";
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {
@@ -13,9 +13,7 @@ declare global {
 
 const EXPOSE = { expose: { forgePopoverAnchor: "./ui/client/popover-anchor" } };
 
-/** The coordinate rule, verbatim from `assets/css/forge-ui.css`. Inlined rather than loading the
- * built sheet: the harness serves no CSS, and what is under test is this rule and the UA default
- * fighting over the same box. */
+/** The coordinate rule, verbatim from `assets/css/forge-ui.css`, inlined because the harness serves no CSS. */
 const COORD_RULE = `
   [popover] { border: 0; padding: 0; }
   [popover][data-coords] {

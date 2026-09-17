@@ -27,6 +27,12 @@ const RULE = [
   "Anything else is a second home for a fact that already has one, and it decays where it sits.",
 ].join(" ");
 
+/** Long enough to clear the floor, and about something else entirely, so filler never scores against filler. */
+const FILLER = [
+  "A migration runs once and is never edited afterwards, because its hash is the ledger's record of what the database already did.",
+  "Roll a mistake forward under a new number instead, and keep the restore path honest.",
+].join(" ");
+
 describe("checkDuplicates()", () => {
   it("warns on a section copied between the canon and this repository's own documents", () => {
     const result = checkDuplicates(
@@ -86,7 +92,46 @@ describe("checkDuplicates()", () => {
     );
 
     expect(result.findings).toEqual([]);
-    expect(result.summary).toBe("0 searchable chunks, 0 pairs at or above 0.28, highest 0.000.");
+    expect(result.summary).toBe("0 comparable sections, 0 pairs at or above 0.28, highest 0.000.");
+  });
+
+  // A banner is copied on purpose — two entry points of one nature get one label — and a ratio over
+  // a handful of shingles cannot tell that from a rule stated twice.
+  it("counts a banner too short for a ratio to mean anything out of the comparison entirely", () => {
+    const banner = "**Browser-only, side-effect import.** esbuild entry points only.";
+    const result = checkDuplicates(
+      config(
+        repo("warden-dup-floor-", [
+          ["src/ui/README.md", doc("the client entries", `${banner}\n\n### One\n\n${RULE}`)],
+          ["src/chrome/README.md", doc("the client entries", `${banner}\n\n### One\n\n${FILLER}`)],
+        ]),
+      ),
+    );
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toContain("0 pairs at or above 0.28");
+  });
+
+  it("leaves two `See also` lists citing one governing document alone", () => {
+    const seeAlso = (extra: string) =>
+      [
+        "## See also",
+        "",
+        "- [`docs/SOURCE_OF_TRUTH.md`][sot] §2f — why this README, and not a `docs/` document, owns the rulings above",
+        `- ${extra}`,
+        "",
+        "[sot]: ../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows",
+      ].join("\n");
+    const result = checkDuplicates(
+      config(
+        repo("warden-dup-see-also-", [
+          ["src/session/README.md", `${doc("sessions", RULE)}\n${seeAlso("[`src/form/README.md`][form] — binding a token to the session id")}`],
+          ["src/term/README.md", `${doc("terminals", FILLER)}\n${seeAlso("[`src/cli/README.md`][cli] — the command layer")}`],
+        ]),
+      ),
+    );
+
+    expect(result.findings).toEqual([]);
   });
 
   it("excludes an organising stub, whose prose belongs to its children", () => {
@@ -94,7 +139,7 @@ describe("checkDuplicates()", () => {
     const result = checkDuplicates(config(repo("warden-dup-stub-", [["warden/canon/shared/CODE_RULES.md", parent]])));
 
     // Three headings, one of them a `## 1.` stub with no prose of its own.
-    expect(result.summary).toBe("1 searchable chunks, 0 pairs at or above 0.28, highest 0.000.");
+    expect(result.summary).toBe("1 comparable sections, 0 pairs at or above 0.28, highest 0.000.");
   });
 
   it("reports the canon-against-docs pair first, whatever order the corpus produced it in", () => {

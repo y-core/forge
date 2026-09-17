@@ -18,8 +18,6 @@ const CONSTANT_FALSE: ReadonlySignal<boolean> = {
   },
 };
 
-/** One document's theme preference, the media listener that resolves `system`, and the effects that
- * paint `<html>` — held open by however many theme scopes have acquired it. */
 interface ThemeDocument {
   pref: Signal<string>;
   dark: ReadonlySignal<boolean>;
@@ -27,11 +25,8 @@ interface ThemeDocument {
   release: () => void;
 }
 
-/** Per document rather than per scope: the preference belongs to the document, and a navbar toggle
- * beside a settings toggle each mutating its own signal left the other cycling from a stale value. */
 const themes = new WeakMap<Document, ThemeDocument>();
 
-/** Every live document's theme, newest last, so the single `isDark` export has one to report. */
 const liveThemes: ThemeDocument[] = [];
 
 /** Whether the active resolved theme is dark. `false` until a theme scope resumes. @public */

@@ -4,7 +4,7 @@ import { base64urlEncode, uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { AuthStoreError } from "../errors";
 import type { AuthChallenge, AuthCredential, AuthCredentialInput, ChallengeStore, CredentialStore } from "../types";
-import { PASSKEY_FLAG, ceremonyCborEncode, createPasskeyKeyPair, fakeClientData, fakePasskeyRegistration } from "./fixture";
+import { PASSKEY_FLAG, ceremonyCborEncode, createPasskeyKeyPair, fakeClientData, fakePasskeyRegistration } from "./passkey.fixture";
 import { verifyPasskeyRegistration } from "./register";
 import type { CeremonyCborValue, PasskeyKeyPair } from "./types";
 import type { PasskeyRegistrationVerifyOptions } from "./types";

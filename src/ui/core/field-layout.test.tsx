@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { FormField } from "./field-layout";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
 
 const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 

@@ -6,7 +6,7 @@ import type { MiddlewareGuardGroup } from "../../app/types";
 import { contextVar } from "../../context/accessor";
 import { getAppContext } from "../../context/types";
 import { safeRedirectPath } from "../../http/redirect-path";
-import { jsonResponse, redirect } from "../../http/response";
+import { createRedirectResponse, jsonResponse } from "../../http/response";
 import { sessionCtx } from "../../session/session";
 import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { authFactorContext } from "../factors/registry";
@@ -72,7 +72,7 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
         const replayable = method === "GET" || method === "HEAD";
         const target = new URL(options.signinPath, context.url);
         if (replayable) target.searchParams.set(returnParam, safeRedirectPath(`${context.url.pathname}${context.url.search}`, "/"));
-        return redirect(`${target.pathname}${target.search}`, replayable ? undefined : 303);
+        return createRedirectResponse(`${target.pathname}${target.search}`, replayable ? undefined : 303);
       });
     }
 
@@ -203,9 +203,9 @@ export function requireEnrolment<Bindings = Record<string, unknown>>(options: Au
     const demand = await resolveAuthDemand(context, identity, options);
     if (demand.status === "enrolment") {
       const target = enrolmentTarget(options, demand.kinds);
-      return refuse(options.medium, ENROLMENT_OWED, 403, () => redirect(target));
+      return refuse(options.medium, ENROLMENT_OWED, 403, () => createRedirectResponse(target));
     }
-    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => redirect(options.stepUpPath));
+    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath));
     // Refused rather than redirected: an unknown demand cannot pick a remedy, and every remedy page
     // asks the same unavailable store, so a redirect here is a loop.
     if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
@@ -225,9 +225,9 @@ export function requirePendingEnrolment<Bindings = Record<string, unknown>>(opti
     if (demand.status === "enrolment") return next();
     // The whole point of this guard: a session owing a step-up may not mint the second factor that
     // would satisfy it, so it is sent to verify rather than admitted to enrol.
-    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => redirect(options.stepUpPath));
+    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath));
     if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
-    return refuse(options.medium, NOTHING_OWED, 403, () => redirect(options.settledPath));
+    return refuse(options.medium, NOTHING_OWED, 403, () => createRedirectResponse(options.settledPath));
   };
 }
 
@@ -249,7 +249,7 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
     if (stepUpHolds(identity.stepUpAt, maxAgeMs)) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
-    return refuse(options.medium, STEP_UP_STALE, 403, () => redirect(options.stepUpPath, 303));
+    return refuse(options.medium, STEP_UP_STALE, 403, () => createRedirectResponse(options.stepUpPath, 303));
   };
 }
 

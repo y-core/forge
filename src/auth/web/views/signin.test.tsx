@@ -7,6 +7,7 @@ import { render } from "../../../testing/render";
 import { createIcon } from "../../../ui/core/icon";
 import type { ForgeIcon } from "../../../ui/core/types";
 import { PASSKEY, PASSKEY_SCOPE } from "../../passkey-contract";
+import type { AuthFactorCell } from "../types";
 import {
   attrOf,
   attrsOf,
@@ -18,8 +19,7 @@ import {
   tagOf,
   textOf,
   valuesOf,
-} from "../test-support";
-import type { AuthFactorCell } from "../types";
+} from "../web.fixture";
 import { SigninView } from "./signin";
 import type { SigninViewProps } from "./types";
 

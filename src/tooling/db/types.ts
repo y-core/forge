@@ -36,7 +36,7 @@ export interface DbConfig {
   readonly target: DbTarget;
 }
 
-/** What one process run produced, with the two streams kept apart so `--json` stays parseable. @public */
+/** What one process run produced, with stdout and stderr kept apart so `--json` stays parseable. @public */
 export interface Spawned {
   readonly code: number;
   readonly stdout: string;
@@ -357,7 +357,7 @@ export interface BackupManifest {
   readonly selfDigest: string;
 }
 
-/** The three facts that bind an artifact to a schema, each catching what the other two cannot. @public */
+/** The facts that bind an artifact to a schema, each catching what the others cannot. @public */
 export interface SchemaFacts {
   readonly migrations: readonly string[];
   /** SHA-256 over the app's own objects — the managed tables are created rather than restored, so they are not in it. */

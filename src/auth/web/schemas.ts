@@ -44,7 +44,7 @@ export function authEmailChangeSchema() {
 }
 
 // `formText` trims, so a field holding only spaces arrives as `""`. The domain models an unnamed
-// credential as `null`, and folding the two keeps clearing a name from writing a third state.
+// credential as `null`, and folding them keeps clearing a name from writing a third state.
 /** The passkey naming form, used both at enrolment and when renaming a registered credential. @public */
 export function authPasskeyLabelSchema() {
   return strictObject({

@@ -28,7 +28,7 @@ const DOCS_PREFIX = "docs/";
 /** What a cited `[tree/]DOC.md` spelling named. @public */
 export type Resolution = { kind: "resolved"; id: string } | { kind: "ambiguous"; ids: readonly string[] } | { kind: "none" };
 
-/** Resolves a cited `[tree/]DOC.md` spelling, saying which of the three things happened. @public */
+/** Resolves a cited `[tree/]DOC.md` spelling to a resolution, an ambiguity, or nothing. @public */
 export function resolveCitation(cited: string, sources: readonly SourceDoc[], from?: SourceDoc): Resolution {
   const pool = from?.corpus === "dependency" ? sources.filter((doc) => LIBRARY_CORPORA.includes(doc.corpus)) : sources;
   const find = (spelling: string) =>

@@ -169,12 +169,7 @@ export type TokenKind = "option" | "option-terminator" | "positional";
 /** One element of the command line, classified but not yet matched against any definition. @public */
 export interface ArgToken {
   kind: TokenKind;
-  /**
-   * Index into the original argv — **not** into this token stream.
-   *
-   * Members of an expanded cluster all carry the index of the one argv element they came from,
-   * which is what makes `argv.slice(token.index)` correct whatever the token was.
-   */
+  /** Index into the original argv, not into this token stream; a whole cluster carries the index it came from. */
   index: number;
   /** Flag name: the long name without `--`, or the single letter without `-`. */
   name?: string;

@@ -71,7 +71,7 @@ This is what makes the majority of corpus rules mechanically checkable rather th
 
 ## 2. Two Rule Tiers — Floor and Defaults
 
-A corpus rule occupies exactly one of two tiers. There is no third strength, and a rule that cannot be placed in one of the two is not yet a rule.
+A corpus rule occupies exactly one of two tiers. There is no third strength, and a rule that cannot be placed in one of them is not yet a rule.
 
 ### 2a. Floor — Verify and Refuse
 
@@ -186,8 +186,8 @@ Registration of those two files in the source-of-truth register is a separate co
 
 ### 4a. Gate Enforcement Across Both Tiers
 
-Two properties of that gate step are not derivable from the contract sentence above, and a reader who assumes either one wrongly draws a conclusion
-about rule strength that is not there.
+These properties of that gate step are not derivable from the contract sentence above, and a reader who assumes either one wrongly draws a
+conclusion about rule strength that is not there.
 
 **Enforcement runs in both directions.** The corpus is checked against forge's API by `validate-design`, and forge's own source is checked against
 the corpus by the `lint` step — **all of it that renders markup, not `src/ui/` alone**. The second direction is why a rule the corpus publishes for
@@ -231,7 +231,7 @@ at all.
 against a barrel. oxlint judges one file at a time, which is why those checks stay gate steps and why `validate-design` still runs: it holds the
 corpus against forge's API, and the two registers against the plugin, neither of which is a per-file question.
 
-The plugin's rule key is the corpus id minus its `forge-ui-` prefix, derived in both directions and never hand-kept. **Two registers name the
+The plugin's rule key is the corpus id minus its `forge-ui-` prefix, derived in both directions and never hand-kept. **The registers name the
 mechanism, one per rule family**, and an author adding a rule declares its enforcer in the register that already holds the rule:
 
 - `src/tooling/lint/design-rules.ts` routes every corpus rule, through `RULE_ENFORCER`. It imports nothing, deliberately: the plugin reaches it
@@ -274,7 +274,7 @@ function is not resolved: a class list written there is not the shared recipe th
 
 ## 5. Three-Way Documentation Boundary
 
-Three homes exist for a statement about forge's UI, and the boundary between them is the section other documents will cite most. Each answers a
+The boundary between the homes for a statement about forge's UI is the section other documents will cite most. Each home answers a
 different question:
 
 | Home | Owns | The question it answers |

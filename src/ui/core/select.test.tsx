@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { FormField } from "./field-layout";
 import { createIcon } from "./icon";
 import { Select } from "./select";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 const optionsOf = (html: string) => [...html.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((match) => match[1]);

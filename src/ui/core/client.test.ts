@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
+import { FakeElement, FakeEvent, fakeTree } from "../client/dom.fixture";
 import { resume, resumeScope } from "../client/resume";
-import { FakeElement, FakeEvent, fakeTree } from "../client/test-dom";
 import { ALERT_SCOPE } from "../contracts/alert-contract";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
 import { ISLAND_STATE_KEY } from "../contracts/island-contract";

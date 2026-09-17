@@ -28,9 +28,11 @@ describe("renderShell without a registered shell", () => {
     expect(await res.text()).toBe(`<!DOCTYPE html><html lang="en"><head>${HEAD}<title>Sign in</title></head><body><p>hello</p></body></html>`);
   });
 
-  it("escapes a title the mount did not write itself", async () => {
+  it("escapes a title the mount did not write itself, leaving no unescaped copy anywhere in the document", async () => {
     const res = await renderShell(context(), <p>hello</p>, { ...SLOT, meta: { title: "Ada & Co <admin>" } });
-    expect(await res.text()).toContain("<title>Ada &amp; Co &lt;admin&gt;</title>");
+    expect(await res.text()).toBe(
+      `<!DOCTYPE html><html lang="en"><head>${HEAD}<title>Ada &amp; Co &lt;admin&gt;</title></head><body><p>hello</p></body></html>`,
+    );
   });
 
   it("carries the status and headers the mount asked for", async () => {
@@ -64,8 +66,8 @@ describe("pageShell", () => {
     const shell = pageShell();
     const signin = await (await renderShell(context(shell), <p>a</p>, SLOT)).text();
     const logs = await (await renderShell(context(shell), <p>b</p>, { mount: "logs", page: "logs", meta: { title: "Logs" } })).text();
-    expect(signin).toContain("<title>Sign in</title>");
-    expect(logs).toContain("<title>Logs</title>");
+    expect(signin).toBe(`<!DOCTYPE html><html lang="en"><head>${HEAD}<title>Sign in</title></head><body><p>a</p></body></html>`);
+    expect(logs).toBe(`<!DOCTYPE html><html lang="en"><head>${HEAD}<title>Logs</title></head><body><p>b</p></body></html>`);
   });
 });
 

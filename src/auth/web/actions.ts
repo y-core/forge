@@ -6,7 +6,7 @@ import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
 import type { ReadonlyFormData } from "../../form/types";
-import { jsonResponse, redirect } from "../../http/response";
+import { createRedirectResponse, jsonResponse } from "../../http/response";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { sessionCtx } from "../../session/session";
@@ -141,7 +141,7 @@ export const AUTH_CEREMONY_MAX_BYTES = 65_536;
 /** What reading a ceremony body produced: the parsed JSON, or the refusal the endpoint owes. */
 type CeremonyBody = { readonly ok: true; readonly body: unknown } | { readonly ok: false; readonly response: Response };
 
-// The two stages `parseFormData` proves: refuse on a `Content-Length` that already says too much,
+// The stages `parseFormData` proves: refuse on a `Content-Length` that already says too much,
 // then meter the stream, because a chunked body's header may be absent or lying.
 /** The JSON body a ceremony endpoint was posted, capped at `AUTH_CEREMONY_MAX_BYTES`. */
 async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<CeremonyBody> {
@@ -211,7 +211,7 @@ export function createSigninActions<Bindings>(options: AuthWebOptions<Bindings>)
       // parameter carrying it lands in browser history, `Referer` and every proxy log on the way.
       services.signin.request(parsed.data.email, authNow(options));
       markAuthSigninPending(session, parsed.data.email);
-      return redirect(options.paths.auth.verify.show(), REDIRECT_STATUS);
+      return createRedirectResponse(options.paths.auth.verify.show(), REDIRECT_STATUS);
     },
   };
 }
@@ -229,12 +229,12 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       services.signup.request(parsed.data.email, authNow(options));
       markAuthSigninPending(session, parsed.data.email);
-      return redirect(options.paths.auth.verify.show(), REDIRECT_STATUS);
+      return createRedirectResponse(options.paths.auth.verify.show(), REDIRECT_STATUS);
     },
   };
 }
 
-/** The two POSTs of the verification page: presenting the code, and asking for another. @public */
+/** The POSTs of the verification page: presenting the code, and asking for another. @public */
 export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly submit: RequestHandler;
   readonly resend: RequestHandler;
@@ -262,11 +262,11 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
         if (!stepped.ok) return loadVerify(c, options, { error: SIGNIN_NOTICE[redactSigninReason(stepped.error)], status: 422 });
         // The only place a step-up is ever recorded: every other outcome leaves the mark alone.
         markAuthStepUp(session, at);
-        return redirect(authReturnPath(c, options), REDIRECT_STATUS);
+        return createRedirectResponse(authReturnPath(c, options), REDIRECT_STATUS);
       }
 
       const pending = resolveAuthSigninPending(session);
-      if (pending === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (pending === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
 
       const completed = await services.signin.complete(pending, parsed.data.code, at);
       if (!completed.ok) {
@@ -277,9 +277,9 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const resolution = completed.data.resolution;
       // A successful outcome of a correct sign-in, not a refusal of one: the visitor proved the
       // primary factor and now owes an enrolment, which is a page to visit rather than a 4xx.
-      if (resolution.status === "enrolment-required") return redirect(enrolTarget(options, resolution.kinds), REDIRECT_STATUS);
-      if (resolution.status === "step-up-required") return redirect(options.paths.auth.verify.show(), REDIRECT_STATUS);
-      return redirect(authReturnPath(c, options), REDIRECT_STATUS);
+      if (resolution.status === "enrolment-required") return createRedirectResponse(enrolTarget(options, resolution.kinds), REDIRECT_STATUS);
+      if (resolution.status === "step-up-required") return createRedirectResponse(options.paths.auth.verify.show(), REDIRECT_STATUS);
+      return createRedirectResponse(authReturnPath(c, options), REDIRECT_STATUS);
     },
 
     resend: async (context) => {
@@ -296,15 +296,15 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       if (demand.identity !== null) {
         await services.signin.requestStepUp(demand.identity.userId, demand.factor, at);
-        return redirect(resent, REDIRECT_STATUS);
+        return createRedirectResponse(resent, REDIRECT_STATUS);
       }
 
       const pending = resolveAuthSigninPending(session);
-      if (pending === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (pending === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
       // Synchronous by design: `request` reads nothing about the address before returning, so a
       // registered one and an unknown one differ in neither shape nor time. There is nothing to await.
       services.signin.request(pending, at);
-      return redirect(resent, REDIRECT_STATUS);
+      return createRedirectResponse(resent, REDIRECT_STATUS);
     },
   };
 }
@@ -315,7 +315,7 @@ export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>
     signout: (context) => {
       const c = getAppContext<Bindings>(context);
       clearAuthSession(sessionCtx.get(c, NO_SESSION));
-      return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
     },
   };
 }
@@ -425,7 +425,7 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       const id = c.params.id;
-      if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (identity === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
       const offered = authEnrollable(services, "passkey");
       if (!offered.ok) return offered.error;
       if (id === undefined) return notFound();
@@ -445,7 +445,7 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       const session = sessionCtx.get(c, NO_SESSION);
       const identity = resolveAuthViewer(c);
       const id = c.params.id;
-      if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (identity === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
       const offered = authEnrollable(services, "passkey");
       if (!offered.ok) return offered.error;
       if (id === undefined) return notFound();
@@ -485,7 +485,7 @@ async function confirmTotp<Bindings>(
 ): Promise<Result<AuthIdentity, Response>> {
   const services = await authServices(c, options);
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(options.paths.auth.signin(), REDIRECT_STATUS));
+  if (identity === null) return err(createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS));
   const service = services.factors.find(TOTP_KIND);
   if (service === undefined || service.enrolment !== "explicit") return err(notFound());
 
@@ -510,7 +510,7 @@ export function createTotpEnrolActions<Bindings>(options: AuthWebOptions<Binding
       // Whatever the policy demands now the factor is confirmed — the step-up it was enrolled for —
       // rather than the account page, which the enrolment guard would only bounce back.
       const target = await signedInTarget(c, options, confirmed.data.userId, confirmed.data.isAdmin);
-      return redirect(target, REDIRECT_STATUS);
+      return createRedirectResponse(target, REDIRECT_STATUS);
     },
   };
 }
@@ -526,14 +526,14 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
     totpEnrol: async (context) => {
       const c = getAppContext<Bindings>(context);
       const confirmed = await confirmTotp(c, options, loadTotpEnrol);
-      return confirmed.ok ? redirect(options.paths.account.totp(), REDIRECT_STATUS) : confirmed.error;
+      return confirmed.ok ? createRedirectResponse(options.paths.account.totp(), REDIRECT_STATUS) : confirmed.error;
     },
 
     totpRemove: async (context) => {
       const c = getAppContext<Bindings>(context);
       const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
-      if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (identity === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
       const service = services.factors.find(kind);
       if (service === undefined) return notFound();
 
@@ -547,7 +547,7 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
       // admitted on the strength of it standing on another device.
       const revoked = await revokeOtherSessions(services, sessionCtx.get(c, NO_SESSION), identity.userId, authNow(options));
       if (!revoked) return unavailable();
-      return redirect(options.paths.account.totp(), REDIRECT_STATUS);
+      return createRedirectResponse(options.paths.account.totp(), REDIRECT_STATUS);
     },
   };
 }
@@ -559,7 +559,7 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
       const c = getAppContext<Bindings>(context);
       const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
-      if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (identity === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
 
       const parsed = await readAuthSubmission(c, authEmailChangeSchema());
       if (!parsed.ok) return loadEmailChange(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
@@ -641,7 +641,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
       const removed = await services.admin.remove(id);
       if (!removed.ok) return unavailable();
-      if (removed.data === "changed") return redirect(options.paths.admin.users.list(), REDIRECT_STATUS);
+      if (removed.data === "changed") return createRedirectResponse(options.paths.admin.users.list(), REDIRECT_STATUS);
       return loadAdminUserEdit(c, options, { outcome: removed.data, status: adminRefusalStatus(removed.data) });
     },
   };
@@ -654,20 +654,17 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
       const c = getAppContext<Bindings>(context);
       const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
-      if (identity === null) return redirect(options.paths.auth.signin(), REDIRECT_STATUS);
+      if (identity === null) return createRedirectResponse(options.paths.auth.signin(), REDIRECT_STATUS);
 
       const parsed = await readAuthSubmission(c, authAdminElevateSchema());
       if (!parsed.ok) return loadAdminElevate(c, options, { fieldError: parsed.error.message, status: 422 });
 
-      const counted = await services.admin.countAdmins();
-      if (!counted.ok) return unavailable();
-      // Re-read rather than trusted from the page: the claim is open to anyone signed in, so the
-      // only thing standing between two visitors and two first admins is this check at write time.
-      if (counted.data > 0) return loadAdminElevate(c, options, { status: 409 });
-
-      const elevated = await services.admin.elevate(identity.userId, authNow(options));
-      if (!elevated.ok) return unavailable();
-      return redirect(options.paths.admin.users.list(), REDIRECT_STATUS);
+      const claimed = await services.admin.claimFirst(identity.userId, authNow(options));
+      if (!claimed.ok) return unavailable();
+      if (claimed.data === "changed") return createRedirectResponse(options.paths.admin.users.list(), REDIRECT_STATUS);
+      // A signed-in session naming a row that is gone; the claim page has nothing to say about it.
+      if (claimed.data === "not-found") return unavailable();
+      return loadAdminElevate(c, options, { status: 409 });
     },
   };
 }

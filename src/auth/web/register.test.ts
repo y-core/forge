@@ -25,6 +25,7 @@ import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, authCtx } from "./id
 import { loadSignin } from "./loaders";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
+import type { AuthWebOptions } from "./types";
 import {
   attrOf,
   attrsOf,
@@ -39,8 +40,7 @@ import {
   fakeFactorService,
   fakeFactorStore,
   valuesOf,
-} from "./test-support";
-import type { AuthWebOptions } from "./types";
+} from "./web.fixture";
 
 const CSRF_SECRET = "b".repeat(64);
 

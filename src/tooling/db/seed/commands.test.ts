@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { addCommand, createCommand } from "../../cli/command";
 import { execute } from "../../cli/execute";
 import type { CommandBase } from "../../cli/types";
+import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../db.fixture";
 import { sha256 } from "../digest";
-import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../test-support";
 import type { FakeDbIo, SeedRecord } from "../types";
 import { createSeedCommands } from "./commands";
 

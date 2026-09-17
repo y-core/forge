@@ -11,7 +11,7 @@ function ownFilter(): string {
   return `m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\'`;
 }
 
-/** The five reads a model is built from, batched into one wrangler spawn however many tables there are. @internal */
+/** The reads a model is built from, batched into one wrangler spawn however many tables there are. @internal */
 export function schemaModelSelects(): { inventory: string; columns: string; indexList: string; indexColumns: string; foreignKeys: string } {
   const own = ownFilter();
   return {
@@ -72,7 +72,7 @@ function foreignKeysOf(rows: readonly Row[]): SchemaForeignKey[] {
   return [...grouped.entries()].sort((a, b) => a[0] - b[0]).map(([, entry]) => entry);
 }
 
-/** Assembles a model from the five reads' rows, which a test can hand in without a database. @internal */
+/** Assembles a model from those reads' rows, which a test can hand in without a database. @internal */
 export function assembleSchemaModel(rows: {
   inventory: readonly Row[];
   columns: readonly Row[];
@@ -135,7 +135,7 @@ export function assembleSchemaModel(rows: {
   return { tables: byName(tables), indexes: byName(indexes), triggers: byName(triggers), views: byName(views) };
 }
 
-/** Reads a home's schema into a model: the five reads in one wrangler spawn, however many objects there are. @internal */
+/** Reads a home's schema into a model: every read in one wrangler spawn, however many objects there are. @internal */
 export function readSchemaModel(io: DbIo, home: Home): SchemaModel {
   const selects = schemaModelSelects();
   const [inventory = [], columns = [], indexList = [], indexColumns = [], foreignKeys = []] = queryBatches(io, home, [

@@ -182,8 +182,8 @@ describe("formatMissingRequirement()", () => {
   });
 
   it("prints a multi-route remedy unwrapped, since not every remedy is a single command", () => {
-    expect(formatMissingRequirement("test:browser", "chromium", "run `a`, or use a devbox container — `devctl up`", "full")).toBe(
-      "✗ test:browser — chromium not found; run `a`, or use a devbox container — `devctl up`",
+    expect(formatMissingRequirement("test:browser", "chromium", "run `a`, or set `CHROME_PATH`", "full")).toBe(
+      "✗ test:browser — chromium not found; run `a`, or set `CHROME_PATH`",
     );
   });
 });

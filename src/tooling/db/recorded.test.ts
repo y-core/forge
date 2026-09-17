@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { fakeDbIo, OK } from "./db.fixture";
 import { applyRecordedSql } from "./recorded";
-import { fakeDbIo, OK } from "./test-support";
 import type { DbConfig, DbRunContext, FakeDbIo, Home } from "./types";
 
 const HOME: Home = {

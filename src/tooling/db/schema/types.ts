@@ -14,7 +14,7 @@ export interface SqlToken {
 /** Which double-quoted tokens stay as written: every one, or those in a DEFAULT or CHECK that name none of the given columns. @internal */
 export type SqlLiteralRule = "verbatim" | ReadonlySet<string>;
 
-/** One clause of a `CREATE TABLE` body: a column or a table constraint, in the three forms the engine reads. @internal */
+/** One clause of a `CREATE TABLE` body: a column or a table constraint, in the forms the engine reads. @internal */
 export interface TableBodyClause {
   readonly kind: "column" | "constraint";
   readonly raw: string;

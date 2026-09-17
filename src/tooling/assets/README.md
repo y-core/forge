@@ -6,65 +6,89 @@ audience: internal
 
 # `@y-core/forge/tooling/assets`
 
-The asset pipeline for `@y-core/forge` consumer projects — the namespace that turns a typed `assets.config.ts` into hashed, cache-busted,
-production-ready static output plus a generated, fully-typed asset module.
+One config file names every asset your app ships. `forge assets build` turns it into hashed, cache-busted static output plus `.forge/assets.ts` —
+a generated module that maps each logical name to the path it was actually written to, and gives each sprite group a typed icon component.
 
-The pipeline bundles JavaScript with esbuild, compiles Tailwind CSS, assembles SVG sprite sheets, downloads fonts, rasterises favicons and PWA
-icons, renders `robots.txt` and `sitemap.xml`, and copies static files — then emits a `.forge/assets.ts` module mapping every logical asset name to
-its content-hashed path. Consumer apps drive it through the `forge assets` command tree.
+**Node.js / Bun only.** Everything here reads and writes the filesystem, spawns build tools and fetches over the network. Do not import it into a
+Cloudflare Worker or a client bundle — the two request-time lookups the generated module calls live in [`@y-core/forge/assets`][assets-readme],
+which imports no Node built-in at all.
 
-```ts
-import { buildAll, defineAssetsConfig, loadConfig } from "@y-core/forge/tooling/assets";
+```bash
+forge assets build              # every stage, and write .forge/assets.ts
+forge assets build --minify     # production: minified, content-hashed, immutable _headers
+forge assets build css          # one stage alone
+forge assets gen types          # the generated module from config alone — no toolchain, no network
 ```
 
-> **Node.js / Bun only.** Everything here reads and writes the filesystem, spawns build tools, and fetches over the network. **Do not import it into
-> a Cloudflare Worker or a client bundle.** The two request-time lookups the generated module calls live in [`@y-core/forge/assets`][assets-readme],
-> which imports no Node built-in at all.
-
-See [`ASSET_PIPELINE.md`][ap-1] §1 and §2 for the authoritative architecture.
+The architecture, the stage order and the artifact contract are [`ASSET_PIPELINE.md`][ap-1]'s; this file teaches the use.
 
 ---
 
-## Features
+## Getting started
 
-- **Typed, validated config** — `defineAssetsConfig` supplies editor types; `loadConfig` imports `assets.config.ts`, validates it against
-  `AssetsConfigSchema` (valibot), fills in path defaults, and resolves `env`/`flag` references.
-- **JS bundling** — `buildJS` drives esbuild per entry, with `splitting`, `format` (`esm`/`cjs`/`iife`), `minify`, and `define` constant injection.
-  JSX compiles against `@y-core/forge/jsx`.
-- **Tailwind CSS** — `buildCSS` shells out to the `tailwindcss` CLI for each `css` build.
-- **SVG sprite sheets** — `buildSprites` normalises and sanitises source SVGs into `<symbol>` entries inside a single hidden `<svg>`, preserving
-  root presentation attributes on a wrapping `<g>` and emitting per-symbol `viewBox` metadata.
-- **Favicon / PWA icons** — `buildIcons` rasterises a master SVG (via `sharp`, loaded only where a `png` or `ico` output is configured) into SVG,
-  PNG, ICO, and a web-app `manifest.json`.
-  `icons.publicPrefix` puts them all under one directory, so a Worker's `run_worker_first` needs one `!` glob rather than one rule per filename;
-  `root: true` pins the single output that must stay at the origin root. `iconLinks` derives the head `<link>` set, emitted as `ICON_LINKS`.
-- **Font downloads** — `buildFonts` fetches remote fonts into the public directory, cached on disk.
-- **Robots and sitemap** — `buildSite` renders `robots.txt` and `sitemap.xml` into the asset-tree root from a [`@y-core/forge/site`][site-readme]
-  config, so a crawler costs the Worker no invocation.
-- **Content hashing** — with `minify: true`, every emitted file gets an 8-char SHA-256 stem (`styles.abc12345.css`), and the `_headers` cache rule
-  switches from `no-cache` to immutable.
-- **Generated typed module** — `buildAll` writes `.forge/assets.ts` exporting an `assets` manifest plus a typed `*Icon` component per sprite group.
-  `generateAssetsTypes` emits the same module from config alone, so a clean checkout can typecheck and test without running a build.
-- **Path-containment safety** — `safeJoin` guards every config-supplied output path against escaping the asset root.
-- **Incremental state** — `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes for watch-mode skip logic.
-- **A command tree, not a script you write** — `createAssetsCommands` builds the `forge assets` subtree the `forge` binary attaches; a consuming
-  repository owns no binding file.
-
----
-
-## Usage
-
-### 1. Author the config
-
-Create `assets.config.ts` at the project root and default-export the result of `defineAssetsConfig`:
+Write `assets.config.ts` at the project root, default-exporting `defineAssetsConfig`:
 
 ```ts
-import { defineAssetsConfig, env, flag } from "@y-core/forge/tooling/assets";
-import { forgeUiSpriteSources } from "@y-core/forge/ui/assets/build";
+import { defineAssetsConfig } from "@y-core/forge/tooling/assets";
 
 export default defineAssetsConfig({
   paths: { sourceDir: "src/static", publicDir: "public/assets", publicPrefix: "/assets" },
   css: [{ tool: "tailwindcss", input: "src/assets/tailwind.css", output: "styles.css" }],
+  js: { bundles: [{ entry: "src/client/main.ts", outdir: "js" }] },
+});
+```
+
+Build it, then read paths out of the generated module:
+
+```bash
+forge assets build --minify
+```
+
+```ts
+import { assets } from "@assets";
+
+const cssHref = assets.path("styles.css"); // "/assets/styles.abc12345.css"
+```
+
+`@assets` is a `tsconfig.json` path alias for `.forge/assets.ts`. That file is a build artifact — git-ignore it, and see
+[Keeping typecheck and tests off the full build](#keeping-typecheck-and-tests-off-the-full-build) for the cheap way to make it resolve on a clean
+checkout.
+
+---
+
+## Declaring what to build
+
+Every top-level block is optional, and each one you add is a stage the build runs. `defineAssetsConfig` only supplies authoring types — it validates
+nothing. `loadConfig` is what validates, and every command calls it, so a malformed config fails at the command rather than at the stage that
+reads it.
+
+| Block | Add it when you want |
+| --- | --- |
+| `css` | A Tailwind CLI build per entry |
+| `js.bundles` | esbuild bundles, compiled with `@y-core/forge/jsx` as the JSX source |
+| `sprites` | SVG sheets, plus a typed icon component per group |
+| `icons` | Favicon, PWA icons and a web-app manifest rasterised from one master SVG |
+| `fonts.downloads` | Remote fonts fetched into the public directory and cached on disk |
+| `copy` | Static files copied verbatim |
+| `rasters` | SVG-to-PNG output for a surface that cannot render a vector |
+| `cursors` | CSS `cursor` values baked per theme |
+| `site` | `robots.txt` and `sitemap.xml`, rendered from a [`@y-core/forge/site`][site-readme] config |
+
+Choices worth making deliberately:
+
+**`paths` decides the URL, not just the directory.** `publicDir` is where files land, `publicPrefix` is what the manifest prepends at runtime, and
+the `_headers` cache rule is written for that same prefix. Leave them unset and you get `public/assets`, `/assets` and `src/static`.
+
+**`site.outDir` is the asset-tree root, not `publicDir`.** `robots.txt` and `sitemap.xml` are only meaningful at the origin root, so that block
+names its own directory. `icons.outDir` works the same way.
+
+**A `define` value may be deferred to the build environment.** Write a literal for a constant that never varies, `env("NAME")` for a string read at
+`loadConfig` time, and `flag("NAME")` for a boolean — `"true"` or `"1"` is `true`, anything else is `false`:
+
+```ts
+import { defineAssetsConfig, env, flag } from "@y-core/forge/tooling/assets";
+
+export default defineAssetsConfig({
   js: {
     bundles: [
       {
@@ -76,273 +100,76 @@ export default defineAssetsConfig({
       },
     ],
   },
-  sprites: {
-    ui: {
-      target: "sprites/ui.svg",
-      sources: [
-        // forge's own UI glyphs (spinner, chevron-down, theme icons, …) — self-described,
-        // so a forge upgrade adding icons never requires touching this list.
-        ...forgeUiSpriteSources(),
-        { path: "src/assets/svg/", files: ["arrow-right.svg", "close.svg"] },
-      ],
-    },
-  },
-  fonts: { downloads: [{ url: "https://fonts.example/inter.woff2", to: "fonts/inter.woff2" }] },
-  icons: {
-    src: "src/assets/favicon.svg",
-    outDir: "public",
-    publicPrefix: "/static",
-    lightColor: "#111827",
-    darkColor: "#f9fafb",
-    app: { name: "My App", shortName: "App", backgroundColor: "#ffffff" },
-    outputs: [
-      { kind: "svg", file: "favicon.svg" },
-      { kind: "png", file: "apple-touch-icon.png", size: 180, rel: "apple-touch-icon" },
-      { kind: "png", file: "icon-192.png", size: 192, manifest: true },
-      { kind: "ico", file: "favicon.ico", sizes: [16, 32, 48], root: true },
-      { kind: "manifest", file: "manifest.json" },
-    ],
-  },
 });
 ```
 
-`defineAssetsConfig` is an identity-typed pass-through — it supplies authoring types but runs **no** validation. Validation happens in `loadConfig`,
-which every command invokes.
+An unset `env()` variable substitutes `undefined` rather than failing, so a bundle can branch on its absence.
 
-### 2. Build from the CLI
+---
+
+## Running the build
 
 ```bash
 forge assets build            # everything, and write .forge/assets.ts
-forge assets build all        # the same run, named explicitly
-forge assets build --minify   # production: minified + content-hashed filenames + _headers
+forge assets build --minify   # production: minified, content-hashed, immutable _headers
 ```
-
-### 3. Consume the generated module at runtime
-
-`buildAll` writes `.forge/assets.ts`, aliased as `@assets` in consumer projects. Import the `assets` manifest and resolve logical names to hashed
-public paths:
-
-```ts
-import { assets } from "@assets";
-
-const cssHref = assets.path("styles.css"); // "/assets/styles.abc12345.css"
-```
-
-When the config declares sprite groups, the generated module also exports a typed icon component per group (a `ui` group → `UiIcon`), bound to the
-sprite path and its `viewBox` metadata, plus the glyph-name union that component accepts:
-
-```ts
-export type UiIconName = "spinner" | "chevron-down";
-export const UiIcon = createIcon(assets.path("sprites/ui.svg"), UI_META, "icon-");
-```
-
-Pass the union wherever a component is generic over its glyph names — `Toolbar<MyActions, UiIconName>`, `ToolbarDefinition<A, UiIconName>`.
-
----
-
-## Core Components & APIs
-
-### Config authoring
-
-| Export | Signature | Purpose |
-| --- | --- | --- |
-| `defineAssetsConfig` | `(config: AssetsConfig) => AssetsConfig` | Identity pass-through that supplies authoring types |
-| `env` | `(name: string) => EnvRef` | Marks a `define` value to resolve from the build env at `loadConfig` time |
-| `flag` | `(name: string) => FlagRef` | Marks a `define` value as a boolean flag (`"true"`/`"1"` → `true`) |
-| `loadConfig` | `(options: LoadConfigOptions) => Promise<ResolvedConfig>` | Imports, validates, and normalises the config file into a `ResolvedConfig` |
-| `AssetsConfigSchema` | valibot schema | The schema `loadConfig` validates against |
-| `SITE_OUTPUTS` | `readonly string[]` | The files a configured `site` block writes — `robots.txt`, `sitemap.xml` |
-
-`LoadConfigOptions`:
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `root` | `string` | — | Directory a relative `configPath` resolves against. Required. |
-| `configPath` | `string?` | `assets.config.ts` | The config module to import. |
-| `env` | `Record<string, string \| undefined>?` | `{}` | Source for `env()` and `flag()` references in bundle `define`s. |
-
-`loadConfig` fills the path defaults `sourceDir: "src/static"`, `publicDir: "public/assets"`, `publicPrefix: "/assets"`, and returns a
-`ResolvedConfig` — `AssetsConfig` is the input shape, `ResolvedConfig` the normalised output, with `icons`, `cursors` and `site` present as `null`
-when unconfigured.
-
-#### Config type reference
-
-`AssetsConfig` (every top-level field optional):
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `paths` | `PathsConfig` | `sourceDir`, `publicDir`, `publicPrefix` (all optional) |
-| `js.bundles` | `JsBundle[]` | esbuild bundles |
-| `css` | `CssBuild[]` | Tailwind builds |
-| `copy` | `CopyEntry[]` | `{ from, to }` static copies |
-| `rasters` | `RasterEntry[]` | `{ from, to, width?, height? }` SVG→PNG rasterizations |
-| `sprites` | `Sprites` (`Record<string, SpriteGroup>`) | Keyed sprite groups |
-| `fonts.downloads` | `FontDownload[]` | `{ url, to }` remote fonts |
-| `icons` | `IconsConfig` | Favicon / PWA icon outputs |
-| `cursors` | `CursorsConfig` | Baked CSS cursor values (see [Advanced](#advanced)) |
-| `site` | `SiteBuildConfig` | `robots.txt` and `sitemap.xml` |
-
-`JsBundle`:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `entry` | `string` | esbuild entry point (required) |
-| `outdir` | `string` | Output subdirectory under `publicDir` (required) |
-| `splitting` | `boolean?` | Enable code splitting |
-| `format` | `"esm" \| "cjs" \| "iife"` (optional) | Output format; defaults to `esm` |
-| `minify` | `boolean?` | Per-bundle minify (the `--minify` flag also applies globally) |
-| `define` | `Record<string, DefineValue>?` | Compile-time constants; values may be literals, `env(...)`, or `flag(...)` |
-
-`ResolvedJsBundle` is `JsBundle` with `define` already resolved to JavaScript source literals.
-
-`CssBuild`: `{ tool: "tailwindcss"; input: string; output: string }`. `CopyEntry`: `{ from: string; to: string }`. `FontDownload`:
-`{ url: string; to: string }`. `RasterEntry`: `{ from: string; to: string; width?: number; height?: number }` — see [Rasters](#rasters).
-`IconOutput` is a discriminated union on `kind`: `"svg"`, `"png"` (`size`, optional `manifest` and `rel`), `"ico"` (`sizes`), `"manifest"`. Every
-variant takes an optional `root` — see [Icon placement](#icon-placement). `SiteBuildConfig`:
-`{ outDir: string; config: SiteConfig }` — `outDir` is the **asset-tree root**, not `publicDir`, because `robots.txt` and `sitemap.xml` are only
-meaningful at the origin root.
-
-`SpriteGroup`: `{ target: string; sources: SpriteSource[]; prefix?: string }`, where `SpriteSource` is
-`{ path: string; files: (string | { key: string; file: string })[] }`. A bare filename takes its basename as the symbol key; an explicit pair names
-the key itself. `prefix` defaults to `icon-`. A `path` starting with `http://` or `https://` is fetched and cached; otherwise it is read from disk.
-
-> **Standard pattern:** spread `...forgeUiSpriteSources()` (from `@y-core/forge/ui/assets/build`) as the first source of the group your components
-> use. It returns absolute paths to every forge UI glyph, so consumers never hand-list `node_modules/@y-core/forge/...` paths — see the config
-> example above and [src/ui/README.md][ui-readme].
-
-`CursorsConfig`:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `target` | `string` | Output CSS file path (relative to `publicDir`) |
-| `css` | `string?` | The compiled CSS file whose custom-property declarations resolve tokens; defaults to the first `css` output |
-| `themes` | `Record<string, string>` | Theme key → CSS selector, e.g. `{ light: ":root", dark: ".dark" }` |
-| `sources` | `CursorSource[]` | Cursor source directories (see below) |
-| `vars` | `Record<string, string \| Record<string, string>>?` | Build-time colour variables; a flat string applies to all themes, a nested record maps theme keys to values |
-
-`CursorSource`:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `path` | `string` | Directory containing cursor SVG files |
-| `files` | `(string \| { key: string; file: string })[]` | File list — bare strings use the stem as the cursor key |
-| `template` | `{ path: string; file: string }` | SVG template wrapper applied to every cursor in this source |
-
-### Pipeline functions
-
-| Export | Signature | Purpose |
-| --- | --- | --- |
-| `buildAll` | `(config: ResolvedConfig, opts?: BuildOptions) => Promise<void>` | Runs the full pipeline and writes `.forge/assets.ts` |
-| `generateAssetsTypes` | `(config: ResolvedConfig, opts?: { assetsPath?: string }) => Promise<void>` | Writes `.forge/assets.ts` from config alone — no build, no toolchain |
-| `buildJS` | `(bundles: ResolvedJsBundle[], opts: { outDir; minify?; hash? }) => Promise<Record<string, string>>` | esbuild bundling; returns the logical→output mapping |
-| `buildCSS` | `(cssBuild: CssBuild, opts: { outDir; minify?; hash? }) => Record<string, string>` | Tailwind build for one entry |
-| `buildSprites` | `(sprites: Sprites, publicDir: string, opts?: { hash? }) => Promise<SpriteBuildResult>` | Assembles all sprite groups |
-| `buildIcons` | `(config: IconsConfig) => Promise<void>` | Rasterises favicon/PWA icon outputs |
-| `buildFonts` | `(fonts: { downloads: FontDownload[] }, publicDir: string) => Promise<void>` | Downloads remote fonts |
-| `buildRasters` | `(rasters: RasterEntry[], publicDir: string) => Promise<void>` | Rasterises configured SVGs to PNG under `publicDir` |
-| `buildSite` | `(config: SiteBuildConfig) => void` | Writes `robots.txt` and `sitemap.xml` into `config.outDir` |
-| `copyAssets` | `(copies: CopyEntry[], publicDir: string) => void` | Copies static files |
-| `fetchURL` | `(url: string, dest: string, opts?: { force? }) => Promise<void>` | Fetches a URL to disk; skips if `dest` exists unless `force` |
-| `hashFile` | `(filePath: string) => string` | 8-char SHA-256 of a file's bytes |
-| `hashString` | `(content: string) => string` | 8-char SHA-256 of a string |
-| `safeJoin` | `(base: string, ...segments: string[]) => string` | Path join that throws if the result escapes `base` |
-| `createAssetsCommands` | `() => CommandBase` | Builds the `forge assets` command tree |
-
-`BuildOptions`: `{ minify?: boolean; assetsPath?: string }`. `assetsPath` defaults to `.forge/assets.ts`. `minify` toggles both esbuild/Tailwind
-minification **and** content hashing across the pipeline.
-
-`buildAll` runs in dependency order: CSS → copy → rasters → sprites → fonts → icons → site → cursors → write `.forge/assets.ts` → JS → rewrite
-`.forge/assets.ts` → `_headers`. **The module is written twice on purpose**: esbuild resolves `@assets` while bundling, so the file has to exist
-before `buildJS`, and the JS bundle's own hashed names only enter the manifest afterwards. A regenerated pass whose content is byte-identical does
-not touch the file.
-
-> **`_headers` is written wholesale.** It is emitted as a sibling of `publicDir`, carrying one `Cache-Control` rule for `paths.publicPrefix`
-> (`/assets/*` by default), and the file is truncated on every build. `minify` decides only whether the value is `no-cache` or immutable. A header
-> rule for any other path — including the generated `robots.txt` and `sitemap.xml` — cannot be added by a second writer.
-
-> **Output-directory ownership.** `buildJS`, `buildCSS`, and `buildSprites` clean their target directory on every run — `buildJS` removes all
-> non-hidden files plus `chunks/` in each `outdir`, `buildCSS` removes the non-hidden `.css` files matching its own entry's output stem, and sprite
-> builds do the same for the group's `.svg` stem. Never place hand-authored files alongside generated output; they will be deleted.
-
-### Sprite results and incremental state
-
-`SpriteBuildResult`: `{ mapping: Record<string, string>; groups: Record<string, SpriteGroupResult> }`. `SpriteGroupResult`:
-`{ spriteKey: string; meta: Record<string, string>; prefix: string }` — `spriteKey` is the logical (unhashed) target, `meta` maps each symbol ID to
-its `viewBox`, and `prefix` is the group's symbol-ID prefix.
-
-Incremental state helpers operate over `BuildState` (`Record<string, string>` of key → hash):
-
-| Export | Signature |
-| --- | --- |
-| `loadState` | `(statePath: string) => BuildState` |
-| `saveState` | `(statePath: string, state: BuildState) => void` |
-| `hasChanged` | `(state: BuildState, key: string, currentHash: string) => boolean` |
-| `markBuilt` | `(state: BuildState, key: string, hash: string) => void` |
-
-`loadState` returns `{}` for a missing or malformed file. `hasChanged` is `true` when the stored hash differs from `currentHash`. A typical watch
-step: read the source, `hashFile` it, and if `hasChanged` run the single relevant build function, then `markBuilt` + `saveState`.
-
----
-
-## Integration Guide
-
-### CLI commands
-
-The `forge` binary attaches the `assets` subtree `createAssetsCommands` builds. Every command calls `loadConfig` first, against the root it
-resolved.
 
 | Command | Builds |
 | --- | --- |
-| `forge assets build` | Full pipeline + generated module (same as `all`) |
-| `forge assets build all` | Full pipeline + generated module |
+| `forge assets build` | The full pipeline and the generated module — identical to `build all` |
+| `forge assets build all` | The same run, named explicitly |
 | `forge assets build css` | Tailwind CSS only |
 | `forge assets build js` | esbuild bundles only |
 | `forge assets build fonts` | Font downloads only |
-| `forge assets build icons` | Favicon/PWA icons only |
-| `forge assets build rasters` | Configured SVG→PNG rasters only |
+| `forge assets build icons` | Favicon and PWA icons only |
+| `forge assets build rasters` | Configured SVG-to-PNG rasters only |
 | `forge assets sprites` | SVG sprite sheets only |
-| `forge assets gen types` | Nothing — derives the generated module from config |
+| `forge assets gen types` | Nothing — derives the generated module from config alone |
 
-**The bare `build` is the union, not a narrower default.** Unlike a scope default, it runs everything, so it can never silently do less than asked.
+**The bare `build` is the union, not a narrower default.** Unlike a scope default it runs everything, so it can never silently do less than asked.
 
-| Flag | Type | Applies to | Effect |
+| Flag | Type | Accepted by | Effect |
 | --- | --- | --- | --- |
-| `--minify` | boolean | `build`, `build all`, `build css/js`, `sprites` | Minify output; on `build`/`build all` and `sprites` it also enables content-hashed filenames |
-| `--config` | string | every command | Path to `assets.config.ts` (default: `assets.config.ts` under the resolved root) |
+| `--minify` | boolean | `build`, `build all`, `build css`, `build js`, `sprites` | Minify output; on `build`, `build all` and `sprites` it also turns on content-hashed filenames |
+| `--config` | string | every command | Path to the config module, relative to the resolved root (default `assets.config.ts`) |
 | `--root` | string | every command | Application root; also read from `FORGE_APP_ROOT`, else derived from forge's install path |
-| `--out` | string | `build`, `build all`, `gen types` | Output path for the generated assets module (default `.forge/assets.ts`) |
+| `--out` | string | `build`, `build all`, `gen types` | Where to write the generated module (default `.forge/assets.ts`) |
 
-Pass `--help` (or `-h`) at any level for generated help, e.g. `forge assets build --help`.
+`--help` works at every level, e.g. `forge assets build --help`.
 
-### The generated module in typecheck and tests
+**Hashing is what `--minify` really switches.** Without it every emitted file keeps its logical name, the manifest maps each key to itself, and the
+`_headers` rule is `no-cache`. With it each file gets an 8-character stem — `styles.abc12345.css` — and the rule becomes immutable. Use it for
+production and leave it off in dev, where a stable filename is easier to reason about.
 
-`.forge/assets.ts` is a **build artifact**. It is not committed — its content hashes churn on every change, and a committed copy would claim to be
-generated while going stale. Consumers alias it as `@assets` in `tsconfig.json` and import it from server and client code alike.
+---
 
-That leaves a clean-checkout hole: on a fresh clone or a cold CI runner nothing has written the file yet, so `@assets` does not resolve and
-**typecheck fails before any test runs**. Running the full build first closes the hole, but pays with the entire toolchain — `tailwindcss`,
-`esbuild`, optionally `sharp`, and the network for font and remote-sprite fetches — none of which affects whether TypeScript compiles.
+## Using the generated module
 
-`forge assets gen types` is the cheap half. It derives the module from `assets.config.ts` alone:
+`.forge/assets.ts` exports an `assets` manifest, and one typed icon component plus a glyph-name union per sprite group. A group named `ui` yields
+`UiIcon` and `UiIconName`:
 
-```bash
-forge assets gen types    # milliseconds; no tailwind, no esbuild, no sharp, no network
+```ts
+import { assets, UiIcon, type UiIconName } from "@assets";
+
+assets.path("sprites/ui.svg"); // the hashed public path
 ```
 
-Everything carrying **type** information is config-derived and reproduced exactly:
+Pass the union wherever a component is generic over the glyph names it accepts — `Toolbar<MyActions, UiIconName>`. The union is what makes handing a
+component a glyph its sprite does not carry a compile error, so prefer it over a bare `string`.
 
-| Reproduced from config | Needs a real build |
-| --- | --- |
-| every manifest key — `css[].output`, `<outdir>/<entry>.js`, `sprites.<group>.target` | every manifest value (the content hash) |
-| every icon name — `basename(file, ".svg")` or the explicit `key`, plus the group `prefix` | each symbol's `viewBox`, scraped from the assembled sprite |
-| sprite group → `*Icon` and `*IconName` export names, `publicPrefix`, cursor and theme keys | the baked cursor data-URIs |
+A configured `icons` block also exports `ICON_LINKS`, the head `<link>` set derived from `icons.outputs`. Rendering that array is how the files, the
+markup and the Worker's bypass rules stay derived from one list.
 
-So the emitted module is shape-identical to a real build — same exports, same `createIcon` calls, and critically the same `*_META` literal keys,
-which are what give `createIcon` its icon-name union and make passing an icon-less sprite to a component a compile error. Only the _values_ are
-placeholders: paths are the unhashed logical names, and every `viewBox` is empty. That last choice is deliberate — an empty `viewBox` renders
-visibly broken, so a types-only artifact that reaches a browser fails loudly instead of quietly shipping mis-scaled icons.
+---
 
-Wire it as a precondition to the steps that only need the module to resolve, and keep the full build for dev and deploy:
+## Keeping typecheck and tests off the full build
+
+On a fresh clone nothing has written `.forge/assets.ts`, so `@assets` does not resolve and typecheck fails before a single test runs. A full build
+closes the hole but pays with the whole toolchain — `tailwindcss`, `esbuild`, optionally `sharp`, and the network for font and remote-sprite
+fetches — none of which decides whether TypeScript compiles.
+
+`forge assets gen types` is the cheap half. Make it a precondition of the steps that only need the module to resolve, and keep the full build for
+dev and deploy:
 
 ```json
 {
@@ -355,22 +182,165 @@ Wire it as a precondition to the steps that only need the module to resolve, and
 }
 ```
 
-Both commands write the same path, but a build always wins over a types artifact: `gen types` keeps an existing build artifact when it still fits
-the config, so running the gate after a build no longer degrades the manifest to unhashed paths. It rewrites only when the shape no longer matches —
-a bundle or a glyph added, a sprite target or prefix renamed — because that module no longer describes the config. The command says which it did:
+The emitted module is shape-identical to a real build — the same exports, the same `createIcon` calls, the same `*_META` keys and therefore the same
+glyph unions. Only the values are placeholders: paths are unhashed logical names and every `viewBox` is empty
+([`ASSET_PIPELINE.md`][ap-4b] §4b owns the contract).
 
-```text
-✓ assets: wrote .forge/assets.ts (types only)
-✓ assets: kept .forge/assets.ts — an existing build artifact already fits the config
+Consequences to plan around:
+
+- **A build always wins.** `gen types` keeps an existing build artifact that still fits the config, and rewrites only when the shape stops
+  matching — a bundle or a glyph added, a sprite target or prefix renamed. The command prints which it did.
+- **Never assert an asset digest or a rendered `viewBox` in a test.** Those assertions pass under a full build and fail under `gen types`, which
+  ties the test to whichever command happened to run last. Assert the logical name instead.
+
+---
+
+## Building sprite sheets
+
+A group names its target sheet and lists every file that goes into it. There is no glob — the symbol set is stated, so the generated glyph union
+changes only when a human edits the list:
+
+```ts
+import { defineAssetsConfig } from "@y-core/forge/tooling/assets";
+import { forgeUiSpriteSources } from "@y-core/forge/ui/assets/build";
+
+export default defineAssetsConfig({
+  sprites: {
+    ui: {
+      target: "sprites/ui.svg",
+      sources: [...forgeUiSpriteSources(), { path: "src/assets/svg/", files: ["arrow-right.svg", { key: "x", file: "close.svg" }] }],
+    },
+  },
+});
 ```
 
-Because the emitted paths are unhashed and the `viewBox` values are empty, **tests must never assert an asset digest or a rendered `viewBox`**:
-those assertions pass under a full build and fail under `gen types`, which couples a test to which command happened to run rather than to behaviour.
-Assert the logical name instead.
+**Spread `forgeUiSpriteSources()` first in any group your forge components draw from.** It returns absolute paths to every forge UI glyph, so a
+forge upgrade that adds icons never requires editing a hand-written `node_modules/` path — see [src/ui/README.md][ui-readme].
 
-### Programmatic builds
+A bare filename takes its basename as the symbol key; a `{ key, file }` pair names the key itself. The symbol id is `<prefix><key>`, where `prefix`
+defaults to `icon-`. A `path` starting with `http://` or `https://` is fetched and cached beside the sheet; anything else is read from disk, and a
+missing local file is a warning and a skipped symbol rather than a failed build.
 
-To run the pipeline outside the CLI, pair `loadConfig` with `buildAll`:
+Each source SVG is normalised on the way in, which is why an icon set authored at mixed origins still lines up: a non-zero `viewBox` origin is
+rewritten to `0 0 w h` with a compensating `translate`, and root presentation attributes (`fill`, `stroke`, `stroke-width`, `stroke-linecap`,
+`stroke-linejoin`) move to a single wrapping `<g>` so ordinary SVG inheritance lets a child override them. An attribute is read only at an attribute
+boundary, so `data-stroke="…"` on the root contributes no `stroke`.
+
+### Choosing which SVGs to trust
+
+Sanitisation here is **best-effort defence in depth for sources you already trust** — the icon libraries you name in config. It strips `<script>`,
+`<foreignObject>`, `<style>`, SMIL `<animate>`/`<set>` href retargeting, `javascript:` and `data:text/html` href schemes, and `on*` handler
+attributes in any casing and with whitespace around the `=`. Root-`<svg>` handlers are gone anyway, because the root tag is discarded.
+
+**For untrusted or user-supplied SVGs this is not sufficient.** Run a full DOM-based sanitizer such as DOMPurify before the file reaches the config.
+The production CSP remains the primary runtime control.
+
+---
+
+## Placing favicons and PWA icons
+
+One master SVG produces every icon output. The choice that matters is where they land:
+
+```ts
+icons: {
+  src: "src/assets/favicon.svg",
+  outDir: "public",
+  publicPrefix: "/static",
+  lightColor: "#111827",
+  darkColor: "#f9fafb",
+  app: { name: "My App", shortName: "App", backgroundColor: "#ffffff" },
+  outputs: [
+    { kind: "svg", file: "favicon.svg" },
+    { kind: "png", file: "apple-touch-icon.png", size: 180, rel: "apple-touch-icon" },
+    { kind: "png", file: "icon-192.png", size: 192, manifest: true },
+    { kind: "ico", file: "favicon.ico", sizes: [16, 32, 48], root: true },
+    { kind: "manifest", file: "manifest.json" },
+  ],
+}
+```
+
+**`publicPrefix` buys you one Worker rule instead of one per filename**, which is why it is worth setting even for three icons:
+
+```jsonc
+"run_worker_first": ["/*", "!/static/*", "!/favicon.ico"]
+```
+
+**`root: true` pins one output to the asset root, and `favicon.ico` is the one that needs it.** A browser probes `/favicon.ico` whenever there is no
+HTML head to read — a PDF, an image, a JSON response, a download tab, a platform-generated error page — as do unfurlers and feed readers that never
+parse HTML. Safari probes `/apple-touch-icon.png` on the same condition. Everything else is reached only through a tag you emit, so its path is
+yours to choose.
+
+A `png` earns a head `<link>` only when it declares a `rel`; one marked `manifest: true` is already declared by the web-app manifest. `sharp` is
+loaded only when a `png` or `ico` output is configured, so an icon set of `svg` and `manifest` alone needs no optional peer at all.
+
+---
+
+## Baking themed cursors
+
+A `cursors` block turns a directory of cursor SVGs into a `CURSOR_BAKES` export on the generated module —
+`Record<cursorKey, Record<themeKey, cssValue>>`, where each value is a complete CSS `cursor` property:
+
+```text
+url("data:image/svg+xml,<encoded-svg>") <hx> <hy>, auto
+```
+
+Each source declares its own template SVG, so filled arrow cursors and thin snap-indicator cursors can use different wrappers. A template is the
+outer wrapper and receives three placeholders:
+
+| Placeholder | Replaced with |
+| --- | --- |
+| `{{viewBox}}` | The cursor SVG's `viewBox` value |
+| `{{markup}}` | The cursor SVG's sanitized inner geometry |
+| `{{signal}}` | The resolved hex for that cursor's `data-cursor-token` in the theme being baked |
+
+`{{signal}}` is the only colour placeholder, because the token _name_ varies per cursor. Every fixed colour in a template is written as
+`cssvar(--name)` instead, which resolves against the theme's tokens — the compiled stylesheet's custom properties plus the `vars` overlay — and is
+baked to a hex literal. A token that is missing, or present but unparseable as a colour, **throws**; a silent black cursor is not a usable
+diagnostic.
+
+`data-cursor-token` and `data-cursor-hotspot` on the cursor SVG's root `<svg>` drive the bake: the token names the custom property `{{signal}}`
+resolves, and the hotspot carries `"<x> <y>"`. Both are optional — without a token `{{signal}}` bakes `#000000`, and without a hotspot the cursor
+anchors at `0 0`.
+
+**Declare a colour in `vars` when it is a cursor-only value**, and in CSS when the theme already owns it. A flat string applies to every theme, a
+nested record maps theme keys, a `var(--x)` reference is followed as CSS would follow it, and a config value wins over a CSS-declared one of the
+same name:
+
+```ts
+cursors: {
+  vars: {
+    "--cursor-outline": "#ffffff",
+    "--cursor-shadow": { light: "rgb(0 0 0 / 0.28)", dark: "rgb(0 0 0 / 0.45)" },
+  },
+}
+```
+
+Alpha survives the bake: a resolved colour carrying alpha — `rgb(0 0 0 / 0.28)`, `rgba(…, 0.28)`, `oklch(L C H / a)` or `#rrggbbaa` — becomes an
+8-digit hex, so one token carries colour and opacity with no separate `fill-opacity`. An opaque colour bakes to 6 digits.
+
+Comment freely in templates and cursor SVGs: XML comments are stripped before `cssvar()` resolution, so they never reach the data URI and a
+commented-out `cssvar(--x)` neither resolves nor throws. That also disarms a footgun — a `--` inside a comment is ill-formed XML, and browsers drop
+the whole cursor image without a word.
+
+---
+
+## Rasterising an SVG for a surface that cannot render one
+
+`rasters` is for the places a vector will not do, such as an email signature:
+
+```ts
+rasters: [{ from: "src/svg/logo-lockup.svg", to: "email/logo@2x.png", width: 630 }],
+```
+
+Give `width`, `height`, or both; an entry with neither is rejected by the schema. Set one and the other follows the source's intrinsic ratio, so a
+non-square lockup scales rather than squashes. Raster outputs are **not** content-hashed and never enter the manifest — like `copy`, because a URL
+pasted into a mail client has to keep working. `currentColor` is not substituted, so give the source an explicit fill.
+
+---
+
+## Driving the pipeline from your own code
+
+Pair `loadConfig` with `buildAll` to run the pipeline outside the CLI:
 
 ```ts
 import { buildAll, loadConfig } from "@y-core/forge/tooling/assets";
@@ -379,194 +349,56 @@ const config = await loadConfig({ root: process.cwd(), configPath: "assets.confi
 await buildAll(config, { minify: true, assetsPath: "src/generated/assets.ts" });
 ```
 
-### Optional dependencies
+`root` is required and `configPath` resolves against it; `env` is the source `env()` and `flag()` read, and defaults to nothing at all rather than
+to `process.env`, so a caller states what the build may see.
 
-`buildIcons` and `buildRasters` dynamically import `sharp`, and `buildJS` dynamically imports `esbuild` — each only when the config asks for what
-that package does. `buildIcons` is gated on a configured `png` or `ico` output, not merely on an `icons` block: one emitting only `svg` and
-`manifest` outputs writes both files without `sharp` installed. `buildRasters` returns before the import for an empty raster list, and `buildJS`
-before it for an empty `js.bundles`.
+Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildSprites`, `buildIcons`, `buildFonts`, `buildRasters`, `buildSite`,
+`copyAssets` — and each takes its own slice of the config plus an output directory rather than the whole config
+([`ASSET_PIPELINE.md`][ap-2a] §2a). `createAssetsCommands` returns the `forge assets` subtree, for registering inside a CLI of your own.
 
-A missing peer fails with a sentence, not a module-resolution stack trace: it names the config key that demanded the package, the package, and the
-command that installs it.
+For a watch loop, `hashFile` plus `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes against a state file **you** name. Nothing
+in the pipeline calls them and forge writes no build state of its own ([`ASSET_PIPELINE.md`][ap-2b] §2b).
+
+---
+
+## Gotchas
+
+**Generated directories are cleaned on every run.** `buildJS` removes every non-hidden file plus `chunks/` in each `outdir`; `buildCSS` and
+`buildSprites` remove the non-hidden files matching their own output stem. Never keep a hand-authored file alongside generated output — it will be
+deleted.
+
+**`_headers` is written wholesale.** It is emitted as a sibling of `publicDir` with one rule for `paths.publicPrefix` and one per icon output, and
+the file is truncated on every build. A second writer cannot add a rule to it, including for the generated `robots.txt` and `sitemap.xml`. Icons are
+revalidated rather than pinned, because their filenames are not content-hashed; the web-app manifest is `must-revalidate`, because it is how an
+installed app learns its name, colours or icon set changed.
+
+**The generated module is written twice per build, on purpose.** esbuild resolves `@assets` while bundling, so the file must exist before `buildJS`
+runs, and the JS bundle's own hashed names only enter the manifest afterwards. A pass whose content is byte-identical does not touch the file.
+
+**A missing optional peer fails with a sentence, not a resolution stack trace.** `sharp` and `esbuild` are imported only when the config asks for
+what they do, and the error names the config key that demanded the package, the package, and the command that installs it:
 
 ```text
 [forge-assets] icons.outputs asks for a rasterized PNG, which needs the optional peer "sharp". Install it: bun add -d sharp
 ```
 
----
-
-## Advanced
-
-### Cursor authoring
-
-A `cursors` block is baked by `buildCursors`, which lives in [`@y-core/forge/ui/assets/build`][ui-readme] — the pipeline calls it, and this
-namespace owns only the config shape. It reads one or more source directories of cursor SVG files, bakes each cursor for every configured theme, and
-returns a `CURSOR_BAKES` object the generated module re-exports:
-
-```text
-Record<cursorKey, Record<themeKey, cssValue>>
-```
-
-Each `cssValue` is a complete CSS `cursor` property value:
-
-```text
-url("data:image/svg+xml,<encoded-svg>") <hx> <hy>, auto
-```
-
-**Template SVGs** act as the outer wrapper. They receive three structural placeholders injected at bake time:
-
-| Placeholder | Replaced with |
-| --- | --- |
-| `{{viewBox}}` | The cursor SVG's `viewBox` attribute value |
-| `{{markup}}` | The cursor SVG's sanitized inner geometry |
-| `{{signal}}` | Resolved hex for the cursor's `data-cursor-token` in the current theme |
-
-`{{signal}}` is the only colour placeholder — it exists because the token _name_ varies per cursor (each cursor SVG carries its own
-`data-cursor-token`). Every fixed colour in a template resolves through `cssvar(--name)` instead, including theme tokens straight from the compiled
-CSS (a halo layer writes `fill="cssvar(--background)"`).
-
-Each source declares its own `template`, so a collection of filled arrow cursors and a collection of thin snap-indicator cursors can use different
-wrappers.
-
-**XML comments are stripped from bakes.** Comment freely in templates and cursor SVGs — comments never reach the emitted data URI. Stripping happens
-before `cssvar()` resolution, so a commented-out `cssvar(--x)` reference neither resolves nor throws. This also removes a footgun: a `--` inside a
-comment — say, a token name — is ill-formed XML, and browsers silently drop the whole cursor image.
-
-**`cssvar(--name)` resolver** — anywhere in a template, or in cursor markup injected via `{{markup}}`, write `cssvar(--my-token)` to resolve a CSS
-custom property to its baked hex at build time:
-
-```svg
-<rect fill="cssvar(--cursor-shadow)" />
-```
-
-`cssvar()` runs after `{{markup}}` substitution, so it resolves tokens authored inside cursor SVGs too. The token must be resolvable from the
-theme's token map (CSS declarations plus the `vars` overlay), otherwise the build **throws**. An unparseable-but-present colour value falls back to
-`#000000`.
-
-**Alpha** flows through the bake: when a resolved colour carries alpha — `rgb(0 0 0 / 0.28)`, `rgba(…, 0.28)`, `oklch(L C H / a)`, or `#rrggbbaa` —
-`cssvar()` and `{{signal}}` bake an 8-digit `#rrggbbaa` hex, so a single token carries both colour and opacity with no separate `fill-opacity`.
-Opaque colours bake the shortest canonical form, 6-digit `#rrggbb`, since a trailing `ff` alpha byte is redundant and only pads the data URI.
-
-**`vars`** defines build-time colour variables in config rather than CSS. A flat string applies to all themes; a nested record maps theme keys:
-
-```ts
-cursors: {
-  vars: {
-    "--cursor-outline": "#ffffff",                          // same in every theme
-    "--cursor-shadow": { light: "rgb(0 0 0 / 0.28)", dark: "rgb(0 0 0 / 0.45)" }, // per-theme colour + alpha
-  },
-}
-```
-
-`vars` entries may reference existing CSS tokens via `var(--x)` — the resolver follows `var()` chains just as CSS does. Config values win over
-CSS-declared values of the same name.
-
-**`data-cursor-*` conventions** on the cursor SVG root `<svg>`:
-
-| Attribute | Role |
-| --- | --- |
-| `data-cursor-token` | CSS custom property name for the signal colour (the `{{signal}}` slot) |
-| `data-cursor-hotspot` | `"<x> <y>"` hotspot coordinates in the CSS `cursor` value |
-
-Both are optional; omitting `data-cursor-token` leaves `{{signal}}` as `#000000`, and omitting `data-cursor-hotspot` defaults to `0 0`. A token that
-_is_ declared but resolves to something the colour parser cannot read throws, as a missing token does — a silent black cursor is not a usable
-diagnostic.
-
-### Sprite normalisation
-
-`buildSprites` transforms every source SVG before it becomes a `<symbol>`:
-
-1. **viewBox normalisation** — a non-zero-origin `viewBox` (e.g. `viewBox="4 4 16 16"`) is rewritten to `0 0 w h` and the inner content wrapped in a
-   `<g>` carrying `transform="translate(-minX -minY)"`, so `<use>` at `(0,0)` always lands inside the symbol's viewport.
-2. **Root attribute preservation** — presentation attributes on the root `<svg>` (`fill`, `stroke`, `stroke-width`, `stroke-linecap`,
-   `stroke-linejoin`) are emitted **once** on a wrapping `<g>`, in that order, so SVG's own inheritance resolves them: a child or a nested `<g>`
-   setting its own `fill` still wins. When the viewBox also needs a translate, both live on the same wrapper; with neither a translate nor a root
-   attribute, no wrapper is emitted. An attribute is read only at an attribute boundary, so `data-stroke="…"` on the root contributes no `stroke`.
-3. **Symbol ID** — emitted as `<prefix><key>`, default `icon-arrow-right` for `arrow-right.svg`.
-
-A source from which no inner content can be extracted is skipped.
-
-### SVG sanitisation scope
-
-Sprite sanitisation is **best-effort, defence-in-depth** for _trusted_ sources — the icon libraries you reference in config. It strips `<script>`,
-`<foreignObject>`, `<style>`, SMIL `<animate>`/`<set>` href retargeting, `javascript:` and `data:text/html` href schemes, and `on*` event-handler
-attributes, whitespace around the `=` and any casing included. Root-`<svg>` event handlers are already neutralised because the root tag is
-discarded. For **untrusted or user-supplied** SVGs, use a full DOM-based sanitizer such as DOMPurify — this is not sufficient there. The production
-CSP (`self`, nonce) remains the primary runtime control.
-
-### Rasters
-
-`rasters` turns configured SVGs into PNGs under `publicDir` — for the surfaces that cannot render a vector, such as an email signature:
-
-```ts
-rasters: [{ from: "src/svg/logo-lockup.svg", to: "email/logo@2x.png", width: 630 }],
-```
-
-Give `width`, `height`, or both; an entry with neither is rejected by the schema. When only one is set, the other is derived from the source's
-intrinsic ratio, so a non-square lockup is scaled rather than squashed. Outputs are **not** content-hashed and never enter the manifest — same as
-`copy`, because a URL pasted into a mail client has to stay stable. `buildRasters` does not substitute `currentColor`, so give the source an
-explicit fill.
-
-### Icon placement
-
-`icons.outDir` is the **asset-tree root**. `icons.publicPrefix` puts the outputs in a directory beneath it and serves them from that path, so a
-Worker excludes them from `run_worker_first` with a single glob:
-
-```jsonc
-"run_worker_first": ["/*", "!/static/*", "!/favicon.ico"]
-```
-
-Two rules, and neither grows when the icon set does. `validate-asset-root` holds them to the config and asks for the directory rule rather than the
-filename. Without a prefix every output lands at the root and needs a rule of its own — correct, but it is the shape the check has to keep naming.
-
-`root: true` pins one output to the asset root. Keep `favicon.ico` there: a browser probes `/favicon.ico` whenever there is no HTML head to read —
-a PDF, image, JSON or download tab, and a platform-generated error page — as do unfurlers and feed readers that never parse HTML. Safari probes
-`/apple-touch-icon.png` on the same condition. Everything else is reached only through a tag you emit, so its path is yours to choose.
-
-A manifest served under a prefix is why `renderManifest` writes `start_url` and `scope` explicitly: both default to the manifest's own directory, so
-an installed app would otherwise launch into `/static/` rather than the site root. Its `icons[].src` entries carry the prefix for the same reason.
-
-`iconLinks(config)` derives the head links from `outputs`, and `buildAll`/`generateAssetsTypes` emit them as `ICON_LINKS` in the generated module —
-so the files, the Worker's bypass rules and the markup all come from one list. A `png` contributes a link only when it declares a `rel`; a
-`manifest: true` png is already declared by the web-app manifest.
-
-`emitHeaders` writes a `_headers` rule for each icon too. They are **not** given the `immutable` value `publicDir` gets: those filenames are
-content-hashed and these are not, so pinning one would strand a changed logo in a returning visitor's cache. Icons get
-`public, max-age=86400, stale-while-revalidate=604800`; the web-app manifest gets `public, max-age=0, must-revalidate`, because it is how an
-installed app discovers a changed name, colour or icon set.
-
-Every one of those values is built with `CacheControl` from [`@y-core/forge/http`][http-readme] rather than written as a string — the same typed
-builder a route uses for the header it sets at runtime, so the directives have one spelling across the build and the request path.
-
-The rules are emitted **per file rather than as a prefix glob**, and that is load-bearing: Cloudflare applies every `_headers` rule an incoming
-request matches and joins a header set twice with a comma, so a `/static/*` glob overlapping an exact manifest rule would produce one
-`Cache-Control` carrying both values.
-
-### Content hashing and cache busting
-
-With hashing enabled, `buildCSS`/`buildJS`/`buildSprites` rename outputs to `<stem>.<8hex>.<ext>` using `hashFile` — a truncated SHA-256 of the
-_emitted_ file, so the hash changes only when output content does. The build manifest maps the logical name to the hashed relative path, and
-`createManifest` resolves it at runtime. `buildAll` then writes `_headers` with `Cache-Control: public, max-age=31536000, immutable` for
-`paths.publicPrefix`, normalised exactly as `createManifest` normalises it, so the rule and the served URL cannot disagree.
-
-### Path containment
-
-`safeJoin` resolves `base` plus `segments` and throws if the result escapes `base`. It guards every config-supplied **output** path — copy `to`,
-raster `to`, sprite `target`, font `to`, JS `outdir`. Source **reads** (`from`, font `url`, remote sprite `source.path`) are intentionally
-unrestricted.
+**Output paths are contained; source paths are not.** `safeJoin` throws if a config-supplied output path — a copy or raster `to`, a sprite `target`,
+a font `to`, a JS `outdir` — resolves outside the asset root. Reads are deliberately unrestricted: `from`, a font `url`, a remote sprite source.
 
 ---
 
 ## See also
 
-- [`@y-core/forge/assets`][assets-readme] — the two request-time lookups the generated module calls, and the only asset code a Worker may import.
-- [`@y-core/forge/tooling/cli`][cli-readme] — the command framework `createAssetsCommands` builds on, and `resolveAppRoot`.
-- [`ASSET_PIPELINE.md`][ap-1] §1, §2 and §4 — the config contract, the pipeline and its change detection, and the generated module with its ordered
-  stages.
+- [`@y-core/forge/assets`][assets-readme] — the two request-time lookups the generated module calls, and the only asset code a Worker may import
+- [`@y-core/forge/tooling/cli`][cli-readme] — the command framework `createAssetsCommands` builds on
+- [`src/ui/README.md`][ui-readme] — `forgeUiSpriteSources`, `buildCursors` and the rest of the compute half this namespace orchestrates
+- [`ASSET_PIPELINE.md`][ap-1] §1, §2 and §4 — the config contract, the pipeline and its change detection, and the generated module's ordered stages
 
 [ap-1]: ../../../docs/ASSET_PIPELINE.md#1-assets-config
+[ap-2a]: ../../../docs/ASSET_PIPELINE.md#2a-build-functions--orchestration
+[ap-2b]: ../../../docs/ASSET_PIPELINE.md#2b-hash-and-change-detection
+[ap-4b]: ../../../docs/ASSET_PIPELINE.md#4b-build-and-types-artifacts-are-shape-identical
 [assets-readme]: ../../assets/README.md
 [cli-readme]: ../cli/README.md
-[http-readme]: ../../http/README.md
 [site-readme]: ../../site/README.md
 [ui-readme]: ../../ui/README.md

@@ -6,5 +6,3 @@ export type { CitableDir, DocKind, DocsCheckConfig, ExtraDir, FrontmatterRule } 
 export { checkDocs, linkDefinitions, parseSections, stripFences, validateFrontmatter, validateNoRot } from "./docs";
 export type { SubpathCitation } from "./docs-parse";
 export { findSubpathCitations, quickReference, uncitedSubpaths } from "./docs-parse";
-export type { ReadmeExportsCheckConfig } from "./readme-exports";
-export { checkReadmeExports, discoverReadmes } from "./readme-exports";

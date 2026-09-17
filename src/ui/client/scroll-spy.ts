@@ -2,14 +2,11 @@ import { mountFragmentObserver } from "./fragment-observer";
 import type { FragmentEntry } from "./types";
 import type { ScrollSpyOptions } from "./types";
 
-/** The marker. `"location"` and never `"page"`: the page has not changed — the reader moved within
- *  it — and `"page"` would announce a navigation that never happened. */
+/** The marker: `"location"` and never `"page"`, since the reader moved within a page that never navigated. */
 const CURRENT_ATTR = "aria-current";
 const CURRENT_VALUE = "location";
 
-/** Biases toward the section at the top of the viewport rather than the one merely visible: the
- *  bottom inset shrinks the observation band to the top slice of the viewport, so a long section
- *  scrolling away stops being "current" as soon as its successor reaches the top. */
+/** Biases toward the section at the top of the viewport: the bottom inset shrinks the band to the top slice. */
 const DEFAULT_ROOT_MARGIN = "0px 0px -70% 0px";
 
 const mountedSpies = new WeakMap<Element, () => void>();

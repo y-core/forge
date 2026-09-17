@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {

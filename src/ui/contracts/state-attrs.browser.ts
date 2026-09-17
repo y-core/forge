@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 
 declare global {
   interface Window {

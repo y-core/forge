@@ -8,7 +8,7 @@ import { createIcon } from "../../../ui/core/icon";
 import type { ForgeIcon } from "../../../ui/core/types";
 import { authPaths } from "../paths";
 import { adminRoutes } from "../routes";
-import { attrOf, attrsOf, tagOf, textOf } from "../test-support";
+import { attrOf, attrsOf, tagOf, textOf } from "../web.fixture";
 import { AdminElevateView } from "./admin-elevate";
 import type { AdminElevateViewProps } from "./types";
 

@@ -270,6 +270,19 @@ async function probeLastAdmin(db: D1Database): Promise<Record<string, unknown>> 
   return { demotions: [...demotions].sort(), adminsLeft: must(await admins.countAdmins(), "countAdmins") };
 }
 
+async function probeFirstAdmin(db: D1Database): Promise<Record<string, unknown>> {
+  const { users, admins } = await storesOn(db);
+  const person = async (local: string): Promise<string> =>
+    must(await users.create({ email: `${local}@example.test`, emailKey: `${local}@example.test` }, AT), `create ${local}`).id;
+
+  const hana = await person("hana");
+  const ivan = await person("ivan");
+  const claims = (await Promise.all([admins.claimFirstAdmin(hana, AT + 1), admins.claimFirstAdmin(ivan, AT + 1)])).map((outcome) =>
+    must(outcome, "concurrent claim"),
+  );
+  return { claims: [...claims].sort(), adminsAfter: must(await admins.countAdmins(), "countAdmins") };
+}
+
 async function probeDeactivatedAdmin(db: D1Database): Promise<Record<string, unknown>> {
   const { users, admins } = await storesOn(db);
   const admin = async (local: string): Promise<string> =>
@@ -409,6 +422,7 @@ async function probeEmailLength(db: D1Database): Promise<Record<string, unknown>
 async function probeGuards(db: D1Database): Promise<Response> {
   return json({
     lastAdmin: await probeLastAdmin(db),
+    firstAdmin: await probeFirstAdmin(db),
     deactivatedAdmin: await probeDeactivatedAdmin(db),
     ownership: await probeOwnershipAndCounter(db),
     ephemera: await probeEphemera(db),

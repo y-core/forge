@@ -1,8 +1,3 @@
-/** Synthetic AST nodes and the traversal oxlint performs, so a rule's spec states the tree it
- *  judges rather than the source text a parser would have to turn into one. The shapes here are the
- *  ones oxlint hands a plugin: `parent` linked, `loc` 1-indexed by line, `:exit` after the children.
- *  Nothing here carries a publication tag — see `types.ts`. */
-
 import type { AstNode, LintRule, RuleContext, SourceLocation, Visitor } from "./types.ts";
 
 let cursor = 0;
@@ -32,8 +27,7 @@ export function template(...chunks: string[]): AstNode {
   } as AstNode;
 }
 
-/** A JSX attribute and the nodes its value is built from. The real AST names the first of them
- *  `value`, so a rule reading the attribute's own value sees the same node the traversal reaches. */
+/** A JSX attribute and the nodes its value is built from. */
 export function attribute(name: string, ...children: AstNode[]): AstNode {
   return {
     type: "JSXAttribute",
@@ -86,8 +80,7 @@ export function member(owner: AstNode, name: string): AstNode {
   } as unknown as AstNode;
 }
 
-/** A call on an arbitrary callee — `member(…)` for a method call. The real AST names the arguments
- *  `arguments`, which is what a rule reading one by position looks at. */
+/** A call on an arbitrary callee — `member(…)` for a method call. */
 export function callOn(callee: AstNode, ...args: AstNode[]): AstNode {
   return { type: "CallExpression", loc: nextLoc(), callee, arguments: args, children: [callee, ...args] } as unknown as AstNode;
 }
@@ -102,8 +95,7 @@ export function property(key: string, ...children: AstNode[]): AstNode {
   return { type: "Property", loc: nextLoc(), key: { type: "Identifier", loc: nextLoc(), name: key }, children } as unknown as AstNode;
 }
 
-/** An opening JSX element of `tag`, carrying `attributes`. The real AST names them `attributes`,
- *  which is what a rule reading their source order looks at; `children` is what the walk follows. */
+/** An opening JSX element of `tag`, carrying `attributes`. */
 export function element(tag: string, ...attributes: AstNode[]): AstNode {
   return {
     type: "JSXOpeningElement",

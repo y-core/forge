@@ -6,7 +6,7 @@ import type { SchemaModel } from "./types";
 const USERS = "CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  -- the address\n  email TEXT NOT NULL,\n  CHECK (length(email) < 254)\n) STRICT";
 const POSTS = "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, body TEXT)";
 
-/** The five reads' rows for the two-table schema above. */
+/** The reads' rows for the two-table schema above. */
 export function twoTableRows() {
   return {
     inventory: [

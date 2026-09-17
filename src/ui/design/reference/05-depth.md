@@ -8,14 +8,14 @@ description: "When a surface may lift off the page, and what shadow, border and 
 Everything here is a **Default** — rebuttable only by an explicit written brief, never by preference. The Floor rules cited below are not.
 
 Depth in forge is not decoration. It is a claim about distance: a raised surface is asserting that it sits _closer to the user_ than what it covers.
-Five levels express every distance a product UI has, and forge's primitives already occupy them, so the design work is choosing a level rather than
-inventing one.
+The ladder below expresses every distance a product UI has, and forge's primitives already occupy each level, so the design work is choosing a level
+rather than inventing one.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 The ladder: the five levels a product UI has, and the primitive that already occupies each
+- §1 The ladder: every distance a product UI has, and the primitive that already occupies each
 - §1a The two modes spell a level differently: a cast shadow in light, a rim and a falloff in dark
 - §1b Claiming a level: reach for the primitive, raise only what is closer, and keep the body flat
 - §2 Choosing a separator: spacing, a background token, a hairline, a shadow — cheapest first
@@ -31,7 +31,7 @@ inventing one.
 | Level | Surface | Primitive | What it means |
 | --- | --- | --- | --- |
 | 0 | Flat on `--background` | any `<div>` | Part of the page. Nothing sits above it. |
-| 1 | A hairline | `Separator`, `border-border` | Two regions of one surface, told apart. |
+| 1 | A hairline | `Separator`, `border-border` | Regions of one surface, told apart. |
 | 2 | `shadow-sm` on `--card` | `Card` | A grouped object you can point at. |
 | 3 | `shadow-md` on `--popover` | `Popover.Content`, `Menu.Popup` | Transient, tied to a trigger, dismissible. |
 | 4 | `shadow-lg` on `--popover` | `Dialog`, `Toast` | Above everything; blocks or interrupts. |
@@ -77,8 +77,8 @@ Given two regions that must read as distinct, three things separate them and the
 
 | Given | Choose | Because |
 | --- | --- | --- |
-| Two parts of one object (header ↔ body) | `Separator`, or `Card.Header`'s own `border-b border-border` | One object, one elevation |
-| Two peer objects in a list | spacing — a `gap-*` step | Whitespace separates without adding a level |
+| Parts of one object (header ↔ body) | `Separator`, or `Card.Header`'s own `border-b border-border` | One object, one elevation |
+| Peer objects in a list | spacing — a `gap-*` step | Whitespace separates without adding a level |
 | A region on a differently-shaded ground | `bg-muted` with `text-muted-foreground` | A background change reads as a different _kind_ of region |
 | A surface that covers something | `Card`, `Popover.Content`, `Dialog` | Only a covering surface earns a shadow |
 
@@ -104,7 +104,7 @@ smaller version of that — it is a second shape, and it reads as a graphic bord
 **Default: every shadow is blurred and offset on the block axis only.**
 <!-- rule:forge-ui-depth-soft-shadow -->
 
-`shadow-sm` / `shadow-md` / `shadow-lg` are the three forge uses. Override under a brief calling for a deliberately flat, illustrative style — where
+`shadow-sm` / `shadow-md` / `shadow-lg` are the ones forge uses. Override under a brief calling for a deliberately flat, illustrative style — where
 the offset shadow is the aesthetic, applied consistently rather than to one element.
 
 **Default: never add a shadow class to a component that already renders one.**

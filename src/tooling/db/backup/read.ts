@@ -37,7 +37,7 @@ export function keyCollation(tableSql: string, key: string): string | null {
   return null;
 }
 
-/** The two statements a key probe asks: whether any row holds NULL, then how many storage classes the column spans. @internal */
+/** The statements a key probe asks: whether any row holds NULL, then how many storage classes the column spans. @internal */
 export function keyProbeSelects(name: string, key: string): [string, string] {
   const table = quoteSqlIdentifier(name);
   const column = quoteSqlIdentifier(key);

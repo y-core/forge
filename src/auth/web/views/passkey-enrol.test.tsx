@@ -28,7 +28,7 @@ import {
   tagOf,
   textOf,
   valuesOf,
-} from "../test-support";
+} from "../web.fixture";
 import { PasskeyEnrolView } from "./passkey-enrol";
 import type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./types";
 

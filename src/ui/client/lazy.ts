@@ -4,8 +4,7 @@ import type { LazyImportOptions } from "./types";
 /** How many times {@link lazy} calls `load()` for one element before it gives up. */
 const LAZY_MAX_ATTEMPTS = 3;
 
-/** Wait between retries. `observe()` re-fires on the next frame for an element already on screen,
- *  so an immediate re-observe spends the whole attempt budget inside a few frames. */
+/** Wait between retries; `observe()` re-fires on the next frame, so an immediate retry burns the attempt budget. */
 const LAZY_RETRY_DELAY_MS = 500;
 
 /** Defers loading a module until its anchor element enters the viewport, retrying a rejected load up to `LAZY_MAX_ATTEMPTS` times. @public */
@@ -31,8 +30,6 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
     return () => {};
   }
 
-  /** Every failure reaches somewhere: without a handler the error was dropped outright, so a load
-   * that never arrived looked identical to one that was never scheduled. */
   const report = (error: unknown) => {
     if (options.onError) options.onError(error);
     else console.error(`[lazy] "${options.ref}" failed to load`, error);

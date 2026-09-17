@@ -36,8 +36,8 @@ import { createAuthGuards } from "./guards";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import { fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./test-support";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
+import { fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./web.fixture";
 
 // This file is the mount AUTH_MOUNTING.md §1 describes, written out with no ellipsis and no free
 // variable, so the documented wiring is held to the real signatures by the compiler.

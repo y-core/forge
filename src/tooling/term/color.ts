@@ -102,14 +102,7 @@ function buildPlain(): Colorize {
   return Object.freeze(plain);
 }
 
-/**
- * The level-0 styler: every chain is itself, and every call returns its input.
- *
- * Frozen and shared, because it holds nothing that could differ between two callers. It is the
- * default wherever a renderer takes a styler, which is what keeps every existing exact-match
- * assertion on that renderer's output true without an edit.
- * @public
- */
+/** The level-0 styler: every chain is itself, and every call returns its input. @public */
 export const PLAIN: Colorize = buildPlain();
 
 /** Builds a styler for `level`. Level 0 is `PLAIN`. @public */

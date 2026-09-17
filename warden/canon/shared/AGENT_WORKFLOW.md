@@ -18,10 +18,10 @@ description: "How an agent works in any repository: the posture it holds to, the
 
 ## 0. Quick Reference
 
-- §1 Working Posture: only what was asked, and the two things that need approval first
+- §1 Working Posture: only what was asked, and what needs approval first
 - §1a Scope of the Delivered Work: the asked-for scope is the deliverable
 - §2 Tool Selection: `rg` and `find` for discovery, LSP for definitions and references
-- §3 Shell Exit Checks: the one permitted `; echo "EXIT:$?"` spelling and the three refusals
+- §3 Shell Exit Checks: the one permitted `; echo "EXIT:$?"` spelling and the refusals it carries
 - §3a Commands the Parser Can Read: the shell shapes that force a permission prompt no allow rule suppresses
 - §4 Verification Delegation: which sub-agent runs the gate, and the scoped-step exception
 - §4a Delegation Restraint: when a sub-agent earns its cost, and when it does not
@@ -37,7 +37,7 @@ description: "How an agent works in any repository: the posture it holds to, the
 whose stated subject is something else, so the reader who approves the diff has not agreed to it. Recommend the addition, get approval, then make it
 — as its own change.
 
-Two additions are never made unilaterally, because both bind everyone downstream:
+These additions are never made unilaterally, because both bind everyone downstream:
 
 - **A runtime dependency.** Every consumer inherits it — its install size, its transitive tree, its release cadence and its vulnerabilities — and
   removing one after it ships is a breaking change. Propose it with what it replaces and why the standard library or an existing dependency will not
@@ -88,7 +88,7 @@ everything the symbol is not.
 <command>; echo "EXIT:$?"
 ```
 
-Three refusals, each for the failure it prevents:
+Each refusal is for the failure it prevents:
 
 - **`;`, never `&&`.** With `&&` the echo is skipped precisely when the command fails, which is the only case worth checking.
 - **Never pipe within the same statement.** `<command> | tail -20; echo "EXIT:$?"` reports `tail`'s status, not the command's. Redirect to a file

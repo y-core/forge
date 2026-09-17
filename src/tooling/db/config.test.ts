@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
 import { resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry } from "./config";
-import { minimalWranglerConfig } from "./test-support";
+import { minimalWranglerConfig } from "./db.fixture";
 
 const roots: string[] = [];
 

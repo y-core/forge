@@ -106,7 +106,7 @@ brings it forward.
 already mirrors: `mountRovingFocus` reads direction from the element, so an RTL island navigates as RTL, and a physical margin beside it is the one
 thing that does not turn around.
 
-Two positions are physical on purpose and stay physical. An inset resolved with `anchor()` has no inline-axis spelling at all — `anchor()` takes a
+Some positions are physical on purpose and stay physical: an inset resolved with `anchor()` has no inline-axis spelling at all — `anchor()` takes a
 physical side — and a rule already mirrored by a `:dir()` selector would mirror twice if its margin mirrored too. Both are stated at the line rather
 than left to be inferred.
 

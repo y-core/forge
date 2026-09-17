@@ -1,100 +1,268 @@
 ---
 title: The CLI Toolkit
-description: "Typed, hierarchical commands with declared flags, plus the process, PATH and scoped-logging primitives forge's own scripts run on."
+description: "Typed, hierarchical commands with declared flags, plus the process, PATH, JSONC-editing and scoped-logging primitives forge's own scripts run on."
 audience: internal
 ---
 
 # `@y-core/forge/tooling/cli`
 
-A small, dependency-free toolkit for building **typed, hierarchical command-line tools** in TypeScript — the framework behind forge's own build and
-tooling scripts. Declare commands with typed flags, compose them into a sub-command tree, and run them with a single `execute` call that handles
-parsing, validation, `--help`, and error reporting. Bundled alongside it are node-only **process and PATH primitives** (`run`, `capture`,
-`requireTools`, `hasTool`, `probeOk`, `insertPath`) and a `[scope]`-prefixed logger for script output.
+A command-line tool here is **data, not registration**: you build a tree of command values, hand the root to `execute`, and it does the parsing,
+the `--help`, the argument validation and the error reporting. Flags are declared once in a typed record, so a handler reads `flags.profile` as a
+`string` with no cast and no runtime shape check.
+
+Reach for this namespace when you are writing a build script, a `bin` entry, or anything else that has to read a terminal's arguments.
 
 ```ts
-import { createCommand, addCommand, execute, run, requireTools, scopeLogger } from "@y-core/forge/tooling/cli";
+import { addCommand, createCommand, execute, requireTools, run, scopeLogger } from "@y-core/forge/tooling/cli";
 ```
 
-> **Runtime:** this namespace is **node-only**. `execute` reads `node:process`; `proc.ts` uses `node:child_process`, `node:fs`, and `node:path`. It
-> is intended for build scripts and CLIs, not the browser or Worker bundle.
+> **Node.js / Bun only.** `execute` reads `node:process`, and the process primitives use `node:child_process`, `node:fs` and `node:path`. **Do not
+> import this namespace into a Cloudflare Worker or a client bundle.**
+
+> The decisions behind the surface are [`BUILD_TOOLING.md`][bt] §1's: commands as values (§1a), the typed flag record and why number parsing is
+> absent (§1b), the kind-not-exit-code error contract (§1c), and why `CommandBase` and `Command` stay two interfaces (§1d).
 
 ---
 
-## Features
+## Getting started
 
-- **Typed flags** — declare a flag map once; `ResolvedFlags<F>` infers each flag's runtime type. A `boolean` flag resolves to `boolean`; a `string`
-  flag with a `default` or `required: true` resolves to `string`; every other `string` flag resolves to `string | undefined`. No casts in your
-  handler. Why the record is keyed by long name, and why number parsing and repeated flags are absent, are [`BUILD_TOOLING.md`][bt-1b] §1b's.
-- **Hierarchical commands** — compose commands into a tree with `addCommand`. `execute` walks the tree by matching leading non-flag tokens to
-  sub-command names, then dispatches to the deepest match.
-- **Persistent flags** — a flag marked `persistent: true` is inherited by every descendant command, letting a root command define global flags (e.g.
-  `--verbose`) once.
-- **Argument validation** — declare an `ArgValidator` (`exact`, `min`, `max`, `range`, or `none`) and `execute` enforces the positional-argument
-  count before invoking your handler.
-- **Auto-generated help** — `formatHelp` and `formatUsage` render Cobra-style help text; `--help` / `-h` is handled for free, and group commands
-  invoked without a sub-command print their help.
-- **Structured errors** — `CliError` carries a discriminated `kind` rather than an exit code; `execute` formats it to stderr and exits 1, and
-  user-facing messages never leak stack traces. The two-valued exit contract behind that is [`BUILD_TOOLING.md`][bt-1c] §1c's.
-- **Process primitives** — `run` spawns child processes with inherited stdio and throws on failure; `capture` buffers their combined output and
-  returns the exit code instead; `requireTools` asserts external tools are on `PATH` with install hints; `hasTool` / `probeOk` answer a prerequisite
-  check by exit code alone; `insertPath` prepends a directory to `PATH`.
-- **Destructive-action confirmation** — `confirm` asks `Continue? [y/N]` before an irreversible action, and refuses a run with no terminal that did
-  not pass `--yes`.
-- **Injectable IO** — `execute` accepts a `CliIO` ( `stdout` / `stderr` / `exit` ) so tests can drive a command and capture its output without
-  touching the real console or process.
-
----
-
-## Usage
-
-A complete two-level CLI: a root `build` command with a persistent `--verbose` flag and a `wasm` sub-command that requires external tools and takes
-a typed `--profile` flag.
+A root command, a sub-command, and one `execute` call. The root's `persistent` flag is inherited by every descendant, which is how a tool declares
+`--verbose` once.
 
 ```ts
-import { createCommand, addCommand, execute, run, requireTools, scopeLogger } from "@y-core/forge/tooling/cli";
+import { addCommand, createCommand, execute, requireTools, run, scopeLogger } from "@y-core/forge/tooling/cli";
 
-// 1. Root command — defines a persistent flag shared by all sub-commands.
 const root = createCommand({
   name: "forge-build",
   description: "Build the forge project",
   flags: { verbose: { type: "boolean", short: "v", description: "Verbose output", persistent: true } },
 });
 
-// 2. Sub-command — its own typed flags plus the inherited `verbose`.
 const wasm = createCommand({
   name: "wasm",
   description: "Compile the Rust kernel to WASM",
   args: { kind: "none" },
   flags: { profile: { type: "string", short: "p", description: "Cargo profile", default: "release" } },
-  run: async (args, flags) => {
-    // flags.profile : string     (has a default → never undefined)
-    // flags.verbose : boolean    (inherited persistent boolean flag)
+  run: async (args, flags, ctx) => {
+    // flags.profile : string   (has a default → never undefined)
+    // flags.verbose : boolean  (inherited persistent boolean flag)
     const log = scopeLogger("wasm");
-
-    requireTools({ cargo: "install Rust: https://rustup.rs", "wasm-opt": "npm i -g binaryen" });
-
+    requireTools({ cargo: "install Rust — https://rustup.rs", "wasm-opt": "npm i -g binaryen" });
     log.info(`building with profile=${flags.profile}`);
     run("cargo", ["build", "--profile", flags.profile]);
     log.done("build complete");
   },
 });
 
-// 3. Compose and run.
 addCommand(root, wasm);
 await execute(root); // reads process.argv.slice(2)
 ```
 
-Running it:
-
 ```bash
 forge-build wasm --profile dev --verbose
-forge-build wasm --help        # prints sub-command help
-forge-build                    # group command → prints root help
+forge-build wasm --help        # sub-command help
+forge-build                    # a group command with no handler prints its own help
+forge-build wsam               # Unknown command "wsam" for "forge-build". Did you mean "wasm"?
 ```
 
-### Testing a command
+`addCommand(parent, child)` mutates `parent` and throws on a duplicate sibling name, so a tree cannot hold two commands answering to one word.
+`execute` walks the tree by matching leading non-flag tokens, stops at the first token starting with `-` or matching nothing, and dispatches to the
+deepest match. A leaf with no `run` is a `missing-command` error; a branch with no `run` prints its help.
 
-Pass an explicit `argv` and a fake `CliIO` to capture output without spawning the real process:
+The third handler argument is the **context**: `ctx.io` (the `stdout`, `stderr` and `exit` sink), `ctx.out` and `ctx.err` (stylers resolved
+separately for each stream, so `tool > log.txt` stays plain on the file and coloured on the terminal), and `ctx.width` (columns available on
+stdout). It is optional — a handler that only spawns things can ignore it.
+
+---
+
+## Declaring flags
+
+A flag's **long name is its key** in the record; `short` is the optional one-letter alias. There is no `long` field. The type you get back is
+inferred, so the shape of the declaration is the whole contract:
+
+| Declaration | `flags.x` resolves to |
+| --- | --- |
+| `{ type: "boolean" }` | `boolean` — `false` when the flag was not passed |
+| `{ type: "string" }` | `string \| undefined` |
+| `{ type: "string", default: "release" }` | `string` |
+| `{ type: "string", required: true }` | `string` — a run that omits it throws `missing-value` |
+| `{ type: "string", multiple: true as const }` | `string[]` — `[]` when the flag was not passed |
+| `{ …, persistent: true }` | inherited by every descendant command |
+
+On the command line, the forms the parser accepts:
+
+| Form | Meaning |
+| --- | --- |
+| `--name value`, `-n value` | String flag taking the next element. A `-`-leading element is refused rather than swallowed. |
+| `--name=value`, `-n=value` | String flag with an inline value. |
+| `--flag`, `-f` | Boolean flag set to `true`. |
+| `--flag=false`, `--flag=0` | Boolean flag set to `false`; any other inline value reads as `true`. |
+| `-abc`, `-ab=cd` | A cluster, expanded to `-a -b -c` and `-a -b=cd`. |
+| `--` | Stops flag parsing; every later element is a positional. |
+| `-`, `-5` | Positionals — stdin by convention, and a negative number through the tokenizer's digit guard. |
+
+**Repeating a flag that is not `multiple` is refused, not last-wins**, and the error quotes the values that would have been dropped. An unknown long
+flag is refused with the nearest known name offered; an unknown short flag is refused without a guess, because with one-letter names every other
+short is one edit away.
+
+`parseArgs(argv, flagDefs)` and `collectFlags(command)` are published for driving the parser directly — `collectFlags` is what merges a command's
+own flags with its ancestors' persistent ones, and `tokenize(argv)` is the classification pass beneath both, for a tool that wants tokens rather
+than a resolved record.
+
+---
+
+## Validating positional arguments
+
+Declare `args` and `execute` enforces the count before your handler runs, so a handler never opens with a length check:
+
+```ts
+createCommand({ name: "copy", args: { kind: "exact", count: 2 }, run: ([from, to]) => {} });
+```
+
+`{ kind: "none" }` (the default) takes no arguments at all, `exact` takes a `count`, `min` and `max` take a bound apiece, and `range` takes both. A
+mismatch throws `invalid-args` naming the command, the rule and the count it got.
+
+---
+
+## Reporting a failure
+
+Throw a `CliError` from a handler and `execute` prints `Error: <message>` to stderr and exits 1. **The `kind` is the classification, never an exit
+code** — every failure is exit 1, and a user-facing message never carries a stack trace.
+
+| Kind | Throw it when |
+| --- | --- |
+| `unknown-flag` | An unrecognised flag token was passed. |
+| `missing-value` | A string flag is missing its value, or a `required` flag was omitted. |
+| `invalid-args` | The positional count violates the command's rule, or a confirmation was declined. |
+| `missing-command` | A leaf command has no handler, or a word matched no sub-command. |
+| `external` | A command this tool ran — `wrangler`, say — failed, or answered in a shape it cannot read. |
+
+The first four are thrown by the framework itself; `external` is yours. Any non-`CliError` throw still reaches stderr as `Error: <message>` and
+still exits 1, so a thrown `Error` from a spawned tool is never silently swallowed.
+
+---
+
+## Running other programs
+
+The primitive to reach for follows from what you intend to do with the outcome:
+
+| You want to | Reach for |
+| --- | --- |
+| Run a tool, let its output reach the terminal, and abort the script on failure | `run(cmd, args, { cwd? })` |
+| Run a tool, keep its output, and report the failure rather than abort | `capture(cmd, args, { cwd? })` |
+| Assert several tools up front, each with its own install hint | `requireTools({ cmd: hint })` |
+| Ask whether an executable is on `PATH` | `hasTool(cmd)` |
+| Ask whether the thing a tool needs is actually there | `probeOk(cmd, args)` |
+| Make `node_modules/.bin` resolvable to everything you spawn afterwards | `insertPath(dir)` |
+
+```ts
+const { code, output, ms } = capture("oxfmt", ["--check", "src/"], { cwd: repoRoot });
+if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n"));
+```
+
+`capture` points both streams at **one** temp-file descriptor, so `output` matches what `cmd > log 2>&1` would have written; `stdio: "pipe"` returns
+stdout and stderr as independent buffers whose relative order is lost. A spawn failure produces no child output, so its error message is appended to
+`output` rather than leaving you with an empty capture, and `stdin` is ignored — a captured process must never block waiting on a terminal.
+
+**Probe for the thing, not for the CLI that uses it.** `hasTool` answers `<cmd> --version`, which passes vacuously when the CLI is installed but the
+browser, the service or the credential it needs is not. That case wants a command of its own, and `probeOk` is what runs one:
+
+```ts
+if (!probeOk("docker", ["compose", "ps", "--status=running", "--quiet"])) {
+  throw new Error("no running container — docker compose up -d");
+}
+```
+
+`requireTools` throws `<cmd> not found — <hint>` on the first missing tool, in insertion order, surfacing your hint verbatim so `execute` reports it
+and exits 1. `insertPath` is idempotent and a no-op when the directory is empty, absent, or already on `PATH`.
+
+---
+
+## Writing to the terminal
+
+`scopeLogger(scope)` prefixes every line with `[scope]`: `info` and `done` write to stdout, `warn` writes to stderr. That split is the whole point —
+a progress line redirected to a log file leaves the warning on the terminal.
+
+```ts
+const log = scopeLogger("build");
+log.info("compiling…");
+log.warn("optional tool missing, skipping");
+log.done("done");
+```
+
+Help text is rendered for you, but `formatHelp(command, { width, style })` and `formatUsage(command)` are published for a tool that wants to print
+it somewhere else. Help lists the description, the usage line, an alphabetised **Available Commands** block, and a **Flags** block built from
+`collectFlags` — inherited persistent flags included, because those are what actually work — always ending with `--help`. A required string flag is
+marked `(required)` and one with a default is marked `(default: …)`.
+
+**Pin `width` in a test.** It defaults to the terminal's columns, or 80 when there are none, so an exact-match assertion drifts with the window
+unless the test states one.
+
+---
+
+## Confirming a destructive action
+
+`confirm` asks `Continue? [y/N]` and returns a `Promise<void>`; a `n` answer throws `invalid-args`, so a declined run aborts rather than falling
+through.
+
+```ts
+await confirm({
+  verb: "reset",
+  what: `${database} (local)`,
+  consequence: "Its local state files are removed and nothing here restores them.",
+  yes: flags.yes,
+  cancelMessage: "Reset cancelled; the database is unchanged.",
+});
+```
+
+You are choosing three pieces of a sentence: `verb` and `what` complete `About to <verb> <what>`, `detail` lists the things affected after a colon,
+and `consequence` is the one line saying why it cannot be taken back. All three are reused verbatim in the refusal, so write them to read in both.
+
+**A non-interactive run is refused, not assumed.** With no TTY and no `yes`, `confirm` throws naming the verb, the object and the consequence, and
+says that `--yes` is how to mean it — so a CI job cannot silently take a destructive path. Pass `input`, `output`, `interactive` and `print` to
+drive the prompt from a test.
+
+---
+
+## Finding the application root
+
+`resolveAppRoot(explicit?)` returns the directory a consuming application lives in — the stated one if you pass it, otherwise everything before the
+first `node_modules` segment of forge's own module path. It **throws** rather than guessing when forge is not installed under one, naming the fix.
+
+```ts
+const consumerRoot = resolveAppRoot();
+// Inside forge itself there is no `node_modules` above this file, so the root is stated:
+const forgeRoot = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
+```
+
+**Nothing here walks the disk looking for a marker file** — a root is stated or derived, never discovered ([`BUILD_TOOLING.md`][bt-2h] §2h).
+`installedAppRoot()` is the derivation on its own, returning `undefined` instead of throwing, and `findAppRoot(modulePath)` is the pure string split
+beneath both.
+
+---
+
+## Editing a jsonc file in place
+
+A Worker config is JSONC — comments, trailing commas — and rewriting it through `JSON.parse`/`stringify` destroys both. `applyJsoncEdits` splices
+the bytes each edit names and leaves every other byte alone.
+
+```ts
+import { applyJsoncEdits, countComments } from "@y-core/forge/tooling/cli";
+
+const result = applyJsoncEdits(source, [{ path: ["vars", "LOG_LEVEL"], value: "debug" }]);
+if (!result.ok) console.error(result.error.message); // carries the `path` that failed
+```
+
+A `path` is object keys and array indices, outermost first, and a missing key is **inserted** at the right indent rather than refused. Refusals
+come back as [`Result`][result-readme] errors: writing a non-primitive, and overwriting a whole object or array with a single value — the message
+renders the path as a reader would point at it, `kv_namespaces[0].id`. `parseJsoncTree` is the span tree beneath it, `stripJsonc` yields text
+`JSON.parse` accepts, and `countComments` is what a tool reports when a write would have destroyed them.
+
+---
+
+## Testing a command
+
+Pass an explicit `argv` and a fake `CliIO`, and nothing touches the real console or process:
 
 ```ts
 import { execute, type CliIO } from "@y-core/forge/tooling/cli";
@@ -112,320 +280,42 @@ const io: CliIO = {
 await execute(root, ["wasm", "--profile", "dev"], io);
 ```
 
----
-
-## Core Components & APIs
-
-### Defining commands
-
-#### `createCommand(config)`
-
-Creates a command definition from a `CommandDefinition`. The generic flag type `F` is inferred from `config.flags`, so the `flags` argument passed
-to `run` is fully typed.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | Command name (matched against argv tokens). **Required.** |
-| `description` | `string` | One-line description shown in help. Defaults to `""`. |
-| `flags` | `FlagDefs` | Map of long-flag name → `FlagDef`. Defaults to `{}`. |
-| `args` | `ArgValidator` | Positional-argument count rule. Defaults to `{ kind: "none" }`. |
-| `run` | `(args, flags) => void \| Promise<void>` | Handler invoked when this command is selected. |
-
-Returns a `Command<F>` with an empty `commands` array, ready to receive sub-commands via `addCommand`.
-
-#### `addCommand(parent, child)`
-
-Attaches `child` as a sub-command of `parent`: sets `child.parent` and pushes it onto `parent.commands`. Throws
-`Error: Duplicate command name: "<name>"` if a sibling with the same name already exists. Returns `void` — it mutates `parent`.
-
-```ts
-const root = createCommand({ name: "tool" });
-addCommand(root, createCommand({ name: "build", run: () => {} }));
-addCommand(root, createCommand({ name: "test", run: () => {} }));
-```
+`exit` is typed `never`, so throwing from it is how a test observes a failure path without ending the run. For the layers beneath, `parseArgs`,
+`collectFlags`, `tokenize`, `formatHelp` and `suggest` are all pure and assertable on their own.
 
 ---
 
-### Running a command
+## Gotchas
 
-#### `execute(root, argv?, io?)`
+**`multiple: true` needs `as const` in a flag table.** Written `{ type: "string" as const, multiple: true }`, the field widens to `boolean`, the
+conditional type stops matching `{ multiple: true }`, and the flag silently infers `string | undefined` instead of `string[]`.
 
-The main entry point. Resolves the target command and dispatches to its `run` handler. Returns `Promise<void>`.
+**A flag with neither `default`, `required` nor `multiple` can be absent.** That is what `string | undefined` is telling you; there is no runtime
+fallback to `""`.
 
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `root` | `CommandBase` | — | The root of the command tree. |
-| `argv` | `string[]` | `process.argv.slice(2)` | Raw argument tokens. |
-| `io` | `CliIO` | console-backed IO | Injectable output/exit sink. |
+**`--help` is answered before flags are parsed**, so a command with a `required` flag still prints its help rather than refusing.
 
-Behavior, in order:
-
-1. **Descend the tree** — consumes leading non-flag tokens, matching each to a sub-command name, stopping at the first token that starts with `-` or
-   matches no sub-command.
-2. **Help** — if the remaining tokens include `--help` or `-h`, prints `formatHelp(current)` to stdout and returns.
-3. **Parse** — collects the effective flag set (own + inherited persistent) via `collectFlags`, then parses the remaining tokens with `parseArgs`.
-4. **Validate args** — enforces the command's `ArgValidator`; a mismatch throws `CliError("invalid-args", …)`.
-5. **Dispatch** — calls `run(args, flags)` (awaited). A command with no `run` but with sub-commands prints its help; a leaf command with no `run`
-   throws `CliError("missing-command", …)`.
-6. **Errors** — a `CliError` is formatted via `formatError` to stderr; any other `Error` prints `Error: <message>`; then `io.exit(1)` is called.
+**`run` throws and `capture` does not.** Choosing the wrong one is how a step runner ends up unwinding on the first red tool rather than reporting
+it.
 
 ---
 
-### Parsing
+## Attribution
 
-#### `parseArgs(argv, flagDefs)`
-
-Parses raw tokens against a flag map, returning `{ args, flags }` where `args` is the positional array and `flags` is a typed `ResolvedFlags<F>`.
-Used internally by `execute`, exported for direct use and testing.
-
-Parsing rules:
-
-| Form | Meaning |
-| --- | --- |
-| `--name value`, `-n value` | String flag with a separate value token. |
-| `--name=value`, `-n=value` | String flag with an inline value. |
-| `--flag`, `-f` | Boolean flag set to `true`. |
-| `--flag=false`, `--flag=0` | Boolean flag set to `false`; any other inline value is `true`. |
-| `--` | Stops flag parsing; all later tokens are positionals. |
-| `-` | Treated as a positional (e.g. stdin). |
-
-After parsing, unset boolean flags default to `false`, unset string flags fall back to their `default`, and a missing `required` string flag throws
-`CliError("missing-value", …)`. An unknown flag throws `CliError("unknown-flag", …)`; a string flag with no value throws
-`CliError("missing-value", …)`.
-
-#### `collectFlags(command)`
-
-Walks the command's ancestor chain and returns the effective `FlagDefs`: the command's own flags plus any ancestor flag marked `persistent`. Child
-definitions override an inherited flag of the same name.
-
----
-
-### Process & tool primitives
-
-#### `run(cmd, args, opts?)`
-
-Spawns `cmd args` synchronously with **inherited** stdio (child output goes straight to the parent's terminal). Returns the exit code (`0`) on
-success; throws ``Error: `<cmd> <args>` failed (exit <code>)`` on a non-zero exit.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `cmd` | `string` | Executable to run. |
-| `args` | `string[]` | Arguments. |
-| `opts.cwd` | `string` | Optional working directory; defaults to `process.cwd()`. |
-
-```ts
-run("cargo", ["build", "--release"]);
-run("git", ["status"], { cwd: "/src/forge" });
-```
-
-#### `capture(cmd, args, opts?)`
-
-Spawns `cmd args` synchronously with its output **buffered** rather than inherited, and **never throws** — the counterpart to `run` for callers that
-report a failure instead of aborting on it (a step runner, a gate). Returns a `CaptureResult`.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `cmd` | `string` | Executable to run. |
-| `args` | `string[]` | Arguments. |
-| `opts.cwd` | `string` | Optional working directory; defaults to `process.cwd()`. |
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `code` | `number` | Exit code; `1` when killed by a signal or never spawned. |
-| `output` | `string` | Combined stdout and stderr, interleaved in write order. |
-| `ms` | `number` | Wall-clock duration of the spawn. |
-
-Both streams are pointed at one temp-file descriptor, so `output` matches what `cmd > log 2>&1` would have written — `stdio: "pipe"` returns two
-independent buffers whose relative order is lost. A spawn failure (a missing executable) produces no child output, so its error message is appended
-to `output` rather than leaving the caller with an empty capture. `stdin` is `ignore`d: a captured process must never block waiting on a terminal.
-
-```ts
-const { code, output, ms } = capture("oxfmt", ["--check", "src/"], { cwd: repoRoot });
-if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n"));
-```
-
-#### `requireTools(tools)`
-
-Asserts that every tool in a `ToolHints` map is present on `PATH`, in insertion order. Throws on the first missing tool with
-`Error: <cmd> not found — <hint>`, surfacing the install hint verbatim so `execute` reports it on stderr and exits 1.
-
-```ts
-requireTools({ "wasm-snip": "cargo install wasm-snip", "wasm-opt": "npm i -g binaryen" });
-```
-
-#### `hasTool(cmd)`
-
-Returns `true` when `cmd --version` exits 0 — i.e. the tool is present and runnable. Non-throwing; use it for optional-tool branching. A thin
-wrapper over `probeOk(cmd, ["--version"])`.
-
-#### `probeOk(cmd, args)`
-
-Returns `true` when `cmd args` exits 0, with stdout and stderr discarded — a prerequisite check whose only signal is the exit code. Non-throwing.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `cmd` | `string` | Executable to run. |
-| `args` | `readonly string[]` | Arguments passed to it. |
-
-Reach for it when the prerequisite is **not** the presence of an executable on `PATH` — a downloaded browser, a running service, a provisioned
-credential — where `hasTool` would pass vacuously because the CLI is installed but the thing it needs is not. Such a prerequisite needs a command of
-its own to answer for it.
-
-```ts
-if (!probeOk("docker", ["compose", "ps", "--status=running", "--quiet"])) {
-  throw new Error("no running container — docker compose up -d");
-}
-```
-
-#### `insertPath(dir)`
-
-Idempotently prepends `dir` to `process.env.PATH` for subsequent child processes. A no-op when `dir` is empty, does not exist on disk, or is already
-on `PATH`.
-
-```ts
-insertPath(`${process.cwd()}/node_modules/.bin`);
-```
-
----
-
-### Confirmation
-
-#### `confirm(options)`
-
-Asks before an irreversible action and returns `Promise<void>`; a `n` answer throws `CliError("invalid-args", …)`, so a cancelled run aborts rather
-than continuing. Returns immediately when `options.yes` is set.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `what` | `string` | The object of the action, completing `About to <verb> <what>`. **Required.** |
-| `consequence` | `string` | One sentence on why the action cannot be taken back. **Required.** |
-| `verb` | `string` | The verb the prompt and the refusal use. Defaults to `proceed`. |
-| `detail` | `string` | The things affected, listed after a colon in the prompt and the refusal. |
-| `yes` | `boolean` | `--yes`: skip the prompt entirely. |
-| `input` / `output` | `NodeStdioStream` | Streams the answer is read from and the question written to. Default `process.stdin` / `process.stdout`. |
-| `interactive` | `boolean` | Whether a prompt can be shown. Defaults to `input.isTTY`. |
-| `print` | `(line: string) => void` | Where the preamble lines go. Defaults to `console.log`. |
-| `cancelMessage` | `string` | The error message a `n` answer raises. |
-
-**A non-interactive run is refused, not assumed.** With no TTY and no `yes`, `confirm` throws naming the verb, the object and the consequence, and
-says that `--yes` is how to mean it — so a CI job cannot silently take a destructive path.
-
-```ts
-await confirm({
-  verb: "reset",
-  what: `${database} (local)`,
-  consequence: "Its local state files are removed and nothing here restores them.",
-  yes: flags.yes,
-  cancelMessage: "Reset cancelled; the database is unchanged.",
-});
-```
-
----
-
-### Logging
-
-#### `scopeLogger(scope)`
-
-Returns a `ScopedLogger` whose every line is prefixed with `[scope]`. `info` and `done` write to stdout; `warn` writes to stderr.
-
-| Method | Stream | Output |
-| --- | --- | --- |
-| `info(msg)` | stdout | `[scope] msg` — progress line |
-| `warn(msg)` | stderr | `[scope] msg` — warning line |
-| `done(msg)` | stdout | `[scope] msg` — completion line |
-
-```ts
-const log = scopeLogger("build");
-log.info("compiling…");
-log.warn("optional tool missing, skipping");
-log.done("done");
-```
-
----
-
-### Help & usage
-
-#### `formatHelp(command, options?)`
-
-Renders the full help text for a command: description, usage line, an alphabetised **Available Commands** list (when it has sub-commands), and a
-**Flags** section that always appends `--help`. Required string flags are marked `(required)`.
-
-`HelpOptions` carries `width` (columns the block must fit in, defaulting to `80`) and `style` (the heading styler, defaulting to `PLAIN`). Pin
-`width` in a test so an exact-match assertion stays exact.
-
-#### `formatUsage(command)`
-
-Renders just the usage line, e.g. `Usage:\n tool wasm [flags]`. Appends `[command]` when the command has sub-commands and `[args]` when its
-`ArgValidator` is not `{ kind: "none" }`.
-
----
-
-### Errors
-
-#### `class CliError extends Error`
-
-A structured CLI error carrying a discriminated `kind`. Thrown by the framework (and throwable from your own handlers) so `execute` can report it
-cleanly and exit non-zero.
-
-```ts
-new CliError(kind: CliErrorKind, message: string);
-```
-
-`CliErrorKind` is one of:
-
-| Kind | Raised when |
-| --- | --- |
-| `unknown-flag` | An unrecognised flag token was passed. |
-| `missing-value` | A string flag is missing its value, or a `required` flag was omitted. |
-| `invalid-args` | The positional-argument count violates the command's `ArgValidator`. |
-| `missing-command` | A leaf command has no `run` handler. |
-| `external` | A command this tool ran — `wrangler`, say — failed, or answered in a shape it cannot read. |
-
-#### `formatError(err)`
-
-Formats a `CliError` for display as `Error: <message>`.
-
----
-
-### Types
-
-| Type | Description |
-| --- | --- |
-| `CommandDefinition<F>` | Input to `createCommand`: `name`, optional `description`, `flags`, `args`, `run`. |
-| `Command<F>` | A command definition with a typed `run`; extends `CommandBase`. |
-| `CommandBase` | Tree-structural command shape (`name`, `description`, `flags`, `args`, `parent`, `commands`) without the typed handler — used for parent/child links. |
-| `FlagDef` | A flag definition: `BooleanFlagDef \| StringFlagDef`. |
-| `BooleanFlagDef` | `{ type: "boolean"; short?; description?; persistent? }`. |
-| `StringFlagDef` | `BooleanFlagDef` fields plus `default?` and `required?`. |
-| `FlagDefs` | `Record<string, FlagDef>` — the long-flag name is the record key. |
-| `ResolvedFlags<F>` | Maps a `FlagDefs` to its inferred runtime flag-value shape. |
-| `ArgValidator` | Positional-count rule: `none`, `exact`, `min`, `max`, or `range`. |
-| `ToolHints` | `Record<string, string>` — tool command → install hint for `requireTools`. |
-| `CaptureResult` | `{ code; output; ms }` — the `capture` return type. |
-| `ScopedLogger` | `{ info; warn; done }` — the `scopeLogger` return type. |
-| `CliIO` | `{ stdout; stderr; exit }` — injectable IO for `execute`. |
-| `ConfirmOptions` | The prompt `confirm` asks: `what`, `consequence`, and the optional `verb`, `detail`, `yes`, `input`, `output`, `interactive`, `print` and `cancelMessage`. |
-| `CliErrorKind` | Discriminant union of `CliError.kind` values. |
-
-> **Note on flag naming:** a flag's **long** name is its key in the `FlagDefs` record (e.g. `profile` → `--profile`); the optional **short** alias
-> is the `short` field (e.g. `"p"` → `-p`). There is no separate `long` field on `FlagDef`.
-
-> **Note on repeatable flags:** when `multiple: true` a flag resolves to `string[]`, and repeating an unmarked flag is refused — the ruling and its
-> ordering against `default`/`required` are [`BUILD_TOOLING.md`][bt-1b] §1b's. Mind the inference trap: a table written
-> `{ type: "string" as const, multiple: true }` widens `multiple` to `boolean` and falls through to `string | undefined`. Write
-> `multiple: true as const`.
+`tokenize.ts` adopts its token shape, argv-index rule and digit guards from `@visulima/command-line-args` (MIT), itself after `args-tokens` (MIT);
+the file header names the upstream, and [`@y-core/forge/tooling/term`][term-readme] reproduces the MIT text these share.
 
 ---
 
 ## See also
 
-- [`BUILD_TOOLING.md`][bt] — the decisions behind this surface: commands as values (§1a), the typed flag record (§1b), the kind-not-exit-code error
-  contract (§1c), and why `CommandBase` and `Command` stay separate (§1d).
+- [`BUILD_TOOLING.md`][bt] §1 — the decisions behind this surface, and §2h for where a root comes from.
+- [`@y-core/forge/tooling/term`][term-readme] — the terminal primitives help text and colour are rendered with.
 - [`@y-core/forge/tooling/gate`][gate-readme] — the verification gate built on this framework.
-- [`@y-core/forge/tooling/term`][term-readme] — the terminal-output sink the CLIs render through.
+- [`@y-core/forge/result`][result-readme] — the `Result` shape the JSONC functions return.
 
 [bt]: ../../../docs/BUILD_TOOLING.md
-[bt-1b]: ../../../docs/BUILD_TOOLING.md#1b-flags-are-a-typed-record
-[bt-1c]: ../../../docs/BUILD_TOOLING.md#1c-errors-carry-a-kind-not-an-exit-code
+[bt-2h]: ../../../docs/BUILD_TOOLING.md#2h-roots-are-stated-or-derived-never-discovered
 [gate-readme]: ../gate/README.md
+[result-readme]: ../../result/README.md
 [term-readme]: ../term/README.md

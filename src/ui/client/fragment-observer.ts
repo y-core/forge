@@ -6,8 +6,7 @@ const POSITION_FOLLOWING = 4;
 
 const NOOP = (): void => {};
 
-/** Links paired with their targets, deduplicated and ordered by the targets' document position
- *  rather than by the nav's markup order, which is free to differ. @internal */
+/** Links paired with their targets, deduplicated and ordered by the targets' document position. @internal */
 export function resolveFragmentEntries(root: Element, selector: string): FragmentEntry[] {
   const entries: FragmentEntry[] = [];
   const seen = new Set<Element>();
@@ -24,8 +23,7 @@ export function resolveFragmentEntries(root: Element, selector: string): Fragmen
   return entries.sort((a, b) => ((a.target.compareDocumentPosition(b.target) & POSITION_FOLLOWING) !== 0 ? -1 : 1));
 }
 
-/** The mount scaffold both fragment-driven controllers share: the idempotence guard, the three
- *  refusals and the disposer. Returns the mount's disposer, or a noop when a guard tripped. @internal */
+/** Mounts a fragment-driven controller, returning its disposer, or a noop when a guard tripped. @internal */
 export function mountFragmentObserver(config: FragmentObserverConfig): () => void {
   const { root, selector, mounted } = config;
   // Deterministic for a given call site and impossible to discover later, so it throws.

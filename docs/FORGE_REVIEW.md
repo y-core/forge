@@ -29,9 +29,9 @@ audience: internal
 - §5 Verification Protocol: prove a finding before reporting it
 - §6 Valid Patterns — Do Not Flag: correct code that looks wrong
 - §7 The oxlint Rule Set: why `suspicious` is off and which of its rules are named individually
-- §7a Why `categories.suspicious` is off: the default-deny, and the three rules that dominate its volume
+- §7a Why `categories.suspicious` is off: the default-deny, and the rules that dominate its volume
 - §7b The two rules taken from it: what `preserve-caught-error` and `no-shadow` caught
-- §7c Why `jsx-a11y` is on, and what it does not see: the one rule off, the two site suppressions, the named blind spots, and the
+- §7c Why `jsx-a11y` is on, and what it does not see: the one rule off, the written site suppressions, the named blind spots, and the
   vocabulary-versus-composition split
 
 ---
@@ -47,7 +47,7 @@ See [`CODE_REVIEW.md`][cr-1] §1 for the review workflow, the green-baseline req
 These are forge's own invariants. **Any one of them blocks a merge regardless of severity argument.**
 
 **The canon's invariants bind alongside these, not underneath them.** The table below is what forge adds; the fleet's list is the canon's own §2,
-and three of its entries appear nowhere here — browser-only code imported from a Worker path, untrusted input validated at the boundary, and PII
+and some of its entries appear nowhere here — browser-only code imported from a Worker path, untrusted input validated at the boundary, and PII
 reaching a log record. Each still blocks a merge. Read both tables, or read the canon's and treat this one as the delta.
 
 | Invariant | Owner |
@@ -55,7 +55,7 @@ reaching a log record. Each still blocks a merge. Read both tables, or read the 
 | No deprecation shim or backward-compatible path before v1.0.0 | [`FORGE_STRUCTURE.md`][la-7] §7 |
 | No hardcoded secret, key, or credential in source | §3c |
 | `mod.ts` uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`][nd-1b] §1b |
-| No sibling-barrel import outside the two exemptions | [`NAMESPACES.md`][namespaces-2] §2 |
+| No sibling-barrel import outside the sanctioned exemptions | [`NAMESPACES.md`][namespaces-2] §2 |
 | Runtime namespaces use only Web APIs | [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d |
 | `valibot` is never imported outside the facade | [`INPUT_VALIDATION.md`][iv-1a] §1a |
 | Security-critical paths fail closed | [`BOUNDARIES.md`][boundaries-5] §5 |
@@ -81,11 +81,11 @@ reaching a log record. Each still blocks a merge. Read both tables, or read the 
 | Browser-only `ui/client` import reaching a Worker-executed `src/ui` file | `bun run verify --only validate-ssr-boundary` |
 | No-sibling-barrel rule (oxlint `no-restricted-imports`) | `bun run verify --only lint` |
 | Governing-doc import paths, numbering, references | `bun run verify --only validate-docs` |
-| `src/ui/README.md` export tables against the barrels they document, both directions | `bun run verify --only validate-readme-exports` |
 | Tailwind `@source` coverage of every `src/ui/` directory | `bun run verify --only validate-css-sources` |
-| Every corpus rule the plugin owns — the markup family (`forge-ui-a11y-*`, `-no-inline-style`, `-no-nested-card`, `-catalog-wrong-raw-input`) and the class-string family (`-spacing-scale-only`, `-color-token-only`, `-color-theme-no-raw-utility`, `-reduced-motion`, `-focus-ring`, `-interaction-focus-visible`, the four `-platform-*`) | `bun run verify --only lint` |
+| Every corpus rule the plugin owns — the markup family (`forge-ui-a11y-*`, `-no-inline-style`, `-no-nested-card`, `-catalog-wrong-raw-input`) and the class-string family (`-spacing-scale-only`, `-color-token-only`, `-color-theme-no-raw-utility`, `-reduced-motion`, `-focus-ring`, `-interaction-focus-visible`, the `-platform-*` family) | `bun run verify --only lint` |
 | The corpus against forge's API, and both rule registers against the plugin | `bun run verify --only validate-design` |
 | ARIA vocabulary validity — attribute names, role names, value shapes | `bun run verify --only lint` |
+| The comment budget — multi-line TSDoc, any tag but `@public`/`@internal`, `//` runs over two lines, banners, commented-out code, `TODO`. An interface field earns at most one line and earns nothing when its name and type already say it | `bun run verify --only validate-comment-budget` |
 | Behaviour of the changed unit | `bun test <path>` |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
@@ -112,15 +112,18 @@ rg -n 'from "valibot"|from \x27valibot\x27' src/ --glob '!src/validation/**'
 ```
 
 _Triage:_ any hit is a breach, including in a `*.test.ts`. A test that imports valibot directly bypasses the facade exactly as production code
-would, and will not follow a version bump.
+would, and will not follow a version bump. One class is not a hit but reads as one: a gate check's fixture carries the specifier as a **string
+literal** for the parser under test to find — `src/tooling/gate/checks/` only, and the line is inside a quoted fixture rather than at module scope.
 
 **Sibling-barrel import**
 
 ```bash
-rg -nP 'from "\.\./(?!validation/mod|crypto/mod)[a-z-]+/mod"' src/
+rg -nP 'from "\.\./(?!validation/mod|crypto/mod)[a-z-]+/mod"' src/ --glob '!*.test.*'
 ```
 
-_Triage:_ the negative lookahead already excludes the two sanctioned exemptions ([`NAMESPACE_DESIGN.md`][nd-2c] §2c), so this should return nothing.
+_Triage:_ the negative lookahead already excludes the sanctioned exemptions ([`NAMESPACE_DESIGN.md`][nd-2c] §2c), and the `!*.test.*` glob
+excludes the one legitimate class — a published-surface assertion importing a sibling barrel on purpose, each already carrying an
+`oxlint-disable-next-line` and its reason. With both, this should return nothing.
 **PCRE2 (`-P`) is required** — the default engine has no lookahead and will silently match everything.
 
 **Web-APIs-only breach in a runtime namespace**
@@ -128,13 +131,14 @@ _Triage:_ the negative lookahead already excludes the two sanctioned exemptions 
 ```bash
 rg -n '\bBun\.|from "node:' src/ \
   --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' \
-  --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md'
+  --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
+  --glob '!**/*.fixture.ts'
 ```
 
 _Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption ([`NAMESPACES.md`][namespaces-4a] §4a) — and `ui/assets/build`
 is the one runtime-owned namespace that carries the same exemption behind its own subpath. Tests and `.browser.ts` specs run under Bun or
-Playwright, never in a Worker. **Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a
-genuine runtime-portability break.
+Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker does. **Without those globs the
+command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a genuine runtime-portability break.
 
 _The direction that matters most is already a gate step._ `validate-build-time-boundary` fails any runtime module that imports a build-time one, so
 a review does not have to find that by hand; run this command for the case the step cannot see — a Node API used **inside** a runtime namespace
@@ -176,39 +180,6 @@ correctly, which is the one shape a looser pattern picks up as a false positive.
 declaration site and the gate's `typecheck` step fails before this command runs. The command stays because `ForgeIcon<string>` is still spellable,
 still compiles, and is still always wrong in a prop position — catching that explicit spelling is its remaining job.
 
-**Unbudgeted comment** ([`CODE_RULES.md`][cr-5a] §5a is the whole budget; [`CODE_RULES.md`][cr-5b] §5b is what is deleted on sight)
-
-```bash
-rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
-rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
-rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
-rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
-rg -n '^\s*//\s*(const|let|function|return|import|export|if|await)\b' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
-rg -Un --multiline '(?:^[ \t]*//[^\n]*\n){3,}' --glob 'src/**/*.ts*' --glob 'config/**/*.ts' --glob 'warden/**/*.ts'
-```
-
-**Every command carries `--glob 'config/**/*.ts'` and `--glob 'warden/**/*.ts'`.** Only the first carried the `config/` glob until the September
-2026 sweep, and `config/steps.ts` — the file with the most `//` runs in the repository — was therefore scanned by nothing. `warden/` was added on
-the same terms in the sweep that followed: it carries TypeScript, it is published as the `./warden` subpath, and no command could see it.
-
-_Triage:_ the third, fourth, and fifth have **no false-positive class** — every hit is a defect, in a test file as readily as in production source.
-The other three do, and all were confirmed on a real sweep:
-
-- The first is anchored to `^\s*\*\s*@example` — a TSDoc continuation line — precisely because a bare `rg "@example"` matches the `you@example.com`
-  in every email fixture in the repo, plus a `barrel-parse.test.ts` fixture that feeds the parser a literal `" * @example"` as **test input**.
-  Deleting that string would delete the test. Never grep for the bare tag.
-- The second needs `-P`: its lookahead is unsupported by the default engine, which errors rather than under-matching. Its 400-character threshold is
-  a heuristic floor, not the rule — read each hit and keep the one sentence [`CODE_RULES.md`][cr-5a] §5a permits. It also matches **template-literal
-  contents** that use comment syntax as their payload: `cf-env-registry.ts`'s `HEADER` is the banner the `gen:env` command emits into generated
-  files, so shortening it would change generator output, and `warden/src/checks/docs.test.ts` feeds the checker a fixture containing the literal
-  `/**/*.test.ts`. A hit inside a backtick or quoted string is code, not a comment.
-- The sixth is the run-length detector: three or more consecutive `//` lines. [`CODE_RULES.md`][cr-5a] §5a form 3 caps an inline _why_ at **one or
-  two lines**, so a longer run is over budget by construction and no other command sees it. Its one false-positive class is the **upstream
-  attribution header** — the MIT/ISC notice carried by eight files, `src/tooling/term/{ansi,border,capability,codes,color,width,wrap}.ts` and
-  `src/tooling/cli/tokenize.ts`, of which the four running to three lines or more (`capability`, `codes`, `color`, `tokenize`) are what this command
-  matches. A licence notice is a legal requirement, not prose written for the reader, and it is never shortened. Three _separate_ one-line comments
-  on adjacent lines also match; read the hit before cutting.
-
 Restating-the-code and narration are not reachable by any command; they belong to §3c.
 
 ### 3c. Tier 3 — Judgement
@@ -235,9 +206,16 @@ cover every piece of work the function started, or only the headline one?_ A `vo
 before it settles — the shape to look for is a probabilistic or opportunistic side task detached from the promise the caller awaits
 ([`FORGE_STRUCTURE.md`][la-6] §6).
 
-**The ten unchecked a11y rule ids.** Read every added or changed `.tsx` under `src/ui/`. _Does the markup meet each of these ids, none of which any
-gate step proves?_ The eight that are gated are §3a's; these ten are the remainder, and the reason each has no command is recorded below so it is
-not re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-accessibility.md`][accessibility]; the corpus publishes them either way
+**Prose that earns nothing.** Read every comment and every README paragraph in the diff. _Does this sentence say something the name, the type, the
+signature, or a test does not?_ A per-field gloss, a per-symbol restatement, and a paragraph narrating how the code works are the same defect at
+rising scale — §3a's step catches the first two by shape, never the last ([`CODE_RULES.md`][cr-5b] §5b, [`AGENT_GUIDE.md`][ag-6c] §6c). In a
+README the shape to look for is a section named after an exported symbol: no gate sees it, and it is what a task-shaped README replaced. Where the
+sentence asserts behaviour, the question is sharper — _which test pins this?_ — and where none does, the finding is the missing assertion
+([`CODE_RULES.md`][cr-5e] §5e).
+
+**The unchecked a11y rule ids.** Read every added or changed `.tsx` under `src/ui/`. _Does the markup meet each of these ids, none of which any
+gate step proves?_ The gated ids are §3a's; the ones below are the remainder, and the reason each has no command is recorded beside it so it is not
+re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-accessibility.md`][accessibility]; the corpus publishes them either way
 ([`UI_DESIGN_GUIDANCE.md`][udg-4a] §4a).
 
 | Rule id | Why no command decides it |
@@ -246,7 +224,7 @@ not re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-acces
 | `forge-ui-heading-order` | Order is a property of the rendered document, not of one file — `compositions.tsx` correctly writes three `<h3>`s before its `<h2>` |
 | `forge-ui-hit-target` | Needs to know which element is interactive and what the unspecified axis resolves to at render |
 | `forge-ui-not-color-alone` | Turns on whether an icon and words _also_ convey the state |
-| `forge-ui-a11y-icon-plus-text` | Preferred form and permitted alternative are the same shape in source — the 25 `aria-label` sites in `show/components.tsx` alone would fire |
+| `forge-ui-a11y-icon-plus-text` | Preferred form and permitted alternative are the same shape in source — the `aria-label` sites in `show/components.tsx` alone would fire |
 | `forge-ui-a11y-label-element` | The trigger is "the design has no room for a visible label", a fact about the design and not about the markup |
 | `forge-ui-a11y-required-marker` | `Label`'s `required` prop already emits the marker, so no residual shape is left to match |
 | `forge-ui-a11y-reduced-motion-pair` | Depends on whether the settled state is already the untransitioned default |
@@ -274,12 +252,13 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | Pattern | Why it is correct |
 | --- | --- |
 | `new Forge<Env>()` in a test | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets _config holders_ — [`CODE_RULES.md`][cr-1d] §1d |
-| `@y-core/forge/context` imported by a consumer | `context` **is** a public subpath. Any claim that it is internal is stale |
+| `@y-core/forge/context` imported by a consumer | `context` **is** a public subpath |
 | A reference to `@y-core/forge/crypto` being absent | That subpath **never existed**. `crypto` is sealed-internal — [`NAMESPACES.md`][namespaces-3b] §3b |
-| `import { v } from "../validation/mod"` in forge source | One of the two sanctioned barrel exemptions — [`NAMESPACE_DESIGN.md`][nd-2c] §2c |
+| `import { v } from "../validation/mod"` in forge source | A sanctioned barrel exemption — [`NAMESPACE_DESIGN.md`][nd-2c] §2c |
 | `import … from "../crypto/mod"` in forge source | The other sanctioned exemption |
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
+| `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |
 | `node:child_process` / `node:fs` / `node:net` in `src/testing/workerd.ts` | The one node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
@@ -290,7 +269,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `serveObject` returning a `Response`, not a `Result` | A ratified boundary exception — [`FORGE_ERRORS.md`][eh-5e] §5e |
 | `Input` exported from both `ui/core` and `ui/controls` | Deliberate shadowing — [`NAMESPACES.md`][namespaces-5b] §5b |
 | `@public` / `@internal` on a TSDoc line | Machine-readable visibility markers, explicitly budgeted — [`CODE_RULES.md`][cr-5a] §5a |
-| A one-line inline comment carrying an external _why_ | The third budgeted form, subject to the four conditions in [`CODE_RULES.md`][cr-5a] §5a |
+| A one-line inline comment carrying an external _why_ | The third budgeted form, subject to the conditions in [`CODE_RULES.md`][cr-5a] §5a |
 | A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`CODE_RULES.md`][cr-5d] §5d |
 | A `page.evaluate` callback whose destructured parameter repeats an outer name | The callback runs in the browser realm and _cannot_ close over the Node-side binding; the repeated name is what documents the marshalled argument — §7b |
 | `[--tone:var(--color-…)]` arbitrary-property classes, and `bg-(--tone)` reading them | The tone mechanism, not a stray arbitrary value: `toneVariants` sets the properties and one recipe per appearance reads them — [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e |
@@ -335,21 +314,21 @@ step runs from.
 
 ### 7c. Why `jsx-a11y` is on, and what it does not see
 
-The plugin is enabled and every one of its 35 rules runs under `correctness`. Measured over `src/` and `config/` before adoption, it produced **9
+The plugin is enabled and every rule it ships runs under `correctness`. Measured over `src/` and `config/` before adoption, it produced **9
 findings and zero real defects**: six were correct ARIA the rules mis-advise, three were adversarial markup in test fixtures.
 
 **Unlike §7a's default-deny, a category is the right unit here** — and the reach is narrower than §7a's argument implies. `.oxlintrc.json` is not in
 `package.json`'s `files` array, so it does not ship. A consumer inherits the _invocation_ (`lintStep` → `oxlint --deny-warnings`) and writes its own
-rule table, so an oxc editorial change to `jsx-a11y` reaches forge's tree only, not every consumer's. Against that, the 35 rules are a fixed W3C
-vocabulary rather than a style opinion, and they cost nothing today.
+rule table, so an oxc editorial change to `jsx-a11y` reaches forge's tree only, not every consumer's. Against that, the plugin's rules are a fixed
+W3C vocabulary rather than a style opinion, and they cost nothing today.
 
 **One rule is off.** `prefer-tag-over-role` proposes `<output>` for `role="status"` and `address, details, fieldset, hgroup, optgroup` for
 `role="group"` — substitutions that change the element's meaning. It is off rather than suppressed per-site because it is the one rule that
-_recurs_: every future correct `role="status"` would owe a fresh suppression. Three rules are off for `*.test.{ts,tsx}` only —
+_recurs_: every future correct `role="status"` would owe a fresh suppression. A further set is off for `*.test.{ts,tsx}` only —
 `control-has-associated-label`, `tabindex-no-positive`, `aria-proptypes` — because feeding a linter's own bad input is what those tests are for
 ([`TESTING.md`][testing]).
 
-**Two sites carry a written suppression**, both load-bearing and both proven so by `report-unused-disable-directives-severity error` on
+**Every written suppression is load-bearing**, and proven so by `report-unused-disable-directives-severity error` on
 `typeAwareLintStep`: `switch.tsx` (`role-has-required-aria-props` — a native checkbox supplies `aria-checked` itself) and `scroll-area.tsx`
 (`no-noninteractive-tabindex` — WCAG 2.1.1 requires the tab stop). Directives are honoured both in JSX attribute position and inside a `{/* … */}`
 container.
@@ -370,9 +349,10 @@ including on a deliberately broken label. An inert setting reads as coverage tha
 **The division of labour that follows.** jsx-a11y owns ARIA _vocabulary validity_ on forge's own intrinsic markup — a typo'd `aria-labeledby`, an
 invalid role string, a malformed value. Forge's own published a11y rules are the design gate's, over the composition jsx-a11y cannot read (§3a);
 `contrastStep` continues to own `forge-ui-contrast-floor`. Neither tool substitutes for the other, and no imported rule set closes the gap between
-forge's published a11y ids and its checked ones — the ten ids that gap still contains are owned as review items in §3c.
+forge's published a11y ids and its checked ones — the ids that gap still contains are owned as review items in §3c.
 
 [accessibility]: ../src/ui/design/reference/10-accessibility.md
+[ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [boundaries-5]: ../warden/canon/libs/BOUNDARIES.md#5-fail-closed
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [cr]: ../warden/canon/libs/CODE_REVIEW.md
@@ -385,6 +365,7 @@ forge's published a11y ids and its checked ones — the ten ids that gap still c
 [cr-5a]: ../warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
 [cr-5b]: ../warden/canon/shared/CODE_RULES.md#5b-forbidden-outright
 [cr-5d]: ../warden/canon/shared/CODE_RULES.md#5d-tests-are-not-exempt
+[cr-5e]: ../warden/canon/shared/CODE_RULES.md#5e-a-behavioural-claim-is-an-assertion
 [eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [floor]: ../src/ui/design/floor.md

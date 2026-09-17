@@ -5,8 +5,7 @@ import { fnv1a } from "../corpus/hash";
 import type { SourceDoc } from "../types";
 import { versionsMatch } from "./db";
 
-/** What a freshness check found. `stale` names the paths that changed; empty means the index is
- *  current. `rebuild` says the whole index has to go, not just those paths. @public */
+/** What a freshness check found: `stale` names the paths that changed, `rebuild` says the whole index has to go. @public */
 export interface Freshness {
   fresh: boolean;
   rebuild: boolean;
@@ -23,12 +22,7 @@ interface Row {
   hash: string;
 }
 
-/** Three tiers, cheapest first: the version gate, then `size`/`mtimeMs`, then a content hash for
- *  the files that failed the stat gate alone.
- *
- *  The last tier exists because a checkout, a `git stash`, or a formatter run rewrites mtimes
- *  without changing bytes — and rebuilding the whole corpus on every branch switch is how a
- *  freshness check gets turned off. @public */
+/** Whether the index is current, cheapest gate first: the version, then `size`/`mtimeMs`, then a content hash. @public */
 export function freshness(db: Database, sources: readonly SourceDoc[], canonVersion: string): Freshness {
   if (!versionsMatch(db, canonVersion)) {
     return { fresh: false, rebuild: true, stale: [], reason: "the schema, the indexer or the canon version changed" };
@@ -58,9 +52,7 @@ export function freshness(db: Database, sources: readonly SourceDoc[], canonVers
     : { fresh: false, rebuild: false, stale, reason: `${stale.length} document${stale.length === 1 ? "" : "s"} changed` };
 }
 
-/** The advisory a search prints over an index it could not bring forward. A caller refreshes first
- *  and only reaches this when the rebuild itself failed, so the line means "behind, and stuck" —
- *  never merely "behind", which the refresh would have fixed before any result was served. @public */
+/** The advisory a search prints over an index it could not bring forward. @public */
 export function advisory(state: Freshness): string {
   if (state.fresh) return "";
   const detail = state.stale.length > 0 ? `: ${state.stale.slice(0, 5).join(", ")}${state.stale.length > 5 ? ", …" : ""}` : "";

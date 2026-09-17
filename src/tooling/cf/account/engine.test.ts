@@ -173,8 +173,10 @@ describe("syncBindings() — deployment target", () => {
 
   it("threads a pages target derived from the config", async () => {
     const { handler, seen } = captureTarget();
-    await syncBindings({ name: "cornellaw", pages_build_output_dir: "./public", kv_namespaces: [{ binding: "KV" }] }, { auth: AUTH }, [handler]);
-    expect(seen()).toEqual({ kind: "pages", name: "cornellaw" });
+    await syncBindings({ name: "engine-fixture", pages_build_output_dir: "./public", kv_namespaces: [{ binding: "KV" }] }, { auth: AUTH }, [
+      handler,
+    ]);
+    expect(seen()).toEqual({ kind: "pages", name: "engine-fixture" });
   });
 
   it("threads a worker target when main is present", async () => {

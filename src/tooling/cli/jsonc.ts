@@ -2,27 +2,14 @@ import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import type { JsonPath, JsoncMember, JsoncNode, JsoncParseError } from "./types";
 
-/** Render a path the way a user would point at it: `kv_namespaces[0].id`. */
+/** Renders a path the way a user would point at it: `kv_namespaces[0].id`. */
 export function formatPath(path: JsonPath): string {
   return path.reduce<string>((acc, seg) => (typeof seg === "number" ? `${acc}[${seg}]` : acc ? `${acc}.${seg}` : String(seg)), "");
 }
 
-/**
- * A JSONC parser that keeps byte offsets.
- *
- * The values themselves still come from `JSON.parse(stripJsonc(src))` — this tree
- * exists only to answer "where in the original text does this live?", which is what
- * makes it possible to write an id back without reformatting the file around it.
- */
-
 const isWs = (c: string | undefined) => c === " " || c === "\t" || c === "\n" || c === "\r";
 
-/**
- * Advance past whitespace and comments.
- *
- * Shared with {@link stripJsonc} so that the two cannot disagree about what counts
- * as ignorable text — a disagreement would show up as a splice at the wrong offset.
- */
+/** Advances past a run of whitespace and comments. */
 export function skipTrivia(src: string, i: number): number {
   const len = src.length;
   while (i < len) {
@@ -37,11 +24,7 @@ export function skipTrivia(src: string, i: number): number {
   return i;
 }
 
-/**
- * Advance past exactly **one** comment at `i`, or return undefined if none starts
- * there. Distinct from {@link skipTrivia}, which consumes a whole run — a caller
- * counting comments needs them one at a time.
- */
+/** Advances past exactly one comment at `i`, or returns undefined when none starts there. */
 export function scanComment(src: string, i: number): number | undefined {
   const len = src.length;
   if (src[i] !== "/") return undefined;
@@ -64,13 +47,10 @@ export function scanComment(src: string, i: number): number | undefined {
   return undefined;
 }
 
-/**
- * Scan a string literal starting at its opening quote.
- * Returns the offset just past the closing quote.
- */
+/** Scans a string literal from its opening quote, returning the offset just past the closing quote. */
 export function scanString(src: string, i: number): number {
   const len = src.length;
-  i++; // opening quote
+  i++;
   while (i < len) {
     const c = src[i];
     if (c === "\\") {
@@ -80,7 +60,7 @@ export function scanString(src: string, i: number): number {
     if (c === '"') return i + 1;
     i++;
   }
-  return i; // unterminated; the caller's JSON.parse will report it
+  return i;
 }
 
 /** True when a comma at `i` is a trailing comma — the next real token closes a container. */
@@ -89,13 +69,7 @@ function isTrailingComma(src: string, i: number): boolean {
   return next === "}" || next === "]";
 }
 
-/**
- * Strip comments and trailing commas, yielding text `JSON.parse` accepts.
- *
- * Trailing commas are detected during the scan rather than by a regex over the
- * output. The regex could not tell a comma inside a string from a syntactic one,
- * so `{"a": "x, }"}` used to be silently rewritten to `{"a": "x }"}`.
- */
+/** Strips comments and trailing commas, yielding text `JSON.parse` accepts. */
 export function stripJsonc(src: string): string {
   let out = "";
   let i = 0;
@@ -171,7 +145,6 @@ function parseValue(src: string, i: number): { node: JsoncNode; next: number } {
     return { node: { kind: "string", start: i, end }, next: end };
   }
 
-  // Number, true, false, null — scan to the next structural delimiter.
   const start = i;
   while (i < src.length) {
     const c = src[i];
@@ -187,7 +160,7 @@ function parseValue(src: string, i: number): { node: JsoncNode; next: number } {
 
 function parseObject(src: string, i: number): { node: JsoncNode; next: number } {
   const start = i;
-  i++; // {
+  i++;
   const members: JsoncMember[] = [];
 
   for (;;) {
@@ -224,7 +197,7 @@ function parseObject(src: string, i: number): { node: JsoncNode; next: number } 
 
 function parseArray(src: string, i: number): { node: JsoncNode; next: number } {
   const start = i;
-  i++; // [
+  i++;
   const elements: JsoncNode[] = [];
 
   for (;;) {
@@ -245,7 +218,7 @@ function parseArray(src: string, i: number): { node: JsoncNode; next: number } {
   }
 }
 
-/** Parse `src` into a span tree. */
+/** Parses `src` into a span tree. */
 export function parseJsoncTree(src: string): Result<JsoncNode, JsoncParseError> {
   try {
     const { node, next } = parseValue(src, 0);
@@ -260,7 +233,7 @@ export function parseJsoncTree(src: string): Result<JsoncNode, JsoncParseError> 
   }
 }
 
-/** Look up the member named `key` on an object node. */
+/** Looks up the member named `key` on an object node. */
 export function findMember(node: JsoncNode, key: string): JsoncMember | undefined {
   return node.kind === "object" ? node.members.find((m) => m.key === key) : undefined;
 }

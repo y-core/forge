@@ -49,7 +49,7 @@ One row per file, keyed by the question that sends you there. This is the corpus
 | Which component do I reach for? | [`catalog.md`][catalog] |
 | Does this look like it was generated rather than designed? | [`tells.md`][tells] |
 | Am I done? | [`preflight.md`][preflight] |
-| Two things look equally important. | [`reference/01-hierarchy.md`][hierarchy] |
+| Several things look equally important. | [`reference/01-hierarchy.md`][hierarchy] |
 | How much space goes between these, and why that much? | [`reference/02-layout.md`][layout] |
 | How many text sizes and weights, and how wide does the copy run? | [`reference/03-typography.md`][typography] |
 | Which token is this shade, and does it hold in dark mode? | [`reference/04-color.md`][color] |

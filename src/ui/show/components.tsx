@@ -353,7 +353,7 @@ const BUTTON_SIZES = ["sm", "md", "lg"] as const;
 const BUTTON_SHAPES = ["default", "icon", "square", "circle"] as const;
 /** The control width each size's non-default shape reads from — spelled out, so Tailwind can see them. */
 const BUTTON_SHAPE_BOX = { sm: "w-control-sm", md: "w-control-md", lg: "w-control-lg" } as const;
-/** The three tones a state has to be legible on: `state-disabled` composes over `--tone`, it does not replace it. */
+/** The tones a state has to be legible on: `state-disabled` composes over `--tone`, it does not replace it. */
 const STATE_TONES = ["primary", "neutral", "destructive"] as const;
 
 const AlertSection: FC<{ page: string }> = ({ page }) => (

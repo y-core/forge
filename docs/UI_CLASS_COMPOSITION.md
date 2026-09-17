@@ -102,7 +102,7 @@ stay governed by [`BOUNDARIES.md`][boundaries]'s no-PII rule; the cache adds no 
 ### 1b. Class Order Is Not Load-Bearing Within a Literal
 
 **The invariant: every class literal is a fixed point of `cn`.** For any literal `L`, `cn(L) === L`. Equivalently, no two tokens in one literal
-claim the same conflict group. A literal that breaks it already contains dead code — one of the two tokens is dropped at render — so the rule costs
+claim the same conflict group. A literal that breaks it already contains dead code — one of the tokens is dropped at render — so the rule costs
 nothing and buys everything below.
 
 **The gate enforces it; this paragraph does not.** `validate-class-order` judges class positions with the real `cn`, imported rather than
@@ -130,7 +130,7 @@ and `cva`'s `base → variants → matching compounds → class` layering, which
 app formatting its own tree with forge's `.oxfmtrc.json` keeps both.
 
 **Only literals in a class position are sorted.** A bare `const FOO = "…"` sits in no such position, so forge's own class consts are wrapped —
-`const INPUT_BASE = cn("…")` — which reaches them with a call the invariant proves is the identity. Two files cannot be wrapped, because reaching
+`const INPUT_BASE = cn("…")` — which reaches them with a call the invariant proves is the identity. Some files cannot be wrapped, because reaching
 `cn` would close a namespace cycle; their literals are unsorted and unreachable by any sorter, which is exactly why they are also unbreakable by
 one.
 
@@ -168,9 +168,9 @@ gains a named group only when both probes agree.**
 one, breaking the pinned ruling that `classGroup("cursor-brand")` stays `undefined` so a consumer's bespoke class survives (§1a). A root that
 genuinely takes a scale value answers both probes the same way; a root whose names are keywords compiles nothing for either and is left alone.
 
-**Two groups reaching exactly the same properties is a derivation-time throw, not a silent no-edge.** Equal reach is never a legitimate table state,
+**Groups reaching exactly the same properties are a derivation-time throw, not a silent no-edge.** Equal reach is never a legitimate table state,
 and a proper-subset check would emit no edge and leave the ambiguity invisible — surfacing later as `cn` dropping both classes at runtime depending
-on argument order. Throwing surfaces it as a named `validate-class-groups` failure instead, which is how the derivation already treats its other two
+on argument order. Throwing surfaces it as a named `validate-class-groups` failure instead, which is how the derivation already treats its other
 ambiguity conditions.
 
 ### 1d. A Narrower Later Utility Layers Rather Than Displaces
@@ -210,15 +210,15 @@ while the recipe sits on the wrapping label is the ordinary shape here, not the 
 signature. `config/steps.ts` names them through `FORGE_STATE_RECIPES`; `reach()` finds no CSS property in such a key, so no override edge is derived
 into or out of one either.
 
-**The signature this replaces was wrong in both directions.** `signature()` prefers a utility's `--tw-*` variables over the CSS properties it also
-sets, so `state-invalid` — `border-color` _and_ `--tw-ring-color` — collapsed to the group every `ring-*` takes, and since a caller's `class` is
-always last under last-wins `cn`, `<Input class="ring-primary">` shipped a control announcing `aria-invalid` while looking valid; the reverse held
-too, `state-busy`'s group subsuming a caller's `cursor-wait`. Neither is a real conflict — a recipe painting only under `&[aria-invalid]` cannot
-contend with one that paints unconditionally. **A state recipe therefore travels as one token of the base literal, never as a second `cn`
-argument**: slot-keyed, it contends with nothing, so its own argument buys no separation. What earns one is a base-scope token that does contend —
-`slider.tsx` and `toggle.tsx` pass `cursor-pointer` alone because `state-busy` paints `cursor: progress`.
+**A compiled signature groups a state recipe wrongly in both directions.** `signature()` prefers a utility's `--tw-*` variables over the CSS
+properties it also sets, so `state-invalid` — `border-color` _and_ `--tw-ring-color` — collapses to the group every `ring-*` takes, and since a
+caller's `class` is always last under last-wins `cn`, `<Input class="ring-primary">` would drop the invalid border and leave a control announcing
+`aria-invalid` while looking valid; the reverse holds too, `state-busy`'s group subsuming a caller's `cursor-wait`. Neither is a real conflict — a
+recipe painting only under `&[aria-invalid]` cannot contend with one that paints unconditionally. **A state recipe therefore travels as one token of
+the base literal, never as a second `cn` argument**: slot-keyed, it contends with nothing, so its own argument buys no separation. What earns one is
+a base-scope token that does contend — `slider.tsx` and `toggle.tsx` pass `cursor-pointer` alone because `state-busy` paints `cursor: progress`.
 
-**The four paint recipes keep their compiled signature, deliberately.** `border-field`, `field-chrome`, `otp-cells` and `otp-editor` declare their
+**The paint recipes keep their compiled signature, deliberately.** `border-field`, `field-chrome`, `otp-cells` and `otp-editor` declare their
 whole payload at base scope, so a consumer's later `rounded-lg`, `h-auto` or `w-20` should win — the override [`UI_SSR_COMPONENTS.md`][usc-1c] §1c
 promises. A **paint** recipe would still be wrong as an `@utility`: a pressed toggle's `background-color` is exactly what its resting state sets, so
 a `state-pressed` would delete the `bg-transparent` beside it. **What works there is a shared class const** passed as its own `cn` argument
@@ -234,7 +234,7 @@ behind each property.
 
 ### 1f. Which Utility Composes a Class, and In What Order
 
-**Four ratified points deciding which of `const`, `cva` and `cn` a class expression uses**; `src/ui/README.md` owns the worked call-site examples.
+**The ratified points deciding which of `const`, `cva` and `cn` a class expression uses**; `src/ui/README.md` owns the worked call-site examples.
 
 **A class string that never varies is a module-scope `const`, not a `cn` call at render** — resolved once at load rather than once per element, and
 named for every call site that shares it. `src/ui/core/utils/recipes.ts` (`PANEL_HEADER`, `FIELD_SIZE`, …) is the pattern.
@@ -347,7 +347,7 @@ group the design system states, so the conforming spelling merges against `text-
 its family group, so `font-face-display` merges against `font-sans` and coexists with `font-semibold`. A non-conforming token keeps §1a's behaviour,
 unchanged and still silent.
 
-**The gate holds forge to it, and holds a consumer to it once the consumer opts in.** `validate-css-tokens` fails any `@theme` token declared in an
+**The gate holds forge to it, and holds an opted-in consumer to it.** `validate-css-tokens` fails any `@theme` token declared in an
 overloaded namespace, deriving _overloaded_ from the compiled design system rather than a hand-kept list that would age: a root whose enumerated
 values mean one concern and whose other names mean another. The row is not forge-only — `cloudflareWorkerSteps({ design: { cssDir } })` runs it
 against the app's own CSS directory, so a consumer naming `design.cssDir` has its non-conforming `--text-*` or `--font-*` token flagged today. It is

@@ -28,7 +28,7 @@ export const COPY_STATUS_ATTR = "data-copy-status";
 /** How long a copy button reads "Copied" before its own label returns. @public */
 export const COPY_CONFIRM_MS = 2000;
 
-/** The two things the customiser hands you, and the control beside each. @public */
+/** What the customiser hands you, and the control beside each. @public */
 export const COPY_TARGETS: readonly CopyTarget[] = [
   {
     id: "url",
@@ -144,7 +144,7 @@ export function stepProperty(family: ScaleFamily, step: number): string {
   return `--${family}-${step + 1}`;
 }
 
-/** One value covering both modes, collapsed to a bare value where the two modes agree. @public */
+/** One value covering both modes, collapsed to a bare value where light and dark agree. @public */
 export function lightDark(light: string, dark: string): string {
   return light === dark ? light : `light-dark(${light}, ${dark})`;
 }
@@ -170,7 +170,7 @@ function buildFamily(ramp: Readonly<Record<Mode, Ramp>>, hue: number, chroma: nu
   return { light: build("light"), dark: build("dark") };
 }
 
-/** The whole scheme, from the five dials; chroma arrives in {@link DIALS}' thousandths. @public */
+/** The whole scheme, from the dials; chroma arrives in {@link DIALS}' thousandths. @public */
 export function buildTheme(dials: DialValues): GeneratedTheme {
   return {
     gray: buildFamily(GRAY_RAMP, dials.grayHue ?? 0, (dials.grayChroma ?? 0) / 1000),
@@ -226,7 +226,7 @@ export const HEX_ATTR = "data-hex";
 
 // Every id is family-prefixed, gray included: a bare `light` beside `accent-light` would make the
 // rows non-uniform and invite parsing the id to recover the family it already carries.
-/** The four rows of the preview: each generated scale, drawn on the surface it belongs to. @public */
+/** The rows of the preview: each generated scale, drawn on the surface it belongs to. @public */
 export const SCALE_ROWS: readonly { readonly id: string; readonly family: ScaleFamily; readonly mode: Mode; readonly label: string }[] = [
   { id: "accent-light", family: "accent", mode: "light", label: "Accent scale, light surface" },
   { id: "accent-dark", family: "accent", mode: "dark", label: "Accent scale, dark surface" },
@@ -234,7 +234,7 @@ export const SCALE_ROWS: readonly { readonly id: string; readonly family: ScaleF
   { id: "gray-dark", family: "gray", mode: "dark", label: "Gray scale, dark surface" },
 ];
 
-/** The five bands the twelve steps are drawn under; `span` must total twelve. @public */
+/** The bands a scale's steps are drawn under; `span` must total twelve. @public */
 export const STEP_SEGMENTS: readonly { readonly label: string; readonly span: number }[] = [
   { label: "Surfaces", span: 2 },
   { label: "Interactive", span: 3 },

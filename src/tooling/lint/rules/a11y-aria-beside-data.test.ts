@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, element, literal, runRule } from "../test-support.ts";
+import { attribute, element, literal, runRule } from "../lint.fixture.ts";
 import { a11yAriaBesideData, PRESENCE_STATES } from "./a11y-aria-beside-data.ts";
 
 describe("a11y-aria-beside-data", () => {

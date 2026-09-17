@@ -14,8 +14,7 @@ export const TURNSTILE_SCOPE = "turnstile";
 /** Cloudflare Turnstile script, matched as a prefix so a URL carrying parameters is still found. @public */
 export const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
-/** The URL the controller injects: the controller renders every widget itself, so the implicit
- * document scan Cloudflare runs without `render=explicit` has nothing to find. @public */
+/** The URL the controller injects; `render=explicit` suppresses the document scan Cloudflare would otherwise run. @public */
 export const TURNSTILE_SCRIPT_URL = `${TURNSTILE_SCRIPT_SRC}?render=explicit`;
 
 /** If the script has not loaded within this budget, the controller reveals the fallback message. @public */

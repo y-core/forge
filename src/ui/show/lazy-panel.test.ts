@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeTree } from "../client/test-dom";
+import { fakeTree } from "../client/dom.fixture";
 import {
   LAZY_DEMO_LOADED,
   LAZY_DEMO_STATUS_REF,

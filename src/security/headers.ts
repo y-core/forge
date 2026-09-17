@@ -25,6 +25,10 @@ const CSP_SOURCE_TOKEN = /^[\x21-\x7e]+$/;
 
 const CSP_HASH_SOURCE = /^'(sha256|sha384|sha512)-/i;
 
+// Tighter than `CSP_SOURCE_TOKEN`, which admits `'` and would let a caller close the quoted
+// nonce source and append a further one — `'unsafe-inline'` among them.
+const CSP_NONCE_VALUE = /^[A-Za-z0-9+/_-]+={0,2}$/;
+
 const FORBIDDEN_CSP_SOURCES: ReadonlyMap<string, string> = new Map(UNSAFE_CSP_SOURCES.map((s) => [s.token, s.exportName]));
 
 const PERMISSIONS_POLICY_FEATURES = ["camera", "microphone", "geolocation", "payment"] as const;
@@ -179,6 +183,9 @@ function renderSecurityHeaders(precomputed: PrecomputedSecurityHeaders, nonce: s
 /** Applies forge's security headers to `response`, minting a nonce when `options.nonce` is omitted. @public */
 export function applySecurityHeaders(response: Response, options?: ApplySecurityHeadersOptions): Response {
   const { nonce = generateNonce(), ...headerOptions } = options ?? {};
+  if (!CSP_NONCE_VALUE.test(nonce)) {
+    throw new Error("Invalid CSP nonce: must be a non-empty base64 or base64url value (no quotes, whitespace or CSP separators)");
+  }
   assertValidCspOptions(headerOptions);
   const headers = new Headers(response.headers);
   for (const [name, value] of renderSecurityHeaders(precomputeSecurityHeaders(headerOptions), nonce)) {

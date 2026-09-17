@@ -104,13 +104,6 @@ function readLink(input: string, index: number): { text: string; end: number } |
   return { text: input.slice(paramsEnd + 1, closer), end: closer + OSC8_CLOSER.length };
 }
 
-/**
- * The one linear scan every export here is built from.
- *
- * Returns the width consumed, and `index` — where the scan stopped because the next character
- * would have pushed it past `limit`. Callers that only want a width pass an infinite limit; the
- * ones that want to cut read `index` and never measure the string a second time.
- */
 function scan(input: string, limit: number, cfg: Metrics): { width: number; index: number; truncated: boolean } {
   const { length } = input;
   const escapes = hasAnsi(input);
@@ -171,13 +164,7 @@ export function stringWidth(input: string, options?: WidthOptions): number {
   return scan(input, Number.POSITIVE_INFINITY, metrics(options)).width;
 }
 
-/**
- * Cuts `input` down to `limit` columns, appending an ellipsis in place of what was dropped.
- *
- * Returns the width alongside the text: every caller here is about to lay the result out in a
- * column, and measuring the same string twice is how the two disagree.
- * @public
- */
+/** Cuts `input` down to `limit` columns, appending an ellipsis in place of what was dropped. @public */
 export function truncate(input: string, limit: number, options: TruncateOptions = {}): TruncateResult {
   const cfg = metrics(options);
   const full = scan(input, Number.POSITIVE_INFINITY, cfg);
@@ -185,8 +172,6 @@ export function truncate(input: string, limit: number, options: TruncateOptions 
 
   const requested = options.ellipsis ?? "…";
   const requestedWidth = scan(requested, Number.POSITIVE_INFINITY, cfg).width;
-  // An ellipsis wider than the column would report a width above the limit it was asked to fit
-  // in, so below that threshold the cut is silent rather than marked.
   const marked = requestedWidth <= limit;
   const ellipsis = marked ? requested : "";
   const ellipsisWidth = marked ? requestedWidth : 0;

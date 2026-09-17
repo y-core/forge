@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, call, literal, other, runRule } from "../test-support.ts";
+import { attribute, call, literal, other, runRule } from "../lint.fixture.ts";
 import { logicalUtility, platformLogicalSpacing } from "./platform-logical-spacing.ts";
 
 const CORPUS = "(forge-ui-platform-logical-spacing — src/ui/design/reference/16-platform.md)";

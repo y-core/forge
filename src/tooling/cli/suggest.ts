@@ -1,10 +1,3 @@
-/**
- * Levenshtein distance, two rows at a time.
- *
- * Hand-written because the obvious reference imports `fastest-levenshtein`, which forge cannot
- * add, and because that reference's substring fast path makes a one-letter typo match every
- * candidate containing it — a suggestion that names four commands is not a suggestion.
- */
 function distance(a: string, b: string): number {
   if (a === b) return 0;
   if (a.length === 0) return b.length;
@@ -26,14 +19,7 @@ function distance(a: string, b: string): number {
   return previous[b.length] as number;
 }
 
-/**
- * The one candidate closest to `input`, or `undefined` when none is close enough.
- *
- * The threshold scales with the input: one edit is always forgiven, and a third of the length
- * beyond that. Returns a single name rather than a list, because a line that offers three
- * alternatives has not narrowed anything down.
- * @public
- */
+/** The one candidate closest to `input`, or `undefined` when none is close enough. @public */
 export function suggest(input: string, candidates: readonly string[]): string | undefined {
   const limit = Math.max(1, Math.floor(input.length / 3));
   const target = input.toLowerCase();

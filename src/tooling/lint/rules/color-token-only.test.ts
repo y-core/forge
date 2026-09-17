@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, literal, other, runRule } from "../test-support.ts";
+import { attribute, literal, other, runRule } from "../lint.fixture.ts";
 import { colorTokenOnly } from "./color-token-only.ts";
 
 const CORPUS = "(forge-ui-color-token-only — src/ui/design/floor.md)";

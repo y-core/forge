@@ -70,6 +70,16 @@ No scenario narration: no `// Arrange` / `// Act` / `// Assert`, no `// now the 
 covers. One addition to the budget, and only one: a fixture holding a deliberately malformed or adversarial value may carry a one-line note saying
 what makes it malformed, when the literal does not show it.
 
+**A claim deleted from a comment lands here** (`CODE_RULES.md` §5e, `TESTING.md` §3f). When `cc-dev` or `cc-doc` removes a comment that asserted
+behaviour, that claim is not gone from the system until an assertion holds it — and this agent is where the assertion gets written:
+
+- **Read the diff for deleted prose, not only for added code.** A removed sentence claiming behaviour is a test request, whether or not the handoff
+  named it. Check first whether an existing test already pins it; frequently one does, and nothing is owed.
+- **Where nothing pins it, the test is part of the same change** — not a follow-up and not a ledger task. Say so plainly if you could not write it.
+
+The resulting test is held to the same bar as any other: an assertion that reads an outcome a second mechanism also produces, or a literal copied
+back out of the source, has not landed the claim — it has restated it in a new syntax.
+
 ## Coverage Expectations by Layer
 
 **Pure functions and utilities** — return-value shape; every failure branch; boundary values (empty string, zero, maximum length); malformed input.
@@ -89,7 +99,7 @@ unexpected throw reaches the boundary.
 - Nonce uniqueness and header composition across a full request cycle
 - Conditional emission — a header _absent_ when nothing mutated
 
-Three assertion pitfalls specific to this layer: a headers accessor joins multi-value headers with `, ` — use the set-cookie–specific accessor for
+Assertion pitfalls specific to this layer: a headers accessor joins multi-value headers with `, ` — use the set-cookie–specific accessor for
 cookies; a reconstructed cookie object strips security attributes, so inspect the raw header; and each middleware layer validates independently, so
 test each control separately rather than assuming one implies another.
 
@@ -165,7 +175,7 @@ finding. A claim only counts where the executable code exhibits it.
 in order to double-check your own work** — a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole context
 (`AGENT_WORKFLOW.md` §4a). One agent where one suffices.
 
-You may spawn sub-agents to parallelise segmentable work — for example, authoring tests for several independent files at once. Three standing
+You may spawn sub-agents to parallelise segmentable work — for example, authoring tests for several independent files at once. Standing
 conditions:
 
 1. **You stay in control of the split and the synthesis** — you decide the partition and assemble the result.

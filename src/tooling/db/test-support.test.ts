@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { argvHas, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "./test-support";
+import { argvHas, fakeDbIo, jsonRows, minimalWranglerConfig, OK, routedReply } from "./db.fixture";
 
 describe("argvHas()", () => {
   it("finds words in order without requiring them to be adjacent", () => {
@@ -81,6 +81,29 @@ describe("jsonRows()", () => {
 
   it("is the empty-result shape for no rows", () => {
     expect(jsonRows([]).stdout).toBe('[{"results":[],"success":true,"meta":{}}]\n');
+  });
+});
+
+describe("routedReply()", () => {
+  it("answers a batched command with one result set per statement", () => {
+    const seen: string[] = [];
+    const answer = (statement: string): Record<string, unknown>[] => {
+      seen.push(statement);
+      return [{ statement }];
+    };
+
+    const batched = routedReply("SELECT 1;\nSELECT 2;", answer);
+
+    expect(seen).toEqual(["SELECT 1", "SELECT 2"]);
+    expect(JSON.parse(batched.stdout)).toEqual([
+      { results: [{ statement: "SELECT 1" }], success: true, meta: {} },
+      { results: [{ statement: "SELECT 2" }], success: true, meta: {} },
+    ]);
+  });
+
+  it("answers an unbatched read exactly as it answers the same statement inside a batch", () => {
+    const answer = (statement: string): Record<string, unknown>[] => [{ statement }];
+    expect(routedReply("SELECT 1", answer)).toEqual(routedReply("SELECT 1;", answer));
   });
 });
 

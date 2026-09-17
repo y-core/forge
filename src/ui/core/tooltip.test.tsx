@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 import { Menu } from "./menu";
-import { attrOf, attrsOf, variantClasses } from "./test-support";
 import { Tooltip } from "./tooltip";
 
 describe("Tooltip.Content", () => {

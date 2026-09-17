@@ -51,7 +51,8 @@ export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimit
     let resolvedKey: string;
     try {
       resolvedKey = key(c);
-    } catch {
+    } catch (error) {
+      logger.warn("Rate limit key resolution failed — refusing the request", { error: String(error) });
       return new Response("Service unavailable", { status: 503 });
     }
     const { success } = await binding.limit({ key: resolvedKey });

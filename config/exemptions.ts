@@ -17,6 +17,14 @@ export const CN_FIXTURE_SPECS: readonly string[] = [
 /** Subpaths withheld from the runtime import beyond the ones the `client` segment derives. */
 export const BROWSER_ONLY: readonly string[] = [];
 
+/** Modules whose leading `//` run is an upstream licence notice, each mapped to the attribution it carries. */
+export const LICENCE_HEADERS: ReadonlyMap<string, string> = new Map([
+  ["src/tooling/cli/tokenize.ts", "@visulima/command-line-args (MIT), itself after args-tokens (MIT)"],
+  ["src/tooling/term/capability.ts", "@visulima/is-ansi-color-supported (MIT), itself after chalk/supports-color (MIT)"],
+  ["src/tooling/term/codes.ts", "@visulima/colorize (MIT), itself after ansis (ISC), plus color-convert (MIT)"],
+  ["src/tooling/term/color.ts", "@visulima/colorize (MIT), itself after ansis (ISC)"],
+]);
+
 /** Modules exempt from needing a co-located test, each mapped to why. */
 export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/bind-contract.ts", "its one function is covered where it is used, by `client/bind-display.test.ts`"],
@@ -37,15 +45,10 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/toggle-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/toolbar-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/turnstile-contract.ts", "declared contract constants — the markup that uses them is tested"],
-  ["src/ui/show/coverage-missing.ts", "a declared list, held against the tree by the design checks"],
-  ["src/ui/design/catalog-missing.ts", "a declared list, held against the tree by the design checks"],
   ["src/ui/show/lazy-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/show/scope-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/show/toast-contract.ts", "declared contract constants — the markup that uses them is tested"],
-  ["src/ui/client/browser-test-helper.ts", "test infrastructure — it is the thing the browser specs test with"],
-  ["src/ui/client/test-dom.ts", "test infrastructure — it is the thing the unit specs test with"],
   ["src/ui/client/htmx.ts", "a vendor side-effect import with no forge surface of its own"],
-  ["src/tooling/lint/test-support.ts", "test infrastructure — it is the thing the lint-rule specs test with"],
   ["src/test-setup.ts", "the preload that every spec runs under; it has no behaviour to assert"],
   ["src/tooling/lint/data/design-scale.ts", "generated from the stylesheet, and `designScaleStep` holds it against the source"],
   ["src/form/constants.ts", "declared data — the parsers that read the constants are tested"],

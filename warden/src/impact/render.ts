@@ -2,10 +2,7 @@ import type { Impact } from "./impact";
 
 const span = (range: { start: number; end: number }): string => (range.start === range.end ? `${range.start}` : `${range.start}-${range.end}`);
 
-/** The impact report as the text both the CLI and the MCP tool return.
- *
- *  One renderer rather than two: a four-block report duplicated across the two surfaces would drift,
- *  and a reader comparing them would have two answers to the same question. @public */
+/** The impact report as the text both the CLI and the MCP tool return. @public */
 export function renderImpact(report: Impact): string {
   const lines: string[] = [];
 

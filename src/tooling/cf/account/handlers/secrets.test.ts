@@ -43,7 +43,7 @@ const remote = (...names: string[]) => names.map((name) => ({ name, type: "secre
 // `.dev.vars` is gitignored repo-wide, so fixtures are built in a temp tree at
 // runtime rather than committed.
 function makeProject(devVars: string | null, { subdir = false } = {}): { configPath: string; dir: string } {
-  const root = mkdtempSync(join(tmpdir(), "foundry-secrets-"));
+  const root = mkdtempSync(join(tmpdir(), "forge-secrets-"));
   const dir = subdir ? join(root, "nested", "deep") : root;
   if (subdir) mkdirSync(dir, { recursive: true });
   const configPath = join(dir, "wrangler.jsonc");
@@ -449,7 +449,7 @@ describe("fixed secrets — pages project", () => {
   const handler = createSecretsHandler(configPath);
 
   function makePagesCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-    return makeCtx({ scriptName: "cornellaw", target: { kind: "pages", name: "cornellaw" }, ...overrides });
+    return makeCtx({ scriptName: "secrets-fixture", target: { kind: "pages", name: "secrets-fixture" }, ...overrides });
   }
 
   function makePagesFetch(
@@ -473,7 +473,7 @@ describe("fixed secrets — pages project", () => {
           success: true,
           errors: [],
           messages: [],
-          result: { name: "cornellaw", deployment_configs: { production: { env_vars: envVars, wrangler_config_hash: "hash-1" } } },
+          result: { name: "secrets-fixture", deployment_configs: { production: { env_vars: envVars, wrangler_config_hash: "hash-1" } } },
         }),
       );
     };
@@ -487,7 +487,7 @@ describe("fixed secrets — pages project", () => {
 
     expect(res.results[0]?.action).toBe("in-sync");
     expect(res.results[0]?.detail).toBe("name only (value not readable)");
-    expect(captured[0]?.url).toContain("/pages/projects/cornellaw");
+    expect(captured[0]?.url).toContain("/pages/projects/secrets-fixture");
   });
 
   it("does not mistake a plain_text var for a secret", async () => {
@@ -505,7 +505,7 @@ describe("fixed secrets — pages project", () => {
     expect(res.results[0]?.action).toBe("created");
 
     const patch = captured.find((c) => c.method === "PATCH");
-    expect(patch?.url).toBe("https://api.cloudflare.com/client/v4/accounts/acc/pages/projects/cornellaw");
+    expect(patch?.url).toBe("https://api.cloudflare.com/client/v4/accounts/acc/pages/projects/secrets-fixture");
     expect(patch?.body).toEqual({
       deployment_configs: { production: { env_vars: { CSRF_SECRET: { type: "secret_text", value: "v" } }, wrangler_config_hash: "hash-1" } },
     });
@@ -518,7 +518,7 @@ describe("fixed secrets — pages project", () => {
       });
     const res = await handler.reconcile([{ name: "S", value: "v" }], makePagesCtx({ fetch: notFound }));
     expect(res.results[0]?.action).toBe("unavailable");
-    expect(res.results[0]?.detail).toBe("pages project · pages project not found: cornellaw");
+    expect(res.results[0]?.detail).toBe("pages project · pages project not found: secrets-fixture");
   });
 
   it("keeps the secret value out of rows even when the PATCH is rejected", async () => {
@@ -557,7 +557,7 @@ describe("fixed secrets — pages project", () => {
 describe("a secret is not a binding", () => {
   // A secret has no id and takes no prefix: it exists under its own name, unlike KV/D1/R2/queues
   // resources that are created independently and then linked via a prefix and write-back.
-  const PREFIXED = makeCtx({ prefix: "CORNELLAW" });
+  const PREFIXED = makeCtx({ prefix: "SECRETS" });
 
   it("ignores the prefix, even where one is set for the run", async () => {
     const { configPath } = makeProject(fixed("STRIPE_KEY"));
@@ -585,7 +585,7 @@ describe("a secret is not a binding", () => {
     const config: WranglerConfig = { name: "proj" };
     const out = await syncBindings(
       config,
-      { auth: AUTH, prefix: { kind: "custom", prefix: "CORNELLAW" } },
+      { auth: AUTH, prefix: { kind: "custom", prefix: "SECRETS" } },
       [createSecretsHandler(configPath)],
       makeFetch(remote()),
     );

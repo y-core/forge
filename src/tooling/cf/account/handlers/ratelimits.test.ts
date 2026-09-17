@@ -9,17 +9,17 @@ const AUTH = { apiToken: "tok", accountId: "acc" };
 function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
   return {
     auth: AUTH,
-    scriptName: "cornellaw",
+    scriptName: "ratelimit-fixture",
     prefix: "",
     dryRun: false,
     rotate: new Set<string>(),
     fetch: globalThis.fetch,
-    target: { kind: "worker", name: "cornellaw" },
+    target: { kind: "worker", name: "ratelimit-fixture" },
     ...overrides,
   };
 }
 
-const pagesCtx = (overrides: Partial<HandlerContext> = {}) => makeCtx({ target: { kind: "pages", name: "cornellaw" }, ...overrides });
+const pagesCtx = (overrides: Partial<HandlerContext> = {}) => makeCtx({ target: { kind: "pages", name: "ratelimit-fixture" }, ...overrides });
 
 function settingsFetch(bindings: unknown[]): typeof globalThis.fetch {
   return async () => new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { bindings } }));
@@ -40,8 +40,8 @@ describe("rateLimitsHandler.extract()", () => {
 
 describe("rateLimitsHandler — pages project", () => {
   it("reports the binding as inert, because Pages rejects ratelimits outright", async () => {
-    // cornellaw's wrangler.jsonc is a Pages config declaring MAIN_LIMITER. wrangler's
-    // supportedPagesConfigFields has no "ratelimits", so the block binds nothing.
+    // wrangler's supportedPagesConfigFields has no "ratelimits", so a Pages config
+    // declaring one binds nothing.
     const res = await rateLimitsHandler.reconcile([MAIN_LIMITER], pagesCtx());
     expect(res.results[0]?.action).toBe("unavailable");
     expect(res.results[0]?.action).not.toBe("in-sync");

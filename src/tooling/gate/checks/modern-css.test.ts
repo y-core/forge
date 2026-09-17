@@ -26,8 +26,7 @@ const messages = (root: string, extra: Partial<ModernCssCheckConfig> = {}) => ru
 
 const CORPUS = "src/ui/design/reference/16-platform.md";
 
-/** A fixture stylesheet with the layer declared after it, so Tier C's adoption rule stays silent
- *  without moving any line number the Tier A expectations name. */
+/** A fixture stylesheet with the layer declared after it, so Tier C's adoption rule stays silent. */
 const LAYERED = (css: string): string => `${css}@layer base;\n`;
 
 describe("checkModernCss() — the tree it walks", () => {

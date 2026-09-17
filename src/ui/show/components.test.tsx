@@ -6,7 +6,7 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { TONES } from "../contracts/vocabulary";
 import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./components";
-import { sectionBodies } from "./coverage";
+import { sectionBodies } from "./coverage.fixture";
 import { showcasePaths } from "./route";
 import { TOAST_CYCLE_DURATION, TOAST_CYCLE_SCOPE } from "./toast-contract";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";

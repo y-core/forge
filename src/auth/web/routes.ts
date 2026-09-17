@@ -2,7 +2,7 @@ import { del, get, patch, post, route } from "@remix-run/fetch-router/routes";
 
 import type { AuthRouteGroup } from "./types";
 
-/** Every group the three builders produce — a nested group exists only where its guards or medium differ from its parent's. @public */
+/** Every group the builders below produce — a nested group exists only where its guards or medium differ from its parent's. @public */
 export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [
   { path: ["auth"], guards: [], medium: "html" },
   // The one group that admits both an anonymous visitor and a signed-in one: the page serves the

@@ -9,7 +9,7 @@ import { createLocalVarsHandler } from "./localvars";
 import type { HandlerContext } from "./types";
 
 function makeProject(devVars: string | null): string {
-  const dir = mkdtempSync(join(tmpdir(), "foundry-localvars-"));
+  const dir = mkdtempSync(join(tmpdir(), "forge-localvars-"));
   const configPath = join(dir, "wrangler.jsonc");
   writeFileSync(configPath, `{ "name": "proj" }`, "utf-8");
   if (devVars !== null) writeFileSync(join(dir, ".dev.vars"), devVars, "utf-8");

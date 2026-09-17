@@ -83,11 +83,7 @@ function largestFitting(build: (count: number) => KvLogMetadata, max: number): n
   return low;
 }
 
-/**
- * Bounds the row-preview metadata to KV's 1024 serialized bytes, shrinking message, then prefix,
- * then dropping requestId — `JSON.stringify` expands one C0 control character to six bytes, so a
- * cap counted in code units let a 256-character message serialize to ~1620 and KV rejected the put.
- */
+/** Bounds the row-preview metadata to KV's 1024 serialized bytes, shrinking message, then prefix, then dropping requestId. */
 function boundMetadata(record: LogRecord): KvLogMetadata {
   const requestId = truncateCodePoints(record.data?.requestId != null ? String(record.data.requestId) : "", REQUEST_ID_CODE_POINTS_MAX);
 
@@ -122,9 +118,7 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
   const highWater = options?.highWater ?? Math.floor(maxLogs * 1.2);
   const purgeProbability = options?.purgeProbability ?? DEFAULT_PURGE_PROBABILITY;
   const persistStack = options?.persistStack ?? false;
-  // `v2` because an old key's third segment starts with '2' and a new one with '9': under one
-  // prefix every legacy record would sort above every new one and bury the newest entries.
-  const listPrefix = `${prefix}||v2||`;
+  const listPrefix = `${prefix}||`;
 
   return {
     async write(record: LogRecord): Promise<void> {

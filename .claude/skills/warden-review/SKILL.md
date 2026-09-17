@@ -58,5 +58,7 @@ These hold whatever the scope:
   finding.
 - **Patterns that avoid technical debt** rather than defer it.
 - **Attack vectors introduced or widened**, and for a whole-codebase pass, those already present.
+- **Read the prose in the diff, not only the code.** Every comment and every README paragraph is in
+  scope, and §3c names the question to ask of each.
 - **Pre-1.0.** A regression shim, a deprecation alias or a backward-compatibility path is blocking,
   not a courtesy.

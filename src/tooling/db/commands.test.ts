@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execute } from "../cli/execute";
 import type { CommandBase } from "../cli/types";
 import { createDbCommands } from "./commands";
-import { bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "./test-support";
+import { bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "./db.fixture";
 import type { FakeDbIo } from "./types";
 
 const roots: string[] = [];

@@ -164,7 +164,7 @@ columns exist only to align a label against its value — a definition list or a
 The most common way a machine-composed layout announces itself is a border around everything. A border is the loudest available way to say "these
 things belong together", and it is almost never the one the content needs.
 
-Three ways to group, in ascending order of force:
+Ways to group, in ascending order of force:
 
 | Force | Device | When |
 | --- | --- | --- |

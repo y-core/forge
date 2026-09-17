@@ -20,11 +20,7 @@ export interface ResourceTemplate {
   mimeType: string;
 }
 
-/** The one fixed resource.
- *
- *  The catalogue is a resource rather than a tool because it is addressable content: a host can pin
- *  it into context at session start without spending a model turn asking for it, which is the whole
- *  reason resources exist. @public */
+/** The one fixed resource. @public */
 export const RESOURCES: readonly ResourceSpec[] = [
   {
     uri: "knowledge://catalogue",

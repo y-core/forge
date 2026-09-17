@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, element, literal, runRule } from "../test-support.ts";
+import { attribute, element, literal, runRule } from "../lint.fixture.ts";
 import { noInlineStyle } from "./no-inline-style.ts";
 
 describe("no-inline-style", () => {

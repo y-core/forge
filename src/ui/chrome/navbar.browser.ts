@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
 import type { NavDefinition } from "./types";

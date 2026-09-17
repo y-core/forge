@@ -9,7 +9,7 @@ import type { ForgeIcon } from "../../../ui/core/types";
 import type { AdminUserOutcome, AuthUser } from "../../types";
 import { authPaths } from "../paths";
 import { adminRoutes } from "../routes";
-import { attrOf, attrsOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf } from "../test-support";
+import { attrOf, attrsOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf } from "../web.fixture";
 import { AdminUserEditView } from "./admin-user-edit";
 import type { AdminUserEditViewProps } from "./types";
 

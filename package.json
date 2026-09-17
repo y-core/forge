@@ -6,7 +6,7 @@
     "warden": "./warden/src/bin.ts"
   },
   "type": "module",
-  "description": "Server-rendered web utilities and an integrated command layer for Cloudflare Workers — HTMX + Tailwind",
+  "description": "A Web standards platform for server-rendered web applications, built on a foundation of Web APIs for seamless deployment on Cloudflare Workers",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/y-core/forge.git"
@@ -346,10 +346,12 @@
     "src/ui/",
     "src/validation/",
     "warden/",
-    "!**/*-test-helper.ts",
     "!**/*.browser.ts",
+    "!**/*.browser.tsx",
+    "!**/*.fixture.ts",
+    "!**/*.fixture.tsx",
     "!**/*.test.ts",
     "!**/*.test.tsx",
-    "!**/test-support.ts"
+    "!src/tooling/dev/"
   ]
 }

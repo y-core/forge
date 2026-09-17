@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { ShowcaseContent } from "./components";
-import { sectionBodies } from "./coverage";
+import { sectionBodies } from "./coverage.fixture";
 import { showcasePaths } from "./route";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 
@@ -92,7 +92,7 @@ describe("ChromeToolbarSection", () => {
   });
 
   // The flyout is the one place a rail publishes its placement: the root's classes and its
-  // `data-orientation` are shared by the two rails on each axis, so only this tells left from right.
+  // `data-orientation` are shared by the rails on each axis, so only this tells left from right.
   it("gives each flyout-bearing rail an auto popover carrying that rail's own placement", async () => {
     const body = await bodyOf("chrome-toolbar");
     expect(slotTags(body, "toolbar-flyout").map((tag) => [attrOf(tag, "popover"), attrOf(tag, "data-side")])).toEqual([

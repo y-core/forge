@@ -18,7 +18,7 @@ import { Toast } from "../core/toast";
 import type { ForgeIcon } from "../core/types";
 import { CatalogStack } from "./components";
 
-/** The two glyphs this band draws: `Spinner` spins one and `Select` points with the other. */
+/** The glyphs this band draws: `Spinner` spins one and `Select` points with the other. */
 type CompositionIcon = ForgeIcon<"spinner" | "chevron-down">;
 
 /** Forge's own feedback components, as the corpus every surface below renders. */

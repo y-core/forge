@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, variantClasses } from "./core.fixture";
 import { Skeleton } from "./skeleton";
-import { attrsOf, variantClasses } from "./test-support";
 
 describe("Skeleton", () => {
   it("renders the whole placeholder exactly, forwarded attributes escaped", async () => {

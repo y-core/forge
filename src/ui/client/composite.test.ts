@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { isDisabled, isNativeInput } from "./composite";
-import { fakeTree } from "./test-dom";
+import { fakeTree } from "./dom.fixture";
 
 const target = (props: Record<string, unknown>) => ({ nodeType: 1, ...props }) as unknown as EventTarget;
 

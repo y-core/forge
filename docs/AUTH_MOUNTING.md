@@ -1,26 +1,26 @@
 ---
 title: Auth Mounting
-description: "What a consumer mounts to get forge's identity capability: the three route groups and their guards, the order the middleware goes up in, the seams forge does not ship, and the bill."
+description: "What a consumer mounts to get forge's identity capability: the route groups and their guards, the order the middleware goes up in, the seams forge does not ship, and the bill."
 audience: consumer
 ---
 
 # Auth Mounting
 
-> Owns what a consumer does to stand forge's identity capability up: the three route builders and the order they go up in, the guard table every
+> Owns what a consumer does to stand forge's identity capability up: the route builders and the order they go up in, the guard table every
 > group is cut from, the seams forge deliberately ships no implementation for, what mounting costs, and how to place a single auth view inside a
 > page you own.
 >
 > Owns the mount, not the flows. What each flow does once mounted is [`AUTH_FLOWS.md`][af], which also owns the limits this release carries.
 >
 > Defers to: [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
-> [`src/auth/README.md`][auth-readme] for every signature, option shape and export; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
+> [`src/auth/README.md`][auth-readme] for how each of these is called, task by task; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
 > operations return a `Result`; [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c for `resume()` and scope registration.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 The Mount, in Order: the three builders, the one order that works, and the compiled copy of it
+- §1 The Mount, in Order: the builders, the one order that works, and the compiled copy of it
 - §2 The Three Route Groups and Their Guards: which paths each builder registers and what admits a visitor
 - §3 What Forge Does Not Ship: the mailer, the deferral, the confirm route, and the bindings
 - §4 Why Guards Are Wired Separately from Routes: one table, two readers
@@ -31,7 +31,7 @@ audience: consumer
 
 ## 1. The Mount, in Order
 
-Three builders, each optional: omit a capability by not calling its builder. `authRoutes(base)` carries sign-in, sign-up, verification and passkey
+Every builder is optional: omit a capability by not calling its builder. `authRoutes(base)` carries sign-in, sign-up, verification and passkey
 enrolment; `accountRoutes(base)` carries the signed-in self-service pages; `adminRoutes(base)` carries user management and the elevation bootstrap.
 `authPaths(routeMap)` turns a built map into href builders, so no path literal is written twice — every loader, action and view reads its targets
 off that map.
@@ -59,7 +59,7 @@ const authMap = authRoutes("/auth");
 const accountMap = accountRoutes("/account");
 const adminMap = adminRoutes("/admin");
 
-// `AuthWebOptions.paths` wants all three maps under one object; `authPaths` builds one at a time.
+// `AuthWebOptions.paths` wants every map under one object; `authPaths` builds one at a time.
 const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) };
 
 applyMiddlewareChain(app, {                  // the chain order is ROUTING_AND_MIDDLEWARE.md §3e's
@@ -144,8 +144,8 @@ above happens at bootstrap.
 ## 2. The Three Route Groups and Their Guards
 
 `AUTH_ROUTE_GROUPS` is the authoritative table: one entry per middleware group, each with the guards it carries and the medium it answers in. **A
-nested group exists only where its guards or its medium differ from its parent's** — that is what turns "these two routes answer JSON" and "these
-two are deliberately not admin-gated" into structure rather than a comment.
+nested group exists only where its guards or its medium differ from its parent's** — that is what turns "these routes answer JSON" and "these are
+deliberately not admin-gated" into structure rather than a comment.
 
 | Group | Guards | Medium | Routes |
 | --- | --- | --- | --- |
@@ -173,9 +173,9 @@ factor loops between the enrolment guard and the page meant to satisfy it.
 clears the mark a step-up writes. **`auth.enrol` carries a page per enrollable kind**, because `enrolmentPaths` sends an owed enrolment to the kind
 it actually owes and `require-enrolment` refuses the `account` group while that enrolment is outstanding.
 
-**`require-fresh-step-up` gates only what changes something, and it is on unless you turn it off.** Every `POST`, `PATCH` or `DELETE` in those three
-groups needs a step-up inside the window — what stands between a long-lived session and stripping the second factor, removing a passkey, moving the
-address, or changing somebody's role. A `GET` is always admitted: reading the page that offers an action is not the action. Omit
+**`require-fresh-step-up` gates only what changes something, and it is on unless you turn it off.** Every `POST`, `PATCH` or `DELETE` in a group
+that carries it needs a step-up inside the window — what stands between a long-lived session and stripping the second factor, removing a passkey,
+moving the address, or changing somebody's role. A `GET` is always admitted: reading the page that offers an action is not the action. Omit
 `freshStepUpMaxAgeMs` and the window is `AUTH_FRESH_STEP_UP_MS`, fifteen minutes; pass `null`, which is the only opt-out, and the guard demands
 nothing.
 
@@ -206,23 +206,23 @@ Every item here is a seam with a contract and no implementation, and each is req
 | A key ring | Hex root secrets, newest first, each at least 32 bytes, held as a Worker secret. |
 | `EmailOtpOptions.address` — `(userId) => string \| Promise<string>` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` — `(userId) => { name, displayName }` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
-| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**: the cookie carries only the session id, and the three auth keys live server-side. `createCookieSessionStorage` works for the auth keys alone, since all three are scalars, but leaves nothing for anything larger. |
+| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**: the cookie carries only the session id, and the auth keys live server-side. `createCookieSessionStorage` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger. |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | An `@source` line covering the installed package's `src/auth/` directory | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The exact directive is in [`src/auth/README.md`][auth-readme]. |
-| A `ForgeIcon<AuthIconName>` covering `alert`, `chevron-right`, `key`, `mail` | The views draw from **your** sprite, not a bundled one — forge's own ships only `chevron-right`, so three of the four have to come from somewhere else. Build it with `createIcon`, documented at [`src/ui/README.md`][ui-readme] section “Icons”. Lucide covers all four, but names one differently: its file is `triangle-alert.svg`, so map it to `alert` when you assemble the sprite. |
+| A `ForgeIcon<AuthIconName>` covering every name in that union | The views draw from **your** sprite, not a bundled one — forge's own ships `chevron-right` and nothing else, so the rest have to come from somewhere else. Build it with `createIcon`, documented at [`src/ui/README.md`][ui-readme] section “Icons”. Lucide covers the whole union, but names one glyph differently: its file is `triangle-alert.svg`, so map it to `alert` when you assemble the sprite. |
 
-**This table owns the `AuthIconName` membership.** The type is the machine-checked source; this row is the only prose that spells the four names,
-and [`src/auth/README.md`][auth-readme] points here rather than repeating them — two copies of a glyph list drift, and a drifted one is a page with
-a missing icon and no error.
+**`AuthIconName` owns its own membership.** The type in `src/auth/web/types.ts` is the machine-checked source and the register names it
+([`SOURCE_OF_TRUTH.md`][sot-2d] §2d); read the union there rather than any prose, here or in [`src/auth/README.md`][auth-readme] — a second copy of
+a glyph list drifts, and a drifted one is a page with a missing icon and no error.
 
 ---
 
 ## 4. Why Guards Are Wired Separately from Routes
 
 `registerAuth` / `registerAccount` / `registerAdmin` mount handlers and **wire no guards.** The middleware stacks come from `createAuthGuards`,
-which reads the same `AUTH_ROUTE_GROUPS` table the `register*` functions cut their `app.map` calls along. Two copies of that table would drift, and
-a drifted copy is an unguarded admin page that looks guarded. `createAuthGuards` refuses a group that lists an identity-reading guard before
+which reads the same `AUTH_ROUTE_GROUPS` table the `register*` functions cut their `app.map` calls along. A second copy of that table would drift,
+and a drifted copy is an unguarded admin page that looks guarded. `createAuthGuards` refuses a group that lists an identity-reading guard before
 `require-auth`.
 
 **`rateLimit` is keyed by the group's own dotted path** — `"auth"`, `"auth.verify"`, `"account"` — rather than declared on `AuthRouteGroup`, so the
@@ -240,10 +240,11 @@ chain — a special case of the order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e
 
 None of this is a defect; it is the bill, and it is easier to pay knowingly.
 
-**Two new non-optional bindings, and a wider config.** The D1 and KV bindings in §3 are required, and your app config grows the secrets that go with
+**New non-optional bindings, and a wider config.** The D1 and KV bindings in §3 are required, and your app config grows the secrets that go with
 them. Every test fixture that builds an env or a config **object literal** stops compiling the moment they are added — not because anything broke,
-but because a literal must now name fields it did not before. Expect to touch every such fixture in one pass; in the starter mount that was six.
-Building fixtures through a factory with defaults rather than as bare literals is what makes the next binding cost one line instead of six.
+but because a literal must now name fields it did not before. Expect to touch every such fixture in one pass.
+Building fixtures through a factory with defaults rather than as bare literals is what makes the next binding cost one line instead of one edit per
+fixture.
 
 **Every signed-in visitor signs in again within seven days.** `AUTH_SESSION_MAX_MS` is an absolute lifetime measured from the moment the session was
 established, not a window activity extends: a session an attacker took is otherwise one they can keep alive forever. A session carrying no
@@ -256,7 +257,7 @@ well as on your lockfile.
 **A browser bundle entry.** `import "@y-core/forge/auth/client"` has to reach the browser before `resume()`, which for most apps means a new entry
 point or an addition to an existing one.
 
-**The namespace is pre-release, and its signatures move.** Two things follow. Pin the version rather than tracking a branch; and when this page and
+**The namespace is pre-release, and its signatures move.** Pin the version rather than tracking a branch; and when this page and
 a signature disagree, **the signature wins** — check it against [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts), which compiles,
 rather than against prose, which does not. That file exists precisely so this section's warning has a remedy.
 
@@ -273,16 +274,16 @@ if (!view.ok) return view.error;
 return renderPage(<MyPage ctx={ctx}>{view.data.node}</MyPage>, { status: view.data.status ?? 200 });
 ```
 
-**It returns a `Result`, and the failure channel is a `Response`.** Ten of the sixteen pages can answer a redirect, a 404 or a 503 instead of props
+**It returns a `Result`, and the failure channel is a `Response`.** Most pages can answer a redirect, a 404 or a 503 instead of props
 — a credential store that is down has no passkey list to render, and a function that could only return a node would have nowhere to put the 503.
 Return `view.error` as it stands; it is already the refusal forge's own route would have given.
 
-`view.data` carries four things: `name`, the resolved `props` (the escape hatch, when you are composing your own markup), `node` (`props` applied to
+`view.data` carries `name`, the resolved `props` (the escape hatch, when you are composing your own markup), `node` (`props` applied to
 your `views` override or forge's own view), and `status` — `undefined` for an ordinary 200.
 
-**A guarded page needs `guarded`, and the field is a claim you are making.** Thirteen of the sixteen pages render data that only a guard
-establishes; `AUTH_VIEW_GUARDS` names, per page, which guards that is. Passing `guarded: AUTH_VIEW_GUARDS.adminUsers` says _this route runs those
-guards_:
+**A guarded page needs `guarded`, and the field is a claim you are making.** Most pages render data that only a guard establishes;
+`AUTH_VIEW_GUARDS` names, per page, which guards that is, and names none for a page that needs no guard. Passing `guarded:
+AUTH_VIEW_GUARDS.adminUsers` says _this route runs those guards_:
 
 ```ts
 const view = await resolveAuthView(c, authWebOptions, { name: "adminUsers", guarded: AUTH_VIEW_GUARDS.adminUsers });
@@ -291,9 +292,10 @@ const view = await resolveAuthView(c, authWebOptions, { name: "adminUsers", guar
 The compiler holds you to the exact list, in order, because `AUTH_VIEW_GUARDS` is `as const`. A guarded name with no `guarded` **throws** — a wiring
 mistake, not a request to refuse, so it 500s rather than rendering. An unguarded name types as `readonly []`, so the field stays inert there.
 
-**Two of the six guards are re-checked here and are not taken on trust.** `require-auth` reads the identity off `authCtx` and nowhere else, so a
-route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin` off that identity and answers the
-same 403 `requireAdmin` does. The rest — `resolve-auth`, the two enrolment guards and `require-fresh-step-up` — need a factor-registry round trip
+**`require-auth` and `require-admin` are re-checked here and are not taken on trust.** `require-auth` reads the identity off `authCtx` and nowhere
+else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin` off that identity and
+answers the same 403 `requireAdmin` does. The rest — `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` —
+need a factor-registry round trip
 that would cost one per render, so for those `guarded` is the whole check. That is why it is a claim a reviewer can check, and why a lie about it is
 a lie about your own route.
 
@@ -324,5 +326,6 @@ there is one.
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [session-readme]: ../src/session/README.md
+[sot-2d]: ./SOURCE_OF_TRUTH.md#2d-ui-contracts-and-data-tables
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ui-readme]: ../src/ui/README.md

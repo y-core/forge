@@ -19,7 +19,7 @@ import {
   authTotpEnrolSchema,
   authVerifySchema,
 } from "../schemas";
-import { valuesOf } from "../test-support";
+import { valuesOf } from "../web.fixture";
 import { AdminElevateView } from "./admin-elevate";
 import { AdminUserEditView } from "./admin-user-edit";
 import { EmailChangeView } from "./email-change";

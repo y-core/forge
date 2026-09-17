@@ -162,15 +162,24 @@ export interface UserStore {
 }
 
 /** What an administrative write did to the row it named — one member per refusal, so each guard says which it was. @public */
-export type AdminUserOutcome = "changed" | "last-admin-deactivate" | "last-admin-delete" | "last-admin-demote" | "not-found" | "self";
+export type AdminUserOutcome =
+  | "admin-exists"
+  | "changed"
+  | "last-admin-deactivate"
+  | "last-admin-delete"
+  | "last-admin-demote"
+  | "not-found"
+  | "self";
 
 /** The administrative surface, split from `UserStore` so a sign-in service cannot hold it. @public */
 export interface AdminUserStore {
   findById(id: string): Promise<AuthStoreResult<AuthUser | null>>;
   list(page?: AuthUserPage): Promise<AuthStoreResult<readonly AuthUser[]>>;
   search(query: string, page?: AuthUserPage): Promise<AuthStoreResult<readonly AuthUser[]>>;
-  /** Counts admins who could still sign in, matching the guard behind the three writes below. */
+  /** Counts admins who could still sign in, matching the guard behind the writes below. */
   countAdmins(): Promise<AuthStoreResult<number>>;
+  /** Takes the role while the deployment has none, deciding that in the statement that writes — `admin-exists` is the refusal. */
+  claimFirstAdmin(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   setAdmin(id: string, isAdmin: boolean, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   setDeactivated(id: string, deactivated: boolean, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   remove(id: string): Promise<AuthStoreResult<AdminUserOutcome>>;

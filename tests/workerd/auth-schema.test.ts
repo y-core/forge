@@ -112,6 +112,10 @@ describe("the shipped store adapters against real D1", () => {
     expect(guards.lastAdmin).toEqual({ demotions: ["changed", "last-admin-demote"], adminsLeft: 1 });
   });
 
+  it("lets exactly one of two concurrent first-admin claims through against an empty deployment", () => {
+    expect(guards.firstAdmin).toEqual({ claims: ["admin-exists", "changed"], adminsAfter: 1 });
+  });
+
   it("demotes and deletes a deactivated admin, while still refusing the last one who could sign in", () => {
     expect(guards.deactivatedAdmin).toEqual({
       deactivateDave: "changed",

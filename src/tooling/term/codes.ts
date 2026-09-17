@@ -116,7 +116,7 @@ export function createAnsiCodes(level: ColorLevel): AnsiCodes {
     colors[`bg${name[0]?.toUpperCase()}${name.slice(1)}` as AnsiColor] = bg(30 + i);
     colors[`bg${name[0]?.toUpperCase()}${name.slice(1)}Bright` as AnsiColor] = bg(90 + i);
   });
-  // `gray`/`grey` are the two spellings of bright black; both are aliases, not a fourth colour.
+  // `gray` and `grey` alias bright black; neither is a colour of its own.
   colors.gray = colors.blackBright;
   colors.grey = colors.blackBright;
   colors.bgGray = colors.bgBlackBright;

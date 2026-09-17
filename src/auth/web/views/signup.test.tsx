@@ -18,7 +18,7 @@ import {
   tagOf,
   textOf,
   valuesOf,
-} from "../test-support";
+} from "../web.fixture";
 import { SignupView } from "./signup";
 import type { SignupViewProps } from "./types";
 

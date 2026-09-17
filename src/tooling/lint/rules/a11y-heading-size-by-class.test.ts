@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, call, element, literal, other, runRule } from "../test-support.ts";
+import { attribute, call, element, literal, other, runRule } from "../lint.fixture.ts";
 import { a11yHeadingSizeByClass } from "./a11y-heading-size-by-class.ts";
 
 const CORPUS = "(forge-ui-a11y-heading-size-by-class — src/ui/design/reference/10-accessibility.md)";

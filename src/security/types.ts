@@ -91,8 +91,7 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   onLimit?: (c: AppContext<Bindings>) => Response | Promise<Response>;
   /** A development entry's token: with `rateLimitOptional` an absent binding is skipped instead of answering 503. */
   dev?: DevAllowance;
-  /** Opts the default keying into `CF-Connecting-IP`, which is only trustworthy behind Cloudflare;
-   *  defaults to false, and without a custom `key` the default keying then throws. */
+  /** Opts the default keying into `CF-Connecting-IP`, trustworthy only behind Cloudflare; without it and without a `key`, keying throws. */
   trustCfHeaders?: boolean;
 }
 

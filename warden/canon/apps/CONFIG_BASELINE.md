@@ -6,31 +6,31 @@ description: "The tsconfig flags, oxlint base and overrides, gate wiring, script
 # Application Configuration Baseline
 
 > Owns the toolchain configuration an application repository is held to: the compiler flags, the linter's base and where it may be overridden, what
-> the gate table is wired from, which `package.json` scripts exist, and who owns a version pin. Four repositories reached four different answers,
-> with no principle behind the divergence; this is the one answer.
+> the gate table is wired from, which `package.json` scripts exist, and who owns a version pin. Repositories reached different answers, with no
+> principle behind the divergence; this is the one answer.
 >
 > **Diffed by hand.** No gate check enforces this document — each section is written concrete enough to hold a repository against without tooling.
 >
-> Defers to: [`TESTING.md`][testing-6] §6 for what the three gate modes mean and what a step's tier is; [`FORGE_CONSUMPTION.md`][fc] for the
+> Defers to: [`TESTING.md`][testing-6] §6 for what the gate modes mean and what a step's tier is; [`FORGE_CONSUMPTION.md`][fc] for the
 > application-to-library relationship, which is a different subject from the toolchain.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 The tsconfig Flag Set: seven strictness flags, the `@assets` path, and no `exclude` key
+- §1 The tsconfig Flag Set: the strictness flags beyond `strict`, the `@assets` path, and no `exclude` key
 - §2 The oxlint Base and Its Overrides: one base every repository shares, variation only in `overrides`
 - §2a The Base: plugins, categories, ignore patterns, rules, and the type-aware block
 - §2b Overrides Are Scoped and Reasoned: the spec override, and what a legitimate second one looks like
 - §3 Gate Wiring: the preset is the table, and a hand-appended row is a defect
-- §4 The Script Set: eleven always, three conditional
+- §4 The Script Set: the scripts every repository has, and the sets conditional on what it holds
 - §5 Version Pins: one fleet version, forge's pin is the fleet's pin
 
 ---
 
 ## 1. The tsconfig Flag Set
 
-**Seven strictness flags beyond `strict`, and every repository carries all seven:**
+**Beyond `strict`, every repository carries all of these:**
 
 ```json
 {
@@ -44,8 +44,8 @@ description: "The tsconfig flags, oxlint base and overrides, gate wiring, script
 }
 ```
 
-They are one set, not a menu. Each removes a class of defect the type checker would otherwise hand to review, and a repository carrying six of
-seven has the review burden of a repository carrying none for the class it dropped.
+They are one set, not a menu. Each removes a class of defect the type checker would otherwise hand to review, and a repository that drops one has
+the review burden of a repository carrying none for the class it dropped.
 
 **`paths` declares the generated asset module**, so markup names `@assets` rather than a relative path into a build artifact:
 
@@ -73,13 +73,13 @@ Everything above `overrides` is shared. A repository does not curate this list �
 | `plugins` | `["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"]` |
 | `jsPlugins` | `["@y-core/forge/tooling/lint/plugin"]` — the published bundle, never a relative path |
 | `categories` | `{ "correctness": "error" }` |
-| `ignorePatterns` | `[".forge/**", ".types/**"]` — the two generated trees, which no tool but their emitter owns |
+| `ignorePatterns` | `[".forge/**", ".types/**"]` — the generated trees, which no tool but their emitter owns |
 
 `rules` carries the `forge/*` design and accessibility rules the library's own corpus defines, the `typescript/*` shape rules, the
 `eslint/no-restricted-imports` patterns that hold the facade and keep a build-time subpath out of `src/`, and the handful of upstream rules this
 fleet turns off.
 
-**Three entries in it are got wrong by copying the shape and not the options**, so they are written out here:
+**These entries in it are got wrong by copying the shape and not the options**, so they are written out here:
 
 ```json
 {
@@ -89,7 +89,7 @@ fleet turns off.
 }
 ```
 
-A bare `"error"` in place of any of the three is not a stricter setting; it is a rule that fires on code the fleet writes on purpose, which is how a
+A bare `"error"` in place of any of them is not a stricter setting; it is a rule that fires on code the fleet writes on purpose, which is how a
 rule comes to be turned off.
 
 **Both restricted-import bans are `patterns` groups, and the build-time group names three spellings** — the library's `tooling` prefix bare, then
@@ -113,7 +113,7 @@ barrel, and the ban is the only thing standing between a Worker bundle and a mod
 }
 ```
 
-The seven `off` entries are as load-bearing as the three `error` ones: without them the type-aware run is noise, and a noisy row is a row someone
+The `off` entries are as load-bearing as the `error` ones: without them the type-aware run is noise, and a noisy row is a row someone
 turns off.
 
 ### 2b. Overrides Are Scoped and Reasoned
@@ -125,10 +125,10 @@ it.** An unexplained override is indistinguishable from a rule someone could not
 `forge/a11y-*`, `forge/platform-*` and design rule is off — a test's job is to feed the adversarial markup a rule exists to catch, so holding a
 fixture to the rule inverts it — and `forge/exact-markup-assertion` is on, which is the only file class it applies to.
 `typescript/no-non-null-assertion` is off there
-too, with the three `jsx-a11y` rules a fixture's deliberately malformed markup trips: `aria-proptypes`, `control-has-associated-label` and
+too, with the `jsx-a11y` rules a fixture's deliberately malformed markup trips: `aria-proptypes`, `control-has-associated-label` and
 `tabindex-no-positive`.
 
-A repository that turns off four of them and leaves the rest on has not written a narrower override; it has an untested half of the block, and the
+A repository that turns off some of them and leaves the rest on has not written a narrower override; it has an untested half of the block, and the
 first spec that needs one of the other rules off gets a per-site suppression instead.
 
 **The second shared override is the build-time one**, scoped to `["config/**", "scripts/**", "playwright.config.ts"]` — the trees that sit outside
@@ -146,10 +146,10 @@ is a disagreement with the base, and it belongs in the base or nowhere.
 **`cloudflareWorkerSteps()` is the table.** A repository's `config/steps.ts` spreads the preset and appends only rows that are genuinely its own —
 a check over its own data, a build its own pipeline needs.
 
-**`wardenAppSteps()` is the second half of the table, and appending it is not an exception.** The four rows it emits — `validate-docs`,
-`warden:index`, `warden:queries`, `warden:duplicates` — cannot come from the first preset, which lives under the library's `src/` where nothing may
-import warden. It is spread, not hand-assembled: a repository writing the four builder calls out again has four places for the `dependency` flag and
-the tier to drift.
+**`wardenAppSteps()` is the second half of the table, and appending it is not an exception.** The rows it emits — `validate-docs`, `warden:index`,
+`warden:queries`, `warden:duplicates` — cannot come from the first preset, which lives under the library's `src/` where nothing may import warden.
+It is spread, not hand-assembled: a repository writing those builder calls out again has one place per row for the `dependency` flag and the tier to
+drift.
 
 **The preset emits `lint:types` at the `standard` tier**, immediately after `format`. An application never hand-appends `typeAwareLintStep`: the
 selector refuses a duplicate label, so a local row is not an addition but a failure. A repository that was appending one deletes it when it takes
@@ -171,7 +171,7 @@ same bytes.
 
 ## 4. The Script Set
 
-**Eleven scripts exist in every application repository**, so a command learned in one works in the next:
+**These scripts exist in every application repository**, so a command learned in one works in the next:
 
 | Script | Runs |
 | --- | --- |
@@ -190,7 +190,7 @@ same bytes.
 **`lint` and `fix` are two verbs, not two spellings of one.** `lint` reports and writes nothing; `fix` writes and reports nothing. Scripting them
 apart is what keeps a `lint` from being the command that quietly rewrote your tree.
 
-**Three sets are conditional on a fact about the repository:**
+**These sets are conditional on a fact about the repository:**
 
 - **`db:*`** — present when the application has a D1 binding: `db:backup`, `db:compose`, `db:lint`, `db:migrate`, `db:reset`, `db:restore`,
   `db:schema:check`, `db:status`.
@@ -214,8 +214,8 @@ peer-requires.
 
 **Everything else takes a caret**, because the range is the point: `typescript`, `wrangler`, `@playwright/test`, `tailwindcss`, `esbuild`.
 
-**A pin nothing uses is deleted rather than carried.** A devDependency present in three repositories and reached by none of them is four things to
-update and zero things to gain.
+**A pin nothing uses is deleted rather than carried.** A devDependency present in a repository and reached by nothing in it is one more thing to
+update and nothing to gain.
 
 [fc]: ./FORGE_CONSUMPTION.md
 [testing-6]: ./TESTING.md#6-the-verification-gate

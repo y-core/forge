@@ -2,11 +2,7 @@ const CHARS_PER_TOKEN = 4;
 const MAX_TOKENS = 6000;
 const MAX_CHARS = MAX_TOKENS * CHARS_PER_TOKEN;
 
-/** Caps one response, naming the narrower path rather than only that it was cut.
- *
- *  A whole document is the largest thing this server can emit, and a bare ellipsis leaves a reader
- *  to guess whether the rule they wanted was in the part that was dropped. The tail names the two
- *  tools that reach the missing part directly. @public */
+/** Caps one response, naming the narrower path rather than only that it was cut. @public */
 export function truncate(body: string, path: string): string {
   if (body.length <= MAX_CHARS) return body;
   const tokens = Math.ceil(body.length / CHARS_PER_TOKEN);

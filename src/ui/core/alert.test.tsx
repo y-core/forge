@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Alert } from "./alert";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 
 const callout = (props: Parameters<typeof Alert>[0] = {}) => render(<Alert {...props}>Message</Alert>);
 const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);

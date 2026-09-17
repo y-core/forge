@@ -47,14 +47,14 @@ export interface DevVar {
   line: number;
 }
 
-/** One remote resource, reduced to the two things reconciliation compares it by. */
+/** One remote resource, reduced to the id and name reconciliation compares it by. */
 export interface RemoteResource {
   /** Absent for a resource the API gives no id — an R2 bucket is named and nothing more. */
   id?: string;
   name: string;
 }
 
-/** The per-resource part of the provision ladder: everything four handlers do not share. */
+/** The per-resource part of the provision ladder: everything the handlers do not share. */
 export interface ProvisionSpec<TLocal extends { binding: string }> {
   type: ResourceType;
   displayName: string;
@@ -74,13 +74,7 @@ export interface HandlerBuildOptions {
   configPath: string;
 }
 
-/**
- * Whether every requested name may be rotated.
- *
- * Two distinct refusals, because they need different fixes: a name absent from
- * `.dev.vars` is a typo, and an unmarked name is a credential this tool must not
- * regenerate — a third-party API key overwritten with random bytes is gone.
- */
+/** Why a rotation was refused: names absent from `.dev.vars`, and names not marked rotatable. */
 export interface RotationRefusal {
   unknown: string[];
   unmarked: string[];
@@ -95,9 +89,6 @@ export interface RowIdentity {
 }
 
 export interface FailureRowOptions {
-  /**
-   * Suppress the upstream message. Required wherever the failed request carried a
-   * secret, since Cloudflare's rejection text can quote the payload it rejected.
-   */
+  /** Suppress the upstream message, since Cloudflare's rejection text can quote a secret the request carried. */
   redactMessage?: boolean;
 }

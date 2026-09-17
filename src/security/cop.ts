@@ -5,8 +5,7 @@ import { err, ok } from "../result/result";
 import { SAFE_METHODS, verifyOrigin } from "./origin";
 import type { CrossOriginProtectionOptions, CrossOriginResult, OriginProtectionOptions } from "./types";
 
-/** The verdict itself, with the missing-header allowance as a parameter rather than as an option — so
- *  `originProtection`'s own use of it needs no token a caller could also pass. */
+/** The verdict itself, taking the missing-header allowance as a parameter rather than as an option. */
 function crossOriginVerdict(request: Request, allowMissingHeader: boolean): CrossOriginResult {
   if (SAFE_METHODS.has(request.method.toUpperCase())) {
     return ok();

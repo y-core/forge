@@ -1,289 +1,142 @@
 ---
 title: The Result Primitive
-description: "Forge's single discriminated-union result type, its value constructors, and the wrapper that captures any throw as data."
+description: "How to capture a throw as data, return a typed failure from your own code, and read the domain aliases forge's pipeline hands back."
 audience: consumer
 ---
 
 # `@y-core/forge/result`
 
-A tiny, dependency-free utility for explicit, type-safe error handling. It is forge's **single result primitive**: one discriminated-union `Result`
-type with one failure field (`error`), the `ok()` / `err()` value-constructors, a `result()` wrapper that captures any throw as data, a `toError()`
-helper for coercing unknown thrown values, and two domain aliases (`GuardResult`, `ValidationResult`).
+An operation that can fail predictably returns its failure here instead of throwing it. This namespace is the one type that shape is written in,
+plus the constructors that build it. It is dependency-free and touches no platform API, so it behaves the same in a Worker, a test, or a build
+script.
 
 ```ts
-import { ok, err, result, toError, type Result, type GuardResult, type ValidationResult } from "@y-core/forge/result";
+import { err, ok, result, toError, type GuardResult, type Result, type ValidationResult } from "@y-core/forge/result";
 ```
 
-## Features
+The contract — one failure field, never `null | T`, never a throw for an expected failure — is [`FORGE_ERRORS.md`][fe-1a] §1a's, and the aliases are
+§1c's. This file shows them in use and settles nothing.
 
-- **One `Result<T, E>` primitive** — success carries `data`, failure carries `error`. There is exactly one failure field; a single `if (!r.ok)`
-  guard narrows the type with no casts.
-- **`ok()` / `err()` constructors** — the sanctioned value-constructors: `ok()` for a passing `void` result, `ok(data)` for a success, `err(error)`
-  for a failure. Prefer them to hand-written object literals so the discriminant and field names stay uniform.
-- **`result()` wrapper** — runs a sync function, an async function, or a bare promise and turns any throw or rejection into `{ ok: false, error }`.
-  No `try/catch` at the call site.
-- **`toError()` coercion** — converts any thrown value (string, number, object, `undefined`, `null`) into a real `Error` instance, safe for
-  `catch (err: unknown)` blocks.
-- **`GuardResult<R>` alias** — `Result<void, R>` for predicate/authorization checks (origin, CSRF, Turnstile); the machine-readable reason code
-  lives in `.error`.
-- **`ValidationResult<T>` alias** — `Result<T, readonly string[]>`; the failure branch carries the per-field message list as
-  `error: readonly string[]`. Produced by `@y-core/forge/validation` functions and `defineAction`'s `validate` hook.
-- **Synchronous error preservation** — `result()` returns the failure variant synchronously for sync throws and a `Promise` for async work; existing
-  `Error` instances pass through unwrapped.
+---
 
-## Usage
+## Getting started
 
-### Wrapping a synchronous operation
-
-`result()` runs the function and captures any throw. Narrow the union with one guard before touching `data`:
+`result()` runs your function and hands back the outcome as a value. One `if (!r.ok)` guard narrows the union, and no cast is needed afterwards.
 
 ```ts
 import { result } from "@y-core/forge/result";
 
-const r = result(() => new URL(input));
-if (!r.ok) {
-  return new Response(r.error.message, { status: 400 });
+const parsed = result(() => new URL(input));
+if (!parsed.ok) {
+  return new Response(parsed.error.message, { status: 400 });
 }
-const url = r.data; // type-narrowed to URL — no cast needed
+const url = parsed.data; // URL
 ```
 
-### Wrapping async work
-
-When passed an async function or a bare promise, `result()` returns a `Promise<Result<T, E>>`. `await` it, then narrow as usual:
+Hand it an async function or a bare promise and you get a promise back, so `await` moves to the front and nothing else changes.
 
 ```ts
-import { result } from "@y-core/forge/result";
+const remote = await result(async () => fetchRemote(id));
+if (!remote.ok) return new Response("Upstream unavailable", { status: 502 });
 
-// async function
-const a = await result(async () => fetchRemote(id));
-if (!a.ok) {
-  return new Response("Upstream unavailable", { status: 502 });
-}
-const payload = a.data;
-
-// bare promise
-const b = await result(fetch("https://example.com"));
-if (!b.ok) {
-  console.error(b.error.message);
-}
+const response = await result(fetch("https://example.com"));
 ```
 
-### Chaining fallible steps
-
-Return early on each failure rather than nesting. This keeps the happy path at the left margin:
-
-```ts
-import { result } from "@y-core/forge/result";
-
-const parsed = result(() => JSON.parse(raw));
-if (!parsed.ok) return parsed; // propagate the failure
-
-const validated = result(() => schema.parse(parsed.data));
-if (!validated.ok) return validated;
-
-return { ok: true as const, data: validated.data };
-```
-
-### Coercing an unknown thrown value
-
-In a `catch` block, `err` is typed `unknown`. Use `toError()` to get a guaranteed `Error` with a sensible `message`:
+Anything thrown or rejected arrives on `error` as a real `Error`. Outside a `result()` wrapper — in a hand-written `catch`, where the caught value
+is typed `unknown` — `toError()` performs the same coercion on its own.
 
 ```ts
-import { toError } from "@y-core/forge/result";
-
 try {
   doRiskyThing();
-} catch (err) {
-  const e = toError(err); // always an Error
-  log.error(e.message);
+} catch (thrown) {
+  log.error(toError(thrown).message);
 }
 ```
 
-`toError()` leaves existing `Error` instances untouched and wraps everything else with `new Error(String(thrown))`:
+---
 
-| Thrown value | `toError(...).message` |
-| --- | --- |
-| `new Error("boom")` | `"boom"` (same instance returned) |
-| `"oops"` | `"oops"` |
-| `404` | `"404"` |
-| `{ code: 1 }` | `"[object Object]"` |
-| `undefined` | `"undefined"` |
-| `null` | `"null"` |
+## Returning a failure from your own function
 
-### Building results with `ok()` and `err()`
-
-When you construct a result by hand (rather than wrapping a throw with `result()`), use the `ok()` / `err()` constructors. `ok()` with no argument
-produces a passing `Result<void>`; `ok(data)` carries a value; `err(error)` carries the failure:
+When your code decides the failure rather than catching one, build the value with `ok()` and `err()`. `ok()` with no argument is the passing
+`Result<void>`; `ok(data)` carries a value; `err(error)` carries whatever describes the failure — an `Error`, a reason code, a message list.
 
 ```ts
-import { ok, err, type Result } from "@y-core/forge/result";
+import { err, ok, type Result } from "@y-core/forge/result";
 
 function parsePort(raw: string): Result<number, string> {
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? ok(n) : err("port must be a positive integer");
+  const port = Number(raw);
+  return Number.isInteger(port) && port > 0 ? ok(port) : err("port must be a positive integer");
 }
 ```
 
-`ok` / `err` are the only sanctioned value-constructors, and the reason they are a documented exception to forge's `create*` factory-naming rule is
-[`FORGE_ERRORS.md`][eh-1a] §1a's.
+Choosing `E` is the real decision. Leave it at the default `Error` when the caller will log or surface the message; make it a string-literal union
+when the caller will branch on it, because that is the only version a `switch` can be exhaustive over.
 
-### Guard checks with `GuardResult`
-
-`GuardResult<R>` is `Result<void, R>` — the shape for predicate/authorization checks that produce no success value. The success arm is `void`; the
-reason code lives in `.error`. Build a passing check with `ok()` and a failing one with `err(reason)`:
+A caller that cannot handle a failure returns it unchanged. Doing that at each step keeps the success path at the left margin instead of nesting.
 
 ```ts
-import { ok, err, type GuardResult } from "@y-core/forge/result";
+const parsed = result(() => JSON.parse(raw));
+if (!parsed.ok) return parsed;
 
-type OriginReason = "missing" | "disallowed";
+const validated = validateContact(parsed.data);
+if (!validated.ok) return validated;
 
-function verifyOrigin(origin: string | null, allowed: string[]): GuardResult<OriginReason> {
+return ok(validated.data);
+```
+
+---
+
+## Reading the aliases a forge signature hands you
+
+Two aliases appear across forge's own signatures. They narrow `Result`; they do not extend it, so the guard you already write is the whole API.
+
+**`GuardResult<R>` comes back from a check that either passes or gives a reason** — origin, CSRF, Turnstile. There is no success value, so a passing
+check is `ok()` and the reason lives on `.error`, typically as a string-literal union.
+
+```ts
+import { err, ok, type GuardResult } from "@y-core/forge/result";
+
+function verifyOrigin(origin: string | null, allowed: string[]): GuardResult<"missing" | "disallowed"> {
   if (!origin) return err("missing");
-  if (!allowed.includes(origin)) return err("disallowed");
-  return ok();
+  return allowed.includes(origin) ? ok() : err("disallowed");
 }
 
-const r = verifyOrigin(request.headers.get("Origin"), allowed);
-if (!r.ok) {
-  // r.error: OriginReason — server-log only; never echo the reason to clients
-  return new Response("Forbidden", { status: 403 });
-}
+const origin = verifyOrigin(request.headers.get("Origin"), allowed);
+if (!origin.ok) return new Response("Forbidden", { status: 403 }); // log `origin.error`; never send it
 ```
 
-### Working with `ValidationResult`
-
-Validation functions return `ValidationResult<T>` (`Result<T, readonly string[]>`), whose failure branch carries the per-field message list as
-`error: readonly string[]`. Surface all of them at once:
+**`ValidationResult<T>` comes back from anything that parses input** — every `@y-core/forge/validation` helper and `defineAction`'s `validate` hook.
+Its `error` is a `readonly string[]` of already-formatted field messages, so a UI can surface every failing field in one pass rather than one at a
+time. `@y-core/forge/http` renders that list directly.
 
 ```ts
-import { ok, err, type ValidationResult } from "@y-core/forge/result";
-
-function validateContact(input: unknown): ValidationResult<Contact> {
-  const messages: string[] = [];
-  // ...collect per-field messages...
-  if (messages.length > 0) return err(messages);
-  return ok(input as Contact);
-}
-
-const r = validateContact(form);
-if (!r.ok) {
-  // r.error: readonly string[] — e.g. ["Email is required", "Name is too long"]
-  return renderErrors(r.error);
-}
-const contact = r.data;
+const contact = validateContact(form);
+if (!contact.ok) return fragmentResponse(renderValidationErrors(contact.error), 422);
 ```
 
-## Core Components & APIs
+---
 
-### `Result<T, E>`
+## Gotchas
 
-```ts
-type Result<T, E = Error> = { ok: true; data: T } | { ok: false; error: E };
-```
+**Only a throw produces the failure branch.** `0`, `""`, `false`, `null` and `undefined` are all successes carried on `data` — `result()` has no
+opinion about truthiness.
 
-A discriminated union representing the outcome of a fallible operation. When to reach for it rather than `null | T` or a throw is
-[`FORGE_ERRORS.md`][eh-1a] §1a's.
+**A sync function stays sync.** `result(() => …)` returns the `Result` itself, not a promise, so `await`-ing it out of habit is harmless but
+`if (!r.ok)` without the `await` on an async call silently tests a promise. The return type says which you have.
 
-| Type parameter | Default | Description |
-| --- | --- | --- |
-| `T` | — | Type of the success payload, available as `data` when `ok` is `true`. |
-| `E` | `Error` | Type of the failure payload, available as `error` when `ok` is `false`. |
+**`toError()` stringifies whatever it is given.** An `Error` passes through untouched; everything else becomes `new Error(String(thrown))`, which
+turns a thrown plain object into the message `[object Object]`. Throw an `Error` when the message has to survive.
 
-Always check `r.ok` before accessing `r.data` or `r.error`; the union narrows automatically inside the guard. The single-failure-channel rule the
-domain aliases below reuse rather than extend is [`FORGE_ERRORS.md`][eh-1a] §1a's, and the narrow-and-return-early shape is §1b's.
-
-### `ok(data?)` and `err(error)`
-
-```ts
-function ok(): Result<void, never>;
-function ok<T>(data: T): Result<T, never>;
-function err<E>(error: E): Result<never, E>;
-```
-
-The sanctioned value-constructors. `ok()` with no argument builds a passing `Result<void>` (e.g. a passing `GuardResult`); `ok(data)` builds a
-success carrying `data`; `err(error)` builds a failure carrying `error`. Use them instead of writing `{ ok: true, data }` / `{ ok: false, error }`
-object literals so the discriminant and field names stay uniform across the codebase.
-
-| Function | Parameter | Returns |
-| --- | --- | --- |
-| `ok` | — | `{ ok: true, data: undefined }` typed `Result<void, never>`. |
-| `ok` | `data: T` | `{ ok: true, data }` typed `Result<T, never>`. |
-| `err` | `error: E` | `{ ok: false, error }` typed `Result<never, E>`. |
-
-### `GuardResult<R>`
-
-```ts
-type GuardResult<R = string> = Result<void, R>;
-//  ≡ { ok: true; data: void } | { ok: false; error: R };
-```
-
-A domain alias of `Result` for predicate/authorization checks (origin, CSRF, Turnstile) that produce no success value. The success arm is `void`;
-the failure channel carries a machine-readable reason code in `.error` — typically a string-literal union (e.g. `"missing" | "disallowed"`). That
-the reason is a server diagnostic, never echoed to a client, is [`FORGE_ERRORS.md`][eh-1c] §1c's.
-
-| Type parameter | Default | Description |
-| --- | --- | --- |
-| `R` | `string` | The reason-code type carried in `error` on failure. |
-
-### `ValidationResult<T>`
-
-```ts
-type ValidationResult<T> = Result<T, readonly string[]>;
-//  ≡ { ok: true; data: T } | { ok: false; error: readonly string[] };
-```
-
-A domain alias of `Result` for validation. The failure branch carries the per-field message list as `error: readonly string[]` — a list of
-already-formatted, human-readable field messages, so a UI can surface every failing field at once. Produced by `@y-core/forge/validation` functions
-and `defineAction`'s `validate` hook.
-
-| Type parameter | Description |
-| --- | --- |
-| `T` | Type of the parsed, validated value on success. |
-
-### `result(arg)`
-
-Runs `arg` and returns a `Result`, capturing any throw or rejection as the failure variant. Overloaded by the shape of `arg`:
-
-```ts
-function result<T, E = Error>(fn: () => T): Result<T, E>;
-function result<T, E = Error>(fn: () => Promise<T>): Promise<Result<T, E>>;
-function result<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
-```
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `arg` | `() => T` | Sync function — returns `Result<T, E>` synchronously. |
-| `arg` | `() => Promise<T>` | Async/promise-returning function — returns `Promise<Result<T, E>>`. |
-| `arg` | `Promise<T>` | A bare promise — returns `Promise<Result<T, E>>`. |
-
-Behavior:
-
-- A returned value becomes `{ ok: true, data }`.
-- A thrown value or rejected promise becomes `{ ok: false, error }`, with the thrown value coerced via `toError()`.
-- Falsy values (`0`, `""`, `false`) are treated as success — only an actual throw or rejection produces the failure branch.
-- Existing `Error` instances pass through to `error` unwrapped.
-
-### `toError(thrown)`
-
-```ts
-function toError(thrown: unknown): Error;
-```
-
-Coerces any thrown value into an `Error` instance. Returns `thrown` unchanged if it is already an `Error`; otherwise returns
-`new Error(String(thrown))`. Safe to use in `catch (err)` blocks where `err` is `unknown`.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `thrown` | `unknown` | The caught value to normalize into an `Error`. |
+---
 
 ## See also
 
-- [`@y-core/forge/validation`][validation-readme] — produces `ValidationResult<T>` values.
-- [`@y-core/forge/http`][http-readme] — `renderValidationErrors`, `renderError`, `fragmentResponse` for turning results into HTMX fragments.
-- [`FORGE_ERRORS.md`][eh] — the governing error-handling doctrine (error taxonomy, fail-closed posture, router error boundary).
+- [`docs/FORGE_ERRORS.md`][fe] — the governing doctrine: the primitive (§1a), the narrowing guard (§1b), the aliases (§1c), and which failures are
+  expected, unexpected, or infrastructural (§5)
+- [`src/http/README.md`][http-readme] — turning a failure into a response fragment
+- [`src/validation/README.md`][validation-readme] — the producer of most `ValidationResult` values you will handle
 
-[eh]: ../../docs/FORGE_ERRORS.md
-[eh-1a]: ../../docs/FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
-[eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[fe]: ../../docs/FORGE_ERRORS.md
+[fe-1a]: ../../docs/FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [http-readme]: ../http/README.md
 [validation-readme]: ../validation/README.md

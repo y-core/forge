@@ -43,8 +43,7 @@ function enclosingClassPosition(node: AstNode): AstNode | undefined {
   return found;
 }
 
-/** The child nodes of `node`, whatever properties the parser named them — `parent` excepted, which
- *  would walk back up the tree. */
+/** The child nodes of `node`, whatever properties the parser named them, `parent` excepted. */
 export function childrenOf(node: AstNode): AstNode[] {
   const out: AstNode[] = [];
   for (const [key, value] of Object.entries(node)) {
@@ -79,11 +78,8 @@ function isModuleScope(declarator: AstNode): boolean {
   return holder?.type === "Program" || (holder?.type === "ExportNamedDeclaration" && holder.parent?.type === "Program");
 }
 
-/** Visits every literal in a class position, handing the enclosing position along with it. A class
- *  list bound to a module-scope `const` and passed by name is judged at the name's own location. */
+/** Visits every literal in a class position, handing the enclosing position along with it. */
 function literalVisitor(onPart: (position: AstNode, part: ClassText) => void): Visitor {
-  // Source order, so a constant declared above the component that reads it is already known. One
-  // declared below resolves to nothing, which is the same silence as before this resolved at all.
   const moduleConstants = new Map<string, AstNode>();
 
   return {
@@ -133,8 +129,7 @@ export function classLiteralVisitor(onLiteral: (found: ClassText) => void): Visi
   });
 }
 
-/** Every class position as one joined string, fired once on exit — for a predicate whose subject is
- *  the *absence* of a token, which may sit in a sibling argument of the same `cn()` call. */
+/** Every class position as one joined string, fired once on exit. */
 export function classExpressionVisitor(onExpression: (found: ClassText) => void): Visitor {
   const buffered = new Map<AstNode, ClassText[]>();
 

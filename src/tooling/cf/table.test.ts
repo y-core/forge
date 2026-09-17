@@ -57,10 +57,13 @@ describe("renderSections()", () => {
   });
 
   it("prints the note on its own line under the title, indented to the grid", () => {
-    // Two lines, because they answer different questions: which section this is, and what rule
-    // governs every row in it. Run together the title stopped being findable.
     const out = renderSections([{ title: "Rotated by --commit", note: "the local value is never sent", rows }]);
     expect(out.split("\n").slice(0, 2)).toEqual(["Rotated by --commit", "  the local value is never sent"]);
+  });
+
+  it("wraps a note to the width less its own indent, so it stops where the grid does", () => {
+    const out = renderSections([{ title: "T", note: "one two three four five six", rows }], { width: 16 });
+    expect(out.split("\n").slice(1, 3)).toEqual(["  one two three", "  four five six"]);
   });
 
   it("indents the bordered grid two spaces under the heading", () => {

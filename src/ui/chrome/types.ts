@@ -150,8 +150,7 @@ export interface ToolbarAction<A extends string = string, G extends string = str
   /** data-ref (test/parity hook). */
   ref?: string | undefined;
   data?: Record<string, string> | undefined;
-  /** Stamps class="active" at SSR for boot highlight. Tri-state: `false` announces an unpressed
-   *  toggle, absent announces a plain action button. */
+  /** Tri-state press: `true` and `false` announce a toggle, absent a plain action button. */
   active?: boolean | undefined;
   /** Height of the icon-shaped item; default `md`. */
   size?: Size | undefined;
@@ -224,8 +223,7 @@ export interface ToolbarProps<A extends string = string, G extends string = stri
   placement?: ToolbarPlacement | undefined;
   /** `commandfor` sink (element id, bare or `#id`) for actions with `dispatch:"command"`. */
   commandTarget?: string | undefined;
-  /** DOM id for the rail; also namespaces the generated flyout ids, which two same-placement rails
-   * on one page would otherwise collide on. */
+  /** DOM id for the rail; also namespaces the generated flyout ids. */
   id?: string | undefined;
   class?: string | undefined;
 }
@@ -245,8 +243,7 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
   collapsible?: NavCollapsible | undefined;
   /** Renders the underlying `<details>` open on first paint. Attribute-only; there is no controller. */
   defaultOpen?: boolean | undefined;
-  /** DOM id for the bar; also namespaces the generated menu ids, which two same-placement bars on
-   * one page would otherwise collide on. */
+  /** DOM id for the bar; also namespaces the generated menu ids. */
   id?: string | undefined;
   class?: string | undefined;
 }

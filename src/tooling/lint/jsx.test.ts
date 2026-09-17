@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { attributeNamed, containsTag, enclosingElement, openingTag, spreadName, statedString, tagName } from "./jsx.ts";
-import { attribute, container, element, identifier, jsxElement, literal, memberElement, other, runRule, spread } from "./test-support.ts";
+import { attribute, container, element, identifier, jsxElement, literal, memberElement, other, runRule, spread } from "./lint.fixture.ts";
 import type { AstNode, LintRule } from "./types.ts";
 
 /** Runs `read` over every node of `root`, which is how a rule reaches the helpers. */

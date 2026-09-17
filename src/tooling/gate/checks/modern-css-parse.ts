@@ -2,8 +2,7 @@ import type { ModernCssReportedId, ModernCssRuleId } from "../../lint/types";
 import { blankComments, lineAt, suppressedBy } from "./source-scan";
 import type { CssBlock, ModernCssFinding } from "./types";
 
-/** A `/* modern-css-allow: <rule> — <reason> *​/` comment on `line` or the one above it. The reason
- *  is mandatory — a bare marker with no text after the em dash does not suppress. @public */
+/** A `/* modern-css-allow: <rule> — <reason> *​/` comment on `line` or the one above it. @public */
 export const isModernCssSuppressed: (lines: readonly string[], line: number, ruleId: ModernCssReportedId) => boolean =
   suppressedBy("modern-css-allow");
 
@@ -217,8 +216,7 @@ function findPhysicalProperties(source: string, file: string): ModernCssFinding[
   return findings;
 }
 
-/** Physical spacing properties in a stylesheet. The utility half is `forge/platform-logical-spacing`
- *  in forge's oxlint plugin, which reads a class literal off the AST rather than off the line. @public */
+/** Physical spacing properties in a stylesheet. @public */
 export function findPhysicalSpacing(source: string, file: string): ModernCssFinding[] {
   return file.endsWith(".css") ? findPhysicalProperties(source, file) : [];
 }

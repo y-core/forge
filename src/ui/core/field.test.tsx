@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 import { FieldDescription, FieldError, FieldLabel, fieldControlProps, fieldDescribedBy, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { FormField } from "./field-layout";
 import { Field } from "./field-stack";
 import { Input } from "./input";
-import { attrOf, attrsOf, variantClasses } from "./test-support";
 
 const ROOT = 'data-slot="field"';
 const LABEL = 'data-slot="field-label"';

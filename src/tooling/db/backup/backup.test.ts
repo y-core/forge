@@ -5,10 +5,6 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
-import { sha256 } from "../digest";
-import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
-import { schemaFingerprint } from "../migrate/fingerprint";
-import { toSchemaObjects } from "../sql";
 import {
   argvHas,
   fakeDbIo,
@@ -22,7 +18,11 @@ import {
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
-} from "../test-support";
+} from "../db.fixture";
+import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
+import { schemaFingerprint } from "../migrate/fingerprint";
+import { toSchemaObjects } from "../sql";
 import type { DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
 import { resolveBackupsDir, runBackup } from "./backup";

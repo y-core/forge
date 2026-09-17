@@ -13,7 +13,7 @@ import type { TestAction } from "../../testing/types";
 import { createPasskeyFactor } from "../factors/passkey";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService } from "../factors/types";
-import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/fixture";
+import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/passkey.fixture";
 import type { PasskeyKeyPair } from "../passkey/types";
 import type { AuthChallenge, AuthCredential, CredentialStore, UserStore } from "../types";
 import {
@@ -30,6 +30,7 @@ import {
   createVerifyActions,
 } from "./actions";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
+import type { AuthRequestServices, AuthWebOptions } from "./types";
 import {
   attrOf,
   HOSTILE_TEXT,
@@ -45,8 +46,7 @@ import {
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
-} from "./test-support";
-import type { AuthRequestServices, AuthWebOptions } from "./types";
+} from "./web.fixture";
 
 const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 
@@ -779,5 +779,37 @@ describe("createAdminElevateActions", () => {
 
     const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(409);
+  });
+
+  it("grants exactly one of two claims racing an empty deployment, because the write decides", async () => {
+    let admins = 0;
+    const service = fakeAdminUserService([signedIn], {
+      countAdmins: async () => ok(admins),
+      claimFirst: async () => {
+        if (admins >= 1) return ok("admin-exists" as const);
+        admins += 1;
+        return ok("changed" as const);
+      },
+    });
+    // One service across both requests: `optionsWith` builds a fresh one per call, and two services
+    // would each hold their own count, which is the race rather than a test of it.
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    const statuses = await Promise.all([
+      app.request("/admin/elevate", formBody({ confirm: "yes" })),
+      app.request("/admin/elevate", formBody({ confirm: "yes" })),
+    ]).then((responses) => responses.map((res) => res.status).sort());
+
+    expect(statuses).toEqual([303, 409]);
+    expect(admins).toBe(1);
+  });
+
+  it("reports a session naming a row that is gone as unavailable, rather than redirecting on it", async () => {
+    const service = fakeAdminUserService([signedIn], { claimFirst: async () => ok("not-found" as const) });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    expect((await app.request("/admin/elevate", formBody({ confirm: "yes" }))).status).toBe(503);
   });
 });

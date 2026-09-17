@@ -3,11 +3,11 @@ import { describe, expect, it } from "bun:test";
 import { INVENTORY_SELECT } from "../../storage/db/schema";
 import type { WranglerConfig } from "../cf/types";
 import { PLAIN } from "../term/color";
+import { argvHas, composed, fakeDbIo, jsonRows, OK } from "./db.fixture";
 import { resolveHome } from "./home";
 import { RECORDED_CHECKSUM_SELECT } from "./migrate/checksum";
 import { migrationChecksum } from "./migrate/files";
 import { runStandbyReset } from "./standby";
-import { argvHas, composed, fakeDbIo, jsonRows, OK } from "./test-support";
 import type { DbConfig, DbRunContext, FakeDbIo, Place, Spawned } from "./types";
 
 const STATE = "/app/.forge/standby/app-db-standby/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/db.sqlite";

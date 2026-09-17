@@ -53,7 +53,7 @@ export function writeMeta(db: Database, key: string, value: string): void {
   db.run("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", [key, value]);
 }
 
-/** The three versions a stale index is recognised by, cheapest gate first. @public */
+/** The versions a stale index is recognised by, cheapest gate first. @public */
 export function stampVersions(db: Database, canonVersion: string): void {
   writeMeta(db, "schema_version", SCHEMA_VERSION);
   writeMeta(db, "indexer_version", INDEXER_VERSION);

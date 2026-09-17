@@ -4,7 +4,7 @@ import { dnsName, prefixedName, sanitizeName } from "./naming";
 
 describe("prefixedName()", () => {
   it("joins the project prefix to the binding", () => {
-    expect(prefixedName("CORNELLAW", "MAIN_LIMITER")).toBe("CORNELLAW_MAIN_LIMITER");
+    expect(prefixedName("NAMING", "MAIN_LIMITER")).toBe("NAMING_MAIN_LIMITER");
   });
 
   it("returns the binding alone when there is no prefix", () => {

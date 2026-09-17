@@ -144,20 +144,19 @@ rules `forge db migrate status --check` applies, and reports one of four states.
 | `unrecorded` | The table is there with no rows, **or** its last row's `fingerprint` is `NULL` — applied, never certified |
 | `match` / `mismatch` | A fingerprint is certified, and it is or is not the schema as it now stands |
 
-**None of the three functions takes an options argument**: `checkSchemaHealth(db)`, `schemaHealthCheck(binding)` and
+**None of these functions takes an options argument**: `checkSchemaHealth(db)`, `schemaHealthCheck(binding)` and
 `schemaHealthMonitor({ binding, logger? })` are the whole surface, and which table the history lives in is not configurable. There is no
 `SchemaHealthOptions` type and no `DEFAULT_MIGRATIONS_TABLE` constant.
 
 **The read is defined only against a `_forge_migrations` table.** A Worker pointed at a database forge has not migrated on a matching version reads
 `unavailable` on every request — a loud but truthful report, since the fingerprint it would compare against does not exist. The fix is a
-`forge db migrate` against that database; pre-1.0 ships no shim for an older companion-table layout
-([`DATABASE_MANAGEMENT.md`][dm-4a] §4a).
+`forge db migrate` against that database; pre-1.0 ships no shim for any other companion-table layout ([`DATABASE_MANAGEMENT.md`][dm-4a] §4a).
 
 **It writes nothing and gates nothing.** A Worker cannot repair a mismatch correctly: overwriting the fingerprint blesses the drift, applying
 migrations needs files, wrangler, the apply lock and the undo, and refusing to serve turns a stray `CREATE INDEX` into an outage. The repair is
 `forge db migrate` on the CLI; the Worker's part is to be loud about it.
 
-Two surfaces build on the read:
+These surfaces build on the read:
 
 - `schemaHealthMonitor({ binding })` is middleware that observes once per isolate, keyed on the env object the way `validateBindings` is, and logs
   one `d1.schema.health` record — `warn` on `mismatch` and on `unavailable`, `info` otherwise — with `{ state, recorded, actual }`. An absent
@@ -188,7 +187,7 @@ deletes and the guarded parent delete, in one batch.
 **Invariants live in the schema.** `CHECK`, `NOT NULL`, `UNIQUE` and a foreign key are evaluated inside the transaction, and a violation is what
 aborts the batch. valibot validates the input and words the error for the caller; it never stands in for a constraint.
 
-**The zero-rows trap.** An `UPDATE … WHERE id = ? AND balance >= ?` that matches no row is a success, and the batch commits around it. Two answers,
+**The zero-rows trap.** An `UPDATE … WHERE id = ? AND balance >= ?` that matches no row is a success, and the batch commits around it. The answers,
 in order of preference: a `CHECK` such as `quantity >= 0`, so the write itself fails; and `requireRowsWritten()` appended directly after the write
 it protects, for an invariant the schema cannot express or a consumer cannot change. The guard reads `changes()`, which reports the statement
 immediately before it, so it is one guard per protected write and a guard after a non-write is a bug. When a guard fires the batch rolls back and
@@ -209,7 +208,8 @@ an outbox row in the same batch and let a scheduled handler drain it; four lines
 
 `createKVStore` wraps a raw `KVNamespace` with a typed, codec-aware store, and its generic flows through every read and write.
 
-**The `codec` option is required** — select the codec matching the format already stored in the namespace, or the format you intend to write.
+**Always pass `codec` explicitly** — select the one matching the format already stored in the namespace, or the format you intend to write. It
+falls back to `jsonCodec()` when omitted, which is a default for the common case and never a reading of what the namespace already holds.
 
 ### 2b. Codecs — jsonCodec, textCodec, bytesCodec
 
@@ -277,10 +277,10 @@ name — and quotes and backslashes are emitted as quoted-pairs, so a crafted ob
 character must never reach the `filename=` parameter: `Headers.set` throws on it, turning a legitimate download into a 500.
 
 **The bound method is deliberately not the same.** `store.serveObject(c.request, key, options?)` returns `Promise<Result<Response>>`, through the
-same `result()` wrapper as the store's other five operations — the caller maps the failure to HTTP and logs it. The free function keeps returning a
+same `result()` wrapper as the store's other operations — the caller maps the failure to HTTP and logs it. The free function keeps returning a
 bare `Response`, because a `404` or a `416` is a _rendered failure_, not an absent value.
 
-Two things that settles:
+What that settles:
 
 - **A rejected key carries the same failure shape as every other operation.** `normalizeKey` throws on a leading `/` or a `..` segment, and the
   caller reads that as `{ ok: false, error }` — not as a bare `400` with a `null` body.
@@ -381,7 +381,7 @@ rather than mirroring the platform's.** An in-memory stub implementing only what
 `r2Backend`, `createKVStore` or `createD1Client` directly — no `@cloudflare/workers-types` value in a test, and no fake obliged to implement a whole
 platform interface to be accepted. A contract widened to mirror the platform type would silently take that away.
 
-**Where a platform brand genuinely forces a cast, localise it once inside the adapter — never in a resolver or a consumer.**
+**Where a platform brand genuinely forces a cast, localise it in one place inside the adapter — never in a resolver or a consumer.**
 
 ## 5. Dev Degradation
 

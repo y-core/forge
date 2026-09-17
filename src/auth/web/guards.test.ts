@@ -19,7 +19,7 @@ import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireF
 import { AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes, AUTH_ROUTE_GROUPS } from "./routes";
-import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore } from "./test-support";
+import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore } from "./web.fixture";
 
 const authMap = authRoutes("/auth");
 const accountMap = accountRoutes("/account");

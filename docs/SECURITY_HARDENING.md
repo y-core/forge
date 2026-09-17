@@ -33,7 +33,7 @@ audience: consumer
 - §3f Deriving allowedOrigins in Dev: `BASE_URL` as the source, the dev allowance's `extraOrigins` as the sole escape hatch
 - §4 Rate Limiting with Workers Binding: the limiter middleware
 - §4a rateLimit Middleware Factory: per-route application
-- §4b The Dev Allowance for a Missing Binding: the availability trade, and the key it now takes
+- §4b The Dev Allowance for a Missing Binding: the availability trade, and the key it takes
 - §4c Workers Rate Limiter Binding Configuration: wrangler and env typing
 - §4d Rate-Limit Key Selection: the default key and its trust precondition
 - §5 Request Identity: request-id generation and the CF trust boundary
@@ -48,7 +48,7 @@ audience: consumer
 
 ## 1. What Is Not in security
 
-`src/security/mod.ts` is authoritative for what this namespace exports, and `src/security/README.md` documents each symbol.
+`src/security/mod.ts` is authoritative for what this namespace exports, and `src/security/README.md` teaches how to use them.
 
 **Not in security** — a common mistake:
 
@@ -155,7 +155,7 @@ The emitted defaults, and the reasoning where a choice was available:
   This is deliberately **not** a `DevAllowance` grant ([`NAMESPACES.md`][namespaces-5i] §5i): the dev token is for relaxations that must never
   reach production, and `'wasm-unsafe-eval'` is legitimate there.
 
-  **Each of the four costs something different, which is why there are four and not one flag.** `'unsafe-inline'` discards §2a's whole contract.
+  **Each costs something different, which is why they are separate flags rather than one.** `'unsafe-inline'` discards §2a's whole contract.
   `'unsafe-eval'` re-enables the `new Function` path that is otherwise the one thing stopping an `hx-on:*` attribute from executing
   ([`HTMX.md`][htmx-7b] §7b). `'unsafe-hashes'` is narrower than `'unsafe-inline'`: it admits _hashed_ event-handler attributes and no `<script>`
   block. `'wasm-unsafe-eval'` is narrowest — WebAssembly compilation only, granting no JavaScript evaluation — and is what a WebAssembly consumer
@@ -282,10 +282,9 @@ submissions and API mutations.
 production route, by construction — a misconfigured binding fails closed rather than silently disabling the limit.
 
 **This is the graceful degradation [`BOUNDARIES.md`][boundaries-5b] §5b scopes to rate limiting, with the call site made unforgeable.** The
-asymmetry §5b draws still holds: bypassed rate limiting is an availability concern, bypassed CSRF is an integrity breach. What changed is that the
-relaxation was a boolean on a production option, so a shared middleware module reached from the production entry could set it — and a missing
-`RATE_LIMITER` binding in production then disabled rate limiting in silence. Minting the token is an import, and `validate-dev-boundary` fails that
-import outside a `*.dev.ts` entry.
+asymmetry §5b draws holds: bypassed rate limiting is an availability concern, bypassed CSRF is an integrity breach. The relaxation is a token rather
+than a boolean on a production option, so no shared middleware module reached from the production entry can set it and silently disable rate
+limiting. Minting the token is an import, and `validate-dev-boundary` fails that import outside a `*.dev.ts` entry.
 
 ### 4c. Workers Rate Limiter Binding Configuration
 

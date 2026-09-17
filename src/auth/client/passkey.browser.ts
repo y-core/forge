@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { mount, SECURE_ORIGIN } from "../../ui/client/browser-test-helper";
+import { mount, SECURE_ORIGIN } from "../../ui/client/browser.fixture";
 import {
   PASSKEY,
   PASSKEY_MODE_ATTR,

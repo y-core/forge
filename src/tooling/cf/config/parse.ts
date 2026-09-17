@@ -65,16 +65,10 @@ function describeUnsupported(diffs: ConfigDiff[]): string[] {
     .map((d) => `${formatPath(d.path)} (${d.reason})`);
 }
 
-/**
- * Write `text` to `path` without ever leaving a half-written config behind.
- *
- * Temp file in the same directory, so the rename is within one filesystem and is
- * therefore atomic; the original's permissions are carried onto the replacement.
- */
 function writeAtomic(path: string, text: string): void {
-  // The pid keeps two concurrent runs from writing through each other's temp file — a
-  // fixed name would let the second overwrite the first's staged bytes before the rename.
-  const temp = join(dirname(path), `.${basename(path)}.foundry-${process.pid}.tmp`);
+  // Same directory, so the rename is within one filesystem and therefore atomic; the pid keeps
+  // two concurrent runs from staging through each other's temp file.
+  const temp = join(dirname(path), `.${basename(path)}.forge-${process.pid}.tmp`);
   try {
     writeFileSync(temp, text, "utf-8");
     try {
@@ -132,7 +126,7 @@ export function writeWranglerConfig(
       new CliError(
         "invalid-args",
         `Refusing to write ${loaded.path}: the edited config did not reproduce the expected result (${verification}). ` +
-          "This is a bug in foundry's config writer, not something --force can fix. The file is unchanged.",
+          "This is a bug in forge's config writer, not something --force can fix. The file is unchanged.",
       ),
     );
   }

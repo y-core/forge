@@ -4,12 +4,12 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../testing/render";
-import { FakeElement } from "../ui/client/test-dom";
+import { FakeElement } from "../ui/client/dom.fixture";
 import { readPasskeyContract } from "./client/passkey";
 import { PASSKEY, PASSKEY_CSRF_HEADER_DEFAULT, PASSKEY_MODE_ATTR, PASSKEY_REDIRECT_FALLBACK, PASSKEY_SCOPE } from "./passkey-contract";
-import { attrsOf, elementOf, fakeAuthIcon, valuesOf } from "./web/test-support";
 import { PasskeyEnrolView } from "./web/views/passkey-enrol";
 import type { AuthPasskeyContract } from "./web/views/types";
+import { attrsOf, elementOf, fakeAuthIcon, valuesOf } from "./web/web.fixture";
 
 const CONTRACT: AuthPasskeyContract = {
   mode: "registration",

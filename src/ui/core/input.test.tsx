@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Input } from "./input";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 const SIZE_CLASSES = [
   { size: "sm", added: ["h-control-sm"], dropped: ["h-control-md"] },

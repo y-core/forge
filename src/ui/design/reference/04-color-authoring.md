@@ -91,7 +91,7 @@ is `--accent-contrast`'s shape, and the reason step 11 exists to carry the hue a
 `--yellow-contrast` inverts instead — near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in _both_ modes: `--gray-12` in
 light, `--gray-1` in dark.
 
-The three text weights forge's light mode distinguishes now sit on steps that carry a Radix role: `--primary-foreground` is `--gray-1`, and
+The text weights forge's light mode distinguishes now sit on steps that carry a Radix role: `--primary-foreground` is `--gray-1`, and
 `--secondary-foreground` and `--accent-foreground` are `--gray-12`. No step is parked.
 
 ### 1d. Overriding a per-mode value on the step
@@ -105,13 +105,13 @@ is silent: the light mode keeps working, and only the dark half is wrong.
 
 ## 2. Authoring a scale for a brand hue
 
-Everything above this point assumes the twelve steps already exist. A consumer whose product has a brand hue has to author them, and forge gives
+Everything above this point assumes a twelve-step scale already exists. A consumer whose product has a brand hue has to author them, and forge gives
 that job a shape that most colour advice does not: the steps are not decoration, they are the operands of a mapping `theme-base.css` has already
 written. Read the mapping first, then pick values that survive it.
 
-The four shipped schemes are worked examples of the _shape_ — twelve solid steps, once each, and nothing else — but not of the authoring, because
-each of them sidesteps the hard half the same way: every step's lightness is Radix's, so no lightness in them was chosen against forge's mapping.
-Only the hue was chosen. The example of a scale with _authored_ values in it is in `src/ui/README.md`, and it is written in `oklch()`.
+The shipped schemes are worked examples of the _shape_ — a twelve-step scale, each step declared once, and nothing else — but not of the authoring,
+because each of them sidesteps the hard half the same way: every step's lightness is Radix's, so no lightness in them was chosen against forge's
+mapping. Only the hue was chosen. The example of a scale with _authored_ values in it is in `src/ui/README.md`, and it is written in `oklch()`.
 
 ### 2a. Author in a space that carries lightness
 
@@ -133,8 +133,8 @@ A scale that bleaches its ends spends its brand on the steps nobody looks at and
 motivated authoring one at all.
 
 Default: the tint runs through the whole scale, not only its ends — the middle steps carry the same hue at a chroma low enough to read as neutral —
-which is the _only_ thing separating the four shipped schemes from one another: `theme-stone.css` is warm, `theme-gray.css` cool and
-`theme-slate.css` strongly cool, `theme-neutral.css` sits at no tint at all, and the twelve lightnesses are otherwise the same decision. Unless a
+which is the _only_ thing separating the shipped schemes from one another: `theme-stone.css` is warm, `theme-gray.css` cool and
+`theme-slate.css` strongly cool, `theme-neutral.css` sits at no tint at all, and their lightnesses are otherwise the same decision. Unless a
 brief fixes untinted greys, usually because a second brand colour has to sit beside them without either one bending.
 <!-- rule:forge-ui-color-ramp-author-tinted-neutrals -->
 
@@ -171,10 +171,10 @@ failure into a global one. `--muted-foreground` on `--muted` is where this bites
 ### 3a. Radix for lightness, Tailwind for chroma and hue
 
 **Radix Colors** supplies the **lightness** of every step in every scheme, and every value in `theme-neutral.css`. It is `@radix-ui/colors` 3.0.0,
-MIT-licensed. The default scheme is achromatic, so its twelve solid steps are Radix's `gray` verbatim except for the light-mode 1↔2 swap §1b
+MIT-licensed. The default scheme is achromatic, so its solid steps are Radix's `gray` verbatim except for the light-mode 1↔2 swap §1b
 describes; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` keep those lightnesses and replace the chroma and hue.
 
-**Tailwind CSS** supplies the **chroma and hue** of the three tinted schemes: `theme-stone.css` takes Tailwind's `stone`, `theme-gray.css` its
+**Tailwind CSS** supplies the **chroma and hue** of the tinted schemes: `theme-stone.css` takes Tailwind's `stone`, `theme-gray.css` its
 `gray` and `theme-slate.css` its `slate`, each resampled at the Radix lightness of the step it lands on, because Tailwind's eleven stops are not
 spaced for twelve roles. The fixed status hues are Tailwind's too, but by reference rather than by value: `--red-9` and its siblings resolve through
 the Tailwind colour variables the consuming app's own build declares, so no number for them is copied here at all.
@@ -197,7 +197,7 @@ Three of that account's claims were read and deliberately **not** given rule ids
 - **"Prefer HSL to hex."** Forge's own worked scale in `src/ui/README.md` is `oklch()`. Publishing the preference would have the corpus contradict
   the example it points readers at, so the rule above states what the notation has to _do_ — carry lightness as its own coordinate — and lets the
   example name the form.
-- **A count of shades per hue.** Already stated in [`04-color.md`][color-1a] §1a, where the twelve steps are argued for. A second id would be a
+- **A count of shades per hue.** Already stated in [`04-color.md`][color-1a] §1a, where the step count is argued for. A second id would be a
   second citation anchor for one sentence.
 - **Rotating hue to keep perceived brightness even as lightness changes.** True, and general colour theory: it terminates in no forge token,
   primitive or utility, so it fails the admission test this corpus applies to every rule. It is worth knowing while authoring a scale; it is not a

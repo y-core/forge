@@ -9,7 +9,7 @@ import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthCredential } from "../../types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
-import { attrOf, attrsOf, elementOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../test-support";
+import { attrOf, attrsOf, elementOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../web.fixture";
 import { PasskeyListView } from "./passkey-list";
 import type { PasskeyListViewProps, PasskeyRow } from "./types";
 
@@ -169,7 +169,7 @@ describe("PasskeyListView and the per-row token", () => {
   });
 
   // Pinned rather than assumed: `csrfProtection` keys on the pathname, so one token per row
-  // authorises both writes only while the two routes stay on the one path.
+  // authorises both writes only while both routes stay on the one path.
   it("holds the rename and the remove to one pathname, which is what lets one token cover both", () => {
     expect(ACCOUNT.passkeyRename({ id: "c1" })).toBe(ACCOUNT.passkeyRemove({ id: "c1" }));
   });

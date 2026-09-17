@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeDbIo, OK } from "../test-support";
+import { fakeDbIo, OK } from "../db.fixture";
 import type { DbConfig, DbRunContext, FakeDbIo, Home, Migration } from "../types";
 import { applyMigrations } from "./applier";
 import { FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL } from "./companions";

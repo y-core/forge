@@ -17,7 +17,43 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+### Upgrading
+
+Every action this version asks of a consuming app, loudest failure last — the first one is the only
+one that fails without saying so. Each entry's own **Migration:** paragraph below carries the
+reasoning; this is the checklist.
+
+1. **`sed -i 's/^# foundry:/# forge:/' .dev.vars`**, on every machine and every deployment
+   environment holding one. **Fails silently:** the key reads as `local`, `forge sync` stops pushing
+   it, and `--rotate` reports no rotatable keys.
+2. **Rename any `test-support.ts` importing across a namespace boundary to `*.fixture.ts`** —
+   `validate-namespace-graph` goes red.
+3. **Rewrite any authored-document sentence that narrates a change** — `validate-docs` goes red.
+4. **Drop the `readmeExportsStep(…)` row and its import from `config/steps.ts`** — `tsc` raises
+   TS2305, and the gate cannot start.
+5. **Replace every `'unsafe-*'` CSP source string with the imported `UNSAFE_*` symbol** — throws at
+   startup, naming the directive and the symbol to import.
+6. **Stop threading a request-derived nonce into `applySecurityHeaders`** — an empty nonce throws at
+   the call.
+7. **`redirect` → `createRedirectResponse`** — `tsc`.
+8. **Nothing to do** for the `kvLogChannel` key layout, the `browserStep` hint or
+   `validate-packaging`, unless a test asserts on the key shape or the hint text.
+
 ### Breaking Changes
+
+- **`validate-readme-exports` is retired, and `readmeExportsStep` is removed from
+  `@y-core/forge/warden/steps`.** Its only job was holding a README's `### Exports` tables against
+  the barrels they documented, and those tables are gone: a table beside a barrel is a second copy
+  of the export surface with nothing but a check keeping the two in step. Also removed:
+  `checkReadmeExports`, `ReadmeExportsCheckConfig` and `discoverReadmes` from
+  `@y-core/forge/warden/checks`, and `ANCHOR_RE`, `parseExportsHeadingLine`,
+  `parseExportsTableSymbols`, `parseImportPathAnchors` and `parseTypesProse` from
+  `@y-core/forge/tooling/gate`.
+
+  **A consumer wiring `readmeExportsStep` drops the row from its `config/steps.ts`.** Nothing
+  replaces it, because nothing was lost: `validate-exports` already proves every `@public` symbol
+  reaches its barrel in both directions, which is the property the tables were transcribing by
+  hand. Pre-1.0, so no shim is owed.
 
 - **Every unsafe CSP source is refused as a string and admitted only as an imported symbol.** The
   four — `'unsafe-inline'`, `'unsafe-eval'`, `'unsafe-hashes'`, `'wasm-unsafe-eval'` — throw when
@@ -52,6 +88,87 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   **`mergeSecurityHeaders` is unaffected** and stays a non-throwing data transform that carries a
   symbol through like any other source. Validation runs where it already ran, at the constructor.
 
+- **`applySecurityHeaders` validates the nonce it is handed.** `options.nonce` is spliced into
+  `'nonce-…'` in the emitted CSP, and every other source in that header is checked hard — the nonce
+  was not. A caller threading a request-influenced value (`request.headers.get("x-render-nonce")`)
+  therefore shipped an injection: `abc' 'unsafe-inline` emitted
+  `script-src 'self' 'nonce-abc' 'unsafe-inline''`, switching off the mitigation the header exists
+  for. A nonce outside the base64/base64url alphabet — `/^[A-Za-z0-9+/_-]+={0,2}$/`, so no quote, no
+  whitespace, no `;` or `,` — now throws at the call. `getNonce(c)` and the minted default satisfy it
+  unchanged; a caller passing a placeholder such as `"n"` in a test is unaffected, and one passing
+  `""` now throws.
+
+- **`redirect` is gone from `@y-core/forge/http`.** It was a second exported name for
+  `createRedirectResponse` — one function, two public names, which is the shim pattern pre-1.0 forbids.
+  Rename the import and the call; the signature and behaviour are identical.
+
+- **`kvLogChannel` keys drop the `||v2||` segment.** A record is written at
+  `${prefix}||${inverted}||${rand}`. Records under the old four-segment layout sit outside the list
+  prefix, so `read` and `readEntry` do not answer them — there is no read path to migrate, and every
+  record carries `expirationTtl` (7 days by default), so KV reclaims them. A consumer asserting on the
+  key shape, or listing the namespace by hand, updates the prefix.
+
+- **`browserStep`'s `chromium` hint names the install command and nothing else** — ``run `bunx
+  playwright install chromium` ``. A repository whose containers supply a browser states its own line
+  through `options.hint`, which is unchanged. A test asserting the previous two-route string updates.
+
+- **`namespaceGraphStep` no longer counts `test-support.ts` as test source.** Test source is the four
+  spec suffixes plus `*.fixture.ts` / `*.fixture.tsx`. A consumer with a `test-support.ts` that imports
+  across a namespace boundary now raises an undeclared edge: rename the file `*.fixture.ts`, which is
+  the convention forge's own tree follows (`docs/FORGE_STRUCTURE.md` §9).
+
+- **`docsStep` reports historical phrasing in every document a repository authors, against a wider
+  list.** It ran on numbered governing documents only, against six phrases; it now runs on every walked
+  document — namespace `README.md` files and agent docs included — against a longer list. A cited tree
+  is excluded, because a finding there names a line only its home repository can change. **Visible
+  break: a consumer's `validate-docs` goes red** on any sentence narrating a change. Two classes are
+  deliberately absent from the list and stay safe to write: a live third-party vocabulary (`legacy`,
+  `deprecated`, and `superseded` on its own — the two-word `superseded by` is on the list, so a
+  red-lined sentence loses the `by` and not the noun), and the pre-1.0 no-shim policy's own words
+  (`backward-compatible`, `migration path`).
+
+- **The `.dev.vars` markers are spelled `# forge:`, not `# foundry:`.** `GENERATE_MARKER` is
+  `# forge:generate` and `PUSH_MARKER` is `# forge:push`. **This fails quiet, which is what makes it
+  worth acting on before upgrading:** an unrecognised comment is just a comment, so a key under the old
+  marker parses as `kind: "local"` — `forge sync` stops pushing it to the deployed surface, and
+  `--rotate` reports finding no rotatable keys rather than erroring. Nothing throws and no diff shows
+  it.
+
+  **Migration:** in every `.dev.vars` in every consuming app,
+  `sed -i 's/^# foundry:/# forge:/' .dev.vars`, then confirm with `forge sync` that each secret is
+  still listed under the kind it should have. The file is gitignored, so each machine and each
+  deployment environment holding one needs the edit.
+
+  The same rename runs through the surrounding surface, none of which a consumer keys on: the
+  `[forge]` warning prefix, the `.forge-<pid>.tmp` suffix on the `.dev.vars` and wrangler-config temp
+  files, and the config writer's bug message.
+
+### Added
+
+- **`validate-packaging` — the tarball carries no module only a test reaches.** `packagingStep`,
+  `checkPackaging`, `fixtureName`, `moduleImports` and `PackagingCheckConfig` are new from
+  `@y-core/forge/tooling/gate`. The check walks the source tree, resolves every relative specifier —
+  `import(…)` included — from each `exports` entry and each `bin` script, and fails any packed module
+  nothing consumable reaches. Its remedy is the file's `*.fixture.ts` spelling, never a `files` entry,
+  so a `files` array names classes and stops growing.
+
+- **A `*.fixture.ts` needs no co-located test.** `coLocationStep` excuses the suffix on the terms it
+  already excuses `types.ts` and `bin.ts` on, so a fixture no longer needs an `exempt` entry with a
+  reason.
+
+### Changed
+
+- **Forge's `files` array excludes by class, not by path.** The tarball drops every `*.fixture.ts` /
+  `*.fixture.tsx` and the whole of `src/tooling/dev/`, and carries no per-file exclusion. Thirteen
+  test-only modules were renamed to the convention; none was reachable through the `exports` map, so
+  no published surface changes.
+
+### Fixed
+
+- **`rateLimit` says why it refused.** A key resolver that throws still fails closed with a 503, and
+  the bare `catch` swallowed the message the module writes to explain the misconfiguration. It is now
+  logged at `warn` before the refusal.
+
 ---
 
 ## [0.1.16] — 2026-09-16
@@ -64,7 +181,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   modelled: which keys a named environment inherits is a property of the tool and its version, not of
   the file the check reads, so a block states its three controls or is unstated.
 
-  **Visible break: cornellaw's gate goes red.** Its `env.dev` block states bindings only, so
+  **Visible break: a consuming app's gate goes red.** An `env.dev` block that states bindings only, so
   `validate-exposure` produces three findings until that block states the three keys.
 
 - **Stating both `routes` and `route` now fails**, at any values, because wrangler accepts exactly
@@ -1744,7 +1861,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   vocabulary, and could only silence them by committing a trimmed copy of forge's table. Three were
   mis-targeted rather than library-only and were retargeted — `no-PII` to `PII` (the canon spells the
   first only in an unindexed frontmatter line), `script-src` to `csp`, and `origin-guard` to
-  `origin`. Forge, starter and cornellaw now each report zero dead bridges.
+  `origin`. Forge and its consumers now each report zero dead bridges.
 - **The gate is scoped to the corpora a repository owns.** `missingGloss`, `emptyDocuments` and the
   unresolved-citation warning select `canon` and `project` explicitly, independent of how a path is
   spelled: a gate may only fail a repository for a file that repository can edit, and a dependency
@@ -2034,10 +2151,10 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   still unreleased, so nothing shipped carried the broken argv.
 
 - **`browserStep`'s prerequisite names both routes to a browser.** The default was
-  `bun run test:install`, which assumed every consumer defines that script — forge did, starter did
-  not. It now reads ``run `bunx playwright install chromium`, or use a devbox container — `devctl up` ``:
-  a direct command needing nothing defined anywhere, and the container that supplies one. Forge's own
-  `test:install` script is gone. Anyone who sees the line is by definition outside such a container —
+  `bun run test:install`, which assumed every consumer defines that script — forge did, a consuming app
+  did not. It now reads ``run `bunx playwright install chromium` ``:
+  a direct command needing nothing defined anywhere. Forge's own
+  `test:install` script is gone. Anyone who sees the line has no browser downloaded —
   every image there bakes Chromium and sets `CHROME_PATH`, the first thing `hasChromium` resolves, so
   the probe cannot fail in one. A project whose browser arrives some other way passes `hint` itself,
   as it always could. Both the hint and the `browser` row are unreleased, so no shipped surface changes.
@@ -3642,7 +3759,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
 
 - **`buttonVariants`' base now carries `whitespace-nowrap`.** A multi-word label used to break
   across two lines inside its own pill at narrow widths — a button is a control, and a control's
-  label is not prose to be reflowed. Every consumer that added the class locally (cornellaw's FICA
+  label is not prose to be reflowed. Every consumer that added the class locally (a consuming app's
   declaration buttons at 320px, for one) can drop it. The class rides the base, so `Button`,
   `ToggleGroup` items and `Toolbar` items all inherit it; a label long enough to need wrapping
   wants a shorter label, not a two-line button.

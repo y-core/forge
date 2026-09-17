@@ -4,13 +4,7 @@ import type { WranglerConfig } from "../types";
 
 export type ConfigDiff = { kind: "set"; path: JsonPath; value: Primitive } | { kind: "unsupported"; path: JsonPath; reason: string };
 
-/**
- * A config together with the exact bytes it was parsed from.
- *
- * Write-back needs the original text, and it needs to be the same text the offsets
- * were computed against — so the source travels with the config rather than being
- * re-read later, when the user may have edited the file mid-run.
- */
+/** A config together with the exact bytes it was parsed from, which write-back splices its offsets against. */
 export interface LoadedWranglerConfig {
   path: string;
   source: string;

@@ -4,7 +4,6 @@ import type { CheckStep, StepRequirement } from "../../src/tooling/gate/types";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
 import { checkDesign, type DesignCheckConfig } from "./checks/design";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
-import { checkReadmeExports, type ReadmeExportsCheckConfig } from "./checks/readme-exports";
 import { libraryDocsDir } from "./corpus/dependency";
 import { checkDuplicates, type DuplicateCheckConfig } from "./gate/duplicates";
 import { GOLDEN, NEGATIVE } from "./gate/golden";
@@ -18,11 +17,6 @@ const SQLITE: StepRequirement = { tool: "bun:sqlite", probe: () => typeof Bun !=
 /** Checks the governing documents against the subpaths they are required to cite. @public */
 export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-docs", () => checkDocs(config), options);
-}
-
-/** Checks a README's per-subpath export tables against the barrels they document. @public */
-export function readmeExportsStep(config: ReadmeExportsCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-readme-exports", () => checkReadmeExports(config), options);
 }
 
 /** Checks the changelog's headings against the current package version, on the `full` tier. @public */
@@ -78,7 +72,7 @@ export interface WardenAppStepOptions {
   requiredFrontmatter?: DocsCheckConfig["requiredFrontmatter"];
 }
 
-/** The four rows every consuming application appends. @public */
+/** The rows every consuming application appends. @public */
 export function wardenAppSteps(options: WardenAppStepOptions): readonly CheckStep[] {
   const { root, queries } = options;
   const kind = options.kind ?? "apps";

@@ -24,8 +24,8 @@ audience: consumer
 - §1a The Dial Declaration and Its Units: what `DIALS` owns, and the one unit convention a reader must know
 - §1b The Query String Is the Whole State: no storage, and therefore no second pre-paint script
 - §1c Presets Are Fitted Aliases, Not a Second Source: input-only parameter, explicit dial wins, and a command rather than a binding
-- §1d Shape Tokens Are Not a Scheme: the eight non-colour tokens, where they are declared, and why a scheme file never carries one
-- §2 Generation Pipeline: five numbers to a complete scheme
+- §1d Shape Tokens Are Not a Scheme: the non-colour tokens, where they are declared, and why a scheme file never carries one
+- §2 Generation Pipeline: from the dials to a complete scheme
 - §2a From Dials to Both Families in Both Modes: what `buildTheme` produces and why two representations are kept
 - §2b The OKLab Conversion Has One Home, Two Gamut Policies: who owns the arithmetic, and why the gate clips where the generator reduces chroma
 - §2c Emission Contract: one declaration site per step, and standalone-completeness
@@ -35,17 +35,17 @@ audience: consumer
 - §3b Accepted Exemptions: a mandatory reason, a pinned value, and no third state
 - §3c The Live Readout Reuses the Audit: why the customiser measures the same pairs, and what it cannot measure
 - §3d A Focus Ring Is Read Against the Surface It Is Drawn On: the audited row, the fill the gray step fails, and why the choice is per-appearance
-- §4 A Status Hue Holds Its Fill: the accent ramp's shape applied to the four intents
+- §4 A Status Hue Holds Its Fill: the accent ramp's shape applied to the status intents
 - §4a One Value Cannot Be Both a Fill and Text: the defect the hold fixes, and what flips instead
 - §4b Three Tokens Per Intent: the naming that follows, and the rows the audit gains
-- §4c Success Unifies on Emerald: one hue per intent, and the two steps that retire
+- §4c Success Unifies on Emerald: one hue per intent, and the steps that retire
 
 ---
 
 ## 1. One Declaration, Three Consumers
 
 The theme data has three readers that cannot see each other: the Worker-side customiser page, the browser scope that repaints it, and the
-verification gate that runs in neither. A value duplicated across those three drifts silently — the page keeps rendering, the browser keeps
+verification gate that runs in neither. A value duplicated across them drifts silently — the page keeps rendering, the browser keeps
 painting, and only the number a reader is shown becomes wrong.
 
 That is the argument [`STATE_ATTRIBUTES.md`][sa-1] §1 makes for state attributes, applied to a third reader. The data therefore lives in
@@ -59,7 +59,7 @@ prose here, and they are registered as such in [`AGENT_GUIDE.md`][ag-8] §8.
 
 **A dial is declared once and carries everything about itself** — the state field, the query parameter, the accessible name, the range, the step,
 and the value an absent parameter means. The loader, the sliders, the browser scope and the share link all read that one row, so adding a dial is a
-data edit rather than a change in four places.
+data edit rather than a change in each of them.
 
 **One unit convention is not derivable and is therefore stated: a chroma dial carries thousandths.** The control is an integer slider, and
 `buildTheme` divides on the way in. A reader who assumes the dial value is the OKLCh chroma is out by three orders of magnitude, and the page still
@@ -79,12 +79,12 @@ drag costs no history entry and no request.
 
 ### 1c. Presets Are Fitted Aliases, Not a Second Source
 
-A shipped scheme is reproducible from two gray dials, and a preset is that pair under a name. Three properties keep the alias from becoming a second
+A shipped scheme is reproducible from two gray dials, and a preset is that pair under a name. These properties keep the alias from becoming a second
 source of truth:
 
 - **The preset parameter is input-only, and an explicit dial beside it wins.** It expands to dial values during the load and is never emitted, so no
   state can be expressed two ways at once.
-- **Picking a preset is a command, not a binding.** The pick fires a scope action that writes the two dials; the painter then reacts exactly as it
+- **Picking a preset is a command, not a binding.** The pick fires a scope action that writes both dials; the painter then reacts exactly as it
   does to a drag. A binding would make the picker a second holder of the scheme's state.
 - **Which preset the dials name is derived, never stored.** A lever dragged off a preset moves the picker to the custom option, because a control
   naming `slate` beside a scheme whose dials have drifted off `slate` is the disagreement the live readouts exist to prevent.
@@ -94,17 +94,17 @@ source of truth:
 
 ### 1d. Shape Tokens Are Not a Scheme
 
-**Shape lives in `theme-base.css`, and a scheme file never declares it.** The eight tokens — `--radius`, `--radius-field`, `--radius-box`,
+**Shape lives in `theme-base.css`, and a scheme file never declares it.** The shape tokens — `--radius`, `--radius-field`, `--radius-box`,
 `--radius-selector`, `--control-h-sm`, `--control-h-md`, `--control-h-lg` and `--border-width` — are declared once beside the semantic colour
 mapping, and every component reads them through the bridged utilities (`rounded-field`, `rounded-box`, `rounded-selector`, `h-control-*`,
 `border-field`) rather than through a raw Tailwind size.
 
 **Why not a scheme file.** A scheme is the file a consumer replaces, and the contrast audit walks every `theme-*.css` that is not a declared token
-file, on the assumption that it holds colour steps and nothing else (§3a). Putting a radius in one would either make each of the four schemes
-restate a value that has nothing to do with its tint, or hand the audit a token it cannot measure. Keeping shape in the mapping file means any
+file, on the assumption that it holds colour steps and nothing else (§3a). Putting a radius in one would either make every shipped scheme restate a
+value that has nothing to do with its tint, or hand the audit a token it cannot measure. Keeping shape in the mapping file means any
 scheme composes with any shape, and the audit's assumption stays true.
 
-**The alternate ships as proof, not as a catalogue.** `shape-compact.css` re-declares exactly the eight tokens and is imported after `forge.css`,
+**The alternate ships as proof, not as a catalogue.** `shape-compact.css` re-declares exactly those tokens and is imported after `forge.css`,
 the same cascade a scheme uses. Its name deliberately does not start with `theme-`, which is the prefix the audit takes as "a scheme". An
 application's own shape file follows the same shape: one `:root` block, those tokens, nothing else.
 
@@ -113,9 +113,9 @@ application's own shape file follows the same shape: one `:root` block, those to
 `forge-ui.css` where `cn` reads its compiled signature unambiguously.
 
 **The customiser's shape dials drive these tokens directly**, as `--radius` always was (§2b): a dial whose whole output is one custom property, with
-no scale behind it. Four dials cover six of the eight tokens: `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes
-`--radius-box`, and `controlH` writes `--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it. The last five of those are
-the list `SHAPE_PROPERTIES` names and `shapeVars` values. `--radius-selector` and `--border-width` are not dialled: a pill is a pill at every
+no scale behind it. `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH` writes
+`--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it. Every dialled property but `--radius` is named by
+`SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector` and `--border-width` are not dialled: a pill is a pill at every
 radius, and a hairline that moves with a slider is a different decision from a corner that does.
 
 ---
@@ -125,8 +125,8 @@ radius, and a hairline that moves with a slider is a different decision from a c
 ### 2a. From Dials to Both Families in Both Modes
 
 `buildTheme` produces both families, in both modes, from the dials alone. The fixed half of a scale is a per-step lightness with a chroma shape over
-it (`src/ui/contracts/theme/color.ts`); the dials supply the hue and the peak chroma the shape is scaled by, which is what makes a scheme five
-numbers rather than twenty-four colours.
+it (`src/ui/contracts/theme/color.ts`); the dials supply the hue and the peak chroma the shape is scaled by, which is what makes a scheme a handful
+of dial numbers rather than a written-out palette.
 
 **Each step is kept in two representations, and the second is not redundant.** The OKLCh string is what a scheme file declares
 ([`UI_CLASS_COMPOSITION.md`][ucc-2a] §2a); the byte-quantised sRGB value beside it is what the contrast ratios and the preview swatches are computed
@@ -141,11 +141,11 @@ in, because that is the colour a reader is actually shown. Deriving one from the
 apart while every test kept passing.
 
 **The direction is forced, not chosen.** `ui/contracts/theme` is a LEAF namespace, and LEAF constrains _outgoing_ edges only — so it may be imported
-and may not import out, which leaves it as the only one of the three that can hold the shared function. That is also what
+and may not import out, which leaves it as the only one that can hold the shared function. That is also what
 `@y-core/forge/ui/contracts/theme` publishes and all it may publish: the theme's type contract and the colour arithmetic over it, never a component,
 a route or anything that would give the subpath an outgoing edge.
 
-**Two gamut policies exist, and only one of them is a policy of its own.** Reducing chroma at constant lightness and hue, as CSS Color 4 specifies,
+**Both gamut policies exist, and only one of them is a policy of its own.** Reducing chroma at constant lightness and hue, as CSS Color 4 specifies,
 is what any emitted coordinate needs, so it lives once in `toSrgbGamut` beside the arithmetic; `ui/assets/build`'s `oklchToSrgb` composes over it
 and converts the mapped coordinate rather than restating the bisection. The gate's `oklchToPaintedHex` **clips per channel**, because a browser
 clips and a conformance measurement must match what is painted — that is the one genuinely separate policy. `color.test.ts` pins both: the two agree
@@ -157,14 +157,14 @@ chroma-reduced `#bf000f`.
 **The generator is held to the declaration contract rather than exempted from it.** [`UI_CLASS_COMPOSITION.md`][ucc-2] §2 owns both halves — one
 declaration site per step, and standalone-completeness — and what is local here is how the emitter satisfies them: a step whose two modes agree
 collapses to a bare value and every other step is wrapped, and `--accent-contrast` is **derived from the audit's own `ACCENT_CONTRAST` side** rather
-than written out, so the two steps the file declares are provably the two the live measurement reads.
+than written out, so the steps the file declares are provably the ones the live measurement reads.
 
 **The corner radius is driven directly rather than through a scale**, because it is not a colour and has no twelve steps; it is a dial whose whole
 output is one custom property.
 
 **Shape is emitted as a second block, under its own comment, rather than folded into the scheme.** The scheme block stays exactly what §1d says a
-scheme is — colour steps and nothing else — so the five shape declarations (`--radius-field`, `--radius-box`, `--control-h-sm`, `--control-h-md`,
-`--control-h-lg`) follow it as a file a reader saves separately, the way `shape-compact.css` ships. `--radius` is painted rather than emitted, and
+scheme is — colour steps and nothing else — so the shape declarations `SHAPE_PROPERTIES` names follow it as a file a reader saves separately, the
+way `shape-compact.css` ships. `--radius` is painted rather than emitted, and
 stays where it was.
 
 ### 2d. No Generated Colour Reaches Markup
@@ -182,7 +182,7 @@ and the _keys_ the painter writes into; the colour arrives only once the scope r
 ### 3a. Audited Pairs and Criteria
 
 **Every pair forge measures is declared in one list, and each row records what it is and what binds it** — the token, the role it plays in the
-library, the step it resolves through, the two sides of the measurement, and the WCAG criterion whose floor applies. The criteria and their floors
+library, the step it resolves through, each side of the measurement, and the WCAG criterion whose floor applies. The criteria and their floors
 are declared beside it.
 
 **The gate consumes that list rather than restating it.** `config/steps.ts` imports the pairs, the criteria and the exemptions and hands them to the
@@ -197,7 +197,7 @@ satisfying it.
 A pair the criteria do not bind is **recorded, not omitted**. An exemption row names the token, the step, the value that step is pinned at in each
 mode, the worst-case measured ratio, and the reason no criterion applies.
 
-Three properties make the list a contract rather than a suppression list:
+These properties make the list a contract rather than a suppression list:
 
 - **The reason is mandatory and non-empty.** An exemption with no stated reason does not hold, and the gate says so.
 - **The pinned value is checked against the stylesheet.** The exemption states what its number measures, so a changed step value invalidates it and
@@ -209,15 +209,14 @@ Three properties make the list a contract rather than a suppression list:
 
 **The customiser measures the same pairs the gate does**, from the same declaration, so a scheme a reader generates is judged by the criteria forge
 enforces on its own — not by a second, friendlier list that happens to agree today. **Both compare the ratio unrounded**, and only the displayed
-number is rounded: a pair that fails by less than the two decimals a reader is shown must fail on both sides, or the agreement above holds
+number is rounded: a pair that fails by less than the rounding a reader is shown must fail on both sides, or the agreement above holds
 everywhere except at the boundary that matters.
 
 **A side names the family it is a step of, and may name a step per mode.** Both families are generated, so a side resolves as
 `theme[family][mode].solid[sideStep(side, mode)]` and nothing else reads `.step`. The per-mode form exists for exactly one side —
 `--accent-contrast`, which is `--gray-1` in light and `--gray-12` in dark — and that asymmetry is why dark carries less headroom than light at any
-given step 9. It once carried too little: a band of high-chroma greens put `--primary-foreground` under its floor while `--accent-9` was
-lightness-pinned to one value for both modes. `ACCENT_RAMP.dark.lightness[8]` is 0.5075 rather than the light ramp's 0.52 for that reason, which is
-also why `--accent-9` is the one accent step the shipped scheme declares per mode.
+given step 9. `ACCENT_RAMP.dark.lightness[8]` is 0.5075 rather than the light ramp's 0.52, and `--accent-9` is the one accent step the shipped
+scheme declares per mode.
 
 **Only the pairs whose two sides are both steps of a generated scale can be measured live**, and that boundary is in the data rather than in a
 comment: a pair resolving through a fixed token has no generated value to measure, because the customiser generates scales and not the semantic
@@ -234,7 +233,7 @@ _inside_ the element ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e), so on a solid f
 does not clear it: **`--ring` measures 1.03 against `--primary` in light.**
 
 **The remedy is per-appearance rather than a second audited row.** Every appearance recipe in `src/ui/core/utils/tone.ts` names its own
-`--focus-ring` — `--tone-fg` on the solid fill, `--ring` on the four that paint no fill — so none inherits a solid ancestor's choice. No row is
+`--focus-ring` — `--tone-fg` on the solid fill, `--ring` on the appearances that paint none — so none inherits a solid ancestor's choice. No row is
 added because a ring-on-fill pair resolves through the semantic layer rather than a generated scale, which is the boundary §3c draws, and the choice
 is a per-appearance token rather than a step the audit can name.
 
@@ -273,7 +272,7 @@ Each intent owns three tokens, mirroring primary:
 `UI_CLASS_COMPOSITION.md` §2c already rules that `--destructive` / `--success` / `--warning` **are** fills, so the naming follows from a decision
 already taken. Every call site that painted error or status text off the fill moves to the `-text` token.
 
-The audit follows the tokens. The three "as text on a page surface" rows that measured a step 9 against `--gray-3` now measure `--destructive-text`
+The audit follows the tokens. The "as text on a page surface" rows that measured a step 9 against `--gray-3` now measure `--destructive-text`
 / `--info-text` / `--success-text` on step 11, and `--warning-text` gains the row it never had. No status pair is live-measured — `scalePairs()`
 keeps only pairs with both sides on a generated scale, and every status side is fixed — so the contrast step is the sole detector of a regression
 here.

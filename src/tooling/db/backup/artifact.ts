@@ -279,7 +279,7 @@ export function verificationSelect(table: AppTable, columns: readonly string[], 
     })
     .join(", ");
   // The table is aliased and the key qualified, because a bare `ORDER BY "id"` binds to a result
-  // alias of that name while `WHERE "id" > …` binds to the base column, and the two orders disagree.
+  // alias of that name while `WHERE "id" > …` binds to the base column, and the orders disagree.
   const key = `t.${quoteSqlIdentifier(table.key)}`;
   const seek = after === null ? "" : ` WHERE ${key} > ${typeof after === "object" ? `X'${toBlobHex(after)}'` : quoteSqlLiteral(after)}`;
   return `SELECT ${projection} FROM ${quoteSqlIdentifier(table.name)} AS t${seek} ORDER BY ${key} LIMIT ${table.pageRows}`;

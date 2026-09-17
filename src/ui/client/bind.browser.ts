@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { render } from "../../testing/render";
 import { ToggleGroup } from "../controls/toggle-group";
 import { Resumable } from "../server/resumable";
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {

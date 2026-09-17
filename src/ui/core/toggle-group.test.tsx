@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import type { Size } from "../contracts/types";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { ToggleGroup } from "./toggle-group";
 
 const ITEM_INPUT = 'data-slot="toggle-group-input"';

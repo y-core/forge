@@ -17,7 +17,6 @@ import { canonVersion } from "../version";
 
 /** What the knowledge check needs to know about the project. @public */
 export interface WardenCheckConfig extends DependencyOptions {
-  /** Repository root. */
   root: string;
   /** The canon tree this repository is subject to. */
   kind: Tree;

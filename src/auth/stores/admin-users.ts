@@ -3,11 +3,11 @@ import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { AdminUserStore, AuthUserPage } from "../types";
 import { normalizeEmail } from "./email";
-import { adminRefusal, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
+import { adminRefusal, NO_ADMIN_YET, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
 import type { UserRow } from "./types";
 
 // Prefix-anchored, so the unique index on `email_key` answers the search rather than a full scan.
-/** Turns a search term into a prefix `LIKE` pattern, escaping the two wildcards a caller's text may carry. */
+/** Turns a search term into a prefix `LIKE` pattern, escaping the `%` and `_` a caller's text may carry. */
 function likeTerm(query: string): string {
   return `${normalizeEmail(query).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
@@ -53,6 +53,15 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
         sql`SELECT COUNT(*) AS total FROM auth_users WHERE is_admin = 1 AND deactivated_at IS NULL`,
       );
       return outcome.ok ? ok(outcome.data?.total ?? 0) : err(storeError("adminUsers.countAdmins", outcome.error));
+    },
+
+    async claimFirstAdmin(id, at) {
+      const key = uuidKey(id);
+      if (!key) return ok("not-found");
+      const written = await db.execute(sql`UPDATE auth_users SET is_admin = 1, updated_at = ${at} WHERE id = ${key} AND ${NO_ADMIN_YET}`);
+      if (!written.ok) return err(storeError("adminUsers.claimFirstAdmin", written.error));
+      if (written.data.rowsWritten > 0) return ok("changed");
+      return adminRefusal(db, "adminUsers.claimFirstAdmin", key, "admin-exists");
     },
 
     async setAdmin(id, isAdmin, at) {

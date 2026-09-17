@@ -4,12 +4,7 @@ import { CF_ERROR_CODES, SURFACE_PERMISSIONS } from "./endpoints";
 import type { CfApiClientError } from "./types";
 import type { CfFailureKind, DescribeCfFailureOptions } from "./types";
 
-/**
- * Classify by envelope error code first. Cloudflare's HTTP status does not track
- * the failure kind — an auth failure arrives as HTTP 400 and a missing object as
- * HTTP 404 — so status is consulted only when no recognised code is present.
- * See `endpoints.ts` for the probed evidence.
- */
+/** Classifies a Cloudflare failure by envelope error code, falling back to HTTP status. */
 export function classifyCfError(e: CfApiClientError): CfFailureKind {
   if (e.kind === "network") return "network";
 
@@ -17,19 +12,14 @@ export function classifyCfError(e: CfApiClientError): CfFailureKind {
   if (codes.some((c) => (CF_ERROR_CODES.notFound as readonly number[]).includes(c))) return "not-found";
   if (codes.some((c) => (CF_ERROR_CODES.auth as readonly number[]).includes(c))) return "auth";
 
+  // Cloudflare's status does not track the failure kind — an auth failure arrives as HTTP 400 — so it is only a fallback.
   if (e.statusCode === 404) return "not-found";
   if (e.statusCode === 401 || e.statusCode === 403) return "auth";
 
   return "other";
 }
 
-/**
- * A detail string for a failed call against `target`.
- *
- * The classified kinds never quote upstream text; only "network" and "other" do,
- * because there the message is the sole information available. Those two are what
- * {@link DescribeCfFailureOptions.redactMessage} suppresses.
- */
+/** A detail string for a failed call against `target`. */
 export function describeCfFailure(e: CfApiClientError, target: DeploymentTarget, options: DescribeCfFailureOptions = {}): string {
   const kind = classifyCfError(e);
   switch (kind) {
@@ -45,13 +35,6 @@ export function describeCfFailure(e: CfApiClientError, target: DeploymentTarget,
   }
 }
 
-/**
- * An auth failure, naming the permission this surface needs and the code returned.
- *
- * Both halves are stated because Cloudflare conflates them — see
- * {@link CF_ERROR_CODES}. The code is structural, never upstream text, so this is
- * safe on a request that carried a secret.
- */
 function describeAuthFailure(e: CfApiClientError, target: DeploymentTarget): string {
   const code = e.cfErrors?.[0]?.code;
   const permission = SURFACE_PERMISSIONS[target.kind];

@@ -342,7 +342,29 @@ describe("checkDocs() — a required frontmatter key", () => {
 });
 
 describe("checkDocs() — historical phrasing", () => {
-  const phrases = ["previously", "no longer", "used to", "formerly", "renamed from", "fixed by", "has since", "Previously"];
+  const phrases = [
+    "previously",
+    "no longer",
+    "used to",
+    "formerly",
+    "renamed from",
+    "fixed by",
+    "has since",
+    "Previously",
+    "any more",
+    "it once",
+    "as of version",
+    "was called",
+    "superseded by",
+    "replaced all",
+    "remains compatible",
+    "for compatibility",
+    "historically",
+    "originally",
+    "what changed is",
+    "was rejected",
+    "was split out of",
+  ];
 
   for (const phrase of phrases) {
     it(`fails on \`${phrase}\``, () => {
@@ -365,6 +387,39 @@ describe("checkDocs() — historical phrasing", () => {
     });
   }
 
+  // The classes the phrase list deliberately excludes, each a word a live vocabulary owns.
+  for (const kept of ["The legacy zone WAF rejects it.", "The API is deprecated upstream.", "No backward-compatible path is shipped."]) {
+    it(`does not report \`${kept}\``, () => {
+      const root = fixtureRoot({
+        ".decisions/governance/TESTING.md": doc("Testing", kept),
+        "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
+      });
+
+      expect(run(root).findings).toEqual([]);
+    });
+  }
+
+  it("reports historical phrasing in a namespace README, not only in a numbered document", () => {
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": doc("Testing", "Body."),
+      "src/http/README.md": "# http\n\nThe helper no longer escapes its input.\n",
+      "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
+    });
+
+    expect(messages(root)).toEqual(["historical phrasing `no longer` — governing docs carry no history"]);
+  });
+
+  it("leaves a cited tree alone, since only its home repository can change it", () => {
+    const root = fixtureRoot({
+      "docs/TESTING.md": doc("Testing", "Body."),
+      "warden/canon/libs/CODE_RULES.md": doc("Code rules", "The rule previously named the sentinel."),
+      "CLAUDE.md": index("- [`TESTING.md`](docs/TESTING.md): the testing rules"),
+    });
+
+    const findings = checkDocs({ root, packageName: "@y-core/forge", exports: {}, decisionsDir: "docs", citableDirs: ["warden/canon/libs"] });
+    expect(findings.findings.map((finding) => finding.message)).toEqual([]);
+  });
+
   it("does not report historical phrasing inside a fenced code block", () => {
     const root = fixtureRoot({
       ".decisions/governance/TESTING.md": doc("Testing", "```md\nThe rule previously named the sentinel.\n```"),
@@ -377,6 +432,99 @@ describe("checkDocs() — historical phrasing", () => {
   it("does not report historical phrasing inside an inline code span", () => {
     const root = fixtureRoot({
       ".decisions/governance/TESTING.md": doc("Testing", "The `no longer` flag is read at startup."),
+      "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
+    });
+
+    expect(run(root).findings).toEqual([]);
+  });
+});
+
+describe("checkDocs() — inventory counts", () => {
+  const counted: [string, string][] = [
+    ["The roster lists the five agents.", "five agents"],
+    ["Three runners cover the suites.", "Three runners"],
+    ["Each mode takes the same seven flags.", "seven flags"],
+    ["Four namespaces sit below the split.", "Four namespaces"],
+    ["The roster is closed and there are five.", "there are five"],
+    ["There are three runners.", "There are three"],
+    ["Pick one of the seven.", "one of the seven"],
+    ["It walks its four states in order.", "four states"],
+    ["Two further directories are permitted members of the tree.", "Two further directories"],
+    ["The mounting doc owns the three route builders.", "three route builders"],
+  ];
+
+  for (const [body, count] of counted) {
+    it(`fails on \`${count}\``, () => {
+      const root = fixtureRoot({
+        ".decisions/governance/TESTING.md": doc("Testing", body),
+        "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
+      });
+
+      const result = run(root);
+
+      expect(result.ok).toBe(false);
+      expect(result.findings).toEqual([
+        {
+          level: "fail",
+          message: `inventory count \`${count}\` — a governing doc records that a thing exists, not how many`,
+          file: ".decisions/governance/TESTING.md",
+          line: 12,
+        },
+      ]);
+    });
+  }
+
+  const kept = [
+    "A document fails above 800 lines.",
+    "The manifest is at schema version 3 of that format.",
+    "The rule it answers to is §1.",
+    "The barrel exports exactly two symbols.",
+    "Take one of exactly four things.",
+    "The roster names `five agents` in one place.",
+    "A tree cannot hold two commands answering to one word.",
+    "It pins agreement between two files rather than behaviour.",
+    "Nothing separates them, so the two cases read alike.",
+    'Delete a count standing in for what it counts — "five agents", "three runners".',
+    'There are two flag types — `"boolean"` and `"string"`.',
+    'Forbidden: "five agents", "the same seven flags", "three runners".',
+    "Forbidden: “five agents”, “the same seven flags”, “three runners”.",
+  ];
+
+  for (const body of kept) {
+    it(`does not report \`${body}\``, () => {
+      const root = fixtureRoot({
+        ".decisions/governance/TESTING.md": doc("Testing", body),
+        "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
+      });
+
+      expect(run(root).findings).toEqual([]);
+    });
+  }
+
+  it("leaves a heading and the Quick Reference line mirroring it alone", () => {
+    const counting = [
+      "---",
+      "title: Testing",
+      'description: "One sentence describing what this document governs."',
+      "---",
+      "",
+      "## 0. Quick Reference",
+      "",
+      "- §1 One: what it decides",
+      "- §1a One Command, Three Modes: how the gate runs",
+      "",
+      "## 1. One",
+      "",
+      "Body.",
+      "",
+      "### 1a. One Command, Three Modes",
+      "",
+      "Body.",
+      "",
+    ].join("\n");
+
+    const root = fixtureRoot({
+      ".decisions/governance/TESTING.md": counting,
       "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
     });
 

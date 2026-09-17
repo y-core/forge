@@ -40,10 +40,7 @@ function isFunction(node: AstNode | null | undefined): boolean {
   return node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression" || node?.type === "FunctionDeclaration";
 }
 
-// The subject is what the value *is*, not what was touched on the way: `classOf(out).split(" ")` is
-// a list even though a renderer's markup is three nodes down inside it.
-/** Whether the value `node` evaluates to is a list rather than a string to match inside. `lists`
- *  names the bindings already known to hold or return one — the file's own, and the fixture helpers. */
+/** Whether the value `node` evaluates to is a list rather than a string to match inside. */
 function producesList(node: AstNode | null | undefined, lists: ReadonlySet<string>): boolean {
   const value = unwrap(node);
   if (value == null) return false;
@@ -201,7 +198,7 @@ export const exactMarkupAssertion: LintRule = {
         for (let size = -1; size !== names.functions.size + names.values.size + lists.size;) {
           size = names.functions.size + names.values.size + lists.size;
           for (const binding of bindings) {
-            // A list is a list whether or not markup reaches it: the two questions are independent,
+            // A list is a list whether or not markup reaches it: the questions are independent,
             // and it is the listness that decides `toContain` is membership rather than a substring.
             if (annotatesList(binding.returnType) || yieldsList(binding.body, lists)) lists.add(binding.name);
             if (!reachesMarkup(binding.body, names)) continue;

@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
+import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../db.fixture";
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { schemaFingerprint } from "../migrate/fingerprint";
-import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../test-support";
 import type { FakeDbIo, SeedRecord } from "../types";
 
 const USERS = "INSERT INTO users (email) VALUES ('${ADMIN:-admin@example.com}');";

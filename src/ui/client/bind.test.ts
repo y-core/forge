@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { isChosen, paintControl, readControl } from "./bind";
-import { fakeTree } from "./test-dom";
+import { fakeTree } from "./dom.fixture";
 
 type Control = Parameters<typeof readControl>[0];
 

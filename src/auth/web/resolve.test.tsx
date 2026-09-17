@@ -35,6 +35,13 @@ import {
 import { AUTH_VIEWS } from "./render";
 import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
 import { AUTH_ROUTE_GROUPS } from "./routes";
+import type { AuthIdentity } from "./types";
+import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthViewName, AuthViewProps } from "./types";
+import type { AuthViewRequest } from "./types";
+import { SigninView } from "./views/signin";
+import type { SigninViewProps } from "./views/types";
+import type { AuthViewChrome } from "./views/types";
 import {
   fakeAdminUserService,
   fakeAuthCredential,
@@ -52,14 +59,7 @@ import {
   elementsOf,
   tagOf,
   textOf,
-} from "./test-support";
-import type { AuthIdentity } from "./types";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
-import type { AuthViewName, AuthViewProps } from "./types";
-import type { AuthViewRequest } from "./types";
-import { SigninView } from "./views/signin";
-import type { SigninViewProps } from "./views/types";
-import type { AuthViewChrome } from "./views/types";
+} from "./web.fixture";
 
 type Loader = (c: never, options: AuthWebOptions, state?: AuthPageState) => Promise<Response>;
 
@@ -287,7 +287,7 @@ const CASES: readonly Case[] = [
   },
 ];
 
-// The two tables answer different questions — which guards a route runs, and which a page's data
+// The tables answer different questions — which guards a route runs, and which a page's data
 // assumes — and the mapping is not mechanical: `adminElevate` is deliberately not admin-gated.
 const VIEW_GROUP: Readonly<Record<AuthViewName, readonly string[]>> = {
   signin: ["auth"],

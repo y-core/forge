@@ -39,8 +39,7 @@ interface DrawerCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
 interface DrawerTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" | "id"> {
   /** id of the `Drawer` this heading names — the root's `aria-labelledby` target is derived from it. */
   for: string;
-  /** Heading level, from where the drawer sits in the document. Never from its size — the class is
-   *  fixed, so a level change is a semantic one. Defaults to `2`. */
+  /** Heading level, from where the drawer sits in the document. Defaults to `2`. */
   level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
   children?: JSXNode | undefined;
 }

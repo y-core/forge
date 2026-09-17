@@ -47,6 +47,14 @@ function fakeAdminUsers(seed: readonly AuthUser[]) {
     list: (page: AuthUserPage = {}) => Promise.resolve(ok(rows.slice(0, page.limit ?? rows.length))),
     search: (query) => Promise.resolve(ok(rows.filter((row) => row.emailKey.includes(normalizeEmail(query))))),
     countAdmins: () => Promise.resolve(ok(activeAdmins())),
+    claimFirstAdmin: (id, at) => {
+      const index = indexOf(id);
+      const row = rows[index];
+      if (index < 0 || !row) return Promise.resolve(ok("not-found" as const));
+      if (activeAdmins() > 0) return Promise.resolve(ok("admin-exists" as const));
+      rows[index] = { ...row, isAdmin: true, updatedAt: at };
+      return Promise.resolve(ok("changed" as const));
+    },
     setAdmin: (id, isAdmin, at) =>
       Promise.resolve(ok(guardedWrite(id, !isAdmin, "last-admin-demote", (row) => ({ ...row, isAdmin, updatedAt: at })))),
     setDeactivated: (id, deactivated, at) =>

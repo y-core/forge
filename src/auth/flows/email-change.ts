@@ -15,7 +15,7 @@ const PAYLOAD_SEPARATOR = " ";
 /** `approve` is answered by the address the account holds; only `move` — mailed to the new address — changes the row. */
 type Stage = "approve" | "move";
 
-/** The three fields a token payload carries, or `undefined` for a payload this flow did not write. */
+/** The fields a token payload carries, or `undefined` for a payload this flow did not write. */
 function readPayload(payload: string): { stage: Stage; userId: string; address: string } | undefined {
   const first = payload.indexOf(PAYLOAD_SEPARATOR);
   if (first < 0) return undefined;

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { compiledCss, mount } from "../client/browser-test-helper";
+import { compiledCss, mount } from "../client/browser.fixture";
 
 const STRIP = "flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain rounded-box [scrollbar-width:thin] motion-safe:scroll-smooth";
 

@@ -7,7 +7,7 @@ import { scopeAttrs } from "../contracts/scope-attrs";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import type { ScopeAttrsProps } from "../contracts/types";
 import { Resumable } from "../server/resumable";
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { element, jsxElement, literal, memberElement, other, runRule } from "../test-support.ts";
+import { element, jsxElement, literal, memberElement, other, runRule } from "../lint.fixture.ts";
 import { noNestedCard } from "./no-nested-card.ts";
 
 const content = (...children: Parameters<typeof jsxElement>[1][]) => jsxElement(memberElement("Card", "Content"), ...children);

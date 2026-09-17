@@ -6,55 +6,114 @@ audience: internal
 
 # `@y-core/forge/tooling/release`
 
-**The release workflow** — `forge release` resolves the next version from git history, guards the public export surface against a silent shrink,
-promotes `CHANGELOG.md`, updates `package.json`, commits, and creates the tag.
+`forge release` cuts a release from what git already knows. It resolves the next version from the commit subjects since the latest tag, refuses a
+few things that should not ship, promotes `CHANGELOG.md`, updates `package.json`, commits both, and creates the tag. It never pushes.
 
-`forge release` is a **command, not a script you write**: it stages exactly what it wrote, so the common project needs no configuration at all.
-`createReleaseCommand` stays published for a release registered inside a CLI of your own.
+It is a command, not a script you write: it stages exactly what it wrote, so the common project configures nothing at all.
 
-```ts
-import { createReleaseCommand, ReleaseError, resolveVersion } from "@y-core/forge/tooling/release";
+**Node.js / Bun only.** This namespace shells out to `git` and reads and writes `package.json` and the changelog. Do not import it into a Cloudflare
+Worker or a client bundle.
+
+```bash
+forge release --dry     # resolve the version and print what would happen; write nothing
+forge release           # bump, promote, commit, tag
+forge release 2.1.0     # force the version, which must be greater than the latest tag
 ```
 
-> **Node.js / Bun only.** This namespace shells out to `git` via `node:child_process` and reads and writes `package.json` and the changelog via
-> `node:fs`. **Do not import it into a Cloudflare Worker or a client bundle.**
-
-> **This namespace depends on [`@y-core/forge/tooling/gate`][gate-readme], never the reverse.** The gate owns the changelog parser, the semver
-> primitives, and the barrel parser; the release workflow is built on them. `parseChangelog`, `promoteUnreleased`, `formatReleaseDate` and the
-> `SemVer` functions are imported from the gate, not re-exported here.
-
-> The release path and its refusals, and the export surface a release compares, are owned by [`BUILD_TOOLING.md`][bt-2a] §2a and §2b.
+The release path, its refusals and the surface it compares are [`BUILD_TOOLING.md`][bt-2a] §2a and §2b's; this file teaches the use.
 
 ---
 
-## Features
-
-- **Automatic version resolution** (`resolveVersion`) — derives the next version from the latest git tag plus commit history. Every commit subject
-  in `<latest-tag>..HEAD` is scanned and the highest bump wins: `major:` → major, `minor:` → minor, otherwise patch. The winning commit is reported
-  as evidence.
-- **A `release` command** (`createReleaseCommand`) — checks the working tree, resolves the version, guards the export surface, promotes the
-  changelog, updates `package.json`, commits, and creates the git tag. Supports `--dry`/`-n`, `--allow-dirty`, `--allow-empty-changelog` and
-  `--allow-semver`.
-- **A semver shrink guard** — a patch release that drops a public export is refused. The surface at the previous tag is compared against the working
-  tree's, so removing a symbol has to be a deliberate `minor:` or an explicit version.
-- **Changelog promotion** — `[Unreleased]` becomes a dated version section, a fresh empty `[Unreleased]` takes its place, and a compare-link
-  definition is appended. Both files land in one commit.
-- **Structured errors** (`ReleaseError`) — every failure carries a discriminated `kind` so callers can react programmatically.
-
----
-
-## Usage
-
-### Wire up `release`
-
-**No file at all.** `forge release` stages exactly what it wrote — `package.json`, plus the changelog when one was promoted:
+## Getting started
 
 ```json
 { "scripts": { "release": "forge release" } }
 ```
 
-A `config/release.ts` is for the cases that reach beyond what the release itself writes — a lockfile, a monorepo's sibling manifests, a version
-constant in source:
+Run the preview first. It resolves the version and prints what would happen, writing nothing:
+
+```bash
+bun run release --dry
+bun run release
+```
+
+| Flag | Short | Effect |
+| --- | --- | --- |
+| `--dry` | `-n` | Print the resolution and the promotion that would happen, then stop. Skips the clean-tree check and nothing else |
+| `--allow-dirty` | — | Release with uncommitted changes in the tree |
+| `--allow-empty-changelog` | — | Release although `[Unreleased]` carries no entry |
+| `--allow-semver` | — | Release a patch although the public export surface shrank |
+| `--config <path>` | — | Config module; the default `config/release.ts` is optional, a named one is not |
+| `--root <path>` | — | The repository to release, supplied as `cwd` (default: the working directory) |
+
+A single optional positional argument forces the version: `bun run release 2.1.0`.
+
+**Commit before you dry-run.** The resolution reads `<latest-tag>..HEAD`, so a preview taken with the work still uncommitted reports "nothing to
+release" rather than the version a real release would produce.
+
+---
+
+## Choosing the next version
+
+The bump comes from commit subjects, and the highest one in the range wins:
+
+```bash
+git commit -m "major: rewrite kernel ABI"    # → next major
+git commit -m "minor: add export panel"      # → next minor
+git commit -m "fix snapping tolerance"       # → next patch, the default
+```
+
+A range holding both a `major:` and a later `fix …` releases as a major — every subject in the range is read, not just the tip. The run prints the
+commit that won as a `because:` row beside the version, so the bump traces to one commit instead of to a rule you have to reapply by hand.
+
+Pass a version explicitly when the derivation would be wrong — a `1.0.0` that no subject prefix can ask for, say. An explicit version is rejected
+unless it is greater than the latest tag.
+
+Some resolutions write nothing and are not failures: **no tags yet** releases `0.0.1`, **no commits since the latest tag** reports "already at" and
+stops, and **a tag that already exists** stops before any write.
+
+---
+
+## Writing the changelog entry
+
+Write entries under `[Unreleased]` as you go; the release promotes that section in place, retitles it with the resolved version and the releaser's
+local date, inserts a fresh empty `[Unreleased]` above it, and appends a compare link built from `package.json`'s `repository` URL. The heading
+grammar and the round-trip guarantees are [`BUILD_TOOLING.md`][bt-2d] §2d's.
+
+**The promoted changelog ships in the same commit as the bump**, because `stageFiles` defaults to exactly what the release wrote. The bump, the
+promotion and the tag cannot come apart.
+
+A project with no changelog releases unchanged — promotion is skipped, not failed. `changelogFile` renames the file the release looks for.
+
+---
+
+## Getting past a refusal
+
+Each refusal has a flag or it has none, and the ones with none are the ones worth reading twice.
+
+| Refused because | Say instead |
+| --- | --- |
+| The working tree is dirty | Commit or stash; `--allow-dirty` defeats the guard's only purpose |
+| `[Unreleased]` is empty and commits exist | Write the entry; `--allow-empty-changelog` is for a genuinely entry-free tooling release |
+| A patch release drops a public export | Give the removing commit a `minor:` subject prefix (`major:` from 1.0); `--allow-semver` if a patch is genuinely right |
+| The changelog does not parse | Fix the document — no flag reaches this one |
+| The previous tag is not an ancestor of HEAD | Recover the rewritten commits with `git reflog` and rebuild HEAD on the tag — no flag reaches this one |
+| A reachable remote does not carry the previous tag | `git push --tags`, then release |
+
+**Every refusal except the clean-tree check fires under `--dry` too**, so a preview never hides the refusal it is previewing. A remote that cannot
+be reached at all is reported and non-fatal: releasing from a machine with no route out is ordinary, and an unanswerable question is not a failed
+one.
+
+The surface guard compares the exports the previous tag published against the working tree's and names each entry that has gone. It runs only on an
+auto-patch with a previous tag — an explicit version and a `minor:`/`major:` bump have already said what they are
+([`BUILD_TOOLING.md`][bt-2b] §2b). The ancestry and push checks are the amend floor's ([`BUILD_TOOLING.md`][bt-2j] §2j).
+
+---
+
+## Staging files the release did not write
+
+Add a config module only when a release has to touch something beyond `package.json` and the changelog — a lockfile, a monorepo's sibling manifests,
+a version constant in source:
 
 ```ts
 // config/release.ts — optional; forge itself ships none
@@ -63,17 +122,20 @@ import type { ReleaseCommandConfig } from "@y-core/forge/tooling/release";
 export default { stageFiles: ["package.json", "CHANGELOG.md", "bun.lock"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
 ```
 
-`stageFiles` is an **override, not an addition** — naming it replaces the derived list, so include the changelog yourself if you still want it
-staged.
+**`stageFiles` replaces the derived list rather than adding to it**, so name the changelog yourself if you still want it staged.
 
-`cwd` is the one field the config may not set — it comes from `--root`, or from the working directory. That keeps a config module portable: it
-describes the release, not where it happens.
+`cwd` is the one field the module may not set: it comes from `--root` or the working directory, which is what keeps the module describing the
+release rather than the machine it runs on. A `--config` naming a missing file is an error; only the unnamed default may be absent, because that
+absence is the zero-config case rather than a mistake.
 
-### Publish the packed tarball
+---
 
-`forge release` commits and tags; it never pushes, and it never builds an artifact. Pushing the tag
-is what publishes, via `.github/workflows/release.yml`: the workflow re-runs the gate, packs the tag
-with `bun pm pack`, and attaches the result to a GitHub Release.
+## Publishing the tagged tarball
+
+`forge release` commits and tags. Pushing the tag is what publishes: `.github/workflows/release.yml` re-runs the gate, packs the tag with
+`bun pm pack`, and attaches the tarball to a GitHub Release. The command's last line is the push to run.
+
+A consumer then depends on the artifact by URL:
 
 ```json
 {
@@ -83,82 +145,27 @@ with `bun pm pack`, and attaches the result to a GitHub Release.
 }
 ```
 
-Running the command:
+---
 
-```bash
-# Auto-resolve the next version from git history, then commit + tag
-bun run release
+## Calling it from your own code
 
-# Preview without writing anything
-bun run release --dry
-
-# Force an explicit version (must be greater than the latest tag)
-bun run release 2.1.0
-
-# Bypass the clean-working-tree check
-bun run release --allow-dirty
-
-# Release even though [Unreleased] carries no entry
-bun run release --allow-empty-changelog
-
-# Release a patch despite a shrinking export surface
-bun run release --allow-semver
-```
-
-The command derives the bump from the commit subjects since the latest tag, taking the highest one it finds:
-
-```bash
-git commit -m "minor: add export panel"   # → next minor release
-git commit -m "major: rewrite kernel ABI" # → next major release
-git commit -m "fix snapping tolerance"    # → next patch release (default)
-```
-
-A range holding both `major:` and `fix …` releases as a **major** — the scan reads every subject in the range, not just the tip. The subject that
-won is printed as the `because:` row, so the resolved bump is traceable to one commit rather than to a rule the reader has to reapply by hand.
-
-**`createReleaseCommand` stays published** for a release registered inside a CLI of your own, and it is the only path that takes `deps` for testing:
-
-```ts
-const release = createReleaseCommand({ cwd: process.cwd() });
-```
-
-### What the run prints
-
-Before writing anything, the command reports the resolution as a definition list — previous tag, next version with its reason, the commit that
-justified it, the tag it will create, and what happens to the changelog. `--dry` stops there. An existing tag also stops the run, without an error:
-there is nothing to release.
-
-### Promote the changelog on release
-
-Given a `CHANGELOG.md` whose `[Unreleased]` section carries entries, the command retitles that heading with the resolved version and today's local
-date, inserts a fresh empty `[Unreleased]` above it, and appends a compare-link definition built from `package.json`'s `repository` URL. **Both
-files land in one commit by default** — the promoted changelog is staged because the release wrote it, so the bump, the promotion and the tag can
-never come apart.
-
-`changelogFile` defaults to `"CHANGELOG.md"`; a project without one releases unchanged — the promotion step is skipped, not failed.
-
-The command refuses to release when `[Unreleased]` is empty (whitespace only, `---` separators only, or just the `_Nothing yet._` placeholder) while
-commits exist since the tag. `--allow-empty-changelog` overrides that, and still promotes — the released section ships carrying `_Nothing yet._`. It
-does **not** override a changelog that fails to parse; that refusal has no escape.
-
-The parser and promoter themselves are [`@y-core/forge/tooling/gate`][gate-readme]'s, and usable directly from there.
-
-### Resolve a version programmatically
+`resolveVersion` answers "what would the next version be?" without releasing anything:
 
 ```ts
 import { resolveVersion } from "@y-core/forge/tooling/release";
 
 const result = resolveVersion({ cwd: process.cwd(), tagPrefix: "v" });
-console.log(result.version); // e.g. "1.3.0"
-console.log(result.reason); // "auto-minor"
-console.log(result.previous); // "v1.2.4" | null
-console.log(result.evidence?.commit?.subject); // "minor: add export panel"
+result.version; // "1.3.0"
+result.reason; // "auto-minor"
+result.previous; // "v1.2.4" | null
+result.evidence?.commit?.subject; // "minor: add export panel" — set only on an auto-* reason
 ```
 
-### Handle failures by `kind`
+Every failure is a `ReleaseError` carrying a discriminated `kind`, so a caller can branch instead of matching on message text. The kinds are the
+`ReleaseErrorKind` union in `src/tooling/release/types.ts`:
 
 ```ts
-import { ReleaseError } from "@y-core/forge/tooling/release";
+import { ReleaseError, resolveVersion } from "@y-core/forge/tooling/release";
 
 try {
   resolveVersion({ cwd, tagPrefix: "v", explicit: "0.9.0" });
@@ -171,146 +178,40 @@ try {
 }
 ```
 
+To register a release inside a CLI of your own, `createReleaseCommand({ cwd })` returns the `Command` — the same one `forge release` runs, minus the
+config-module lookup. `createReleaseBinCommand()` is the wrapper that adds `--config` and `--root`, and `DEFAULT_RELEASE_CONFIG` is the path it
+looks in.
+
 ---
 
-## Core Components & APIs
+## Gotchas
 
-### Release command
+**A refusal throws; it does not exit.** `execute` renders the error and exits 1, so the operator sees the same output while the guard stays
+reachable from a test that mocks no process.
 
-#### `forge release`
+**The changelog parser and the semver primitives are imported from [`@y-core/forge/tooling/gate`][gate-readme], not from here.** `parseChangelog`,
+`promoteUnreleased`, `formatReleaseDate` and the `SemVer` functions all live there, because the gate's own changelog and export-surface checks read
+them too. This namespace depends on the gate and never the reverse.
 
-Resolves an optional config module and runs the release. `createReleaseBinCommand()` builds it, and the `forge` binary attaches it.
+**The git and `package.json` helpers are deliberately unpublished.** What forge publishes is the policy over git — the ordered, refusing release
+command — not a thin wrapper you would have to rebuild the policy around ([`BUILD_TOOLING.md`][bt-2c] §2c).
 
-| Flag | Default | Effect |
-| --- | --- | --- |
-| `--config <path>` | `config/release.ts` | Module default-exporting `Omit<ReleaseCommandConfig, "cwd">`. **Optional** — an absent default path releases with the built-in defaults. |
-| `--root <path>` | the working directory | The repository the release happens in, supplied as `cwd`. |
-
-Plus `--dry`/`-n`, `--allow-dirty`, `--allow-empty-changelog` and `--allow-semver`, and the optional positional version, all delegated to
-`createReleaseCommand`. `DEFAULT_RELEASE_CONFIG` is the exported default path.
-
-**The config module may not set `cwd`.** It comes from `--root` or the working directory, so the module describes _the release_ and stays portable
-across checkouts. A `--config` naming a missing file is still an error — only the unnamed default is allowed to be absent, because that absence is
-the zero-config case rather than a mistake.
-
-#### `createReleaseCommand(config, deps?)`
-
-Builds the `release` CLI `Command`. The returned command takes a single optional positional argument — an explicit version — plus the four flags
-below.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `config` | `ReleaseCommandConfig` | Project configuration (see below). |
-| `deps` | `ReleaseDeps` | Optional dependency overrides for testing; defaults to the real git/pkg/version functions. |
-
-`ReleaseCommandConfig`:
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `cwd` | `string` | — | Repository working directory. Required. |
-| `tagPrefix` | `string` | `"v"` | Prefix for git tags (e.g. `v1.2.3`). |
-| `stageFiles` | `string[]` | what the release wrote | `["package.json"]`, plus `changelogFile` when a changelog was promoted. Naming it **replaces** the derived list rather than adding to it. |
-| `changelogFile` | `string` | `"CHANGELOG.md"` | Changelog to promote, relative to `cwd`. A missing file skips promotion. |
-
-Flags:
-
-| Flag | Short | Effect |
-| --- | --- | --- |
-| `--dry` | `-n` | Report the resolved version and the promotion that would happen; write nothing, and skip the clean-tree check. |
-| `--allow-dirty` | — | Skip the clean-working-tree refusal. |
-| `--allow-empty-changelog` | — | Release despite an empty `[Unreleased]`. Promotion still runs; a malformed changelog is still refused. |
-| `--allow-semver` | — | Release a patch despite a shrinking public export surface. |
-
-### Version resolution
-
-#### `resolveVersion(options, deps?)`
-
-Computes the next version from git state and returns a `VersionResult`. Throws `ReleaseError` on invalid or non-monotonic versions.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `options.explicit` | `string?` | Forces a specific version; must be greater than the latest tag. |
-| `options.cwd` | `string` | Repository working directory. |
-| `options.tagPrefix` | `string` | Tag prefix used to strip and match tags. |
-| `deps` | `VersionDeps?` | Optional git/pkg overrides for testing. |
-
-`VersionResult`:
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `version` | `string` | Resolved version string (no prefix), e.g. `"1.3.0"`. |
-| `reason` | `"explicit" \| "auto-patch" \| "auto-minor" \| "auto-major" \| "first-release" \| "in-sync"` | How the version was derived. |
-| `previous` | `string \| null` | The latest tag, or `null` for a first release. |
-| `evidence` | `BumpEvidence?` | Set only on an `auto-*` reason — no other path reads commits. |
-
-`BumpEvidence` is `{ commit?: { sha: string; subject: string }; commitCount: number }`. `commit` is absent for a patch, which no commit asks for.
-
-Resolution rules:
-
-- **No tags** → `0.0.1` (`first-release`).
-- **Explicit version** → used as-is after a greater-than check (`explicit`).
-- **No commits since the latest tag** → returns the current version; throws `version-mismatch` if `package.json` and the tag disagree (`in-sync`).
-- **Commits since the latest tag** → bumps from the tag by the highest bump any subject in the range asks for (`auto-major` / `auto-minor` /
-  `auto-patch`).
-
-A latest tag that cannot be parsed is fatal rather than skipped: the not-greater guard reads `prev !== null && …`, so an unparseable tag would make
-it vacuous and wave a downgrade through.
-
-### The export-surface guard
-
-Before an `auto-patch` release, the command compares the `<specifier>#<exportName>` set the previous tag published against the working tree's. Any
-entry that has gone refuses the release, naming each one and naming the remedy: a `minor:` subject prefix (`major:` from 1.0) on the commit that
-removed them, which is the only machine-readable signal a consumer pinning by tag gets. `--allow-semver` is the deliberate override, for a shrink
-where a patch bump is genuinely correct. The check runs only on `auto-patch` with a previous tag — an explicit version and a `minor:`/`major:` bump
-have already said what they are.
-
-### The amend-floor preflight
-
-With a previous tag resolved, and before anything is written, the command asks two questions about it ([`BUILD_TOOLING.md`][bt-2j] §2j):
-
-- **Is the tag still an ancestor of HEAD?** If not, history at or below the amend floor was rewritten: consumers have already fetched those commits
-  in a codeload tarball, so the tag now names different content with no version change to say so. This refuses with `history-rewritten` and no
-  override — the remedy is `git reflog` and rebuilding HEAD on top of the tag.
-- **Does the remote carry the tag?** `forge release` never pushes, and a tag that stays local does not exist for a consumer while `getLatestTag`
-  will happily cut the next release on top of it. A reachable remote that lacks the tag refuses with `tag-unpushed`, naming `git push --tags`.
-
-A remote that cannot be reached is reported and non-fatal: releasing from a machine with no route out is ordinary, and an unanswerable question is
-not a failed one. Both run in a `--dry` run too, so `--dry` shows the refusal a real release would hit.
-
-### Errors
-
-#### `ReleaseError`
-
-Extends `Error` with a discriminated `kind` field for programmatic handling.
-
-| `kind` | Raised when |
-| --- | --- |
-| `invalid-version` | A version string cannot be parsed, or `package.json` has no `version`. |
-| `version-not-greater` | An explicit version is not greater than the latest tag. |
-| `version-mismatch` | `package.json` and the latest tag disagree with no new commits. |
-| `git-error` | A `git` command exits non-zero, including a tag that could not be created after the commit landed. |
-| `pkg-update` | Reading or writing `package.json` or the changelog fails. |
-| `manifest-malformed` | A `package.json` the surface guard reads cannot be parsed. |
-| `working-tree-dirty` | The working tree has uncommitted changes and `--allow-dirty` was not passed. |
-| `changelog-empty` | `[Unreleased]` carries no entry while commits exist since the tag, and `--allow-empty-changelog` was not passed. |
-| `changelog-malformed` | The changelog does not parse, or cannot be promoted. No flag overrides this. |
-| `surface-shrink` | A patch release drops a public export and `--allow-semver` was not passed. |
-| `history-rewritten` | The previous tag is no longer an ancestor of HEAD. No flag overrides this. |
-| `tag-unpushed` | A reachable remote does not carry the previous tag. |
-
-A tag that fails to create after the commit landed says so in the message — the commit is named as unpushed and untagged, because that is the state
-the reader has to clean up.
+**A tag that fails to create after the commit landed says so.** The message names the commit as unpushed and untagged, because that is the state you
+have to clean up.
 
 ---
 
 ## See also
 
-- [`@y-core/forge/tooling/gate`][gate-readme] — the changelog parser, the semver primitives, and the barrel parser this namespace builds on.
-- [`@y-core/forge/tooling/cli`][cli-readme] — the command framework `createReleaseCommand` returns a `Command` of.
-- [`BUILD_TOOLING.md`][bt-2a] §2a, §2b, §2c, §2d and §2e — the release workflow, the compared surface, the git and manifest internals, the
-  unreleased contract, and the changelog gate invariants.
+- [`@y-core/forge/tooling/gate`][gate-readme] — the changelog parser, the semver primitives and the barrel parser this namespace builds on
+- [`@y-core/forge/tooling/cli`][cli-readme] — the command framework `createReleaseCommand` returns a `Command` of
+- [`BUILD_TOOLING.md`][bt-2a] §2a–§2e — the release workflow, the compared surface, the git and manifest internals, the unreleased contract, and the
+  changelog gate invariants
 
 [bt-2a]: ../../../docs/BUILD_TOOLING.md#2a-createreleasecommand--automated-release-workflow
+[bt-2b]: ../../../docs/BUILD_TOOLING.md#2b-the-export-surface-a-release-compares
+[bt-2c]: ../../../docs/BUILD_TOOLING.md#2c-git-and-manifest-internals
+[bt-2d]: ../../../docs/BUILD_TOOLING.md#2d-changelog-promotion--the-unreleased-contract
 [bt-2j]: ../../../docs/BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
 [cli-readme]: ../cli/README.md
 [gate-readme]: ../gate/README.md

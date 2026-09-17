@@ -117,23 +117,10 @@ export interface CfClient {
   delete<T>(path: string): Promise<Result<T, CfApiClientError>>;
 }
 
-/**
- * Why a Cloudflare call failed, at the granularity a result row cares about.
- *
- * A missing target and a bad token are the two failures a user acts on
- * differently — one means "create it", the other "fix your credentials" — and
- * until this existed they rendered as the same `error` row.
- */
+/** Why a Cloudflare call failed, at the granularity a result row cares about. */
 export type CfFailureKind = "not-found" | "auth" | "network" | "other";
 
 export interface DescribeCfFailureOptions {
-  /**
-   * Never interpolate the upstream message.
-   *
-   * Cloudflare echoes parts of a rejected request back in its error text, so for a
-   * call whose body carried a secret the message is a leak surface. Callers in that
-   * position pass `redactMessage` and get the error *code* instead — enough to
-   * diagnose, and structurally incapable of carrying a payload.
-   */
+  /** Never interpolate the upstream message, which can echo a secret out of the rejected request body. */
   redactMessage?: boolean;
 }

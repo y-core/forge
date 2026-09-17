@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {
@@ -42,9 +42,7 @@ function isOpen(page: Page): Promise<boolean> {
   return page.evaluate(() => document.querySelector<HTMLDetailsElement>("#rail")?.open ?? false);
 }
 
-/** How many `toggle` events the rail has dispatched, which is not how many times `open` changed:
- * the HTML spec coalesces a toggle task still pending, so a case must wait on the count and never
- * on `open`, which is already correct before the event exists. */
+/** How many `toggle` events the rail dispatched; the spec coalesces a pending toggle task, so cases wait on this, not `open`. */
 function toggleCount(page: Page): Promise<number> {
   return page.evaluate(() => window.forgeToggles);
 }

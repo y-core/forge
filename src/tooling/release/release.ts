@@ -194,8 +194,7 @@ const releaseBinFlags = {
   root: { type: "string" as const, description: "Repository working directory (default: the working directory)" },
 };
 
-/** Builds the `forge release` CLI `Command`. Its config module is optional — a project needing no
- *  override releases with the defaults. Delegates to {@link createReleaseCommand}. @public */
+/** Builds the `forge release` CLI `Command`, whose config module is optional. @public */
 export function createReleaseBinCommand(): Command<typeof releaseBinFlags> {
   return createCommand({
     name: "release",

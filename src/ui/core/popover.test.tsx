@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf } from "./core.fixture";
 import { Popover } from "./popover";
-import { attrOf, attrsOf, classesOf } from "./test-support";
 
 const ALIGNS = ["start", "center", "end"] as const;
 const SIDES = ["top", "right", "bottom", "left"] as const;

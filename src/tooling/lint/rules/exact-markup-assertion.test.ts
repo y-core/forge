@@ -13,7 +13,7 @@ import {
   other,
   returnStatement,
   runRule,
-} from "../test-support.ts";
+} from "../lint.fixture.ts";
 import type { AstNode } from "../types.ts";
 import { exactMarkupAssertion } from "./exact-markup-assertion.ts";
 

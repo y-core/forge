@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { FakeEvent, fakeTree } from "./dom.fixture";
 import { mountExpandedState, mountExpandedStates } from "./popover-expanded";
-import { FakeEvent, fakeTree } from "./test-dom";
 
 /** A popup with `count` invokers pointing at it, plus one pointing somewhere else. */
 function scene(popupId = "p") {

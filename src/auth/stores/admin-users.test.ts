@@ -178,6 +178,39 @@ describe("createAdminUserStore — the last-admin guard", () => {
     expect(outcome.ok === false && outcome.error.operation).toBe("adminUsers.remove");
   });
 
+  it("carries the first-admin guard in the claiming statement's own WHERE, never in a read before it", async () => {
+    const [client, db] = clientOf(() => [userRow()]);
+    expect(await createAdminUserStore(client).claimFirstAdmin(USER_ID, 9_000)).toEqual({ ok: true, data: "admin-exists" });
+    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toBe(
+      "UPDATE auth_users SET is_admin = 1, updated_at = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM auth_users WHERE is_admin = 1 AND deactivated_at IS NULL)",
+    );
+  });
+
+  it("refuses the second of two concurrent first-admin claims, so exactly one succeeds", async () => {
+    let activeAdmins = 0;
+    const [client] = writerOf(
+      (sql) => {
+        if (!sql.includes("SET is_admin = 1")) return 0;
+        if (activeAdmins >= 1) return 0;
+        activeAdmins += 1;
+        return 1;
+      },
+      () => [userRow()],
+    );
+    const admins = createAdminUserStore(client);
+    const outcomes = await Promise.all([admins.claimFirstAdmin(USER_ID, 1), admins.claimFirstAdmin(OTHER_ID, 1)]);
+    expect(outcomes.map((outcome) => outcome.ok && outcome.data).sort()).toEqual(["admin-exists", "changed"]);
+    expect(activeAdmins).toBe(1);
+  });
+
+  it("tells a refused claim from a row that is gone, rather than reporting both as one", async () => {
+    const [client] = writerOf(
+      () => 0,
+      () => [],
+    );
+    expect(await createAdminUserStore(client).claimFirstAdmin(USER_ID, 1)).toEqual({ ok: true, data: "not-found" });
+  });
+
   it("elevates without the guard, and reports a missing id on every write rather than success", async () => {
     const [client] = writerOf(() => 0);
     const admins = createAdminUserStore(client);
@@ -186,6 +219,12 @@ describe("createAdminUserStore — the last-admin guard", () => {
     expect(await admins.setDeactivated(USER_ID, true, 1)).toEqual({ ok: true, data: "not-found" });
     expect(await admins.setDeactivated(USER_ID, false, 1)).toEqual({ ok: true, data: "not-found" });
     expect(await admins.remove(USER_ID)).toEqual({ ok: true, data: "not-found" });
+  });
+
+  it("promotes a second admin through `setAdmin`, which the first-admin guard must not reach", async () => {
+    const [client, db] = writerOf(() => 1);
+    expect(await createAdminUserStore(client).setAdmin(OTHER_ID, true, 1)).toEqual({ ok: true, data: "changed" });
+    expect(db.calls[0]?.sql).not.toContain("NOT EXISTS");
   });
 
   it("changes what it was asked to change when the guard is satisfied", async () => {

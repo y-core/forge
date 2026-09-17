@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, redirect } from "./response";
+import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse } from "./response";
 
 describe("htmlResponse", () => {
   it("defaults to status 200", () => {
@@ -63,39 +63,39 @@ describe("fragmentResponse", () => {
   });
 });
 
-describe("redirect", () => {
+describe("createRedirectResponse", () => {
   it("returns a 302 response with the Location header set", () => {
-    const res = redirect("/login", 302);
+    const res = createRedirectResponse("/login", 302);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/login");
   });
 
   it("defaults to status 302 with no init", () => {
-    expect(redirect("/login").status).toBe(302);
+    expect(createRedirectResponse("/login").status).toBe(302);
   });
 
   it("takes a numeric init as the status", () => {
-    expect(redirect("/x", 303).status).toBe(303);
+    expect(createRedirectResponse("/x", 303).status).toBe(303);
   });
 
   it("merges a ResponseInit — status and extra headers both survive", () => {
-    const res = redirect("/x", { status: 307, headers: { "cache-control": "no-store" } });
+    const res = createRedirectResponse("/x", { status: 307, headers: { "cache-control": "no-store" } });
     expect(res.status).toBe(307);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("Location")).toBe("/x");
   });
 
   it("stringifies a URL location", () => {
-    expect(redirect(new URL("https://example.com/next")).headers.get("Location")).toBe("https://example.com/next");
+    expect(createRedirectResponse(new URL("https://example.com/next")).headers.get("Location")).toBe("https://example.com/next");
   });
 
   it("does not overwrite a caller-supplied Location header", () => {
-    const res = redirect("/ignored", { headers: { Location: "/kept" } });
+    const res = createRedirectResponse("/ignored", { headers: { Location: "/kept" } });
     expect(res.headers.get("Location")).toBe("/kept");
   });
 
   it("has a null body", async () => {
-    const res = redirect("/login");
+    const res = createRedirectResponse("/login");
     expect(res.body).toBeNull();
     expect(await res.text()).toBe("");
   });
@@ -126,12 +126,6 @@ describe("htmlResponse — content-type is fixed", () => {
     expect(() => htmlResponse("<p>ok</p>", 200, { "Content-Type": "application/json" })).toThrow(
       "htmlResponse: content-type is fixed for HTML responses — remove it from headers",
     );
-  });
-});
-
-describe("createRedirectResponse", () => {
-  it("is the same function as the redirect alias", () => {
-    expect(createRedirectResponse).toBe(redirect);
   });
 });
 

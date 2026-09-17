@@ -140,6 +140,39 @@ export interface CoLocationCheckConfig {
   exempt?: ReadonlyMap<string, string>;
 }
 
+/** One comment, its UTF-16 extent and the 1-indexed line it opens on. @public */
+export interface CommentSpan {
+  kind: "block" | "line";
+  start: number;
+  end: number;
+  line: number;
+  text: string;
+}
+
+/** What the comment-budget check needs to hold a source tree to `CODE_RULES.md` §5a. @public */
+export interface CommentBudgetCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Files and directories to scan, relative to `root`; a `!`-prefixed entry excludes a subtree. */
+  sources: readonly string[];
+  /** Files whose leading `//` run is an upstream licence notice, each mapped to the attribution it carries. */
+  licences?: ReadonlyMap<string, string>;
+}
+
+/** What the packaging check needs to judge a module against the published tarball. @public */
+export interface PackagingCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Directories walked for source modules, relative to `root`. Defaults to `["src"]`. */
+  sources?: readonly string[];
+  /** The `files` array, verbatim from `package.json` — what the tarball carries is derived from it. */
+  files: readonly string[];
+  /** The `exports` map, verbatim from `package.json` — what a consumer can reach is derived from it. */
+  exports: ExportsMap;
+  /** Further entry modules, relative to `root` — a `bin` script is reachable without being an export. */
+  entries?: readonly string[];
+}
+
 /** A colour scheme the theme is audited in. */
 export type Mode = "light" | "dark";
 
@@ -201,7 +234,6 @@ export interface ContrastCheckConfig {
   tokenFiles: readonly string[];
   /** The mapping layer, checked by one rule specifically. */
   mappingFile: string;
-  /** The pairs to measure. */
   pairs: readonly ContrastPairInput[];
   /** Each criterion's floor and name, keyed as `pairs[].criterion` names them. */
   criteria: Readonly<Record<string, ContrastCriterion>>;
@@ -279,8 +311,7 @@ export interface BarrelImport {
   line: number;
   /** The exports-map key form of the barrel — e.g. `./ui/core`. */
   subpath: string;
-  /** The names the statement asks the barrel for, `type` markers stripped and `as` aliases resolved
-   *  back to the exported name. */
+  /** The names the statement asks the barrel for. */
   symbols: string[];
 }
 
@@ -367,8 +398,7 @@ export interface ExportsCheckConfig {
   files: readonly string[];
   /** Directory scanned for source barrels, relative to `root`. Defaults to `"src"`. */
   sourceDir?: string;
-  /** Further subpaths whose runtime import is skipped because loading them touches DOM globals.
-   *  A subpath under a `client` segment is derived; this is for one that is browser-only under another name. */
+  /** Further subpaths whose runtime import is skipped because loading them touches DOM globals. */
   browserOnly?: readonly string[];
   /** Subpaths that intentionally export no value, because they mutate globals or register once. */
   sideEffectOnly?: readonly string[];
@@ -562,7 +592,6 @@ export interface DeferredFinding {
 export interface ModernCssFinding {
   /** Repo-relative path of the file the violation sits in. */
   file: string;
-  /** 1-indexed line. */
   line: number;
   ruleId: ModernCssReportedId;
   detail: string;
@@ -631,7 +660,7 @@ export interface DeclaredGraph {
   edges: Record<string, Record<string, EdgeKind>>;
 }
 
-/** The six ways the observed tree and the declaration can disagree. */
+/** The ways the observed tree and the declaration can disagree. */
 export type GraphFindingKind = "undeclared-edge" | "absent-edge" | "leaf-edge" | "kind-mismatch" | "primitive-escape" | "unknown-namespace";
 
 /** One disagreement, with the site that proves it where the observed tree supplies one. */
@@ -649,7 +678,7 @@ export interface GraphFinding {
   detail: string;
 }
 
-/** The four ways the document can carry an enumeration the data files own. */
+/** The ways the document can carry an enumeration the data files own. */
 export type EnumerationFindingKind = "missing-catalog-section" | "missing-classification-section" | "composes-table" | "classification-column";
 
 /** One enumeration finding, carrying no message because its remedy is a fixed string the caller emits. */
@@ -661,7 +690,6 @@ export interface EnumerationFinding {
 
 /** What the namespace-graph check needs to know about the project. @public */
 export interface NamespaceGraphCheckConfig {
-  /** Application root. */
   root: string;
   /** The `exports` map, verbatim from `package.json` — the namespace set is *derived* from it. */
   exports: ExportsMap;
@@ -673,27 +701,6 @@ export interface NamespaceGraphCheckConfig {
   sealedInternal?: readonly string[];
   /** Governing document guarded against a returning enumeration, relative to `root`; omit to skip check 3. */
   enumerationDoc?: string;
-}
-
-/** One subpath section of a README, located by the `> Import path:` line that opens it. */
-export interface ImportPathAnchor {
-  /** The exports-map key form of the subpath — e.g. `./ui/controls`. */
-  subpath: string;
-  /** The barrel the anchor points at, repo-relative as written — e.g. `src/ui/controls/mod.ts`. */
-  barrel: string;
-  /** 1-indexed line the anchor itself sits on. */
-  line: number;
-  /** 1-indexed line of the `##` heading the anchor belongs to. */
-  sectionStart: number;
-  /** 1-indexed line the next `##` heading sits on, or one past the last line. Exclusive. */
-  sectionEnd: number;
-}
-
-/** One symbol a documentation table or a `**Types:**` sentence names, and where it was named. */
-export interface DocumentedSymbol {
-  name: string;
-  /** 1-indexed line the symbol was written on. */
-  line: number;
 }
 
 /** What the SSR-boundary check needs to know about the project. @public */

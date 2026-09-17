@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { compiledCss, mount, paintedHex } from "../../client/browser-test-helper";
+import { compiledCss, mount, paintedHex } from "../../client/browser.fixture";
 import { contrastRatio } from "../../contracts/theme/color";
 import { CRITERION } from "../../contracts/theme/contrast-pairs";
 import { APPEARANCES, TONES, toneVariants } from "./tone";

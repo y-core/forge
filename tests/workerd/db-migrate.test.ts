@@ -182,7 +182,7 @@ describe("forge db migrate --target local against real D1", () => {
     expect(execute(user("02020202020202020202020202020202", "two@example.com")).status).toBe(0);
 
     const backup = forgeDb(["backup", "--target", "local", "--yes"]);
-    expect(backup.code).toBe(0);
+    expect(backup.code, `backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
 
     const rehearsed = mkdtempSync(join(tmpdir(), "forge-db-rehearse-"));
     cpSync(FIXTURE, rehearsed, { recursive: true });

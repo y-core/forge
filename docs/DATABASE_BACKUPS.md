@@ -1,6 +1,6 @@
 ---
 title: Database Backups
-description: "The backup artifact: its three files, the proof both restore routes pass before it exists, what binds it to a schema, the data format and its limits, and what restore and reset check."
+description: "The backup artifact: what it holds, the proof both restore routes pass before it exists, what binds it to a schema, the data format and its limits, and what restore and reset check."
 audience: consumer
 ---
 
@@ -14,10 +14,10 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 The Artifact: the directory name, the three files, and which route restores from each
+- §1 The Artifact: the directory name, what it holds, and which route restores from each
 - §2 Proven Before Written: both routes replayed into a scratch and compared row by row, and what a backup holds the lock for
 - §3 A Remote Backup Is a Read: no lock, no bookmark, proven into a local scratch
-- §4 Self-Contained and Bound: the embedded migrations, the three facts the manifest binds to, and the manifest's own digest
+- §4 Self-Contained and Bound: the embedded migrations, the facts the manifest binds to, and the manifest's own digest
 - §5 The Data Format: why forge writes the rows itself, what the format carries, and the limits that follow
 - §5a What a Backup Costs: the page size, the spawn per page, the whole-database memory bound, and what `--no-verify` skips
 - §6 Restore and Reset: an empty target only, the whole artifact checked first, and what a reset relies on
@@ -26,10 +26,10 @@ audience: consumer
 
 ## 1. The Artifact
 
-`forge db backup` writes a directory named `<database>-<YYYYMMDDTHHMMSSZ>` under `.forge/backups` (or `backupsDir`, or `--out`), holding three files
-and a directory of migrations. The name is the second the backup began, so a second backup of that database in that second is refused rather than
-written over the first. Every file and directory forge writes under `.forge/` is created readable by the owner alone (`0600` and `0700`), since an
-artifact holds every row the database does.
+`forge db backup` writes a directory named `<database>-<YYYYMMDDTHHMMSSZ>` under `.forge/backups` (or `backupsDir`, or `--out`), holding the files
+below and a directory of migrations. The name is the second the backup began, so a second backup of that database in that second is refused rather
+than written over the first. Every file and directory forge writes under `.forge/` is created readable by the owner alone (`0600` and `0700`), since
+an artifact holds every row the database does.
 
 | File | What it is | Restores by |
 | --- | --- | --- |
@@ -42,9 +42,9 @@ artifact holds every row the database does.
 
 ## 2. Proven Before Written
 
-**Both routes are proven before the artifact is written.** Each is replayed into a throwaway database under `.forge/scratch/`, and three things are
-compared against the source: every row of every app table, every row of forge's companion tables, and a digest of the restored schema's app objects
-— a merge-join on the table's key, not a positional zip. Any of the three diverging fails the backup, before any manifest is written — so a
+**Both routes are proven before the artifact is written.** Each is replayed into a throwaway database under `.forge/scratch/`, and compared
+against the source: every row of every app table, every row of forge's companion tables, and a digest of the restored schema's app objects
+— a merge-join on the table's key, not a positional zip. Any of those diverging fails the backup, before any manifest is written — so a
 directory holding one is a directory whose proof passed. The schema comparison covers app objects only, since the `_forge_*` companion **tables**
 are created by forge on route `migrations` rather than declared by any migration — their **rows** are restored, and are compared like any others.
 `--no-verify` skips the proof and records in the manifest that nothing was proven, which `restore` repeats back on the way in.
@@ -80,7 +80,7 @@ restored database that it picked on the source, and the fingerprint the Worker r
 ([`DATABASE_MANAGEMENT.md`][dm-4a] §4a). A replay that also recorded would collide with every one of those rows on the `name` index; it therefore
 applies the bodies and records nothing at all.
 
-The manifest binds the artifact to a schema three ways — the applied migration names, a digest of the app's own schema objects (the same set the
+The manifest binds the artifact to a schema by the applied migration names, a digest of the app's own schema objects (the same set the
 proof compares; the managed tables are created, not restored), and the migrations digest — and a restore reports every one of them that disagrees
 with the app as it now stands. Every check a restore or a reset makes — the manifest, the artifact's files against their declared hashes, and a
 target that is empty across the app tables and forge's companions alike — runs before the confirmation is asked, so a refused verb never asks. A
@@ -165,10 +165,8 @@ is hashed against its `artifacts[].sha256` — a missing one is the same refusal
 backup time: `schema.sql` against the schema-only check, `data.sql` against the data-only one. A damaged artifact is refused with no row loaded,
 rather than discovered afterwards, where there is deliberately no repair path.
 
-**An artifact written by an earlier forge is refused by `formatVersion`, not misread.** The field is bumped whenever a manifest field changes
-meaning, and the refusal names both numbers and says to take the backup again. An artifact from before forge owned the migration history is one such
-— its `data.sql` carries no history rows and its `full.sql` carries wrangler's. An artifact from before route `full` became two files is another: it
-carries a `full.sql` no verb loads any more, and no `schema.sql` this one could load instead. There is no converter, pre-1.0.
+**An artifact whose `formatVersion` does not match is refused, not misread.** The field is bumped whenever a manifest field changes meaning, and the
+refusal names both numbers and says to take the backup again. There is no converter, pre-1.0.
 
 `forge db reset` refuses a database holding rows unless a verified artifact still describes them — not "a backup exists". Every app table's count is
 compared against the manifest's `tables[].rows` first, refusing immediately and naming the table when one differs; only when every count agrees are

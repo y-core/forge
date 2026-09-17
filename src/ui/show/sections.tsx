@@ -97,9 +97,8 @@ export const ValidateFragment: FC<{ data: ValidateData; icon: ForgeIcon<"close">
   return (
     <FormField id={SHOW_VALIDATE_ID} name='email' invalid={showError}>
       <FormField.Label name='email'>Email</FormField.Label>
-      {/* On the control rather than a wrapper: htmx sends the triggering element's own value on a
-          GET. `sync` is explicit because the default resolves `closest form`, which this standalone
-          field has none of — htmx would throw inside its own trigger handler and send nothing. */}
+      {/* On the control rather than a wrapper: htmx sends the triggering element's own value on a GET, and
+          `sync` is explicit because its default `closest form` resolves to nothing for a standalone field. */}
       <Input
         type='email'
         name='email'

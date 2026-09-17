@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, call, literal, other, runRule } from "../test-support.ts";
+import { attribute, call, literal, other, runRule } from "../lint.fixture.ts";
 import { reducedMotion } from "./reduced-motion.ts";
 
 const CORPUS = "(forge-ui-reduced-motion — src/ui/design/floor.md)";

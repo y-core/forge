@@ -2,14 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { rootIdentifiers } from "../../tooling/gate/checks/readme-exports-parse";
+import { rootIdentifiers } from "../../tooling/gate/checks/design-parse";
 // oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as chrome from "../chrome/mod";
 // oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as controls from "../controls/mod";
 // oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as core from "../core/mod";
-import { CATALOG_MISSING } from "./catalog-missing";
+import { CATALOG_MISSING } from "./catalog-missing.fixture";
 
 function componentExports(barrel: Record<string, unknown>): string[] {
   return Object.entries(barrel)

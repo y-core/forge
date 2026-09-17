@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
-import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "./test-support";
+import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "./db.fixture";
 import type { FakeDbIo } from "./types";
 import type { Home } from "./types";
 import { executeFile, executeSql, exportSql, queryBatches, queryOne, queryRows, queryRowsIfTable, runWrangler, wranglerVersion } from "./wrangler";
@@ -155,6 +155,24 @@ describe("queryRows()", () => {
     const io = ioWith(() => true, {
       code: 0,
       stdout: '⛅️ wrangler 4.42.0\n🌀 Executing on local database\n[{"results":[{"name":"t"}],"success":true}]\n',
+      stderr: "",
+    });
+    expect(queryRows(io, home(), "SELECT name FROM sqlite_master")).toEqual([{ name: "t" }]);
+  });
+
+  it("reads the payload when wrangler appended an update notice after it", () => {
+    const io = ioWith(() => true, {
+      code: 0,
+      stdout: '[{"results":[{"name":"t"}],"success":true}]\nThere is a newer version of Wrangler available (current: 4.129.1, latest: 4.133.0).\n',
+      stderr: "",
+    });
+    expect(queryRows(io, home(), "SELECT name FROM sqlite_master")).toEqual([{ name: "t" }]);
+  });
+
+  it("reads the payload between a banner and a trailing notice", () => {
+    const io = ioWith(() => true, {
+      code: 0,
+      stdout: '⛅️ wrangler 4.129.1\n[{"results":[{"name":"t"}],"success":true}]\nUpdate available: 4.133.0\n',
       stderr: "",
     });
     expect(queryRows(io, home(), "SELECT name FROM sqlite_master")).toEqual([{ name: "t" }]);

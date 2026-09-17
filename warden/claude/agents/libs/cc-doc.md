@@ -29,7 +29,7 @@ namespace READMEs.
 **Never put in prose what drifts**: function signatures, constant values, step counts, file inventories. Name the file that owns them —
 `AGENT_GUIDE.md` §8 owns both the rule and the register.
 
-Three corollaries you will need constantly:
+Corollaries you will need constantly:
 
 - **The canon is not yours to edit.** It is byte-identical across every library that clones the shared corpus, and an in-place edit is silently
   reverted by the next sync. A rule that genuinely needs changing is a corpus change — report it, do not make it here (`AGENT_GUIDE.md` §6d).
@@ -47,12 +47,37 @@ Three corollaries you will need constantly:
 2. **`CLAUDE.md`** — the repository's own preamble. It registers no document: warden indexes `docs/` and serves it, so a new document needs no row
    anywhere (`AGENT_GUIDE.md` §5c).
 
-3. **Namespace READMEs** — developer-facing, per namespace:
-   - **Features** — capabilities as concise bullets
-   - **Usage** — practical examples, common cases first, importing from the namespace barrel
-   - **Core Components & APIs** — every public symbol: purpose, typed params, return values, examples; tables for parameters
-   - Optional when warranted: Integration Guide, Advanced, Security. **Never diagrams** — no ASCII, no mermaid
-   - Scale depth to complexity: a simple utility needs Features + Usage and nothing else
+3. **Namespace READMEs** — developer-facing, per namespace. **A README teaches use, not workings** (`AGENT_GUIDE.md` §6c): it answers how do I use
+   this, never what it does or how it does it. Write it to this shape:
+
+   ````markdown
+   # `@y-core/forge/<subpath>`
+
+   One paragraph: the problem this solves, and when a developer reaches for it.
+
+   ```ts
+   import { … } from "@y-core/forge/<subpath>";
+   ```
+
+   ## Getting started      ← the common case, end to end, in one block that runs
+   ## <a task>             ← one section per thing a developer wants to DO
+   ## <a task>
+   ## Gotchas              ← optional: what surprises a first-time caller
+   ## See also             ← the governing document that owns the rules
+   ````
+
+   These rules make that a shape rather than a template:
+
+   - **Sections are named for tasks, not for symbols.** No `###` per exported symbol, and no catalogue of purpose, params and returns — the
+     signature already holds every one of those, and the catalogue goes stale the first time one changes.
+   - **No parameter table restating a signature.** Where an options bag needs explaining, explain the _choice_ the caller is making, never the
+     field list.
+   - **No export table.** The barrel is the export surface, and the gate proves every `@public` symbol reaches it.
+   - **A ruling is a link, not a paragraph.** Cite the governing document that owns it and stop.
+   - **Length tracks the use taught.** A small utility is two sections; a large namespace is legitimately long. What makes a README long is the
+     number of tasks, never the number of symbols. The `docs/` line bands do not bind it (`AGENT_GUIDE.md` §6a).
+
+   **Never diagrams** — no ASCII, no mermaid.
 
 4. **TSDoc on exports** — one line per exported symbol, plus `@internal` where non-public. That is the whole of it; see the next section.
 
@@ -68,7 +93,14 @@ ledger task, history to the commit message.
 **You do not add `@example` blocks to source.** Examples are the README's job — that is the whole reason the README exists. An `@example` in source
 is a defect, and you delete it rather than improve it whenever you touch the file.
 
-Documenting a namespace is the moment long TSDoc gets written. Write the prose in the README instead and leave the source at one line per export.
+**Prose the comment budget evicts is deleted, not relocated.** A README is not where it goes to live (`AGENT_GUIDE.md` §6c). §5c's routing table
+sends _consumer-facing usage_ to the README and nothing else; a paragraph that failed to earn its place in a source file does not earn it by moving.
+
+**A behavioural claim you delete lands in a test** (`CODE_RULES.md` §5e). Find the test that pins it; where none does, the assertion is the missing
+work, and the change is not done until it exists. Name the test for `cc-test` rather than leaving the claim to evaporate.
+
+**A field is a symbol** (`CODE_RULES.md` §5f). An interface field earns at most one line, and nothing at all when its name and type already say it.
+A gloss that spells the field name back is deleted; one carrying a default, a unit, a constraint or a caveat stays.
 
 ## Verify, Do Not Assume
 
@@ -95,15 +127,16 @@ doc is worse than a missing one.
 6. Run the docs gate step — or delegate the gate to `cc-tester`.
 7. Confirm the new document is reachable — `knowledge_search` for the rule it carries returns it.
 
-**For READMEs:** inventory the public API via the barrel, match the established style of the existing READMEs, and verify every example against real
-exports — exact names, signatures, and import paths.
+**For READMEs:** start from the tasks, not the barrel. List what a developer arrives wanting to do, write a section per task, and verify every
+example against real exports — exact names, signatures, and import paths. The barrel is what you check an example against; it is never the outline.
+**A section named after an exported symbol is the defect to look for in your own draft** — no gate sees it.
 
 ## Before You Return
 
 The docs gate already checks the mechanical rules — numbering, frontmatter, resolvable references, Quick Reference completeness, dated content,
 boundary-crossing links. **Run the step; do not re-inspect by hand what it proves.**
 
-Three things no check measures, and they are why this agent exists:
+What no check measures, and why this agent exists:
 
 - **Directory.** The canon for a portable rule, `docs/` for a local fact. This is the one mistake a later sync makes expensive.
 - **Single home.** Nothing restated that another file owns — every duplicate is a link.
@@ -151,7 +184,7 @@ claims verified, are themselves the evidence the close rests on.
 in order to double-check your own work** — a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole context
 (`AGENT_WORKFLOW.md` §4a). One agent where one suffices.
 
-You may spawn sub-agents to parallelise segmentable work — for example, verifying claims across several namespaces at once. Three standing
+You may spawn sub-agents to parallelise segmentable work — for example, verifying claims across several namespaces at once. Standing
 conditions:
 
 1. **You stay in control of the split and the synthesis** — one writer per file, always.

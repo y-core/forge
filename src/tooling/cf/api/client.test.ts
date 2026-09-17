@@ -91,7 +91,7 @@ describe("an auth failure names the permission the surface needs", () => {
   it("names the Pages permission on a Pages target", () => {
     // A Workers token template does not grant Pages, so "check your scopes" left the
     // reader with the one question the row could have answered.
-    expect(describeCfFailure(rejected, { kind: "pages", name: "cornellaw" })).toBe(
+    expect(describeCfFailure(rejected, { kind: "pages", name: "client-fixture" })).toBe(
       'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Cloudflare Pages" (Read to report, Edit to change) · code 10000',
     );
   });

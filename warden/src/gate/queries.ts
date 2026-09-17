@@ -15,7 +15,6 @@ import { type Dimension, GOLDEN, type GoldenQuery, NEGATIVE } from "./golden";
 
 /** What the golden-query check needs to know about the project. @public */
 export interface GoldenCheckConfig extends DependencyOptions {
-  /** Repository root. */
   root: string;
   /** The canon tree this repository is subject to. */
   kind: Tree;

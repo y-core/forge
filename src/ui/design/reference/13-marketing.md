@@ -9,7 +9,7 @@ description: "Forge's secondary target, and the whole file is conditional: where
 are tuned for product and app UI — surfaces a user visits repeatedly to finish a task. A landing page is the opposite case: seen once, by someone
 who has not decided anything yet, where variance earns attention rather than costing recognition.
 
-So read this file as a **standing case for a written brief**, in the sense of `docs/UI_DESIGN_GUIDANCE.md` §2c, raising the three dials of
+So read this file as a **standing case for a written brief**, in the sense of `docs/UI_DESIGN_GUIDANCE.md` §2c, raising the dials of
 `12-density.md` from their ratified app-UI defaults (`UI_DESIGN_GUIDANCE.md` §8) toward roughly density 3, variance 7, motion 5.
 
 Default: marketing dial settings apply only when a written brief identifies the surface as a public-facing marketing or landing page, and never by
@@ -30,7 +30,7 @@ announcement — unless the brief names it a marketing surface explicitly. <!-- 
 
 ## 1. What actually changes
 
-Four things, and only four. Everything else on the page is composed exactly as it would be in the app.
+The levers below, and only those. Everything else on the page is composed exactly as it would be in the app.
 
 | Lever | App default | Marketing | Terminates in |
 | --- | --- | --- | --- |
@@ -116,7 +116,7 @@ import { Button } from "@y-core/forge/ui/core";
 </section>;
 ```
 
-Two text colors, one accent, the measure capped, and one claim — which happens to be true of the product being described.
+That is two text colors, one accent, the measure capped, and one claim — which happens to be true of the product being described.
 
 ## 3. What does not change
 

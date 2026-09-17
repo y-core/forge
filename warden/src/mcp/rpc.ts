@@ -1,9 +1,3 @@
-/** Newline-delimited JSON-RPC 2.0 over a pair of streams — the whole of MCP's stdio transport.
- *
- *  Hand-rolled rather than taken as a dependency: the protocol warden needs is a request id, a
- *  method name, a params object and a result, and forge adds no runtime dependency without a
- *  reason bigger than that. */
-
 /** A JSON-RPC request or notification. @public */
 export interface RpcRequest {
   jsonrpc: "2.0";

@@ -39,7 +39,7 @@ const railPlacementVariants = cva({
   defaultVariants: { placement: "left" },
 });
 
-/** What the two boxes between the consumer's layout and the `<details>` carry in rail mode. */
+/** What the boxes between the consumer's layout and the `<details>` carry in rail mode. */
 const RAIL_HEIGHT_CHAIN = "h-full";
 
 /** What the bar itself paints below `md` it would position against the bar, not the viewport. */
@@ -48,8 +48,7 @@ const DRAWER_BAR_CLASS = "max-md:bg-transparent max-md:backdrop-blur-none";
 /** The rail's own scrolling box has to be released too, or the out-of-flow panel is clipped by it. */
 const DRAWER_RAIL_CLASS = cn(`${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`);
 
-/** The off-canvas panel below `md`. `visibility`, not `display`: `display` is not transitionable and
- * `visibility` is, and `invisible` still keeps the closed panel out of the tab order and the a11y tree. */
+/** The off-canvas panel below `md`, hidden with `visibility` rather than the untransitionable `display`. */
 const DRAWER_PANEL_BASE = cn(
   "max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[transform,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-reduce:max-md:transition-none",
 );
@@ -85,16 +84,13 @@ const PANEL_CLASS: Record<NavCollapsible, string> = {
   always: "hidden flex-col gap-4 p-2 group-open:flex",
 };
 
-/** Panel classes per collapse mode in drawer mode: the `≥md` half of the inline table, restated so
- * that nothing unprefixed decides `display` — below `md` the overlay's own `max-md:flex` does. */
+/** Panel classes per collapse mode in drawer mode: the `≥md` half only, so nothing unprefixed decides `display`. */
 const DRAWER_PANEL_CLASS: Record<NavCollapsible, string> = {
   mobile: "flex-col justify-between gap-4 p-2 md:flex md:flex-row md:items-center",
   always: "flex-col gap-4 p-2 md:hidden md:group-open:flex",
 };
 
-/** The toggle's two states, taken from the props union rather than from a widened `icon`: only the
- * rail-drawer member's `icon` is typed for the panel pair, so the discriminants are what reach them.
- * A bar keeps the hamburger even when it opens off-canvas — that glyph is what a bar's menu is. */
+/** The toggle's open and close glyphs, chosen from the props union's discriminants. */
 function renderToggleGlyphs(props: NavbarProps, edge: DrawerEdge): JSXNode {
   if (props.collapsedAs === "drawer" && props.collapsible === "always") {
     const Glyph = props.icon;

@@ -9,7 +9,7 @@ import { fakeD1 } from "../../testing/fakes";
 import { AuthStoreError } from "../errors";
 import { createFactorStore } from "../stores/factors";
 import type { AuthFactor, AuthFactorKind, FactorStore } from "../types";
-import { fakeFactorOffer } from "../web/test-support";
+import { fakeFactorOffer } from "../web/web.fixture";
 import { authFactorContext, createFactorRegistry } from "./registry";
 import type { AuthFactorOffer, AuthFactorRequirement, AuthFactorService, EnrollableFactorService } from "./types";
 

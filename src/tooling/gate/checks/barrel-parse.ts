@@ -123,8 +123,7 @@ export function parseConsumerExportNames(source: string): Set<string> {
   return names;
 }
 
-/** Collects only the identifiers a barrel exports as types — the `export type { … }` blocks and the
- *  `export interface` / `export type` declarations. The values are `parseConsumerExportNames` minus these. */
+/** Collects only the identifiers a barrel exports as types. */
 export function parseTypeExportNames(source: string): Set<string> {
   const stripped = blankSourceComments(source);
   const names = new Set<string>();

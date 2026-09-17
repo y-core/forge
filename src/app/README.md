@@ -6,251 +6,183 @@ audience: consumer
 
 # `@y-core/forge/app`
 
-App bootstrap and request lifecycle for `@y-core/forge` — the namespace that turns a set of routes, middleware, and handlers into a single
-Cloudflare Workers `fetch` default export.
+A Worker's default export has to be one object with a `fetch` method, and everything a request needs — bindings, config, middleware, routing, a
+document to render into, and an answer for anything that throws — has to be reachable from inside it. This namespace is that object.
 
-`createApp` returns a `Forge` instance: a Workers-native request router wrapped in a fail-closed error boundary. Its
-`fetch(request, env, executionCtx)` method _is_ the Workers module handler, so the entire wiring is `export default app`. Around routing it provides
-path-scoped middleware, per-request config/env injection, two route-handler factories (`definePage`, `defineAction`), a static-asset catch-all
-(`applyAssets`), startup binding validation (`validateEnv`, `validateBindings`), and a JSON health endpoint (`healthCheck`).
-
-This namespace is an **integration namespace** — it composes `form`, `http`, `logging`, `result`, `router`, `security`, and `validation` into the
-app lifecycle. See [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] and [`docs/FORGE_STRUCTURE.md`][la] for the authoritative architecture.
-
----
-
-## Features
-
-- **One-line Workers entry** — `export default createApp(...)`; the `Forge` instance's `fetch` is a valid module-worker default export, including
-  `HEAD` handling.
-- **Fail-closed error boundary** — every throw inside or outside the middleware chain produces a hardened `500` page; an in-chain throw still flows
-  back out through security headers.
-- **Path-scoped middleware** — `app.use("*", ...)` / `app.use("/api/*", ...)` register guards that wrap matched routes.
-- **Declarative route registration** — `app.map(routes, controller)` binds a route map to its controller.
-- **Two route-handler factories** — `definePage` (loader → view, with caching and error recovery) and `defineAction` (read → bot guards → schema →
-  handle, with automatic `413`/`400`/`422`/`500` error fragments).
-- **Static-asset catch-all** — `applyAssets` serves the `ASSETS` binding, falling back to the app's own `notFound` hook.
-- **Config injection** — a `Config` store passed to `createApp` is resolved once per request and exposed on the context (`ConfigKey`, `c.config`).
-- **One registered page shell** — `createApp({ shell })` names the document every mounted page renders into, resolved per request; forge's own
-  mounts take no chrome options of their own.
-- **Typed page meta** — every mount hands the shell a `PageMeta` (`title`, `description`, `canonical`, `robots`, `og`, `twitter`, JSON-LD, and an
-  open escape hatch), rendered by `metaTags` and merged over a site base with `mergeMeta`.
-- **Startup binding validation** — `validateEnv` (one-shot, throws) and `validateBindings` (middleware form) check Worker bindings against a valibot
-  schema.
-- **Health endpoint** — `healthCheck` runs named predicates concurrently and returns `{ ok, checks }` as JSON (`200`/`503`).
-- **Test harness** — `app.request(path, init?, env?)` builds a `Request`, dispatches the full chain, and awaits any `waitUntil` work.
-
----
-
-## Usage
-
-A complete Workers entry that wires middleware, routes, assets, and a health check:
+Reach for it when you are writing the entry point, a route handler, or the document every page renders into.
 
 ```ts
-import { createApp, applyAssets, definePage, defineAction, healthCheck, validateBindings } from "@y-core/forge/app";
-import { renderPage } from "@y-core/forge/jsx";
-import { route, createController } from "@y-core/forge/router";
-import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
-import { v } from "@y-core/forge/validation";
-import { configStore, type AppConfig } from "./config";
+import { applyMiddlewareChain, createApp, defineAction, definePage, healthCheck } from "@y-core/forge/app";
+```
 
-interface Bindings {
+---
+
+## Getting started
+
+`createApp` returns a `Forge` instance whose `fetch` **is** the Workers module handler, so the whole entry point is one expression and an
+`export default`.
+
+```ts
+import { applyMiddlewareChain, createApp, type AssetsFetcher } from "@y-core/forge/app";
+import { consoleChannel } from "@y-core/forge/logging";
+import { NONCE } from "@y-core/forge/security";
+
+import { appConfig } from "./config";
+import { EnvSchema } from "./env.schema";
+import { registerRoutes } from "./routes";
+
+export interface Bindings {
   CSRF_SECRET: string;
-  ASSETS: { fetch(req: Request): Promise<Response> };
-  MY_KV: KVNamespace;
+  ASSETS: AssetsFetcher;
 }
 
-const app = createApp<Bindings>({
-  config: configStore, // resolved once per request → c.config
-  dev, // the token minted in src/worker.dev.ts; with `errorDetail`, the 500 page prints the thrown message
+export default createApp<Bindings>({
+  config: appConfig,
+  middleware: (app) =>
+    applyMiddlewareChain(app, {
+      logging: { channels: () => [consoleChannel()] },
+      securityHeaders: { scriptSrc: ["'self'", NONCE] },
+      bindings: EnvSchema,
+    }),
+  routes: registerRoutes,
+  assets: true,
 });
+```
 
-// Global, path-scoped middleware. "*" matches everything; "/api/*" matches the prefix.
-app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
-app.use("*", validateBindings(v.object({ CSRF_SECRET: v.string() })));
+What that expression settles, and why to prefer it over wiring by hand:
 
-// Routes as data (single source of truth).
-const routes = route({
+- **The wiring hooks run in a fixed order** — `middleware`, `routes`, `finalize`, then `assets` — so the asset catch-all is registered last and
+  cannot shadow a route, whatever order you wrote the fields in. `finalize` is for late registrations that must still precede it, such as a route
+  only a development build registers.
+- **`Bindings` types `c.env` everywhere downstream**, in middleware, loaders, views and handlers alike.
+- **`config` is resolved once per request** and reaches handlers as their `config` argument, and the context as `c.config`. Pass a store built with
+  `createConfig` from [`@y-core/forge/config`][config-readme].
+
+Everything is optional: `createApp()` with no arguments is a valid app. Wiring by hand — `createApp()`, then `app.use`, `app.map` and `applyAssets`
+in that order — stays supported for a layout the hooks cannot express, and is what the rest of this document shows piecemeal.
+
+---
+
+## Wiring the middleware chain
+
+Global middleware order is load-bearing: a nonce provider that runs after its consumers produces a page with no styles, and a rate limiter that runs
+before the logger costs you the record of what it refused. `applyMiddlewareChain` encodes that order once, so the choice you are making is **which
+guards cover which paths**, not what runs when.
+
+```ts
+applyMiddlewareChain(app, {
+  requestId: true, // on unless you set it false — the id the 500 page quotes
+  logging: { channels: (c) => [consoleChannel()] },
+  securityHeaders: { scriptSrc: ["'self'", NONCE] }, // the one required member
+  bindings: EnvSchema,
+  session: sessionMiddleware(storage, sessionCookie),
+  globals: [csrfGuard], // after the session, because they read it
+  guards: [
+    {
+      paths: ["/api/*"],
+      origin: { allowedOrigins: (c) => [c.env.SITE_ORIGIN] },
+      rateLimit: { limiter: (c) => c.env.RATE_LIMITER },
+    },
+  ],
+});
+```
+
+The encoded chain, the guard-major grouping that keeps one rate limiter per group, and the global-before-route-level rule are
+[`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e's and [§3a][ram-3a]'s; why the nonce provider must lead is [§3d][ram-3d]'s.
+
+**`app.use` is the direct form**, for middleware the chain has no field for. `"*"` matches every request, `"/admin/*"` matches `/admin` and
+everything beneath it, and an array of paths registers each handler **once**, matching any of them.
+
+```ts
+app.use("*", requestId());
+app.use(["/admin/*", "/internal/*"], adminOnly);
+```
+
+`buildGuardChain(group)` expands one guard group into the ordered array `app.use` takes, for a group you want to register yourself.
+
+---
+
+## Registering routes
+
+Routes are data: a map of names to `{ method, pattern }`, a controller binding those names to handlers, and one `app.map` call. The route map holds
+no handlers — why, and what registration order against `app.use` means, are [`ROUTING_AND_MIDDLEWARE.md`][ram-1a] §1a's and [§1c][ram-1c]'s.
+
+```ts
+import type { Forge } from "@y-core/forge/app";
+import { healthCheck } from "@y-core/forge/app";
+import { createController, route } from "@y-core/forge/router";
+
+import { contactAction, homePage } from "./controllers";
+import { csrfGuard } from "./guards";
+
+export const routes = route({
   home: { method: "GET", pattern: "/" },
   contact: { method: "POST", pattern: "/api/contact" },
   health: { method: "GET", pattern: "/api/health" },
 });
 
-const controller = createController(routes, {
-  actions: {
-    home: homePage,
-    contact: { middleware: [csrfGuard], handler: contactAction },
-    health: healthCheck<Bindings>({ kv: (c) => Boolean(c.env.MY_KV) }),
-  },
-});
+export function registerRoutes(app: Forge<Bindings>): void {
+  const controller = createController(routes, {
+    actions: {
+      home: homePage, // a bare handler
+      contact: { middleware: [csrfGuard], handler: contactAction }, // route middleware lives here
+      health: healthCheck<Bindings>({ kv: (c) => Boolean(c.env.MY_KV) }),
+    },
+  });
 
-app.map(routes, controller);
-applyAssets(app); // static-asset catch-all over the ASSETS binding
-
-export default app;
+  app.map(routes, controller);
+}
 ```
 
-> `renderPage` is imported from `@y-core/forge/jsx`, **not** from this namespace. Pages call it inside their `view` to turn a JSX tree into an HTML
-> `Response`.
+The `actions` keys must match the route names exactly, so a missing or misspelled handler is a compile error. Per-route middleware goes in the
+controller entry and nowhere else — neither `definePage` nor `defineAction` accepts a `middleware` field ([`ROUTING_AND_MIDDLEWARE.md`][ram-1b]
+§1b).
 
 ---
 
-## Core Components & APIs
+## Rendering a page
 
-### `createApp(options?)`
+`definePage` turns a loader and a view into a route handler. The loader does the I/O; the view turns state into a `Response`, typically via
+`renderPage` from [`@y-core/forge/jsx`][jsx-readme]. Keeping I/O out of the view is [`ROUTING_AND_MIDDLEWARE.md`][ram-5c] §5c's rule.
 
-Creates a `Forge` instance with a structured error boundary.
-
-| Option | Type | Description |
-| --- | --- | --- |
-| `config` | `Config<T>` (object) | A config store (from `@y-core/forge/config`). Registered against the app and resolved once per request; the result is exposed as `c.config` and to page/action handlers. |
-| `dev` | `DevAllowance` | A token from `@y-core/forge/dev`. With `errorDetail` granted, the default `500` page includes the error message; otherwise a generic message is shown. Only a development entry can mint one. |
-| `onError` | `(error: Error, c: AppContext<Bindings>) => Response \| Promise<Response>` | Custom app-level error handler. Replaces the default `500` page. If it throws, forge falls back to the default page. |
-| `logger` | `Logger` | Custom logger injected into the error handler. Defaults to `createLogger("app")`. |
-| `shell` | `PageShell<Bindings>` | The document every mounted page renders into, resolved per request. Omitted, forge renders a bare document. |
-| `middleware` | `(app: Forge<Bindings>) => void` | Wiring step 1 — register global middleware (typically one `applyMiddlewareChain` call). |
-| `routes` | `(app: Forge<Bindings>) => void` | Wiring step 2 — register routes (`app.map` calls). |
-| `finalize` | `(app: Forge<Bindings>) => void` | Wiring step 3 — late registrations (e.g. dev-only routes) that must precede the asset catch-all. |
-| `notFound` | `(c: AppContext<Bindings>, config: unknown) => Response \| Promise<Response>` | Renders every unmatched URL — the router's no-match path and the asset catch-all's misses alike. Omitted, forge answers a hardened plain-text `404 Not Found` that never echoes the request path. |
-| `assets` | `boolean` | Wiring step 4 — registers the static-asset catch-all **last**, so real routes always win. |
-
-All options are optional; `createApp()` with no arguments is valid. The generic `Bindings` parameter types `c.env` throughout the app.
-
-The wiring fields make the whole bootstrap a single expression — `createApp` runs them in the enforced canonical order (`middleware` → `routes` →
-`finalize` → `assets`), so the register-last rule for the asset catch-all cannot be violated:
-
-```ts
-import { applyMiddlewareChain, createApp } from "@y-core/forge/app";
-
-export default createApp<Bindings>({
-  config: configStore,
-  dev, // minted in src/worker.dev.ts
-  onError: (err, c) => renderErrorPage(c, err),
-  middleware: (app) =>
-    applyMiddlewareChain(app, {
-      logging: { channels: (c) => [consoleChannel()] },
-      securityHeaders: { scriptSrc: ["'self'", NONCE] },
-      bindings: EnvSchema,
-      guards: [{ paths: ["/api/save"], origin: { allowedOrigins: (c) => allowed(c) }, rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
-    }),
-  routes: registerRoutes,
-  finalize: registerDevRoutes, // optional — e.g. /admin/logs in dev builds only
-  notFound: notFoundController,
-  assets: true,
-});
-```
-
-Manual wiring (`createApp()` + `app.use` + `app.map` + `applyAssets`) remains fully supported for layouts the fields cannot express.
-
-### `Forge` — the app object
-
-`createApp` returns a `Forge<Bindings>`. The `Forge` class is also exported directly for typing.
-
-| Member | Signature | Description |
-| --- | --- | --- |
-| `fetch` | `(request: Request, env: Bindings, executionCtx?: ExecutionContext) => Promise<Response>` | The Workers module `fetch` handler. `HEAD` requests are served as a derived `GET` with the body cancelled and stripped. `executionCtx` defaults to a mock context for non-Workers environments. |
-| `use` | `(path: string \| readonly string[], ...handlers: Middleware[]) => void` | Registers path-scoped global middleware. `"*"` matches every request; `"/admin/*"` matches `/admin` and anything beneath it; an array registers each handler **once**, matching any of the paths. |
-| `map` | `(routes, controller) => void` | Declarative route registration — the canonical way to add routes. |
-| `setShell` | `(shell: PageShell<Bindings>) => void` | Registers the document shell after construction — the single writer of that slot, so a later call replaces an earlier one. |
-| `request` | `(path: string, init?: RequestInit, env?: Bindings) => Promise<Response>` | Test helper: builds a `Request` from `path`, dispatches the full chain, and awaits any `waitUntil` promises before returning. |
-
-Because `fetch` is the module handler, the whole app ships as:
-
-```ts
-export default app;
-```
-
-The router is built lazily on the first request, with a static middleware stack: per-request state injection → header flush → error boundary →
-path-scoped guards → error boundary → matched route. The inner boundary is why error responses still carry the consumer's security headers — the
-error response flows back out through the guards that queue them. The outer boundary catches a throw from a guard itself, which would otherwise
-escape the router and skip the header flush entirely. Config resolution runs inside the same `try` as routing, so an invalid env produces the app's
-own error page rather than the runtime's.
-
-### `definePage(def)`
-
-Wraps an `action` (mutation) + `loader` (data) + `view` (JSX → `Response`) into a `RequestHandler`, with optional caching, custom headers, and error
-recovery.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `action` | `(c, config, data) => ActionData \| Response \| Promise<...>` | Optional. Runs on every non-`GET` request, before the loader, so the view renders post-mutation state. Its return value reaches the view as `state.actionData`; returning a `Response` short-circuits rendering. Skipped entirely on a `GET`. `data` is the `schema`'s output, and is `undefined` on a page that declares none. |
-| `schema` | `S extends v.GenericSchema` | Optional. Routes every non-`GET` request through the same read → guard → validate sequence `defineAction` runs, so `action` is unreachable without a passing `v.safeParse` and receives the output as its third argument. A refused body becomes a `422` fragment (with the configured `cache`/`headers` applied) and `action`, `loader` and `view` never run. Omitting it leaves the page as it was — and forbids every pipeline option, at the type level and with a throw from `definePage`. |
-| `loader` | `(c, config) => LoaderData \| Response \| Promise<...>` | Optional. Fetches page data. Returning a `Response` (e.g. a redirect) short-circuits rendering — the response still gets the configured headers/cache applied. |
-| `view` | `(c, config, state) => Response \| Promise<Response>` | Required. Builds the page response. `state` is `{ data, actionData, method }`: `state.data` is the loader's return value, `state.actionData` the action's (`undefined` on a `GET`), and `state.method` is `"GET"` or `"POST"`. |
-| `cache` | `"no-store" \| CacheDirective` | Optional. The page's **default** `Cache-Control`: set only on a response that carries none of its own, so a redirect or a `no-store` refusal keeps what it stated. `CacheDirective` is `{ maxAge: number; scope?: "public" \| "private" }` (scope defaults to `"public"`). |
-| `headers` | `Record<string, string>` | Optional. Extra response headers, merged onto whatever the view returned. Applied last, so it overrides `cache` too. |
-| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Called if `action`, `loader`, or `view` throws. If omitted, the error re-throws to the app's error boundary. |
-
-**The submission sequence's options are declared here too.** `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` mean on a page exactly
-what they mean on an action — `PageDefinition` inherits them, so they are documented once, in the `defineAction` table below. **Each requires a
-`schema`**, and `definePage` throws at registration naming any that were stated without one; why the shared surface is inherited rather than
-restated, and why a pipeline option without a schema is refused at all, is `ROUTING_AND_MIDDLEWARE.md` §2d's.
-
-```ts
+```tsx
 import { definePage } from "@y-core/forge/app";
 import { renderPage } from "@y-core/forge/jsx";
 
 export const homePage = definePage<Bindings, AppConfig>({
   cache: { maxAge: 300, scope: "public" },
   loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
-  view: (_c, _cfg, state) => renderPage(<Home greeting={state.data.greeting} />),
-  onError: (err, c) => renderErrorPage(c, err),
+  view: (_c, _config, state) => renderPage(<Home greeting={state.data.greeting} />),
+  onError: (err, c) => renderErrorPage(err, c),
 });
 ```
 
-The view receives the resolved `config` (the second argument) and the render `state` (the third). I/O belongs in the `loader` or the `action`, not
-the `view`.
+Either the loader or the view may return a `Response` to short-circuit — a redirect from a loader is the common case — and the configured headers
+still apply to it.
 
-### `defineAction(def)`
+**`cache` and `headers` answer different questions.** `cache` is the page's _default_ policy, set only on a response that states none of its own, so
+a redirect or a `no-store` refusal keeps what it said. `headers` is applied last and overrides everything, including `cache`. The full lifecycle,
+including what a `schema` on a page changes, is [`ROUTING_AND_MIDDLEWARE.md`][ram-2a] §2a's.
 
-Wires a `read → guard → validate → handle` pipeline into a POST handler that returns structured error fragments automatically.
+A page that also accepts a submission declares a `schema` and an `action`; the options that come with it are the next section's, and they mean the
+same thing on a page as on an action.
 
-**The schema is the only way in.** `defineAction` reads the parsed body itself and `handle` is unreachable except through a passing `v.safeParse` of
-`schema`, so a route cannot accept a body nothing checked ([`INPUT_VALIDATION.md`][iv-1d] §1d).
+---
 
-**The body-content guards live here; transport guards do not.** The Turnstile check reads a named field out of this form, so it belongs where the
-body is read and where the field it consumes can be dropped in the same step. CSRF, origin and rate-limit guards decide from the request's envelope
-and need to know nothing about the route's fields, so they stay in the controller action's `middleware` array (`defineAction` accepts no
-`middleware` field).
+## Handling a form submission
 
-`defineAction<S, Bindings, ConfigData>` takes three type arguments and infers `S` from `def.schema`. TypeScript has no partial type-argument
-inference, so a call site naming `Bindings` names the schema too (`defineAction<typeof ContactSchema, Bindings, AppConfig>`); `createHandlerFactory`
-removes the need for any of them.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `schema` | `S extends v.GenericSchema` | The body schema. Prefer `strictObject` from `@y-core/forge/validation` — it is what turns a field nobody declared into a refusal rather than a value silently dropped, and it holds for every key a caller can send. |
-| `handle` | `(data: v.InferOutput<S>, c, config) => Response \| Promise<Response>` | Runs after the schema passes. Receives the schema's **output** (so a transform reaches it as the type it actually is), the context, and the resolved `config`. |
-| `onValidationError` | `(issues: readonly v.BaseIssue<unknown>[], c) => Response \| Promise<Response>` | Optional. Replaces the default validation fragment. It receives the **issues**, not formatted strings: an issue embeds the rejected value, and under a strict object the caller's own key, so how much of a caller's text travels back in a refusal is the app's decision. |
-| `onError` | `(error: Error, c) => Response \| Promise<Response>` | Optional. Overrides the default `500` fragment for anything that throws inside the validate-and-handle region — `handle`, the schema, or `onValidationError`. |
-| `turnstile` | `ActionTurnstileOptions` | Optional. `{ secretKey, tokenField?, verify }`. The pipeline verifies the token and drops the token field, so the schema is never asked to declare it. `tokenField` is fixed at definition time (the field is dropped whether or not verification reaches the network); `secretKey` and `verify` resolve per request. |
-| `onBotDetected` | `(rejection: BotRejection, c) => Response \| Promise<Response>` | Optional. Replaces the refusal a tripped guard renders. `BotRejection` is `{ guard: "turnstile"; reason }`, so an app can tell a siteverify outage from an attack. The default says nothing about the guard at all. |
-| `maxBytes` | `number` | Optional. Body-size cap for this route's form parse. Defaults to `FORM_MAX_BYTES_DEFAULT` (100 KB). A `csrfProtection` guard on the same route parses the body first, so raising this also means raising the guard's own `maxBytes`. |
-
-**What reaches the schema.** Every entry the caller sent, minus the fields a guard on that request consumed. An **absent field is absent** rather
-than `""`, which is what keeps `v.optional` reachable and required-ness a presence check. A **repeated key arrives as an array**, so a scalar schema
-refuses it in its own words and a route that genuinely accepts many says so with `v.array`. A **`File` passes through unchanged**, so an upload
-schema can see one.
-
-**Nothing is dropped on a guess.** The Turnstile field is dropped because this pipeline checked it; the CSRF field is dropped because
-`csrfProtection` published the field it took the token from. There is no option for naming a field to drop — the derived-not-declared rule, what a
-route with no CSRF middleware therefore does with a submitted `_csrf`, and the two alternatives that were rejected are `ROUTING_AND_MIDDLEWARE.md`
-§2b's.
-
-**Text normalization belongs to the schema, not the pipeline.** Use `formText()` for a single-line control, `formMultilineText()` for a
-`<textarea>`, and `formDigits()` for a control whose separators are cosmetic — all from `@y-core/forge/validation`. The body read passes values
-through exactly as submitted, so a bare `v.pipe(v.string(), v.minLength(1))` accepts `" "`.
+`defineAction` answers with a fragment; `definePage` with a whole page. That is the whole basis for choosing between them — both run the identical
+read → guard → validate sequence first, and neither has a path to its own terminal step that goes around it
+([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
 
 ```ts
 import { defineAction } from "@y-core/forge/app";
 import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
 import { formMultilineText, formText, strictObject, v } from "@y-core/forge/validation";
-import { CONTACT_DECOY } from "./forms";
 
 const ContactSchema = strictObject({
   name: v.pipe(formText(), v.minLength(1)),
   email: v.pipe(formText(), v.email()),
-  phone: v.optional(formText()),
   message: v.pipe(formMultilineText(), v.minLength(10)),
 });
 
@@ -263,269 +195,64 @@ export const contactAction = defineAction<typeof ContactSchema, Bindings, AppCon
 });
 ```
 
-The automatic error responses (all are HTMX-swappable fragments):
+`handle` receives the schema's **output**, so a transform reaches it as the type it actually is. Reach for `strictObject` and the `formText` family
+from [`@y-core/forge/validation`][validation-readme]: the body read passes values through exactly as submitted, so a bare
+`v.pipe(v.string(), v.minLength(1))` accepts `" "`. The schema contract itself is [`INPUT_VALIDATION.md`][iv-1d] §1d's.
 
-| Status | Cause |
-| --- | --- |
-| `413` | Form body exceeds the size cap (`parseFormData` throws with `status: 413`). |
-| `400` | Body is unparseable as form data. |
-| `422` | The schema refused the body and no `onValidationError` was supplied — a well-formed request the server understood and declined. The fragment carries one `<li>` naming the failing field and nothing else ([`INPUT_VALIDATION.md`][iv-1b] §1b). |
-| `422` | A bot guard tripped and no `onBotDetected` was supplied. Byte-identical to the refusal above, so a bot cannot tell a guard from a mistyped field by comparing answers ([`INPUT_VALIDATION.md`][iv-4b] §4b). |
-| `500` | Anything in the validate-and-handle region throws, and no `onError` was supplied; the failure is logged. That covers `handle`, a schema whose `v.transform`/`v.check` throws on malformed input (valibot does not catch those), and a throwing `onValidationError`. A throwing schema is a route defect, not a bad request, which is why it is a `500` and not a `400`. |
+**The refusals are already written.** An oversized body, an unparseable one, a body the schema refused, and a throw all answer with a fragment
+without you supplying anything. Optional hooks replace them one for one, and each is a decision about what a caller learns:
 
-### `createHandlerFactory<Bindings, ConfigData>()`
+- `onValidationError` receives the **issues**, not formatted strings — an issue embeds the rejected value and, under a strict object, the caller's
+  own key, so rendering more than the field name is a choice ([`INPUT_VALIDATION.md`][iv-1b] §1b).
+- `onBotDetected` receives `{ guard, reason }`, so a siteverify outage can be told from an attack in your logs while the caller still sees what a
+  mistyped field sees ([`INPUT_VALIDATION.md`][iv-4b] §4b).
+- `onError` replaces the `500` fragment for anything that throws inside the sequence or in `handle`.
 
-Returns `{ definePage, defineAction }` with the app's `Bindings` and `ConfigData` generics pre-bound, so individual route modules stop repeating
-them. Per-call generics (`LoaderData`, `ActionData`, and the action's schema) remain inferred as usual — and since the schema infers from
-`def.schema`, a bound `defineAction` needs no type arguments at all. Bind once in an `app/handlers.ts` module and import the bound pair everywhere:
+**Bot guards that read the body go here; transport guards do not.** `turnstile` names a field of _this_ form, so the pipeline verifies it and drops
+the field before the schema sees it — no schema declares it. CSRF, origin and rate-limit guards decide from the request envelope and belong in the
+controller's `middleware` array. What is dropped is derived from what a guard actually consumed, never declared
+([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
+
+```ts
+turnstile: {
+  secretKey: (c, config) => config.turnstile.secretKey,
+  verify: (c) => ({ remoteIp: c.request.headers.get("cf-connecting-ip") ?? undefined, expectedHostname: "example.com" }),
+},
+```
+
+---
+
+## Declaring the generics once
+
+TypeScript has no partial type-argument inference, so naming `Bindings` at a call site means naming the schema too. `createHandlerFactory` binds
+both app-wide generics once and hands back the pair, after which a route module names nothing.
 
 ```ts
 // app/handlers.ts
 import { createHandlerFactory } from "@y-core/forge/app";
-export const { definePage, defineAction } = createHandlerFactory<Bindings, AppConfig>();
 
-// controllers/home.tsx — no generic arguments needed:
+export const { definePage, defineAction } = createHandlerFactory<Bindings, AppConfig>();
+```
+
+```tsx
+// controllers/home.tsx — no type arguments anywhere
 import { definePage } from "../app/handlers";
+
 export const homePage = definePage({
   loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
-  view: (_c, _cfg, state) => renderPage(<Home greeting={state.data.greeting} />),
+  view: (_c, _config, state) => renderPage(<Home greeting={state.data.greeting} />),
 });
 ```
 
-The standalone `definePage`/`defineAction` exports are unchanged — the factory is sugar, not a replacement.
-
-### `healthCheck(checks)`
-
-Returns a `RequestHandler` that runs each named predicate concurrently (`Promise.allSettled`) and responds with JSON. A check that throws or rejects
-is recorded as `false`.
-
-- Each value is `(c: AppContext<Bindings>) => boolean | Promise<boolean>`.
-- Response body is `HealthCheckResult` — `{ ok: boolean; checks: Record<string, boolean> }`.
-- Status is `200` when every check passes, `503` otherwise; `Cache-Control: no-store` is always set.
-
-```ts
-import { healthCheck } from "@y-core/forge/app";
-
-// In the controller actions map — registered as a bare handler, no route middleware:
-health: healthCheck<Bindings>({
-  kv: (c) => Boolean(c.env.MY_KV),
-  r2: async (c) => (await c.env.MY_BUCKET.head("__probe")) !== null,
-}),
-```
-
-### `applyAssets(app, path?)` / `serveAssets(app)`
-
-`applyAssets` registers a catch-all route that serves static files from the `ASSETS` binding, falling back to the app's own `notFound` hook. The
-`Bindings` type must include an optional `ASSETS` fetcher (`HasAssets`).
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `app` | `Forge<Bindings>` | The app to register the catch-all on; its `notFound` hook answers every miss. |
-| `path` | `string` (default `"*"`) | Pattern for the catch-all route. |
-
-```ts
-import { applyAssets, createApp } from "@y-core/forge/app";
-
-const app = createApp<Bindings>({ notFound: (c, config) => renderPage(<NotFound site={config.site} />) });
-applyAssets(app);
-```
-
-**There is one not-found answer, whether or not `assets` is configured.** The asset catch-all shadows the router's own no-match path, so without a
-single owner the same unmatched URL would get two different responses.
-
-`serveAssets` is the underlying `RequestHandler` if you need to register it on a non-catch-all route yourself. It renders the app's not-found answer
-on a `404` from the binding, on a missing `ASSETS` binding, or on a non-`GET`/`HEAD` method. Register `applyAssets` **last**, after `app.map`, so
-real routes take precedence over the catch-all.
-
-### `createErrorPage(options?)`
-
-Builds a styled, debug-gated full-page 500 handler for `createApp({ onError })` (and reusable as `definePage`'s `onError`). It preserves the default
-boundary's guarantees — the real error message appears **only** under a `DevAllowance` granting `errorDetail`, and all
-interpolated content is HTML-escaped.
-
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `dev` | `DevAllowance` | — | With `errorDetail` granted, shows `error.message`. Mintable only from a development entry ([`@y-core/forge/dev`][dev-readme]). |
-| `title` | `string` | `"Something went wrong"` | Page `<title>` and heading. |
-| `stylesheetHref` | `string \| ((c) => string)` | — | Optional stylesheet link (static or per-request, e.g. hashed asset path). A throwing resolver renders the page without the link. |
-| `homeHref` | `string` | — | Optional "Back to safety" link. |
-
-**A `Reference: <id>` line appears when the `requestId` middleware ran** — the same id as the `x-request-id` header, for a user to quote in a
-support ticket. Neither this page nor the default boundary page generates an id, so without that middleware the line is simply absent.
-
-```ts
-import { createApp, createErrorPage } from "@y-core/forge/app";
-
-const onError = createErrorPage<Bindings>({
-  dev, // minted in src/worker.dev.ts
-  stylesheetHref: "/assets/css/main.css",
-  homeHref: "/",
-});
-export default createApp<Bindings>({ config: configStore, onError });
-```
-
-The page is Tailwind-classed markup that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/app";` to your own stylesheet or the page
-renders unstyled.
-
-### `validateEnv(env, schema)` / `validateBindings(schema)`
-
-Two forms of binding validation against a valibot schema.
-
-- `validateEnv(env, schema)` — one-shot. Returns the typed, validated env, or **throws** `Error("Invalid environment: …")` with the offending paths.
-  Call it at startup when you have the raw env in hand.
-- `validateBindings(schema)` — middleware form. Validates `c.env` on the first request, and again whenever the env reference changes (so a swapped
-  binding set is re-checked). Throws on failure; it does not store or mutate the env — read bindings via `c.env` directly.
-
-In production apps the schema is **typically generated**, not hand-written: `forge cf gen env` (`bun run gen:env`, from `@y-core/forge/tooling/cf`)
-emits `env.schema.ts` from `wrangler.jsonc` + `.dev.vars`, so the schema can never drift from the actual binding surface. Hand-written schemas
-remain fine for small surfaces. See the standard setup guide in [src/config/README.md][config-readme].
-
-```ts
-import { validateEnv, validateBindings } from "@y-core/forge/app";
-import { v } from "@y-core/forge/validation";
-
-const EnvSchema = v.object({ CSRF_SECRET: v.string(), TURNSTILE_SECRET_KEY: v.string() });
-
-// One-shot:
-const env = validateEnv(rawEnv, EnvSchema);
-
-// Middleware form — validates on the first request:
-app.use("*", validateBindings(EnvSchema));
-```
-
-### `metaTags(meta, options?)`, `mergeMeta(base, page)`, `PageMeta`, `MetaTag`, `RobotsDirective`
-
-| Export | Kind | Description |
-| --- | --- | --- |
-| `metaTags(meta, options?)` | function | Renders a `PageMeta` as `<head>` children. `options.nonce` is required for `jsonLd` to render at all — the element it emits needs the request's nonce ([`SECURITY_HARDENING.md`][sh-2d] §2d). |
-| `mergeMeta(base, page)` | function | Merges a page's descriptor over the site-wide one — shallow at the top, one level deep for `og`/`twitter`, `extra` concatenated base-first. |
-| `PageMeta` | type | `{ title, description?, canonical?, robots?, og?, twitter?, jsonLd?, extra? }`. `canonical` and `og.image` must be absolute; forge derives neither. |
-| `MetaTag` | type | The `extra` escape hatch: `{ name, content }`, `{ property, content }`, or `{ tagName: "link", rel, href }`. Appended verbatim, never deduplicated. |
-| `RobotsDirective`, `OgType`, `MetaOptions` | types | The robots tokens (given singly or as an array, joined with `", "`), the `og:type` values, and what `metaTags` reads off the request. |
-
-### `renderShell(c, content, slot, init?)`, `pageShell(document?)`, `PageShell`, `ShellSlot`, `ShellDocument`
-
-| Export | Kind | Description |
-| --- | --- | --- |
-| `renderShell(c, content, slot, init?)` | function | Renders `content` as a full document through the app's registered shell, or the bare one. `init` is `{ status?, headers? }`. The only place `<html>` is written — your own pages can render through the same shell by calling it. |
-| `pageShell(document?)` | function | Builds a `PageShell` for a deployment whose whole chrome is a stylesheet and a script. |
-| `PageShell<Bindings>` | type | `(c, content, slot) => JSXNode \| Promise<JSXNode>` — the document a mounted page renders into. |
-| `ShellSlot` | type | `{ mount, page, meta }` — which mount and page a shell is wrapping, and the `PageMeta` that mount resolved for it. |
-| `ShellDocument` | type | `{ stylesheet?, script?, lang? }` — what `pageShell` renders. |
-
-### `ConfigKey`
-
-A typed context key (`createContextKey<unknown>()`) under which the resolved app config is stored for the current request. forge's router injects
-it; `definePage` and `defineAction` read it for you and pass the typed config to your `view`/`handle`. Read it directly only when writing a custom
-`RequestHandler`:
-
-```ts
-import { ConfigKey } from "@y-core/forge/app";
-
-const handler: RequestHandler = (context) => {
-  const config = context.get(ConfigKey) as AppConfig;
-  // …
-};
-```
-
-In most code, prefer the `config` argument passed to your loader/view/handle, or `c.config`.
+Per-call generics — loader data, action data, and the action's schema — are still inferred. The standalone `definePage` and `defineAction` are
+unchanged; the factory is sugar.
 
 ---
 
-## Integration Guide
+## Wrapping pages in a document shell
 
-### 1. Declare routes as data
-
-Build the route map with `route()` from `@y-core/forge/router` — names mapped to `{ method, pattern }`. Why the map carries no handlers, and why
-registration order against `app.use` matters, are `ROUTING_AND_MIDDLEWARE.md` §1a's and §1c's.
-
-```ts
-import { route } from "@y-core/forge/router";
-
-export const routes = route({ home: { method: "GET", pattern: "/" }, contact: { method: "POST", pattern: "/api/contact" } });
-```
-
-### 2. Bind handlers in a controller
-
-`createController(routes, { actions })` maps each route name to either a bare `RequestHandler` or `{ middleware, handler }`. The `actions` keys must
-match the route names exactly — a missing or misspelled handler is a compile error.
-
-```ts
-import { createController } from "@y-core/forge/router";
-
-export const controller = createController(routes, {
-  actions: {
-    home: homePage, // bare handler
-    contact: { middleware: [csrfGuard], handler: contactAction }, // per-route middleware
-  },
-});
-```
-
-### 3. Register on the app, then assets
-
-```ts
-app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] })); // globals first
-app.map(routes, controller); // routes
-applyAssets(app); // catch-all last
-export default app;
-```
-
-### Middleware ordering
-
-**Prefer `applyMiddlewareChain`** — it encodes the canonical global order once, so apps never re-derive it. The chain it encodes, the guard-major
-registration that keeps one `rateLimit` per group, the global-before-route-level rule, and the nonce-consumer rule a hand-written chain must still
-respect are all `ROUTING_AND_MIDDLEWARE.md` §3a, §3d and §3e's.
-
-### Page rendering
-
-A `view` returns a `Response`, typically built by `renderPage` from `@y-core/forge/jsx`:
-
-```ts
-import { renderPage } from "@y-core/forge/jsx";
-
-view: (_c, _cfg, state) => renderPage(<Home data={state.data} />),
-```
-
-`renderPage` converts the JSX tree to an HTML `Response` directly — there is no global render-middleware step.
-
-### The page shell
-
-**A page forge mounts — the auth pages, the showcase, the log viewer — renders into one shell the app registers**, resolved per request. A mountable
-takes no `layout`, `context` or `document` option of its own; the ruling and the reasoning are [`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6.
-
-`PageShell` is `(c, content, slot) => JSXNode | Promise<JSXNode>`, where `slot` is `{ mount, page, meta }` — `mount` names the mountable (`"auth"`,
-`"showcase"`, `"logs"`, or your own) and is an open string, so a shell that branches on it needs a default arm. `meta` is the page's `PageMeta`,
-whose `title` is always set.
-
-```tsx
-createApp({ shell: async (c, content, slot) => <Layout ctx={await renderContext(c, c.config)}>{content}</Layout> });
-```
-
-The app's per-request context and layout stay inside that closure, which is why no `Ctx` type parameter reaches forge.
-
-For a deployment whose whole chrome is a stylesheet, `pageShell` builds the shell instead:
-
-```ts
-import { pageShell } from "@y-core/forge/app";
-
-createApp({ shell: pageShell({ stylesheet: "/assets/app.css", script: "/assets/app.js" }) });
-```
-
-**With no shell registered**, a mounted page renders a bare document — doctype, a `<head>` built from the slot's `meta`, content in `<body>`. It is
-readable and unstyled: forge ships no stylesheet URL it could guess.
-
-**A fragment never reaches the shell.** An htmx partial or an API fragment is swapped into a document that already exists, so it is rendered bare.
-
-**Your own pages can render through the same shell**, with a slot they name themselves:
-
-```tsx
-view: (c, _cfg, state) => renderShell(c, <Home data={state.data} />, { mount: "app", page: "home", meta: { title: "Home" } }),
-```
-
-### Page meta
-
-A page says what it says about itself in a `PageMeta`, and the shell renders it with `metaTags`. The ruling — why a typed shape rather than a merged
-array of tag descriptors, and the three things it deliberately does not do — is [`ROUTING_AND_MIDDLEWARE.md`][ram-6d] §6d.
+One shell, registered on the app, is the document every mounted page renders into — forge's own auth pages and log viewer included. A mountable
+takes no chrome options of its own, and the reasoning is [`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6's.
 
 ```tsx
 import { mergeMeta, metaTags } from "@y-core/forge/app";
@@ -533,7 +260,7 @@ import { getNonce } from "@y-core/forge/security";
 
 const SITE_META = { title: "Acme", description: "…", og: { type: "website", image: "https://cdn.acme.com/og.png" } } as const;
 
-createApp({
+createApp<Bindings>({
   shell: (c, content, slot) => (
     <html lang='en'>
       <head>
@@ -548,43 +275,122 @@ createApp({
 });
 ```
 
-**Every page forge mounts states `robots: "noindex"`** — an auth page, the log viewer and the showcase each have no business in an index. Merging
-the site's base under the page's meta, as above, keeps that.
+Your app's per-request context and layout stay inside that closure, which is why no context type parameter reaches forge. `slot` is
+`{ mount, page, meta }`; `mount` is an open string, so a shell that branches on it needs a default arm. `app.setShell(shell)` registers one after
+construction and is the single writer of the slot ([`ROUTING_AND_MIDDLEWARE.md`][ram-6a] §6a).
+
+**When the whole chrome is a stylesheet and a script**, `pageShell` is the shell:
+
+```ts
+import { pageShell } from "@y-core/forge/app";
+
+createApp<Bindings>({ shell: pageShell({ stylesheet: "/assets/app.css", script: "/assets/app.js" }) });
+```
+
+**Render your own pages through the same shell** with `renderShell`, naming the slot yourself:
+
+```tsx
+view: (c, _config, state) => renderShell(c, <Home data={state.data} />, { mount: "app", page: "home", meta: { title: "Home" } }),
+```
+
+Meta is a typed descriptor, not a tag array: `mergeMeta` merges a page over the site base one level deep for `og` and `twitter`, and `metaTags`
+renders it. `canonical` and `og.image` must be absolute, `jsonLd` needs the request nonce to render at all, and every page forge mounts states
+`robots: "noindex"` — all of it [`ROUTING_AND_MIDDLEWARE.md`][ram-6d] §6d's. A fragment never reaches the shell ([§6c][ram-6c]).
 
 ---
 
-## Advanced
+## Serving static files and answering an unmatched URL
 
-### `HEAD` request handling
+`assets: true` on `createApp` registers the catch-all over the `ASSETS` binding as the last route. Registering it by hand is the same thing, and the
+same rule applies — **after every `app.map` call**, or it shadows them.
 
-`Forge.fetch` rewrites `HEAD` to an internal `GET` by copy-constructing the request (`new Request(request, { method: "GET" })`), so `signal`, `cf`,
-`redirect` and `credentials` carry into the handler as well as the headers. It runs the full chain, cancels the GET response's body, then returns a
-body-less `Response` with that status and headers. Handlers never need to special-case `HEAD`; why `router` therefore exports no `head` verb, and
-when a `HEAD` branch inside a unit is still correct, is `ROUTING_AND_MIDDLEWARE.md` §1d's.
+```tsx
+import { applyAssets, createApp } from "@y-core/forge/app";
 
-### Lazy router build and per-request state
+const app = createApp<Bindings>({ notFound: (c, config) => renderPage(<NotFound site={config.site} />) });
+app.map(routes, controller);
+applyAssets(app); // or applyAssets(app, "/static/*") for a narrower pattern
+```
 
-The dispatching router is built once, on the first `fetch`, with a fixed middleware stack. Per-request `env`, `executionCtx`, and resolved `config`
-are stored in a `WeakMap` keyed by the `Request` and re-published onto the context inside the chain. If the request object is replaced between
-`fetch` and routing (an incompatible `@remix-run/fetch-router` version), forge throws a loud diagnostic rather than silently dropping
-`env`/`config`.
+**`notFound` is the single answer to an unmatched URL** — the router's no-match and every asset miss alike, so configuring assets changes which path
+reaches it and never what a client gets. Omitted, forge answers a hardened plain-text `404` that does not echo the request path
+([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e).
 
-### Config resolution
+`serveAssets(app)` is the underlying handler, for registering on a route of your own rather than a catch-all.
 
-When `createApp({ config })` is given a store, `fetch` calls `resolveConfig(store, env)` once per request and exposes the result via `ConfigKey` /
-`c.config`. `definePage` and `defineAction` read it and pass the typed value to your `view`/`handle`. `applyAssets`/`serveAssets` resolve the same
-store to pass `config` into the app's `notFound` hook. No config means `c.config` is `undefined` and handlers receive `undefined` for their config
-argument.
+---
 
-### Testing with `app.request`
+## Reporting whether the app is healthy
 
-`app.request(path, init?, env?)` is the canonical way to exercise the full chain in `bun test`. It builds a `Request`, supplies a test
-`ExecutionContext`, dispatches through every middleware, and awaits any `waitUntil` promises before resolving — so fire-and-forget work has
-completed when you assert.
+`healthCheck` takes named predicates, runs them concurrently, and answers `{ ok, checks }` as JSON — `200` when all pass, `503` otherwise, always
+`no-store`. A predicate that throws or rejects counts as `false`, so a probe needs no error handling of its own.
 
 ```ts
-import { Forge } from "@y-core/forge/app";
+health: healthCheck<Bindings>({
+  kv: (c) => Boolean(c.env.MY_KV),
+  r2: async (c) => (await c.env.MY_BUCKET.head("__probe")) !== null,
+}),
+```
 
+It is a bare handler in the controller's `actions` map, with no route middleware ([`ROUTING_AND_MIDDLEWARE.md`][ram-2c] §2c).
+
+---
+
+## Validating bindings before anything reads them
+
+Both forms check a Worker's bindings against a valibot schema and **throw** on failure, because a malformed environment is a deployment error rather
+than a runtime condition ([`FORGE_ERRORS.md`][eh-5e] §5e). Choose by where you are standing:
+
+- `validateBindings(schema)` — middleware. Validates `c.env` on the first request and again whenever the env reference changes. Pass it as
+  `applyMiddlewareChain`'s `bindings` field, or register it with `app.use("*", …)`.
+- `validateEnv(env, schema)` — one-shot, returning the typed env. Use it where you already hold the raw env, outside a request.
+
+```ts
+import { validateEnv } from "@y-core/forge/app";
+
+const env = validateEnv(rawEnv, EnvSchema); // or throws `Invalid environment: <field>: <reason>; …`
+```
+
+**Generate the schema rather than writing it.** `forge cf gen env` emits `env.schema.ts` from `wrangler.jsonc` plus `.dev.vars`, so it cannot drift
+from the real binding surface — see [`src/tooling/cf/README.md`][cf-readme], and [`src/config/README.md`][config-readme] for how the generated layer
+sits under your app config. Hand-writing one stays fine for a small surface.
+
+---
+
+## Replacing the 500 page
+
+Every throw already produces a hardened `500` carrying security headers, whether it happened inside the middleware chain or outside it
+([`FORGE_ERRORS.md`][eh-5b] §5b). Replace the page when you want it to look like your app:
+
+```ts
+import { createApp, createErrorPage } from "@y-core/forge/app";
+
+export default createApp<Bindings>({
+  config: appConfig,
+  dev, // minted in src/worker.dev.ts
+  onError: createErrorPage<Bindings>({ dev, stylesheetHref: "/assets/css/main.css", homeHref: "/" }),
+});
+```
+
+`createErrorPage` works as `definePage`'s `onError` too, and keeps the default boundary's guarantees: everything interpolated is escaped, and the
+thrown message appears **only** under a `DevAllowance` granting `errorDetail`, which only a development entry can mint
+([`@y-core/forge/dev`][dev-readme]). Passing `dev` to `createApp` does the same for the default page. A `stylesheetHref` resolver that throws yields
+the page without the link rather than no page.
+
+A `Reference: <id>` line appears when the `requestId` middleware ran, matching the `x-request-id` header for a user to quote. Neither page mints an
+id, so without that middleware the line is absent.
+
+The page is Tailwind-classed markup that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/app";` to your own stylesheet or it renders
+unstyled — the scanning boundary that makes this a README's business is [`FORGE_STRUCTURE.md`][la-3d] §3d.
+
+---
+
+## Testing a request through the whole chain
+
+`app.request(path, init?, env?)` builds a `Request`, dispatches it through every middleware, and **awaits any `waitUntil` work** before resolving —
+so fire-and-forget work has finished by the time you assert.
+
+```ts
 const res = await app.request(
   "/api/contact",
   {
@@ -598,81 +404,72 @@ const res = await app.request(
 expect(res.status).toBe(200);
 ```
 
----
-
-## Security
-
-- **Hardened error boundary.** Every throw — inside the middleware chain or in router internals outside it — yields a `500` page that carries
-  security headers by construction. The three paths, the baseline header set an out-of-chain throw ships, and what a guard throwing mid-chain does
-  and does not queue are [`FORGE_ERRORS.md`][eh-5b] §5b's.
-- **Error detail is gated by a token production cannot mint.** The default `500` page reveals the error message **only** under a `DevAllowance`
-  granting `errorDetail` ([`@y-core/forge/dev`][dev-readme]); otherwise it shows a generic message. There is no predicate to wire to a value an
-  attacker controls, and `validate-dev-boundary` fails the import that would mint the token outside a `*.dev.ts` entry.
-- **Validation failures are generic by default.** `defineAction` collapses body-parse and handler failures to neutral `400`/`500` fragments — supply
-  `onError` only if you control what is surfaced, and do not leak internal exception detail to clients.
-- **A refusal names the field and nothing else**, and **`onValidationError` opts out of that bound** — it receives the raw issues, so an app
-  rendering more than the field name is choosing to. What the default refusal refuses to reproduce, and why, is [`INPUT_VALIDATION.md`][iv-1b] §1b.
-- **A tripped bot guard is indistinguishable from a schema refusal**, and `onBotDetected` receives the reason for logging or banning without
-  changing what the caller sees. The residual that shape leaves is [`INPUT_VALIDATION.md`][iv-4b] §4b.
-- **Validate bindings at the edge.** Use `validateEnv`/`validateBindings` so a missing or malformed secret (e.g. `CSRF_SECRET`) fails loudly at
-  startup or on the first request, never silently downstream.
-- **Asset method gating.** `serveAssets` answers only `GET`/`HEAD`; every other method falls through to the app's not-found answer, so the asset
-  catch-all cannot be used as a write surface.
+A bare path is resolved against `http://localhost`; a full URL is used as given. `env` defaults to `{}`, and `executionCtx` is supplied for you.
 
 ---
 
-## Architecture
+## Gotchas
 
-`app` is an **integration namespace** — what that classification obliges, and the facade rule that keeps `@remix-run/*` out of a consumer's imports,
-are `NAMESPACE_DESIGN.md` §3's and [`LIBRARY_ARCHITECTURE.md`][la-1a] §1a's.
+**`renderPage` is not in this namespace.** It comes from `@y-core/forge/jsx`, and a view calls it to turn a JSX tree into a `Response`.
 
-Per the Workers runtime model, `createApp` is a factory that captures bindings at request time, not at module evaluation — module-level state stays
-request-independent across V8 isolates. Use `c.executionCtx.waitUntil` for work that should outlive the response.
+**A `HEAD` request never reaches a handler as itself.** The app copy-constructs it into a `GET`, runs the full chain, then strips the body — so
+handlers never special-case it, and `router` ships no `head` verb ([`ROUTING_AND_MIDDLEWARE.md`][ram-1d] §1d).
 
-Related docs:
+**A submission option without a `schema` throws at registration.** `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` configure a
+pipeline that a schema-less page does not have, so `definePage` refuses them by name rather than ignoring them ([§2d][ram-2d]).
 
-- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — route map, controller, middleware ordering, `definePage`/`defineAction` lifecycle.
-- [`docs/FORGE_STRUCTURE.md`][la] — facade pattern, namespace tiers, Workers runtime constraints.
-- [`docs/FORGE_ERRORS.md`][eh] — the error boundary's three paths and their header guarantees (§5b), and the `definePage`/`defineAction` recovery
-  divergence (§5d).
+**Raising `maxBytes` on the handler is half the change.** A `csrfProtection` guard on the same route parses the body first, so its own cap is what a
+large submission meets — see [`src/form/README.md`][form-readme].
+
+**An aborted request gets no page and no log record.** A disconnected client is cancellation, not a failure: the boundary answers `499` and both
+builders re-throw to it.
+
+**No config store means `c.config` is `undefined`**, and handlers receive `undefined` for their `config` argument. Nothing throws.
+
+**The router is built on the first request, not at construction.** Register everything before the app serves anything — which is what the wiring
+hooks guarantee.
 
 ---
 
-## Exports
+## See also
 
-| Symbol | Kind | Summary |
-| --- | --- | --- |
-| `createApp` | function | Creates a `Forge` app with a structured error boundary. |
-| `Forge` | class | The app object — a Workers-native router with `fetch`/`use`/`map`/`request`. |
-| `definePage` | function | Loader + view → `RequestHandler`, with caching and error recovery. |
-| `defineAction` | function | Schema-validated POST pipeline with auto error fragments. |
-| `createHandlerFactory` | function | Returns `definePage`/`defineAction` with `Bindings`/`ConfigData` pre-bound. |
-| `HandlerFactory` | type | The pre-bound pair returned by `createHandlerFactory`. |
-| `healthCheck` | function | Concurrent named checks → JSON `{ ok, checks }` (`200`/`503`). |
-| `applyAssets` | function | Registers the static-asset catch-all over the `ASSETS` binding. |
-| `serveAssets` | function | The underlying asset-serving `RequestHandler`. |
-| `validateEnv` | function | One-shot env validation against a valibot schema (throws). |
-| `validateBindings` | function | Middleware-form binding validation (first request / on change). |
-| `ConfigKey` | const | Context key holding the resolved per-request app config. |
-| `ActionDefinition` | type | The `defineAction` config shape. |
-| `ActionTurnstileOptions` | type | `{ secretKey, tokenField?, verify }` for `turnstile` on either builder. |
-| `BotRejection` | type | Why a guard refused — `{ guard: "turnstile"; reason }`. |
-| `AppOptions` | type | The `createApp` options shape. |
-| `AssetsFetcher` | type | Shape of the `ASSETS` binding (`fetch(req)`). |
-| `CacheDirective` | type | `{ maxAge; scope? }` for `definePage({ cache })`. |
-| `HealthCheckResult` | type | `{ ok; checks }` health response body. |
-| `PageDefinition` | type | The `definePage` config shape, inheriting the submission sequence's options. |
+- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the route map, the middleware chain, the handler factories, and the page shell
+- [`docs/FORGE_ERRORS.md`][eh] — the error boundary's three paths (§5b), and why the two builders recover differently (§5d)
+- [`docs/INPUT_VALIDATION.md`][iv] — the submission sequence, and what a refusal is allowed to say
+- [`src/config/README.md`][config-readme] — the store `createApp({ config })` resolves per request
+- [`src/router/README.md`][router-readme] — `route`, `createController`, and route-pattern syntax
+- [`src/dev/README.md`][dev-readme] — minting the `DevAllowance` that unlocks error detail
 
+[cf-readme]: ../tooling/cf/README.md
 [config-readme]: ../config/README.md
 [dev-readme]: ../dev/README.md
 [eh]: ../../docs/FORGE_ERRORS.md
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
+[eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[form-readme]: ../form/README.md
+[iv]: ../../docs/INPUT_VALIDATION.md
 [iv-1b]: ../../docs/INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
 [iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-4b]: ../../docs/INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
-[la]: ../../docs/FORGE_STRUCTURE.md
-[la-1a]: ../../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1a-facade-over-dependencies
+[jsx-readme]: ../jsx/README.md
+[la-3d]: ../../docs/FORGE_STRUCTURE.md#3d-css-source-scanning-stops-at-ui
 [ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
+[ram-1a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1a-declarative-route-map-pattern
+[ram-1b]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1b-controller--mapping-route-names-to-actions
+[ram-1c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1c-registering-routes-with-appmap
+[ram-1d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1d-no-head-verb-export
+[ram-1e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
+[ram-2a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2a-full-page-routes-with-definepage
+[ram-2b]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
+[ram-2c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2c-health-check-route-with-healthcheck
+[ram-2d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
+[ram-3a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3a-global-vs-route-level-middleware
+[ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
+[ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
+[ram-5c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#5c-view--definepage-render-function
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
+[ram-6a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6a-registering-a-shell
+[ram-6c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6c-fragments-never-reach-the-shell
 [ram-6d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6d-the-meta-descriptor
-[sh-2d]: ../../docs/SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization
+[router-readme]: ../router/README.md
+[validation-readme]: ../validation/README.md

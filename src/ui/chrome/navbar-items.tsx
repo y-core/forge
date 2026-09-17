@@ -69,9 +69,7 @@ function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
   );
 }
 
-/** A megamenu at bar level is a `Popover` of link columns plus its collapsed list twin; inside a menu it
- * degrades to a submenu of groups, and in a rail only the list form renders. No `role="menu"`: a block
- * of links is navigation, so Tab walks it and light-dismiss and Escape are the platform's. */
+/** A `Popover` of link columns plus its collapsed list twin at bar level, a submenu of groups when nested. */
 function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JSXNode {
   const fattrs = filterAttrs(item, ctx.activeFilters);
 

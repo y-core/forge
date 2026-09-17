@@ -80,7 +80,7 @@ stated and one whose inputs depend on where the command was typed. [`BUILD_TOOLI
 | `copyAssets` | Each `copy[]` rule, `from` → `to` |
 | `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values |
 
-Signatures live in `src/tooling/assets/README.md`; none of these takes the whole config — each takes its own slice plus an output directory.
+None of these takes the whole config — each takes its own slice plus an output directory; `src/tooling/assets/README.md` teaches driving them.
 
 **There is no glob.** A sprite group names every file it contains: a `sources[].path` (a directory or an `http(s)` base) and a `files` list of bare
 names or `{ key, file }` pairs. A missing local file is a warning and a skipped symbol, not a failure, and a group producing no symbols writes
@@ -90,7 +90,7 @@ human edits that list, where a glob would let a file appearing on disk silently 
 **The same no-glob rule holds for the `_headers` rules `buildAll` writes**, and there for a second reason: Cloudflare applies _every_ matching rule
 and joins a repeated header with a comma, so one `/static/*` glob overlapping the per-file icon rules would hand the manifest a `Cache-Control`
 carrying both values. `emitHeaders` therefore emits one rule per icon output — the rationale sits at `src/tooling/assets/pipeline.ts`, and
-`src/tooling/assets/README.md` carries the emitted shape.
+`src/tooling/assets/README.md` says what a caller sees of it.
 
 `buildAll` is the standard entry for CI and `package.json` scripts. The per-stage functions exist because the CLI exposes each as its own
 subcommand, so a developer can rerun one stage alone.
@@ -119,21 +119,19 @@ build-time exemption [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d grants, and [`LIBRA
 
 Reachability cuts both ways. It is what admits a Node-API shell into `src/assets`, and it is also what declines to admit an algorithm merely because
 it happens to run at build time. A module that computes rather than orchestrates has no external tool behind it, so nothing about `src/assets`
-explains why it lives there — only that it was written during a build stage.
+explains why it would live there.
 
-**The compute half now lives under `src/ui/assets/build/`**, where the artifact each module produces is already the subject of the surrounding
+**The compute half lives under `src/ui/assets/build/`**, where the artifact each module produces is already the subject of the surrounding
 namespace — `color.ts` most plainly, since `ui/contracts/theme/color.ts` already owns the same arithmetic (§2b of [`THEME_GENERATION.md`][tg]). It
 carries its own `./ui/assets/build` subpath rather than sitting behind `./ui/assets`, so a Node-API import cannot reach a consumer who took the
 parent barrel for runtime-safe.
 
-`sprites.ts` split rather than moved whole: `svgToSymbol` and its sanitizer compute and went with the rest, while `buildSprites` — which fetches,
-hashes, writes and renames — is orchestration and stayed. Moving it would have made `ui/assets/build` and `assets/build` name each other at value.
+`sprites.ts` sits on both sides of the line: `svgToSymbol` and its sanitizer compute, so they live with the rest of the compute half, while
+`buildSprites` — which fetches, hashes, writes and renames — is orchestration and stays in `src/tooling/assets`. Housing them together would make
+`ui/assets/build` and `assets/build` name each other at value.
 
 **The routing question for anything new: does this drive an external builder, or is it one?** Drives one → `src/tooling/assets`. Is one → the
 namespace that owns the artifact.
-
-A shrink-only exempt list was considered and deferred: it would make `config/steps.ts` a fourth writer for a rule the sentence above already
-enforces.
 
 ---
 
@@ -172,7 +170,7 @@ current build. A consuming app aliases it as `@assets` and regenerates it with `
 
 ### 4a. The Ordered Stages and the Two Codegen Passes
 
-**`src/tooling/assets/pipeline.ts` owns the stage sequence** and is authoritative over it. Two properties of the order are decisions rather than
+**`src/tooling/assets/pipeline.ts` owns the stage sequence** and is authoritative over it. These properties of the order are decisions rather than
 incidents:
 
 - **Codegen runs twice, before and after `buildJS`.** esbuild resolves the `@assets` alias while bundling, so a bundle importing the manifest needs

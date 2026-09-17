@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, element, literal, runRule } from "../test-support.ts";
+import { attribute, element, literal, runRule } from "../lint.fixture.ts";
 import { a11yNoAriaReadonlyOnButton } from "./a11y-no-aria-readonly-on-button.ts";
 
 const readonly = attribute.bind(null, "aria-readonly");

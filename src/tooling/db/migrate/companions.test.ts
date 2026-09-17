@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { argvHas, fakeDbIo, OK } from "../db.fixture";
 import { appHome } from "../home";
-import { argvHas, fakeDbIo, OK } from "../test-support";
 import type { DbConfig, FakeDbIo, Home } from "../types";
 import { ensureCompanionTables, FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL } from "./companions";
 

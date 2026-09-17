@@ -86,9 +86,7 @@
   "enabledMcpjsonServers": [
     "ledger"
   ],
-  "enabledPlugins": {
-    "typescript-lsp@devbox-ts": true
-  },
+  "enabledPlugins": {},
   "extraKnownMarketplaces": {},
   "sandbox": {
     "enabled": true,

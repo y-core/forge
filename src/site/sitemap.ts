@@ -29,16 +29,7 @@ function formatPriority(priority: number): string {
   return Number.isInteger(priority * 10) ? priority.toFixed(1) : priority.toFixed(2);
 }
 
-/**
- * Filters a route-path list down to the URLs a sitemap can carry, and decorates each with its
- * configured metadata.
- *
- * Parameterised (`/case/:id`) and wildcard patterns are dropped: there is no single URL they
- * stand for. Excluded paths are dropped next, duplicates collapse, and the survivors sort so the
- * output is stable across builds.
- *
- * @public
- */
+/** Filters a route-path list down to the URLs a sitemap can carry — deduped and sorted — and decorates each with its configured metadata. @public */
 export function resolveSitemapEntries(paths: readonly string[], options: ResolveSitemapOptions): SitemapEntry[] {
   const { origin, exclude = [], entries = {} } = options;
   const seen = new Set<string>();

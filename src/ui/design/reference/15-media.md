@@ -5,7 +5,7 @@ description: "Photographs and glyphs — the two things that arrive on a surface
 
 # Media
 
-Two things arrive on a surface that no token controls: a photograph, and a glyph. Both defeat the rules the rest of this corpus relies on, and in
+A photograph and a glyph arrive on a surface that no token controls. Both defeat the rules the rest of this corpus relies on, and in
 the same way — a photograph is a colour the theme did not choose, and a glyph is a shape whose size is not the box it was dropped into.
 
 Forge ships no image component and no aspect-ratio primitive. The one image element it owns is `Avatar.Image`, and it is worth reading as the

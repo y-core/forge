@@ -9,7 +9,7 @@ export interface FakeAuthFactor {
   readonly id?: string;
   readonly secret?: Uint8Array | null;
   readonly lastCounter?: number | null;
-  /** Consecutive failed verifications standing against this enrolment. @defaultValue `0` */
+  /** Consecutive failed verifications standing against this enrolment; defaults to `0`. */
   readonly failedAttempts?: number;
   /** `null` leaves the enrolment unconfirmed — what a factor begun but never completed looks like. */
   readonly confirmedAt?: number | null;
@@ -26,7 +26,7 @@ export interface FakeAuthUser {
   readonly webauthnId?: Uint8Array | null;
   readonly isAdmin?: boolean;
   readonly deactivatedAt?: number | null;
-  /** The revocation barrier — every session established at or before it is refused. @defaultValue `null` */
+  /** The revocation barrier — every session established at or before it is refused; defaults to `null`. */
   readonly sessionsInvalidBefore?: number | null;
   readonly createdAt?: number;
   readonly updatedAt?: number;
@@ -35,13 +35,13 @@ export interface FakeAuthUser {
 
 /** Options for `createTestContext`. @public */
 export interface TestContextOptions<Bindings = Record<string, unknown>, ConfigData = unknown> {
-  /** Workers bindings exposed as `c.env`. @defaultValue `{}` */
+  /** Workers bindings exposed as `c.env`; defaults to `{}`. */
   env?: Bindings;
   /** Resolved app config exposed as `c.config` and via `ConfigKey`. */
   config?: ConfigData;
-  /** Execution context exposed as `c.executionCtx`. @defaultValue `mockExecutionContext()` */
+  /** Execution context exposed as `c.executionCtx`; defaults to `mockExecutionContext()`. */
   executionCtx?: ExecutionContext;
-  /** Request logger installed on the context. @defaultValue `nullLogger` */
+  /** Request logger installed on the context; defaults to `nullLogger`. */
   logger?: Logger;
 }
 

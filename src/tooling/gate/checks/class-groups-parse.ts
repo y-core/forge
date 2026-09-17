@@ -171,10 +171,7 @@ function deriveOverrides(groups: readonly string[]): Map<string, readonly string
 // var-only, so it collides with a plain `ring-*` and last-wins `cn` would drop the state hook.
 const stateRecipeGroup = (name: string): string => `forge:${name}`;
 
-/** Reads every utility the design system knows and returns the conflict table `cn` resolves against.
- *
- * `stateRecipes` names the `@utility` recipes whose payload is conditional; every other utility,
- * forge's own paint recipes included, is keyed by what it compiles to. @public */
+/** Reads every utility the design system knows and returns the conflict table `cn` resolves against. @public */
 export function deriveClassGroups(ds: DesignSystem, stateRecipes: readonly string[] = []): ClassGroupTable {
   const conditional = new Set(stateRecipes);
   const signatures = (candidates: string[]): (string | undefined)[] =>

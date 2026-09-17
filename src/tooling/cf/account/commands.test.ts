@@ -133,9 +133,9 @@ describe("parseResources()", () => {
 });
 
 describe("printResults()", () => {
-  const WORKER: DeploymentTarget = { kind: "worker", name: "cornellaw" };
+  const WORKER: DeploymentTarget = { kind: "worker", name: "commands-fixture" };
 
-  function capture(results: SyncResult[], target: DeploymentTarget = WORKER, prefix = "CORNELLAW", notes: SyncNote[] = []): string[] {
+  function capture(results: SyncResult[], target: DeploymentTarget = WORKER, prefix = "COMMANDS", notes: SyncNote[] = []): string[] {
     const written: string[] = [];
     const original = console.log;
     console.log = (line?: unknown) => void written.push(String(line ?? ""));
@@ -169,7 +169,7 @@ describe("printResults()", () => {
   const PROVISIONED: SyncResult = {
     resourceType: "kv_namespaces",
     binding: "SESSIONS",
-    remoteName: "CORNELLAW_SESSIONS",
+    remoteName: "COMMANDS_SESSIONS",
     action: "would-create",
     local: true,
     remote: false,
@@ -192,9 +192,9 @@ describe("printResults()", () => {
 
   it("names the surface once, in a banner above the sections", () => {
     const lines = capture(ALL);
-    expect(lines[0]).toBe("worker script · cornellaw");
+    expect(lines[0]).toBe("worker script · commands-fixture");
     // Not once per row, which is what the `Detail` column used to do.
-    expect(lines.filter((l) => l.includes("worker script"))).toEqual(["worker script · cornellaw"]);
+    expect(lines.filter((l) => l.includes("worker script"))).toEqual(["worker script · commands-fixture"]);
   });
 
   it("names a pages project as one", () => {
@@ -204,7 +204,7 @@ describe("printResults()", () => {
   it("groups the rows by actor, into five sections", () => {
     // Reversed on the way in: the order is the report's, not the handlers'.
     expect(headings(capture([...ALL].reverse()))).toEqual([
-      "worker script · cornellaw",
+      "worker script · commands-fixture",
       "Local Only",
       "Pushed by the Next Deploy",
       "Created by --commit",
@@ -226,7 +226,7 @@ describe("printResults()", () => {
     const lines = capture([SECRET, PROVISIONED]);
     expect(headings(lines).slice(1)).toEqual(["Created by --commit", "Provisioned by --commit"]);
     expect(lines.some((l) => l.includes("EMAIL_API_KEY"))).toBe(true);
-    expect(lines.some((l) => l.includes("CORNELLAW_SESSIONS"))).toBe(true);
+    expect(lines.some((l) => l.includes("COMMANDS_SESSIONS"))).toBe(true);
   });
 
   it("shows no Remote Name or Remote ID column for secrets, which have neither", () => {
@@ -242,9 +242,9 @@ describe("printResults()", () => {
     expect(notes).toEqual([
       ".dev.vars declared keys with no marker and no matching vars in wrangler.jsonc",
       "wrangler.jsonc declared keys; `deploy` writes them, sync only reports",
-      ".dev.vars secrets marked '# foundry:push', created remotely under their own name",
-      "Bindings created as CORNELLAW_<BINDING> with the id written back into wrangler.jsonc",
-      ".dev.vars keys marked '# foundry:generate'; --commit generates remote secret; --rotate rotates secrets",
+      ".dev.vars secrets marked '# forge:push', created remotely under their own name",
+      "Bindings created as COMMANDS_<BINDING> with the id written back into wrangler.jsonc",
+      ".dev.vars keys marked '# forge:generate'; --commit generates remote secret; --rotate rotates secrets",
     ]);
   });
 
@@ -316,13 +316,13 @@ describe("printResults()", () => {
 
   it("keeps Remote Name in the section that actually has one", () => {
     const lines = capture([VAR, PROVISIONED]);
-    expect(lines.some((l) => l.includes("CORNELLAW_SESSIONS"))).toBe(true);
+    expect(lines.some((l) => l.includes("COMMANDS_SESSIONS"))).toBe(true);
     // Still absent from the deploy section, whose columns are computed on its own.
     expect(lines.filter((l) => l.includes("Remote Name"))).toHaveLength(1);
   });
 
   it("renders a note under the section it belongs to, not as a row", () => {
-    const lines = capture([SECRET], WORKER, "CORNELLAW", [{ resourceType: "secrets", message: "No .dev.vars at /tmp/.dev.vars." }]);
+    const lines = capture([SECRET], WORKER, "COMMANDS", [{ resourceType: "secrets", message: "No .dev.vars at /tmp/.dev.vars." }]);
     expect(lines.at(-1)).toBe("  No .dev.vars at /tmp/.dev.vars.");
     expect(lines.some((l) => l.includes("(none)"))).toBe(false);
   });
@@ -339,7 +339,7 @@ describe("printResults()", () => {
   });
 
   it("omits a section that has no rows", () => {
-    expect(headings(capture([DECLARED]))).toEqual(["worker script · cornellaw", "Pushed by the Next Deploy"]);
+    expect(headings(capture([DECLARED]))).toEqual(["worker script · commands-fixture", "Pushed by the Next Deploy"]);
   });
 });
 
@@ -540,7 +540,7 @@ describe("--rotate and --local", () => {
   type Flags = Parameters<NonNullable<typeof cmd.run>>[1];
 
   function makeProject(devVars: string): string {
-    const dir = mkdtempSync(join(tmpdir(), "foundry-cli-"));
+    const dir = mkdtempSync(join(tmpdir(), "forge-cli-"));
     writeFileSync(join(dir, "wrangler.jsonc"), `{ "name": "proj" }`, "utf-8");
     writeFileSync(join(dir, ".dev.vars"), devVars, "utf-8");
     return join(dir, "wrangler.jsonc");
@@ -586,13 +586,13 @@ describe("--rotate and --local", () => {
   });
 
   it("expands --rotate all to every rotate-marked key, and only those", () => {
-    const config = makeProject(`${GENERATE_MARKER}\nA=1\n# foundry:push\nB=2\nC=3\n${GENERATE_MARKER}\nD=4\n`);
+    const config = makeProject(`${GENERATE_MARKER}\nA=1\n# forge:push\nB=2\nC=3\n${GENERATE_MARKER}\nD=4\n`);
     expect(resolveRotation("all", config)).toEqual(["A", "D"]);
   });
 
   it("refuses --rotate all when nothing is marked, rather than silently doing nothing", () => {
-    const config = makeProject("# foundry:push\nSTRIPE_KEY=v\n");
-    expect(() => resolveRotation("all", config)).toThrow(/found no keys marked "# foundry:generate"/);
+    const config = makeProject("# forge:push\nSTRIPE_KEY=v\n");
+    expect(() => resolveRotation("all", config)).toThrow(/found no keys marked "# forge:generate"/);
   });
 
   it("rotates every marked key when --local --rotate all is given", async () => {

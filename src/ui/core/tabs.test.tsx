@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Tabs } from "./tabs";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, "");
 const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]+)"/g)].map((match) => match[1]);

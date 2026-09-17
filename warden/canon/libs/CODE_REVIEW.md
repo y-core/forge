@@ -97,6 +97,8 @@ Group by file, then severity, critical first. **Never write a secret's value int
 | No PII reaches a log record | [`BOUNDARIES.md`][boundaries-4] §4 |
 | A security guard has both a pass and a fail test | [`TESTING.md`][testing-5a] §5a |
 | No comment outside the permitted budget | [`CODE_RULES.md`][cr-5a] §5a |
+| A behavioural claim deleted from a comment is landed as an assertion | [`CODE_RULES.md`][cr-5e] §5e, [`TESTING.md`][testing-3f] §3f |
+| No interface field carries a gloss that spells its own name back | [`CODE_RULES.md`][cr-5f] §5f |
 
 **The pre-1.0 shim ban is the one most often argued away.** A published shim is unrecoverable: once a consumer depends on it, removing it is a
 breaking change — which is precisely what a pre-1.0 version number exists to avoid.
@@ -131,7 +133,7 @@ hand-inspection is a rule that gets reviewed on the passes somebody remembered i
 names, namespace directories, and exemption globs — which makes them implementation by construction, and is why none of them lives here.
 
 **Every command is written with its false-positive class, stated beside it. A command without its triage note is worse than no command** — it gets
-run once, returns noise, and is never run again. Three triage classes account for nearly all of them, and each dictates something about how the
+run once, returns noise, and is never run again. These triage classes account for nearly all of them, and each dictates something about how the
 command is written:
 
 - **An exempt tier.** A rule that holds for runtime source but not for build-time tooling, or for production source but not for tests, needs its
@@ -145,6 +147,9 @@ command is written:
 
 A command whose threshold is numeric — a character count, a line count — is a **heuristic floor, not the rule.** Read every hit against the rule the
 owning document states.
+
+**Where a repository wires a comment-budget gate step, the budget is Tier 1 and not a review item at all** — §3a governs it, and no command for it
+belongs here. What the step cannot decide — whether a sentence earns its place — stays with §3c either way.
 
 Violations reachable by no command at all — restating the code, narration, a judgement about surface — belong to §3c.
 
@@ -176,6 +181,11 @@ work the function started, or only the headline one?_ [`LIBRARY_ARCHITECTURE.md`
 **Name reachability.** Read each new export. _Could a reader who knows the domain but not this codebase name this symbol from the question it
 answers — and conversely, does the name carry a word that earns nothing?_ ([`CODE_RULES.md`][cr-7] §7.)
 
+**Prose that earns nothing.** Read every comment and every README paragraph in the diff. _Does this sentence say something the name, the type, the
+signature, or a test does not?_ A per-field gloss, a per-symbol restatement, and a paragraph narrating how the code works are the same defect at
+different scales ([`CODE_RULES.md`][cr-5b] §5b, [`AGENT_GUIDE.md`][ag-6c] §6c). Where the sentence asserts behaviour, the question is sharper:
+_which test pins this?_ — and where none does, the finding is the missing assertion ([`CODE_RULES.md`][cr-5e] §5e).
+
 ---
 
 ## 4. Severity Calibration
@@ -191,6 +201,9 @@ answers — and conversely, does the name carry a word that earns nothing?_ ([`C
 
 **Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line costs one read; an unbudgeted one is re-read on
 every pass, is reachable by no gate, and goes stale silently. **Never report "expand this comment" as a finding.**
+
+**The asymmetry reaches README prose on the same terms.** A section restating a signature, narrating how the code works, or re-housing prose the
+comment budget evicted is Major; a task a README does not yet teach is Minor. "Document this more fully" is not a finding.
 
 **Calibrate by consequence, not by effort.** A one-character fix to a fail-closed check is Critical; a large refactor that improves readability is
 Minor.
@@ -231,7 +244,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | Duplicated markup or constants across a leaf boundary | An accepted cost — [`NAMESPACE_DESIGN.md`][nd-3e] §3e |
 | The same symbol name exported from two barrels | Deliberate shadowing where a bound and unbound variant coexist |
 | `@public` / `@internal` on a TSDoc line | Machine-readable markers, explicitly budgeted — [`CODE_RULES.md`][cr-5a] §5a |
-| A one-line inline comment carrying an external _why_ | The third budgeted form, under its four conditions — [`CODE_RULES.md`][cr-5a] §5a |
+| A one-line inline comment carrying an external _why_ | The third budgeted form, under its stated conditions — [`CODE_RULES.md`][cr-5a] §5a |
 | A one-line note on an adversarial test fixture | The one test-side addition to the budget — [`CODE_RULES.md`][cr-5d] §5d |
 | A non-null assertion in a test file | Permitted where the lint config relaxes it for tests; it stays an error in production source |
 
@@ -239,6 +252,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 constructor, a fail-open surface ratified under [`BOUNDARIES.md`][boundaries-5c] §5c — is recorded there with the same two columns, and a reviewer
 reads both.
 
+[ag-6c]: ../shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [boundaries-1]: ./BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-3]: ./BOUNDARIES.md#3-validate-at-the-boundary
 [boundaries-4]: ./BOUNDARIES.md#4-no-pii-in-logs
@@ -248,7 +262,10 @@ reads both.
 [cr-1c]: ../shared/CODE_RULES.md#1c-constants-are-acceptable
 [cr-1e]: ../shared/CODE_RULES.md#1e-browser-only-modules-are-exempt
 [cr-5a]: ../shared/CODE_RULES.md#5a-the-entire-permitted-budget
+[cr-5b]: ../shared/CODE_RULES.md#5b-forbidden-outright
 [cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt
+[cr-5e]: ../shared/CODE_RULES.md#5e-a-behavioural-claim-is-an-assertion
+[cr-5f]: ../shared/CODE_RULES.md#5f-a-field-is-a-symbol
 [cr-7]: ../shared/CODE_RULES.md#7-name-distinctiveness-rule
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
 [eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--resolvers-throw
@@ -265,6 +282,7 @@ reads both.
 [nd-4b]: ./NAMESPACE_DESIGN.md#4b-option-and-shape-type-suffixes
 [testing-2a]: ./TESTING.md#2a-test-file-naming-convention
 [testing-3d]: ./TESTING.md#3d-assert-the-mechanism-not-an-outcome-a-second-mechanism-also-guarantees
+[testing-3f]: ./TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
 [testing-6]: ./TESTING.md#6-the-verification-gate
 [testing-6a]: ./TESTING.md#6a-one-command-three-modes

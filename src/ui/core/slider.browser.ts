@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount, paintedHex } from "../client/browser-test-helper";
+import { mount, paintedHex } from "../client/browser.fixture";
 import { Slider } from "./slider";
 
 const SLIDER = "[data-slot~='slider']";

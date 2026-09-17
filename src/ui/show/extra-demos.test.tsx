@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { ShowcaseContent } from "./components";
-import { sectionBodies } from "./coverage";
+import { sectionBodies } from "./coverage.fixture";
 import { LAZY_DEMO_LOADED, LAZY_DEMO_PENDING, LAZY_DEMO_REF, LAZY_DEMO_SCOPE } from "./lazy-contract";
 import { showcasePaths } from "./route";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";

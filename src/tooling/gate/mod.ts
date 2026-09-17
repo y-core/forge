@@ -13,6 +13,7 @@ export {
   classOrderStep,
   classTokensStep,
   coLocationStep,
+  commentBudgetStep,
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
@@ -27,6 +28,7 @@ export {
   markdownStep,
   modernCssStep,
   namespaceGraphStep,
+  packagingStep,
   ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
@@ -65,6 +67,11 @@ export type { ClassTokensCheckConfig, SourceLiteral } from "./checks/types";
 export { checkClassTokens, stringLiterals, unknownTokens } from "./checks/class-tokens";
 export { checkCoLocation, declaredByName, testCandidates } from "./checks/co-location";
 export type { CoLocationCheckConfig } from "./checks/types";
+export { checkCommentBudget } from "./checks/comment-budget";
+export { isToolingDirective, validateCommentBudget } from "./checks/comment-budget-parse";
+export type { CommentBudgetCheckConfig, CommentSpan } from "./checks/types";
+export { checkPackaging, fixtureName, moduleImports } from "./checks/packaging";
+export type { PackagingCheckConfig } from "./checks/types";
 export { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./checks/color";
 export type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./checks/types";
 export { checkContrast, measurePairs, parsePalette, resolveColor } from "./checks/contrast";
@@ -182,14 +189,6 @@ export {
   resolveSpecifier,
   sectionWindow,
 } from "./checks/namespace-graph-parse";
-export type { DocumentedSymbol, ImportPathAnchor } from "./checks/types";
-export {
-  ANCHOR_RE,
-  parseExportsHeadingLine,
-  parseExportsTableSymbols,
-  parseImportPathAnchors,
-  parseTypesProse,
-} from "./checks/readme-exports-parse";
 export {
   balancedSpan,
   blankComments,
@@ -197,6 +196,7 @@ export {
   collectFiles,
   collectSource,
   excludedBy,
+  findComments,
   lineAt,
   listDirectories,
   listFiles,

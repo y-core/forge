@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
+import { argvHas, fakeDbIo, OK, schemaModelReply } from "../db.fixture";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
 import { migrationsDigest } from "../migrate/files";
-import { argvHas, fakeDbIo, OK, schemaModelReply } from "../test-support";
 import type { DbConfig, DbHostConfig, DbRunContext, FakeDbIo, Spawned } from "../types";
 import { checkSchema, formatSchemaCheck } from "./check";
 import { buildSchemaSnapshot, formatSchemaSnapshot } from "./snapshot";

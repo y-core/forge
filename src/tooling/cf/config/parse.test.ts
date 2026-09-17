@@ -76,7 +76,7 @@ describe("parseWranglerConfig()", () => {
   let counter = 0;
   function writeTemp(contents: string): string {
     counter += 1;
-    const path = join("/tmp", `foundry-wrangler-${counter}.jsonc`);
+    const path = join("/tmp", `forge-wrangler-${counter}.jsonc`);
     writeFileSync(path, contents, "utf-8");
     return path;
   }

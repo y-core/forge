@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { Input } from "../core/input";
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {

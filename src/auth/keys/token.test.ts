@@ -261,7 +261,7 @@ describe("authNonceKey", () => {
 // Every alias decodes to the same frame and passes the tag, so without this each spelling of one
 // spent token would derive a fresh nonce key and open again.
 describe("non-canonical base64url spellings of one token", () => {
-  /** The three aliases `base64urlDecode` accepts for one token, or `null` where the token happens to have none. */
+  /** The aliases `base64urlDecode` accepts for one token, or `null` where the token happens to have none. */
   function aliasesOf(token: string): { name: string; alias: string | null }[] {
     const padded = token.length % 4 === 0 ? null : `${token}=`;
     const standard = /[-_]/.test(token) ? token.replace(/-/g, "+").replace(/_/g, "/") : null;

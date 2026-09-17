@@ -5,8 +5,8 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { menuItemAttrs } from "../contracts/menu-contract";
 import { POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
+import { attrOf, attrsOf, classesOf } from "./core.fixture";
 import { Menu } from "./menu";
-import { attrOf, attrsOf, classesOf } from "./test-support";
 
 describe("Menu.Trigger — data-slot", () => {
   it("emits its own token alone when none was inherited", async () => {

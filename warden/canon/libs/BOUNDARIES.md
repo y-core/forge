@@ -5,7 +5,7 @@ description: "The recurring boundary rulings: SSR versus browser, transport vers
 
 # Library Boundaries
 
-> Owns the five boundaries that every namespace is judged against. Each is a rule about _where_ a concern is allowed to live, not about how to
+> Owns the boundaries that every namespace is judged against. Each is a rule about _where_ a concern is allowed to live, not about how to
 > implement it — the owning document supplies the mechanism, this one supplies the line.
 >
 > Defers to: [`NAMESPACE_DESIGN.md`][nd-3] §3 for the leaf/integration split these boundaries are enforced within; [`ERROR_HANDLING.md`][eh-1] §1
@@ -105,7 +105,7 @@ layering violation even when the code is short and the import resolves.
 
 ### 2c. Why Identity Is Application-Layer
 
-Two consequences follow from the split, and both are the reason it is held:
+These consequences follow from the split, and both are the reason it is held:
 
 - **Composability.** A transport guard is a pure function of the request. It can be unit-tested against a hand-built `Request` with no storage
   binding, no session, and no user fixture. The moment it reads identity, every test of it needs an authenticated world.
@@ -219,7 +219,7 @@ both would make the difference invisible at the call site, which is exactly wher
 A fail-open behaviour is ratifiable, and occasionally correct — a class-name conflict resolver that meets an unrecognised utility has no safe way to
 refuse, and refusing would break every consumer for a token it merely did not know about.
 
-**Three conditions, all required:** the surface is provably outside the security boundary; the open failure degrades presentation and never
+**All of the following are required:** the surface is provably outside the security boundary; the open failure degrades presentation and never
 authorisation; and the exception is written into the owning `docs/` document and listed in [`CODE_REVIEW.md`][cr-6] §6 so a reviewer meets it as a
 known pattern rather than as a finding.
 

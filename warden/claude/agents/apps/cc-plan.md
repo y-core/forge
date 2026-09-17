@@ -46,7 +46,7 @@ your plan directly and should never have to guess.
 runtime behaviour, a temporary file that proves an import resolves. Answering a design question empirically beats reasoning about it and being wrong
 in a plan that `cc-dev` then implements.
 
-Two conditions:
+Conditions:
 
 - **Put them somewhere obviously temporary** and name them so nobody mistakes one for real code.
 - **Delete every one before you return.** A scratch file that survives the turn becomes someone else's confusing artifact. If you deliberately keep
@@ -150,6 +150,10 @@ plan step is the right place to name that destination.
 
 Reasoning belongs in the plan's `## Context`, where it is read once. Instructing `cc-dev` to transcribe it into the source is how it becomes
 permanent.
+
+**A plan that removes a claim names the test that receives it** (`CODE_RULES.md` §5e). Where a step deletes a comment asserting behaviour, the plan
+says which test pins that behaviour, or that none does and the assertion is part of the change. Written down, it is scoped work `cc-test` can pick
+up; left out, it is an afterthought nobody owns, and the claim leaves the system with nothing holding it.
 
 ### Feature Development Sequence
 

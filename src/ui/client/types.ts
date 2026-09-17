@@ -5,24 +5,11 @@ export interface BindTextOptions {
 }
 
 export interface MountOptions {
-  /** Modules to publish on `window`, keyed by global name. Values are specifiers resolved from
-   * `src/` — e.g. `{ forgeResume: "./ui/client/resume" }`. */
+  /** Modules to publish on `window`, keyed by global name; values are specifiers resolved from `src/`. */
   expose?: Record<string, string>;
-  /**
-   * Stylesheets to load into the page, as paths resolved from `src/`.
-   *
-   * Served raw, with no Tailwind build: name each sheet the spec needs in `forge.css`'s import
-   * order (a relative `@import` will not resolve through `addStyleTag`), and size fixtures by
-   * content or inline `<style>` rather than by a utility class, which resolves to nothing.
-   */
+  /** Stylesheets to load into the page, as paths resolved from `src/`, served raw with no Tailwind build. */
   css?: string[];
-  /**
-   * The origin the fixture is served from, defaulting to {@link ORIGIN}.
-   *
-   * Only a spec needing a *secure* context has cause to change it: `http://forge.test/` is not one,
-   * so Chromium exposes no `PublicKeyCredential` and no `navigator.credentials` there at all. Pass
-   * `SECURE_ORIGIN` for a spec that drives WebAuthn.
-   */
+  /** The origin the fixture is served from. Pass `SECURE_ORIGIN` where Chromium gates an API on a secure context. @default ORIGIN */
   origin?: string;
 }
 
@@ -52,8 +39,7 @@ export interface RovingFocusOptions {
 export interface NavDrawerOptions {
   /** The disclosure to drive — a `<details>`. Takes precedence over {@link NavDrawerOptions.selector}. */
   element?: Element | null;
-  /** Selector for the disclosure, resolved in {@link NavDrawerOptions.within}'s document.
-   *  Ignored when an element is given. */
+  /** Selector for the disclosure, resolved in {@link NavDrawerOptions.within}'s document. */
   selector?: string;
   /** Any node in the document to search. Omit for the top-level page. */
   within?: Node;
@@ -149,8 +135,7 @@ export interface ScrollSpyOptions {
   root: Element;
   /** Selector for the links to spy on. */
   linkSelector?: string;
-  /** `rootMargin` for the observer — the default biases toward the section at the top of the
-   *  viewport rather than the one merely visible. */
+  /** `rootMargin` for the observer; the default biases toward the section at the top of the viewport. */
   rootMargin?: string;
 }
 
@@ -198,8 +183,7 @@ export interface TooltipOptions {
 export interface ViewportCollapseOptions {
   /** The disclosure to drive — a `<details>`. Takes precedence over {@link ViewportCollapseOptions.selector}. */
   element?: Element | null;
-  /** Selector for the disclosure, resolved in {@link ViewportCollapseOptions.within}'s document.
-   *  Ignored when an element is given. */
+  /** Selector for the disclosure, resolved in {@link ViewportCollapseOptions.within}'s document. */
   selector?: string;
   /** Any node in the document to search. Omit for the top-level page. */
   within?: Node;

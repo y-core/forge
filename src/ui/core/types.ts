@@ -74,8 +74,7 @@ export type ForgeIcon<Name extends string> = (props: Omit<IconProps, "symbol" | 
 /** Which corner of the wrapped content an indicator item sits on. @public */
 export type IndicatorPlacement = "top-start" | "top-end" | "bottom-start" | "bottom-end";
 
-/** How a link marks itself as one — always underlined, underlined on hover, or never. Not the
- *  ratified `appearance` axis, which is an emphasis level: this decides text decoration. @public */
+/** How a link marks itself as one — always underlined, underlined on hover, or never. @public */
 export type LinkDecoration = "underline" | "hover" | "plain";
 
 export interface LinkProps extends Omit<JSX.IntrinsicElements["a"], "children"> {
@@ -85,7 +84,7 @@ export interface LinkProps extends Omit<JSX.IntrinsicElements["a"], "children"> 
   children?: JSXNode | undefined;
 }
 
-/** Which of the three bands a measured value reads as. @public */
+/** Which band a measured value reads as. @public */
 export type MeterState = "optimum" | "suboptimum" | "poor";
 
 /** How many digits a one-time code holds. @public */

@@ -132,7 +132,7 @@ describe("callTool()", () => {
     const hits = (limit: unknown): number =>
       (callTool(knowledge, "knowledge_search", { query: "comment budget", limit }).content[0]?.text ?? "").split("\n\n").length;
 
-    // Floored to 1 from below, and from above capped well under the three hits this corpus holds is
+    // Floored to 1 from below, and from above capped well under what this corpus holds is
     // not something to assert — what matters is that neither extreme reaches SQL as given.
     expect(hits(0)).toBe(1);
     expect(hits(-5)).toBe(1);

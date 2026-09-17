@@ -61,7 +61,8 @@ for it and swap the response into the target. Sanitizing here converts a loud re
 indistinguishable at the point of failure from the behaviour the author intended. A guard whose failure mode is silent success is worse than no
 guard, because it also removes the pressure to supply a trustworthy value in the first place.
 
-Two runtime layers sit **underneath** that reason. Neither is the control, and neither would justify the attributes being unsanitized on its own:
+Further runtime layers sit **underneath** that reason. Neither is the control, and neither would justify the attributes being unsanitized on its
+own:
 
 - **htmx dispatches an XHR; it never navigates the value.** A `javascript:` pseudo-URL in an `hx-get` is a string handed to a request builder, not
   an address the script engine evaluates — so the pseudo-URL that makes an `href` dangerous fails to execute here.

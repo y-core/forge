@@ -65,8 +65,8 @@ exactly when the declaration and the migrations already agree, and prints the di
 
 ## 3. Ownership
 
-Ownership decides **which desired file declares which object**, and nothing else — the app composes every file either way. Two declared schemas
-holding one name is refused naming both **by path**; an index or trigger belongs with its table — a view names none — so an app index on
+Ownership decides **which desired file declares which object**, and nothing else — the app composes every file either way. A name held by more than
+one declared schema is refused, naming both **by path**; an index or trigger belongs with its table — a view names none — so an app index on
 `auth_users` is refused naming the file that declares `auth_users`. An app table declaring a name a library's file already declares falls under the
 same rule. There is no prefix rule, and no namespace.
 
@@ -92,7 +92,7 @@ line, on the compose that forgets it.
 
 **A declared name in a reserved space is refused at the door.** `_forge_`, `sqlite_` and `_cf_` are forge's, SQLite's and the platform's — a desired
 file declaring any of them is refused naming the file and the object, rather than composing to nothing because the model never carries it. There is
-no exception for a migrations table any more: forge's history lives under the `_forge_` prefix like everything else it owns
+no exception for a migrations table: forge's history lives under the `_forge_` prefix like everything else it owns
 ([`DATABASE_MANAGEMENT.md`][dm-4] §4).
 
 The same prefix covers the `_forge_new_` tables a rebuild creates (§4), so one left behind by a rebuild that was interrupted mid-migration is
@@ -108,7 +108,7 @@ is one SQLite's `ADD COLUMN` accepts (no `PRIMARY KEY` or `UNIQUE`, no `NOT NULL
 defaulting to `NULL`, no `STORED` generated column), every dropped column is one `DROP COLUMN` accepts (not a key, not indexed — a partial index's
 `WHERE` counts — not a foreign key, not named by a constraint, a generated column, a trigger or a view), and the added columns come after the
 existing ones; and **rebuilt** otherwise, with the reason named in the plan: `column-changed`, `reordered`, `constraints-changed`,
-`options-changed`, `add-column-unsupported`, `drop-column-unsupported`. Two tables are equal when their columns are equal in order by normalized
+`options-changed`, `add-column-unsupported`, `drop-column-unsupported`. Tables are equal when their columns are equal in order by normalized
 clause, their constraint sets are equal and their `STRICT` / `WITHOUT ROWID` options agree — never by whole text, because `ADD COLUMN` splices a
 clause into the stored text in a way a file never writes.
 
@@ -117,7 +117,7 @@ wrong on D1 for a table other tables point at. D1 enforces foreign keys and igno
 every `ON DELETE CASCADE` into its children and deletes their rows, and a child on `NO ACTION` leaves a deferred violation the transaction cannot
 commit through; `defer_foreign_keys` changes neither. Compose therefore rebuilds the closure: the table, every table whose FOREIGN KEY points at it,
 and so on transitively. The replacements are created parents first with each `REFERENCES` re-pointed at the replacement of the table it names, rows
-are copied over the common non-generated columns, the old tables are dropped **children first** — a table nothing references any more drops without
+are copied over the common non-generated columns, the old tables are dropped **children first** — a table nothing still references drops without
 firing anything — and the replacements are renamed into place parents first, at which point SQLite rewrites every re-pointed `REFERENCES` back to
 the real name. Views and triggers are dropped before a rebuild and recreated after it, because the rename into place fails while one names a table
 that is momentarily gone. A closure that reaches from a library's table into an app table pointing at it is the ordinary case, not a refusal: the
@@ -216,7 +216,7 @@ backfill, a step compose cannot express (`DATABASE_MANAGEMENT.md` §7a). Its DDL
 `schema.sql`; a file carrying neither stamp is read as custom too, and warns the same way. There is no verb that writes an empty migration.
 
 Compose runs entirely in `.forge/scratch/compose/`, from a copy of the run's config forced to `local`, so `--target remote` can never aim it at
-Cloudflare. Every wrangler spawn costs about a second, so a side is two of them — the load, and the five introspection reads batched into one
+Cloudflare. Every wrangler spawn costs about a second, so a side is two of them — the load, and the introspection reads batched into one
 `--command` — and the **model** is cached, never the database, under `<side>/cache/<key>/model.json`, keyed on the model version, the wrangler
 version and a digest of that side's inputs. A hit is zero spawns, one model is kept per side, the proof's own replay is cached as the next baseline,
 and `--no-cache` replays regardless. A cold compose is under ten seconds; a warm `--check --replay` is under two. A baseline whose migrations do not

@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { CSRF_FIELD_DEFAULT } from "../../form/constants";
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf } from "./core.fixture";
 import { Form } from "./form";
-import { attrOf, attrsOf, classesOf } from "./test-support";
 
 const CSRF_FIELD = 'data-slot="form-csrf"';
 

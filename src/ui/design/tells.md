@@ -114,9 +114,9 @@ generator, so every level of nesting in the data becomes a level of elevation in
 
 ### 2b. A Row of Exactly Three Equal Cards
 
-Three features, three tiers, three benefits — always three, always the same width, always the same internal composition. It reads as generated
-because three is what a grid defaults to when nothing in the content asked for a count. Default: the number of cards in a row comes from the data,
-and a row whose count was chosen rather than counted is rebuilt as a list — `Separator`-divided rows in one `Card.Content`, per
+A row of three features, three tiers, three benefits — always three, always the same width, always the same internal composition. It reads as
+generated because three is what a grid defaults to when nothing in the content asked for a count. Default: the number of cards in a row comes from
+the data, and a row whose count was chosen rather than counted is rebuilt as a list — `Separator`-divided rows in one `Card.Content`, per
 `forge-ui-density-separator-over-card`. <!-- rule:forge-ui-tell-three-card-row --> Override when the surface genuinely has three peer objects, which
 a reader can verify against the source of the data.
 
@@ -131,7 +131,7 @@ heading cannot carry — a `Badge` `outline` is usually the better form of that 
 ### 2d. Numbered Sections
 
 `01`, `02`, `03` set large and faint beside each heading. It reads as generated because the numbers assert a sequence the content does not have:
-three independent features are not steps, and numbering them tells the reader to read in an order that does not matter. Default: sections are
+independent features are not steps, and numbering them tells the reader to read in an order that does not matter. Default: sections are
 unnumbered unless the reader must follow them in order, in which case the order is real and the numbers are content rather than decoration.
 <!-- rule:forge-ui-tell-numbered-sections --> Override for a genuine procedure — an onboarding sequence, a setup guide — where a step number is what
 the reader refers to.

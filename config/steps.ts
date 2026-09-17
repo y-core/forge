@@ -7,18 +7,19 @@ import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
   browserStep,
+  buildTimeBoundaryStep,
   chromiumBundleStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
   coLocationStep,
+  commentBudgetStep,
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
+  dbSchemaStep,
   designScaleStep,
   devBoundaryStep,
-  FORGE_STATE_RECIPES,
-  type ExportsMap,
   exportsStep,
   formatStep,
   jsxStep,
@@ -27,19 +28,20 @@ import {
   markdownStep,
   modernCssStep,
   namespaceGraphStep,
-  type Step,
-  buildTimeBoundaryStep,
-  dbSchemaStep,
+  packagingStep,
   ssrBoundaryStep,
   testStep,
   typeAwareLintStep,
-  workerdStep,
   typecheckStep,
-} from "../src/tooling/gate/mod";
+  workerdStep,
+} from "../src/tooling/gate/builders";
+import { FORGE_STATE_RECIPES } from "../src/tooling/gate/checks/class-groups";
+import type { ExportsMap } from "../src/tooling/gate/checks/types";
+import type { Step } from "../src/tooling/gate/types";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
-import { changelogStep, designStep, docsStep, duplicatesStep, readmeExportsStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
-import { BROWSER_ONLY, CN_FIXTURE_SPECS, CO_LOCATION_EXEMPT, DESIGN_CORPUS_EXCLUDED, SEALED_INTERNAL } from "./exemptions";
+import { changelogStep, designStep, docsStep, duplicatesStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
+import { BROWSER_ONLY, CN_FIXTURE_SPECS, CO_LOCATION_EXEMPT, DESIGN_CORPUS_EXCLUDED, LICENCE_HEADERS, SEALED_INTERNAL } from "./exemptions";
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
@@ -91,6 +93,8 @@ export const STEPS: readonly Step[] = [
   ),
   jsxStep({ root: ROOT }, { tier: "standard" }),
   coLocationStep({ root: ROOT, sources: ["src", "warden"], exempt: CO_LOCATION_EXEMPT }, { tier: "standard" }),
+  commentBudgetStep({ root: ROOT, sources: ["src", "config", "warden/src"], licences: LICENCE_HEADERS }, { tier: "standard" }),
+  packagingStep({ root: ROOT, sources: ["src"], files: pkg.files, exports: EXPORTS, entries: Object.values(pkg.bin) }, { tier: "standard" }),
   ssrBoundaryStep(
     { root: ROOT, clientDirs: ["src/ui/client", "src/auth/client"], sources: ["src/ui", "src/auth"], entryPoints: ["client.ts"] },
     { tier: "standard" },
@@ -130,10 +134,6 @@ export const STEPS: readonly Step[] = [
       ],
       listedOnlySubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime"],
     },
-    { tier: "standard" },
-  ),
-  readmeExportsStep(
-    { root: ROOT, exempt: ["./auth/client", "./ui/core/client", "./ui/client/htmx", "./ui/chrome/client", "./ui/show/client"] },
     { tier: "standard" },
   ),
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { tier: "full" }),

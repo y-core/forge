@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
-import { FakeEvent, fakeTree } from "../../ui/client/test-dom";
-import type { FakeElement, FakeWindow } from "../../ui/client/test-dom";
+import { FakeEvent, fakeTree } from "../../ui/client/dom.fixture";
+import type { FakeElement, FakeWindow } from "../../ui/client/dom.fixture";
 import {
   PASSKEY,
   PASSKEY_CSRF_HEADER_ATTR,

@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 import { RadioGroup } from "./radio-group";
-import { attrOf, attrsOf, variantClasses } from "./test-support";
 
 const INPUT = 'data-slot="radio-group-input"';
 const DESCRIPTION = 'data-slot="field-description"';

@@ -12,8 +12,8 @@ audience: internal
 > It governs the showcase's _contract_, not its content. No component behaviour is decided here.
 >
 > Defers to: `src/ui/README.md` for the routes, options, loaders and worked usage; [`THEME_GENERATION.md`][tg] for the theme page's dial model and
-> audit readouts; [`UI_DESIGN_GUIDANCE.md`][udg] for the design corpus and the gate that holds forge's own markup to it; `src/ui/show/coverage.ts`
-> and `src/ui/show/coverage-missing.ts` for the manifest and the gap list themselves.
+> audit readouts; [`UI_DESIGN_GUIDANCE.md`][udg] for the design corpus and the gate that holds forge's own markup to it;
+> `src/ui/show/coverage.fixture.ts` and `src/ui/show/coverage-missing.fixture.ts` for the manifest and the gap list themselves.
 
 ---
 
@@ -21,10 +21,10 @@ audience: internal
 
 - §1 What the Showcase Is: a published surface rather than an example app, why the consumer app is its only host, and what follows from that
 - §1a Registration Supplies the App's Shell: forge renders the body, the app renders everything around it
-- §1b Routes Are Derived From One Base Path: the path table, the six pages cut by consumer prerequisite, and the theme page's separate owner
+- §1b Routes Are Derived From One Base Path: the path table, the catalog pages cut by consumer prerequisite, and the theme page's separate owner
 - §1c The Catalog Declaration: what the section list owns, the page it names, and why it is not barrelled
 - §1d The Turnstile Page Demonstrates Forge's Own Surface: why it has its own page, the preset-only sitekey, and the one rule it deliberately breaks
-- §1e Every Band Is Built From One Grammar: the six band primitives, why a note owns its row, and why a page is all cards or none
+- §1e Every Band Is Built From One Grammar: the band primitives, why a note owns its row, and why a page is all cards or none
 - §2 Coverage Contract: the anti-drift rule that keeps the catalog honest
 - §2a The Demo Manifest: one entry per published component, and the axes a demo owes
 - §2b Coverage Is Read From Rendered Markup: why the check renders the catalog rather than reading source
@@ -41,7 +41,7 @@ component into their app and gets it back with their layout, their icons and the
 registration entry point and nothing else, because a route helper is the only thing an app needs to mount it — and the browser half is the
 side-effect import `@y-core/forge/ui/show/client`, which registers every scope the demos bind and therefore exports no symbol an app may call.
 
-Two consequences are real costs, and both are accepted deliberately:
+These consequences are real costs, and both are accepted deliberately:
 
 - **Its markup is demo markup that ships to every consumer.** The utility classes it uses are therefore opt-in: an app that mounts the showcase adds
   one line to its stylesheet so those classes compile, exactly as it does for the log viewer. `config/steps.ts` owns that line, and the CSS
@@ -49,9 +49,9 @@ Two consequences are real costs, and both are accepted deliberately:
 - **It is forge's most-read worked example**, which is why §3 refuses it any exemption from the rules it demonstrates.
 
 **Forge publishes the showcase and does not host it.** The canonical host is the consumer app — `/src/starter` mounts it — and in-repo verification
-is `render()` over the component plus Playwright over the rendered string. An in-repo dev worker was rejected: it adds a machine prerequisite to the
-gate for a surface no forge code imports. A Playwright `webServer` harness was rejected too: it makes the demos viewable in CI without any consumer
-ever having mounted them, which is the one thing dogfooding is for.
+is `render()` over the component plus Playwright over the rendered string. Forge runs no in-repo dev worker for it — that adds a machine
+prerequisite to the gate for a surface no forge code imports — and no Playwright `webServer` harness, which would make the demos viewable in CI
+without any consumer having mounted them, the one thing dogfooding is for.
 
 ### 1a. Registration Supplies the App's Shell
 
@@ -70,7 +70,7 @@ type-check rather than rendering a blank square.
 **Every showcase URL derives from a single base path, and one path table is the only place a path is written.** The page, the fragment endpoints and
 the markup that targets them all read that table, so a relocated showcase moves as a unit and no HTMX target can point at a path that moved.
 
-There are seven pages — five catalog pages, the Turnstile page (§1d) and the theme customiser — and the rest are HTMX endpoints demonstrating the
+The pages are the catalog pages, the Turnstile page (§1d) and the theme customiser; every other path is an HTMX endpoint demonstrating the
 patterns in [`HTMX.md`][htmx]. **The catalog is cut by consumer prerequisite, not by taxonomy**: the page a section lands on is what a reader must
 install for it to work, from a page that needs nothing through to one that needs a client import, an endpoint set or a configuration object. Sorting
 by component family would have grouped things a reader already knows how to group; what they cannot see from the markup is the wiring. The theme
@@ -108,7 +108,7 @@ rather than claiming a verification that never happened.
 
 **A demo composes the band primitives in `components.tsx`; it does not spell a band's layout in utilities of its own.** The showcase is forge's
 most-read worked example, so a page whose bands each invent their own heading weight, note size and column widths is a demonstration of the opposite
-of what the design corpus asks for. Six pieces, and a demo needs no seventh:
+of what the design corpus asks for. These are the pieces, and a demo needs no other:
 
 | Piece | The band it makes |
 | --- | --- |
@@ -119,7 +119,7 @@ of what the design corpus asks for. Six pieces, and a demo needs no seventh:
 | `CatalogNote` | a band's own line of prose |
 | `CatalogGroup` | a titled column inside a band, for a demo read as two things side by side |
 
-Two rules the primitives exist to hold:
+The rules the primitives exist to hold:
 
 - **A note takes the band's width, and no line-length cap.** A band is a flex row, and a flex item is measured at its own clamp — so a note written
   `w-full max-w-prose` is measured at the prose cap, and the next specimen lands beside the sentence rather than under it. The cap is wrong on its

@@ -1,282 +1,160 @@
 ---
 title: Declarative Route Configuration
-description: "Routes as plain data, bound to handlers by a structurally-checked controller — the same map powers type-safe URL generation and introspection."
+description: "Declaring routes as data, binding them to handlers, generating URLs from the same map, and wiring middleware onto the paths it declares."
 audience: consumer
 ---
 
 # `@y-core/forge/router`
 
-Declarative, type-safe route configuration for forge apps. Routes are plain **data** — a map of names to `{ method, pattern }` definitions — bound
-to handlers by a structurally-checked controller and registered on the app in one call. The same route map powers type-safe URL generation and
-route-table introspection.
+Routes in a forge app are **data**: a map of names to `{ method, pattern }` pairs, written once and bound to handlers separately. That one map is
+what dispatch, URL generation, and middleware wiring all read, so a path exists in exactly one place.
 
-This namespace is a **curated re-export** of the `@remix-run/fetch-router` routing engine and the `@remix-run/route-pattern` URL helpers, plus one
-forge-specific addition (`routePaths`). The re-exported surface is documented in brief here; for deep reference on the underlying engine, see the
-[`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) and [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern)
-packages.
+The namespace is a curated re-export of the [`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) engine and the
+[`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) URL helpers, plus forge's own `routePaths` and `forMethod`. Pattern syntax
+and the resource helpers are upstream's to document; this file covers the shape forge expects you to use.
 
 ```ts
-import { route, createController, get, post } from "@y-core/forge/router";
+import { createController, get, post, route, routePaths } from "@y-core/forge/router";
 ```
 
 ---
 
-## Features
+## Getting started
 
-- **Routes as data.** Declare every route once with `route({ … })`. The resulting map is the single source of truth for dispatch, URL generation,
-  and introspection.
-- **Structural controller binding.** `createController(routes, { actions })` checks that every route name has exactly one handler — a missing or
-  misspelled action is a **compile error**, not a runtime 404.
-- **Type-safe URLs.** `routes.name.href(params)` and `createHref(pattern, params)` derive URL strings from the pattern type. Required params that
-  you forget are compile errors; bad params throw at runtime.
-- **Verb shorthands.** `get`, `post`, `put`, `patch`, `del`, `options` build typed `Route` objects without spelling out `{ method, pattern }`.
-- **Route-table introspection.** `routePaths(routes, filter?)` flattens a route map into its path strings — useful for navigation menus, sitemaps,
-  or wiring per-path middleware.
-- **Per-route and per-controller middleware.** Each action can carry a `middleware` array; the controller can carry one shared array that runs
-  before every action.
-
----
-
-## Usage
-
-### Declare routes, bind handlers, register
-
-The canonical three-step flow: describe routes, bind them to handlers, map them onto the app (`Forge` from [`@y-core/forge/app`][app-readme]).
+Describe the routes, bind each name to a handler, then register the pair on the app.
 
 ```ts
-import { route, createController, get, post } from "@y-core/forge/router";
+import { createController, get, post, route } from "@y-core/forge/router";
 
-// 1. Describe the routes as data — the single source of truth.
 const routes = route({
   home: get("/"),
   save: post("/api/save"),
-  load: get("/api/load"),
-  settingsPut: post("/api/settings"),
   logs: get("/admin/logs"),
 });
 
-// 2. Bind each route name to a handler — bare, or `{ middleware, handler }`.
 const controller = createController(routes, {
+  middleware: [requestLogger], // every action in this controller
   actions: {
-    home: homeController,
-    save: { middleware: [csrfGuard, originGuard], handler: saveController },
-    load: loadController,
-    settingsPut: settingsPutController,
-    logs: { middleware: [adminAuth], handler: logsController },
+    home: homeHandler, // a bare handler
+    save: { middleware: [csrfGuard, originGuard], handler: saveHandler }, // guards for this route only
+    logs: { middleware: [adminAuth], handler: logsHandler },
   },
 });
 
-// 3. Register on the app (`app` is a `Forge` instance from `@y-core/forge/app`).
-app.map(routes, controller);
+app.map(routes, controller); // `app` is a `Forge` from `@y-core/forge/app`
 ```
 
-Every route leaf in `routes` must have a matching entry in `actions`, and vice-versa. The mapping is checked structurally, so a missing, extra, or
-misspelled handler fails type-checking.
+The binding is checked structurally: every route name needs exactly one action and every action needs a route, so a misspelled or forgotten handler
+is a type error rather than a 404 you find in production. At dispatch the order is controller middleware, then action middleware, then the handler.
+Register global middleware before `app.map`, or it will not wrap these routes — that rule and the rest of the registration contract are
+[`ROUTING_AND_MIDDLEWARE.md`][ram-1c] §1c's.
 
-### Two ways to declare a route
-
-A route definition is either a **verb helper** or an object literal. Both produce the same `Route`. A bare string or `RoutePattern` is also accepted
-and defaults to method `ANY`.
+A route definition can be any of four things, all producing the same `Route`:
 
 ```ts
-import { route, get, post, Route } from "@y-core/forge/router";
-
 const routes = route({
-  home: get("/"), // verb helper
+  home: get("/"), // verb helper: get, post, put, patch, del, options
   save: { method: "POST", pattern: "/api/save" }, // object literal
-  any: new Route("ANY", "/health"), // explicit Route
-  catchAll: "/legacy/*path", // bare string → method ANY
+  health: new Route("ANY", "/health"), // explicit Route
+  legacy: "/legacy/*path", // bare pattern — method ANY
 });
 ```
 
-### Nesting and base patterns
-
-`route()` accepts nested maps, and an optional **base pattern** as the first argument that is joined onto every contained pattern.
-
-```ts
-const routes = route({ home: get("/"), api: route({ save: post("/api/save"), load: get("/api/load") }) });
-
-// Base pattern joined onto each child:
-const admin = route("/admin", {
-  logs: get("/logs"), // → "/admin/logs"
-  users: get("/users"), // → "/admin/users"
-});
-```
-
-Nested route names are addressed by path: `routes.api.save.href()`.
-
-### Generate URLs
-
-Build URLs from the route, never by string concatenation. The pattern's params are part of its type, so the call is checked.
-
-```ts
-const routes = route({ user: get("/users/:id"), save: post("/api/save") });
-
-routes.save.href(); // "/api/save"
-routes.user.href({ id: "42" }); // "/users/42"
-routes.user.href({ id: "42" }, { tab: "x" }); // "/users/42?tab=x"
-```
-
-For a raw pattern string (not part of a route map), use `createHref` directly:
-
-```ts
-import { createHref } from "@y-core/forge/router";
-
-createHref("/users/:id", { id: "42" }); // "/users/42"
-```
-
-### Introspect the route table
-
-`routePaths` flattens a route map into its declared path strings, optionally filtered by method. It recurses into nested maps and preserves
-declaration order.
-
-The filter answers **"which paths serve this method?"**, not "which paths were declared with this method". A route declared `ANY` is dispatched for
-every method, so it appears under any concrete method filter. `{ method: "ANY" }` is the one exception — it is not a wildcard, and selects only the
-routes declared `ANY`.
-
-```ts
-import { routePaths } from "@y-core/forge/router";
-
-const routes = route({ home: get("/"), save: post("/api/save"), importDoc: post("/api/import"), health: new Route("ANY", "/health") });
-
-routePaths(routes); // ["/", "/api/save", "/api/import", "/health"]
-routePaths(routes, { method: "POST" }); // ["/api/save", "/api/import", "/health"]
-routePaths(routes, { method: "GET" }); // ["/", "/health"]
-routePaths(routes, { method: "ANY" }); // ["/health"]
-```
-
-A method filter that matches nothing in a route map that does contain routes **throws**. The result is nearly always fed to a middleware loop, and
-an empty path list would attach that middleware to nothing — a silent hole rather than a visible error. An unfiltered call never throws, and neither
-does a route map with no routes at all.
+For a handler living in its own file, `createAction(routes.save, handler)` types it against its route so `context.params` is inferred. It returns
+the handler untouched. For whole RESTful maps, upstream's `resource`, `resources` and `form` helpers are re-exported here too.
 
 ---
 
-## Core Components & APIs
+## Grouping routes under a shared prefix
 
-### Route authoring
-
-| Symbol | Signature | Description |
-| --- | --- | --- |
-| `route` | `route(defs)` / `route(base, defs)` | Build a typed `RouteMap` from a `RouteDefs` object. With a `base` pattern, joins it onto every child. Alias of `createRoutes`. |
-| `get` `post` `put` `patch` `del` `options` | `(pattern) => Route` | Verb shorthands. Each returns a `Route` typed to that method and pattern (`del` ⇒ `DELETE`). No `head`: `Forge.fetch` serves `HEAD` through the `GET` route, so a `HEAD` route could never match. |
-| `Route` | `new Route(method, pattern)` | A single route definition: `.method`, `.pattern` (parsed AST), and `.href(...args)`. |
-| `resource` | `resource(name, options?)` | Build the route map for a **singular** RESTful resource. See upstream docs. |
-| `resources` | `resources(name, options?)` | Build the route map for a **collection** RESTful resource. See upstream docs. |
-| `form` | `form(pattern, options?)` | Build a GET + POST pair for a form endpoint. See upstream docs. |
-
-`route()` definitions (`RouteDef`) accept three shapes: a bare pattern string, a `RoutePattern`, or `{ method?, pattern }` (method defaults to `ANY`
-when omitted).
-
-### Controllers and actions
-
-| Symbol | Signature | Description |
-| --- | --- | --- |
-| `createController` | `createController(routes, controller)` | Bind route names to actions. `controller` is `{ actions, middleware? }`. Action keys are structurally checked against `routes`. |
-| `createAction` | `createAction(route, action)` | Type a single action against its route so `context.params` is inferred. Returns the action unchanged. |
-| `Action` | _type_ | A handler `(context) => Response \| Promise<Response>`, or `{ middleware?, handler }`. |
-| `Controller` | _type_ | `{ actions, middleware? }` mapping a `RouteMap`'s leaves to actions. |
-| `RequestHandler` | _type_ | `(context) => Response \| Promise<Response>`. |
-
-An action is either a bare handler or an object with per-action middleware:
+`route()` nests, and an optional first argument is a base pattern joined onto every pattern inside.
 
 ```ts
-const controller = createController(routes, {
-  middleware: [requestLogger], // runs before every action in this controller
-  actions: {
-    home: homeController, // bare handler
-    save: { middleware: [csrfGuard], handler: saveAction }, // per-action middleware
-  },
+const routes = route({
+  home: get("/"),
+  admin: route("/admin", {
+    logs: get("/logs"), // → /admin/logs
+    users: get("/users"), // → /admin/users
+  }),
 });
+
+routes.admin.logs.href(); // "/admin/logs"
 ```
 
-Middleware order at dispatch: controller middleware → action middleware → handler.
+A nested name is addressed by its path through the map, which is also how the controller's `actions` object is shaped. Prefer a base pattern to
+repeating the prefix in each child: renaming the mount point then touches one line, and every `href` and `routePaths` result follows.
 
-### Middleware and context
+---
 
-| Symbol | Signature | Description |
-| --- | --- | --- |
-| `createMiddleware` | `createMiddleware(...middleware)` | Preserve a middleware chain's exact tuple type when stored in a variable. Prefer plain inline arrays elsewhere. |
-| `createContextKey` | `createContextKey()` | Mint a typed key for storing per-request values on the context. |
-| `RequestContext` | _class_ | The base context object passed to every handler and middleware. forge extends it at runtime with the Workers `env`/`executionCtx` — see [`@y-core/forge/context`][context-readme]. |
-| `Middleware` `MiddlewareContext` | _types_ | The middleware function type and the context it produces. |
+## Building a URL for a route
 
-### Type-safe URL generation
-
-| Symbol | Signature | Description |
-| --- | --- | --- |
-| `createHref` | `createHref(pattern, params?, searchParams?)` | Build a URL string from a raw pattern. `params` is required when the pattern has required params. Throws `CreateHrefError` on missing/invalid params or a hostname-only pattern. |
-| `CreateHrefError` | _class_ | Thrown by `createHref` / `Route.href` when args don't satisfy the pattern. Carries a `details` discriminant (`missing-params`, `missing-hostname`, `nameless-wildcard`, …). |
-| `joinPatterns` | `joinPatterns(a, b)` | Join two route-pattern segments into one normalized pattern (the same join `route(base, defs)` applies). |
-| `CreateHrefArgs` `JoinPatterns` | _types_ | The argument tuple for a pattern, and the joined-pattern type. |
-
-### Route-table introspection (forge-specific)
-
-The only addition forge layers over the upstream engine.
-
-| Symbol | Signature | Description |
-| --- | --- | --- |
-| `routePaths` | `routePaths(routeMap, filter?)` | Collect every `Route`'s path string from a `RouteMap`, in declaration order, recursing into nested maps. Throws when a method filter matches nothing in a map that does contain routes. |
-| `RouteFilter` | `{ method?: RequestMethod \| "ANY" }` | Restrict `routePaths` to routes that serve the method — routes declared `ANY` serve every method and are always included. `"ANY"` selects only routes declared `ANY`. Omit `method` to match all. |
-| `forMethod` | `forMethod(method, middleware)` | Wrap `middleware` so it runs only for the given `RequestMethod` (or array of them) and calls `next()` otherwise. |
-
-**`app.use` is path-scoped only** — dispatch never consults the method — so a filtered `routePaths` list selects _paths_, not method-and-path pairs.
-Pair the two:
+Never concatenate a path. The pattern's params are part of its type, so a forgotten required param is a compile error and a wrong one throws.
 
 ```ts
-// Wire per-path middleware onto only the mutating endpoints.
+const routes = route({ user: get("/users/:id"), search: get("/search") });
+
+routes.user.href({ id: "42" }); // "/users/42"
+routes.search.href(undefined, { q: "a b&c" }); // "/search?q=a+b%26c" — search values are encoded
+```
+
+For a pattern that is not part of a route map, `createHref(pattern, params?, searchParams?)` does the same job standalone, and `joinPatterns(a, b)`
+performs exactly the join `route(base, defs)` applies — useful when you are computing a mount point rather than declaring one.
+
+---
+
+## Listing the paths a route map declares
+
+`routePaths(routes, filter?)` flattens the map into its declared path strings, recursing into nested maps and preserving declaration order. It is
+how you drive a navigation menu, a sitemap, or a middleware loop from the routes themselves instead of a second hand-written list.
+
+```ts
+import { forMethod, routePaths } from "@y-core/forge/router";
+
+routePaths(routes); // every declared path, in order
+routePaths(routes, { method: "POST" }); // paths that serve POST
+
 for (const path of routePaths(routes, { method: "POST" })) {
   app.use(path, forMethod("POST", csrfGuard));
 }
 ```
 
-Without the wrapper the guard applies to every method those paths serve. A route declared `ANY` — `health: new Route("ANY", "/health")` — is
-included under a concrete method filter by design, so the unwrapped loop above guarded `/health` on GET. The same overlap always existed for a path
-declared both `get("/x")` and `post("/x")`; the `ANY` inclusion only made it reachable through this documented example.
+**The filter answers "which paths serve this method?", not "which were declared with it".** A route declared `ANY` serves every method, so it shows
+up under any concrete filter; `{ method: "ANY" }` is the one exception and selects only the routes declared `ANY`.
 
-`forMethod` reads `context.method`, so a `methodOverride` is honoured — the value dispatch itself matches on. Forge rewrites `HEAD` to `GET` before
-routing, so `forMethod("GET", …)` also covers `HEAD`.
-
-### Lower-level router engine
-
-Most apps never touch these — `createApp` from [`@y-core/forge/app`][app-readme] builds and owns the router for you.
-
-| Symbol | Signature | Description |
-| --- | --- | --- |
-| `createRouter` | `createRouter(options?)` | Construct a bare `Router`. Used internally by `createApp`; reach for it only when you need a router outside the forge app lifecycle. |
-| `RouterOptions` `RouterTypes` | _types_ | Router construction options and the router's context/type configuration. |
-| `RouteEntry` `MatchData` | _types_ | The normalized entry stored in the matcher (`pattern`, `handler`, `method`, `middleware`). |
-
-`RouterOptions` accepts `defaultHandler` (the no-match fallback, default `404`), a `matcher`, and router-wide `middleware`.
+**`app.use` matches on path alone** — dispatch never consults the method — so a filtered list selects paths, not method-and-path pairs. `forMethod`
+is what closes the gap: it wraps a middleware so it runs for the given method (or array of them) and calls `next()` otherwise. Without it, the loop
+above would guard every method those paths serve, `/health` on GET included. `forMethod` reads `context.method`, the same value dispatch matched on,
+so a method override is honoured, and `forMethod("GET", …)` also covers `HEAD`.
 
 ---
 
-## Type reference
+## Gotchas
 
-Re-exported types, grouped by concern:
+**There is no `head` verb, on purpose.** Forge rewrites a `HEAD` request into a derived `GET` before dispatch, so a route declared `head(...)` could
+never match ([`ROUTING_AND_MIDDLEWARE.md`][ram-1d] §1d). A `HEAD` branch inside a middleware is still correct.
 
-| Concern | Types |
-| --- | --- |
-| Route maps | `RouteMap`, `RouteDef`, `RouteDefs`, `BuildRoute`, `RequestMethod` |
-| Resource helpers | `ResourceMethod`, `ResourceOptions`, `ResourcesMethod`, `ResourcesOptions`, `FormOptions` |
-| Controllers / actions | `Action`, `Controller`, `RequestHandler`, `Middleware`, `MiddlewareContext` |
-| URL generation | `CreateHrefArgs`, `JoinPatterns` |
-| Router engine | `RouterOptions`, `RouterTypes`, `RouteEntry`, `MatchData` |
-| Introspection | `RouteFilter` |
+**A method filter that matches nothing throws.** The result of `routePaths` is nearly always fed to a middleware loop, and an empty list would
+attach that middleware to nothing — a silent hole is worse than an error naming the method. An unfiltered call never throws, and neither does a
+route map with no routes in it.
+
+**`href` and `createHref` throw `CreateHrefError`, not a `Result`.** Its `details` carries a discriminant (`missing-params`, `missing-hostname`,
+`nameless-wildcard`, …) for a caller that wants to branch. A missing _required_ param is caught at compile time; this is the runtime backstop for
+values that were not statically known.
+
+**`createRouter` is here but is rarely yours to call.** `createApp` from [`src/app/README.md`][app-readme] builds and owns the router, including its
+`defaultHandler` and matcher. Reach for the bare constructor only outside the forge app lifecycle.
 
 ---
 
 ## See also
 
-- [`@y-core/forge/app`][app-readme] — `createApp`, `definePage`, `defineAction`, and `app.map(routes, controller)`, which consume the route maps
-  built here.
-- [`@y-core/forge/context`][context-readme] — the `AppContext` extensions to `RequestContext`.
-- [`ROUTING_AND_MIDDLEWARE.md`][ram] — the declarative route-map and controller rulings (§1a, §1b), the `app.map` registration order (§1c), the
-  no-`head`-verb ruling (§1d), and middleware ordering (§3).
-- [`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) — upstream engine reference for `createRouter`, controllers, middleware,
-  and the `resource`/`resources`/`form` helpers.
-- [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) — upstream reference for pattern syntax, `createHref`, and
-  `joinPatterns`.
+- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the governing doctrine: routes as a map (§1a), controllers (§1b), registration order (§1c), the absent
+  `head` verb (§1d), and middleware composition (§3)
+- [`src/app/README.md`][app-readme] — `createApp`, `app.map`, and the `definePage` / `defineAction` builders that fill a controller's actions
+- [`src/context/README.md`][context-readme] — what a handler reads off the context these routes dispatch to
 
 [app-readme]: ../app/README.md
 [context-readme]: ../context/README.md
 [ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
+[ram-1c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1c-registering-routes-with-appmap
+[ram-1d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1d-no-head-verb-export

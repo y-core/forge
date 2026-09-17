@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { classExpressionVisitor, classLiteralVisitor } from "./ast.ts";
-import { attribute, call, declaration, declarator, element, identifier, literal, other, property, template, traverse } from "./test-support.ts";
+import { attribute, call, declaration, declarator, element, identifier, literal, other, property, template, traverse } from "./lint.fixture.ts";
 import type { ClassText } from "./types.ts";
 import type { AstNode } from "./types.ts";
 

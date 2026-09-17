@@ -1,7 +1,7 @@
 import { splitList } from "../cli/parse";
 import type { CheckStep, GateMode, Selection, Step } from "./types";
 
-/** The three tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
+/** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
 export const GATE_MODES = ["fast", "standard", "full"] as const;
 
 /** Narrows a step to the in-process variant. @public */

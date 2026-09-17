@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { FakeEvent, fakeTree } from "./dom.fixture";
+import type { FakeElement } from "./dom.fixture";
 import { mountInputFormat } from "./input-format";
-import { FakeEvent, fakeTree } from "./test-dom";
-import type { FakeElement } from "./test-dom";
 
 const CARD = "#### #### #### ####";
 

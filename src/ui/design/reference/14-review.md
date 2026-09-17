@@ -49,8 +49,8 @@ was observed in, unless the surface ships in one theme only. <!-- rule:forge-ui-
 
 ## 2. Part 2 — severity
 
-Two reviewers should assign the same severity to the same finding. That is the only test this scale has to pass, so the boundaries are drawn where
-they are checkable rather than where they feel right.
+Any reviewer should assign the same severity to the same finding as any other. That is the only test this scale has to pass, so the boundaries are
+drawn where they are checkable rather than where they feel right.
 
 | Severity | Definition | Examples |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ from reading markup alone, unless the surface renders no interactive element at 
 
 ## 4. Part 4 — the report
 
-One finding per line. Five fields, in this order, with no prose paragraph around them:
+One finding per line, in this order, with no prose paragraph around it:
 
 ```text
 P0  forge-ui-focus-ring        src/routes/settings.tsx:84   Close button sets `outline-none` with no replacement ring — focus is invisible when tabbing.   Add `focus-visible:ring-2 focus-visible:ring-ring`.

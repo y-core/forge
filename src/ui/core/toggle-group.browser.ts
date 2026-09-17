@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, escapeClass, mount } from "../client/browser-test-helper";
+import { classesOf, escapeClass, mount } from "../client/browser.fixture";
 import { ToggleGroup } from "../controls/toggle-group";
 import { Resumable } from "../server/resumable";
 

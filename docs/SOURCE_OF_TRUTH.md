@@ -27,7 +27,7 @@ audience: internal
 - §2c Cloudflare Reconciliation: the files that decide what `forge cf sync` creates and writes
 - §2d UI Contracts and Data Tables: the files prose may not re-enumerate
 - §2e On-Disk Database Formats: the format versions and the shapes they number
-- §2f The Prose Rows: the rulings whose home is a document, and the five READMEs that own their own
+- §2f The Prose Rows: the rulings whose home is a document, and the READMEs that own their own
 - §3 Rows That Name More Than One File: policy split from matchers
 - §3a The Barrel Row: exports and barrel-parse
 - §3b The Namespace-Graph Rows: data, policy, and parser
@@ -134,7 +134,9 @@ restates a naming rule or a handler's plan.
 | Audited contrast pairs and the criterion binding each | `src/ui/contracts/theme/contrast-pairs.ts` |
 | Accepted contrast exemptions, their pinned values and reasons | `src/ui/contracts/theme/contrast-accepted.ts` |
 | Theme dial fields, parameters, ranges, units and fallbacks | `src/ui/contracts/theme/theme-contract.ts` |
-| The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.ts` + `src/ui/show/coverage-missing.ts` |
+| The dialled shape properties and the values they take | `SHAPE_PROPERTIES` and `shapeVars` in `src/ui/contracts/theme/theme-contract.ts` |
+| The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.fixture.ts` + `src/ui/show/coverage-missing.fixture.ts` |
+| The glyph names the auth views draw, which a consumer's sprite must cover | `AuthIconName` in `src/auth/web/types.ts` |
 
 ### 2e. On-Disk Database Formats
 
@@ -156,20 +158,21 @@ separates the two, and a ruling has a single home for the same reason a table do
 | Owns | File |
 | --- | --- |
 | What a source comment may contain, and where displaced rationale goes | [`CODE_RULES.md`][cr-5] §5 |
+| What a README is for, and what it is not for | [`AGENT_GUIDE.md`][ag-6c] §6c |
 | The `config` namespace's rulings — the store, resolution order, and what a consumer may read | `src/config/README.md` |
 | The `session` namespace's rulings — cookie construction, signing, and the middleware's contract | `src/session/README.md` |
 | The `site` namespace's rulings — what a site descriptor carries and what reads it | `src/site/README.md` |
 | The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
 
-**Five READMEs own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was five new governing documents
-whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to prevent, and
-writing one on purpose is worse than tolerating the asymmetry. So for these five namespaces the README **is** the governing prose: cite it as the
-owner, and do not restate its rulings in a `docs/` document. Every other namespace's README stays what §4's check assumes — API reference, deferring
-its rulings to the `docs/` document that owns them.
+**The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document
+per namespace whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to
+prevent, and writing one on purpose is worse than tolerating the asymmetry. So for those namespaces the README **is** the governing prose: cite it
+as the owner, and do not restate its rulings in a `docs/` document. Every other namespace's README teaches use and nothing else, deferring its
+rulings to the `docs/` document that owns them ([`AGENT_GUIDE.md`][ag-6c] §6c).
 
 **A row moves the day a `docs/` document is written for one of these namespaces**, and the README is reduced to reference in the same change. Adding
-the document without moving the row is how the two copies start.
+the document without moving the row is how a second copy starts.
 
 ---
 
@@ -187,7 +190,7 @@ one chasing "why did the gate fail" wants the entry point.
 
 ### 3b. The Namespace-Graph Rows
 
-These split three ways, and the first is the unusual one: **`config/namespaces.ts` is _data_, and it is authoritative over the prose.**
+These split further, and the first split is the unusual one: **`config/namespaces.ts` is _data_, and it is authoritative over the prose.**
 [`NAMESPACES.md`][namespaces-4] §4 cites it and enumerates nothing, because a second copy of a graph is indistinguishable from an amendment the
 moment the two disagree.
 
@@ -212,6 +215,7 @@ For a subpath matched by a pattern rather than a literal key, the check addition
 stylesheet that was never written would satisfy the shape and send a reader to a resolution error.
 
 [ag-5d]: ../warden/canon/shared/AGENT_GUIDE.md#5d-crossing-the-governance-boundary
+[ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [cr-5]: ../warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification

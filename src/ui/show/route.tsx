@@ -11,8 +11,7 @@ import { loadTurnstileOptions, TurnstileVerdictFragment } from "./turnstile-demo
 import type { TurnstileVerdict } from "./types";
 import type { DependentData, PaginateData, PreviewData, SearchData, ShowcaseData, ShowcasePaths, ToastData, ValidateData } from "./types";
 
-/** Returns all showcase paths derived from a base path. Pass `apiPath` to serve API
- * endpoints under a different prefix than the page. @public */
+/** Returns all showcase paths derived from a base path, with `apiPath` prefixing the API endpoints instead. @public */
 export function showcasePaths(basePath: string, apiPath?: string): ShowcasePaths {
   const page = joinPath(basePath);
   const api = joinPath(apiPath ?? basePath);

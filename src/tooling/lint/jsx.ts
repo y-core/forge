@@ -34,8 +34,7 @@ export function attributeNamed(node: AstNode, name: string): JsxAttributeNode | 
   return undefined;
 }
 
-/** The string an attribute states, whether quoted or written in an expression container. A value
- *  computed at render time states none, and is judged nowhere. */
+/** The string an attribute states, whether quoted or written in an expression container. */
 export function statedString(value: AstNode | null | undefined): string | undefined {
   if (value == null) return undefined;
   const inner = value.type === "JSXExpressionContainer" ? ((value as { expression?: AstNode }).expression ?? undefined) : value;
@@ -55,8 +54,7 @@ export function enclosingElement(node: AstNode): AstNode | undefined {
   return node.parent?.type === "JSXElement" ? node.parent : undefined;
 }
 
-/** Whether any element inside `node` — at any depth, and through an expression container — opens
- *  with a tag `matches` accepts. The element `node` itself opens does not count as inside it. */
+/** Whether any element inside `node`, at any depth, opens with a tag `matches` accepts. */
 export function containsTag(node: AstNode, matches: (tag: string) => boolean): boolean {
   const own = (node as unknown as { openingElement?: AstNode }).openingElement;
   return childrenOf(node).some((child) => child !== own && reachesTag(child, matches));

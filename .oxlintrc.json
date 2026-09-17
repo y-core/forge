@@ -7,15 +7,14 @@
   // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
   // holds it against the source; linting or formatting it would be judging esbuild's output.
   "ignorePatterns": ["src/tooling/gate/chromium.mjs", "src/tooling/lint/plugin.mjs"],
-  // `suspicious` stays off — see docs/CODE_REVIEW.md
+  // `suspicious` stays off — see docs/FORGE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {
     // AST-anchored, and it covers every rule rather than only `design-allow`. `lint:types` already
     // passes --report-unused-disable-directives-severity error, so a stale suppression is a failure
     // there; this states the other half — a live suppression says why it is one.
     "forge/suppression-needs-reason": "error",
-    // The JSX contract's ordering half, moved off `validate-jsx`'s tag-frame scanner and onto the
-    // AST; `docs/STATE_ATTRIBUTES.md` states the rule.
+    // The JSX contract's ordering half, read off the AST; `docs/STATE_ATTRIBUTES.md` states the rule.
     "forge/data-slot-before-spread": "error",
     // The design corpus's class-string rules, read off the AST rather than line by line. Their ids
     // are `forge-ui-` + the key here; `docs/UI_DESIGN_GUIDANCE.md` states them
@@ -38,7 +37,7 @@
     "forge/platform-text-pretty": "error",
     "forge/reduced-motion": "error",
     "forge/spacing-scale-only": "error",
-    // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see docs/CODE_REVIEW.md §7c
+    // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see docs/FORGE_REVIEW.md §7c
     "jsx-a11y/prefer-tag-over-role": "off",
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",
@@ -116,8 +115,8 @@
     },
     {
       // `cn`'s spec pins which of two conflicting utilities survives, so its fixtures are pairs the
-      // design rules forbid on purpose. They are reachable now that a class list bound to a
-      // module-scope const and passed by name is judged.
+      // design rules forbid on purpose, and a class list bound to a module-scope const and passed
+      // by name is judged.
       "files": ["src/ui/core/utils/cn.test.ts"],
       "rules": { "forge/platform-logical-spacing": "off", "forge/platform-text-balance": "off" }
     },
@@ -133,8 +132,8 @@
       "rules": { "forge/a11y-one-live-region": "off" }
     },
     {
-      // `validate-design`'s source walk never read a spec or a browser file, and these carry the
-      // adversarial markup a test exists to feed. Keeping the corpus rules off them is parity.
+      // A spec or a browser file carries the adversarial markup a test exists to feed, so the
+      // corpus rules are off for them.
       "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts", "**/*.browser.tsx"],
       "rules": {
         "forge/a11y-aria-beside-data": "off",
@@ -152,7 +151,7 @@
     },
     {
       // The rule's subject is a rendered-markup assertion, which only a test file makes; scoped to
-      // the tree `validate-exact-assertions` walked, so the migration widens no corpus.
+      // the tree `validate-exact-assertions` walks, so no corpus is widened.
       // `auth/web` is the second tree that renders markup, and its view specs are the bulk of the
       // layer's assertion surface — unscanned, most of it would go unchecked.
       "files": [

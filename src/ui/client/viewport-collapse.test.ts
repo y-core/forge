@@ -2,9 +2,6 @@ import { describe, expect, it } from "bun:test";
 
 import { mountViewportCollapse } from "./viewport-collapse";
 
-/** The fake fires `toggle` synchronously on every write to `open` — one event per change, in order
- * — which is the property the controller's own-write bookkeeping depends on. */
-
 class FakeMediaQueryList {
   readonly listeners = new Set<() => void>();
 

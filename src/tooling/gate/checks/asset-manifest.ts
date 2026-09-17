@@ -10,16 +10,12 @@ import type { AssetManifestCheckConfig } from "./types";
 
 const BUILD_HINT = "run `forge assets build --minify` — the manifest is ahead of the built tree";
 
-/** Checks every path the emitted assets manifest maps to exists under `publicDir`. The types-only
- *  artifact is tolerated in `fast` alone — `standard` and `full` both fail it, because a manifest
- *  nothing has built is exactly what a run that closes a task has to catch. @public */
+/** Checks every path the emitted assets manifest maps to exists under `publicDir`. @public */
 export async function checkAssetManifest(config: AssetManifestCheckConfig, mode: GateMode): Promise<CheckResult> {
   const { root } = config;
   const assetsPath = config.assetsPath ?? ".forge/assets.ts";
   const modulePath = resolve(root, assetsPath);
 
-  // `types:assets` runs immediately before and always writes when the file is absent, so an absent
-  // module here is a genuine breakage rather than a tree nobody has built yet.
   if (!existsSync(modulePath)) {
     return checkResult([fail(`\`${assetsPath}\` not found`, { file: assetsPath, detail: [BUILD_HINT] })], "asset manifest: no emitted module");
   }

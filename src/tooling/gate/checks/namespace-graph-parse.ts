@@ -9,9 +9,7 @@ const MASK = "\u0001";
 /** Extensions a specifier may carry that must be stripped before namespace attribution. */
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js"];
 
-// `/test-support.ts` and not `test-support.ts`: the leading slash is what keeps a production module
-// named `foo-test-support.ts` out of the sweep.
-const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", "/test-support.ts"];
+const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
 
 /** Characters an import/export clause may contain between the keyword and its `from`. */
 const CLAUSE = "[A-Za-z0-9_$,{}\\s*]*?";
@@ -154,10 +152,9 @@ function clauseKind(clause: string): EdgeKind {
   return members.every(isTypeMember) ? "type" : "value";
 }
 
-/** One `from → to` edge as a Set key. `\u0000` cannot appear in a namespace name, so it is the one
- * separator that cannot collide — written as an escape rather than as a literal NUL, which made
- * this whole file report as binary to `file` and be skipped silently by `grep`. */
+/** One `from → to` edge as a Set key. */
 function edgeKey(from: string, to: string): string {
+  // The separator is written as an escape, never a literal NUL: a literal makes `file` report this source as binary and `grep` skip it.
   return `${from}\u0000${to}`;
 }
 

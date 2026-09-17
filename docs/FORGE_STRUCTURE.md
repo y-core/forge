@@ -32,12 +32,14 @@ audience: internal
 - §8 Type Declarations Live in `types.ts`: one per directory, and what the exported surface owes a reader
 - §8a A Type Is Imported on Its Own Line: why an inline `type` specifier is not the same statement
 - §8b What Enforces It: the two plugin rules, and why neither ships with the toolchain
+- §9 A Test-Only Module Is Named `*.fixture.ts`: the one spelling that keeps it out of the tarball
+- §9a What Enforces It: the packaging gate, and the two checks that read the same suffix
 
 ---
 
 ## 1. Core Architectural Principles
 
-See [`LIBRARY_ARCHITECTURE.md`][la-1] §1 for the four structural principles — facade over dependencies, runtime-only, demand composition,
+See [`LIBRARY_ARCHITECTURE.md`][la-1] §1 for the structural principles — facade over dependencies, runtime-only, demand composition,
 Web-APIs-only — and [`LIBRARY_ARCHITECTURE.md`][la-1e] §1e for why the build-time exemption is reachability rather than a path glob. What forge
 wraps, and which of its namespaces are wholly build-time, is §3 and §4 below.
 
@@ -103,7 +105,7 @@ When a namespace wraps a third-party package:
 
 `src/validation/mod.ts` exposes exactly two symbols — `v` and the `ValidationResult` type — never the raw valibot surface.
 
-Two facades are deliberately **thin pass-throughs** whose forge-authored surface is minimal:
+These facades are deliberately **thin pass-throughs** whose forge-authored surface is minimal:
 
 - **`router`** re-exports the fetch-router and route-pattern engine verbatim; its only forge-authored surface is the `routePaths` / `RouteFilter`
   introspection pair.
@@ -186,7 +188,7 @@ two into one statement means every reader asking what a file costs at runtime ha
 
 ### 8b. What Enforces It
 
-**Two oxlint rules, in forge's own plugin.** `forge/type-import-external` reports an exported interface or type alias declared anywhere but a
+**Forge's own plugin carries the rules.** `forge/type-import-external` reports an exported interface or type alias declared anywhere but a
 `types.ts`; `forge/type-import-separation` reports a `type` specifier riding inside a value import. Both are scoped to `src/` in `.oxlintrc.json`,
 with the declaration rule off for `types.ts` itself and for specs — a fixture type is local by definition.
 
@@ -199,6 +201,29 @@ Neither half is available off the shelf. `oxfmt` is a formatter and judges no st
 `typescript/consistent-type-imports` only reports a type reached through a value import, which `verbatimModuleSyntax` already makes a compile error,
 and it accepts the inline specifier this rule exists to forbid. The lint plugin is where a rule of forge's own belongs ([`BUILD_TOOLING.md`][bt-1]
 §1).
+
+---
+
+## 9. A Test-Only Module Is Named `*.fixture.ts`
+
+**A module that exists only for tests carries `.fixture` before its extension** — `coverage.fixture.ts`, `core.fixture.tsx`. The suffix is the
+whole convention: a reader knows from the name that nothing a consumer imports reaches it, and the tarball excludes the class rather than the file.
+
+**The `files` array names the class, never a path.** Its negations are `*.test.ts`, `*.test.tsx`, `*.browser.ts`, `*.browser.tsx`, `*.fixture.ts`
+and `*.fixture.tsx`, plus `src/tooling/dev/` — the tree of commands for developing forge itself, which a consumer has no use for. A per-file
+exclusion is what the convention exists to make unnecessary: the list stops growing, and nothing has to be remembered when a fixture is added.
+
+**A fixture is not a place to put production code.** It is reached by tests and by nothing else, so a helper the library itself needs belongs in a
+module a subpath reaches — and the packaging gate below is what notices when that stops being true in either direction.
+
+### 9a. What Enforces It
+
+**`validate-packaging` computes reachability and names the rename.** It walks `src/`, resolves every relative specifier — `import(…)` included —
+from each `exports` entry and each `bin` script, and fails any module the tarball carries that only a test reaches. Its remedy is the file's
+`*.fixture.ts` spelling, not a `files` entry, so the fix is always the same fix.
+
+**Further checks read the same suffix.** The co-location check asks no test of a `*.fixture.ts`, on the terms a `types.ts` is excused on (§8);
+the namespace graph classifies one as test source, so a fixture's imports raise no cross-namespace edge.
 
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
 [bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor

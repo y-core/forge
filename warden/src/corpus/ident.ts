@@ -1,7 +1,6 @@
 import { type Corpus, CORPORA } from "../types";
 
-/** The stable identifier of one chunk: `<corpus>:<path>#<section>`. A `§N` section is a
- *  citation a human already writes; a `~slug` marks a heading a reword can move. @public */
+/** The stable identifier of one chunk: `<corpus>:<path>#<section>`. @public */
 export function chunkId(corpus: Corpus, path: string, section: string): string {
   return `${sourceId(corpus, path)}#${section}`;
 }
@@ -26,17 +25,12 @@ export function parseId(id: string): { corpus: Corpus; path: string; section?: s
   return { corpus, path, ...(section === undefined || section === "" ? {} : { section }) };
 }
 
-/** The corpus a caller named, or `undefined` when it names none.
- *
- *  A misspelled `--corpus` reaches SQL as a literal that matches no row, and an empty result is an
- *  answer this corpus gives deliberately — so without this the reader is told nothing governs their
- *  question when the truth is that they typed `cannon`. @public */
+/** The corpus a caller named, or `undefined` when it names none. @public */
 export function parseCorpus(value: string): Corpus | undefined {
   return CORPORA.find((corpus) => corpus === value);
 }
 
-/** A heading slug for a corpus with no `§N` numbering. The leading `~` marks it as movable: a
- *  reworded title changes it, where a section number does not. @public */
+/** A heading slug for a corpus with no `§N` numbering; the leading `~` marks it as movable. @public */
 export function headingSlug(title: string): string {
   const slug = title
     .toLowerCase()

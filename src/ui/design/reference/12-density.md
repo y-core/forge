@@ -1,12 +1,13 @@
 ---
 title: Density, Variance, and Motion
-description: "The three dials that tune a forge surface, each on a scale, and the specific class and component choices each one cashes out in."
+description: "The dials that tune a forge surface, each on a scale, and the specific class and component choices each one cashes out in."
 ---
 
 # Density, Variance, and Motion
 
-Three dials describe how a forge surface is tuned, each on a 1–10 scale. They are not style presets — each one cashes out in specific class choices
-and specific component choices, and the whole point of naming them is that a brief can move one without moving the other two.
+Density, variance and motion describe how a forge surface is tuned, each on a 1–10 scale. They are not style presets — each one cashes out in
+specific class choices and specific component choices, and the whole point of naming them is that a brief can move one without moving the other
+two.
 
 | Dial | What it sets | Forge's app-UI default |
 | --- | --- | --- |
@@ -156,7 +157,7 @@ density 3:
   tight spacing is a spacing problem; the answer is a step up on the gap scale, never `outline-none`.
 
 Default: a density increase is implemented by lowering spacing steps and control sizes down to the `sm` floor and no further, unless the brief
-supplies a different mechanism for fitting the content — pagination, a `ScrollArea`, or fewer columns — which it should, because the three rules a
+supplies a different mechanism for fitting the content — pagination, a `ScrollArea`, or fewer columns — which it should, because the rules a
 further squeeze would break are Floor and no brief reaches them. <!-- rule:forge-ui-density-floor-holds -->
 
 Two more that a dense surface reaches for and should not: `forge-ui-text-color-budget` still caps a surface at two text colors, and
@@ -168,7 +169,7 @@ around it are tight.
 Variance is how much two comparable surfaces are allowed to differ. At forge's default of 4, the second surface of a kind copies the first: the same
 `Card` compound in the same order, the same `Button` sizes, the same `Badge` tone and appearance. Raising it is what a marketing brief buys.
 
-Default: two surfaces of the same kind — two settings panels, two list views — use the same component composition and the same size vocabulary,
+Default: surfaces of the same kind — settings panels, list views — use the same component composition and the same size vocabulary,
 unless a brief raises variance above forge's ratified default of 4. <!-- rule:forge-ui-density-variance-repetition -->
 
 Motion at 3 means transitions exist to explain a change of state and nothing else: a popup opening, a panel collapsing, a toast arriving. Every one

@@ -199,7 +199,7 @@ function findRevealMask(out: Emitter): void {
   );
 }
 
-// The two observers forge ships load modules and mark a nav link; neither touches a class, and the
+// The observers forge ships load modules and mark a nav link; neither touches a class, and the
 // callback body is what separates them from a reveal that a view timeline would replace outright.
 const OBSERVER_CTOR = /new\s+[\w$.]*[Oo]bserver[\w$]*\s*\(/g;
 

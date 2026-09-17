@@ -43,7 +43,7 @@ const Step: FC<StepProps> = ({ state = "upcoming", marker, class: cls, children,
     <span data-slot='steps-marker' aria-hidden='true' class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>
       {marker}
     </span>
-    {/* The three states differ only in colour, and the marker is `aria-hidden`. `aria-current` marks
+    {/* The states differ only in colour, and the marker is `aria-hidden`. `aria-current` marks
         where the reader *is*; nothing else marked what is finished. */}
     <span class='sr-only'>{STEP_STATE_LABEL[state]}</span>
     <span data-slot='steps-label'>{children}</span>

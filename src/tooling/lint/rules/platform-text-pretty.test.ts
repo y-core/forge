@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, call, element, literal, other, runRule } from "../test-support.ts";
+import { attribute, call, element, literal, other, runRule } from "../lint.fixture.ts";
 import { platformTextPretty } from "./platform-text-pretty.ts";
 
 const CORPUS = "(forge-ui-platform-text-pretty — src/ui/design/reference/16-platform.md)";

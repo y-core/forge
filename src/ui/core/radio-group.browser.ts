@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 import { RadioGroup } from "./radio-group";
 
 async function formMarkup(): Promise<string> {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, container, element, literal, memberElement, other, runRule, spread } from "../test-support.ts";
+import { attribute, container, element, literal, memberElement, other, runRule, spread } from "../lint.fixture.ts";
 import { dataSlotBeforeSpread } from "./data-slot-before-spread.ts";
 
 const DETAIL =

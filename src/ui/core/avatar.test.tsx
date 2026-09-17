@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Avatar } from "./avatar";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 
 const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 

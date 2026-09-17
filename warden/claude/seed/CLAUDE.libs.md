@@ -14,7 +14,13 @@
   _why_. Nothing else. No `@example` blocks, no multi-paragraph rationale, no restating the code, no section banners, no TODOs. Code is the
   documentation; prose is a cost paid on every read. Fix an unclear line with a better name, not a comment
 - ALWAYS delete unbudgeted comments from any file you touch — there is no grandfathering, and rationale worth keeping is routed to its single home
-  (`CODE_RULES.md` §5c)
+  (`CODE_RULES.md` §5c). A TSDoc block closes on the line it opens on; anything longer is over budget by shape (`CODE_RULES.md` §5a)
+- NEVER gloss an interface field with words that spell its own name back — a field is a symbol, and it earns a line only by adding a default, a
+  unit, a constraint or a caveat (`CODE_RULES.md` §5f)
+- ALWAYS land a deleted behavioural claim as an assertion — find the test that pins it, and where none does, writing it is part of the same change
+  (`CODE_RULES.md` §5e, `TESTING.md` §3f)
+- ALWAYS write a README to teach use, shaped by the tasks a developer arrives wanting to do — never a per-symbol catalogue, and never the place
+  prose the comment budget evicted goes to live (`AGENT_GUIDE.md` §6c)
 - ALWAYS give an exported symbol a domain word, so it can be found from a question and not only from a reference — `create` plus a generic noun is a
   prefix, not a name. One domain word is the floor and roughly the ceiling; do not lengthen a name past it (`CODE_RULES.md` §7)
 - ALWAYS add new public symbols to the namespace's barrel as a named export
@@ -34,7 +40,7 @@
   compress away a caveat that would change what the reader does next (`PLAIN_LANGUAGE.md` §3d, §8)
 - Use `rg` for content search, `find` for file search, and LSP for definitions and references (`AGENT_WORKFLOW.md` §2). LSP resolves a symbol once
   you hold one; a name is what gets you the first one, which is why exported names carry a domain word (`CODE_RULES.md` §7)
-- Tasks are tracked in the task-forge ledger via the `ledger` MCP tools; scope is a property of the URL, so no tool takes a `project` argument
+- Tasks are tracked in the ledger via the `ledger` MCP tools; scope is a property of the URL, so no tool takes a `project` argument
   (`AGENT_WORKFLOW.md` §5)
 
 ---

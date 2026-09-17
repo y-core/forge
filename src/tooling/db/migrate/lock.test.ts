@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import process from "node:process";
 
-import { fakeDbIo } from "../test-support";
+import { fakeDbIo } from "../db.fixture";
 import type { Home } from "../types";
 import { acquireApplyLock, APPLY_LOCK_TTL_MS, applyLockPath } from "./lock";
 

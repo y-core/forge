@@ -4,8 +4,8 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Accordion } from "./accordion";
+import { attrsOf, classesOf, tagOf } from "./core.fixture";
 import { createIcon } from "./icon";
-import { attrsOf, classesOf, tagOf } from "./test-support";
 
 const icon = createIcon("/sprite.svg");
 const narrowIcon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 24 24", "icon-phone": "0 0 24 24" });

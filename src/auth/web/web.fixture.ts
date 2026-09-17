@@ -327,6 +327,7 @@ export function fakeAdminUserService(users: readonly AuthUser[], overrides: Part
     search: async (query) => ok(users.filter((user) => user.email.startsWith(query))),
     view: async (id) => ok(users.find((user) => user.id === id) ?? null),
     countAdmins: async () => ok(users.filter((user) => user.isAdmin && user.deactivatedAt === null).length),
+    claimFirst: async () => ok(users.some((user) => user.isAdmin && user.deactivatedAt === null) ? "admin-exists" : "changed"),
     elevate: async () => ok("changed" as const),
     demote: async () => ok("changed" as const),
     deactivate: async () => ok("changed" as const),

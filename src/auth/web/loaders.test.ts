@@ -27,6 +27,7 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
+import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
 import {
   attrOf,
   attrsOf,
@@ -44,8 +45,7 @@ import {
   fakeFactorStore,
   textOf,
   valuesOf,
-} from "./test-support";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+} from "./web.fixture";
 
 const sessionCookie = createUnsignedCookie("__session", { path: "/" });
 

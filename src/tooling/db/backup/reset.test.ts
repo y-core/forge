@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
-import { sha256 } from "../digest";
 import {
   argvHas,
   fakeDbIo,
@@ -17,7 +16,8 @@ import {
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
-} from "../test-support";
+} from "../db.fixture";
+import { sha256 } from "../digest";
 import type { BackupManifest, DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 import { executeReset, findVerifiedBackup, prepareReset } from "./reset";

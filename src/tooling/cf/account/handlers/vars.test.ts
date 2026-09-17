@@ -24,7 +24,7 @@ function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
 }
 
 function makePagesCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-  return makeCtx({ scriptName: "cornellaw", target: { kind: "pages", name: "cornellaw" }, ...overrides });
+  return makeCtx({ scriptName: "vars-fixture", target: { kind: "pages", name: "vars-fixture" }, ...overrides });
 }
 
 function ok(result: unknown): Response {
@@ -71,14 +71,14 @@ function makePagesFetch(project: CfPagesProject, captured: Captured[], patchOk =
 type EnvVars = Record<string, { type: "plain_text" | "secret_text"; value?: string }>;
 
 const pagesProject = (envVars: EnvVars): CfPagesProject => ({
-  name: "cornellaw",
+  name: "vars-fixture",
   deployment_configs: { production: { env_vars: envVars, wrangler_config_hash: "hash-1" } },
 });
 
 // `.dev.vars` is gitignored repo-wide, so fixtures are built in a temp tree at
 // runtime rather than committed.
 function makeProject(devVars: string | null): string {
-  const dir = mkdtempSync(join(tmpdir(), "foundry-vars-"));
+  const dir = mkdtempSync(join(tmpdir(), "forge-vars-"));
   const configPath = join(dir, "wrangler.jsonc");
   writeFileSync(configPath, `{ "name": "proj" }`, "utf-8");
   if (devVars !== null) writeFileSync(join(dir, ".dev.vars"), devVars, "utf-8");
@@ -202,7 +202,7 @@ describe("varsHandler.reconcile() — pages project", () => {
 
     expect(res.results[0]?.action).toBe("in-sync");
     expect(res.results[0]?.detail).toBe("");
-    expect(captured[0]?.url).toContain("/accounts/acc/pages/projects/cornellaw");
+    expect(captured[0]?.url).toContain("/accounts/acc/pages/projects/vars-fixture");
     expect(captured[0]?.url).not.toContain("/workers/scripts");
   });
 
@@ -230,7 +230,7 @@ describe("varsHandler.reconcile() — a missing target is not an auth failure", 
     const notFound: typeof globalThis.fetch = async () => cfError(7003, "Could not route", 404);
     const res = await handler.reconcile(entries, makePagesCtx({ fetch: notFound }));
     expect(res.results[0]?.action).toBe("unavailable");
-    expect(res.results[0]?.detail).toBe("pages project · pages project not found: cornellaw");
+    expect(res.results[0]?.detail).toBe("pages project · pages project not found: vars-fixture");
   });
 
   it("reports a rejected token as an error", async () => {

@@ -13,7 +13,7 @@ STRIPE_KEY=sk_live_x
 `;
 
 function makeFile(content = SAMPLE): string {
-  const path = join(mkdtempSync(join(tmpdir(), "foundry-rotate-")), ".dev.vars");
+  const path = join(mkdtempSync(join(tmpdir(), "forge-rotate-")), ".dev.vars");
   writeFileSync(path, content, "utf-8");
   return path;
 }

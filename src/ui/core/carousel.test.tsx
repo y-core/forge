@@ -4,7 +4,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Carousel } from "./carousel";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 
 const STRIP = 'data-slot="carousel-strip"';
 const DOT = 'data-slot="pagination-item"';

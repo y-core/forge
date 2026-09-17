@@ -130,10 +130,9 @@ export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<s
   turnstile?: ActionTurnstileOptions<Bindings, ConfigData>;
   /** Replaces the refusal a tripped guard renders. */
   onBotDetected?: (rejection: BotRejection, c: AppContext<Bindings>) => Response | Promise<Response>;
-  /**
-   * Body-size cap for this route's form parse, in bytes. A CSRF guard on the same route parses the
-   * body first, so raising this also requires raising `csrfProtection`'s own `maxBytes`.
-   */
+  // A CSRF guard on the same route parses the body first, so raising this alone changes nothing —
+  // `csrfProtection`'s own `maxBytes` is what the request meets first.
+  /** Body-size cap for this route's form parse, in bytes. */
   maxBytes?: number;
 }
 

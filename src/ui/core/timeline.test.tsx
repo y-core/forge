@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Timeline } from "./timeline";
 
 const MARKER = 'data-slot="timeline-marker"';

@@ -3,9 +3,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { createIcon } from "./icon";
 import { Pagination } from "./pagination";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-left": "0 0 16 16", "icon-chevron-right": "0 0 16 16" });
 

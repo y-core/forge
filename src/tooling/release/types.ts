@@ -45,8 +45,7 @@ export interface VersionResult {
 export interface ReleaseCommandConfig {
   cwd: string;
   tagPrefix?: string;
-  /** Files staged into the release commit. Defaults to what the release itself wrote — `package.json`,
-   *  plus `changelogFile` when a changelog was promoted. Name it only to stage something else too. */
+  /** Files staged into the release commit. Defaults to what the release itself wrote. */
   stageFiles?: string[];
   /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. */
   changelogFile?: string;

@@ -17,7 +17,7 @@ import {
   tagOf,
   textOf,
   valuesOf,
-} from "./test-support";
+} from "./web.fixture";
 
 const MARKUP =
   '<form data-scope="passkey" data-passkey-mode="registration" novalidate>' +

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { other, traverse } from "../test-support.ts";
+import { other, traverse } from "../lint.fixture.ts";
 import type { DisableDirective, RuleContext } from "../types.ts";
 import { suppressionNeedsReason } from "./suppression-needs-reason.ts";
 

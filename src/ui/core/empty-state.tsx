@@ -7,8 +7,7 @@ import { cn } from "./utils/cn";
 type EmptyStateProps = JSX.IntrinsicElements["div"];
 type EmptyStateFigureProps = JSX.IntrinsicElements["span"];
 type EmptyStateTitleProps = JSX.IntrinsicElements["h3"] & {
-  /** Heading level, from the section's position in the document. Never from its size — the class is
-   *  fixed, so a level change is a semantic one. Defaults to `3`. */
+  /** Heading level, from the section's position in the document. Defaults to `3`. */
   level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
 };
 type EmptyStateDescriptionProps = JSX.IntrinsicElements["p"];

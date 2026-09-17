@@ -6,100 +6,65 @@ audience: consumer
 
 # `@y-core/forge/assets`
 
-Two pure lookup helpers a Worker calls at request time: a logical asset name in, a public, content-hashed URL out.
+A view wants to write `styles.css`; the browser needs `/assets/styles.abc12345.css`. This subpath is the lookup between the two — a logical name in,
+a public content-hashed URL out — at request time, in a Worker.
 
 ```ts
 import { createManifest, createSpriteRegistry } from "@y-core/forge/assets";
 ```
 
-The mapping they resolve against is **baked into the generated module at build time**. Neither function touches the filesystem, scans a directory,
-or reads an environment variable — they close over a plain `Record<string, string>` handed to them at construction. That is what makes this subpath
-Worker-safe: no Node built-in is imported anywhere beneath it.
-
-The build that produces that mapping, and the `assets.config.ts` that drives it, are [`@y-core/forge/tooling/assets`][tooling-assets-readme] —
-build-time only, and never imported into a Worker.
+The mapping is **baked into the generated module at build time**. Neither function touches the filesystem, scans a directory, or reads an
+environment variable: they close over a plain record handed to them at construction. That is what makes this subpath Worker-safe — no Node built-in
+is imported anywhere beneath it.
 
 ---
 
-## Features
+## Getting started
 
-- **Logical-name resolution** — `createManifest` maps `"styles.css"` to `/assets/styles.abc12345.css`, and passes an unmapped key straight through
-  under the same prefix, so a name the build did not emit still produces a plausible URL rather than `undefined`.
-- **Sprite-group resolution** — `createSpriteRegistry` maps a sprite group name to its sheet URL through a `Manifest`, so the result carries the
-  same prefix and hash the rest of the tree does.
-- **Loud on an unknown group** — an unregistered sprite name throws rather than resolving to a broken `<use href>`.
-
----
-
-## Usage
-
-The generated `.forge/assets.ts` calls `createManifest` for you, with the mapping the build emitted and the configured `publicPrefix`. Consumers
-import that module (aliased `@assets`) rather than calling `createManifest` themselves:
-
-```ts
-import { assets } from "@assets";
-
-const href = assets.path("styles.css"); // "/assets/styles.abc12345.css"
-```
-
-In an SSR view, reference the logical name and let the Worker serve the hashed path:
+You will rarely call `createManifest` yourself. The generated `.forge/assets.ts` does it for you, with the mapping the build emitted and the
+configured `publicPrefix`. Import that module — aliased `@assets` — and ask it for a path:
 
 ```tsx
-<link rel='stylesheet' href={assets.path("styles.css")} />
+import { assets } from "@assets";
+
+<link rel='stylesheet' href={assets.path("styles.css")} />;
 ```
 
-Calling it directly — in a test, or over a mapping you assembled yourself:
+Reference the logical name everywhere, and let the resolved hash be the build's business.
+
+---
+
+## Calling it over your own mapping
+
+In a test, or anywhere the generated module is not what you want:
 
 ```ts
-import { createManifest, createSpriteRegistry } from "@y-core/forge/assets";
-
 const assets = createManifest({ "styles.css": "styles.abc12345.css" }, "/assets");
 assets.path("styles.css"); // "/assets/styles.abc12345.css"
 assets.path("unknown.png"); // "/assets/unknown.png" — pass-through fallback
 
 const sprites = createSpriteRegistry({ ui: "sprites/ui.svg" }, assets);
 sprites.get("ui"); // "/assets/sprites/ui.svg"
-sprites.get("nope"); // throws: Unknown sprite group: "nope"
 ```
+
+The prefix is a public URL prefix, and a trailing slash on it is trimmed. A leading `/` on the key is stripped before lookup, so `path("/x.css")`
+and `path("x.css")` agree.
 
 ---
 
-## Core Components & APIs
+## Gotchas
 
-| Export | Signature | Purpose |
-| --- | --- | --- |
-| `createManifest` | `(data: Record<string, string>, prefix: string) => Manifest` | Builds a logical-name → public-path resolver |
-| `createSpriteRegistry` | `(sprites: Record<string, string>, manifest: Manifest) => SpriteRegistry` | Resolves sprite group names to public sprite paths |
-
-`Manifest` and `SpriteRegistry` are the two interfaces those functions return, and both are exported as types.
-
-### `createManifest(data, prefix)`
-
-Returns a `Manifest` with one method, `path(key: string): string`. It strips a leading `/` from the key, looks the remainder up in `data`, falls
-back to the key itself when unmapped, and joins the result under `prefix` with the trailing slash normalised away.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `data` | `Record<string, string>` | Logical name → emitted relative path, as the build wrote it. |
-| `prefix` | `string` | Public URL prefix, e.g. `/assets`. A trailing slash is trimmed. |
-
-### `createSpriteRegistry(sprites, manifest)`
-
-Returns a `SpriteRegistry` with one method, `get(name: string): string`. It looks the group name up in `sprites` and resolves the result through
-`manifest`, so the returned URL is prefixed and hash-aware. An unregistered name throws `Unknown sprite group: "<name>"`.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `sprites` | `Record<string, string>` | Group name → logical sprite target from config. |
-| `manifest` | `Manifest` | The manifest the logical target resolves through. |
+**An unmapped asset passes through; an unregistered sprite throws.** The asymmetry is deliberate. A name the build did not emit still produces a
+plausible URL rather than `undefined`, which fails visibly in the browser and not in the middle of a render. A sprite group, by contrast, has no
+plausible fallback — an unknown name would resolve to a broken `<use href>` that renders as nothing at all, so it throws instead.
 
 ---
 
 ## See also
 
 - [`@y-core/forge/tooling/assets`][tooling-assets-readme] — authoring `assets.config.ts`, running the build, and the generated module these two
-  functions are called from.
-- [`ASSET_PIPELINE.md`][ap-3] §3 — the runtime lookup contract as a ruling.
+  functions are called from
+- [`ASSET_PIPELINE.md`][ap-3] §3 — the runtime lookup contract as a ruling
 
 [ap-3]: ../../docs/ASSET_PIPELINE.md#3-assets--the-runtime-namespace
 [tooling-assets-readme]: ../tooling/assets/README.md

@@ -8,7 +8,7 @@ import {
   fakeAuthenticatorData,
   fakePasskeyAssertion,
   fakePasskeyRegistration,
-} from "./fixture";
+} from "./passkey.fixture";
 import { verifyPasskeySignature } from "./signature";
 import type { PasskeyKeyPair } from "./types";
 

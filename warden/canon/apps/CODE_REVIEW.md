@@ -103,6 +103,8 @@ Group by file, then severity, critical first. **Never write a secret's value int
 | A security surface is never worked around locally | [`FORGE_CONSUMPTION.md`][fc-3d] §3d |
 | A security guard has both a pass and a fail test | [`TESTING.md`][testing-5a] §5a |
 | No comment outside the permitted budget | [`CODE_RULES.md`][cr-5a] §5a |
+| A behavioural claim deleted from a comment is landed as an assertion | [`CODE_RULES.md`][cr-5e] §5e, [`TESTING.md`][testing-3f] §3f |
+| No interface field carries a gloss that spells its own name back | [`CODE_RULES.md`][cr-5f] §5f |
 
 **The pre-1.0 shim ban is the one most often argued away.** A shim shipped to production is unrecoverable once anything depends on it, which is
 precisely what a pre-1.0 version exists to avoid.
@@ -121,6 +123,7 @@ precisely what a pre-1.0 version exists to avoid.
 | Style violations and banned import patterns | the lint step |
 | Behaviour of the changed route or service | the test runner, scoped to the changed path |
 | Markup referencing an asset the pipeline does not produce | the asset build |
+| A comment outside the budget, and a field gloss that earns nothing | `bun run verify --only validate-comment-budget` |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
 
@@ -183,20 +186,7 @@ rg -n 'toContain\(|toMatch\(' --glob '*.test.ts*'
 _Triage:_ legitimate on non-markup strings — an error message, a log line. **A hit asserting on rendered markup is a defect**
 ([`TESTING.md`][testing-3a] §3a).
 
-**Unbudgeted comment** ([`CODE_RULES.md`][cr-5a] §5a is the whole budget; [`CODE_RULES.md`][cr-5b] §5b is what is deleted on sight)
-
-```bash
-rg -n '^\s*\*\s*@example' --glob 'src/**/*.ts*'
-rg -UPn '/\*\*(?:[^*]|\*(?!/)){400,}\*/' --glob 'src/**/*.ts*'
-rg -n '^\s*//\s*[-=*_]{3,}' --glob 'src/**/*.ts*'
-rg -n '\b(TODO|FIXME|XXX)\b' --glob 'src/**/*.ts*'
-```
-
-_Triage:_ the third and fourth have **no false-positive class** — every hit is a defect. The first is anchored to a TSDoc continuation line because
-a bare search for the tag matches the `you@example.com` in every email fixture in the repository. The second needs `-P`; its character threshold is
-a heuristic floor, and it also matches template-literal contents that use comment syntax as their payload, which is code rather than a comment.
-
-Restating-the-code and narration are reachable by no command; they belong to §3c.
+The comment budget is gated (§3a) and carries no command here. What a gate cannot decide — whether a sentence earns its place — is §3c.
 
 ### 3c. Tier 3 — Judgement
 
@@ -231,6 +221,11 @@ same rename applied to both files would turn anything red ([`TESTING.md`][testin
 **Name reachability.** Read each new export. _Could a reader who knows the domain but not this codebase name this symbol from the question it
 answers — and conversely, does the name carry a word that earns nothing?_ ([`CODE_RULES.md`][cr-7] §7.)
 
+**Prose that earns nothing.** Read every comment and every README paragraph in the diff. _Does this sentence say something the name, the type, the
+signature, or a test does not?_ A per-field gloss, a per-symbol restatement, and a paragraph narrating how the code works are the same defect at
+different scales ([`CODE_RULES.md`][cr-5b] §5b, [`AGENT_GUIDE.md`][ag-6c] §6c). Where the sentence asserts behaviour, the question is sharper:
+_which test pins this?_ — and where none does, the finding is the missing assertion ([`CODE_RULES.md`][cr-5e] §5e).
+
 ---
 
 ## 4. Severity Calibration
@@ -247,6 +242,9 @@ answers — and conversely, does the name carry a word that earns nothing?_ ([`C
 
 **Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line costs one read; an unbudgeted one is re-read on
 every pass, is reachable by no gate, and goes stale silently. **Never report "expand this comment" as a finding.**
+
+**The asymmetry reaches README prose on the same terms.** A section restating a signature, narrating how the code works, or re-housing prose the
+comment budget evicted is Major; a task a README does not yet teach is Minor. "Document this more fully" is not a finding.
 
 **Calibrate by consequence, not by effort.** A one-character fix to a fail-closed check is Critical; a large refactor that improves readability is
 Minor.
@@ -298,6 +296,7 @@ reviewer reads both.
 [aa-2c]: ./APP_ARCHITECTURE.md#2c-no-layer-skipping
 [aa-2d]: ./APP_ARCHITECTURE.md#2d-views-are-pure
 [aa-3a]: ./APP_ARCHITECTURE.md#3a-typed-config-access
+[ag-6c]: ../shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [boundaries-1]: ./BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-1b]: ./BOUNDARIES.md#1b-splitting-a-component-across-the-boundary
 [boundaries-2b]: ./BOUNDARIES.md#2b-guards-live-in-the-routes-middleware-list
@@ -313,6 +312,8 @@ reviewer reads both.
 [cr-1e]: ../shared/CODE_RULES.md#1e-browser-only-modules-are-exempt
 [cr-5a]: ../shared/CODE_RULES.md#5a-the-entire-permitted-budget
 [cr-5b]: ../shared/CODE_RULES.md#5b-forbidden-outright
+[cr-5e]: ../shared/CODE_RULES.md#5e-a-behavioural-claim-is-an-assertion
+[cr-5f]: ../shared/CODE_RULES.md#5f-a-field-is-a-symbol
 [cr-7]: ../shared/CODE_RULES.md#7-name-distinctiveness-rule
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
 [fc-1a]: ./FORGE_CONSUMPTION.md#1a-the-check-before-writing-code
@@ -322,6 +323,7 @@ reviewer reads both.
 [testing-2d]: ./TESTING.md#2d-optional-bindings-are-deliberately-absent
 [testing-3a]: ./TESTING.md#3a-exact-match--never-substring-matching-on-markup
 [testing-3e]: ./TESTING.md#3e-assert-the-contract-not-the-implementation-restated
+[testing-3f]: ./TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
 [testing-5b]: ./TESTING.md#5b-one-test-per-rejection-path
 [testing-6]: ./TESTING.md#6-the-verification-gate

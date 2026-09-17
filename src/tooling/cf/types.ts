@@ -1,18 +1,12 @@
 import type { Colorize } from "../term/types";
 
-// Auth credentials — always from env or flags, never hardcoded
+/** Cloudflare API credentials, always supplied from the environment or from flags. */
 export interface CfAuth {
   readonly apiToken: string;
   readonly accountId: string;
 }
 
-/**
- * Every resource type the tool knows how to report on.
- *
- * Declared as a value so `--resources` can validate against it; `ResourceType` is
- * derived from it, which is what keeps the CLI's idea of a valid type and the
- * compiler's from drifting apart.
- */
+/** Every resource type the tool knows how to report on, and the source `ResourceType` is derived from. */
 export const RESOURCE_TYPES = [
   "kv_namespaces",
   "d1_databases",
@@ -81,23 +75,12 @@ export interface SyncResult {
   action: SyncAction;
   remoteId?: string | undefined;
   detail?: string | undefined;
-  /**
-   * Where the name was found. Reported rather than inferred from `action`,
-   * because the two failure actions — `error` and `unavailable` — say nothing
-   * about presence, and a blank cell is the honest answer for a side that was
-   * never queried.
-   */
+  /** Where the name was found; undefined for a side that was never queried. */
   local?: boolean | undefined;
   remote?: boolean | undefined;
 }
 
-/**
- * A remark about a whole resource type rather than about one binding.
- *
- * Separate from `SyncResult` because the two answer different questions. "There is no
- * `.dev.vars` at this path" has no binding, no action and no remote counterpart, and
- * forcing it into a row meant inventing all three.
- */
+/** A remark about a whole resource type rather than about one binding. */
 export interface SyncNote {
   resourceType: ResourceType;
   message: string;
@@ -109,10 +92,7 @@ export interface SyncOutput {
   notes: SyncNote[];
   updatedConfig: WranglerConfig;
   configChanged: boolean;
-  /**
-   * The surface every row was compared against. Reported so a caller can state it
-   * once rather than reading it back out of the detail strings.
-   */
+  /** The surface every row was compared against. */
   target: DeploymentTarget;
   /** The resolved name prefix, so a report can state the naming convention it applied. */
   prefix: ResolvedPrefix;
@@ -124,16 +104,9 @@ export interface SyncConfig {
   resources?: ResourceType[] | undefined;
   prefix?: PrefixStrategy | undefined;
   dryRun?: boolean | undefined;
-  /**
-   * Secret names to regenerate rather than push from `.dev.vars`.
-   *
-   * Validated against the rotate markers in `.dev.vars` before the run starts, so a
-   * name reaching here has already been declared rotatable.
-   */
+  /** Secret names to regenerate rather than push from `.dev.vars`. */
   rotate?: readonly string[] | undefined;
 }
-
-// Per-binding config shapes
 
 export interface KvNamespaceConfig {
   binding: string;
@@ -265,16 +238,9 @@ export type TableRow = Record<string, string>;
 export interface TableOptions {
   /** Styler for the headings. Defaults to `PLAIN`, so output carries no escape sequence unless asked. */
   style?: Colorize;
-  /**
-   * Columns the grid must fit in. Omitted, it is as wide as its content — which is what every
-   * existing caller expects, and what a test asserting exact lines depends on.
-   */
+  /** Columns the grid must fit in; omitted, it is as wide as its content. */
   width?: number;
-  /**
-   * Columns permitted to wrap onto further lines when `width` forces a shrink. Everything else is
-   * truncated instead, because a binding name broken across two lines is no longer a name you can
-   * search for.
-   */
+  /** Columns permitted to wrap when `width` forces a shrink; every other column is truncated instead. */
   wrap?: readonly string[];
 }
 
@@ -283,19 +249,9 @@ export interface TableSection {
   title: string;
   note?: string;
   rows: TableRow[];
-  /**
-   * Lines printed under the grid — remarks about the section rather than about any
-   * binding in it. A statement like "there is no .dev.vars here" is not a row: giving
-   * it one means inventing a binding name and an action to put in the columns, and
-   * both would be fiction.
-   */
+  /** Lines printed under the grid — remarks about the section rather than about any binding in it. */
   footers?: string[];
 }
 
-/**
- * Where this config deploys to. A binding means different things on either side —
- * a Pages project keeps its variables under `deployment_configs`, a Worker script
- * under `settings.bindings` — so handlers that touch the deployment itself must
- * know which they are addressing.
- */
+/** Where this config deploys to, which decides the API surface a handler addresses. */
 export type DeploymentTarget = { kind: "worker" | "pages"; name: string };

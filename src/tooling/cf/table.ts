@@ -6,14 +6,6 @@ import type { GridColumn } from "../term/types";
 import { wrapLines } from "../term/wrap";
 import type { TableOptions, TableRow, TableSection } from "./types";
 
-/**
- * The border every grid here draws.
- *
- * Box-drawing rather than pipes and hyphens: a section is a closed shape, so where it starts and
- * ends is visible without counting rules, and the corners distinguish a table from the prose
- * around it at a glance. `stringWidth` measures U+2500–257F as one column each, which is what lets
- * the engine lay out its own border correctly.
- */
 const BORDER = BORDERS.single;
 
 /** What a section's note, grid and footers are all inset by, so they read as one block. */
@@ -23,8 +15,6 @@ const INDENT = "  ";
 function heading(section: TableSection, style: Colorize, width: number | undefined): string[] {
   const title = style.bold(section.title);
   if (!section.note) return [title];
-  // Wrapped to the width less its own indent, so it stops where the grid does rather than two
-  // columns past it.
   const lines = width === undefined ? [section.note] : wrapLines(section.note, Math.max(1, width - INDENT.length));
   return [title, ...lines.map((line) => `${INDENT}${style.gray(line)}`)];
 }
@@ -34,13 +24,7 @@ function columnsOf(rows: readonly TableRow[], wrap: readonly string[]): GridColu
   return Object.keys(rows[0] ?? {}).map((key) => (wrap.includes(key) ? { key, wrap: true } : { key }));
 }
 
-/**
- * Render one grid on its own, with no heading above it.
- *
- * Ruled verticals rather than alignment alone, because a cell here routinely contains spaces — a
- * detail, a `"old" → "new"` pair — and with only whitespace between columns the reader has to
- * guess where one ends. The rule under the header separates the column names from the data.
- */
+/** Renders one grid on its own, with no heading above it. */
 export function renderTable(rows: TableRow[], options: TableOptions = {}): string {
   return renderGrid(rows, {
     border: BORDER,

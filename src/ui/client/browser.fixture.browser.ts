@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 
-import { mount, test } from "./browser-test-helper";
+import { mount, test } from "./browser.fixture";
 
 const NO_PREFERENCE_RULE = `<style>@media (prefers-reduced-motion: no-preference) { #probe { translate: 100px; } }</style><div id="probe">probe</div>`;
 

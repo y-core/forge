@@ -29,6 +29,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §3c Render Once, Assert Once: the single enforced shape
 - §3d Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees: the deletion check
 - §3e Assert the Contract, Not the Implementation Restated: the copied-literal check
+- §3f A Deleted Claim Lands in a Test: the receiving end of the comment budget
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Why Fakes Over Mocks: the comparison, and the no-mock-library rule
@@ -138,7 +139,7 @@ relative path one segment long.
 Importing via the barrel couples the test to the export surface rather than the implementation, and masks exactly the re-export bugs the export gate
 exists to catch.
 
-Two exceptions, both narrow. A **test-fixture namespace** is imported by subpath, because consumer test code sits outside the source tree. And a
+The exceptions are narrow. A **test-fixture namespace** is imported by subpath, because consumer test code sits outside the source tree. And a
 **test whose subject _is_ the export surface** must read the published surface — suppress the lint rule at that import with a reason, and nowhere
 else.
 
@@ -191,7 +192,7 @@ The failure shape is always the same. The subject is a _mechanism_ — a timer c
 assertion reads an _outcome_ that a second, independent mechanism also produces. A guard clause is the usual second mechanism: an early return at
 the top of a callback makes "nothing visibly happened" true whether or not the timer that calls it was ever cancelled.
 
-Two shapes worth recognising:
+Shapes worth recognising:
 
 - **A guard downstream of the subject.** Remove a disposal guard and every case stays green except the one counting initialisations, because the
   guard and the mechanism produce the observable state identically.
@@ -212,7 +213,7 @@ source changes, so it is never vacuous by the deletion check's measure — it me
 about the repository rather than about the software. The rule §2 states for a configuration file is the same rule: a test that can only restate its
 subject back to itself proves nothing, whether the subject is a config or a constant inside a module.
 
-Three shapes, all common:
+These shapes are all common:
 
 - **A transcribed constant map.** A frozen array or lookup table read out of the module and asserted back, entry by entry, often with further cases
   derivable from the first. Test what _reads_ the table: the behaviour its entries were chosen to produce.
@@ -239,6 +240,23 @@ import it, so a dependency's change surfaces as a failure rather than as silent 
 
 **Negative space is evidence.** A refusal that asserts status and body _and_ that nothing downstream ran — no statement issued, no row written, no
 outbound call made — pins what the refusal cost, which no restatement of the guard's own constants can.
+
+### 3f. A Deleted Claim Lands in a Test
+
+**A claim removed from a comment is not removed from the system until an assertion holds it.** `CODE_RULES.md` §5e is this rule seen from the source
+side: a comment asserting behaviour is prose standing in for a test, and the fix is the test. This section is the receiving end.
+
+So a change that deletes such a comment carries work here, and the work is scoped, not incidental:
+
+- **The claim names the assertion.** "Returns the cached value when the entry has not expired" is already a test name and an expectation; it does
+  not need to be redesigned, only written.
+- **Check first whether it is already pinned.** Frequently it is, and the comment was a second, unexecuted copy — §5b's defect, not a missing test.
+  Deleting it then costs nothing and adds nothing.
+- **Where it is not pinned, the test is part of the change.** Not a follow-up, not a ledger task: the claim was load-bearing enough to be written
+  down once, and the change is not done while the system has lost it and gained nothing.
+
+§3d and §3e both apply to the test that results. A claim rewritten as an assertion that reads an outcome a second mechanism also produces, or as a
+literal copied back out of the source, has not landed — it has been restated in a new syntax.
 
 ---
 
@@ -351,7 +369,7 @@ that same hint, because `full` is the release gate a publish blocks on and a rel
 selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
-never inferred from raw tool output. The mode is part of the verdict, because the three modes are different assurances, and **a skipped step is part
+never inferred from raw tool output. The mode is part of the verdict, because the modes are different assurances, and **a skipped step is part
 of it too** — a green that skipped a step is not the green that ran it.
 
 | Flag | Effect |

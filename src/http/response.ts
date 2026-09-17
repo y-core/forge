@@ -7,7 +7,7 @@ function withDoctype(body: string): string {
   return /^\s*<!doctype html/i.test(body) ? body : DOCTYPE + body;
 }
 
-/** Constructs a redirect `Response` for a location, with an optional status or `ResponseInit` (also aliased as `redirect`). @public */
+/** Constructs a redirect `Response` for a location, with an optional status or `ResponseInit`. @public */
 export function createRedirectResponse(location: string | URL, init?: ResponseInit | number): Response {
   let status = 302;
   if (typeof init === "number") {
@@ -20,8 +20,6 @@ export function createRedirectResponse(location: string | URL, init?: ResponseIn
   }
   return new Response(null, { status, ...init, headers });
 }
-
-export { createRedirectResponse as redirect };
 
 /** Constructs a full-page HTML `Response` with a leading `<!DOCTYPE html>`; throws on a caller-supplied `content-type`. @public */
 export function htmlResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {

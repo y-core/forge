@@ -100,16 +100,20 @@ describe("parseJsoncTree()", () => {
     expect(tree.error.offset).toBeGreaterThan(0);
   });
 
+  it("reports an unterminated string rather than accepting the value it opened", () => {
+    expect(parseJsoncTree(`{"a": "x`).ok).toBe(false);
+  });
+
   it("rejects trailing content after the root value", () => {
     const tree = parseJsoncTree(`{"a": 1} garbage`);
     expect(tree.ok).toBe(false);
   });
 
   it("agrees with JSON.parse on every value in a realistic config", () => {
-    const src = `{\n  // a comment with https:// in it\n  "name": "cornellaw",\n  "url": "https://x.test", // trailing\n  "n": [1, 2,],\n}`;
+    const src = `{\n  // a comment with https:// in it\n  "name": "jsonc-fixture",\n  "url": "https://x.test", // trailing\n  "n": [1, 2,],\n}`;
     const tree = parseJsoncTree(src);
     expect(tree.ok).toBe(true);
-    expect(JSON.parse(stripJsonc(src))).toEqual({ name: "cornellaw", url: "https://x.test", n: [1, 2] });
+    expect(JSON.parse(stripJsonc(src))).toEqual({ name: "jsonc-fixture", url: "https://x.test", n: [1, 2] });
   });
 });
 

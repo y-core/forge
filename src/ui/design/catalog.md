@@ -147,7 +147,7 @@ separates the two.
 ### 2a. Actions and Confirmation
 
 **Default:** one primary `Button` per surface, with every other action `appearance="outline"` or `appearance="ghost"`.
-<!-- rule:forge-ui-catalog-action-pyramid --> Those three looks _are_ the pyramid — a second primary button on the same surface asserts two first
+<!-- rule:forge-ui-catalog-action-pyramid --> Those looks _are_ the pyramid — a second primary button on the same surface asserts two first
 actions, and the user reads neither as first. Override when a surface genuinely presents two equal terminal paths with no default, as an
 accept/decline pair does.
 

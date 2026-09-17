@@ -4,11 +4,9 @@ import { pathToFileURL } from "node:url";
 
 import type { ConfigModuleRequest } from "./types";
 
-/** Imports a config module's default export. Returns `undefined` only when an unnamed default path
- *  is absent, so a typo in an explicit `--config` is an error rather than a silent fallback. */
+/** Imports a config module's default export, or `undefined` when a non-explicit default path is absent. */
 export async function loadConfigModule<T>(request: ConfigModuleRequest): Promise<T | undefined> {
   const { root, path, explicit, what } = request;
-  // `resolve` returns `path` unchanged when it is already absolute, so both forms are covered.
   const resolved = resolve(root, path);
 
   if (!existsSync(resolved)) {

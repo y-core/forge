@@ -4,7 +4,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
-import { elementOf } from "../test-support";
+import { elementOf } from "../web.fixture";
 import { AuthTimestamp } from "./timestamp";
 
 const NEW_YEAR = 1735689600000;

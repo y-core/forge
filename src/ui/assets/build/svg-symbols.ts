@@ -15,23 +15,68 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
   return meta;
 }
 
-/** Best-effort SVG sanitizer for inline sprite content from trusted sources. */
+// Copied rather than imported from `http/escape`: `ui/assets/build` declares no edge to `http`, so
+// the import that would share this class fails `validate-namespace-graph`.
+/** C0/C1 controls and spaces, which browsers ignore when resolving a scheme. */
+// oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars
+const URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
+
+const NAMED_REFS = new Map([
+  ["amp", "&"],
+  ["apos", "'"],
+  ["colon", ":"],
+  ["gt", ">"],
+  ["lt", "<"],
+  ["newline", "\n"],
+  ["quot", '"'],
+  ["tab", "\t"],
+]);
+
+const CHAR_REF = /&(#x[0-9a-f]+|#[0-9]+|[a-z]+);?/gi;
+
+/** One decoding pass over HTML character references, as the parser does it — for comparison only, never written back. */
+function decodeCharRefs(value: string): string {
+  return value.replace(CHAR_REF, (match, ref: string) => {
+    const lower = ref.toLowerCase();
+    const code = lower.startsWith("#x") ? Number.parseInt(ref.slice(2), 16) : lower.startsWith("#") ? Number.parseInt(ref.slice(1), 10) : NaN;
+    if (Number.isNaN(code)) return NAMED_REFS.get(lower) ?? match;
+    return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+  });
+}
+
+/** The scheme a browser would resolve the attribute value to, with every spelling that hides one undone. */
+function resolvedScheme(value: string): string {
+  return decodeCharRefs(value.replace(/^["']|["']$/g, ""))
+    .replace(URL_NOISE, "")
+    .toLowerCase();
+}
+
+const PASSES: readonly ((markup: string) => string)[] = [
+  (markup) => markup.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ""),
+  (markup) => markup.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, ""),
+  (markup) => markup.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ""),
+  (markup) => markup.replace(/<(?:animate|set)\b[^>]*\battributeName\s*=\s*["'](?:xlink:)?href["'][^>]*(?:\/>|>[\s\S]*?<\/(?:animate|set)>)/gi, ""),
+  (markup) =>
+    markup.replace(/\s+(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, (match, value: string) => {
+      const scheme = resolvedScheme(value);
+      return scheme.startsWith("javascript:") || scheme.startsWith("data:text/html") ? "" : match;
+    }),
+  (markup) => markup.replace(/\s+on[a-zA-Z]+\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, ""),
+];
+
+// Every pass only deletes, so a round that changes anything shortens the markup and the loop ends.
+// Reaching the cap means an adversarial nesting depth, and half-stripped markup is worse than none.
+const MAX_ROUNDS = 8;
+
+/** Deletes every script, style, foreignObject, event handler and unsafe `href` from SVG markup, repeating until it stops changing. @public */
 export function sanitizeSVG(content: string): string {
   let result = content;
-  result = result.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-  result = result.replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, "");
-  result = result.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
-  result = result.replace(/<(?:animate|set)\b[^>]*\battributeName\s*=\s*["'](?:xlink:)?href["'][^>]*(?:\/>|>[\s\S]*?<\/(?:animate|set)>)/gi, "");
-  result = result.replace(/\s+(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, (match, val: string) => {
-    const normalized = val
-      .replace(/^["']|["']$/g, "")
-      .toLowerCase()
-      .replace(/\s/g, "");
-    if (normalized.startsWith("javascript:") || normalized.startsWith("data:text/html")) return "";
-    return match;
-  });
-  result = result.replace(/\s+on[a-zA-Z]+\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/gi, "");
-  return result;
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const next = PASSES.reduce((markup, pass) => pass(markup), result);
+    if (next === result) return result;
+    result = next;
+  }
+  throw new Error(`sanitizeSVG: markup still changing after ${MAX_ROUNDS} rounds — refusing to emit partially sanitized SVG`);
 }
 
 const PROPAGATABLE_ATTRS = ["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"] as const;

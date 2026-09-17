@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, compiledCss, escapeClass, mount } from "../client/browser-test-helper";
+import { classesOf, compiledCss, escapeClass, mount } from "../client/browser.fixture";
 import { Switch } from "./switch";
 
 const TRACK = "[data-slot~='switch-track']";

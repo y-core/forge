@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import { toColumnInfo, toSchemaObjects } from "../sql";
 import {
   argvHas,
   fakeDbIo,
@@ -12,7 +11,8 @@ import {
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
-} from "../test-support";
+} from "../db.fixture";
+import { toColumnInfo, toSchemaObjects } from "../sql";
 import type { DbIo, FakeDbIo, Home } from "../types";
 import { SqlReal } from "./artifact";
 import {

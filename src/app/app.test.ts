@@ -569,7 +569,7 @@ describe("createApp — ordered wiring", () => {
     expect(order).toEqual(["guard", "handler"]);
   });
 
-  it("remains backward compatible with no wiring fields", async () => {
+  it("accepts no options at all", async () => {
     const app = createApp();
     mapHandler(app, "GET", "/", () => new Response("plain"));
     const res = await app.request("/");

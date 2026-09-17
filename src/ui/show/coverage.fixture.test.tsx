@@ -14,8 +14,8 @@ import * as core from "../core/mod";
 // oxlint-disable-next-line eslint/no-restricted-imports -- the published surface is what is being asserted
 import * as server from "../server/mod";
 import { PAGE_ORDER, SECTIONS, SHOWCASE_PAGES, ShowcaseContent } from "./components";
-import { coverageKeys, coverageReport, DEMO_COVERAGE, explainGap, explainStale } from "./coverage";
-import { COVERAGE_MISSING } from "./coverage-missing";
+import { COVERAGE_MISSING } from "./coverage-missing.fixture";
+import { coverageKeys, coverageReport, DEMO_COVERAGE, explainGap, explainStale } from "./coverage.fixture";
 import { showcasePaths } from "./route";
 import { TURNSTILE_DEMO_DEFAULTS } from "./turnstile-demo";
 import type { CoverageReport } from "./types";

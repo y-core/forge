@@ -4,8 +4,8 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Button } from "./button";
+import { attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { Filter } from "./filter";
-import { attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
 
 type ItemProps = Parameters<typeof Filter.Item>[0];
 type ResetProps = Parameters<typeof Filter.Reset>[0];

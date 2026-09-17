@@ -9,7 +9,7 @@ import type { ControlsDemoState } from "../contracts/types";
 import { fieldId } from "../core/field";
 import { SECTIONS } from "./components";
 import { ControlsDemos } from "./controls-demos";
-import { DEMO_COVERAGE, sectionBodies } from "./coverage";
+import { DEMO_COVERAGE, sectionBodies } from "./coverage.fixture";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- test-only stub
 const StubIcon = ((_props: any) => null) as any;

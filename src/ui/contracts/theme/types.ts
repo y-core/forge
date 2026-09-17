@@ -1,4 +1,4 @@
-/** The two blocks a scheme file declares. Matches `Mode` in `src/tooling/gate/checks/contrast-parse.ts`. @public */
+/** The blocks a scheme file declares. Matches `Mode` in `src/tooling/gate/checks/contrast-parse.ts`. @public */
 export type Mode = "light" | "dark";
 
 /** A twelve-position scale, as a tuple rather than an array. @public */
@@ -23,7 +23,7 @@ export interface Dials {
   readonly chroma: number;
 }
 
-/** The two scales a generated scheme declares. @public */
+/** The scales a generated scheme declares. @public */
 export type ScaleFamily = "gray" | "accent";
 
 /** One contrast pair exempted from the audit, with what it measures and why no criterion binds. @public */
@@ -66,7 +66,7 @@ export interface ContrastPair {
 /** A pair whose two sides are both steps on a generated scale. @public */
 export type ScalePair = ContrastPair & { foreground: ScaleSide; background: ScaleSide };
 
-/** One copy control: the element it reads, and the three things it can say. @public */
+/** One copy control: the element it reads, and what it can say. @public */
 export interface CopyTarget {
   readonly id: string;
   /** The element whose `textContent` is copied — what is displayed is what is copied. */

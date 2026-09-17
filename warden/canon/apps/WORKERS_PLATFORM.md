@@ -170,8 +170,8 @@ remedy, and it is not a code change.
 
 ### 4b. Local Development Variables
 
-Local development reads secrets from a **gitignored variables file**, with obviously non-production values. Two rules: **verify it is gitignored
-before adding the first value**, and **commit an example file** listing the required keys with placeholder values, so a new checkout fails with a
+Local development reads secrets from a **gitignored variables file**, with obviously non-production values: **verify it is gitignored before
+adding the first value**, and **commit an example file** listing the required keys with placeholder values, so a new checkout fails with a
 missing-key error rather than a mysterious one.
 
 ### 4c. The Pre-Deploy Gate

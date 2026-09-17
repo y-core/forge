@@ -48,9 +48,7 @@ if (typeof cssGlobal.CSS === "undefined") {
   };
 }
 
-/** The platform's own timer functions, captured before any block replaces them. The `lazy` block
- *  stubs `setTimeout` to capture the retry delay instead of running it, and `flush` below must keep
- *  draining against the real clock regardless. */
+/** The platform's own timer functions, captured before any block stubs them. */
 const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
 
@@ -135,8 +133,7 @@ describe("lazy", () => {
     timer?.fn();
   }
 
-  /** An intersection the platform would actually deliver: the real observer only calls back for an
-   * element it is currently observing. */
+  /** An intersection the platform would actually deliver: only for an element currently observed. */
   function intersect(): void {
     if (observing) capturedCallback([makeEntry(true)], {} as IntersectionObserver);
   }

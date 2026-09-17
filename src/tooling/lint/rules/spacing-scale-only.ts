@@ -20,8 +20,7 @@ const unitPx = ((): number => {
 
 const STEPS = new Set(SPACING_STEPS);
 
-/** The scale step an arbitrary length is exactly equal to, with whether the value itself is
- *  negative — or `undefined` when the scale states no such step. */
+/** The scale step an arbitrary length is exactly equal to, or `undefined` when the scale states no such step. */
 function stepFor(value: string): { step: string; negative: boolean } | undefined {
   const length = LENGTH.exec(value);
   if (length === null || Number.isNaN(unitPx)) return undefined;

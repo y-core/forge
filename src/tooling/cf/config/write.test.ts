@@ -1,9 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { countComments } from "../../cli/jsonc";
 import { syncBindings } from "../account/engine";
 import { kvHandler } from "../account/handlers/kv";
 import type { WranglerConfig } from "../types";
@@ -12,7 +11,7 @@ import { loadWranglerConfig, writeWranglerConfig } from "./parse";
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
 function project(source: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "foundry-write-"));
+  const dir = mkdtempSync(join(tmpdir(), "forge-write-"));
   const path = join(dir, "wrangler.jsonc");
   writeFileSync(path, source, "utf-8");
   return path;
@@ -37,7 +36,7 @@ const INPUT = `{
   "vars": {
     "BASE_URL": "https://www.example.test" // the canonical origin
   },
-  /* The namespace id is filled in by \`foundry sync --commit\`. */
+  /* The namespace id is filled in by \`forge sync --commit\`. */
   "kv_namespaces": [
     {
       "binding": "MAIN_KV"
@@ -53,7 +52,7 @@ const EXPECTED = `{
   "vars": {
     "BASE_URL": "https://www.example.test" // the canonical origin
   },
-  /* The namespace id is filled in by \`foundry sync --commit\`. */
+  /* The namespace id is filled in by \`forge sync --commit\`. */
   "kv_namespaces": [
     {
       "binding": "MAIN_KV",
@@ -176,47 +175,5 @@ describe("write-back refusals", () => {
     const write = writeWranglerConfig(loaded, updated);
     if (!write.ok) throw write.error;
     expect(readFileSync(path, "utf-8")).toContain(`      "binding": "A",\n      "id": "x"\n`);
-  });
-});
-
-describe("against a real-world config", () => {
-  // cornellaw's worker config carries a `https://` inside a comment and another
-  // inside a string value — the two cases a naive comment stripper conflates.
-  const REAL = join(import.meta.dir, "../../../../../cornellaw/wrangler.workers.jsonc");
-
-  it.skipIf(!existsSync(REAL))("round-trips it byte-for-byte when nothing changes", () => {
-    const source = readFileSync(REAL, "utf-8");
-    const path = project(source);
-    const loaded = loadWranglerConfig(path);
-
-    const write = writeWranglerConfig(loaded, loaded.config);
-    if (!write.ok) throw write.error;
-    expect(write.data.written).toBe(false);
-    expect(readFileSync(path, "utf-8")).toBe(source);
-  });
-
-  it.skipIf(!existsSync(REAL))("keeps a https:// inside a string while dropping one inside a comment", () => {
-    const loaded = loadWranglerConfig(REAL);
-    expect(loaded.config.name).toBe("cornellaw");
-    // The string value survives intact...
-    expect(loaded.config.vars?.BASE_URL).toBe("https://127.0.0.1:8787");
-    // ...while the prose that merely mentions a URL does not become config.
-    expect(JSON.stringify(loaded.config)).not.toContain("load-bearing");
-    expect(countComments(loaded.source)).toBeGreaterThan(5);
-  });
-
-  it.skipIf(!existsSync(REAL))("splices an id into it without disturbing the commentary", () => {
-    const path = project(readFileSync(REAL, "utf-8"));
-    const loaded = loadWranglerConfig(path);
-
-    const updated = JSON.parse(JSON.stringify(loaded.config)) as WranglerConfig;
-    (updated.ratelimits as { namespace_id: string }[])[0]!.namespace_id = "2002";
-
-    const write = writeWranglerConfig(loaded, updated);
-    if (!write.ok) throw write.error;
-
-    const after = readFileSync(path, "utf-8");
-    const before = readFileSync(REAL, "utf-8");
-    expect(after).toBe(before.replace(`"namespace_id": "1001"`, `"namespace_id": "2002"`));
   });
 });

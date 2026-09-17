@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Steps } from "./steps";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 const MARKER = 'data-slot="steps-marker"';
 const labelOf = (html: string) => /<span data-slot="steps-label">([^<]*)</.exec(html)?.[1];

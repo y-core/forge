@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { identifier, nextLoc, other, runRule, template } from "../test-support.ts";
+import { identifier, nextLoc, other, runRule, template } from "../lint.fixture.ts";
 import type { AstNode } from "../types.ts";
 import { sqlExplicitTransaction } from "./sql-explicit-transaction.ts";
 

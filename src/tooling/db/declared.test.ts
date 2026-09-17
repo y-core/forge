@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../cf/types";
 import { PLAIN } from "../term/color";
+import { fakeDbIo } from "./db.fixture";
 import { declaredMigrations, declaredPath, declaredSchemas, declaredSeeds, snapshotPath } from "./declared";
 import { appHome } from "./home";
-import { fakeDbIo } from "./test-support";
 import type { DbConfig, DbHostConfig, DbRunContext } from "./types";
 
 function dbConfig(): DbConfig {

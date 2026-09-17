@@ -31,7 +31,6 @@ export interface CitableDir {
 
 /** What the docs check needs to know about the project. @public */
 export interface DocsCheckConfig {
-  /** Application root. */
   root: string;
   /** The package name consumers import under. */
   packageName: string;
@@ -87,8 +86,66 @@ const LEADING_SECTION = /^\s*§[0-9][A-Za-z0-9]*/;
 const BARE_SECTION = /§([0-9][A-Za-z0-9]*)/g;
 const BACKTICKED_PATH = /`((?:src|config|\.claude)\/[^`]*)`/g;
 const UNRESOLVABLE_PATH = /[*<{…\s]/;
-const ROT_PROSE = /\b(previously|no longer|used to|formerly|renamed from|fixed by|has since)\b/i;
+const ROT_PROSE =
+  /\b(previously|no longer|used to|formerly|renamed from|fixed by|has since|any ?more|it once|as of version|since v0\.|was called|old API|superseded by|replaced all|remains compatible|for compatibility|historically|originally|what changed is|was rejected|was considered and deferred|was split out of|the \S+ sweep)\b/i;
+const COUNT_WORD = "two|three|four|five|six|seven|eight|nine|ten|eleven|twelve";
+const COUNT_ABOVE_A_PAIR = "three|four|five|six|seven|eight|nine|ten|eleven|twelve";
+const DETERMINER = "the|its|their|our|these|those|same";
+const LEAD = `(?:^|[.!?]\\s+|\\|\\s*|^\\s*(?:[-*+]|\\d+[.)])\\s+|[—–]\\s*)[*_>'\\s]*`;
+
+// A definite count is the tally, an indefinite one a rule about arity. `two` is held to a lead
+// position alone: `the two X` is near-always a back-reference to a pair the sentence just named.
+const TALLY = new RegExp(
+  `(?<!\\b(?:least|most|than|every|up to)\\s)(?:(?:there\\s+(?:are|were)|one\\s+of\\s+the)\\s+(?:${COUNT_WORD})\\b` +
+    `|(?:(?<=\\b(?:${DETERMINER})\\s)(?:${COUNT_ABOVE_A_PAIR})|(?<=${LEAD})(?:${COUNT_WORD}))` +
+    `\\s+(?:[A-Za-z][A-Za-z-]*\\s+){0,2}([A-Za-z][A-Za-z-]{2,}s)\\b)`,
+  "i",
+);
+
+/** `two or three pixels` is an approximation, and the unit nouns are measures rather than a population. */
+const APPROXIMATION = new RegExp(`\\b(?:${COUNT_WORD})\\s+or\\s+`, "i");
+
+/** The items themselves, following the count on the same line — the argument that the set is closed. */
+const ENUMERATION = /^(?:\s+[A-Za-z][A-Za-z-]*){0,3}\s*[—–:(]/;
+const UNIT_NOUN = new Set([
+  "pixels",
+  "units",
+  "bytes",
+  "bits",
+  "digits",
+  "characters",
+  "columns",
+  "times",
+  "seconds",
+  "milliseconds",
+  "minutes",
+  "hours",
+  "days",
+  "weeks",
+  "months",
+  "years",
+]);
+const NOT_A_PLURAL = new Set([
+  "always",
+  "perhaps",
+  "thus",
+  "less",
+  "plus",
+  "was",
+  "has",
+  "does",
+  "its",
+  "this",
+  "else",
+  "unless",
+  "across",
+  "versus",
+  "whereas",
+]);
+const HEADING_LINE = /^#{1,6}[ \t]/;
+const QUICK_REFERENCE_HEADING = /^##[ \t]+0\./;
 const INLINE_CODE = /`[^`]*`/g;
+const QUOTED_SPAN = /"[^"]*"|“[^”]*”/g;
 const INLINE_LINK = /\[([^\]]*)\]\([^)]*\)/g;
 
 const LIST_MARKER = /^ {0,3}(?:[-*+]|\d+[.)])\s/;
@@ -198,9 +255,10 @@ function blockAfter(lines: readonly string[], startPattern: RegExp): { start: nu
   return { start, lines: lines.slice(start, end) };
 }
 
-/** Calendar dates and ticket identifiers — a governing document carries no history. @public */
+/** Calendar dates, ticket identifiers and inventory counts — a governing document carries no history and no tally. @public */
 export function validateNoRot(file: string, lines: readonly string[]): Finding[] {
   const findings: Finding[] = [];
+  let inQuickReference = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line === undefined) continue;
@@ -208,6 +266,24 @@ export function validateNoRot(file: string, lines: readonly string[]): Finding[]
     if (date) findings.push(fail(`calendar date \`${date[0]}\` — governing docs carry no history`, { file, line: i + 1 }));
     const ticket = line.match(/\b[A-Z]{1,3}\d+-\d+(?:\.\d+)*\b/);
     if (ticket) findings.push(fail(`ticket identifier \`${ticket[0]}\` — governing docs carry no task IDs`, { file, line: i + 1 }));
+
+    // A heading is an anchor other documents cite, and its Quick Reference line mirrors it word for
+    // word; renaming either to drop a count is a coordinated break for no gain.
+    const heading = HEADING_LINE.test(line);
+    if (heading) inQuickReference = QUICK_REFERENCE_HEADING.test(line);
+    if (heading || inQuickReference) continue;
+
+    // A count inside quotation marks is a mention rather than a claim about the system, wherever in
+    // the sentence it sits — the shape a rule takes when it quotes the spellings it forbids.
+    const prose = line.replace(INLINE_CODE, " ").replace(QUOTED_SPAN, " ");
+    const tally = prose.match(TALLY);
+    const noun = (tally?.[1] ?? "").toLowerCase();
+    // `There are two flag types — "boolean" and "string"` names the members it counts, which is the
+    // argument that the set is closed; the count is then the rule rather than a tally of it.
+    const argued = tally !== null && tally[1] === undefined && ENUMERATION.test(prose.slice((tally.index ?? 0) + tally[0].length));
+    if (tally && !argued && !NOT_A_PLURAL.has(noun) && !UNIT_NOUN.has(noun) && !APPROXIMATION.test(tally[0])) {
+      findings.push(fail(`inventory count \`${tally[0]}\` — a governing doc records that a thing exists, not how many`, { file, line: i + 1 }));
+    }
   }
   return findings;
 }
@@ -421,6 +497,13 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
   const isStrict = (file: string): boolean => isGoverning(file) || file === rootReadme;
 
+  /** Whether a document belongs to a cited tree — written elsewhere, and overwritten here on sync. */
+  const isCited = (file: string): boolean =>
+    (config.citableDirs ?? []).some((entry) => {
+      const dir = typeof entry === "string" ? entry : entry.dir;
+      return file === dir || file.startsWith(`${dir}/`);
+    });
+
   // Which extra frontmatter keys this file owes, by the directory it sits in. A file under no rule
   // owes none and may carry none — the allowed-key set is closed either way.
   const frontmatterRules = (file: string): Omit<FrontmatterRule, "dir">[] =>
@@ -537,7 +620,7 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     if (kind === undefined) return { ambiguous: matches };
 
     // A reader scoped to one kind means their own tree, and `shared` where that tree has no such
-    // document — the two trees a consumer of that kind is ever shipped.
+    // document — the only trees a consumer of that kind is ever shipped.
     if (kind !== "shared") {
       return (
         settle(matches.filter((key) => key.startsWith(`${kind}/`))) ??
@@ -564,6 +647,7 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     }
 
     findings.push(...validateNoRot(file, stripped));
+    if (!isCited(file)) findings.push(...validateRotProse(file, stripped));
 
     const ownSections = new Set((parsed.get(file) ?? []).map((section) => section.number));
     const fileDir = dirname(resolve(root, file));
@@ -653,7 +737,6 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
     findings.push(...validateFrontmatter(file, source, descriptionMax, frontmatterRules(file)));
     findings.push(...validatePaths(file, stripped, root));
-    findings.push(...validateRotProse(file, stripped));
 
     const lineCount = source.split("\n").length;
     if (lineCount > sizeFail) findings.push(fail(`${lineCount} lines exceeds the ${sizeFail}-line hard limit — split or cut`, { file }));

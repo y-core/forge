@@ -65,7 +65,7 @@ count is half of why: one issue reaches the fragment however many fields a calle
 receives.
 
 **Render issues through `describeValidationIssue` — never `issue.message`.** It names the failing field and nothing else, bounded in depth and in
-per-segment length, so the refusal varies only with _which_ field failed and not with what was sent. The three parts it refuses to reproduce are
+per-segment length, so the refusal varies only with _which_ field failed and not with what was sent. The parts it refuses to reproduce are
 each a disclosure: `issue.message` embeds the rejected value, `issue.expected` can be the source text of the schema's own `v.regex`, and
 `issue.input` is the submission itself.
 
@@ -273,11 +273,11 @@ and the hostname a token must have been minted on is usually the request's own.
 **Always pass `expectedHostname` in production.** Without it the token's origin hostname is not checked, so a token minted on an attacker-controlled
 site can be replayed against this one. A runtime warning is logged when it is omitted.
 
-**The dev allowance is the key for Cloudflare's testing secrets, and it takes two locks to open.** Those three published secrets — `1x…AA` (always
+**The dev allowance is the key for Cloudflare's testing secrets, and it takes two locks to open.** Those published secrets — `1x…AA` (always
 passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` whatever origin the widget ran on, so
 an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Passing
 `dev`, a [`DevAllowance`][dev-readme] granting `turnstileTestingSecrets`, skips the hostname comparison **only when `secretKey` is one of those
-three literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret without the token is
+literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret without the token is
 compared as before. Every other check, `expectedHostname`'s fail-closed guard included, is unchanged.
 
 **There is no env var, and now no way to write one.** Minting the token means importing `@y-core/forge/dev` at value, and `validate-dev-boundary`

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Separator } from "./separator";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("Separator", () => {
   it("renders the whole rule exactly, forwarded attributes escaped", async () => {

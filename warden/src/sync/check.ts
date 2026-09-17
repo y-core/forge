@@ -9,10 +9,7 @@ import { identical, walk } from "./sync";
 // the definition block — which is exactly where a boundary-crossing path would now hide.
 const DOCS_HREF = /\]\(([^)]*\bdocs\/[^)]*)\)|^ {0,3}\[[^\]]+\]:[ \t]+(\S*\bdocs\/\S*)/gm;
 
-/** Compares one synced tree against the installed corpus.
- *
- *  The sources are layered in the order `sync` copies them, so a file two sources both carry is
- *  expected to hold the later one's bytes — the same file the destination would end up with. @public */
+/** Compares one synced tree against the installed corpus, sources layered in the order `sync` copies them. @public */
 export function checkTree(repo: string, { tree, from }: SyncTree): Divergence[] {
   const to = resolve(repo, tree);
   const expected = new Map<string, string>();
@@ -55,11 +52,7 @@ export function checkAgents(repo: string): Divergence[] {
   return problems;
 }
 
-/** Reports any markdown link in the canon whose target reaches into a repository's own `docs/`.
- *
- *  Links run one way — implementation may cite governance, governance never cites implementation —
- *  and the canon is byte-identical everywhere, so such a link resolves in the repository that wrote
- *  it and dangles in every other. This is the check `AGENT_GUIDE.md` §5d names. @public */
+/** Reports any markdown link in the canon whose target reaches into a repository's own `docs/`. @public */
 export function checkBoundary(canonRoot = CANON_ROOT): Divergence[] {
   const problems: Divergence[] = [];
   for (const file of walk(canonRoot).filter((name) => name.endsWith(".md"))) {

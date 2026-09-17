@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { ShowcaseContent } from "./components";
-import { sectionBodies } from "./coverage";
+import { sectionBodies } from "./coverage.fixture";
 import { showcasePaths } from "./route";
 import {
   loadTurnstileOptions,

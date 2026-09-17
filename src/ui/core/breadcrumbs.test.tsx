@@ -4,8 +4,8 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Breadcrumbs } from "./breadcrumbs";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { createIcon } from "./icon";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-right": "0 0 16 16" });
 const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1]);

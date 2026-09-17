@@ -5,27 +5,13 @@ export function sanitizeName(value: string): string {
   return value.replace(/[^\w]/g, "_");
 }
 
-/**
- * How a remote resource is named when it is created independently and then linked
- * to the project — D1, KV, R2, a queue.
- *
- * One rule, `PROJECT_BINDING`, with a per-resource normaliser rather than two
- * competing rules. R2 buckets and queues must be DNS-shaped, so they take the
- * lowercase-hyphenated form of the very same name.
- */
+/** The `PREFIX_BINDING` name a remote resource is created under. */
 export function prefixedName(prefix: ResolvedPrefix, binding: string): string {
   const safe = sanitizeName(binding);
   return prefix ? `${sanitizeName(prefix)}_${safe}` : safe;
 }
 
-/**
- * The DNS-shaped form: lowercase alphanumerics and hyphens, no run of more than
- * one hyphen, and none at either end — the shape R2 and Queues enforce.
- *
- * Applied to the whole name, prefix included. Normalising only the binding left the
- * prefix in its uppercase-underscore form, yielding `MY_WORKER-my-bucket` — neither
- * rule, and not a legal bucket name.
- */
+/** The prefixed name in the DNS shape R2 and Queues enforce: lowercase alphanumerics and single interior hyphens. */
 export function dnsName(prefix: ResolvedPrefix, binding: string): string {
   return prefixedName(prefix, binding)
     .toLowerCase()

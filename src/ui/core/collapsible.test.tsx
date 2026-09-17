@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Collapsible } from "./collapsible";
+import { attrOf, attrsOf, classesOf, tagOf } from "./core.fixture";
 import { createIcon } from "./icon";
-import { attrOf, attrsOf, classesOf, tagOf } from "./test-support";
 
 const icon = createIcon("/sprite.svg");
 const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1]);

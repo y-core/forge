@@ -5,14 +5,6 @@ import type { RateLimitConfig, SyncResult } from "../../types";
 import { failureRows } from "./rows";
 import type { HandlerContext, ReconcileResult, ResourceHandler } from "./types";
 
-/**
- * A rate-limit binding as it appears in a deployed Worker's settings.
- *
- * The Workers API has no notion of a rate-limit *namespace* to create — see
- * `api/endpoints.ts`. `namespace_id` is a number the developer picks. The only
- * remote statement available is whether the **deployed worker** carries the binding
- * and whether its limit matches the config.
- */
 interface CfRateLimitBinding {
   type: string;
   name: string;
@@ -28,11 +20,6 @@ function matches(local: RateLimitConfig, remote: CfRateLimitBinding): boolean {
   );
 }
 
-/**
- * Pages rejects `ratelimits` outright, so a Pages config declaring one binds
- * nothing at all. That is worth saying plainly rather than reporting the binding as
- * present or as merely unverified.
- */
 function pagesResults(entries: RateLimitConfig[]): SyncResult[] {
   return entries.map((entry) => ({
     resourceType: "ratelimits" as const,
@@ -58,18 +45,12 @@ async function reconcileWorkerRateLimits(entries: RateLimitConfig[], ctx: Handle
     const row = { resourceType: "ratelimits" as const, binding: entry.name, local: true };
     const found = remote.get(entry.name);
 
-    // Not an `unavailable`: nothing is missing that the next deploy will not bind.
-    // What the reader needs is the actor, and the section heading names it.
     if (!found) return { ...row, action: "deploy-pushes", remote: false };
 
     if (matches(entry, found)) {
-      // remoteId only on the row that actually matched — elsewhere it would print a
-      // local value under a column headed "Remote ID".
       return { ...row, action: "in-sync", remote: true, remoteId: found.namespace_id, detail: describeSimple(entry.simple) };
     }
 
-    // Rate-limit bindings are set by deploying the worker, not by a separate write,
-    // so drift is reported rather than corrected here — under `--commit` too.
     return {
       ...row,
       action: "drift",

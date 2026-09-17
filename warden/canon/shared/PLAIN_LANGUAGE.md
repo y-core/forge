@@ -16,7 +16,7 @@ description: "Reader-centred prose for governing documents and for what an agent
 
 ## 0. Quick Reference
 
-- §1 Surfaces This Document Governs: the two it owns, and the four it does not
+- §1 Surfaces This Document Governs: which it owns, and who owns the rest
 - §2 Plain Language Is Not Simplified Wording: why short sentences prove nothing
 - §3 Relevant — Readers Get What They Need: content chosen before it is written
 - §3a Identify the Reader: who arrives at a governing document, and at a terminal
@@ -49,7 +49,7 @@ description: "Reader-centred prose for governing documents and for what an agent
 
 ## 1. Surfaces This Document Governs
 
-Two surfaces, one rule set:
+One rule set, across these surfaces:
 
 | Surface | Governed here? | Owner if not |
 | --- | --- | --- |
@@ -98,7 +98,7 @@ are chosen. Editing at the end can fix §5. It cannot fix §3.
 
 ### 3a. Identify the Reader
 
-Name the reader before writing. Two readers recur here, and they are not the same person.
+Name the reader before writing. The readers who recur here are not the same person.
 
 **A governing document is read by an agent or an engineer mid-task**, with the surrounding code already in view and a specific question in hand.
 They know the domain. They do not need the domain explained, and they will not read to the end. What they need is the ruling, the reason it holds,
@@ -171,7 +171,7 @@ In a governing section: the ruling first, the reason second, the boundary and th
 
 ### 4b. Most Important First, Warnings Before Instructions
 
-Four ordering rules that are not matters of taste:
+These ordering rules are not matters of taste:
 
 1. **The most important message goes where the reader looks first** — the top. In feedback, the outcome leads. In a section, the ruling leads.
 2. **Build new information on what the reader already knows**, rather than defining forward.
@@ -200,8 +200,8 @@ The same applies to a response: a heading, a bolded lead, or a first sentence is
 
 ### 4d. Information Design in Plain Text
 
-Visual structure reveals relationships that prose hides. Five conditions inside a 250-word paragraph are harder to find than the same five as a
-list, and no amount of sentence-level editing closes that gap.
+Visual structure reveals relationships that prose hides. Conditions buried inside a 250-word paragraph are harder to find than the same conditions
+as a list, and no amount of sentence-level editing closes that gap.
 
 The devices available here, and what each is for:
 
@@ -320,9 +320,9 @@ Before finishing, read the draft as the reader named in §3a, asking:
 Once you understand something, you cannot reliably predict what another reader will misunderstand. This is not a failure of effort, and more care
 does not fix it — the author is structurally the worst-placed judge of their own clarity.
 
-Two practical consequences. First, prefer the concrete over the abstract when both are available: a reader who does not share your model can still
-act on a named file, an exact command, or a specific failing case. Second, treat "this is obvious" as a warning; it is a statement about the author,
-not the text.
+Practical consequences follow. First, prefer the concrete over the abstract when both are available: a reader who does not share your model can
+still act on a named file, an exact command, or a specific failing case. Second, treat "this is obvious" as a warning; it is a statement about the
+author, not the text.
 
 ### 6c. Evidence Over Belief — the Repeated Question
 
@@ -334,7 +334,7 @@ When a reader has to ask "did it pass?", "which file?", "so what do I do now?", 
 belonged in the text and was not there. That is a finding about the writing, and the correction goes into the writing.
 
 The same evidence applies to documents. A rule that is repeatedly asked about, repeatedly misapplied, or repeatedly re-derived from scratch is a
-rule whose document failed one of the four principles. Find out which one before rewording it — rewording fixes only §5, and §5 is rarely the one
+rule whose document failed one of the principles. Find out which one before rewording it — rewording fixes only §5, and §5 is rarely the one
 that broke.
 
 ---
@@ -398,7 +398,7 @@ A reader watching tool calls can already see that work is happening. Narrating i
 When a correction is warranted, state it plainly and briefly, then carry on. No apology, no preamble, no account of how the mistake arose, and no
 running tally of earlier mistakes. Combine several corrections into one statement rather than enumerating each.
 
-Two things that are not corrections, and must not be treated as one:
+These are not corrections, and must not be treated as one:
 
 - **A follow-up question is not a signal of error.** A reader asking more about your work is asking about your work. Answer the question; do not
   re-audit the earlier statement.

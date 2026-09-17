@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeDbIo } from "../test-support";
+import { fakeDbIo } from "../db.fixture";
 import { buildSchemaSnapshot, readSchemaSnapshot, SCHEMA_SNAPSHOT_VERSION, writeSchemaSnapshot } from "./snapshot";
 
 describe("read and write", () => {

@@ -11,8 +11,7 @@ const SETTLED = new Set(["animate-none", "transition-none"]);
 // `cn()` arguments, so the gate and the motion it governs need not sit in the same literal.
 const GATED = /(?<![\w-])motion-(?:safe|reduce):/;
 
-/** An `animate-*` or `transition*` utility in a class expression that names neither `motion-safe:`
- *  nor `motion-reduce:` — which is what makes it run whatever the reader has asked for. */
+/** An `animate-*` or `transition*` utility in a class expression that names neither `motion-safe:` nor `motion-reduce:`. */
 export const reducedMotion: LintRule = {
   meta: {
     type: "problem",

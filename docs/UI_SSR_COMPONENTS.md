@@ -66,7 +66,7 @@ reads. The failure is silent and total, and it is one every `asChild` compound c
 through. `Button` reached it by wrapping its children to make room for a loading spinner; the spinner is now injected into the cloned child instead.
 
 **`data-slot` is a token list, and every compound merges into it rather than replacing it** — under `asChild` and on plain render alike. Composing
-two compounds produces one element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders a single button
+compounds produces one element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders a single button
 carrying `data-slot="menu-trigger tooltip-trigger"`. Overwriting silently unmade the inner compound — every rule and query keyed on the child's own
 slot stopped matching.
 
@@ -265,7 +265,7 @@ mean an outlined button and a filled chip at once. Asked separately the pair rea
 **`orientation` carries the two layout axes and nothing else**, because a stylesheet matches `data-orientation` on exactly that: `Switch`'s label
 side is `labelPlacement` (§1i), `FormField`'s width-driven collapse a separate `responsive` boolean.
 
-**Two props sit outside the table.** `Turnstile`'s `size` is Cloudflare's, verbatim (§1f). `level` picks the heading tag on `EmptyState.Title`
+**Some props sit outside the table.** `Turnstile`'s `size` is Cloudflare's, verbatim (§1f). `level` picks the heading tag on `EmptyState.Title`
 (default `3`) and `Dialog`/`Drawer.Title` (default `2`), and nothing else — `data-slot`, the class and the derived `id` are identical at every
 level, so `aria-labelledby` still resolves. It is the tool `forge-ui-heading-order` needed. Not `as`, which already names a type scale on
 `FormField.Legend`.
@@ -280,7 +280,7 @@ adding one is visible, not a quiet edit.
 for. **The test is "does a consumer construct a value of this type", not "is it named `*Props`"**: a definition object handed to a component —
 `NavSlot`, `NavMegaMenu`, `ToolbarPopover` — is a consumer input as much as an attribute bag is, and the suffix reading let those three drift.
 
-**Two reasons, and the second is a correctness one.** `renderToString` skips a null or undefined attribute value (`src/jsx/render-to-string.ts`), so
+**The second of these reasons is a correctness one.** `renderToString` skips a null or undefined attribute value (`src/jsx/render-to-string.ts`), so
 absent and `undefined` are the same state at runtime and the flag would guard a distinction the renderer does not have. And without the union a
 caller under the flag writes `{...(x !== undefined ? { "aria-label": x } : {})}` rather than `aria-label={x}` — a spread, which `jsx-a11y` cannot
 see as an attribute; forge carried forty-seven, every one unlinted, and `@types/react` writes `className?: string | undefined` for the same reason.
@@ -323,7 +323,7 @@ for a controller to maintain and no bespoke runtime to keep in step with `Toggle
 group lacks.
 
 **The name collision with `ui/core` is intentional and must not be renamed.** [`NAMESPACES.md`][namespaces-5b] §5b owns the resulting rule: a module
-imports a given control name from exactly one of the two barrels, never both.
+imports a given control name from exactly one barrel, never both.
 
 ### 2d. Scoped Components Require the Client Scope Import
 

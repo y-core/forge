@@ -3,8 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 import type { Kind, SeedFile, SyncOutcome } from "../types";
 
-/** The files `--init` writes when they are absent — the repository owns each one after the first
- *  write, and a sync never touches one again. @public */
+/** The files `--init` writes when they are absent. @public */
 export function seedFiles(claudeRoot: string, kind: Kind): SeedFile[] {
   const dir = join(claudeRoot, "seed");
   return [

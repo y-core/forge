@@ -3,7 +3,7 @@
 
 import type { AppContext } from "../../context/types";
 import { mintCsrf } from "../../form/csrf";
-import { redirect } from "../../http/response";
+import { createRedirectResponse } from "../../http/response";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import type { OtpLength } from "../../ui/core/types";
@@ -97,9 +97,9 @@ export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>,
 export function authVerifyDetour<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, demand: AuthVerifyDemand): Response | null {
   if (demand.owed === null || demand.owed === "step-up") return null;
   if (demand.owed === "unknown") return unavailable();
-  if (demand.owed === "none") return redirect(authReturnPath(c, options), VERIFY_DETOUR_STATUS);
+  if (demand.owed === "none") return createRedirectResponse(authReturnPath(c, options), VERIFY_DETOUR_STATUS);
   const enrolment = authEnrolTarget(authEnrolmentPaths(options.paths.auth), demand.kinds) ?? authSettledPath(options);
-  return redirect(enrolment, VERIFY_DETOUR_STATUS);
+  return createRedirectResponse(enrolment, VERIFY_DETOUR_STATUS);
 }
 
 // Both code factors are bounded 6–8 at construction, so this narrows rather than clamps: a width the
@@ -216,7 +216,7 @@ async function resolveEnrolPasskey<Bindings>(
   const services = await authServices(c, options);
   const { auth } = options.paths;
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(auth.signin()));
+  if (identity === null) return err(createRedirectResponse(auth.signin()));
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
 
@@ -240,7 +240,7 @@ async function passkeyPage<Bindings>(
   const services = await authServices(c, options);
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(auth.signin()));
+  if (identity === null) return err(createRedirectResponse(auth.signin()));
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
 
@@ -289,7 +289,7 @@ async function resolvePasskeyEdit<Bindings>(
   const services = await authServices(c, options);
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(auth.signin()));
+  if (identity === null) return err(createRedirectResponse(auth.signin()));
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
   const id = c.params.id;
@@ -326,7 +326,7 @@ async function totpPage<Bindings>(
   const services = await authServices(c, options);
   const { auth } = options.paths;
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(auth.signin()));
+  if (identity === null) return err(createRedirectResponse(auth.signin()));
 
   const offered = authEnrollable(services, "totp-app");
   if (!offered.ok) return err(offered.error);
@@ -387,7 +387,7 @@ async function resolveEmailChange<Bindings>(
 ): Promise<Result<AuthViewProps["accountEmailChange"], Response>> {
   const { auth, account } = options.paths;
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(auth.signin()));
+  if (identity === null) return err(createRedirectResponse(auth.signin()));
   const submitPath = account.emailChangeSubmit();
 
   return ok({
@@ -449,7 +449,7 @@ async function resolveAccountFactors<Bindings>(
   options: AuthWebOptions<Bindings>,
 ): Promise<Result<AuthViewProps["accountFactors"], Response>> {
   const identity = resolveAuthViewer(c);
-  if (identity === null) return err(redirect(options.paths.auth.signin()));
+  if (identity === null) return err(createRedirectResponse(options.paths.auth.signin()));
   return factorsPanel(c, options, identity.userId, options.paths.account);
 }
 
@@ -481,7 +481,7 @@ async function resolveAdminUsers<Bindings>(
     { ...(asked.has("q") ? { q: asked.get("q") } : {}), ...(asked.has("after") ? { after: asked.get("after") } : {}) },
     { abortEarly: true },
   );
-  if (!parsed.success) return err(redirect(admin.users.list()));
+  if (!parsed.success) return err(createRedirectResponse(admin.users.list()));
   const query = parsed.output.q ?? "";
   const after = parsed.output.after;
 
@@ -518,7 +518,7 @@ async function adminUserPage<Bindings>(
   return ok({
     user: found.data,
     lastAdmin: found.data.isAdmin && found.data.deactivatedAt === null && counted.data <= 1,
-    // The two controls that would lock this administrator out of the console they are standing in.
+    // The controls that would lock this administrator out of the console they are standing in.
     // The action refuses them; this is what stops the page offering them in the first place.
     self: resolveAuthViewer(c)?.userId === found.data.id,
     outcome: state.outcome ?? null,
@@ -591,13 +591,13 @@ export const AUTH_VIEW_GUARDS = {
   adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up"],
 } as const satisfies { readonly [Name in AuthViewName]: readonly AuthGuardName[] };
 
-// Two of the four guards are observable here and are re-checked rather than trusted; the enrolment
+// `require-auth` and `require-admin` are observable here and re-checked rather than trusted; the enrolment
 // pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.
 /** The refusal an unguarded or under-privileged request gets, or `null` when it may read the page. */
 function refuseUnguarded<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, guards: readonly AuthGuardName[]): Response | null {
   if (!guards.includes("require-auth")) return null;
   const identity = authCtx.getOptional(c);
-  if (identity === undefined) return redirect(options.paths.auth.signin());
+  if (identity === undefined) return createRedirectResponse(options.paths.auth.signin());
   if (guards.includes("require-admin") && !identity.isAdmin) return new Response(FORBIDDEN, { status: 403 });
   return null;
 }

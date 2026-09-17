@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../../cli/errors";
+import { fakeDbIo } from "../db.fixture";
 import { sha256 } from "../digest";
 import { formatComposeHeader, formatCustomHeader, parseMigrationHeader } from "../schema/header";
-import { fakeDbIo } from "../test-support";
 import { discoverMigrations, migrationChecksum, migrationFileName, migrationsDigest, nextMigrationNumber, readMigrationFiles } from "./files";
 
 const ADD_INDEX = { name: "0002_add_index.sql", path: "/m/0002_add_index.sql", sql: "CREATE INDEX i ON t (a);" };

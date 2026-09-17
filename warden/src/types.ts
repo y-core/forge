@@ -5,10 +5,7 @@ export type Kind = "libs" | "apps";
 export interface SyncTree {
   /** Destination, relative to the repository root. */
   tree: string;
-  /** Sources, absolute, inside the installed warden directory, layered in order — a later source
-   *  overwrites a file of the same name from an earlier one. More than one, because a shared
-   *  definition and a kind-specific one land in the same destination and a second `SyncTree` naming
-   *  it would replace rather than add to the first. */
+  /** Sources, absolute, inside the installed warden directory, layered in order. */
   from: readonly string[];
 }
 
@@ -31,12 +28,10 @@ export interface Divergence {
   detail: string;
 }
 
-/** Which corpus a document belongs to: the fleet's, this repository's own, or an installed
- *  dependency's — the library's consumer-facing documents, served where the library is not. @public */
+/** Which corpus a document belongs to: the fleet's, this repository's own, or an installed dependency's. @public */
 export type Corpus = "canon" | "project" | "dependency";
 
-/** Every corpus, in the order a tie between them is settled. One list, so a new corpus cannot be
- *  added to the type and silently missed by a validator. @public */
+/** Every corpus, in the order a tie between them is settled. @public */
 export const CORPORA: readonly Corpus[] = ["canon", "project", "dependency"];
 
 /** Which canon tree a document belongs to. Project documents carry none. @public */
@@ -71,13 +66,10 @@ export interface Chunk {
   /** The section verbatim, for `knowledge_read`. */
   body: string;
   ordinal: number;
-  /** 1-indexed line its heading sits on, and the last line of its block — the span a changed line
-   *  is resolved through. Stored rather than re-derived, so the spans and the ids come out of one
-   *  build and can never name different sections. */
+  /** 1-indexed line its heading sits on, and the last line of its block — the span a changed line is resolved through. */
   line: number;
   endLine: number;
-  /** Whether the chunk competes in search. False for a heading that only organises its children:
-   *  it is addressable and appears in an outline, but has no prose of its own to rank. */
+  /** Whether the chunk competes in search; false for a heading that only organises its children. */
   searchable: boolean;
 }
 
@@ -87,7 +79,6 @@ export interface Relation {
   kind: "defers" | "cites" | "governs";
   to?: string;
   raw: string;
-  /** The ids a citation named more than one of. In memory only — never a column, because it is
-   *  evidence about the citation's spelling rather than a fact about the corpus. */
+  /** The ids a citation named more than one of; in memory only, never a column. */
   ambiguous?: readonly string[];
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { FileInput } from "./file-input";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("FileInput", () => {
   it("renders the whole control exactly when it is invalid and busy, caller class merged last", async () => {

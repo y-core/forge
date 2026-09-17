@@ -158,6 +158,9 @@ export function inList(values: readonly unknown[]): SqlFragment {
 /** Matches a row unless it is the only admin who could still sign in — a deactivated one cannot recover a deployment. @internal */
 export const NOT_LAST_ADMIN: SqlFragment = sql`(is_admin = 0 OR deactivated_at IS NOT NULL OR (SELECT COUNT(*) FROM auth_users WHERE is_admin = 1 AND deactivated_at IS NULL) > 1)`;
 
+/** Matches only while the deployment has no admin who could sign in — the same predicate `countAdmins` reads. @internal */
+export const NO_ADMIN_YET: SqlFragment = sql`NOT EXISTS (SELECT 1 FROM auth_users WHERE is_admin = 1 AND deactivated_at IS NULL)`;
+
 /** The same guard, as a predicate on a child table's row. @internal */
 export function ownerRemovable(key: Uint8Array<ArrayBuffer>): SqlFragment {
   return sql`EXISTS (SELECT 1 FROM auth_users WHERE id = ${key} AND ${NOT_LAST_ADMIN})`;

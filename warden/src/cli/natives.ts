@@ -70,8 +70,7 @@ async function fetchBinding(pkg: string, version: string, target: string): Promi
   }
 }
 
-/** Places the prebuilt bindings for `arch` into `root`'s node_modules, skipping any whose parent is
- *  not a dependency. @public */
+/** Places the prebuilt bindings for `arch` into `root`'s node_modules, skipping any whose parent is not a dependency. @public */
 export async function placeNatives(root: string, arch: string): Promise<void> {
   for (const { parent, pkg } of bindings(arch)) {
     const version = declaredVersion(root, parent);

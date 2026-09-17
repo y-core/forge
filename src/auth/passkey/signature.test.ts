@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 
 import { decodeCosePublicKey } from "../../crypto/mod";
 import type { CosePublicKey } from "../../crypto/mod";
-import { createPasskeyKeyPair } from "./fixture";
+import { createPasskeyKeyPair } from "./passkey.fixture";
 import { verifyPasskeySignature } from "./signature";
 import type { PasskeyKeyPair } from "./types";
 

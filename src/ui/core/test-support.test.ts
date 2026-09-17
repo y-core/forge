@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 
 const BADGE = '<span data-slot="badge" data-tone="neutral" class="inline-flex px-2.5 text-xs">New</span>';
 

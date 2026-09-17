@@ -3,6 +3,20 @@ import type { BarrelImport, ClassLiteral, CustomPropertyCitation, RuleMarker, Sk
 
 const RULE_ID_GRAMMAR = /^forge-ui-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+const BACKTICKED = /`([^`]+)`/g;
+
+const ROOT_IDENTIFIER = /^[A-Za-z_$][\w$]*/;
+
+/** Every identifier a backticked span names, reduced to its root — a `{ … }` shape names none. */
+export function rootIdentifiers(cell: string): string[] {
+  const names: string[] = [];
+  for (const match of cell.matchAll(BACKTICKED)) {
+    const root = ROOT_IDENTIFIER.exec(match[1] ?? "");
+    if (root !== null) names.push(root[0]);
+  }
+  return names;
+}
+
 /** Whether `id` satisfies the rule-id grammar. */
 export function isValidRuleId(id: string): boolean {
   return RULE_ID_GRAMMAR.test(id);
@@ -100,8 +114,7 @@ interface ClassGroup {
   skipped: SkippedClassPosition[];
 }
 
-/** Reads every string and template literal in `[start, end)` as class text, one literal per quoted
- *  string and one per interpolation-delimited template chunk — the unit the formatter sorts. */
+/** Reads every string and template literal in `[start, end)` as class text — the unit the formatter sorts. */
 function harvestSpan(scanned: string, start: number, end: number, lineOf: (index: number) => number): ClassGroup {
   const literals: ClassLiteral[] = [];
   const consumed: [number, number][] = [];

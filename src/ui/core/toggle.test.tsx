@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Button } from "./button";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { Toggle } from "./toggle";
 import { ToggleGroup } from "./toggle-group";
 

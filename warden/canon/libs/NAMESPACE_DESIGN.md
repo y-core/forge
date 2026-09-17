@@ -56,17 +56,17 @@ barrel means inside an _application_, and the inversion is the single most commo
 ### 1b. Export Star Ban
 
 **`export * from "./foo"` is banned.** It leaks internal symbols into the public surface, risks circular dependencies, and makes the public API
-ungreppable — the three harms are independent, and any one of them is sufficient.
+ungreppable — the harms are independent, and any one of them is sufficient.
 
-**All three spellings are banned**, not just the bare one:
+**Every spelling is banned**, not just the bare one:
 
 | Form | Banned | Why |
 | --- | --- | --- |
-| `export * from "./foo"` | yes | all three harms |
+| `export * from "./foo"` | yes | all the harms |
 | `export * as ns from "./foo"` | yes | the same leak behind one extra token |
 | `export type * from "./foo"` | yes | leaks every internal type, and is equally ungreppable |
 
-The type-only form is erased at emit, so it cannot create a runtime cycle — but two of the three harms still apply, and a barrel's job is to _state_
+The type-only form is erased at emit, so it cannot create a runtime cycle — but the other harms still apply, and a barrel's job is to _state_
 its surface. Name the types.
 
 ### 1c. What the Export Gate Proves
@@ -127,7 +127,7 @@ A namespace is **integration** when it composes across namespaces. **Every edge 
 cross-namespace import is a defect, and so is a declared edge no source file makes. Imports of §3c primitives are not edges and are not declared.
 
 A gate step walks the source tree, builds the observed graph, and diffs it against the declaration, so an undeclared import, a stale declaration,
-and a leaf that quietly gained an edge each fail rather than passing unnoticed. Three properties of that walk are load-bearing and not self-evident:
+and a leaf that quietly gained an edge each fail rather than passing unnoticed. These properties of that walk are load-bearing and not self-evident:
 
 - **Test files are excluded.** Counting them would reclassify most declared leaves as integration and invent edges into test-fixture namespaces no
   consumer can reach. A fixture import is not a layering claim.
@@ -178,7 +178,7 @@ edge should be declared.
 
 ### 4a. Factory and Accessor Verbs
 
-`CODE_RULES.md` §1d owns the three verbs — `create*` for a factory, `resolve*` for a request-time accessor, `define*` for a declarative
+`CODE_RULES.md` §1d owns the verbs — `create*` for a factory, `resolve*` for a request-time accessor, `define*` for a declarative
 configuration object. This section adds only the exception class a layered namespace tree needs.
 
 Value constructors are the one documented class of exception — a pair like `ok` / `err` builds values rather than configured objects, and prefixing
@@ -229,7 +229,7 @@ in that leaf.
 
 ### 5c. Extraction Triggers
 
-A namespace has outgrown its concern when a **countable** threshold is crossed, and the threshold is written down before it is reached. Two shapes
+A namespace has outgrown its concern when a **countable** threshold is crossed, and the threshold is written down before it is reached. These shapes
 recur:
 
 - **A third variant of a builder or client family** — two is a pair, three is a category, and a category deserves its own namespace.

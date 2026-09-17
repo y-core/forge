@@ -52,10 +52,7 @@ function barrels(root: string): Map<string, string> {
   return targets;
 }
 
-/** Which sections a diff touched, what depends on them, and what code they govern.
- *
- *  Spans come out of the same build as the ids, so a changed line and the section it names can
- *  never disagree — which is why they are stored rather than re-derived from the working tree. @public */
+/** Which sections a diff touched, what depends on them, and what code they govern. @public */
 export function impact(db: Database, root: string, sources: readonly SourceDoc[], ref: string, files: readonly ChangedFile[]): Impact {
   const byFile = new Map(sources.map((doc) => [doc.file, doc] as const));
   const targets = barrels(root);

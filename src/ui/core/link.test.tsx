@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Link } from "./link";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 const anchor = (props: Parameters<typeof Link>[0] = {}) => render(<Link {...props}>go</Link>);
 

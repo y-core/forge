@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { render } from "../../testing/render";
 import { Navbar } from "../chrome/navbar";
 import type { NavDefinition } from "../chrome/types";
-import { mount } from "../client/browser-test-helper";
+import { mount } from "../client/browser.fixture";
 import { createIcon } from "./icon";
 import { Menu } from "./menu";
 import { Popover } from "./popover";

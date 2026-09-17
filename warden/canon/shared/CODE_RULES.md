@@ -1,11 +1,11 @@
 ---
 title: Code Rules
-description: "Seven non-negotiable coding rules: zero global state, explicit errors, validation first, testability, the comment budget, declarative style, and name distinctiveness."
+description: "The non-negotiable coding rules: zero global state, explicit errors, validation first, testability, the comment budget, declarative style, and name distinctiveness."
 ---
 
 # Code Rules
 
-> Seven non-negotiable rules for every TypeScript file in the repository, keeping it testable, predictable, and safe in the Cloudflare Workers
+> The non-negotiable rules for every TypeScript file in the repository, keeping it testable, predictable, and safe in the Cloudflare Workers
 > runtime.
 >
 > Defers to: `ERROR_HANDLING.md` §1 for the `Result` primitive; `TESTING.md` for test placement and fake patterns; `BOUNDARIES.md` for the
@@ -34,6 +34,9 @@ description: "Seven non-negotiable coding rules: zero global state, explicit err
 - §5b Forbidden Outright: what is deleted on sight
 - §5c Where Rationale Belongs Instead: the routing table
 - §5d Tests Are Not Exempt: the test name is the documentation
+- §5e A Behavioural Claim Is an Assertion: find the test that pins it, or write it
+- §5f A Field Is a Symbol: a gloss that spells the field name back earns nothing
+- §5g A Count Is Not a Comment: no tally of the things a reader can already see
 - §6 Declarative Over Imperative Rule: expression over statement
 - §7 Name Distinctiveness Rule: a name is the only index from a question to the code
 - §7a The Name Is the First Hop: discovery is name-shaped, understanding is LSP-shaped
@@ -84,7 +87,7 @@ One file owns each such value, and it is named in the source-of-truth register (
 
 ### 1d. Factory Verbs and Bare Constructors
 
-**Three verbs, one rule each:**
+**Each verb carries one rule:**
 
 - **`create*`** names **any factory** that instantiates behaviour from captured configuration. Never `make*`, never `new*`.
 - **`resolve*`** names a **request-time accessor** that reads a binding or a value off the context and fails closed when it is absent.
@@ -190,16 +193,21 @@ cannot be tested without a mock is a design signal: make its dependency an argum
 
 ## 5. Comment Budget Rule
 
-**Code is the documentation. A comment is an admission that the code failed to explain itself, and it is paid for out of every future reader's
-attention.** This rule is a _ceiling_, not a floor: §5a is the entire permitted budget, and anything not named there is a defect to be deleted — not
-a judgement call, not a matter of taste, not something to leave because it is already written.
+**Code is the documentation; the tests are the use cases.** The code states the feature and its purpose. The tests state the use cases. A comment is
+what is left when neither could be made to say it, and most of the time that is nothing. This rule is a _ceiling_, not a floor: §5a is the entire
+permitted budget, and anything not named there is a defect to be deleted — not a judgement call, not a matter of taste, not something to leave
+because it is already written.
 
 Prose does not compile, is not typechecked, is not tested, and is not reachable by any gate. It therefore goes stale silently and asserts things no
 one can verify. Every line of it is read — by a human or an agent — on every single pass over the file, and then discarded. That cost is paid
 continuously; the comment's value is paid once, at most.
 
-**The first fix for an unclear line is always a better name, a smaller function, or a named intermediate — never a comment.** Reach for a comment
-only after those have been tried and have genuinely failed.
+**A name is the alternative to a comment, and it is the better one.** The first fix for an unclear line is a better name, a smaller function, or a
+named intermediate. Naming and convention done well leave no compelling reason for prose that regurgitates what is already evident. §7 is what makes
+that possible, and §7a states the pairing from the naming end.
+
+**Be draconian.** A second, third or fourth layer saying the same thing goes, unless it clarifies something that cannot be expressed any other way.
+Duplicated prose promotes confusion and stale references on top of the debt it already is.
 
 ### 5a. The Entire Permitted Budget
 
@@ -210,8 +218,16 @@ comment syntax: `@jsx*` pragmas, `biome-ignore`, lint suppressions, and project-
 a human-readable reason field, that reason must be **self-contained**: a reason reading "see the note above" breaks the moment the note it points at
 is deleted. Write it so it survives alone.
 
+**A linter override's reason in a configuration file is a directive reason, not source prose.** Where a repository's configuration baseline requires
+one above every override, that requirement stands and this budget does not contradict it. The carve-out is scoped to the override it sits above; it
+does not license prose elsewhere in the same file.
+
 **1. One line of TSDoc on an exported symbol.** One sentence, on one line, saying what the symbol does. Not why it exists, not what it does not do,
 not what was considered instead.
+
+**The operative test is shape, not length: a TSDoc block closes on the line it opens on.** "Multi-paragraph" is a label an author writing three
+wrapped lines does not apply to themselves; "closes on its opening line" is one they cannot avoid applying. This is also what a comment-budget gate
+step checks, so the rule and the check say the same thing.
 
 ```ts
 /** Creates an app with a structured error boundary, wiring middleware → routes → assets. */
@@ -245,7 +261,7 @@ in whatever change touches the file.
 - **`@example` blocks.** A signature plus a one-line summary is the usage documentation. If an API genuinely cannot be used from its types, that is
   an API defect — fix the API. Consumer-facing usage belongs in the unit's `README.md` or its governing document, where it has a single home and
   does not ride along in every read of the source.
-- **Restating the code.** `// increment the counter`, `/** The user's name. */ name: string`, `// Returns true if valid`.
+- **Restating the code.** `// increment the counter`, `// Returns true if valid`. §5f owns the interface-field form of this defect.
 - **Section banners and separators.** `// ---- helpers ----`, `// === Types ===`, box-drawing rules. File structure is what files and exports are
   for.
 - **Commented-out code.** Git holds it.
@@ -266,7 +282,7 @@ one place that owns it:
 | A portable architectural rule, boundary, or trade-off | the governing canon document |
 | A ruling specific to this repository | the matching `docs/` doc |
 | Consumer-facing usage, examples, recipes | the unit's `README.md` |
-| A claim about behaviour | a test that asserts it |
+| A claim about behaviour | a test that asserts it (§5e owns the procedure) |
 | Work not yet done | a ledger task |
 | The history of a decision | the commit message |
 | A capability the repository deliberately does **not** have | the matching `docs/` doc |
@@ -278,6 +294,59 @@ A comment that could live in any row above does not also live in the source. Dup
 A test name is the test's documentation, and it is the one form of description that runs. A test whose intent needs a comment needs a better name.
 The same budget applies to `*.test.ts` / `*.test.tsx`, with one addition: a fixture holding a deliberately malformed or adversarial value may carry
 a one-line note saying what makes it malformed, when that is not visible from the literal itself.
+
+### 5e. A Behavioural Claim Is an Assertion
+
+**A behavioural claim is an assertion, not a sentence.** Where a comment asserts behaviour, find the test that pins it. If none does, the assertion
+is what was missing: write it, then delete the prose. A sentence claiming behaviour nothing asserts is a claim no reader can falsify and every
+reader must re-read.
+
+The procedure, in order:
+
+1. **Read the claim as a proposition.** "Returns the cached value when the entry has not expired" is a proposition about behaviour; "this is the
+   cache module" is not, and is deleted under §5b without further work.
+2. **Find the test that pins it.** A reference lookup on the symbol, then the co-located test file.
+3. **Where none does, the assertion is the missing work** — not a reason to keep the comment. Write the test.
+4. **Then delete the prose.** The claim now lives where it is executed, and a change that breaks it fails rather than lies.
+
+**A claim deleted without an assertion added leaves the change incomplete**, because the system lost a statement of its own behaviour and gained
+nothing that holds it. `TESTING.md` §3f states the same handoff from the receiving end.
+
+### 5f. A Field Is a Symbol
+
+**A field is a symbol, judged as one.** An interface field earns at most one line, and earns nothing when its name and its type already say it. A
+line that adds a default, a unit, a constraint or a caveat earns its place; one that spells the field name back in words does not.
+
+```ts
+interface ScanOptions {
+  /** Repository root. */ root: string; // earns nothing — the words reduce to the field's own name
+  /** The directories. */ dirs?: string[]; // earns nothing
+  /** Max bytes. */ maxBytes?: number; // earns nothing
+}
+```
+
+```ts
+interface ScanOptions {
+  /** Repository root; every reported path is relative to it. */ root: string;
+  /** Directories walked for source files. Defaults to `["src"]`. */ dirs?: string[];
+  /** Hard ceiling in bytes; a larger file is skipped, not truncated. */ maxBytes?: number;
+}
+```
+
+The passing lines carry a fact the signature does not: a relationship, a default, a unit, a failure mode. The failing ones carry the field name
+again. Where neither is available, the line itself is what goes — a field with no gloss at all is the ordinary case, not an omission.
+
+**§7's naming rules apply to a field exactly as to an export.** A field whose gloss is the only thing making it comprehensible has a naming defect,
+and §7b is the fix — not the gloss. A field-gloss rule in a comment-budget gate step is what makes this checkable rather than advisory.
+
+### 5g. A Count Is Not a Comment
+
+**A comment counts nothing.** `AGENT_GUIDE.md` §9b owns the reasoning and the test; it binds a TSDoc line and an inline comment exactly as it binds
+a governing document, so a tally of the exports below, the branches handled, or the callers affected is deleted on sight. §5b already names
+`"for four reasons"` and `"two earlier attempts"` among the forbidden spellings — this extends that list rather than opening a new one.
+
+A number that is a unit, a spec or RFC citation, a limit the code enforces, or an inline enumeration whose items immediately follow it is not a
+tally.
 
 ---
 
@@ -303,6 +372,9 @@ index from those words to the code is the words already in the code.
 This is the division of labour `AGENT_WORKFLOW.md` §2 states, seen from the other end: **discovery is name-shaped, understanding is
 tool-shaped.** §7 governs the first half only. A symbol whose name carries no word from its domain is unreachable by the question that should find
 it, and stays unreachable until someone happens on it while reading something else.
+
+**This is also the other half of §5.** A name is what §5 reaches for before a comment, and §7 is what makes that reach succeed: the budget can be a
+ceiling only because naming is expected to carry the weight prose would otherwise be asked to.
 
 ### 7b. One Domain Word — and No More Than the Domain Needs
 

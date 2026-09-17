@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, tagOf } from "./core.fixture";
 import { createIcon, Icon } from "./icon";
-import { attrOf, attrsOf, classesOf, tagOf } from "./test-support";
 import type { ForgeIcon } from "./types";
 
 const symbolRef = (html: string) => /<use href="([^"]*)"/.exec(html)?.[1] ?? "";

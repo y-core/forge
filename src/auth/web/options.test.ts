@@ -5,7 +5,7 @@ import { RequestContext } from "@remix-run/fetch-router";
 import type { AppContext } from "../../context/types";
 import { csrfMinterCtx } from "../../form/csrf";
 import { authNow, authPasskeyContract, authReturnPath, authServices, authSettledPath } from "./options";
-import { fakeAuthServices, fakeAuthWebOptions } from "./test-support";
+import { fakeAuthServices, fakeAuthWebOptions } from "./web.fixture";
 
 function context(url: string): AppContext {
   const c = new RequestContext(new Request(url));

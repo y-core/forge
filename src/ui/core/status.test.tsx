@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Status } from "./status";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 const dot = (props: Omit<Parameters<typeof Status>[0], "label"> = {}) => render(<Status label='Idle' {...props} />);
 

@@ -126,7 +126,7 @@ describe("devVarsPath()", () => {
 
 describe("readDevVars() and writeDevVars()", () => {
   function makeFile(content: string): string {
-    const path = join(mkdtempSync(join(tmpdir(), "foundry-devvars-")), ".dev.vars");
+    const path = join(mkdtempSync(join(tmpdir(), "forge-devvars-")), ".dev.vars");
     writeFileSync(path, content, "utf-8");
     return path;
   }

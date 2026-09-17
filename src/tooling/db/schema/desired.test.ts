@@ -2,10 +2,10 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
+import { fakeDbIo } from "../db.fixture";
 import { declaredPath } from "../declared";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
-import { fakeDbIo } from "../test-support";
 import type { DbConfig, DbHostConfig, DbRunContext, FakeDbIo } from "../types";
 import { readDesiredState } from "./desired";
 

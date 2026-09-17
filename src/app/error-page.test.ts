@@ -77,6 +77,13 @@ describe("createErrorPage — page structure", () => {
     expect(fragment(body, "<a ", "</a>")).toBe('<a href="/">Back to safety</a>');
   });
 
+  it("collapses a javascript: home or stylesheet href, since the `html` tag leaves `safeUrl` to its caller", async () => {
+    const page = createErrorPage({ stylesheetHref: "javascript:alert(1)", homeHref: "javascript:alert(1)" });
+    const body = await page(new Error("x"), createTestContext(new Request("http://test/"))).text();
+    expect(fragment(body, "<link", "/>")).toBe('<link rel="stylesheet" href="#" />');
+    expect(fragment(body, "<a ", "</a>")).toBe('<a href="#">Back to safety</a>');
+  });
+
   it("resolves a per-request stylesheet href and survives a throwing resolver", async () => {
     const dynamic = createErrorPage<{ CSS: string }>({ stylesheetHref: (c) => c.env.CSS });
     const res = dynamic(new Error("x"), createTestContext(new Request("http://test/"), { env: { CSS: "/hashed/app.css" } }));

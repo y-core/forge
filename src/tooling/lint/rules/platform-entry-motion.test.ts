@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { call, literal, methodCall, other, runRule } from "../test-support.ts";
+import { call, literal, methodCall, other, runRule } from "../lint.fixture.ts";
 import { platformEntryMotion } from "./platform-entry-motion.ts";
 
 const DETAIL =

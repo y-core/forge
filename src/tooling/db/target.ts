@@ -28,7 +28,7 @@ export function describeTargetGrammar(spec: string): string {
   return `--target ${spec} is not a target — use place[:database], place being ${PLACES.join(", ")}`;
 }
 
-/** True for the two places that name a deployed database. @internal */
+/** True for a place that names a deployed database. @internal */
 export function isRemotePlace(place: Place): boolean {
   return place === "remote" || place === "preview";
 }

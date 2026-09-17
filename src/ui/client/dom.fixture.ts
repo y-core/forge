@@ -1,8 +1,4 @@
 import type { FakeRequest } from "./types";
-/** A fake DOM for the client controllers' unit tests — the slice they touch, and nothing else.
- *
- * Hand-rolled rather than happy-dom: forge ships no DOM implementation as a dependency, and
- * `TESTING.md` prefers a fake whose behaviour the test can read to a library whose it cannot. */
 
 type Listener = (event: FakeEvent) => void;
 
@@ -167,10 +163,7 @@ export class FakeElement {
     if (at >= 0) list.splice(at, 1);
   }
 
-  /** Fires `event` here and then at every ancestor, which is the bubbling the controllers rely on.
-   *
-   * A controller may dispatch a *real* `Event` — `mountNumberField` re-fires `input` and `change`
-   * after stepping — whose `target` is a readonly getter, so only a fake one is retargeted. */
+  /** Bubbles `event` from here to every ancestor; only a `FakeEvent` is retargeted, a real `Event`'s `target` being readonly. */
   dispatchEvent(event: FakeEvent | Event): void {
     if (event instanceof FakeEvent) event.target ??= this;
     // oxlint-disable-next-line typescript/no-this-alias -- the loop variable walks up from this node; it is a cursor, not an alias
@@ -239,11 +232,7 @@ export class FakeDocument {
   }
 }
 
-/** A stand-in for `navigator.credentials`: records each call, and answers from `answer`.
- *
- * Nothing else in `ui/client` reads `navigator`, so this is modelled here rather than assumed —
- * a `DOMException` name in `answer` is thrown as that error, which is how a ceremony's refusal
- * paths are reached without a real authenticator. */
+/** A stand-in for `navigator.credentials`: records each call, and answers from `answer`. */
 export class FakeCredentials {
   readonly calls: Array<{ method: "create" | "get"; options: unknown }> = [];
   /** The credential each call resolves with; a string is thrown as a `DOMException` of that name. */
@@ -350,8 +339,7 @@ export class FakeWindow {
     return { direction: (el && this.directions.get(el)) || "ltr" };
   }
 
-  /** A getter, because `throws-on-access` has to fail before any method is reached — which is the
-   * opaque-origin shape `safeStorage` exists to survive. */
+  /** A getter, because `throws-on-access` must fail before any method is reached, as on an opaque origin. */
   get localStorage(): Storage {
     if (this.storageMode === "throws-on-access") throw new Error("SecurityError");
     const store = this.store;

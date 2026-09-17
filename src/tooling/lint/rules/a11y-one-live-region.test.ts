@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, container, element, identifier, literal, runRule } from "../test-support.ts";
+import { attribute, container, element, identifier, literal, runRule } from "../lint.fixture.ts";
 import { a11yOneLiveRegion } from "./a11y-one-live-region.ts";
 
 const live = (value: Parameters<typeof attribute>[1]) => element("div", attribute("aria-live", value));

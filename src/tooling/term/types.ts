@@ -104,14 +104,7 @@ export interface AnsiCodes {
 /** Every colour and style name, each returning a styler to chain the next off. */
 type Chain = { readonly [K in AnsiColor | AnsiStyle]: Colorize };
 
-/**
- * A callable styler that is also a chain: `style.red.bold("x")`.
- *
- * Threaded, never ambient. There is no detected module-level singleton to reach for, because a
- * level is a property of the stream being written to and `CODE_RULES.md` §1 bans the global that
- * would have to hold it.
- * @public
- */
+/** A callable styler that is also a chain: `style.red.bold("x")`. @public */
 export interface Colorize extends Chain {
   (input: string): string;
   /** The sequences this chain opens and closes with — empty at level 0. */

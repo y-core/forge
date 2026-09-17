@@ -11,8 +11,7 @@ const CRITERIA = { "aa-text": { floor: 4.5, name: "WCAG 2.2 AA text" } };
 
 const PAIRS = [{ token: "body text", criterion: "aa-text", foreground: { token: "--ink" }, background: { token: "--surface" } }];
 
-/** A stylesheet directory holding one token file, for the check to read. `light` is the foreground
- *  the light mode resolves to; the dark mode is always white on black, well clear of every floor. */
+/** A stylesheet directory holding one token file, for the check to read. */
 function fixture(light: string, extra = ""): ContrastCheckConfig {
   const css = [
     ":root {",

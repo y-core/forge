@@ -17,6 +17,7 @@ export function createAdminUserService(options: AdminUserServiceOptions): AdminU
     search: (query, page) => options.users.search(query, page),
     view: (id) => options.users.findById(id),
     countAdmins: () => options.users.countAdmins(),
+    claimFirst: (id, at) => options.users.claimFirstAdmin(id, at),
     elevate: (id, at) => options.users.setAdmin(id, true, at),
     demote: (id, at) => options.users.setAdmin(id, false, at),
     deactivate: (id, at) => options.users.setDeactivated(id, true, at),

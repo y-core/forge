@@ -2,11 +2,10 @@ import type { PresentationAttrsProps } from "./types";
 /** Every colour intent a forge surface can carry; `neutral` is the un-toned default. @public */
 export const TONES = ["neutral", "primary", "secondary", "destructive", "info", "success", "warning"] as const;
 
-/** How a tone is painted — the five emphasis levels every toned surface chooses from. @public */
+/** How a tone is painted — the emphasis levels every toned surface chooses from. @public */
 export const APPEARANCES = ["solid", "soft", "outline", "ghost", "link"] as const;
 
-/** Every presentational attribute forge emits — the enum half of the vocabulary, beside the boolean
- *  state hooks in `state-attrs.ts`. @public */
+/** Every presentational attribute forge emits — the enum half of the vocabulary. @public */
 export const PRESENTATION_ATTRS = {
   /** The colour intent the surface carries — one of {@link TONES}. */
   tone: "data-tone",

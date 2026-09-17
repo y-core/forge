@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { renderToString } from "../../jsx/render-to-string";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Turnstile } from "./turnstile";
 
 const mount = (props: Omit<Parameters<typeof Turnstile>[0], "siteKey"> = {}) =>

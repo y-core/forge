@@ -38,7 +38,7 @@ function declaredHex(value: string): string {
   return oklchToHex(Number(parsed[1]) / 100, Number(parsed[2]), Number(parsed[3]));
 }
 
-// A scheme declares each step once, so the two modes are read off the argument positions of one
+// A scheme declares each step once, so light and dark are read off the argument positions of one
 // `light-dark()` rather than off two blocks; a step equal in both modes is written bare.
 function shippedScale(file: string, family: ScaleFamily = "gray"): Record<Mode, readonly string[]> {
   const text = readFileSync(new URL(`../../assets/css/${file}`, import.meta.url).pathname, "utf-8");
@@ -347,7 +347,7 @@ describe("the accent dials against the --primary-foreground floor", () => {
   if (pair === undefined) throw new Error("--primary-foreground is not a scale pair");
 
   const worst = (mode: Mode) => {
-    // The gray dials sit at their defaults: this sweeps the two dials the finding is about, and the
+    // The gray dials sit at their defaults: this sweeps the hue and chroma the finding is about, and the
     // foreground step is read through the same resolver the page uses.
     const foreground = NEUTRAL[mode][sideStep(pair.foreground, mode)] ?? "";
     let low = { ratio: Number.POSITIVE_INFINITY, hue: 0, chroma: 0 };

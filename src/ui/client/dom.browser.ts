@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {
@@ -84,8 +84,7 @@ test.describe("eventTarget", () => {
   });
 });
 
-/** A `[data-scope]` wrapper whose shadow root holds a button and an `<a href>` whose `host` is the
- * non-empty string `"example.com"` — an anchor's `host` is a URL component, not a shadow host. */
+/** A shadow root holding a button and an `<a href>` whose `host` is a URL component, not a shadow host. */
 const ANCHOR_SHADOW_FIXTURE = `
   <div data-scope="demo" id="scope"><div id="widget"></div></div>
   <script>

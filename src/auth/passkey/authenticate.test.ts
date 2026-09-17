@@ -4,7 +4,7 @@ import { base64urlEncode, uuidv7 } from "../../crypto/mod";
 import { ok } from "../../result/result";
 import type { AuthAlgorithm, AuthChallenge, AuthCredential, AuthUser, ChallengeStore, CredentialStore, UserStore } from "../types";
 import { verifyPasskeyAuthentication } from "./authenticate";
-import { PASSKEY_FLAG, createPasskeyKeyPair, fakeClientData, fakePasskeyAssertion } from "./fixture";
+import { PASSKEY_FLAG, createPasskeyKeyPair, fakeClientData, fakePasskeyAssertion } from "./passkey.fixture";
 import type { PasskeyAuthenticationVerifyOptions } from "./types";
 import type { PasskeyKeyPair } from "./types";
 

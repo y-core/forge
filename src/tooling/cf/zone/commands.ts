@@ -25,15 +25,7 @@ interface RemoteRuleset {
   rules?: ZoneRule[];
 }
 
-/**
- * The API-token permission each phase needs, named in the failure row.
- *
- * "Check your scopes" is not a fix, so the failure row names the permission. No single permission
- * covers both phases — which is why a token can succeed on one and fail on the other, and why both
- * failing together points at the token itself rather than at a scope.
- *
- * @internal
- */
+/** The API-token permission each phase needs, named in the failure row. @internal */
 const PHASE_PERMISSIONS: Record<string, string> = {
   http_request_firewall_custom: "Zone → Zone WAF: Edit",
   http_request_dynamic_redirect: "Zone → Dynamic Redirect: Edit",
@@ -78,15 +70,7 @@ async function loadSiteConfigModule(root: string, configPath: string): Promise<R
   return resolveSiteConfig(raw);
 }
 
-/**
- * The rules each phase should hold, derived from the config alone.
- *
- * A phase the config says nothing about gets an empty array, and an empty array is a *statement* —
- * `PUT` replaces the rule list wholesale, so committing it clears the phase. That is the point:
- * one source of truth means a rule this config does not describe does not survive.
- *
- * @public
- */
+/** The rules each phase should hold, derived from the config alone. @public */
 export function planZoneRules(config: ReturnType<typeof resolveSiteConfig>): Array<Pick<PhasePlan, "name" | "phase" | "desired">> {
   const { zone } = config;
   if (zone === null) throw new CliError("invalid-args", "The site config declares no `zone` block — nothing to reconcile.");
@@ -101,14 +85,7 @@ export function planZoneRules(config: ReturnType<typeof resolveSiteConfig>): Arr
       desired: allow
         ? [
             buildAllowRule(
-              {
-                apex: zone.apex,
-                // Every method, not the GET-only sitemap view: a `POST /api/contact` filtered out
-                // here is a broken form, not a blocked probe.
-                paths: allow.paths ?? config.pages,
-                prefixes: allow.prefixes ?? [],
-                files: allow.files ?? [],
-              },
+              { apex: zone.apex, paths: allow.paths ?? config.pages, prefixes: allow.prefixes ?? [], files: allow.files ?? [] },
               { action: allow.action, ...(allow.description !== undefined ? { description: allow.description } : {}) },
             ),
           ]
@@ -155,14 +132,7 @@ function comparable(rule: ZoneRule): string {
   );
 }
 
-/**
- * Whether a phase's remote rules already match what the config describes.
- *
- * Compared on the fields this tool sets, in order. A remote rule carries `id`, `version` and
- * `last_updated` besides, and comparing those would report drift on every run.
- *
- * @public
- */
+/** Whether a phase's remote rules already match the config, compared in order on the fields this tool sets. @public */
 export function rulesInSync(desired: readonly ZoneRule[], remote: readonly ZoneRule[] | null): boolean {
   if (remote === null || remote.length !== desired.length) return false;
   return desired.every((rule, index) => {

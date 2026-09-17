@@ -16,4 +16,4 @@ export { html, isSafeHtml, rawHtml } from "./html";
 export type { SafeHtml } from "./html";
 export { joinPath } from "./path";
 export { safeRedirectPath } from "./redirect-path";
-export { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, redirect } from "./response";
+export { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse } from "./response";

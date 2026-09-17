@@ -263,7 +263,7 @@ describe("CustomiseContent", () => {
     expect(new Set(SCALE_ROWS.map((row) => row.id)).size).toBe(SCALE_ROWS.length);
   });
 
-  it("labels each row visibly, since four rows of near-white step 1 are otherwise indistinguishable", async () => {
+  it("labels each row visibly, since rows of near-white step 1 are otherwise indistinguishable", async () => {
     const out = await page();
     expect(elementsOf(out, "td", 'colspan="12"')).toEqual(
       SCALE_ROWS.map(

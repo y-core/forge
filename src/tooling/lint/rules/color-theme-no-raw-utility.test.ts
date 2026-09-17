@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, call, element, literal, runRule } from "../test-support.ts";
+import { attribute, call, element, literal, runRule } from "../lint.fixture.ts";
 import { colorThemeNoRawUtility } from "./color-theme-no-raw-utility.ts";
 
 const classes = (...texts: string[]) => element("div", attribute("class", call("cn", ...texts.map((text) => literal(text)))));

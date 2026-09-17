@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Stack } from "./stack";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 const pile = (props: Parameters<typeof Stack>[0] = {}) => render(<Stack {...props} />);
 

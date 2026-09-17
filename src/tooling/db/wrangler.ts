@@ -12,18 +12,21 @@ function failed(what: string, home: Home, run: Spawned): CliError {
   return new CliError("external", `${what} against ${home.label} (${home.database}) failed (exit ${run.code})${detail ? `:\n${detail}` : ""}`);
 }
 
-/** The JSON payload wrangler wrote, skipping any banner it printed ahead of it. */
+/** The JSON payload wrangler wrote, skipping a banner ahead of it and anything — an update notice, say — printed after it. */
 function parseJsonOutput(what: string, home: Home, stdout: string): unknown {
   const lines = stdout.split("\n");
   const start = lines.findIndex((line) => /^\s*[[{]/.test(line));
   const shown = stdout.trim().slice(0, 2000);
   if (start === -1) throw new CliError("external", `${what} against ${home.label} (${home.database}) printed no JSON:\n${shown}`);
-  try {
-    return JSON.parse(lines.slice(start).join("\n"));
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new CliError("external", `${what} against ${home.label} (${home.database}) printed JSON this tool cannot read (${detail}):\n${shown}`);
+  let detail = "";
+  for (let end = lines.length; end > start; end--) {
+    try {
+      return JSON.parse(lines.slice(start, end).join("\n"));
+    } catch (error) {
+      detail ||= error instanceof Error ? error.message : String(error);
+    }
   }
+  throw new CliError("external", `${what} against ${home.label} (${home.database}) printed JSON this tool cannot read (${detail}):\n${shown}`);
 }
 
 /** One statement against a home, as rows. Throws on failure: every caller's next step needs the answer. @internal */
@@ -39,7 +42,7 @@ export function queryRows(io: DbIo, home: Home, statement: string): Record<strin
 // 131,072 bytes here — fails at spawn with E2BIG, before wrangler sees a byte of it.
 const COMMAND_BUDGET = 65_536;
 
-/** Several statements in one spawn, returning each statement's rows in order — five reads for the price of one process. @internal */
+/** Several statements in one spawn, returning each statement's rows in order — many reads for the price of one process. @internal */
 export function queryBatches(io: DbIo, home: Home, statements: readonly string[], budget: number = COMMAND_BUDGET): Record<string, unknown>[][] {
   const rows: Record<string, unknown>[][] = [];
   for (const chunk of commandChunks(statements, budget)) {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, tagOf } from "./core.fixture";
 import { Label } from "./label";
-import { attrsOf, classesOf, tagOf } from "./test-support";
 
 describe("Label", () => {
   it("renders the whole caption exactly, its text escaped and the required marker appended after it", async () => {

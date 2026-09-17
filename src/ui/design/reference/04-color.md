@@ -7,7 +7,7 @@ description: "The two layers of forge's colour system, and how a surface picks a
 
 Forge's colour system is two layers.
 
-Underneath is the **scale** in a scheme file — twelve numbered steps, `--gray-1` through `--gray-12` — alongside the fixed status hues in
+Underneath is the **scale** in a scheme file — a twelve-step ramp, `--gray-1` through `--gray-12` — alongside the fixed status hues in
 `theme-colors.css`. Each step holds a **literal value** covering both modes, and names a _position in the system_: the app background, a subtle
 border, a low-contrast text colour.
 
@@ -15,8 +15,8 @@ On top is the semantic layer in `theme-base.css`, which maps a step onto a name 
 `--muted`, `--primary`, `--border`, and the rest. That file declares the mapping, the `color-scheme` that picks each step's mode, and nothing else —
 no scale, and no colour value at all.
 
-**A theme file re-declares the twelve steps, once each, and nothing else.** Four schemes ship and none is mandatory: `theme-neutral.css` is the
-default, which `forge.css` imports, so forge renders correctly with no theme file of the application's own, and `theme-stone.css` (warm),
+**A theme file re-declares every step, once each, and nothing else.** No scheme is mandatory: `theme-neutral.css` is the default, which
+`forge.css` imports, so forge renders correctly with no theme file of the application's own, and `theme-stone.css` (warm),
 `theme-gray.css` (cool) and `theme-slate.css` (strongly cool) override the steps to change the tint. Tailwind's ramp named `gray` is blue-tinted, so
 the achromatic scheme is `theme-neutral.css` rather than `theme-gray.css` — the names invite the opposite reading.
 
@@ -214,7 +214,7 @@ the failure. `bg-gray-100` stays light grey when the page goes dark, so the elem
 dark surface. `bg-card` moves with the theme. The rule is not stylistic tidiness — an untokenised colour is a visible defect the moment a user flips
 the theme.
 
-Default: a colour reaches the page through a semantic token — including the `--status-*` family for the four status intents — and a scale step is
+Default: a colour reaches the page through a semantic token — including the `--status-*` family for the status intents — and a scale step is
 named directly only inside `theme-base.css` or a theme file, unless the colour is a fixed hue no forge token covers, in which case the utility
 carries its own `dark:` counterpart. <!-- rule:forge-ui-color-theme-no-raw-utility -->
 
@@ -232,7 +232,7 @@ the token set — a brand's own signal colour, not "failed" or "succeeded".
 </div>
 ```
 
-Costs the panel its theme: the three greys are fixed values, so under `.dark` this renders as a near-white block with grey text on a `--gray-1` page
+Costs the panel its theme: the greys are fixed values, so under `.dark` this renders as a near-white block with grey text on a `--gray-1` page
 — high contrast in the wrong direction, and unreadable at a glance.
 
 ```tsx
@@ -303,7 +303,7 @@ as text is `text-destructive-text` rather than the fill. <!-- rule:forge-ui-colo
 
 ## 7. Status colour is forge's; the fills are the app's
 
-Four intents — `danger`, `warning`, `success`, `info` — each with five roles, make up the `--status-*` family:
+The intents — `danger`, `warning`, `success`, `info` — each carry the roles below, and together they make up the `--status-*` family:
 
 | Role | Use for |
 | --- | --- |
@@ -311,7 +311,7 @@ Four intents — `danger`, `warning`, `success`, `info` — each with five roles
 | `--status-danger-strong` / `--status-danger-strong-foreground` | The chip tier: `Badge`, which starts one stop in because a filled chip sits on a tinted surface rather than a panel's |
 | `--status-danger-border` | The edge of either tier |
 
-The other three intents take the same five roles, spelled `--status-warning-*`, `--status-success-*` and `--status-info-*`. The info intent has no
+The other intents take the same roles, spelled `--status-warning-*`, `--status-success-*` and `--status-info-*`. The info intent has no
 _solid_ pair — a saturated fill with a foreground sitting on it, the way `--destructive` and `--success` do — because no component renders one, and
 a token with no consumer is a token nobody checks.
 
@@ -353,8 +353,9 @@ for everything else — unless a brief gives a tone its own meaning, which is th
 
 A tone chosen for how it looks rather than for what it means is how a page ends up with three primary buttons and a green chip reporting a failure.
 
-Default: `soft` is the resting emphasis for `Alert`, `Badge` and `Toast`, and `solid` is reserved for the one surface that must lead the page, never
-two solid panels in view at once — unless the component is `Button`, whose resting appearance is its own fill. <!-- rule:forge-ui-soft-vs-solid -->
+Default: `soft` is the resting emphasis for `Alert`, `Badge` and `Toast`, and `solid` is reserved for the one surface that must lead the page,
+never two solid panels in view at once — unless the component is `Button`, whose resting appearance is its own fill.
+<!-- rule:forge-ui-soft-vs-solid -->
 
 Emphasis is relative: a second filled panel does not double the urgency, it halves the first one's. All three components already default to `soft`,
 so the shipped default is the rule and passing `appearance='solid'` is the decision that has to be worth making.

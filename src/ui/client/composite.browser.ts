@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 
 declare global {
   interface Window {
@@ -192,11 +192,8 @@ test.describe("RTL", () => {
   });
 });
 
-/** The direction read itself, which no focus assertion can distinguish from its own absence — only
- * counting `getComputedStyle` invocations can. */
 test.describe("the direction read is narrowed to the keys that can consume it", () => {
-  /** Wraps `getComputedStyle` and records what it was asked about. Must run after `mount`, which
-   * replaces the document and discards every window mutation made before it. */
+  /** Wraps `getComputedStyle` to record what it was asked about; must run after `mount`, which replaces the document. */
   async function instrumentStyleReads(page: Page): Promise<void> {
     await page.evaluate(() => {
       window.styleReads = [];
@@ -244,12 +241,8 @@ test.describe("the direction read is narrowed to the keys that can consume it", 
   });
 });
 
-/** The item scan itself — a `querySelectorAll` plus a `checkVisibility()` per hit — which no focus
- * assertion can distinguish from its own absence, because a key the composite ignores leaves focus
- * where it was whether the ring was resolved first or not. */
 test.describe("the item scan is narrowed to the keys that can consume it", () => {
-  /** Wraps `Element.prototype.querySelectorAll` and records what it was asked for. `Document`'s own
-   * method is a separate slot, so the spec's own `document.querySelectorAll` helpers stay invisible. */
+  /** Wraps `Element.prototype.querySelectorAll` to record what it was asked for; `Document`'s own method is a separate slot. */
   async function instrumentItemScans(page: Page): Promise<void> {
     await page.evaluate(() => {
       window.itemScans = [];

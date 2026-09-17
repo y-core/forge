@@ -1,6 +1,6 @@
 ---
 title: Error Handling
-description: "The published Result signatures, the http fragment renderers, and the router error boundary's header guarantees across its three paths."
+description: "The published Result signatures, the http fragment renderers, and the router error boundary's header guarantees across its error paths."
 audience: consumer
 ---
 
@@ -164,7 +164,7 @@ loop.
 
 ## 4. Fail-Closed Posture
 
-See [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture, the `required: false` asymmetry, and the three conditions a ratified fail-open
+See [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture, the `required: false` asymmetry, and the conditions a ratified fail-open
 exception must meet. forge's one such exception is `cn`'s conflict resolver ([`UI_CLASS_COMPOSITION.md`][ucc-1a] §1a).
 
 ---
@@ -181,7 +181,7 @@ fragment renderer (§2) returned through `fragmentResponse`, and never as a thro
 Programming mistakes that cannot be recovered at the call site. **The app needs no per-route `try/catch`** — the router installs an error boundary
 as a global middleware, at two depths: one innermost, one wrapped around the path-scoped guard stack.
 
-Three paths, with different header guarantees, plus a fourth that is not an error at all:
+The paths carry different header guarantees, and one entry below is not an error at all:
 
 - **In-chain errors** (thrown by a route handler or route-level middleware) — the innermost `errorBoundary` catches the throw; the response flows
   back out through the path-scoped guards and the outermost `applyHeaders` flush, so error pages carry the consumer's full CSP.
@@ -283,7 +283,7 @@ A configuration knob is asserted by **the function that accepts it, synchronousl
 the same stack frame as the mistake, and a function typed `Promise<Result<…>>` never carries a second failure channel beside its per-request one
 (§5a). A misconfiguration is a deployment defect, and belongs with the invariants of §5e.
 
-**The three message shapes, which are §5e's normalised shape for this surface:**
+**The message shapes, which are §5e's normalised shape for this surface:**
 
     ${operation}: ${knob} is ${value}, below the ${min}-${unit} floor — ${why}.
     ${operation}: ${knob} is ${value}, above the ${max}-${unit} ceiling — ${why}.

@@ -354,6 +354,21 @@ describe("applySecurityHeaders", () => {
     expect(hardened.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains; preload");
   });
 
+  it("accepts a base64url nonce with padding", () => {
+    const csp = applySecurityHeaders(new Response("ok"), { nonce: "ab+/_-cd==" }).headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("'nonce-ab+/_-cd=='");
+  });
+
+  it("rejects a nonce that would close the quoted source and append a directive source", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { nonce: "abc' 'unsafe-inline" })).toThrow(
+      "Invalid CSP nonce: must be a non-empty base64 or base64url value (no quotes, whitespace or CSP separators)",
+    );
+  });
+
+  it("rejects an empty nonce", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { nonce: "" })).toThrow("Invalid CSP nonce");
+  });
+
   it("validates its directives at call time, not only at factory time", () => {
     expect(() => applySecurityHeaders(new Response("ok"), { styleSrc: ["'self'; script-src-elem 'unsafe-inline'"], nonce: "n" })).toThrow(
       tokenMessage("styleSrc"),

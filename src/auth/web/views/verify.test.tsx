@@ -20,7 +20,7 @@ import {
   tagOf,
   textOf,
   valuesOf,
-} from "../test-support";
+} from "../web.fixture";
 import type { AuthPasskeyContract } from "./types";
 import type { VerifyViewProps } from "./types";
 import { VerifyView } from "./verify";

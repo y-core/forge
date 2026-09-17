@@ -3,8 +3,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { EmptyState } from "./empty-state";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("EmptyState", () => {
   it("renders the whole placeholder and its four parts exactly, text escaped", async () => {

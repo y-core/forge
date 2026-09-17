@@ -30,14 +30,7 @@ function clusterTokens(arg: string, index: number): ArgToken[] {
   });
 }
 
-/**
- * Splits argv into classified tokens, knowing nothing about any command's flags.
- *
- * Definition-agnostic on purpose: what `--only` means is a question for `parse.ts`, and keeping
- * the two apart is what stops the resolution rules and the lexical rules from being written as
- * one loop that has to be reread whole every time either changes.
- * @public
- */
+/** Splits argv into classified tokens, knowing nothing about any command's flags. @public */
 export function tokenize(argv: readonly string[]): ArgToken[] {
   const tokens: ArgToken[] = [];
 
@@ -50,8 +43,7 @@ export function tokenize(argv: readonly string[]): ArgToken[] {
       return tokens;
     }
 
-    // A lone `-`, anything not starting with one, and `-12`/`-1.5` are values. The digit guard is
-    // what lets a negative number be passed where a flag could have gone.
+    // The digit guard is what lets a negative number be passed where a flag could have gone.
     if (arg === "-" || !arg.startsWith("-") || startsWithDigit(arg)) {
       tokens.push({ kind: "positional", index, value: arg });
       continue;

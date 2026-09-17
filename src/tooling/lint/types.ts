@@ -120,8 +120,7 @@ export type RuleId =
   | "forge-ui-focus-ring"
   | "forge-ui-optional-prop-undefined";
 
-/** Which mechanism enforces a rule: `validate-design`'s source detectors, forge's oxlint plugin, or
- *  `validate-contrast`, which measures resolved colours rather than reading source at all. @public */
+/** Which mechanism enforces a rule. @public */
 export type RuleEnforcer = "gate" | "lint" | "contrast";
 
 /** A JSX opening element and the attributes it carries, in source order. */

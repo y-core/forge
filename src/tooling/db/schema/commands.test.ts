@@ -5,9 +5,9 @@ import { join } from "node:path";
 
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
+import { bufferedIO, fakeDbIo, minimalWranglerConfig } from "../db.fixture";
 import { sha256 } from "../digest";
 import { migrationsDigest } from "../migrate/files";
-import { bufferedIO, fakeDbIo, minimalWranglerConfig } from "../test-support";
 import type { DbHostConfig, FakeDbIo } from "../types";
 import { buildSchemaSnapshot, formatSchemaSnapshot } from "./snapshot";
 

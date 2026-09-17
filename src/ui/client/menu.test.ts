@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
+import { FakeEvent, fakeTree } from "./dom.fixture";
+import type { FakeElement } from "./dom.fixture";
 import { checkMenuItem, mountMenu } from "./menu";
-import { FakeEvent, fakeTree } from "./test-dom";
-import type { FakeElement } from "./test-dom";
 
 const MENU_ITEM_ROLES = [...MENU_ITEM_SELECTOR.matchAll(/\[role='([^']+)'\]/g)].map((match) => match[1] as string);
 

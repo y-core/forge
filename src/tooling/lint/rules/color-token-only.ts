@@ -25,8 +25,7 @@ const DECLARED_PROPERTIES = new Set(["--tone", "--tone-fg", "--tone-text", "--to
 // Both spellings Tailwind accepts for a custom property: `bg-[--x]` and the newer `bg-(--x)`.
 const CUSTOM_PROPERTY = /(?<![\w-])(?:[a-z][a-z0-9-]*:)*(-?[a-z][a-z0-9-]*)-[[(](--[a-z0-9-]+)[\])]/g;
 
-/** A raw colour literal in a class string, or a colour utility resolving a property the theme does
- *  not declare — either way, a colour that no semantic token stands behind. */
+/** A raw colour literal in a class string, or a colour utility resolving a property the theme does not declare. */
 export const colorTokenOnly: LintRule = {
   meta: {
     type: "problem",

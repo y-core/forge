@@ -5,8 +5,8 @@ import type { WranglerConfig } from "./types";
 
 describe("detectTarget()", () => {
   it("detects a Pages project from pages_build_output_dir alone", () => {
-    const config: WranglerConfig = { name: "cornellaw", pages_build_output_dir: "./public" };
-    expect(detectTarget(config, "cornellaw")).toEqual({ kind: "pages", name: "cornellaw" });
+    const config: WranglerConfig = { name: "target-fixture", pages_build_output_dir: "./public" };
+    expect(detectTarget(config, "target-fixture")).toEqual({ kind: "pages", name: "target-fixture" });
   });
 
   it("detects a Worker when neither key is present", () => {

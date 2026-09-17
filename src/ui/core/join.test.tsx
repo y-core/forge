@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Join } from "./join";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("Join", () => {
   it("renders the whole group exactly, its children nested and a forwarded value escaped", async () => {

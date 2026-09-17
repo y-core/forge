@@ -253,15 +253,12 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         ),
       );
 
-      // A run whose every step was skipped is red for the reason a zero-step selection is refused.
-      // `execute` only exits by throwing, which would print a spurious `Error:` after the summary.
       if (failedAt !== undefined || passed === 0) quit(1);
     },
   });
 }
 
-/** Builds the `forge verify` CLI `Command`, which loads its table from a config module rather than
- *  being handed one. Delegates to {@link createGateCommand} once the table is resolved. @public */
+/** Builds the `forge verify` CLI `Command`, which loads its step table from a config module. @public */
 export function createGateBinCommand(): Command<typeof binFlags> {
   return createCommand({
     name: "verify",

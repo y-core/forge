@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Field } from "./field-stack";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
 
 describe("Field (layout)", () => {
   it("renders the whole stack exactly, its caption escaped and the control kept after it", async () => {

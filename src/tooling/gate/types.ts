@@ -102,7 +102,7 @@ export interface CheckResult {
 
 /** The design rows a Worker app opts into, and the paths they read. @public */
 export interface CloudflareWorkerDesignOptions {
-  /** The stylesheet the design system compiles from. Three of the four rows need it. */
+  /** The stylesheet the design system compiles from. */
   stylesheet: string;
   /** Directory of stylesheets the token check reads; omit to skip `validate-css-tokens`. */
   cssDir?: string;
@@ -118,8 +118,6 @@ export interface CloudflareWorkerStepOptions {
   sources?: readonly string[];
   /** Test paths passed to `bun test`. Defaults to `["tests/"]`. Ignored when `testSets` is set. */
   tests?: readonly string[];
-  /** Several labelled `bun test` rows in place of the single `test` row, for a suite split by the
-   *  question each set answers. */
   testSets?: readonly { label: string; sources: readonly string[] }[];
   /** Asset config path; omit to skip the asset-types step entirely. */
   assetConfig?: string;
@@ -141,18 +139,15 @@ export interface CloudflareWorkerStepOptions {
   browser?: boolean;
   /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
   workerd?: boolean;
-  /** Omit to emit no JSX-pragma row: an application states `jsxImportSource` once in its own
-   *  tsconfig, where a library's files each have to carry it. */
+  /** Omit to emit no JSX-pragma row. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. */
   ssrBoundary?: Omit<SsrBoundaryCheckConfig, "root">;
-  /** Omit to emit no contrast row: the audit fails a run that measured no pairs, so it needs the
-   *  ones this repository actually draws. */
+  /** Omit to emit no contrast row. */
   contrast?: Omit<ContrastCheckConfig, "root">;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
   design?: CloudflareWorkerDesignOptions;
-  /** The markdown conventions to hold prose to; omit to emit no row. An app that takes it must also
-   *  ignore every markdown file in `.oxfmtrc.json`, so the formatter and this check do not fight for the same bytes. */
+  /** The markdown conventions to hold prose to; omit to emit no row. */
   markdown?: Omit<MarkdownCheckConfig, "root">;
 }
 
@@ -210,18 +205,15 @@ export interface SemVer {
 /** Which component of a {@link SemVer} to increment. @public */
 export type BumpKind = "major" | "minor" | "patch";
 
-/** How much of the table to run: `fast` is the inner loop, `standard` is the gate a task closes on,
- *  `full` adds everything, including the steps that may require a machine prerequisite. @public */
+/** How much of the table to run. @public */
 export type GateMode = (typeof GATE_MODES)[number];
 
-/** A dependency a step needs, with the probe that detects it and the remedy to print — absent, a
- *  fast or standard run reports the step skipped and a full run fails it. @public */
+/** A dependency a step needs, with the probe that detects it and the remedy to print. @public */
 export interface StepRequirement {
   /** What is missing, named verbatim in the skipped and failure lines. */
   tool: string;
   /** Answers whether the dependency is present. Defaults to whether `<tool> --version` exits 0. */
   probe?: () => boolean;
-  // Rendered verbatim, so it carries its own verb and backticks: a remedy is not always one command.
   /** Remedy shown verbatim when the probe fails, e.g. ``run `bun add -d esbuild` ``. */
   hint: string;
 }
@@ -249,13 +241,8 @@ export interface CommandStep extends StepBase {
 
 /** A step run in-process, reported from the findings it returns rather than from captured text. @public */
 export interface CheckStep extends StepBase {
-  /** Invoked by the runner with the mode of the run, so a check whose strictness depends on it — a
-   *  release gate refusing what a dev loop tolerates — has one row rather than two. Its findings are
-   *  printed verbatim, so there is no `tail` to truncate to. */
   run: (mode: GateMode) => CheckResult | Promise<CheckResult>;
-  /** Auto-fixing counterpart invoked by `--fix`, called in-process like `run`. Absent, the step is
-   *  counted as having no fixer. A fixer writes and reports nothing; `run` reports and writes
-   *  nothing — the two halves of the dev loop are not the same verb. */
+  /** Auto-fixing counterpart invoked by `--fix`, called in-process like `run`. */
   fix?: () => void | Promise<void>;
   cmd?: never;
 }

@@ -7,7 +7,7 @@ import { loadDesignSystem } from "./design-system";
 const ROOT = resolve(import.meta.dir, "../../../..");
 const STYLESHEET = "src/ui/assets/css/tailwind.css";
 
-// `browser-test-helper.ts` serves the stylesheets raw, so an `@utility` resolves to nothing in a
+// `browser.fixture.ts` serves the stylesheets raw, so an `@utility` resolves to nothing in a
 // mounted page and the compiled selector can only be read here.
 const compile = async (candidate: string): Promise<string> => {
   const [css] = (await loadDesignSystem(resolve(ROOT, STYLESHEET))).candidatesToCss([candidate]);

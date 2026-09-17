@@ -3,11 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { CliError } from "../cli/errors";
 import { bundler, peer, rasterizer } from "./peers";
 
-/** A package name no registry entry and no `node_modules` directory can satisfy.
- *
- *  The missing-peer path is proved against a genuinely absent package rather than a stubbed `sharp`:
- *  `mock.module` cannot stub a module another test file has already loaded, and both real peers are
- *  installed here, so a stub would pass alone and fail in the suite. */
+// `mock.module` cannot stub a module another test file has already loaded, so the missing-peer path needs a genuinely absent package.
 const ABSENT = "@y-core/not-a-real-optional-peer";
 
 async function failure(run: Promise<unknown>): Promise<CliError> {

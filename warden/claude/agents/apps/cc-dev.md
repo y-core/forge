@@ -73,7 +73,7 @@ service never imports a controller or a view; a view never fetches, reads config
 
 **No module-level mutable state** — the isolate is recycled, so module scope is shared across requests (`WORKERS_PLATFORM.md` §1a).
 
-**The five boundaries** — `BOUNDARIES.md` is binding on every edit: never import browser-only code from a Worker-reachable file, never skip a guard
+**The boundaries** — `BOUNDARIES.md` is binding on every edit: never import browser-only code from a Worker-reachable file, never skip a guard
 whose dependency is missing, never swallow a verification error, never let PII reach a log record.
 
 ## Implementation Rules
@@ -97,11 +97,11 @@ whose dependency is missing, never swallow a verification error, never let PII r
 **`CODE_RULES.md` §5 is binding on every line you write. It is a ceiling, not a floor.** Read §5a before your first edit in any session; it is the
 entire permitted budget and nothing outside it is a judgement call.
 
-Three forms are allowed. Nothing else is:
+These forms are allowed. Nothing else is:
 
 1. **One line** of TSDoc on an exported symbol — one sentence, saying what it does.
 2. **`@public` / `@internal`** appended to that line.
-3. **A rare one-or-two-line inline *why*** — only under §5a's four conditions. Most files have zero.
+3. **A rare one-or-two-line inline *why*** — only under the conditions §5a names. Most files have zero.
 
 **Unbudgeted comments are deleted from any file you touch.** Multi-paragraph TSDoc, `@example` blocks, banners, commented-out code, TODO/FIXME, and
 restatements of the code go — in existing code as readily as in new. This is not scope creep and is not covered by the no-adjacent-refactor rule;
@@ -110,6 +110,14 @@ deleting them is part of the change.
 **The first fix for an unclear line is a better name, a smaller function, or a named intermediate — never a comment.** When you have real rationale,
 route it per §5c: `docs/` for a local ruling, the unit's `README.md` for usage, a _test_ for a behavioural claim, a ledger task for undone work, the
 commit message for history. Never the source.
+
+**A field is a symbol** (`CODE_RULES.md` §5f). An interface field earns at most one line, and nothing at all when its name and its type already say
+it. `/** Repository root. */ root: string` earns nothing; `/** Repository root; every reported path is relative to it. */` earns its place. Where
+the comment-budget gate step is wired, a gloss that spells the field name back fails the gate rather than a review.
+
+**Deleting a behavioural claim without adding the assertion leaves the change incomplete** (`CODE_RULES.md` §5e). Where a comment you are removing
+asserts behaviour, find the test that pins it. If none does, the assertion is the missing work: the system has lost a statement of its own behaviour
+and gained nothing that holds it. Write the test, or name it for `cc-test` in your handoff — never let the claim evaporate silently.
 
 ## Build Verification
 
@@ -134,7 +142,7 @@ Stop and report rather than proceeding, when:
 - **A plan step contradicts a documented boundary — the boundary wins.** Report the conflict; do not quietly implement either side.
 - **A plan step would require editing the canon.** Governance is overwrite-on-sync and is not this repository's to amend; report it as a corpus
   change instead.
-- **Two `cc-tester` cycles have failed on the same root cause.** A third attempt at the same fix is guessing. Report what you tried and what the
+- **A second `cc-tester` cycle has failed on the same root cause.** A third attempt at the same fix is guessing. Report what you tried and what the
   gate says.
 - **You have found scope creep — even when it is an improvement.** A better name, a cleaner abstraction, an adjacent bug: note it in your return, do
   not implement it. Unrequested improvements are the most expensive kind of change to review.
@@ -189,7 +197,7 @@ finding. A claim only counts where the executable code exhibits it.
 in order to double-check your own work** — a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole context
 (`AGENT_WORKFLOW.md` §4a). One agent where one suffices.
 
-You may spawn sub-agents to parallelise segmentable work — for example, applying one mechanical change across many files. Three standing conditions:
+You may spawn sub-agents to parallelise segmentable work — for example, applying one mechanical change across many files. Standing conditions:
 
 1. **You stay in control of the split and the synthesis** — you partition the work and assemble the result.
 2. **You verify every returned result before acting on it** — read the diff a sub-agent produced; an unread change is not a change you can vouch

@@ -2,9 +2,6 @@ import { describe, expect, it } from "bun:test";
 
 import { mountNavDrawer } from "./drawer";
 
-/** The fake fires `toggle` synchronously on every write to `open`, and routes focus through the
- * document the way a real one does — the two facts every case below reads back. */
-
 class FakeMediaQueryList {
   readonly listeners = new Set<() => void>();
 

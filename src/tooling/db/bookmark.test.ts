@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../cf/types";
 import { timeTravelInfo, timeTravelRestore } from "./bookmark";
-import { fakeDbIo } from "./test-support";
+import { fakeDbIo } from "./db.fixture";
 import type { DbConfig, FakeDbIo, Home, Spawned } from "./types";
 
 function home(over: Partial<Home> = {}): Home {

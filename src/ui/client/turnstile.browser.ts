@@ -14,7 +14,7 @@ import {
   TURNSTILE_SCRIPT_URL,
 } from "../contracts/turnstile-contract";
 import { Turnstile } from "../core/turnstile";
-import { mount } from "./browser-test-helper";
+import { mount } from "./browser.fixture";
 import { TURNSTILE_FOCUS_GUARD_MS } from "./turnstile";
 
 declare global {
@@ -62,9 +62,7 @@ const FAKE_SCRIPT = `
   };
 `;
 
-/** The real SSR markup: a form with a field to focus and the `<Turnstile>` widget inside it. Deferred
- * by default here, because most of what this suite exercises is what the load leads to rather than
- * what starts it — the eager default gets its own describe below. */
+/** The real SSR markup: a form with a field to focus and the `<Turnstile>` widget inside it. */
 function formMarkup(load: "eager" | "focus" = "focus"): Promise<string> {
   return render(
     jsx("form", { id: "form", children: [jsx("input", { id: "field", name: "email" }), Turnstile({ siteKey: "site-key", size: "normal", load })] }),
@@ -96,8 +94,7 @@ function htmxFormMarkup(): Promise<string> {
   );
 }
 
-/** A form declaring no htmx verb of its own: the submit button carries the submission, and the select
- * carries a reshape request that must never be taken for one. */
+/** A form declaring no htmx verb: the button carries the submission, the select a reshape request. */
 function controlSubmissionMarkup(): Promise<string> {
   return render(
     jsx("form", {
@@ -112,9 +109,7 @@ function controlSubmissionMarkup(): Promise<string> {
   );
 }
 
-/** An htmx form whose challenge is deferred to the press, with the submit button the seam marks busy.
- * The options are the shapes htmx's own validation gate turns on: where the verb is declared, whether
- * the form or the press waives constraint validation, and whether a second submit control exists. */
+/** An htmx form whose challenge is deferred to the press; the options are the shapes htmx's validation gate turns on. */
 function submitModeMarkup(
   options: {
     appearance?: "execute" | "interaction-only";
@@ -152,9 +147,7 @@ function submitModeMarkup(
   );
 }
 
-/** The `htmx:confirm` htmx fires before it issues a request, carrying the closure that releases it.
- * `elt` is the element htmx names as issuing the request, `submitter` the control that was pressed,
- * and `on` the node the event is dispatched from — which is `elt` unless a case needs otherwise. */
+/** The `htmx:confirm` htmx fires before a request, carrying `elt`, the pressed `submitter`, and the closure that releases it. */
 const pressSubmit = (page: Page, options: { on?: string; elt?: string; submitter?: string } = {}) =>
   page.evaluate((opts) => {
     window.turnstileIssued = window.turnstileIssued ?? [];
@@ -268,8 +261,7 @@ const FAKE_SCRIPT_BLURRING_FOCUS_ASYNC = `${FAKE_SCRIPT}
   };
 `;
 
-/** Grabs focus into the widget only when the test asks, so the steal can be placed after a focus the
- * reader took in the beat between `render` returning and Cloudflare's own asynchronous grab. */
+/** Grabs focus into the widget only when the test asks, so the steal can be placed after a focus of the reader's. */
 const FAKE_SCRIPT_STEALING_FOCUS_ON_CUE = `${FAKE_SCRIPT}
   window.turnstileFocusActs = [];
   var renderThenWait = window.turnstile.render;
@@ -381,9 +373,7 @@ function scriptCount(page: Page): Promise<number> {
   return page.evaluate((src) => document.querySelectorAll(`script[src^="${src}"]`).length, TURNSTILE_SCRIPT_SRC);
 }
 
-/** Counts `setTimeout` firings, not merely its scheduling. Install after `mount` and after
- * `page.clock.install()`: `setContent` discards every window mutation made before it, and wrapping
- * the clock's `setTimeout` is what keeps `fastForward` in charge of the wrapped timer. */
+/** Counts `setTimeout` firings, not merely its scheduling; install after `mount` and after `page.clock.install()`. */
 async function countTimerFirings(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.forgeTimers = { scheduled: [], fired: [] };
@@ -410,9 +400,7 @@ function timersAt(page: Page, ms: number): Promise<{ scheduled: number; fired: n
   }, ms);
 }
 
-/** Counts reads of `window.turnstile`, which is what a live poll does and a cleared one cannot. The
- * `set` trap is mandatory: a getter-only accessor throws `TypeError` when the polling case assigns
- * the late-arriving API. Same install-after-`mount` rule as {@link countTimerFirings}. */
+/** Counts reads of `window.turnstile`, installed after `mount`; the `set` trap is mandatory, a getter-only accessor throwing on assignment. */
 async function countTurnstileReads(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.forgeTurnstileReads = { count: 0 };
@@ -951,8 +939,7 @@ test.describe("mountTurnstile — the post-render focus guard", () => {
 });
 
 test.describe("mountTurnstile — the reset is scoped to the form's own submission", () => {
-  /** The `htmx:afterRequest` htmx fires once a request completes, naming the issuing element on
-   * `requestConfig` and bubbling from that element. */
+  /** The `htmx:afterRequest` htmx fires on completion, naming the issuing element on `requestConfig`. */
   const afterRequest = (page: Page, options: { successful?: boolean; from?: string }) =>
     page.evaluate(({ successful, from }) => {
       const field = document.querySelector<HTMLInputElement>("#field");

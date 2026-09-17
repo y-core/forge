@@ -35,7 +35,6 @@ const STATES_NO_CORPUS_RULE = new Set([
 
 /** What the design check needs to know about the project. @public */
 export interface DesignCheckConfig {
-  /** Application root. */
   root: string;
   /** The package name consumers import under. */
   packageName: string;
@@ -51,8 +50,7 @@ export interface DesignCheckConfig {
   oxlintConfig?: string;
 }
 
-/** The rules an oxlint config turns on, or `undefined` when the file could not be read. The file is
- *  JSONC: oxlint accepts comments anywhere on a line, `JSON.parse` accepts none. */
+/** The rules an oxlint config turns on, or `undefined` when the file could not be read. */
 function readEnabledRules(path: string): Set<string> | undefined {
   type Block = { rules?: Record<string, unknown> };
   let parsed: Block & { overrides?: readonly Block[] };

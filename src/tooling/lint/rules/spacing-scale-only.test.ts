@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, literal, other, property, runRule } from "../test-support.ts";
+import { attribute, literal, other, property, runRule } from "../lint.fixture.ts";
 import { spacingScaleOnly } from "./spacing-scale-only.ts";
 
 const CORPUS = "(forge-ui-spacing-scale-only — src/ui/design/floor.md)";

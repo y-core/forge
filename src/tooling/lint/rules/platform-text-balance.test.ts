@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, call, element, literal, other, runRule } from "../test-support.ts";
+import { attribute, call, element, literal, other, runRule } from "../lint.fixture.ts";
 import { platformTextBalance } from "./platform-text-balance.ts";
 
 const CORPUS = "(forge-ui-platform-text-balance — src/ui/design/reference/16-platform.md)";

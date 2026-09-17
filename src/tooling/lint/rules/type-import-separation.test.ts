@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { nextLoc, runRule } from "../test-support.ts";
+import { nextLoc, runRule } from "../lint.fixture.ts";
 import type { AstNode } from "../types.ts";
 import { typeImportSeparation } from "./type-import-separation.ts";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, element, jsxElement, literal, runRule } from "../test-support.ts";
+import { attribute, element, jsxElement, literal, runRule } from "../lint.fixture.ts";
 import { a11yLabelAssociation } from "./a11y-label-association.ts";
 
 describe("a11y-label-association", () => {

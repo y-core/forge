@@ -26,7 +26,7 @@ the parts that do not announce their absence.
 
 ## 1. Which field primitive
 
-Three primitives look interchangeable and are not.
+These primitives look interchangeable and are not.
 
 | Given | Choose | Why |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ exactly the value a no-script render loses.
 
 ## 2. `Toggle`, `Switch` and `ToggleGroup`
 
-Three two-state controls. All three submit — what separates them is what the value means.
+Two-state controls, and all of them submit — what separates them is what the value means.
 
 | Given | Choose | What it renders |
 | --- | --- | --- |
@@ -167,7 +167,7 @@ no branch that can be forgotten.
 `bind` without a registered scope is an inert `data-field` attribute. Override when the surface is a `Resumable` island whose state drives other
 rendering.
 
-**Default: one module imports a given control name from exactly one of the two barrels.**
+**Default: one module imports a given control name from exactly one of these barrels.**
 <!-- rule:forge-ui-form-one-barrel -->
 
 Two `Input`s in one file resolve by whichever import came last, and the loser is invisible. Override only by aliasing explicitly at the import,

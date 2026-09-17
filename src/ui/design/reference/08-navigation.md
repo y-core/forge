@@ -75,7 +75,7 @@ no menubar controller; claiming the role without the behaviour announces a keybo
 **Default: one `Navbar` per application, and it holds destinations only.**
 <!-- rule:forge-ui-nav-one-primary -->
 
-Two primary bars means the user must learn which one holds what before they can navigate at all. Override for a documented second axis — a
+A second primary bar means the user must learn which one holds what before they can navigate at all. Override for a documented second axis — a
 persistent product switcher above a section nav, or a page-scoped table of contents over the sections of the page currently open, which is a
 different axis from the destinations bar rather than a rival to it. Anything narrower than a documented second axis is a `NavSlot` in the first bar
 more often than it is a second bar.
@@ -86,9 +86,9 @@ more often than it is a second bar.
 The definition is what gives every item its `data-filter` marker, its generated menu ids, and its correct first paint from `activeFilters`. Override
 never for the bar itself; a page-level sub-nav that is genuinely not the primary bar is ordinary markup.
 
-**Default: two or three `NavSection`s.** <!-- rule:forge-ui-nav-section-count --> Sibling sections spread across the bar, so two reads as ends and
-three as ends-plus-centre. A fourth has no spatial meaning left to claim. Override under a brief for a dense application bar with a declared zone
-model.
+**Default: two or three `NavSection`s.** <!-- rule:forge-ui-nav-section-count --> Sibling sections spread across the bar, so two reads as ends
+and three as ends-plus-centre. A fourth has no spatial meaning left to claim. Override under a brief for a dense application bar with a declared
+zone model.
 
 ### 1c. Menus, groups and megamenus
 
@@ -107,8 +107,8 @@ panel keeps every group scannable at once.
 and a bar holds at most one megamenu.**
 <!-- rule:forge-ui-nav-megamenu-when -->
 
-A megamenu is the widest thing a bar can open, and its value is the side-by-side survey. Two megamenus on one bar are two surveys competing for the
-same panel space; one group under a trigger is a dropdown wearing a panel. Override never — the counts are the affordance.
+A megamenu is the widest thing a bar can open, and its value is the side-by-side survey. A second megamenu on one bar is a second survey competing
+for the same panel space; one group under a trigger is a dropdown wearing a panel. Override never — the counts are the affordance.
 
 **Default: identity, theme and search go in a `NavSlot`, never a `NavLink`.**
 <!-- rule:forge-ui-nav-slot-not-link -->
@@ -137,19 +137,19 @@ trailing-edge rail, or with an explicit horizontal placement for the rare bar th
 ### 1e. The rail's box in the layout
 
 **Default: the rail's width and `shrink-0` go on the flex item, which is the `Resumable` scope root.** <!-- rule:forge-ui-nav-rail-flex-item -->
-`Resumable` takes a `class` for exactly this: the scope root is the box the parent flex row lays out, while `Navbar`'s own `class` lands on the
-`<details>` two boxes further in. A width set there only _looks_ right, because every box between happens to size to its content — and a `shrink-0`
-set there guards an element the flex algorithm was never going to shrink, leaving the item that can shrink unguarded. Override when the rail's
-parent is not a flex row: a grid parent sizes the track, and the width belongs to the track definition rather than to either box.
+`Resumable` takes a `class` for exactly this: the scope root is the box the parent flex row lays out, while `Navbar`'s own `class` lands on
+the `<details>` two boxes further in. A width set there only _looks_ right, because every box between happens to size to its content — and a
+`shrink-0` set there guards an element the flex algorithm was never going to shrink, leaving the item that can shrink unguarded. Override when
+the rail's parent is not a flex row: a grid parent sizes the track, and the width belongs to the track definition rather than to either box.
 
 **Default: a vertical rail stays pinned to the viewport and scrolls its own overflow.**
 <!-- rule:forge-ui-nav-rail-persists -->
 
 That needs a **definite height on the scope root's parent**, and the reason is a cascade rule rather than a forge one: a percentage height resolves
-against the parent's height and computes to `auto` the moment one ancestor is `auto`, so a chain with a single gap buys nothing. Forge supplies the
-two links above the `<details>` — the scope root and the `<nav>` landmark both take `h-full` in rail mode — which leaves the consumer owning exactly
-one, the box the scope root is laid out in. A stretched flex item in a `flex` row is one. Override for a short rail on a short page, where scrolling
-away with the content costs the reader nothing.
+against the parent's height and computes to `auto` the moment one ancestor is `auto`, so a chain with a single gap buys nothing. Forge supplies
+the two links above the `<details>` — the scope root and the `<nav>` landmark both take `h-full` in rail mode — which leaves the consumer owning
+exactly one, the box the scope root is laid out in. A stretched flex item in a `flex` row is one. Override for a short rail on a short page,
+where scrolling away with the content costs the reader nothing.
 
 ### 1f. The collapsed rail's width
 

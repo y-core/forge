@@ -55,7 +55,7 @@ export function createCredentialStore(db: D1Client): CredentialStore {
 
     async recordUse(id, signCount, backedUp, at) {
       // The counter rule is the statement's, not the caller's: comparing in JS and writing after is
-      // a read followed by a write, and a captured assertion replayed between the two lands twice.
+      // a read followed by a write, and a captured assertion replayed between them lands twice.
       const key = uuidKey(id);
       if (!key) return ok(false);
       const outcome = await db.execute(

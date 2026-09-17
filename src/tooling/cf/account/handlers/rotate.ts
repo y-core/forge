@@ -6,10 +6,7 @@ import { editDevVars, GENERATE_MARKER, writeDevVars } from "./devvars";
 import type { DevVar } from "./types";
 import type { RotationPlan, RotationRefusal } from "./types";
 
-/**
- * A fresh secret in the shape `openssl rand -hex 32` produces — 32 bytes of CSPRNG
- * output, hex-encoded.
- */
+/** A fresh secret of hex-encoded CSPRNG bytes. */
 export function randomSecret(bytes = 32): string {
   return bytesToHex(randomBytes(bytes));
 }
@@ -41,13 +38,7 @@ export function describeRefusal(refusal: RotationRefusal, path: string): string 
   return lines.join("\n");
 }
 
-/**
- * Rotate the named keys in `.dev.vars` itself.
- *
- * Local and remote rotation are separate acts on purpose: a remote secret is never
- * copied onto this machine, so the two sides hold different values by design and
- * `--local` is how the development value is replaced.
- */
+/** Rotates the named keys in `.dev.vars` itself, returning the names it replaced. */
 export function rotateSecrets(path: string, names: readonly string[]): string[] {
   const updates = new Map(names.map((name) => [name, randomSecret()]));
   writeDevVars(path, editDevVars(readFileSync(path, "utf-8"), updates));

@@ -43,8 +43,7 @@ export async function checkDesignScale(config: DesignScaleCheckConfig): Promise<
   );
 }
 
-/** Writes the derived scale over the committed module. The caller formats it — `gen:design-scale`
- *  runs `oxfmt` over the written file, which is why the drift check compares content, not layout. @public */
+/** Writes the derived scale over the committed module. @public */
 export async function writeDesignScale(config: DesignScaleCheckConfig): Promise<void> {
   writeFileSync(resolve(config.root, config.table), renderDesignScale(await deriveScale(config)), "utf-8");
 }

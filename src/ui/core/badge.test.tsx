@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
 import { Badge } from "./badge";
-import { attrsOf, classesOf, variantClasses } from "./test-support";
+import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 
 const chip = (props: Parameters<typeof Badge>[0] = {}) => render(<Badge {...props}>New</Badge>);
 

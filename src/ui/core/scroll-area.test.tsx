@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../testing/render";
+import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { ScrollArea } from "./scroll-area";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./test-support";
 
 const viewport = (props: Omit<Parameters<typeof ScrollArea.Viewport>[0], "label"> = {}) => render(<ScrollArea.Viewport label='Log' {...props} />);
 

@@ -156,8 +156,8 @@ import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 
 ## 3. Disabled, read-only, hidden
 
-Three ways to withhold a control, and they communicate three different things. Choosing by convenience is how a reader ends up staring at a greyed
-button with no way to learn why. Withholding a whole _subtree_ is a fourth thing and belongs to `forge-ui-platform-inert` in
+Each of these withholds a control, and each communicates something different. Choosing by convenience is how a reader ends up staring at a greyed
+button with no way to learn why. Withholding a whole _subtree_ is a different matter again and belongs to `forge-ui-platform-inert` in
 [`16-platform.md`][platform].
 
 | The situation | Use | What the reader learns |

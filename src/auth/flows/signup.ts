@@ -26,7 +26,7 @@ export function createSignupFlow(options: AuthSignupOptions): AuthSignupFlow {
   return {
     request(email, at) {
       // Nothing about the address is read before this returns, so the lookup, the insert and the
-      // delivery are all off the caller's clock and the two branches are one code path.
+      // delivery are all off the caller's clock, and the registered address and the new one are one code path.
       options.defer(issue(email, at));
       // The factor's own lifetime, never a knob of this flow's: a page must not be able to promise
       // an expiry the factor does not enforce. Known at construction, so nothing is awaited here.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument, queryAcross, safeStorage } from "./dom";
-import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
+import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./dom.fixture";
 
 const asNode = (el: FakeElement) => el as unknown as Node;
 const asRoot = (el: FakeElement) => el as unknown as Element;

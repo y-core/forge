@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
+import { fakeDbIo } from "./db.fixture";
 import { appHome, clearLocalState, resolveHome, scratchHome, standbyHome, synthesizeHome } from "./home";
-import { fakeDbIo } from "./test-support";
 import type { D1Entry, DbConfig } from "./types";
 
 const ENTRY: D1Entry = { binding: "DB", databaseName: "app-db", databaseId: null, previewDatabaseId: null };

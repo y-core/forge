@@ -43,7 +43,8 @@ Default: every remaining action uses `appearance='ghost'`, including cancel and 
 surface and would read as decoration without a border. <!-- rule:forge-ui-hierarchy-ghost-remainder -->
 
 The paints themselves make the case: the primary button fills with `--primary`, the outline one draws a border from `--input` and no fill, and the
-ghost one is text with a hover wash of `--accent`. Three levels of ink, in descending order. Reaching outside them means fighting the system.
+ghost one is text with a hover wash of `--accent`. Those are the levels of ink, in descending order. Reaching outside them means fighting the
+system.
 
 ### 1a. Before / after — the three-primary dialog
 
@@ -86,7 +87,7 @@ forge's ratified default. <!-- rule:forge-ui-hierarchy-deemphasize-first -->
 Default: a `Badge` used as a neutral label rather than a status signal uses `appearance='outline'`, unless the badge is the only element
 distinguishing two otherwise identical rows. <!-- rule:forge-ui-hierarchy-badge-outline-first -->
 
-Two text colors and stop. `--foreground` (or `--card-foreground` inside a `Card`) carries the line that matters; `--muted-foreground` carries
+Use two text colors and stop. `--foreground` (or `--card-foreground` inside a `Card`) carries the line that matters; `--muted-foreground` carries
 everything supporting. A third competing color is what `forge-ui-text-color-budget` forbids, and `Card.Title` / `Card.Description` are already built
 as that exact pair — copy the relationship rather than inventing a new one.
 

@@ -5,7 +5,7 @@ description: "SSR versus browser, middleware ordering and guard placement, valid
 
 # Application Boundaries
 
-> Owns the five boundaries every request path is judged against. Each is a rule about _where_ a concern is allowed to live, not how to implement it
+> Owns the boundaries every request path is judged against. Each is a rule about _where_ a concern is allowed to live, not how to implement it
 > — the owning document supplies the mechanism, this one supplies the line.
 >
 > Defers to: [`APP_ARCHITECTURE.md`][aa-2] §2 for the layer stack these boundaries sit inside; [`ERROR_HANDLING.md`][eh-1] §1 for the `Result`
@@ -244,9 +244,9 @@ The permitted shape is to catch, **log**, and **return a refusal** — never to 
 
 ### 5d. Recording a Fail-Open Exception
 
-A fail-open behaviour is occasionally correct, and is ratifiable. **Three conditions, all required:** the surface is provably outside the security
-boundary; the open failure degrades presentation and never authorisation; and the exception is written into the application's `docs/` docs and
-listed in [`CODE_REVIEW.md`][cr-6] §6, so a reviewer meets it as a known pattern rather than as a finding.
+A fail-open behaviour is occasionally correct, and is ratifiable. **All of the following are required:** the surface is provably outside the
+security boundary; the open failure degrades presentation and never authorisation; and the exception is written into the application's `docs/` docs
+and listed in [`CODE_REVIEW.md`][cr-6] §6, so a reviewer meets it as a known pattern rather than as a finding.
 
 **An exception that is not written down does not exist.** The next reviewer is right to flag it, and the argument gets had again from scratch.
 

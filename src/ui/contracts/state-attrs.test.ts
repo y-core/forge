@@ -8,7 +8,7 @@ import { ISLAND_STATE_ATTR } from "./island-contract";
 import { applyStateAttrs, STATE_ATTRS, stateAttrs } from "./state-attrs";
 import type { Align, Orientation, Side, StateAttrsProps } from "./types";
 import { PRESENTATION_ATTRS } from "./vocabulary";
-import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs";
+import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs.fixture";
 
 const UI_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 

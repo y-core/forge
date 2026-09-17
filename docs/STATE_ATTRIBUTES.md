@@ -1,6 +1,6 @@
 ---
 title: State and Presentational Attributes
-description: "The data-* vocabulary a forge element emits: the state hooks both tiers share, the presentational enums, the island payload, and the closed-world sweep that holds them to one declaration."
+description: "The data-* vocabulary a forge element emits: the state hooks both tiers share, the presentational enums, the island payload, and a closed-world conformance sweep that holds them to one declaration."
 audience: consumer
 ---
 
@@ -86,7 +86,7 @@ so a duplicate key resolves to the caller's, and the `ui/core` conformance sweep
 ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e) is what paints it, and a rule reading `[aria-busy="true"]` would key the paint off an accessibility
 contract instead.
 
-**There are two writers, and both describe the markup rather than a network.** `Button`'s `loading` marks a press whose work has started, stamping
+**The writers describe the markup rather than a network.** `Button`'s `loading` marks a press whose work has started, stamping
 both attributes whether or not a `loadingIcon` is passed to render a `Spinner` before the children; the field controls take a `busy` prop for a
 control that cannot yet accept a value.
 
@@ -123,19 +123,19 @@ enum by construction, and leaves `data-state` a declared member of §2's table.
 
 ## 4. The Sweep Is Closed-World
 
-**Two sweeps assert that every `data-*` a forge element emits is declared** — in the state table, in §2's presentational set, or in the wiring
+**The sweeps assert that every `data-*` a forge element emits is declared** — in the state table, in §2's presentational set, or in the wiring
 vocabulary, which carries its reason beside each name. The assertion runs in that direction and not the other: filtering the rendered attributes
 down to the declared set before comparing them makes the comparison unfalsifiable, which is how undeclared names came to ship past a test whose
 stated purpose was to stop them.
 
-**The two see different things, which is why there are two.** One **renders** probes and reads the attributes off the markup, so it sees what ships
-and nothing a component merely mentions; the other **scans source text**, so it reaches the namespaces no probe mounts — at the cost of matching
-Tailwind arbitrary-variant spellings and selector strings as well as emitted attributes.
+**Each sweep sees different things, which is why they are separate.** One **renders** probes and reads the attributes off the markup, so it sees
+what ships and nothing a component merely mentions; the other **scans source text**, so it reaches the namespaces no probe mounts — at the cost of
+matching Tailwind arbitrary-variant spellings and selector strings as well as emitted attributes.
 
 **The vocabulary is declared once and derived from the constants that already name it**, so a rename carries the allowlist with it. The table is
 read by tests only, for §1's frozen-hook reason. Each sweep declares its own extras rather than widening the shared set.
 
-**A name nothing emits fails, so the list can only shrink.** That assertion belongs to the scanning sweep alone: only it can tell "unused" from "not
+**A name nothing emits fails, so the list can only shrink.** That assertion belongs to the source scan alone: only it can tell "unused" from "not
 rendered here".
 
 **Wiring versus enum decides where a name goes.** A name driving a `cva` variant is presentational and belongs in §2's declared table; a few sit in
@@ -143,7 +143,7 @@ wiring today, each recorded where it is declared.
 
 **The probe renders each component twice — once bare, once with every boolean state prop set.** A component only emits `data-pressed`,
 `data-checked`, `data-selected`, `data-disabled`, `data-invalid` or `data-busy` when the corresponding prop is true, so a sweep over a default
-render reaches none of them and the six hooks the contract exists for are exactly the ones it never sees.
+render reaches none of them and the hooks the contract exists for are exactly the ones it never sees.
 
 **The precedence expectation is derived independently of the table it checks.** Building both sides of an assertion from the same input proves the
 input equals itself; the override case states the caller's value literally, so a change to the declaration cannot silently rewrite what the test
@@ -154,7 +154,7 @@ demands.
 **Every forge element a caller may need to reach carries a `data-slot`, and a root composes its own token with an inherited one rather than
 hardcoding it** — `slotToken(own, inherited)`, so a component nested inside another stays addressable as both.
 
-**Four components render their `data-slot` on an inner element rather than the root, and that is declared rather than silent.** A `Switch`,
+**Some components render their `data-slot` on an inner element rather than the root, and that is declared rather than silent.** A `Switch`,
 `Toggle`, `Select` or `OtpInput` root is a wrapper whose interesting element is the control inside it, so the token names the control; the
 conformance sweep carries one entry per split with the reason it is a split, in place of the unexplained per-component overrides that made the
 exceptions invisible. It holds the pair both ways: a `classSlot` with no reason beside it fails, and a reason with no split to explain fails too.

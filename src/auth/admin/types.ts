@@ -16,6 +16,8 @@ export interface AdminUserService {
   view(id: string): Promise<AuthStoreResult<AuthUser | null>>;
   /** Admins who could still sign in — what the last-admin controls and the first-admin claim read. */
   countAdmins(): Promise<AuthStoreResult<number>>;
+  /** Takes the role while the deployment has none; `admin-exists` is the claim arriving second. */
+  claimFirst(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   elevate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   demote(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   deactivate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;

@@ -19,6 +19,7 @@ description: "Leverage the shared library before writing app code, never bypass 
 - §1a The Check, Before Writing Code: what to search and in what order
 - §1b Capability Classes the Library Owns: where the answer is almost always yes
 - §1c What Application Code Is For: the four legitimate categories
+- §1d The Gate Steps Are a Capability Too: wiring a published step builder, and the one that gates the comment budget
 - §2 Never Bypass the Facade: one import path per dependency
 - §2a Import Through the Library Subpath, Always: the rule
 - §2b Never Reach Into node_modules: the transitive-dependency trap
@@ -77,6 +78,22 @@ Write app-layer code when the concern is one of exactly four things:
 
 Anything outside those four is a signal to look harder at §1a.
 
+### 1d. The Gate Steps Are a Capability Too
+
+**An application's verification gate is assembled from the library's published step builders, not written locally.** The library owns the checks;
+the application owns which of them run and over which directories. Wiring one is a line in the application's own `config/steps.ts`:
+
+```ts
+import { commentBudgetStep } from "@y-core/forge/tooling/gate";
+
+commentBudgetStep({ root: ROOT, sources: ["src", "config"] }, { tier: "standard" });
+```
+
+**`commentBudgetStep` is the one that makes the comment budget gated rather than reviewed.** Without it, [`CODE_REVIEW.md`][cr-3a] §3a has no step
+to route the rule to and every unbudgeted comment falls back on a reviewer's attention — which is how the rule loses. A step builder taken from the
+library is covered by the library's tests and moves with its rules; a check re-implemented locally is the divergence §1a warns about, applied to
+governance.
+
 ---
 
 ## 2. Never Bypass the Facade
@@ -121,11 +138,11 @@ When the library does not do what is needed, answer three questions **in order**
 3. **Is it domain-specific to this product?** If yes, it belongs here, in the layer [`APP_ARCHITECTURE.md`][aa-2] §2 names — and it is not a
    workaround at all, just application code.
 
-**Only a "no" to all three leaves a genuine local workaround**, and those are rare enough to be worth writing down when they happen.
+**Only a "no" to every one of them leaves a genuine local workaround**, and those are rare enough to be worth writing down when they happen.
 
 ### 3b. Writing a Local Workaround
 
-A local workaround is **one named module in the application's own layer**, not an inline patch at a call site. Three requirements:
+A local workaround is **one named module in the application's own layer**, not an inline patch at a call site. Requirements:
 
 - **It has a name that says what it works around**, so a future reader can find it when the library gains the capability.
 - **It is recorded in the application's `docs/` docs**, with the gap it covers — this is the record that lets it be deleted rather than becoming
@@ -241,4 +258,5 @@ implementation** — they are named in the application's own design documentatio
 [aa-2]: ./APP_ARCHITECTURE.md#2-the-layer-stack
 [boundaries]: ./BOUNDARIES.md
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
+[cr-3a]: ./CODE_REVIEW.md#3a-tier-1--gated
 [testing-6]: ./TESTING.md#6-the-verification-gate

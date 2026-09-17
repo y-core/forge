@@ -4,8 +4,7 @@ import { type AliasTable, aliasTerms } from "./aliases";
 // else is punctuation FTS5 would read as syntax, and is dropped rather than escaped.
 const TERM = /[A-Za-z0-9§][A-Za-z0-9\-_/.§]*/g;
 
-/** English words that carry no lexical signal in a corpus of technical rules — every document has
- *  them, so keeping them costs recall on the terms that matter. */
+/** English words that carry no lexical signal in a corpus of technical rules. */
 const STOP = new Set([
   "a",
   "an",
@@ -68,11 +67,7 @@ function quote(term: string): string {
   return `"${term.replace(/"/g, '""')}"`;
 }
 
-/** Builds the MATCH expression: the reader's own terms OR-ed, then the alias bridges at low weight.
- *
- *  `^` is not used and no term is required — an AND query over a corpus this small returns nothing
- *  far more often than it returns the right thing, and BM25 already ranks a chunk carrying every
- *  term above one carrying a single term. @public */
+/** Builds the MATCH expression: the reader's own terms OR-ed, then the alias bridges at low weight. @public */
 export function matchExpression(query: string, aliases?: AliasTable): string {
   const typed = terms(query);
   if (typed.length === 0) return "";

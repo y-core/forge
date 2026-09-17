@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { FakeElement, FakeEvent, fakeTree } from "../client/dom.fixture";
 import { resume, resumeScope } from "../client/resume";
-import { FakeElement, FakeEvent, fakeTree } from "../client/test-dom";
 import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";

@@ -100,7 +100,7 @@ function makeMeta(overrides?: Partial<KvLogMetadata>): KvLogMetadata {
 
 /** The key shape the channel writes: an inverted, fixed-width timestamp so newest sorts first. */
 function logKey(iso: string, rand: string, prefix = "logs"): string {
-  return `${prefix}||v2||${String(999_999_999_999_999 - Date.parse(iso)).padStart(15, "0")}||${rand}`;
+  return `${prefix}||${String(999_999_999_999_999 - Date.parse(iso)).padStart(15, "0")}||${rand}`;
 }
 
 describe("kvLogChannel — write", () => {
@@ -112,7 +112,7 @@ describe("kvLogChannel — write", () => {
 
     const keys = [...stub._store.keys()];
     expect(keys).toHaveLength(1);
-    expect(keys[0]).toMatch(/^logs\|\|v2\|\|998219778399999\|\|[0-9a-f]{8}$/);
+    expect(keys[0]).toMatch(/^logs\|\|998219778399999\|\|[0-9a-f]{8}$/);
   });
 
   it("stores the serialised LogRecord as the value", async () => {
@@ -159,6 +159,19 @@ describe("kvLogChannel — write", () => {
     expect(meta.requestId).toBe("req-abc");
   });
 
+  // Adversarial fixture: `JSON.stringify` expands one C0 control to six bytes, so a cap counted in
+  // code units serializes a 256-character message to roughly 1620 and KV rejects the put.
+  it("keeps metadata inside KV's 1024 serialized bytes when every character expands sixfold", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(makeRecord({ message: "\u0001".repeat(256), prefix: "\u0001".repeat(128), data: { requestId: "\u0001".repeat(64) } }));
+
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
+    expect(JSON.stringify(meta).length).toBeLessThanOrEqual(1024);
+    expect(meta.message?.length ?? 0).toBeLessThan(256);
+  });
+
   it("omits requestId from metadata when absent in record.data", async () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
@@ -182,7 +195,7 @@ describe("kvLogChannel — purge", () => {
 
     await channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }));
 
-    const remaining = [...stub._store.keys()].filter((k) => k.startsWith("logs||v2||")).sort();
+    const remaining = [...stub._store.keys()].filter((k) => k.startsWith("logs||")).sort();
     expect(remaining.length).toBeLessThanOrEqual(3 + 1);
   });
 
@@ -731,9 +744,8 @@ describe("kvLogChannel — newest-first ordering", () => {
     const key = [...stub._store.keys()][0]!;
     const segments = key.split("||");
     expect(segments[0]).toBe("logs");
-    expect(segments[1]).toBe("v2");
-    expect(segments[2]).toBe("998219778399999");
-    expect(segments[3]).toMatch(/^[0-9a-f]{8}$/);
+    expect(segments[1]).toBe("998219778399999");
+    expect(segments[2]).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("sorts two records one millisecond apart newest first", async () => {
@@ -755,12 +767,12 @@ describe("kvLogChannel — newest-first ordering", () => {
     expect(result.rows.map((r) => r.message)).toEqual(["recent", "ancient"]);
   });
 
-  it("refuses a legacy key from readEntry", async () => {
+  it("refuses a key outside the channel prefix, so readEntry is no arbitrary-read oracle", async () => {
     const stub = makeKvStub();
-    stub._store.set("logs||2026-05-31T10:00:00.000Z||aaa", { value: '{"level":"info"}' });
+    stub._store.set("secrets||session-key", { value: '{"level":"info"}' });
 
     const channel = kvLogChannel(stub, { prefix: "logs" });
-    expect(await channel.readEntry!("logs||2026-05-31T10:00:00.000Z||aaa")).toBeNull();
+    expect(await channel.readEntry!("secrets||session-key")).toBeNull();
   });
 
   it("purge keeps the newest maxLogs by exact surviving-key set", async () => {

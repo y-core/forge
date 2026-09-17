@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { element, runRule } from "../test-support.ts";
+import { element, runRule } from "../lint.fixture.ts";
 import { catalogWrongRawInput } from "./catalog-wrong-raw-input.ts";
 
 describe("catalog-wrong-raw-input", () => {

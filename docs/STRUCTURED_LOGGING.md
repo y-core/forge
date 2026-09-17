@@ -121,7 +121,7 @@ first paragraph is therefore unconditional: **no channel failure of either kind 
 **A log listing must open on the newest record**, and KV lists keys in lexicographic order with no reverse option — so the order is a property of
 the key, not of the reader. `kvLogChannel` writes
 
-    `${prefix}||v2||${inverted}||${rand}`,  inverted = String(999_999_999_999_999 - ms).padStart(15, "0")
+    `${prefix}||${inverted}||${rand}`,  inverted = String(999_999_999_999_999 - ms).padStart(15, "0")
 
 **Width 15 covers every instant past the year 33000**, so the segment never changes length and lexicographic order over it equals numeric order over
 the instant, reversed. Decimal rather than base36: a KV key is read in the dashboard and typed into fixtures, and five saved bytes do not pay for
@@ -130,10 +130,6 @@ the opacity.
 **Both clamps are load-bearing.** An unclamped pre-1970 instant yields a **16**-digit string, and `"1000000000000000" < "999999999999999"` — it
 would sort above every real record, at the top of the newest-first listing. A `NaN` timestamp falls back to `Date.now()`, so it lands with its
 neighbours rather than at an arbitrary end.
-
-**The list prefix carries `v2` for the same reason.** An old key's third segment starts with `2` (a year) and a new one with `9`, so under one
-prefix every legacy record would sort before every new one and bury exactly what the change was for. Outside the prefix they are simply invisible,
-and every record carries `expirationTtl` (7 days by default), so KV reclaims them: there is nothing for a migration shim to do.
 
 **`purge` slices the other end.** Under an inverted key the head of a listing is the newest record, so `keys.slice(maxLogs)` is what may be deleted
 — `keys.slice(0, deleteCount)` would delete precisely what is worth keeping. No key is ever parsed: the ISO timestamp stays in the metadata and the
@@ -198,7 +194,7 @@ a channel list.
     // LOG_LEVEL="warn,error" → failures only; "none" → silent; unset → everything.
     channels: (c) => [withLevels(consoleChannel(), parseLogLevels(c.env.LOG_LEVEL, LOG_LEVELS))]
 
-Two properties follow from this being a **per-channel wrapper** rather than a logger-wide setting:
+These properties follow from this being a **per-channel wrapper** rather than a logger-wide setting:
 
 - **One sink can go quiet while another stays complete.** A test harness can silence the console stream — whose output is interleaved into a test
   runner's stdout — without losing the KV history that a failure investigation reads back. A logger-wide `minLevel` cannot express that, because it

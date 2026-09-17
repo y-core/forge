@@ -26,17 +26,12 @@ export function jsonBatches(batches: readonly Record<string, unknown>[][]): Spaw
   return { code: 0, stdout: `${JSON.stringify(batches.map((results) => ({ results, success: true, meta: {} })))}\n`, stderr: "" };
 }
 
-/**
- * One `--command` answered statement by statement, which is what wrangler does however many were batched
- * into the spawn — so a fake built this way answers a batched read and an unbatched one alike.
- */
+/** One `--command` answered statement by statement, terminator dropped. */
 export function routedReply(command: string, answer: (statement: string) => Record<string, unknown>[]): Spawned {
-  // A batch terminates every statement and an unbatched read does not; the terminator is dropped so a
-  // matcher sees the statement as its caller wrote it either way.
   return jsonBatches(command.split("\n").map((statement) => answer(statement.trim().replace(/;$/, ""))));
 }
 
-/** The one batched reply `readSchemaModel` expects: the five result sets in the order it asks for them. */
+/** The one batched reply `readSchemaModel` expects: the result sets in the order it asks for them. */
 export function schemaModelReply(rows: {
   inventory?: Record<string, unknown>[];
   columns?: Record<string, unknown>[];
@@ -62,7 +57,7 @@ export function tableSqlReply(tableSql: string | null | undefined): Record<strin
   return tableSql === null || tableSql === undefined ? [] : [{ sql: tableSql }];
 }
 
-/** What one key-probe statement asks about: the table, the key column, and which of the two probes it is. */
+/** What one key-probe statement asks about: the table, the key column, and which probe it is. */
 export function keyProbeAsked(statement: string): { table: string; column: string; asks: "nulls" | "classes" } | null {
   if (statement.includes("IS NULL LIMIT 1")) {
     return { table: /FROM "([^"]+)"/.exec(statement)?.[1] ?? "", column: /WHERE "([^"]+)" IS NULL/.exec(statement)?.[1] ?? "", asks: "nulls" };

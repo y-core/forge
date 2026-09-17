@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { TURNSTILE, TURNSTILE_ABANDONED_EVENT } from "../contracts/turnstile-contract";
 import type { TurnstileAbandonedDetail } from "../contracts/types";
-import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./test-dom";
+import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./dom.fixture";
 import { findWidget, hasApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
 
 const win = (turnstile?: unknown) => ({ turnstile }) as unknown as Window;
@@ -227,8 +227,7 @@ interface Scene {
   issued: Array<{ from: string; skip: boolean }>;
 }
 
-/** A mounted controller over a form carrying `formAttrs`, with a descendant field that posts on its
- * own — the `inlineValidation` shape whose request bubbles through the form's own listeners. */
+/** A mounted controller over a form carrying `formAttrs`, with a descendant field that posts on its own. */
 function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<string, string> = {}): Scene {
   const doc = Object.assign(new FakeDocument(), { documentElement: { classList: { contains: () => false } } });
   const calls: Scene["calls"] = { executes: 0, resets: 0, params: null };

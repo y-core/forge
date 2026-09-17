@@ -5,10 +5,6 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
-import { sha256 } from "../digest";
-import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
-import { migrationsDigest } from "../migrate/files";
-import { toSchemaObjects } from "../sql";
 import {
   argvHas,
   fakeDbIo,
@@ -21,7 +17,11 @@ import {
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
-} from "../test-support";
+} from "../db.fixture";
+import { sha256 } from "../digest";
+import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
+import { migrationsDigest } from "../migrate/files";
+import { toSchemaObjects } from "../sql";
 import type { BackupManifest, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, BACKUP_FORMAT_VERSION, manifestSelfDigest } from "./artifact";
 import { executeRestore, prepareRestore, readBackupManifest } from "./restore";
@@ -552,7 +552,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       [join(artifact, "data.sql")]: DATA_SQL,
       [join(artifact, "migrations", "0001_init.sql")]: taken,
     });
-    // The target is empty until the two files have been loaded, which is what route full demands of it.
+    // The target is empty until both files have been loaded, which is what route full demands of it.
     let loaded = false;
     io.rules.push({
       match: (args) => argvHas(args, "execute", "--file"),

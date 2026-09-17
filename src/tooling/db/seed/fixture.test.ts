@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
+import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "../db.fixture";
 import { appHome } from "../home";
-import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "../test-support";
 import type { DbConfig, DbRunContext, FakeDbIo, SeedFixtureOptions } from "../types";
 import { composeSeedFixture } from "./fixture";
 import { lintSeed } from "./lint";
@@ -15,7 +15,7 @@ const SCHEMA = "/app/config/schema.sql";
 const COLUMNS: Record<string, string[]> = { projects: ["uuid", "name"], tasks: ["uuid", "project_uuid", "summary"] };
 
 const ROWS = {
-  projects: [{ uuid: "p1", name: "task-forge" }],
+  projects: [{ uuid: "p1", name: "seed-fixture" }],
   tasks: [
     { uuid: "t1", project_uuid: "p1", summary: "Read the board" },
     { uuid: "t2", project_uuid: "p1", summary: "A body\nover two lines" },
@@ -35,10 +35,7 @@ function dbConfig(): DbConfig {
 
 const command = (a: readonly string[]) => (argvHas(a, "execute", "--json", "--command") ? (a.at(-1) ?? "") : "");
 
-/**
- * The scratch database as wrangler would answer for it: foreign keys on, each table's columns in the
- * order asked for, and a count per table taken from what the emitted statements actually loaded.
- */
+/** The scratch database as wrangler would answer for it. */
 function wire(io: FakeDbIo, over: { foreignKeys?: number; columns?: Record<string, string[]>; counts?: Record<string, number> } = {}): void {
   const columns = over.columns ?? COLUMNS;
   io.rules.push(
@@ -81,7 +78,7 @@ function context(): { run: DbRunContext; io: FakeDbIo } {
 const OPTIONS: SeedFixtureOptions = { path: FIXTURE, tables: ["projects", "tasks"], rows: ROWS, places: ["standby"] };
 
 const EXPECTED = `-- forge:places standby
-INSERT OR IGNORE INTO "projects" ("uuid","name") VALUES ('p1','task-forge');
+INSERT OR IGNORE INTO "projects" ("uuid","name") VALUES ('p1','seed-fixture');
 INSERT OR IGNORE INTO "tasks" ("uuid","project_uuid","summary") VALUES ('t1','p1','Read the board');
 INSERT OR IGNORE INTO "tasks" ("uuid","project_uuid","summary") VALUES ('t2','p1',replace('A body~~N~~over two lines','~~N~~',char(10)));
 `;
@@ -115,7 +112,7 @@ describe("composeSeedFixture()", () => {
     wire(io);
 
     expect(composeSeedFixture(run, { path: FIXTURE, tables: ["projects"], rows: { projects: ROWS.projects } }).sql).toBe(
-      `INSERT OR IGNORE INTO "projects" ("uuid","name") VALUES ('p1','task-forge');\n`,
+      `INSERT OR IGNORE INTO "projects" ("uuid","name") VALUES ('p1','seed-fixture');\n`,
     );
   });
 
@@ -164,7 +161,7 @@ describe("composeSeedFixture()", () => {
 
     expect(outcome.tables[0]).toEqual({ name: "projects", rows: 1, dropped: ["name"] });
     expect(outcome.sql).toContain(`INSERT OR IGNORE INTO "projects" ("uuid") VALUES ('p1');`);
-    expect(outcome.sql).not.toContain("task-forge");
+    expect(outcome.sql).not.toContain("seed-fixture");
   });
 
   it("refuses a seed variable in a row, naming it", () => {

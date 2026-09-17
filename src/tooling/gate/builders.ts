@@ -7,6 +7,7 @@ import { checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder } from "./checks/class-order";
 import { checkClassTokens } from "./checks/class-tokens";
 import { checkCoLocation } from "./checks/co-location";
+import { checkCommentBudget } from "./checks/comment-budget";
 import { checkContrast } from "./checks/contrast";
 import { checkCssSources } from "./checks/css-sources";
 import { checkCssTokens } from "./checks/css-tokens";
@@ -19,6 +20,7 @@ import { checkJsx } from "./checks/jsx";
 import { checkMarkdown, fixMarkdown } from "./checks/markdown";
 import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
+import { checkPackaging } from "./checks/packaging";
 import { checkSsrBoundary } from "./checks/ssr-boundary";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
@@ -28,6 +30,7 @@ import type { ClassGroupsCheckConfig } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ClassTokensCheckConfig } from "./checks/types";
 import type { CoLocationCheckConfig } from "./checks/types";
+import type { CommentBudgetCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { CssSourcesCheckConfig } from "./checks/types";
 import type { CssTokensCheckConfig } from "./checks/types";
@@ -38,6 +41,7 @@ import type { ExposureCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { ModernCssCheckConfig } from "./checks/types";
+import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
@@ -131,11 +135,7 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
     cmd: ["playwright", "test"],
     // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
     // present, so probing it would pass vacuously and let every spec fail at launch.
-    ...prerequisite(options.requires, {
-      tool: "chromium",
-      probe: hasChromium,
-      hint: options.hint ?? "run `bunx playwright install chromium`, or use a devbox container — `devctl up`",
-    }),
+    ...prerequisite(options.requires, { tool: "chromium", probe: hasChromium, hint: options.hint ?? "run `bunx playwright install chromium`" }),
   };
 }
 
@@ -203,6 +203,16 @@ export function assetManifestStep(config: AssetManifestCheckConfig, options: Ste
 /** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */
 export function coLocationStep(config: CoLocationCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-co-location", () => checkCoLocation(config), options);
+}
+
+/** Checks every comment against the budget, so prose the code already states cannot accumulate unseen. @public */
+export function commentBudgetStep(config: CommentBudgetCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-comment-budget", () => checkCommentBudget(config), options);
+}
+
+/** Checks that the published tarball carries no module only a test imports. @public */
+export function packagingStep(config: PackagingCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-packaging", () => checkPackaging(config), options);
 }
 
 /** Checks that no server-rendered file imports the browser-only runtime. @public */

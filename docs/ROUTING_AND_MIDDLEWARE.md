@@ -159,7 +159,7 @@ mode is silent and production-only — the form simply stops submitting, against
 
 **Absent `csrfFieldCtx` means no CSRF guard ran, so nothing was consumed and nothing is dropped.** A `_csrf` field arriving in that body is then an
 ordinary undeclared field, and a strict schema refuses it. That is the intended answer: it points at the missing middleware instead of absorbing its
-absence. Two alternatives were rejected.
+absence. These alternatives were rejected.
 
 - **A permissive default** — drop the default CSRF field name regardless — makes an unguarded route indistinguishable from a guarded one. The form
   submits, the route looks correct, and the missing guard never surfaces. It also cannot be right in general, because it can only guess the default
@@ -188,7 +188,7 @@ validate, refuse or continue — belong to [`INPUT_VALIDATION.md`][iv-1d] §1d. 
 sequence — rather than a rule each route is trusted to keep (§5b).
 
 **The sequence is internal to `app` and is not exported.** It is an implementation seam, not a public surface; a consumer composes it only by
-declaring a `schema` on one of the two builders, and there is no subpath that yields it directly.
+declaring a `schema` on a builder, and there is no subpath that yields it directly.
 
 **The sequence is shared, and so are its options.** There is **one body-validation surface**: `PageDefinition` inherits `turnstile`,
 `onBotDetected`, `onValidationError` and `maxBytes` from the same projection of `ActionDefinition` the pipeline itself consumes, so the options and
@@ -345,9 +345,9 @@ The context is `AppContext<Bindings>` — a `RequestContext` plus `.env` and `.e
 Read the request through the standard Web API surface: `c.request.headers.get("X")`, `c.request.json()`, `c.method`, `c.url` (a `URL`), `c.params`.
 Bindings are `c.env.*`; background work is `c.executionCtx.waitUntil(p)`. Resolved config is `c.config`, or `configStore.get(c.env)`.
 
-**Build responses with the `http` helpers** — `htmlResponse`, `fragmentResponse`, `redirect` ([`FORGE_ERRORS.md`][eh-2] §2, §3) — and read form
-bodies with `parseFormData(c)` ([`INPUT_VALIDATION.md`][iv-2c] §2c). **Context slots are read through typed `contextVar` accessors (§4), never raw
-keys.**
+**Build responses with the `http` helpers** — `htmlResponse`, `fragmentResponse`, `createRedirectResponse` ([`FORGE_ERRORS.md`][eh-2] §2, §3) — and
+read form bodies with `parseFormData(c)` ([`INPUT_VALIDATION.md`][iv-2c] §2c). **Context slots are read through typed `contextVar` accessors (§4),
+never raw keys.**
 
 ---
 
@@ -384,8 +384,8 @@ and no stylesheet.
 ### 6b. A Mountable Takes No Chrome Options
 
 **A mountable that renders a full document takes no chrome options — no `layout`, no `context`, no `document`.** It calls
-`renderShell(c, content, slot)` and names itself in the slot. `registerShowcase`, `loadLogViewer` and `auth/web` each did own such options, in three
-shapes; the shell is the one seam that replaced all three, and the next mountable is held to it rather than inventing a fourth.
+`renderShell(c, content, slot)` and names itself in the slot. `registerShowcase`, `loadLogViewer` and `auth/web` all go through that one seam, and
+the next mountable is held to it rather than inventing a shape of its own.
 
 **That is also why none of them carries a `Ctx` type parameter.** A `context`/`layout` option pair has to thread the consumer's config and context
 types through every signature that might reach a render. A closure holds both, so the generics are the consumer's problem where they belong and
@@ -393,8 +393,6 @@ forge's option types stay one-parameter.
 
 **`slot.mount` is an open string.** A closed union of mount names would make every mountable forge adds later a breaking change for every shell a
 consumer has already written — so a shell that branches on `mount` needs a default arm.
-
-The old options were removed outright, with no shim and no dual path ([`FORGE_STRUCTURE.md`][la-7] §7).
 
 ### 6c. Fragments Never Reach the Shell
 
@@ -426,7 +424,7 @@ the same tags in the same order from the same input. Without a single renderer t
 **`mergeMeta(base, page)` merges a page over the site's base**, shallow at the top and one level deep for `og` and `twitter`. A plain spread drops a
 base `og` whole the first time a page states one field of it. `extra` is concatenated base-first.
 
-Three things the descriptor deliberately does not do:
+What the descriptor deliberately does not do:
 
 - **`extra` is appended verbatim and never deduplicated** against the typed tags. It is the escape hatch for a tag `PageMeta` has no field for, in
   the same `{ name, content }` / `{ property, content }` / `{ tagName: "link", rel, href }` vocabulary React Router uses — not a second one.
@@ -442,6 +440,5 @@ Three things the descriptor deliberately does not do:
 [eh-5d]: ./FORGE_ERRORS.md#5d-defineaction-and-definepage-error-recovery
 [iv-1d]: ./INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-2c]: ./INPUT_VALIDATION.md#2c-parseformdata--body-read-with-size-limit
-[la-7]: ./FORGE_STRUCTURE.md#7-pre-10-api-evolution
 [sh]: ./SECURITY_HARDENING.md
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

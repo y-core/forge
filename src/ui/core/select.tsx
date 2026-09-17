@@ -21,7 +21,7 @@ type SelectOptionProps = JSX.IntrinsicElements["option"];
 type SelectOptGroupProps = JSX.IntrinsicElements["optgroup"];
 
 // The caller's class dresses the wrapper, not the `<select>`: the chevron is positioned against the
-// wrapper's end edge, and a width the two boxes did not share would strand it outside the control.
+// wrapper's end edge, and a width the wrapper and the control did not share would strand it outside.
 const SELECT_WRAPPER = "group/select relative w-full has-[select:disabled]:opacity-50";
 const SELECT_BASE = "state-busy state-disabled state-invalid field-chrome appearance-none pe-10 focus-ring";
 

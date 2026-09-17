@@ -11,7 +11,7 @@ audience: consumer
 >
 > Defers to: [`AUTH_MOUNTING.md`][am] for the mount itself — the builders, the guard table, the seams forge ships no implementation for, and
 > embedding a single view; [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
-> [`src/auth/README.md`][auth-readme] for every signature, option shape and export; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
+> [`src/auth/README.md`][auth-readme] for how each of these is called, task by task; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
 > operations return a `Result`; [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c for `resume()` and scope registration.
 
 ---
@@ -21,7 +21,7 @@ audience: consumer
 - §1 Signup: address in, code out, and why an address already taken is challenged rather than refused
 - §2 Sign-in: the request/verify pair and what each factor requirement demands
 - §2a What Each Requirement Demands: `optional`, `mandatory`, `mandatoryForRoles`
-- §2b What the Visitor Is Told: the three notices, and the reasons folded into them
+- §2b What the Visitor Is Told: the closed set of notices, and the reasons folded into them
 - §2c Where a Resolution Sends the Visitor: enrolment, step-up, or the return path
 - §3 Passkeys: the two-endpoint ceremony both halves share
 - §3a Enrolment: the registration ceremony and the pending-enrolment gate
@@ -96,7 +96,7 @@ to do on a page nobody is sent to.
 
 ### 2b. What the Visitor Is Told
 
-Three notices, and only three: the service is unavailable, you are throttled, or that did not match. Every other reason — expired, consumed, not
+The notices are a closed set: the service is unavailable, you are throttled, or that did not match. Every other reason — expired, consumed, not
 enrolled, deactivated, unrecognised — folds into **that did not match**, because telling them apart is the account-enumeration oracle the decoy
 closes. The unredacted reason is for your logs and your branching, never for the page ([`FORGE_ERRORS.md`][eh-1c] §1c).
 
@@ -124,8 +124,8 @@ A passkey enrols a visitor and steps one up; it never starts a sign-in (§3b). O
 under `capabilities` because TypeScript narrows a union only on a direct discriminant.
 
 Every ceremony is two endpoints and two CSRF tokens. The server half stamps a contract onto the scope root; the browser half reads it off that
-element and runs the ceremony ([`NAMESPACES.md`][namespaces-5h] §5h). **Two tokens because `csrfProtection` binds a token to one path** — a ceremony
-spanning `begin` and `finish` cannot share one, and naming them apart is what stops either being sent to the wrong endpoint.
+element and runs the ceremony ([`NAMESPACES.md`][namespaces-5h] §5h). **A token each, because `csrfProtection` binds a token to one path** — a
+ceremony spanning `begin` and `finish` cannot share one, and naming them apart is what stops either being sent to the wrong endpoint.
 
 The controller checks WebAuthn support **at mount, not at the press**: an unsupported browser reveals the fallback line and disables the trigger,
 rather than failing after the visitor has committed.
@@ -160,7 +160,7 @@ ownership is not a check a caller can forget.
 including the ones on devices this request cannot see — is refused on its own next request. The acting session is carried past the barrier, so the
 visitor stays where they are. Removing the authenticator-app factor does the same.
 
-**Two limits apply to this page, and no configuration removes either** — §7 states both.
+**No configuration removes the limits that apply to this page** — §7 states them.
 
 ---
 
@@ -222,10 +222,10 @@ inbox.
 answering it writes nothing and instead forwards a second link, carrying `move`, to the new address. Answering _that_ one moves the account. An
 unverified account has one stage rather than two — its single link already went to the new address, and already carries `move`.
 
-**Two stages, because marking an address verified that nobody answered verifies nothing.** `changeEmail` stamps the verification in the same
-statement that writes the address, so the address it marks must be one that has answered a link sent to it. Under a single stage the _old_ address
-answered and the _new_ one became a verified primary factor unread — an account's whole sign-in resting on a mailbox no one had proved they could
-open.
+**The stages are split, because marking an address verified that nobody answered verifies nothing.** `changeEmail` stamps the verification in the
+same statement that writes the address, so the address it marks must be one that has answered a link sent to it. Under a single stage the _old_
+address answered and the _new_ one became a verified primary factor unread — an account's whole sign-in resting on a mailbox no one had proved they
+could open.
 
 **The new address is deliberately never looked up before the email goes out.** Answering "that address is taken" here is the same enumeration oracle
 sign-in refuses to give. The unique index refuses the collision at the `move` stage instead, folded into the same refusal an unknown account gets.

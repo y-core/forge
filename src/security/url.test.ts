@@ -7,23 +7,23 @@ import { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";
 
 describe("parseUrl", () => {
   it("extracts origin from a valid URL", () => {
-    const result = parseUrl("https://cornellaw.co.za");
-    expect(result.origin).toBe("https://cornellaw.co.za");
+    const result = parseUrl("https://example.com");
+    expect(result.origin).toBe("https://example.com");
   });
 
   it("extracts hostname from a valid URL", () => {
-    const result = parseUrl("https://cornellaw.co.za");
-    expect(result.hostname).toBe("cornellaw.co.za");
+    const result = parseUrl("https://example.com");
+    expect(result.hostname).toBe("example.com");
   });
 
   it("extracts protocol including the trailing colon", () => {
-    const result = parseUrl("https://cornellaw.co.za");
+    const result = parseUrl("https://example.com");
     expect(result.protocol).toBe("https:");
   });
 
   it("strips path and query from origin", () => {
-    const result = parseUrl("https://cornellaw.co.za/some/path?q=1");
-    expect(result.origin).toBe("https://cornellaw.co.za");
+    const result = parseUrl("https://example.com/some/path?q=1");
+    expect(result.origin).toBe("https://example.com");
   });
 
   it("throws on an invalid URL", () => {
@@ -39,32 +39,32 @@ describe("parseUrl", () => {
 
 describe("deriveAllowedOrigins", () => {
   it("includes the base origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
-    expect(deriveAllowedOrigins(parsed)).toContain("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
+    expect(deriveAllowedOrigins(parsed)).toContain("https://example.com");
   });
 
   it("returns only the base origin by default (no www variant)", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     const origins = deriveAllowedOrigins(parsed);
     expect(origins).toHaveLength(1);
-    expect(origins[0]).toBe("https://cornellaw.co.za");
+    expect(origins[0]).toBe("https://example.com");
   });
 
   it("adds www variant when includeWww: true for a non-www hostname", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
-    expect(deriveAllowedOrigins(parsed, { includeWww: true })).toContain("https://www.cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
+    expect(deriveAllowedOrigins(parsed, { includeWww: true })).toContain("https://www.example.com");
   });
 
   it("returns exactly two origins for a non-www hostname when includeWww: true", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(deriveAllowedOrigins(parsed, { includeWww: true })).toHaveLength(2);
   });
 
   it("returns only the base origin for a www hostname even when includeWww: true", () => {
-    const parsed = parseUrl("https://www.cornellaw.co.za");
+    const parsed = parseUrl("https://www.example.com");
     const origins = deriveAllowedOrigins(parsed, { includeWww: true });
     expect(origins).toHaveLength(1);
-    expect(origins[0]).toBe("https://www.cornellaw.co.za");
+    expect(origins[0]).toBe("https://www.example.com");
   });
 
   it("preserves protocol in the www variant", () => {
@@ -81,88 +81,88 @@ describe("deriveAllowedOrigins", () => {
   });
 
   it("appends https://localhost:8787 for the proxy-less dev fallback", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) })).toEqual([
-      "https://cornellaw.co.za",
+      "https://example.com",
       "https://localhost:8787",
     ]);
   });
 
   it("accepts http://localhost:8787 as a loopback extra origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["http://localhost:8787"] }) })).toEqual([
-      "https://cornellaw.co.za",
+      "https://example.com",
       "http://localhost:8787",
     ]);
   });
 
   it("accepts http://127.0.0.1:8787 as a loopback extra origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["http://127.0.0.1:8787"] }) })).toEqual([
-      "https://cornellaw.co.za",
+      "https://example.com",
       "http://127.0.0.1:8787",
     ]);
   });
 
   it("rejects an extra origin carrying a path", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://x.example/app"] }) })).toThrow(
       "extraOrigins entry is not a normalized origin: https://x.example/app",
     );
   });
 
   it("rejects an extra origin with a trailing slash", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://x.example/"] }) })).toThrow(
       "extraOrigins entry is not a normalized origin: https://x.example/",
     );
   });
 
   it("rejects an extra origin that is not a URL", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["not-a-url"] }) })).toThrow(
       "extraOrigins entry is not a normalized origin: not-a-url",
     );
   });
 
   it("rejects a plain http non-loopback extra origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["http://x.example"] }) })).toThrow(
       "extraOrigins entry must use https: (http://localhost and http://127.0.0.1 are allowed for local development): http://x.example",
     );
   });
 
   it("rejects a ws:// loopback extra origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["ws://localhost:8787"] }) })).toThrow(
       "extraOrigins entry must use https: (http://localhost and http://127.0.0.1 are allowed for local development): ws://localhost:8787",
     );
   });
 
   it("rejects an ftp:// loopback extra origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["ftp://localhost"] }) })).toThrow(
       "extraOrigins entry must use https: (http://localhost and http://127.0.0.1 are allowed for local development): ftp://localhost",
     );
   });
 
   it("de-dupes an extra origin equal to the base origin", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://cornellaw.co.za"] }) })).toHaveLength(1);
+    const parsed = parseUrl("https://example.com");
+    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://example.com"] }) })).toHaveLength(1);
   });
 
   it("orders base, www variant, then extras when composed with includeWww", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
+    const parsed = parseUrl("https://example.com");
     expect(deriveAllowedOrigins(parsed, { includeWww: true, dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) })).toEqual([
-      "https://cornellaw.co.za",
-      "https://www.cornellaw.co.za",
+      "https://example.com",
+      "https://www.example.com",
       "https://localhost:8787",
     ]);
   });
 
   it("returns only the base origin for an empty extraOrigins array", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: [] }) })).toEqual(["https://cornellaw.co.za"]);
+    const parsed = parseUrl("https://example.com");
+    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: [] }) })).toEqual(["https://example.com"]);
   });
 
   it("preserves a non-default port in the www variant", () => {
@@ -185,17 +185,17 @@ describe("deriveAllowedOrigins", () => {
   });
 
   it("de-dupes an extra origin equal to the www variant", () => {
-    const parsed = parseUrl("https://cornellaw.co.za");
-    expect(deriveAllowedOrigins(parsed, { includeWww: true, dev: devAllowance({ extraOrigins: ["https://www.cornellaw.co.za"] }) })).toEqual([
-      "https://cornellaw.co.za",
-      "https://www.cornellaw.co.za",
+    const parsed = parseUrl("https://example.com");
+    expect(deriveAllowedOrigins(parsed, { includeWww: true, dev: devAllowance({ extraOrigins: ["https://www.example.com"] }) })).toEqual([
+      "https://example.com",
+      "https://www.example.com",
     ]);
   });
 });
 
 describe("BaseUrlConfigSchema", () => {
   it("accepts a valid https URL", () => {
-    const result = v.safeParse(BaseUrlConfigSchema, "https://cornellaw.co.za");
+    const result = v.safeParse(BaseUrlConfigSchema, "https://example.com");
     expect(result.success).toBe(true);
   });
 
@@ -205,7 +205,7 @@ describe("BaseUrlConfigSchema", () => {
   });
 
   it("rejects a plain http non-localhost URL", () => {
-    const result = v.safeParse(BaseUrlConfigSchema, "http://cornellaw.co.za");
+    const result = v.safeParse(BaseUrlConfigSchema, "http://example.com");
     expect(result.success).toBe(false);
   });
 
@@ -215,7 +215,7 @@ describe("BaseUrlConfigSchema", () => {
   });
 
   it("names both loopback allowances in the rejection message", () => {
-    const result = v.safeParse(BaseUrlConfigSchema, "http://cornellaw.co.za");
+    const result = v.safeParse(BaseUrlConfigSchema, "http://example.com");
     expect(result.issues?.[0]?.message).toBe("must use https: (http://localhost and http://127.0.0.1 are allowed for local development)");
   });
 
@@ -231,11 +231,11 @@ describe("BaseUrlConfigSchema", () => {
   });
 
   it("transforms to a BaseUrlConfig with allowedOrigins", () => {
-    const result = v.safeParse(BaseUrlConfigSchema, "https://cornellaw.co.za");
+    const result = v.safeParse(BaseUrlConfigSchema, "https://example.com");
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.output.origin).toBe("https://cornellaw.co.za");
-      expect(result.output.allowedOrigins).toEqual(["https://cornellaw.co.za"]);
+      expect(result.output.origin).toBe("https://example.com");
+      expect(result.output.allowedOrigins).toEqual(["https://example.com"]);
     }
   });
 

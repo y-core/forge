@@ -137,9 +137,9 @@ These never appear in output, whatever was asked for.
 **Never write a raw color literal in a `class`.** <!-- rule:forge-ui-color-token-only --> No `#hex`, no `rgb()`, no `hsl()`, no `oklch()`. Use the
 semantic tokens — `--background` `--foreground` `--card` `--card-foreground` `--popover` `--popover-foreground` `--primary` `--primary-foreground`
 `--secondary` `--secondary-foreground` `--muted` `--muted-foreground` `--accent` `--accent-foreground` `--destructive` `--destructive-foreground`
-`--success` `--success-foreground` `--warning` `--warning-foreground` `--border` `--input` `--track` `--ring` — plus the twenty `--status-*` roles,
-four intents (`danger`, `warning`, `success`, `info`) by five roles (`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`, `-border`),
-which is how a status surface gets a fixed hue without a fixed value.
+`--success` `--success-foreground` `--warning` `--warning-foreground` `--border` `--input` `--track` `--ring` — plus the `--status-*` roles, each
+intent (`danger`, `warning`, `success`, `info`) crossed with each role (`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`,
+`-border`), which is how a status surface gets a fixed hue without a fixed value.
 
 Each of them resolves through a numbered step of the scale — `--gray-1` … `--gray-12`, their alpha siblings, and the fixed status hues — and each
 step holds one literal value covering both modes, declared by `theme-neutral.css` (or whichever scheme file is imported after it) and, for the hues,
@@ -148,7 +148,7 @@ makes a theme swap a one-file change, and what makes a _per-mode_ change an edit
 
 A Tailwind palette utility is permitted **only paired with its own `dark:` counterpart**, and only for a hue no forge token covers. A bare
 `bg-red-50` is not a literal, but it fails for the same reason one is banned: it survives the theme switch, and becomes a near-white rectangle on a
-dark page. For the four status intents there is nothing left to reach for it with — that case is `--status-*`, per
+dark page. For the status intents there is nothing left to reach for it with — that case is `--status-*`, per
 `forge-ui-color-semantic-variant-fixed` in `reference/04-color.md`.
 
 - Wrong: `class="bg-[#0f172a] text-[#e2e8f0]"`
