@@ -51,15 +51,9 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      # The browser set's prerequisite. Workerd arrives transitively with wrangler, so Chromium is
-      # the only thing `verify:full` needs that `bun install` does not already bring.
-      - name: install chromium
-        run: bunx playwright install --with-deps chromium
-
-      # A backstop, not the gate that decides the release: `forge release` runs this same command
-      # before it cuts the tag, because by the time it fails here the tag is already fetchable.
+      # `standard`; `verify:full` will have completed by the time a tag reaches here
       - name: verify
-        run: bun run verify:full
+        run: bun run verify
 
       - name: pack
         run: bun pm pack --filename "y-core-forge-${VERSION}.tgz"

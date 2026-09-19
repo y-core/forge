@@ -7,7 +7,9 @@ import { resolveChromiumPath } from "./src/tooling/gate/chromium.mjs";
  *
  * The gate runs it as the full-only `test:browser` row, because a browser binary is a
  * *prerequisite* — the only legitimate reason to hold a step back. Cost is never one. The workspace
- * image supplies the browser and `CHROME_PATH` names it; nothing downloads one.
+ * image supplies the browser and `CHROME_PATH` names it, so nothing downloads one here; CI has no
+ * such image and installs its own, which is why the channel below is the fallback rather than a
+ * second `executablePath`.
  *
  * `bun test` is deliberately untouched by this set: the two never share a process, so no global is
  * ever redefined and forge's Cloudflare `Request`/`Response`/`fetch` semantics stay exactly as the
@@ -30,11 +32,25 @@ import { resolveChromiumPath } from "./src/tooling/gate/chromium.mjs";
  * config loads under node, which refuses to strip types under `node_modules`, and forge loading the
  * exact module a consumer loads is what makes a broken bundle fail here rather than there.
  */
+const executablePath = resolveChromiumPath();
+
 export default defineConfig({
   testDir: ".",
   testMatch: "src/**/*.browser.ts",
   fullyParallel: true,
   workers: "100%",
   reporter: "list",
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: resolveChromiumPath() } } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        // The image's browser where there is one; otherwise `chromium`, which is the new headless
+        // mode over the real browser binary. Never the default, which is the headless shell: it is a
+        // separate build that resolves no CSS anchor positioning and answers a pointer leave
+        // differently, so a suite run against it tests a browser no reader has.
+        ...(executablePath === undefined ? { channel: "chromium" as const } : { launchOptions: { executablePath } }),
+      },
+    },
+  ],
 });

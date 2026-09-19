@@ -17,7 +17,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **The release workflow verifies at the `standard` tier.** `config/release.ts` runs `verify:full`
 
 ---
 
