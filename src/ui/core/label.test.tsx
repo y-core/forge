@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrsOf, classesOf, tagOf } from "./core.fixture";
 import { Label } from "./label";
 
 describe("Label", () => {

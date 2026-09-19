@@ -24,6 +24,7 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
       channels: options.channels(c),
       ...(minLevel !== undefined ? { minLevel } : {}),
       ...(options.onChannelError !== undefined ? { onChannelError: options.onChannelError } : {}),
+      ...(options.redact !== undefined ? { redact: options.redact } : {}),
     });
     const log = base.child(options.bindings ? options.bindings(c) : {});
     requestLog.set(context, log);

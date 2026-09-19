@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { FormField } from "./field-layout";
 
 const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));

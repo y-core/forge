@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 import { FieldDescription, FieldError, FieldLabel, fieldControlProps, fieldDescribedBy, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
 import { FormField } from "./field-layout";
 import { Field } from "./field-stack";

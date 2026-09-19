@@ -172,8 +172,14 @@ Never present in a log record:
 Where a handler must reference a user for debugging, use an **opaque internal id** that cannot be reverse-mapped without database access.
 
 A persisting channel additionally strips stack traces by default — a stack embeds argument values and file paths, and a persisted log is a
-longer-lived artifact than a console line. Provide a redaction wrapper so an application can strip its own sensitive fields before any persisting
-channel sees them.
+longer-lived artifact than a console line.
+
+**Redact every channel by default, and make the relaxation the visible thing.** A per-channel redaction opt-in is the shape that produced the leak
+this rule exists to stop: it is configuration nobody has to write, so console output goes unredacted beside a redacted store while §4a bans the
+field classes on both. Apply the policy once, logger-wide, before the channel fan-out, so no channel can be dirtier than another and an internal
+logger the application never configures is covered too. Give an application two controls — add a field class, and allow a specific one back — and
+one greppable literal that turns the pass off. A per-channel wrapper may still **tighten** what one sink keeps; it must not be able to relax the
+floor.
 
 ### 4b. Structured Fields Over String Interpolation
 

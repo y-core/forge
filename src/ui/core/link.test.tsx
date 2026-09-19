@@ -2,8 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Link } from "./link";
 
 const anchor = (props: Parameters<typeof Link>[0] = {}) => render(<Link {...props}>go</Link>);

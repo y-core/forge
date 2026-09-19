@@ -174,7 +174,12 @@ Never present in a log record:
 Where a handler must reference a user for debugging, use an **opaque internal id** that cannot be reverse-mapped without database access.
 
 **Stack traces stay out of persisted logs.** A stack embeds argument values and file paths, and a persisted record is a far longer-lived artifact
-than a console line. Where the platform offers a redaction wrapper, apply it before any persisting channel.
+than a console line.
+
+**Do not relax the platform's default redaction without a reviewed exception.** Where the platform redacts every record by default, the application
+writes nothing to get §4a compliance, and the only thing that has to be visible is the relaxation: an allowed-back field class, or the opt-out that
+disables the pass. Each one is a reviewed decision recorded where the configuration lives, and a hand-rolled deny list beside the default is a
+second copy free to disagree with it. A per-channel wrapper is for holding one sink to a **stricter** standard than the default, never a looser one.
 
 ### 4b. Structured Fields Over String Interpolation
 

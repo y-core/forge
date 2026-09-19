@@ -5,8 +5,23 @@ import { htmlResponse } from "../http/response";
 import { Fragment, isValidElement } from "./element";
 import type { JSXElement, JSXNode } from "./types";
 
-/** HTML5 void elements — no children, no closing tag. */
-const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+/** HTML5 void elements — no children, no closing tag. @internal */
+export const VOID_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
 
 /** Attributes that are boolean: emitted as bare name when truthy, omitted when falsy. */
 const BOOLEAN_ATTRS = new Set([

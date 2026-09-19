@@ -1,6 +1,6 @@
 import { bytesToHex, randomBytes } from "../crypto/mod";
 import type { KVNamespaceLike } from "../storage/kv/types";
-import { logSafeUrl } from "./log-value";
+import { cloneLogValue } from "./log-clone";
 import type { KvLogChannelOptions, KvLogMetadata, LogChannel, LogQuery, LogReadResult, LogRecord, LogRow } from "./types";
 import { parseLogLevel } from "./types";
 
@@ -11,7 +11,6 @@ const DEFAULT_PURGE_PROBABILITY = 0.02;
 const PURGE_BATCH = 20;
 const PURGE_LIST_LIMIT = 1000;
 const DEFAULT_LIMIT = 50;
-const CIRCULAR_MARKER = "[circular]";
 
 // Width 15 covers every instant to 33658-09-27, so the inverted value never changes length and
 // lexicographic order over it equals numeric order over the instant — newest first.
@@ -29,36 +28,11 @@ function invertTimestamp(iso: string): string {
   return String(INVERSION_BASE - bounded).padStart(INVERTED_WIDTH, "0");
 }
 
+// The same walk redaction runs at dispatch, invoked again per KV write rather than folded into it:
+// `stack` is a named `SerializedError` field matched exactly, and stays out of persisted logs alone.
 /** Deep-clones `value` into a JSON-stable shape, marking cycles and optionally dropping `stack`. @internal */
 function toPersistable(value: unknown, keepStacks: boolean): unknown {
-  const openPath = new WeakSet<object>();
-
-  function walk(input: unknown): unknown {
-    if (input === null || typeof input !== "object") return input;
-    // An invalid Date has no representable instant, and `toISOString` would throw on the log path.
-    if (input instanceof Date) return Number.isNaN(input.getTime()) ? null : input.toISOString();
-    // Ahead of the `toJSON` consult: `URL.prototype.toJSON` returns the full href, query string included.
-    if (input instanceof URL) return logSafeUrl(input);
-    if (openPath.has(input)) return CIRCULAR_MARKER;
-
-    openPath.add(input);
-    try {
-      const toJson = (input as { toJSON?: () => unknown }).toJSON;
-      if (typeof toJson === "function") return walk(toJson.call(input));
-      if (Array.isArray(input)) return input.map((item) => walk(item));
-      if (input instanceof Map) return { type: "Map", entries: [...input].map(([key, val]) => [walk(key), walk(val)]) };
-      if (input instanceof Set) return { type: "Set", values: [...input].map((item) => walk(item)) };
-      return Object.fromEntries(
-        Object.entries(input as Record<string, unknown>)
-          .filter(([key]) => keepStacks || key !== "stack")
-          .map(([key, val]) => [key, walk(val)]),
-      );
-    } finally {
-      openPath.delete(input);
-    }
-  }
-
-  return walk(value);
+  return cloneLogValue(value, (key) => (keepStacks || key !== "stack" ? "keep" : "remove"));
 }
 
 // KV's own limits, not options: the metadata cap is a platform constant.

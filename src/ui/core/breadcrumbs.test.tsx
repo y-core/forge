@@ -2,9 +2,9 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Breadcrumbs } from "./breadcrumbs";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { createIcon } from "./icon";
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-right": "0 0 16 16" });

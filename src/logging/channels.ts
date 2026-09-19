@@ -8,6 +8,7 @@ export function consoleChannel(): LogChannel {
     write(record: LogRecord): void {
       const { data, ...rest } = record;
       // reserved fields win — caller data cannot forge level/message/timestamp
+      // `urlNarrowing` is redundant for a record from `dispatch` and kept for a hand-built one.
       console.log(JSON.stringify({ ...data, ...rest }, urlNarrowing));
     },
   };
@@ -38,6 +39,8 @@ export function withLevels(channel: LogChannel, levels: readonly LogLevel[]): Lo
   };
 }
 
+// It runs after the logger-wide floor, on a record whose masked values are already gone, so it can
+// only tighten — holding one sink to a stricter standard than the rest, never relaxing any.
 /** Wraps a channel so each record passes through `redact` before being written; reads pass through unchanged. @public */
 export function withRedaction(channel: LogChannel, redact: (record: LogRecord) => LogRecord): LogChannel {
   return {

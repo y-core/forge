@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
+import { withRedaction } from "./channels";
+import { LOG_REDACTED, LOG_REDACTION_FAILED } from "./log-clone";
 import { createLogger } from "./logger";
+import { defineLogRedaction } from "./redact";
 import type { LogChannel, LogRecord } from "./types";
 
 let captured: string[] = [];
@@ -758,5 +761,199 @@ describe("createLogger — a synchronously throwing channel", () => {
 
     expect(capturedErrors).toStrictEqual([]);
     expect(captured).toStrictEqual([]);
+  });
+});
+
+describe("createLogger — redaction is logger-wide and on by default", () => {
+  function capture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return { records, channel: { write: (r) => void records.push(r) } };
+  }
+
+  it("masks a §4a field with no options at all, which is what the module-scope internal loggers get", () => {
+    const log = createLogger("t");
+    log.info("hello", { email: "a@b.test" });
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.email).toBe(LOG_REDACTED);
+    expect(captured[0]).not.toContain("a@b.test");
+  });
+
+  it("emits the value when the logger opts out by name", () => {
+    const log = createLogger("t", { redact: "allow-unredacted-logs" });
+    log.info("hello", { email: "a@b.test" });
+    expect(JSON.parse(captured[0]!).email).toBe("a@b.test");
+  });
+
+  it("redacts a binding as it redacts call-site data", () => {
+    const log = createLogger("t", { bindings: { sessionId: "s_1" } });
+    log.info("hello");
+    expect(JSON.parse(captured[0]!).sessionId).toBe(LOG_REDACTED);
+  });
+
+  it("redacts for a child logger, which inherits the policy rather than re-resolving one", () => {
+    const log = createLogger("t").child({ requestId: "r_1" });
+    log.info("hello", { email: "a@b.test" });
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.email).toBe(LOG_REDACTED);
+    expect(obj.requestId).toBe("r_1");
+  });
+
+  it("hands every channel the same redacted record, so no channel can be dirtier than another", () => {
+    const a = capture();
+    const b = capture();
+    const log = createLogger("t", { channels: [a.channel, b.channel] });
+
+    log.info("hello", { email: "a@b.test" });
+
+    expect(a.records[0]!.data).toStrictEqual({ email: LOG_REDACTED });
+    expect(b.records[0]!.data).toStrictEqual({ email: LOG_REDACTED });
+    expect(a.records[0]).toBe(b.records[0]!);
+  });
+
+  it("cannot have the floor relaxed by a channel wrapper, because the value is gone before the wrapper runs", () => {
+    const sink = capture();
+    const restoring = withRedaction(sink.channel, (r) => ({ ...r, data: { ...r.data, email: String(r.data?.email) } }));
+    const log = createLogger("t", { channels: [restoring] });
+
+    log.info("hello", { email: "a@b.test" });
+
+    expect(sink.records[0]!.data).toStrictEqual({ email: LOG_REDACTED });
+  });
+
+  it("lets a channel wrapper tighten past the floor", () => {
+    const sink = capture();
+    const stricter = withRedaction(sink.channel, (r) => ({ ...r, data: { ...r.data, path: LOG_REDACTED } }));
+    const log = createLogger("t", { channels: [stricter, capture().channel] });
+
+    log.info("hello", { path: "/orders/1" });
+
+    expect(sink.records[0]!.data).toStrictEqual({ path: LOG_REDACTED });
+  });
+
+  it("leaves the data object the caller passed unmutated", () => {
+    const data = { email: "a@b.test", user: { email: "c@d.test" } };
+    createLogger("t").info("hello", data);
+    expect(data).toStrictEqual({ email: "a@b.test", user: { email: "c@d.test" } });
+  });
+
+  it("applies a policy built with also and allow", () => {
+    const sink = capture();
+    const log = createLogger("t", { channels: [sink.channel], redact: defineLogRedaction({ also: ["invoice"], allow: ["tokenCount"] }) });
+
+    log.info("hello", { invoiceId: "inv_1", tokenCount: 3, email: "a@b.test" });
+
+    expect(sink.records[0]!.data).toStrictEqual({ invoiceId: LOG_REDACTED, tokenCount: 3, email: LOG_REDACTED });
+  });
+
+  it("hands a channel the JSON-stable clone, so console and KV see one shape", () => {
+    const sink = capture();
+    const log = createLogger("t", { channels: [sink.channel] });
+
+    log.info("hello", { at: new Date("2026-05-31T10:00:00.000Z"), tags: new Set(["x"]) });
+
+    expect(sink.records[0]!.data).toStrictEqual({ at: "2026-05-31T10:00:00.000Z", tags: { type: "Set", values: ["x"] } });
+  });
+});
+
+// Every case here reaches `dispatch` through caller-supplied code that throws, which before the
+// redaction pass could only throw inside a channel write — where the fan-out's guard caught it.
+describe("createLogger — a record whose data cannot be redacted", () => {
+  function capture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return { records, channel: { write: (r) => void records.push(r) } };
+  }
+
+  function loggerWatching(): { records: LogRecord[]; errors: unknown[]; log: ReturnType<typeof createLogger> } {
+    const { records, channel } = capture();
+    const errors: unknown[] = [];
+    return { records, errors, log: createLogger("t", { channels: [channel], onChannelError: (error) => errors.push(error) }) };
+  }
+
+  it("absorbs a getter that throws, rather than failing the work the logging describes", () => {
+    const { records, errors, log } = loggerWatching();
+    const data = {
+      get boom(): string {
+        throw new Error("getter exploded");
+      },
+    };
+
+    expect(() => log.info("x", data)).not.toThrow();
+    expect((errors[0] as Error).message).toBe("getter exploded");
+    expect(records[0]!.data).toStrictEqual({ redactionFailed: true });
+  });
+
+  it("absorbs a toJSON that throws", () => {
+    const { records, errors, log } = loggerWatching();
+    const data = {
+      v: {
+        toJSON(): never {
+          throw new Error("toJSON exploded");
+        },
+      },
+    };
+
+    expect(() => log.info("x", data)).not.toThrow();
+    expect((errors[0] as Error).message).toBe("toJSON exploded");
+    expect(records[0]!.data).toStrictEqual({ redactionFailed: true });
+  });
+
+  it("absorbs a structure too deep for the walk's recursion", () => {
+    const { records, errors, log } = loggerWatching();
+    let node: Record<string, unknown> = {};
+    const root = node;
+    for (let depth = 0; depth < 20_000; depth++) {
+      const next: Record<string, unknown> = {};
+      node.next = next;
+      node = next;
+    }
+
+    expect(() => log.info("x", { root })).not.toThrow();
+    expect(errors[0]).toBeInstanceOf(RangeError);
+    expect(records[0]!.data).toStrictEqual({ redactionFailed: true });
+  });
+
+  it("drops the whole payload rather than writing the part it redacted before failing", () => {
+    const { records, log } = loggerWatching();
+    const data = {
+      email: "a@b.test",
+      note: "LIVE",
+      get boom(): string {
+        throw new Error("getter exploded");
+      },
+    };
+
+    log.info("x", data);
+
+    expect(JSON.stringify(records[0])).not.toContain("LIVE");
+    expect(Object.keys(records[0]!.data!)).toStrictEqual([LOG_REDACTION_FAILED]);
+  });
+
+  it("still writes the record, so a failed redaction costs the payload and not the line", () => {
+    const { records, log } = loggerWatching();
+
+    log.error("request.failed", {
+      get boom(): string {
+        throw new Error("getter exploded");
+      },
+    });
+
+    expect(records[0]!.message).toBe("request.failed");
+    expect(records[0]!.level).toBe("error");
+  });
+
+  it("keeps the throw absorbed under the opt-out, where the merge still runs", () => {
+    const { records, channel } = capture();
+    const errors: unknown[] = [];
+    const log = createLogger("t", { channels: [channel], redact: "allow-unredacted-logs", onChannelError: (error) => errors.push(error) });
+
+    expect(() =>
+      log.info("x", {
+        get boom(): string {
+          throw new Error("getter exploded");
+        },
+      }),
+    ).not.toThrow();
+    expect(errors).toHaveLength(1);
+    expect(records[0]!.data).toStrictEqual({ redactionFailed: true });
   });
 });

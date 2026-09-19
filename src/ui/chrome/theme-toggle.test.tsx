@@ -3,9 +3,9 @@
 import { describe, expect, it } from "bun:test";
 
 import { renderToString } from "../../jsx/render-to-string";
+import { attrOf } from "../../testing/markup";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
-import { attrOf } from "../core/core.fixture";
 import { createIcon } from "../core/icon";
 import { ThemeToggle } from "./theme-toggle";
 

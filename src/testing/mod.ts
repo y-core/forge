@@ -5,6 +5,7 @@ export { collectExecutionContext, createTestContext, mockExecutionContext, nullL
 export { mintTestCsrfToken } from "./csrf";
 export type { FakeD1Options, FakeKVOptions } from "./types";
 export { fakeAssetsFetcher, fakeD1, fakeKV, fakeR2 } from "./fakes";
+export { attrOf, attrsOf, classesOf, elementOf, innerOf, tagOf, variantClasses } from "./markup";
 export { render } from "./render";
 export { buildRequest } from "./request";
 export type { TestAction } from "./types";

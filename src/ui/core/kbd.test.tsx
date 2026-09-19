@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { Kbd } from "./kbd";
 
 const key = (props: Parameters<typeof Kbd>[0] = {}) => render(<Kbd {...props}>K</Kbd>);

@@ -2,10 +2,10 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { menuItemAttrs } from "../contracts/menu-contract";
 import { POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
-import { attrOf, attrsOf, classesOf } from "./core.fixture";
 import { Menu } from "./menu";
 
 describe("Menu.Trigger — data-slot", () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Button } from "./button";
-import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { createIcon } from "./icon";
 
 const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 16 16" });

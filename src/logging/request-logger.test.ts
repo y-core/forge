@@ -6,8 +6,9 @@ import { collectExecutionContext, mockExecutionContext } from "../testing/contex
 import { mapHandler } from "../testing/route";
 import { consoleChannel, withLevels } from "./channels";
 import { kvLogChannel } from "./kv-channel";
+import { defineLogRedaction } from "./redact";
 import { requestLog, requestLogger } from "./request-logger";
-import type { LogChannel, LogRecord } from "./types";
+import type { LogChannel, LogRecord, RequestLoggerOptions } from "./types";
 
 function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
   const records: LogRecord[] = [];
@@ -575,7 +576,7 @@ describe("requestLogger — onChannelError", () => {
   });
 });
 
-describe("requestLogger — the real consoleChannel on a cyclic data payload", () => {
+describe("requestLogger — the real consoleChannel on a cyclic data payload, redaction opted out", () => {
   let capturedLogs: string[] = [];
   let capturedErrors: string[] = [];
   let originalLog: typeof console.log;
@@ -614,7 +615,9 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload", (
 
   function makeCyclicApp(cyclic: Record<string, unknown>) {
     const app = new Forge();
-    app.use("*", requestLogger({ channels: () => [consoleChannel()] }));
+    // Only the opt-out still reaches the throw: the default clone marks the back-reference
+    // `"[circular]"` before any channel sees it, so `JSON.stringify` has nothing to choke on.
+    app.use("*", requestLogger({ channels: () => [consoleChannel()], redact: "allow-unredacted-logs" }));
     mapHandler(app, "GET", "/cyclic", (c) => {
       requestLog.get(c).info("x", { cyclic });
       return new Response("ok");
@@ -651,5 +654,44 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload", (
     expect(summary.message).toBe("request.completed");
     expect(summary.level).toBe("info");
     expect(summary.status).toBe(200);
+  });
+});
+
+describe("requestLogger — redaction threading", () => {
+  function appLogging(data: Record<string, unknown>, redact?: RequestLoggerOptions["redact"]) {
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel], ...(redact !== undefined ? { redact } : {}) }));
+    mapHandler(app, "GET", "/t", (c) => {
+      requestLog.get(c).info("handled", data);
+      return new Response("ok");
+    });
+    return { records, app };
+  }
+
+  it("redacts by default, with no redact option on the middleware", async () => {
+    const { records, app } = appLogging({ email: "a@b.test" });
+    await app.request("/t");
+    expect(records[0]!.data).toStrictEqual({ email: "[redacted]" });
+  });
+
+  it("threads a policy built with defineLogRedaction", async () => {
+    const { records, app } = appLogging({ invoiceId: "inv_1" }, defineLogRedaction({ also: ["invoice"] }));
+    await app.request("/t");
+    expect(records[0]!.data).toStrictEqual({ invoiceId: "[redacted]" });
+  });
+
+  it("threads the opt-out", async () => {
+    const { records, app } = appLogging({ email: "a@b.test" }, "allow-unredacted-logs");
+    await app.request("/t");
+    expect(records[0]!.data).toStrictEqual({ email: "a@b.test" });
+  });
+
+  it("leaves the summary record's own fields alone", async () => {
+    const { records, app } = appLogging({});
+    await app.request("/t");
+    const summary = records[1]!;
+    expect(summary.message).toBe("request.completed");
+    expect(summary.data).toStrictEqual({ method: "GET", path: "/t", status: 200, duration: summary.data!.duration as number });
   });
 });

@@ -2,10 +2,10 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NAVBAR_SCOPE } from "../contracts/navbar-contract";
-import { attrOf } from "../core/core.fixture";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
 import type { NavPlacement } from "./types";

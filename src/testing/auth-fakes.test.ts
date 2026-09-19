@@ -49,6 +49,11 @@ describe("fakeAuthD1 through the user store", () => {
     expect(found.ok && found.data?.deactivatedAt).toBe(99);
   });
 
+  it("keeps a `null` verification stamp, so an account that never answered a link is modelled as one", async () => {
+    const found = await stores([{ id: ADA, email: "ada@example.com", emailVerifiedAt: null }]).users.findById(ADA);
+    expect(found.ok && found.data?.emailVerifiedAt).toBeNull();
+  });
+
   it("finds an account by its WebAuthn handle", async () => {
     const found = await stores(ACCOUNTS).users.findByWebAuthnId(HANDLE);
     expect(found.ok && found.data?.id).toBe(ADA);

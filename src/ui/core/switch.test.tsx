@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { Switch } from "./switch";
 
 const INPUT = 'data-slot="switch-input"';

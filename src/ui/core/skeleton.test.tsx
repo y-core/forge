@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrsOf, variantClasses } from "./core.fixture";
 import { Skeleton } from "./skeleton";
 
 describe("Skeleton", () => {

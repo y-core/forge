@@ -2,9 +2,9 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Accordion } from "./accordion";
-import { attrsOf, classesOf, tagOf } from "./core.fixture";
 import { createIcon } from "./icon";
 
 const icon = createIcon("/sprite.svg");

@@ -21,10 +21,10 @@ audience: consumer
 - §2b consoleChannel for Development: write-only structured JSON
 - §2c kvLogChannel for Production Persistence: symmetric read/write over KV
 - §2d Channel Selection by Environment: the canonical fallback pattern
-- §2e withRedaction and Stack-Redaction Posture: per-channel transforms and `persistStack`
+- §2e Redaction Is Logger-Wide and On by Default: the default policy, its two controls, and `persistStack`
 - §2f Channel Write Failures and `flush`'s Error Contract: what absorbs a failed write, and who observes it
 - §2g Log Ordering — Newest First by Inverted Key: the key format, the clamps, and what purge deletes
-- §2h One Value, One Meaning Across Sinks: `toJSON` is honoured and a `URL` narrows, on every channel
+- §2h One Value, One Meaning Across Sinks: `toJSON`, a narrowed `URL` and one redacted clone, on every channel
 - §3 requestLogger Middleware: the per-request child logger
 - §3a requestLogger Configuration: per-request channels and bindings
 - §3c Ordering — requestId Before requestLogger: why the order is load-bearing
@@ -77,11 +77,55 @@ list resolves per-request:
 
 This is the canonical form — every other document links here rather than restating it.
 
-### 2e. withRedaction and Stack-Redaction Posture
+### 2e. Redaction Is Logger-Wide and On by Default
 
-`withRedaction(channel, redact)` wraps a channel so each record passes through `redact` before `write`; `read`/`readEntry` pass through unchanged.
-It mirrors `withMinLevel` — a composable, per-channel transform for stripping or masking sensitive fields (PII, secrets). Redact before a persisting
-channel while leaving the console stream intact — a redacting wrapper around the persisting channel only.
+**Every logger redacts every record, with no configuration.** `createLogger` applies `DEFAULT_LOG_REDACTION` once inside `dispatch`, between the
+bindings merge and the channel fan-out, so **redaction is not a per-channel question**: every channel — built-in, third-party, or one of the loggers
+forge constructs internally — receives the same already-redacted record. A console stream cannot be dirtier than the KV store it sits beside, which
+is what [`BOUNDARIES.md`][bnd-4a] §4a requires when it bans its field classes on **any** channel.
+
+**The match is a substring over a normalized key, applied recursively.** A key is lowercased with `_` and `-` dropped, and is redacted when it
+**contains** a stem — so `email`, `emailAddress`, `user_email`, `USER-EMAIL` and a nested `user.email` are one rule rather than five entries.
+Exact-key matching fails silently by leaking; substring matching fails loudly by masking a field a reader expected (`[redacted]` where a number
+was), which is the direction §5 fail-closed chooses. The over-capture is deliberate and pinned by test — `tokenCount` and `emailVerifiedAt` are
+masked — and `allow` is what pays for it.
+
+**The default set covers §4a's field classes** and is owned by `src/logging/redact.ts`. A bare `name` and a bare `message` are deliberately
+**absent**, each pinned by a deletion check: `name` under substring matching would take `hostname`, `filename` and `SerializedError.name` — the only
+place a thrown value's type survives — and `message` would mask `error.message` on every error record in the system. An opaque user id is absent for
+the opposite reason: §4a directs an application to log one, so a `userid` stem would redact the affordance §4a sanctions.
+
+**Masking, never a length-preserving mask.** A redacted value becomes the fixed literal `LOG_REDACTED` (`"[redacted]"`), so a reader can tell "an
+email was suppressed here" from "there is no email here". The mask is never derived from its value — no repeated `*`, no preserved character, no
+`[redacted:17]` — because a mask sized to its value leaks a password's length and narrows an email by it. `mode: "remove"` deletes the key instead,
+for a byte budget or a typed-column sink, and gives up that signal.
+
+**The two consumer controls are `also` and `allow`,** both bare key stems rather than dotted paths — `data` is a flat merge of bindings and
+call-site data, so one field class arrives at both `email` and `user.email`, and a path is undefined for a key inside a `Map` or under a shifting
+array index:
+
+    import { defineLogRedaction } from "@y-core/forge/logging"
+
+    redact: defineLogRedaction({ also: ["invoice"], allow: ["tokenCount"] })
+
+`allow` is consulted first, so it wins over both the built-in set and the application's own `also`. An `allow` entry that matches nothing is a no-op
+rather than an error: validating it would forbid allowing back one's own `also`, and a throw at logger construction is a throw on the request path.
+
+**A redaction that cannot run costs the payload, never the request.** Both halves of the pass execute caller-supplied code — the bindings merge
+invokes a getter, the walk invokes a `toJSON` — and either can throw, as a deep enough structure can exhaust the walk's recursion. All of it is
+inside the same guard `dispatch` puts around a channel write (§2f): the failure is reported through `onChannelError`, and the record is written with
+its `data` replaced by the single field `LOG_REDACTION_FAILED`. Failing closed is the whole point — passing the half-walked payload through would
+publish exactly the values the pass exists to remove, and throwing would let a logging call fail the work it describes.
+
+**The opt-out is one greppable literal**, `redact: "allow-unredacted-logs"` — after the log viewer's `"allow-unauthenticated"` precedent (§5a), and
+deliberately not an `"off"` member of `mode`, which §5b forbids: a security relaxation must not share an option name with a choice between two
+equally-safe behaviours. It disables the pass for the whole logger.
+
+**`withRedaction(channel, redact)` survives, and can only tighten.** It wraps a channel so each record passes through `redact` before `write`;
+`read`/`readEntry` pass through unchanged. It now runs **after** the logger-wide floor, on a record whose masked values are already gone, so it
+cannot restore one — the configuration where console is dirtier than KV is unrepresentable, and that is the point of the split rather than an
+accident of ordering. Its remaining use is a sink held to a **stricter** standard than the floor: a third-party destination, or dropping `body` on
+the persisting channel while console keeps it.
 
 Independently, `kvLogChannel` applies a built-in **stack-redaction default**: `KvLogChannelOptions.persistStack` is `false`, so any `stack` property
 is recursively stripped from a **cloned** `record.data` before persistence — error stacks never enter the 7-day KV retention window. The caller's
@@ -96,7 +140,8 @@ at the one call site that matters: `requestLogger` flushes inside a `finally` (�
 so a rejecting flush could discard a successful response or mask the handler error being rethrown.
 
 Absorbing the rejection removes the last place a persistence outage was visible, so **`LoggerOptions.onChannelError` is the only observer of a
-failed write.** Nothing else reports one: `flush` resolves, `consoleChannel` writes synchronously and never sees the KV promise, and the handler
+failed write** — and of a failed redaction (§2e), which is absorbed the same way and for the same reason. Nothing else reports one: `flush`
+resolves, `consoleChannel` writes synchronously and never sees the KV promise, and the handler
 attached at dispatch means the runtime sees no unhandled rejection either. A `LOGS_KV` outage with no observer is an app that looks healthy over an
 empty log store.
 
@@ -111,7 +156,9 @@ best-effort contract over evicted writes are owned by `src/logging/logger.ts`; u
 
 **Both failure modes are absorbed, not only the asynchronous one.** A channel may fail two ways: by rejecting the promise it returned, or by
 throwing before it returns one at all. The second is not hypothetical and is reachable through the default channel — `consoleChannel` calls
-`JSON.stringify`, which throws on a cyclic `data` payload, so an object graph holding a back-reference would otherwise take the request down. A
+`JSON.stringify`, which throws on a cyclic `data` payload, so an object graph holding a back-reference would otherwise take the request down. Since
+§2e, the logger's own clone marks a back-reference `"[circular]"` before any channel sees it, so that payload reaches the throw only on a record
+built by hand or on a logger carrying the `"allow-unredacted-logs"` opt-out — the absorption is unchanged and still what those two paths land on. A
 synchronous throw has no promise to attach a sibling handler to, so it is reported directly instead, and nothing enters the pending buffer for
 `flush` to await. The guard is per channel rather than around the fan-out, so one channel throwing still leaves the rest to run. The claim in the
 first paragraph is therefore unconditional: **no channel failure of either kind reaches the caller.**
@@ -146,7 +193,13 @@ contract, since `complete` would then correspond to no single call.
 
 **A value means the same thing on every channel.** `consoleChannel` and `kvLogChannel` are verified in different places — the console stream in a
 local test, the KV record days later in the viewer — so a shape that differs between them is a shape nobody checks. What makes them agree is the
-`toJSON` rule and the `URL` rule below:
+`toJSON` rule, the `URL` rule, and §2e's redaction:
+
+**Every channel receives one JSON-stable clone, built before the fan-out.** Redaction clones `data` inside `dispatch`, so what reaches `write` is
+never the caller's live object: a `Date` is its ISO instant, a `Map` and a `Set` carry their tagged form, a repeated reference on its own path is
+`"[circular]"`, and a `URL` is `origin + pathname`. `consoleChannel` prints exactly what `kvLogChannel` stores, and **a channel author must not
+expect a live instance** — this is the contract, not an implementation detail. `consoleChannel` keeps its own `urlNarrowing` replacer anyway,
+because it is a public factory a caller may hand a hand-built record to; it is defence in depth at zero cost rather than dead code.
 
 **A value's own `toJSON` decides its logged form.** This is the standard "safe to log" pattern: give a domain object a `toJSON` that drops its
 secret, and the secret is absent from the console line _and_ from the KV record. `kvLogChannel` consults `toJSON` before its own `Map`/`Set` forms,
@@ -221,6 +274,9 @@ These properties follow from this being a **per-channel wrapper** rather than a 
 
 `read` and `readEntry` pass through even when the allowlist is empty — writes are off, history stays readable.
 
+**This argument does not reach `channels` itself, and `channels: (c) => LogChannel[]` is unchanged** — the one structural difference left in a
+channel list turns on a **binding** (§2d), which no env var can carry. What each channel redacts is not a per-channel question at all (§2e).
+
 ---
 
 ## 5. Log Viewer (logging/show)
@@ -268,7 +324,14 @@ filter-bar chevron without owning an icon set. This is what makes `logging/show`
 ## 6. No-PII Rule and Structured Fields
 
 See [`BOUNDARIES.md`][boundaries-4] §4 for the no-PII rule, the prohibited field classes, and the structured-fields-over-interpolation rule. The
-channels and wrappers that implement redaction are §2 above.
+default redaction policy that implements it, its two consumer controls and its opt-out are §2e above.
+
+**Message-string scanning is not offered, and that is deliberate.** §4b concedes that a value interpolated into a message is unreachable by any
+redaction pass. A scanner would cost a regex over every message on the request path, corrupt the grep-friendly labels §4b exists to protect, both
+miss (`user at example dot com`) and over-hit, and — worst — imply that a dynamic message is covered. The control is §4b's call-site rule and
+review. Hashing a value to correlate it without reading it is refused for a different reason: an unkeyed digest of an email is reversible against a
+known user base, and a keyed one means `crypto.subtle`, which is async, while `dispatch` is synchronous and every `Logger` method returns `void`.
+§4a's own answer is the one to use — log the opaque internal id the handler already holds.
 
 [bnd-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
 [boundaries-4]: ../warden/canon/libs/BOUNDARIES.md#4-no-pii-in-logs

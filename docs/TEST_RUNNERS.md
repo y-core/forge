@@ -44,6 +44,7 @@ audience: consumer
 - §7d buildRequest() — Request Builder: options and body helpers
 - §7e mapHandler() and TestAction: single-route registrar
 - §7f The One Subpath That Is Not on the Barrel: why `@y-core/forge/testing/workerd` is imported by name
+- §7g elementOf() and the Markup Readers: the exact assertion on one element of a whole page
 
 ---
 
@@ -262,7 +263,7 @@ it("renders the exact button markup", async () => {
 single entity-aware `toBe` on the full output is the only accepted shape.
 
 **One whole-element assertion per `ui/core` component test file, and it is the HTML-escaping case.** Every other case in the file reads back only
-the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/ui/core/core.fixture.ts`.
+the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/testing/markup.ts`.
 The escaping case is the one that has to see the whole string, because entity encoding is a property of the output as a whole and §3a is what it
 holds the output to; a second whole-markup assertion in the same file buys no coverage and turns every unrelated class or slot change into a
 multi-file diff. §3e enforces the half of this a rule can see — that a substring assertion never stands in for either shape — but which case earns
@@ -487,6 +488,15 @@ one that does not, never loads the module and never needs it.
 **Everything the process leaves behind is removed by `stop()`** — the process group (§1f) and the temp directory holding the `--env-file` it was
 started with. The env file is written per start into a fresh `mkdtemp` directory rather than under a per-port name, because the OS reuses a port and
 successive runs would then share a file; one recursive remove is the whole cleanup.
+
+### 7g. elementOf() and the Markup Readers — One Element of a Whole Page
+
+A page served through `app.request` cannot be asserted with one `toBe`: it is long, and its nonce differs per render. §3b does not relax for that,
+so `elementOf(html, tag, selector?)` cuts the whole first element of a tag — or the first whose opening tag carries `selector` spelled as rendered
+— out of the page for the exact assertion, children included and a void element as its opening tag. `innerOf` strips an element's own tags;
+`tagOf`, `attrOf`, `attrsOf` and `classesOf` read the opening tag, and `variantClasses` is the class diff between two renders — published so a
+consumer's seam suite and forge's own component specs (§3c) reach the same shape rather than a private copy per file. Each answers `""` or an
+empty record for an element the page never rendered; the `toBe` against the expected markup is what makes that a failure.
 
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [namespaces-3c]: NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin

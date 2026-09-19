@@ -377,3 +377,21 @@ describe("parseLogLevels", () => {
     expect(parseLogLevels("verbose,trace", LOG_LEVELS)).toStrictEqual(LOG_LEVELS);
   });
 });
+
+describe("consoleChannel — a record built by hand rather than by dispatch", () => {
+  it("throws on a cyclic data payload, the sync failure the logger absorbs per channel", () => {
+    const node: Record<string, unknown> = { id: 1 };
+    node.self = node;
+    const ch = consoleChannel();
+
+    expect(() => ch.write(makeRecord({ data: { node } }))).toThrow(TypeError);
+  });
+
+  it("narrows a URL that never passed through the logger's clone", () => {
+    const ch = consoleChannel();
+
+    void ch.write(makeRecord({ data: { to: new URL("https://app.example.com/reset?token=SECRET") } }));
+
+    expect(JSON.parse(captured[0]!).to).toBe("https://app.example.com/reset");
+  });
+});

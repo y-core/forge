@@ -2,10 +2,10 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { Carousel } from "./carousel";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 
 const STRIP = 'data-slot="carousel-strip"';
 const DOT = 'data-slot="pagination-item"';

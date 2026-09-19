@@ -195,17 +195,43 @@ try {
 ## Keeping sensitive data out of logs
 
 The field classes that must never reach a record, and why console output counts as a retained log exactly as KV does, are
-[`BOUNDARIES.md`][boundaries-4] §4's. Two things in this namespace enforce it.
+[`BOUNDARIES.md`][boundaries-4] §4's. **You get most of it by writing nothing.**
 
-**`withRedaction(channel, redact)`** runs each record through your function before that channel's `write`, so you can strip a field for a persisting
-channel while the console stream stays intact. Return a new record; never mutate the input.
+**Every logger redacts every record, on every channel, with no configuration.** A key is matched by normalized substring — lowercased, `_` and `-`
+dropped — so `email`, `emailAddress`, `user_email` and a nested `user.email` are all masked, at any depth, inside arrays and `Map`s too. The masked
+value becomes the fixed literal `"[redacted]"`, never a length-preserving one. The default set covers §4a's classes: emails, display names,
+passwords, keys, tokens, secrets, request bodies and credential headers.
+
+The controls that adjust it are both bare key stems:
+
+```ts
+import { defineLogRedaction } from "@y-core/forge/logging";
+
+const log = createLogger("billing", {
+  // `also` adds a stem; `allow` keeps one the default set would have taken, and wins over both.
+  redact: defineLogRedaction({ also: ["invoice"], allow: ["tokenCount"] }),
+});
+```
+
+The default set over-captures on purpose — `tokenCount` and `emailVerifiedAt` are masked — because a lost debugging field announces itself and a
+leak does not. `allow` is the hatch for the ones you miss. `mode: "remove"` drops the key instead of masking it, at the cost of the signal that
+something was suppressed. `redact: "allow-unredacted-logs"` turns the pass off for the whole logger, and is spelled that way so it is greppable in
+review.
+
+**If the redaction itself fails, you lose the fields and keep the line.** A getter that throws, a `toJSON` that throws, or a structure too deep to
+walk is reported through `onChannelError`, and the record is written with its `data` replaced by `{ redactionFailed: true }` — the exported
+`LOG_REDACTION_FAILED`. Your logging call never throws, and a half-redacted payload is never written.
+
+**`withRedaction(channel, redact)` can only tighten.** It runs after the logger-wide pass, on a record whose masked values are already gone, so it
+cannot put one back — use it to hold one sink to a stricter standard than the rest:
 
 ```ts
 import { consoleChannel, kvLogChannel, withRedaction } from "@y-core/forge/logging";
 
+// Both channels are already redacted; KV additionally keeps no request path.
 const channels = [
   consoleChannel(),
-  withRedaction(kvLogChannel(env.LOGS_KV), (r) => ({ ...r, data: r.data ? { ...r.data, email: undefined } : r.data })),
+  withRedaction(kvLogChannel(env.LOGS_KV), (r) => (r.data ? { ...r, data: { ...r.data, path: undefined } } : r)),
 ];
 ```
 
@@ -309,6 +335,10 @@ The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an 
 A channel is an object, not a function. `write` is the only required member; implement `read` and `readEntry` when there is a store behind it and
 you want the viewer to show it. The full contract is [`STRUCTURED_LOGGING.md`][sl-2a] §2a's.
 
+**The `record.data` you receive is already redacted and already a JSON-stable clone** — never the caller's live object. A `Date` arrives as an ISO
+string, a `Map` and a `Set` as their tagged forms, a repeated reference on its own path as `"[circular]"`, and a `URL` as `origin + pathname`. Do
+not write a channel that expects a live instance, and do not mutate what you are handed: every channel gets the same object.
+
 ```ts
 import type { LogChannel } from "@y-core/forge/logging";
 
@@ -343,9 +373,9 @@ asynchronous channel either record would otherwise be lost to isolate teardown.
 the alternative is a sweep cancelled mid-pass, which is exactly when the soft cap stops being enforced. On the small fraction of writes that trigger
 one, the flush window covers a `list` and a series of delete batches, post-response under `waitUntil`.
 
-**`record.data` is cloned into a JSON-faithful shape before it is persisted.** `Date`, `Map` and `Set` carry their payload outside enumerable own
-properties, so each gets an explicit form instead of flattening to `{}`; a reference that reappears on its own path becomes `"[circular]"`, so a
-cyclic structure stores rather than overflowing the stack.
+**`record.data` is cloned into a JSON-faithful shape before any channel sees it**, not only before it is persisted. `Date`, `Map` and `Set` carry
+their payload outside enumerable own properties, so each gets an explicit form instead of flattening to `{}`; a reference that reappears on its own
+path becomes `"[circular]"`, so a cyclic structure logs rather than overflowing the stack. Your own object is untouched.
 
 **A value's own `toJSON` decides its logged form, on every channel.** Give a domain object a `toJSON` that drops its secret, and what you verified
 on the console is what persists. A `URL` is the exception: it logs as `origin + pathname` everywhere, so log a query parameter you need as its own
@@ -372,7 +402,7 @@ in it.
 [sl]: ../../docs/STRUCTURED_LOGGING.md
 [sl-2a]: ../../docs/STRUCTURED_LOGGING.md#2a-logchannel-object-interface
 [sl-2d]: ../../docs/STRUCTURED_LOGGING.md#2d-channel-selection-by-environment
-[sl-2e]: ../../docs/STRUCTURED_LOGGING.md#2e-withredaction-and-stack-redaction-posture
+[sl-2e]: ../../docs/STRUCTURED_LOGGING.md#2e-redaction-is-logger-wide-and-on-by-default
 [sl-2f]: ../../docs/STRUCTURED_LOGGING.md#2f-channel-write-failures-and-flushs-error-contract
 [sl-2g]: ../../docs/STRUCTURED_LOGGING.md#2g-log-ordering--newest-first-by-inverted-key
 [sl-3c]: ../../docs/STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger

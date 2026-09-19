@@ -59,7 +59,8 @@ function userRow(user: FakeAuthUser): Record<string, unknown> {
     id: uuidToBytes(user.id),
     email: user.email,
     email_key: user.emailKey ?? user.email.toLowerCase(),
-    email_verified_at: user.emailVerifiedAt ?? EPOCH,
+    // Not `??`: `null` is the account that never answered a link, and it has to stay unverified.
+    email_verified_at: user.emailVerifiedAt === undefined ? EPOCH : user.emailVerifiedAt,
     webauthn_id: user.webauthnId ?? null,
     is_admin: user.isAdmin ? 1 : 0,
     deactivated_at: user.deactivatedAt ?? null,

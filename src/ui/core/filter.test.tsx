@@ -2,9 +2,9 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Button } from "./button";
-import { attrsOf, classesOf, tagOf, variantClasses } from "./core.fixture";
 import { Filter } from "./filter";
 
 type ItemProps = Parameters<typeof Filter.Item>[0];

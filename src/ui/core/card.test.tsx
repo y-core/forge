@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Card } from "./card";
-import { attrsOf, classesOf } from "./core.fixture";
 
 const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1]);
 const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);

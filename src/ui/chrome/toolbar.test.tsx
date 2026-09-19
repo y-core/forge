@@ -2,9 +2,9 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
-import { attrOf } from "../core/core.fixture";
 import { createIcon } from "../core/icon";
 import { Toolbar } from "./toolbar";
 import type { ToolbarDefinition } from "./types";

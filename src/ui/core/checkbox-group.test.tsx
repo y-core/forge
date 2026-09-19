@@ -2,9 +2,9 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { CheckboxGroup } from "./checkbox-group";
-import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 
 const INPUT = 'data-slot="checkbox-group-input"';
 const DESCRIPTION = 'data-slot="field-description"';

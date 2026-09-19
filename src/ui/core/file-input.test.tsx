@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { FileInput } from "./file-input";
 
 describe("FileInput", () => {

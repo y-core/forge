@@ -74,6 +74,34 @@ export interface LogChannel {
   readEntry?(key: string): Promise<LogRecord | null>;
 }
 
+/** @public */
+export type LogRedactMode = "mask" | "remove";
+
+/** The whole-logger opt-out; greppable, and the only value that disables the pass. @public */
+export type LogRedactionOff = "allow-unredacted-logs";
+
+/** What a walk does with one key: keep the value, replace it with the mask, or drop the key. @internal */
+export type LogKeyVerdict = "keep" | "mask" | "remove";
+
+/** Input to `defineLogRedaction`. @public */
+export interface LogRedactionOptions {
+  /** Defaults to `"mask"`; `"remove"` deletes the key, losing the signal that a field was suppressed. */
+  mode?: LogRedactMode;
+  /** Extra key stems, matched as a normalized substring exactly as the built-in set is. */
+  also?: readonly string[];
+  /** Stems the built-in set would match and this application keeps; wins over both the built-in set and `also`. */
+  allow?: readonly string[];
+}
+
+/** A compiled redaction policy; build one with `defineLogRedaction`. @public */
+export interface LogRedactionPolicy {
+  mode: LogRedactMode;
+  /** @internal */
+  readonly deny: RegExp;
+  /** @internal */
+  readonly allow: RegExp | null;
+}
+
 /** Options for `createLogger`. @public */
 export interface LoggerOptions {
   channels?: LogChannel[];
@@ -81,6 +109,8 @@ export interface LoggerOptions {
   minLevel?: LogLevel;
   /** Called when a channel write fails, with the rejection reason or thrown value. */
   onChannelError?: (error: unknown) => void;
+  /** Omitted applies `DEFAULT_LOG_REDACTION` to every record before any channel sees it. */
+  redact?: LogRedactionPolicy | LogRedactionOff;
 }
 
 /** Structured logger with one method per level, whose `flush` settles the channel writes it has already started. @public */
@@ -104,6 +134,8 @@ export interface RequestLoggerOptions<Bindings = Record<string, unknown>> {
   bindings?: (c: AppContext<Bindings>) => Record<string, unknown>;
   minLevel?: LogLevel | ((c: AppContext<Bindings>) => LogLevel | undefined);
   onChannelError?: (error: unknown) => void;
+  /** Omitted applies `DEFAULT_LOG_REDACTION` to every record before any channel sees it. */
+  redact?: LogRedactionPolicy | LogRedactionOff;
 }
 
 /** @public */

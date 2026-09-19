@@ -206,7 +206,7 @@ and it accepts the inline specifier this rule exists to forbid. The lint plugin 
 
 ## 9. A Test-Only Module Is Named `*.fixture.ts`
 
-**A module that exists only for tests carries `.fixture` before its extension** — `coverage.fixture.ts`, `core.fixture.tsx`. The suffix is the
+**A module that exists only for tests carries `.fixture` before its extension** — `coverage.fixture.ts`, `dom.fixture.ts`. The suffix is the
 whole convention: a reader knows from the name that nothing a consumer imports reaches it, and the tarball excludes the class rather than the file.
 
 **The `files` array names the class, never a path.** Its negations are `*.test.ts`, `*.test.tsx`, `*.browser.ts`, `*.browser.tsx`, `*.fixture.ts`

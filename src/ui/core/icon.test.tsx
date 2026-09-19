@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, classesOf, tagOf } from "./core.fixture";
 import { createIcon, Icon } from "./icon";
 import type { ForgeIcon } from "./types";
 

@@ -201,6 +201,33 @@ The entity encoding is the point of asserting the whole string, and `toContain` 
 
 ---
 
+## Asserting on one element of a whole page
+
+A page served through `app.request` is too long to `toBe`, and a nonce makes it different on every render. The rule does not relax for that
+([`TESTING.md`][canon-testing-3a] §3a): cut the element out and assert it whole, so the substring never stands in for the markup.
+
+```ts
+import { attrOf, elementOf, innerOf } from "@y-core/forge/testing";
+
+const html = await (await app.request("/account", { headers: { cookie } }, TEST_ENV)).text();
+
+expect(elementOf(html, "title")).toBe("<title>Your account — Forge Studio</title>");
+expect(elementOf(html, "span", 'data-ref="account-email"')).toBe('<span data-ref="account-email">a&amp;b@example.com</span>');
+expect(attrOf(elementOf(html, "form"), "action")).toBe("/auth/signout");
+```
+
+`elementOf(html, tag, selector?)` is the whole first element of that tag, children included — or, given a selector, the first whose opening tag
+carries that attribute spelled exactly as rendered. A void element such as `<meta>` is its opening tag. `innerOf` strips an element's own tags
+when the case is about its children rather than its attributes; `attrOf`, `attrsOf` and `classesOf` read the opening tag when it is about one
+attribute, every attribute, or the class list, and `variantClasses(html, baseline, selector?)` names which class tokens one render added and
+dropped against another, so a variant's test asserts only the difference it is about. Every one answers `""` or an empty record for an
+element the page never rendered, and a `toBe` against the expected markup is what turns that into a failure.
+
+Children are cut at the first closing tag of the same name, so for an element nested inside another of its own kind, name the inner one by a
+selector rather than reaching for the outer.
+
+---
+
 ## Running a suite in the real Workers runtime
 
 `@y-core/forge/testing/workerd` starts `wrangler dev` over a fixture, so a spec can drive forge inside workerd instead of Bun. It is node-only: a
@@ -266,6 +293,7 @@ to survive a round trip through an unmodelled table hands the code its own store
 - [`TESTING.md`][canon-testing-4] §4 — fakes over mocks, and the no-mock-library ban
 
 [auth-readme]: ../auth/README.md
+[canon-testing-3a]: ../../warden/canon/libs/TESTING.md#3a-assert-the-escaped-form
 [canon-testing-4]: ../../warden/canon/libs/TESTING.md#4-fakes-over-mocks
 [canon-testing-5c]: ../../warden/canon/libs/TESTING.md#5c-no-mocking-of-security-primitives
 [storage-readme]: ../storage/README.md

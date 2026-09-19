@@ -17,7 +17,61 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Logging redacts every record by default, logger-wide.** `createLogger` applies
+  `DEFAULT_LOG_REDACTION` once in `dispatch`, between the bindings merge and the channel fan-out, so
+  every channel — including the loggers forge constructs internally, which no consumer option
+  reaches — receives the same redacted record. A key matches by normalized substring (lowercased,
+  `_` and `-` dropped), so `email`, `emailAddress`, `user_email` and a nested `user.email` are one
+  rule, applied at every depth. The masked value is the fixed literal `LOG_REDACTED`
+  (`"[redacted]"`), never derived from the value it replaces.
+- **A redaction that throws costs the payload, not the request.** The bindings merge and the walk
+  both run caller-supplied code — a getter, a `toJSON` — and a deep enough structure exhausts the
+  walk's recursion. All of it sits inside the guard `dispatch` already put around a channel write:
+  the failure reaches `onChannelError` and the record is written with its `data` replaced by the
+  exported `LOG_REDACTION_FAILED` field, so a half-walked payload is never published.
+- **`defineLogRedaction({ mode, also, allow })` is the consumer control.** `also` adds a key stem,
+  `allow` keeps one the built-in set would have taken and wins over both it and `also`, and
+  `mode: "remove"` deletes the key rather than masking it. `redact: "allow-unredacted-logs"` is the
+  greppable whole-logger opt-out. `LoggerOptions.redact` and `RequestLoggerOptions.redact` carry
+  either form; omitting them applies the default.
+
+- **`@y-core/forge/testing` publishes the markup readers.** `elementOf(html, tag, selector?)` cuts
+  the whole first element of a tag — or the first carrying an attribute spelled as rendered — out of
+  a served page, so a seam suite asserts it with one `toBe` rather than a substring. `innerOf`
+  strips an element's own tags; `tagOf`, `attrOf`, `attrsOf` and `classesOf` read the opening tag.
+- **`variantClasses(html, baseline, selector?)` joins the published readers.** It names the class
+  tokens one render added and dropped against a baseline; forge's own `ui` specs now read every
+  helper from `src/testing/markup.ts`, and the private copy in `src/ui/core/core.fixture.ts` is gone.
+
+### Fixed
+
+- **`fakeAuthD1` can now model an unverified account.** `FakeAuthUser.emailVerifiedAt` accepted
+  `null` by type and then read it as "absent", stamping the row verified — so no consumer test could
+  reach the one-stage email change an unverified address takes.
+
+### Changed
+
+- **`withRedaction` now tightens only.** It runs after the logger-wide pass, on a record whose
+  masked values are already gone, so a channel wrapper can hold one sink to a stricter standard than
+  the default but cannot restore a masked value.
+
+### Breaking Changes
+
+- **Previously-logged fields are now masked.** Any record whose key contains one of the default
+  stems — emails, display names, passwords, keys, tokens, secrets, request bodies, credential
+  headers — reaches every channel as `"[redacted]"`. Over-capture is deliberate: `tokenCount` and
+  `emailVerifiedAt` are masked, and `allow` is the hatch. A bare `name` and `message` are
+  deliberately **not** stems, so `error.name` and `error.message` survive.
+- **`record.data` handed to a channel's `write` is always a JSON-stable clone.** A `Date` arrives as
+  an ISO string, a `Map`/`Set` as its tagged form, a repeated reference on its own path as
+  `"[circular]"`, and a `URL` as `origin + pathname` — on every channel, not only the persisting
+  one. A channel that expected a live instance must be updated; `consoleChannel` output changes
+  shape for those values.
+- **A cyclic `data` payload no longer makes `consoleChannel` throw through `createLogger`.** The
+  clone marks the back-reference first. The synchronous-throw absorption is unchanged and still
+  reached by a hand-built record or a logger carrying the opt-out.
 
 ---
 

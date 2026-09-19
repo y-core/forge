@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, classesOf, variantClasses } from "./core.fixture";
 import { FormField } from "./field-layout";
 import { createIcon } from "./icon";
 import { Select } from "./select";

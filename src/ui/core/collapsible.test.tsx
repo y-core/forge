@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Collapsible } from "./collapsible";
-import { attrOf, attrsOf, classesOf, tagOf } from "./core.fixture";
 import { createIcon } from "./icon";
 
 const icon = createIcon("/sprite.svg");

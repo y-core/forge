@@ -2,8 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, variantClasses } from "./core.fixture";
 import { Menu } from "./menu";
 import { Tooltip } from "./tooltip";
 

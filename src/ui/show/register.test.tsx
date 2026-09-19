@@ -7,7 +7,7 @@ import { Forge } from "../../app/forge-app";
 import type { PageShell } from "../../app/types";
 import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import { escapeHtml } from "../../http/escape";
-import { attrOf, attrsOf } from "../core/core.fixture";
+import { attrOf, attrsOf } from "../../testing/markup";
 import { PAGE_ORDER, SHOWCASE_PAGES } from "./components";
 import { registerShowcase, showcaseRoutes } from "./register";
 

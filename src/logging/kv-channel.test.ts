@@ -618,6 +618,17 @@ describe("kvLogChannel — stack stripping", () => {
 
     expect((record.data!.error as Record<string, unknown>).stack).toBe("trace");
   });
+
+  it("keeps `stackDepth` and `Stack`, because the strip matches the SerializedError field exactly", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(makeRecord({ data: { stackDepth: 3, Stack: "kept" } }));
+
+    const entry = [...stub._store.values()][0]!;
+    const stored = JSON.parse(entry.value) as { data?: Record<string, unknown> };
+    expect(stored.data).toStrictEqual({ stackDepth: 3, Stack: "kept" });
+  });
 });
 
 describe("kvLogChannel — structured value serialization", () => {
@@ -776,10 +787,19 @@ describe("kvLogChannel and consoleChannel — one value, one meaning", () => {
   }
 
   it("agree on a redacting toJSON, so a console-verified shape is the shape KV keeps", async () => {
-    const seen = await bothSinks({ session: new RedactingSession("s1", "SECRET") });
+    // `visit`, not `session`: a key the logger-wide policy matches is masked before either channel,
+    // which would prove nothing about the two agreeing on a `toJSON`.
+    const seen = await bothSinks({ visit: new RedactingSession("s1", "SECRET") });
 
-    expect(seen.console.session).toStrictEqual(seen.kv.session);
-    expect(seen.kv.session).toStrictEqual({ id: "s1" });
+    expect(seen.console.visit).toStrictEqual(seen.kv.visit);
+    expect(seen.kv.visit).toStrictEqual({ id: "s1" });
+  });
+
+  it("disagree on a stack alone, which the console keeps for local debugging and KV never persists", async () => {
+    const seen = await bothSinks({ error: { message: "boom", stack: "trace" } });
+
+    expect(seen.console.error).toStrictEqual({ message: "boom", stack: "trace" });
+    expect(seen.kv.error).toStrictEqual({ message: "boom" });
   });
 
   it("agree on a URL, narrowing both records to origin and path", async () => {

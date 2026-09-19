@@ -2,8 +2,8 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrOf, attrsOf, classesOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { attrOf, attrsOf, classesOf, tagOf } from "./core.fixture";
 import { Popover } from "./popover";
 
 const ALIGNS = ["start", "center", "end"] as const;
