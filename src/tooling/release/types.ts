@@ -106,3 +106,10 @@ export interface VersionDeps {
 
 /** Reads a barrel's source at a repo-relative path, or `null` when it is absent. */
 export type BarrelReader = (relPath: string) => string | null;
+
+/** Runs a command and returns its stdout — the seam the git helpers take, so a test substitutes it rather than the module. */
+export type ExecFile = (
+  command: string,
+  args: string[],
+  options: { cwd: string; encoding: "utf-8"; stdio: ["ignore", "pipe", "pipe"] },
+) => string | Buffer;

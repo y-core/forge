@@ -1,17 +1,16 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import * as childProcess from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// mock.module must be registered before cf-env-command loads, hence the dynamic imports below; it is process-global, so the real module is spread through.
-const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
-await mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
+import { execute } from "../../cli/execute";
+import { createGenEnvCommand, loadOptions, readWranglerConfig } from "./cf-env-command";
+import { collectBindings, collectVars, emit } from "./cf-env-gen";
+import { DEFAULT_OPTIONS } from "./cf-env-registry";
 
-const { createGenEnvCommand, loadOptions, readWranglerConfig } = await import("./cf-env-command");
-const { execute } = await import("../../cli/execute");
-const { collectBindings, collectVars, emit } = await import("./cf-env-gen");
-const { DEFAULT_OPTIONS } = await import("./cf-env-registry");
+// The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
+// so it reaches whatever loads `node:child_process` after this file and decides by load order.
+const mockSpawnSync = mock((_cmd: string, _args: string[], _opts: { stdio: "inherit"; cwd: string }): { status: number | null } => ({ status: 0 }));
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "cfgen-"));
@@ -81,7 +80,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     );
     writeFileSync(devVarsPath, "CSRF_SECRET=deadbeef\n");
 
-    await execute(createGenEnvCommand(), [
+    await execute(createGenEnvCommand(mockSpawnSync), [
       "--wrangler",
       wranglerPath,
       "--dev-vars",
@@ -106,7 +105,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     const outPath = join(dir, "env.schema.ts");
     writeFileSync(wranglerPath, `{ "vars": { "BASE_URL": "https://example.com" } }`);
 
-    await execute(createGenEnvCommand(), [
+    await execute(createGenEnvCommand(mockSpawnSync), [
       "--wrangler",
       wranglerPath,
       "--dev-vars",
@@ -130,21 +129,30 @@ describe("createGenEnv — run handler end-to-end", () => {
     writeFileSync(wranglerPath, `{ "kv_namespaces": [{ "binding": "CACHE" }] }`);
     writeFileSync(configPath, `export const options = { optional: new Set(["CACHE"]) };`);
 
-    await execute(createGenEnvCommand(), ["--wrangler", wranglerPath, "--dev-vars", join(dir, "none"), "--out", outPath, "--config", configPath]);
+    await execute(createGenEnvCommand(mockSpawnSync), [
+      "--wrangler",
+      wranglerPath,
+      "--dev-vars",
+      join(dir, "none"),
+      "--out",
+      outPath,
+      "--config",
+      configPath,
+    ]);
 
     const generated = readFileSync(outPath, "utf-8");
     expect(generated).toContain("v.optional(");
     expect(generated).toContain("CACHE");
   });
 
-  it("invokes oxfmt via the (mocked) spawnSync formatter", async () => {
+  it("invokes oxfmt through the spawner it was given", async () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
     writeFileSync(wranglerPath, `{}`);
     mockSpawnSync.mockClear();
 
-    await execute(createGenEnvCommand(), [
+    await execute(createGenEnvCommand(mockSpawnSync), [
       "--wrangler",
       wranglerPath,
       "--dev-vars",
@@ -156,7 +164,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     ]);
 
     expect(mockSpawnSync).toHaveBeenCalled();
-    const [cmd, args] = mockSpawnSync.mock.calls[0] as [string, string[]];
+    const [cmd, args] = mockSpawnSync.mock.calls[0]!;
     expect(cmd).toBe("oxfmt");
     expect(args).toEqual([outPath]);
   });
@@ -184,7 +192,7 @@ describe("createGenEnv — an oxfmt that never formatted", () => {
     console.log = () => {};
     console.error = (msg: string) => err.push(msg);
 
-    await execute(createGenEnvCommand(), [
+    await execute(createGenEnvCommand(mockSpawnSync), [
       "--wrangler",
       wranglerPath,
       "--dev-vars",

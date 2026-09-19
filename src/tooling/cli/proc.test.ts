@@ -1,21 +1,21 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import * as childProcess from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { readdirSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter } from "node:path";
 
-// `mock.module` is process-global, so the real module is spread to preserve exports a sibling test file mocks (e.g. execFileSync).
-const mockSpawnSync = mock((_cmd: string, _args?: string[], _opts?: unknown): { status: number | null; error?: Error } => ({ status: 0 }));
-await mock.module("node:child_process", () => ({ ...childProcess, spawnSync: mockSpawnSync }));
+import { capture, hasTool, insertPath, probeOk, requireTools, run } from "./proc";
+import type { SpawnOptions, SpawnOutcome } from "./types";
 
-const { run, capture, hasTool, probeOk, requireTools, insertPath } = await import("./proc");
+// The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
+// so it reaches whatever loads `node:child_process` after this file and decides by load order.
+const mockSpawnSync = mock((_cmd: string, _args: string[], _opts: SpawnOptions): SpawnOutcome => ({ status: 0 }));
 
 describe("run()", () => {
   it("returns 0 and spawns with inherited stdio on success", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    expect(run("echo", ["hi"])).toBe(0);
+    expect(run("echo", ["hi"], undefined, mockSpawnSync)).toBe(0);
     expect(mockSpawnSync.mock.calls).toHaveLength(1);
     expect(mockSpawnSync.mock.calls[0]![0]).toBe("echo");
     expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["hi"]);
@@ -24,7 +24,7 @@ describe("run()", () => {
 
   it("throws naming the command and exit code when status is non-zero", () => {
     mockSpawnSync.mockReturnValue({ status: 2 });
-    expect(() => run("cargo", ["build"])).toThrow("`cargo build` failed (exit 2)");
+    expect(() => run("cargo", ["build"], undefined, mockSpawnSync)).toThrow("`cargo build` failed (exit 2)");
     mockSpawnSync.mockReturnValue({ status: 0 });
   });
 
@@ -32,7 +32,7 @@ describe("run()", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    run("ls", ["-la"], { cwd: "/tmp" });
+    run("ls", ["-la"], { cwd: "/tmp" }, mockSpawnSync);
     expect((mockSpawnSync.mock.calls[0]![2] as { cwd?: string }).cwd).toBe("/tmp");
   });
 
@@ -40,7 +40,7 @@ describe("run()", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    run("ls", ["-la"]);
+    run("ls", ["-la"], undefined, mockSpawnSync);
     expect((mockSpawnSync.mock.calls[0]![2] as { cwd?: string }).cwd).toBeUndefined();
   });
 });
@@ -62,13 +62,13 @@ describe("capture()", () => {
   it("returns the child's combined output interleaved in write order", () => {
     fakeChild(["out-1\n", "err-1\n", "out-2\n"]);
 
-    expect(capture("oxfmt", ["--check"]).output).toBe("out-1\nerr-1\nout-2\n");
+    expect(capture("oxfmt", ["--check"], undefined, mockSpawnSync).output).toBe("out-1\nerr-1\nout-2\n");
   });
 
   it("returns a non-zero exit code without throwing", () => {
     fakeChild(["boom\n"], 2);
 
-    const result = capture("oxfmt", ["--check"]);
+    const result = capture("oxfmt", ["--check"], undefined, mockSpawnSync);
     expect(result.code).toBe(2);
     expect(result.output).toBe("boom\n");
   });
@@ -76,13 +76,13 @@ describe("capture()", () => {
   it("reports a null status (signal kill) as exit code 1", () => {
     fakeChild([], null);
 
-    expect(capture("tsc", ["--noEmit"]).code).toBe(1);
+    expect(capture("tsc", ["--noEmit"], undefined, mockSpawnSync).code).toBe(1);
   });
 
   it("appends the spawn error when the process never started", () => {
     fakeChild([], null, new Error("spawnSync nope ENOENT"));
 
-    const result = capture("nope", []);
+    const result = capture("nope", [], undefined, mockSpawnSync);
     expect(result.code).toBe(1);
     expect(result.output).toBe("spawnSync nope ENOENT\n");
   });
@@ -90,7 +90,7 @@ describe("capture()", () => {
   it("points stdout and stderr at one fd and ignores stdin", () => {
     fakeChild([]);
 
-    capture("echo", ["hi"]);
+    capture("echo", ["hi"], undefined, mockSpawnSync);
     const stdio = (mockSpawnSync.mock.calls[0]![2] as SpawnOpts).stdio!;
     expect(stdio[0]).toBe("ignore");
     expect(typeof stdio[1]).toBe("number");
@@ -100,8 +100,8 @@ describe("capture()", () => {
   it("passes cwd through when provided and omits it when not", () => {
     fakeChild([]);
 
-    capture("ls", [], { cwd: "/tmp" });
-    capture("ls", []);
+    capture("ls", [], { cwd: "/tmp" }, mockSpawnSync);
+    capture("ls", [], undefined, mockSpawnSync);
     expect((mockSpawnSync.mock.calls[0]![2] as SpawnOpts).cwd).toBe("/tmp");
     expect((mockSpawnSync.mock.calls[1]![2] as SpawnOpts).cwd).toBeUndefined();
   });
@@ -109,7 +109,7 @@ describe("capture()", () => {
   it("reports elapsed milliseconds", () => {
     fakeChild([]);
 
-    expect(capture("echo", ["hi"]).ms).toBeGreaterThanOrEqual(0);
+    expect(capture("echo", ["hi"], undefined, mockSpawnSync).ms).toBeGreaterThanOrEqual(0);
   });
 
   it("removes its temp directory on both the success and failure paths", () => {
@@ -117,9 +117,9 @@ describe("capture()", () => {
     const before = leftovers();
 
     fakeChild(["ok\n"]);
-    capture("echo", ["hi"]);
+    capture("echo", ["hi"], undefined, mockSpawnSync);
     fakeChild(["bad\n"], 1);
-    capture("echo", ["hi"]);
+    capture("echo", ["hi"], undefined, mockSpawnSync);
 
     expect(leftovers()).toBe(before);
   });
@@ -133,24 +133,24 @@ describe("probeOk()", () => {
 
   it("returns true when the probe exits 0", () => {
     mockSpawnSync.mockReturnValue({ status: 0 });
-    expect(probeOk("docker", ["compose", "ps", "--quiet"])).toBe(true);
+    expect(probeOk("docker", ["compose", "ps", "--quiet"], mockSpawnSync)).toBe(true);
   });
 
   it("returns false when the probe exits non-zero", () => {
     mockSpawnSync.mockReturnValue({ status: 1 });
-    expect(probeOk("docker", ["compose", "ps", "--quiet"])).toBe(false);
+    expect(probeOk("docker", ["compose", "ps", "--quiet"], mockSpawnSync)).toBe(false);
   });
 
   it("returns false when the probe never started at all (spawn error, null status)", () => {
     mockSpawnSync.mockReturnValue({ status: null, error: new Error("spawnSync forge-no-such-binary ENOENT") });
-    expect(probeOk("forge-no-such-binary", ["--version"])).toBe(false);
+    expect(probeOk("forge-no-such-binary", ["--version"], mockSpawnSync)).toBe(false);
   });
 
   it("spawns exactly the command and arguments it was given, with all output discarded", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    probeOk("docker", ["compose", "ps", "--quiet"]);
+    probeOk("docker", ["compose", "ps", "--quiet"], mockSpawnSync);
 
     expect(mockSpawnSync.mock.calls).toHaveLength(1);
     expect(mockSpawnSync.mock.calls[0]![0]).toBe("docker");
@@ -163,7 +163,7 @@ describe("probeOk()", () => {
     mockSpawnSync.mockReturnValue({ status: 0 });
     const declared = ["compose", "ps", "--quiet"];
 
-    probeOk("docker", declared);
+    probeOk("docker", declared, mockSpawnSync);
 
     expect(mockSpawnSync.mock.calls[0]![1]).toEqual(declared);
     expect(mockSpawnSync.mock.calls[0]![1]).not.toBe(declared);
@@ -173,18 +173,18 @@ describe("probeOk()", () => {
 describe("hasTool()", () => {
   it("returns true when --version exits 0", () => {
     mockSpawnSync.mockReturnValue({ status: 0 });
-    expect(hasTool("node")).toBe(true);
+    expect(hasTool("node", mockSpawnSync)).toBe(true);
   });
 
   it("returns false when --version exits non-zero", () => {
     mockSpawnSync.mockReturnValue({ status: 1 });
-    expect(hasTool("nope")).toBe(false);
+    expect(hasTool("nope", mockSpawnSync)).toBe(false);
     mockSpawnSync.mockReturnValue({ status: 0 });
   });
 
   it("returns false when the tool never started at all", () => {
     mockSpawnSync.mockReturnValue({ status: null, error: new Error("spawnSync nope ENOENT") });
-    expect(hasTool("nope")).toBe(false);
+    expect(hasTool("nope", mockSpawnSync)).toBe(false);
     mockSpawnSync.mockReturnValue({ status: 0 });
   });
 
@@ -192,7 +192,7 @@ describe("hasTool()", () => {
     mockSpawnSync.mockClear();
     mockSpawnSync.mockReturnValue({ status: 0 });
 
-    hasTool("tsc");
+    hasTool("tsc", mockSpawnSync);
 
     expect(mockSpawnSync.mock.calls[0]![0]).toBe("tsc");
     expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["--version"]);
@@ -202,7 +202,7 @@ describe("hasTool()", () => {
 describe("requireTools()", () => {
   it("passes when every tool is present", () => {
     mockSpawnSync.mockReturnValue({ status: 0 });
-    expect(() => requireTools({ cargo: "install rust", node: "install node" })).not.toThrow();
+    expect(() => requireTools({ cargo: "install rust", node: "install node" }, mockSpawnSync)).not.toThrow();
   });
 
   const cases = [
@@ -213,7 +213,7 @@ describe("requireTools()", () => {
     it(`throws the exact hint message when ${name}`, () => {
       let i = 0;
       mockSpawnSync.mockImplementation(() => ({ status: statuses[i++] ?? 0 }));
-      expect(() => requireTools({ cargo: "install rust", node: "install node" })).toThrow(expected);
+      expect(() => requireTools({ cargo: "install rust", node: "install node" }, mockSpawnSync)).toThrow(expected);
       mockSpawnSync.mockReturnValue({ status: 0 });
     });
   }
@@ -264,57 +264,28 @@ describe("insertPath()", () => {
   });
 });
 
-// A fresh `bun` child is the only way to reach the unmocked `spawnSync`, since `node:child_process` is replaced process-wide above.
-declare const Bun: {
-  spawnSync(opts: { cmd: string[]; cwd: string }): { exitCode: number; stdout: { toString(): string }; stderr: { toString(): string } };
-};
-
-interface RealAnswers {
-  exitsZero: boolean;
-  exitsNonZero: boolean;
-  neverStarts: boolean;
-  hasToolPresent: boolean;
-  hasToolMissing: boolean;
-}
-
+// No seam passed: these reach the real `spawnSync`, which is what the default argument resolves to.
+// Reaching it needed a child process while this file mocked the module for the whole process.
 describe("probeOk() and hasTool() — against real processes", () => {
   const MISSING = "forge-no-such-binary-9f3a";
-  const source = [
-    `import { hasTool, probeOk } from ${JSON.stringify(new URL("./proc.ts", import.meta.url).pathname)};`,
-    "console.log(JSON.stringify({",
-    '  exitsZero: probeOk("node", ["--version"]),',
-    '  exitsNonZero: probeOk("node", ["--no-such-flag-9f3a"]),',
-    `  neverStarts: probeOk(${JSON.stringify(MISSING)}, ["--version"]),`,
-    '  hasToolPresent: hasTool("node"),',
-    `  hasToolMissing: hasTool(${JSON.stringify(MISSING)}),`,
-    "}));",
-  ].join("\n");
-
-  let real: RealAnswers | undefined;
-
-  beforeAll(() => {
-    const child = Bun.spawnSync({ cmd: ["bun", "-e", source], cwd: new URL("../../", import.meta.url).pathname });
-    if (child.exitCode !== 0) throw new Error(`harness failed (exit ${child.exitCode}): ${child.stderr.toString()}`);
-    real = JSON.parse(child.stdout.toString()) as RealAnswers;
-  });
 
   it("returns true for a command that really exits zero", () => {
-    expect(real?.exitsZero).toBe(true);
+    expect(probeOk("node", ["--version"])).toBe(true);
   });
 
   it("returns false for a command that really exits non-zero", () => {
-    expect(real?.exitsNonZero).toBe(false);
+    expect(probeOk("node", ["--no-such-flag-9f3a"])).toBe(false);
   });
 
   it("returns false, without throwing, for a command that does not exist", () => {
-    expect(real?.neverStarts).toBe(false);
+    expect(probeOk(MISSING, ["--version"])).toBe(false);
   });
 
   it("keeps hasTool answering true for a tool that is present", () => {
-    expect(real?.hasToolPresent).toBe(true);
+    expect(hasTool("node")).toBe(true);
   });
 
   it("keeps hasTool answering false for a tool that is absent", () => {
-    expect(real?.hasToolMissing).toBe(false);
+    expect(hasTool(MISSING)).toBe(false);
   });
 });

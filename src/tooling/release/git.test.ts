@@ -1,25 +1,26 @@
 import { describe, expect, it, mock } from "bun:test";
-import * as childProcess from "node:child_process";
 
-// `mock.module` is process-global and must land before ./git loads, so the real module is spread to preserve exports a sibling test file mocks.
-const mockExecSync = mock((_cmd: string, _args?: string[], _opts?: unknown): string | Buffer => "");
-await mock.module("node:child_process", () => ({ ...childProcess, execFileSync: mockExecSync }));
+import * as git from "./git";
+import type { ExecFile } from "./types";
 
-const {
-  gitExec,
-  isWorkingTreeClean,
-  getLatestTag,
-  getCommitsSinceTag,
-  getLastCommitMessage,
-  createTag,
-  commit,
-  tagExists,
-  readFileAtRef,
-  tagIsAncestorOfHead,
-  remoteTags,
-  currentBranch,
-  defaultBranch,
-} = await import("./git");
+// The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
+// so it reaches whatever loads `node:child_process` after this file and decides by load order.
+const mockExecSync = mock<ExecFile>(() => "");
+
+// Bound once here so every case below reads as a plain call, with the seam named in one place.
+const gitExec = (args: string[], cwd: string) => git.gitExec(args, cwd, mockExecSync);
+const isWorkingTreeClean = (cwd: string) => git.isWorkingTreeClean(cwd, mockExecSync);
+const getLatestTag = (cwd: string, prefix: string) => git.getLatestTag(cwd, prefix, mockExecSync);
+const getCommitsSinceTag = (cwd: string, tag: string) => git.getCommitsSinceTag(cwd, tag, mockExecSync);
+const getLastCommitMessage = (cwd: string) => git.getLastCommitMessage(cwd, mockExecSync);
+const createTag = (cwd: string, tag: string) => git.createTag(cwd, tag, mockExecSync);
+const commit = (cwd: string, message: string, files: string[]) => git.commit(cwd, message, files, mockExecSync);
+const tagExists = (cwd: string, tag: string) => git.tagExists(cwd, tag, mockExecSync);
+const readFileAtRef = (cwd: string, ref: string, path: string) => git.readFileAtRef(cwd, ref, path, mockExecSync);
+const tagIsAncestorOfHead = (cwd: string, tag: string) => git.tagIsAncestorOfHead(cwd, tag, mockExecSync);
+const remoteTags = (cwd: string, remote?: string) => git.remoteTags(cwd, remote, mockExecSync);
+const currentBranch = (cwd: string) => git.currentBranch(cwd, mockExecSync);
+const defaultBranch = (cwd: string, remote?: string) => git.defaultBranch(cwd, remote, mockExecSync);
 
 describe("gitExec()", () => {
   it("returns trimmed stdout", () => {

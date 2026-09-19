@@ -220,8 +220,8 @@ describe("createGateCommand() — --fix", () => {
     expect(code).toBeUndefined();
   });
 
-  // Nothing here asserts a fixer's exit status: `proc.test.ts` mocks `node:child_process` with
-  // `mock.module`, which is process-global, so a spawn's outcome is not this file's to predict.
+  // Nothing here asserts a fixer's exit status: a fixer spawns a real tool, so what it exits with
+  // belongs to the machine running the suite rather than to this file.
   it("runs every fixer the selection holds rather than stopping at the first", async () => {
     const { logs } = await run([fixable("beta"), fixable("alpha")], { fix: true });
 

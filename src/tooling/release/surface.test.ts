@@ -180,8 +180,7 @@ describe("the published tarball", () => {
       .filter((name) => name.endsWith(".md"))
       .map((name) => `docs/${name}`)
       .sort();
-    // `Bun.spawnSync`, not `node:child_process`: a sibling release test mocks `execFileSync`
-    // process-globally, and a module mock cannot be undone for one file.
+    // A child process because the assertion is about what `bun pm pack` itself packs.
     const run = Bun.spawnSync(["bun", "pm", "pack", "--dry-run"], { cwd: repoRoot, env: { ...process.env, FORCE_COLOR: "0" } });
     const output = run.stdout.toString();
     const packed = [...output.matchAll(/^packed \S+ (docs\/\S+\.md)$/gm)].map((match) => match[1]).sort();

@@ -17,7 +17,28 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **A test file could decide what another module saw of `node:child_process`, and did.** Four specs
+  replaced the module process-wide with `mock.module`, which Bun never restores, so whichever loaded
+  first supplied `spawnSync` and `execFileSync` to everything loaded after it. On a filesystem that
+  ordered them differently from a local checkout — GitHub's runner — `runGate` read a failing
+  command as a passing one, and forge's own release workflow failed on four `runGate()` cases.
+  Each module now takes its spawner as an argument and each spec injects one; nothing mocks the
+  module any more. **No shipped behaviour changed**: `runGate` was always correct against the real
+  `spawnSync`, and the defect never left the test process.
+
+### Changed
+
+- **`run`, `capture`, `probeOk`, `hasTool` and `requireTools` (`@y-core/forge/tooling/cli`), and
+  `createGenEnvCommand` (`@y-core/forge/tooling/cf`), take an optional trailing spawner.** It
+  defaults to the real one, so every existing call is unaffected. It exists so a caller — forge's
+  own specs, in practice — can substitute a spawn without mocking a module for the whole process.
+
+- **The release workflow pins Bun from `package.json`'s `packageManager` field** instead of
+  installing `latest`. A floating runtime made the gate guarding a release a different gate from the
+  one `forge release` had just run locally, and the difference surfaced as a tag whose workflow went
+  red. `engines.bun` is unchanged and still the consumer floor: it is a range, so it pins nothing.
 
 ---
 

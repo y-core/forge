@@ -9,7 +9,7 @@ import { scopeLogger } from "../../cli/log";
 import type { CommandBase } from "../../cli/types";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
-import type { GenOptions } from "./types";
+import type { GenOptions, SpawnSync } from "./types";
 
 /** Parse a `wrangler.jsonc` file at `path` into a config object. @public */
 export function readWranglerConfig(path: string): Record<string, unknown> {
@@ -23,15 +23,15 @@ export async function loadOptions(configPath?: string): Promise<GenOptions> {
   return { ...DEFAULT_OPTIONS, ...(mod.options ?? mod.default) };
 }
 
-function formatGenerated(outPath: string, cwd: string): boolean {
-  const oxfmt = spawnSync("oxfmt", [outPath], { stdio: "inherit", cwd });
+function formatGenerated(outPath: string, cwd: string, spawn: SpawnSync): boolean {
+  const oxfmt = spawn("oxfmt", [outPath], { stdio: "inherit", cwd });
   if (oxfmt.status === 0) return true;
-  const local = spawnSync(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { stdio: "inherit", cwd });
+  const local = spawn(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { stdio: "inherit", cwd });
   return local.status === 0;
 }
 
 /** Builds the env-schema generator command: read wrangler+dev-vars → collect → emit → format. @public */
-export function createGenEnvCommand(): CommandBase {
+export function createGenEnvCommand(spawn: SpawnSync = spawnSync): CommandBase {
   const log = scopeLogger("cf gen env");
 
   return createCommand({
@@ -60,7 +60,7 @@ export function createGenEnvCommand(): CommandBase {
 
       const entries = [...collectBindings(cfg, options), ...collectVars(devVars, wranglerVars, options)];
       writeFileSync(outPath, emit(entries));
-      if (!formatGenerated(outPath, cwd)) log.warn(`oxfmt failed; ${outPath} is unformatted`);
+      if (!formatGenerated(outPath, cwd, spawn)) log.warn(`oxfmt failed; ${outPath} is unformatted`);
 
       log.info(`wrote ${entries.length} entries to ${outPath}`);
     },

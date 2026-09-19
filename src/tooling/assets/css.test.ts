@@ -14,7 +14,7 @@ function stubTailwind(content = "/* built css */") {
     writeFileSync(outPath, content);
     return new Uint8Array();
   }) as never);
-  // A sibling test installs a persistent `node:child_process` mock that Bun does not auto-restore.
+  // `spyOn` hands back one mock per property, so history carries between the tests that call this.
   spy.mockClear();
   return spy;
 }

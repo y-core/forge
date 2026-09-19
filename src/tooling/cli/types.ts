@@ -204,3 +204,19 @@ export interface ConfirmOptions {
   /** The error a `n` answer raises. */
   cancelMessage?: string;
 }
+
+/** The options this namespace hands a spawner — the exact shapes `run`, `capture` and `probeOk` build. */
+export interface SpawnOptions {
+  readonly stdio: "ignore" | "inherit" | ["ignore", number, number];
+  readonly env: typeof process.env;
+  readonly cwd?: string;
+}
+
+/** How a spawned command exited, narrowed to what this namespace reads of it. */
+export interface SpawnOutcome {
+  readonly status: number | null;
+  readonly error?: Error | undefined;
+}
+
+/** Runs a command to completion — the seam these helpers take, so a test substitutes it rather than mocking the module for the whole process. */
+export type SpawnSync = (command: string, args: string[], options: SpawnOptions) => SpawnOutcome;

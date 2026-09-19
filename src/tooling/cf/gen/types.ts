@@ -20,3 +20,6 @@ export interface GenOptions {
   refinements: Record<string, { minLength?: number }>;
   bindingCheck: string;
 }
+
+/** Runs a command to completion and answers how it exited — the seam the generator's formatter takes, so a test substitutes it rather than the module. @internal */
+export type SpawnSync = (command: string, args: string[], options: { stdio: "inherit"; cwd: string }) => { status: number | null };

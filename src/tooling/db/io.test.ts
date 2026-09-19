@@ -19,8 +19,8 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-// `node:child_process` is mocked process-wide by a sibling spec, so the real `spawn` is exercised in
-// a child bun that imports the module fresh and prints what it returned.
+// A child bun, so the assertion is about a real spawn's own outcome rather than about anything this
+// process has arranged around it.
 function spawnFresh(root: string, cmd: string, args: readonly string[], cwd: string): Spawned {
   const script = `import { realDbIo } from ${JSON.stringify(new URL("./io.ts", import.meta.url).pathname)};
 console.log(JSON.stringify(realDbIo(${JSON.stringify(root)}).spawn(${JSON.stringify(cmd)}, ${JSON.stringify(args)}, { cwd: ${JSON.stringify(cwd)} })));`;
