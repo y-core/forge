@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.2.0] — 2026-09-19
+
 ### Upgrading
 
 Every action this version asks of a consuming app, loudest failure last. The entry for each below
@@ -4227,6 +4233,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.2.0]: https://github.com/y-core/forge/compare/v0.1.17...v0.2.0
 [0.1.17]: https://github.com/y-core/forge/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/y-core/forge/compare/v0.1.15...v0.1.16
 [0.1.15]: https://github.com/y-core/forge/compare/v0.1.14...v0.1.15
