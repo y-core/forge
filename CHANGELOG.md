@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.2.1] — 2026-09-19
+
 ### Fixed
 
 - **A test file could decide what another module saw of `node:child_process`, and did.** Four specs
@@ -4254,6 +4260,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.2.1]: https://github.com/y-core/forge/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/y-core/forge/compare/v0.1.17...v0.2.0
 [0.1.17]: https://github.com/y-core/forge/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/y-core/forge/compare/v0.1.15...v0.1.16
