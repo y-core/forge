@@ -6,7 +6,7 @@ audience: consumer
 
 # Storage Bindings
 
-> Owns forge's three storage namespaces — D1, KV, and R2 — their typed clients, the binding resolve/validate pattern, and the absent-binding policy.
+> Owns forge's storage namespaces — D1, KV, and R2 — their typed clients, the binding resolve/validate pattern, and the absent-binding policy.
 > Owns the functional-shape check (§4a).
 >
 > Defers to: [`BOUNDARIES.md`][boundaries-5a] §5a and §5b for the fail-closed posture and the `required: false` asymmetry;
@@ -136,7 +136,7 @@ manual barrel discipline that placement costs.
 ### 1f. Schema Health
 
 `checkSchemaHealth(db)` reads the `fingerprint` of the last `_forge_migrations` row, recomputes the fingerprint from `sqlite_master` under the same
-rules `forge db migrate status --check` applies, and reports one of four states. The report carries both fingerprints and nothing else.
+rules `forge db migrate status --check` applies, and reports the state. The report carries both fingerprints and nothing else.
 
 | State | When |
 | --- | --- |
@@ -183,7 +183,7 @@ would name the same thing twice.
 ([`src/tooling/lint/README.md`][lint-readme]).
 
 **Repositories return fragments; the use case owns the batch.** A store function that needs to be composed with others returns a `SqlFragment` and
-never executes it, so the caller decides what is atomic. `remove` in `src/auth/stores/admin-users.ts` is the shipped form: a probe, four child
+never executes it, so the caller decides what is atomic. `remove` in `src/auth/stores/admin-users.ts` is the shipped form: a probe, the child
 deletes and the guarded parent delete, in one batch.
 
 **Pre-generate ids with `uuidv7()` (§1e).** Every statement in a batch is prepared before any runs, so a child row cannot wait on the parent's
@@ -200,7 +200,7 @@ the client rejects with `a guarded statement in this batch wrote no row, so the 
 which statement failed, so neither does forge.
 
 **Crossing D1 is never atomic.** A Queue send, an R2 put or an email after the batch can succeed while the batch rolled back, or the reverse. Write
-an outbox row in the same batch and let a scheduled handler drain it; four lines a consumer owns, not a forge helper.
+an outbox row in the same batch and let a scheduled handler drain it; a few lines a consumer owns, not a forge helper.
 
 **`withSession()` is not a transaction.** It pins reads to a replica's bookmark for read-your-writes consistency; atomicity comes only from
 `batch()`.
@@ -272,7 +272,7 @@ carrying a non-Latin-1 byte is dropped rather than set, for the same reason the 
 legitimate download into a 500.
 
 **An active content type is neutralised at both ends, and neither end is the caller's to remember.** `nosniff` does nothing once the declared type
-already _is_ `text/html`, so the two ends are these:
+already _is_ `text/html`:
 
 - **`put` never infers one.** `inferContentType` returns `application/octet-stream` for every extension in `ACTIVE_CONTENT_EXTENSIONS` — `html`,
   `htm`, `svg`, `xml`, `js`, `mjs` — because a key is routinely a user-chosen filename. `MIME_MAP` holds the honest mapping and the inference
@@ -348,11 +348,11 @@ Every storage namespace provides two functions with distinct lifecycle roles:
 `"function"`; D1 requires `typeof binding.prepare`. **A string or number mistakenly bound to the name is rejected at the boundary**, rather than
 failing deep inside a handler. Every `validate*` and `resolve*` in §1–§3 uses this one rule.
 
-**Resolver error policy — throw, never `Result`.** A missing binding is a deployment defect, so `resolve*` **throws**. Once resolved, store and
-client _operations_ return `Result<T, E>`, because runtime storage failures are expected errors.
+**Resolver error policy — resolution throws (fail closed); operations return `Result`.** A missing binding is a deployment defect, so `resolve*`
+**throws**. Once resolved, store and client _operations_ return `Result<T, E>`, because runtime storage failures are expected errors.
 
-**The boundary is: resolution throws (fail closed); operations return `Result`.** The `required: false` escape hatch produces `null` instead of a
-throw, and is for non-security-critical features only (§5b, [`BOUNDARIES.md`][boundaries-5b] §5b).
+The `required: false` escape hatch produces `null` instead of a throw, and is for non-security-critical features only (§5b,
+[`BOUNDARIES.md`][boundaries-5b] §5b).
 
 ### 4b. Registering Binding Checks
 

@@ -11,7 +11,7 @@ what dispatch, URL generation, and middleware wiring all read, so a path exists 
 
 The namespace is a curated re-export of the [`@remix-run/fetch-router`](https://github.com/remix-run/fetch-router) engine and the
 [`@remix-run/route-pattern`](https://github.com/remix-run/route-pattern) URL helpers, plus forge's own `routePaths` and `forMethod`. Pattern syntax
-and the resource helpers are upstream's to document; this file covers the shape forge expects you to use.
+and the resource helpers are upstream's to document.
 
 ```ts
 import { createController, get, post, route, routePaths } from "@y-core/forge/router";
@@ -49,7 +49,7 @@ is a type error rather than a 404 you find in production. At dispatch the order 
 Register global middleware before `app.map`, or it will not wrap these routes — that rule and the rest of the registration contract are
 [`ROUTING_AND_MIDDLEWARE.md`][ram-1c] §1c's.
 
-A route definition can be any of four things, all producing the same `Route`:
+A route definition can be written any of these ways, all producing the same `Route`:
 
 ```ts
 const routes = route({
@@ -82,7 +82,7 @@ routes.admin.logs.href(); // "/admin/logs"
 ```
 
 A nested name is addressed by its path through the map, which is also how the controller's `actions` object is shaped. Prefer a base pattern to
-repeating the prefix in each child: renaming the mount point then touches one line, and every `href` and `routePaths` result follows.
+repeating the prefix in each child: renaming the mount point then touches one line, and every `href` and `routePaths` result follows it.
 
 ---
 
@@ -97,8 +97,7 @@ routes.user.href({ id: "42" }); // "/users/42"
 routes.search.href(undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c" — search values are encoded
 ```
 
-Params come first, everything else under the options object: `searchParams` takes a `URLSearchParams` or a record of strings, numbers and arrays of
-them, and `baseURL` takes an absolute URL to render the target against. Give `baseURL` the page the link sits on and a same-origin target comes back
+Params come first, everything else under the options object. Give `baseURL` the page the link sits on and a same-origin target comes back
 path-relative — useful when the markup is rendered once and served under more than one origin. It throws a `TypeError` where the value is not
 absolute, or where no same-origin target can be resolved from it.
 
@@ -142,9 +141,8 @@ so a method override is honoured, and `forMethod("GET", …)` also covers `HEAD`
 **There is no `head` verb, on purpose.** Forge rewrites a `HEAD` request into a derived `GET` before dispatch, so a route declared `head(...)` could
 never match ([`ROUTING_AND_MIDDLEWARE.md`][ram-1d] §1d). A `HEAD` branch inside a middleware is still correct.
 
-**A method filter that matches nothing throws.** The result of `routePaths` is nearly always fed to a middleware loop, and an empty list would
-attach that middleware to nothing — a silent hole is worse than an error naming the method. An unfiltered call never throws, and neither does a
-route map with no routes in it.
+**A method filter that matches nothing throws**, rather than leaving a middleware loop silently attached to nothing. An unfiltered call never
+throws, and neither does a route map with no routes in it.
 
 **`href` and `createHref` throw `CreateHrefError`, not a `Result`.** Its `details` carries a discriminant (`missing-params`, `missing-hostname`,
 `nameless-wildcard`, …) for a caller that wants to branch. A missing _required_ param is caught at compile time; this is the runtime backstop for

@@ -266,7 +266,7 @@ const config: NavDefinition = {
 };
 ```
 
-Costs: on any page reached from a link rather than from the bar, the user has no anchor at all — which is most page loads.
+Costs: on any page reached from a link rather than from the bar, the user has no anchor at all.
 
 ```tsx
 // Right — the active destination rendered as a slot the app controls.
@@ -370,7 +370,7 @@ router wearing a tablist's ARIA, and it breaks the back button in a way the role
 navigation.
 
 **Default: hide a `Tabs` whose panels are all empty.** <!-- rule:forge-ui-nav-tabs-empty --> The empty-state rule in `07-states.md` —
-`forge-ui-state-hide-empty-controls` — covers the general case; this is the one that shows up most.
+`forge-ui-state-hide-empty-controls` — covers the general case; this is that case for `Tabs`.
 
 ---
 
@@ -390,7 +390,7 @@ navigation.
 <!-- rule:forge-ui-nav-fouc-script -->
 
 Without it, a user whose stored preference is dark gets one light frame on every navigation. That is a design defect, not a build detail: it is
-visible, it is repeated, and no amount of correct token usage hides it. Override never.
+visible and it is repeated. Override never.
 
 **Default: read the theme constants rather than restating their string values.**
 <!-- rule:forge-ui-nav-theme-constants -->

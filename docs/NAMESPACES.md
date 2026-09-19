@@ -72,11 +72,10 @@ that a reader can tell it from a namespace that lost its row.
 
 **Asset rows are entries whose target is not a module**, and they carry rules a barrel row does not.
 
-**A non-module file a consumer must name by path is published too, or the facade has a hole in it.**
-`@y-core/forge/auth/schema.sql` is the standing case: a consumer composing its database names forge's identity
-tables in its own load order, ahead of its own DDL, and the only alternative to a subpath is a
-literal reach into `node_modules/@y-core/forge/src/` — which is the one thing a facade exists to
-make unnecessary, and which no rename inside forge would then survive.
+**A non-module file a consumer must name by path is published too, or the facade has a hole in it.** `@y-core/forge/auth/schema.sql` is the standing
+case: a consumer composing its database names forge's identity tables in its own load order, ahead of its own DDL, and the only alternative to a
+subpath is a literal reach into `node_modules/@y-core/forge/src/` — which is the one thing a facade exists to make unnecessary, and which no rename
+inside forge would then survive.
 
 **Their `exports` value is a plain string, not a `{types, import}` object.** Tailwind's CSS resolver runs `conditionNames: ["style"]`, so neither
 `types` nor `import` matches and an object entry is unreachable from `@import` however correct it looks.
@@ -168,7 +167,7 @@ a barrel exist without an export subpath — **a barrel is valid only if it is e
 **Sealed means the path, not the symbol.** Almost everything here is `@internal` plumbing, but a capability may be implemented in `crypto` and
 surfaced publicly through the barrel of the namespace that owns its concern. `uuidv7` / `createUuidv7` are the standing case: implemented here so
 `storage/kv` and `auth` consume them without a layering violation, exported to consumers only via `@y-core/forge/storage/db` (see
-[`STORAGE_BINDINGS.md`][sb-1e] §1e). The sealed guarantee is unchanged — there is still no importable `crypto` path.
+[`STORAGE_BINDINGS.md`][sb-1e] §1e).
 
 **The catalog's enumeration guard reaches this subsection.** `namespace-graph.ts` opens its window on the `### 3a.` heading and closes it at the
 next `## `, so §3a and §3b are one window: a catalog table gaining a leaf/integration or side-effect column fails the gate here just as it would in
@@ -205,11 +204,11 @@ it.
 
 **Pre-bundling is the remedy wherever a consumer's node process imports forge, and playwright is the second such host.** A `playwright.config.ts`
 importing a forge subpath dies at config load with the same `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, and running playwright under bun instead
-is not a free choice: a dev server playwright spawns itself binds, under bun, where the browser cannot reach it — measured as specs that pass
-under `bunx playwright test` and fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So forge cannot
-pick the runtime on a consumer's behalf; `browserStep` spawns `playwright test` — the installed binary resolved off the runner's `binDir`, whose
-shebang is node, rather than `bunx`, which would fall back to installing from the registry when it resolved nothing — and `./tooling/gate/chromium`
-publishes a committed bundle of `checks/chromium.ts` — the one symbol a config needs — held against its source by `validate-chromium-bundle`.
+is not a free choice: a dev server playwright spawns itself binds, under bun, where the browser cannot reach it — measured as specs that pass under
+`bunx playwright test` and fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So forge cannot pick the runtime on a consumer's behalf;
+`browserStep` spawns `playwright test` — the installed binary resolved off the runner's `binDir`, whose shebang is node, rather than `bunx`, which
+would fall back to installing from the registry when it resolved nothing — and `./tooling/gate/chromium` publishes a committed bundle of
+`checks/chromium.ts` — the one symbol a config needs — held against its source by `validate-chromium-bundle`.
 `resolveChromiumPath` lives in `checks/chromium.ts` rather than beside `hasChromium` in `checks/browser.ts`, which imports `@playwright/test` — a
 devDependency a published module may not reach, and so not bundlable.
 
@@ -246,9 +245,9 @@ module under `src/tooling/` is a visible contradiction rather than an argument t
 **The exemption is reachability, and a path is only evidence of it.** That section says so in those words: membership in `src/tooling/` does not
 _confer_ the exemption, it makes the reachability answer obvious enough to check per file. Where path and reachability come apart, the cases are
 named: `src/ui/assets/build/`, a `buildTimeDirs` entry for that reason, and `src/testing/workerd.ts`, the mixed-namespace case the same section
-settles:
-**the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So that module is published under its own
-subpath and left off `src/testing/mod.ts`, which stops a Worker-side `"types": []` program reaching it ([`TEST_RUNNERS.md`][testing-7f] §7f).
+settles: **the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So that module is published
+under its own subpath and left off `src/testing/mod.ts`, stopping a Worker-side `"types": []` program reaching it
+([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 **`validate-build-time-boundary` is what makes that a fact rather than a convention.** It fails any source outside `src/tooling/` or
 `src/ui/assets/build/` that imports one of their modules at value — by relative path or by package subpath, barrelled or not. The rule it enforces
@@ -317,7 +316,7 @@ exemption already covers.
 `security` is strictly transport-layer: CSP, CORS, origin verification, rate limiting, request identity. **It does not handle authentication,
 sessions, or permissions.**
 
-Authentication (JWT, OAuth, session login) and permissions/RBAC belong in `auth` (§5h) — identity is application-layer.
+Identity is application-layer, so authentication and permissions belong in `auth` (§5h).
 
 This is forge's map of the concerns [`BOUNDARIES.md`][boundaries-2b] §2b routes _out_ of a transport-security namespace:
 
@@ -342,9 +341,7 @@ from both, unbound from `ui/core` and bound from `ui/controls`. **The collision 
 **Rule: a module must import a given control name from exactly one of those barrels, never both.** The mechanism is in
 [`UI_SSR_COMPONENTS.md`][usc].
 
-**Growth rulings on the second-tier primitives** (the daisyUI set reviewed by the `ui-theming-system` epic, after Table, Link, Kbd, Status,
-Indicator, Breadcrumbs, Pagination, Steps, Join, FileInput, Stat, EmptyState and Drawer landed; a second audit of the catalog added its later
-rows):
+**Growth rulings on the second-tier primitives** (the daisyUI set):
 
 | Candidate | Ruling | Why |
 | --- | --- | --- |
@@ -359,7 +356,7 @@ rows):
 | `Dock` | **shipped** | `ui/chrome`, beside `Navbar`: a fixed bottom bar of three to five destinations on the same `resolveHref` and `icon` contract; markup-only, the current item is `aria-current="page"` plus `data-selected`. |
 | `Filter` | **shipped** | Not a `RadioGroup` skin: the hide-siblings-on-check plus reset composition is `:has()` CSS a consumer would get wrong. A `ToggleGroup type="single"` sibling in `ui/core`, markup-only. |
 | `OtpInput` | **shipped** | One native `<input autocomplete="one-time-code">` painted as cells by an `@utility` — one field, one value, native paste and autofill, no controller. A per-cell input array is rejected: it assembles its value client-side. Bound variant in `ui/controls`. |
-| `SpeedDial` | **rejected** | Shipped once and removed: a floating action button earns its place only on a screen with no toolbar and no header primary, which the primitive set does not target, and its `asChild` action could not close the panel because invoker commands are button-only. A consumer composes `Popover` with `Button` rows instead. |
+| `SpeedDial` | **rejected** | A floating action button earns its place only on a screen with no toolbar and no header primary, which the primitive set does not target, and its `asChild` action could not close the panel because invoker commands are button-only. A consumer composes `Popover` with `Button` rows instead. |
 | `Megamenu` | **shipped as `Navbar` growth** | Not a new export: a `NavMegaMenu` item renders as a wide `Popover` of `NavGroup` columns beside a list twin for the collapsed panel. `role="menu"` is wrong for a block of links, so it is `Popover` plus `<nav>`, not `core/Menu`. |
 
 The marketing and effect set (hero, footer, mockups, mask, hover-3D, hover gallery, aura, text rotate, countdown, diff, chat bubble) is app-level

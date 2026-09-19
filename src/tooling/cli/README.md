@@ -65,9 +65,8 @@ forge-build                    # a group command with no handler prints its own 
 forge-build wsam               # Unknown command "wsam" for "forge-build". Did you mean "wasm"?
 ```
 
-`addCommand(parent, child)` mutates `parent` and throws on a duplicate sibling name, so a tree cannot hold two commands answering to one word.
-`execute` walks the tree by matching leading non-flag tokens, stops at the first token starting with `-` or matching nothing, and dispatches to the
-deepest match. A leaf with no `run` is a `missing-command` error; a branch with no `run` prints its help.
+`addCommand(parent, child)` mutates `parent` and throws on a duplicate sibling name, so a tree cannot hold two commands answering to one word. A
+leaf with no `run` is a `missing-command` error; a branch with no `run` prints its help.
 
 The third handler argument is the **context**: `ctx.io` (the `stdout`, `stderr` and `exit` sink), `ctx.out` and `ctx.err` (stylers resolved
 separately for each stream, so `tool > log.txt` stays plain on the file and coloured on the terminal), and `ctx.width` (columns available on
@@ -160,9 +159,8 @@ const { code, output, ms } = capture("oxfmt", ["--check", "src/"], { cwd: repoRo
 if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n"));
 ```
 
-`capture` points both streams at **one** temp-file descriptor, so `output` matches what `cmd > log 2>&1` would have written; `stdio: "pipe"` returns
-stdout and stderr as independent buffers whose relative order is lost. A spawn failure produces no child output, so its error message is appended to
-`output` rather than leaving you with an empty capture, and `stdin` is ignored — a captured process must never block waiting on a terminal.
+`capture` interleaves both streams, so `output` matches what `cmd > log 2>&1` would have written. A spawn failure appends its own error message to
+`output` rather than leaving you an empty capture, and `stdin` is ignored — a captured process never blocks waiting on a terminal.
 
 **Probe for the thing, not for the CLI that uses it.** `hasTool` answers `<cmd> --version`, which passes vacuously when the CLI is installed but the
 browser, the service or the credential it needs is not. That case wants a command of its own, and `probeOk` is what runs one:
@@ -191,9 +189,7 @@ log.done("done");
 ```
 
 Help text is rendered for you, but `formatHelp(command, { width, style })` and `formatUsage(command)` are published for a tool that wants to print
-it somewhere else. Help lists the description, the usage line, an alphabetised **Available Commands** block, and a **Flags** block built from
-`collectFlags` — inherited persistent flags included, because those are what actually work — always ending with `--help`. A required string flag is
-marked `(required)` and one with a default is marked `(default: …)`.
+it somewhere else. The **Flags** block is built from `collectFlags`, so inherited persistent flags are listed alongside the command's own.
 
 **Pin `width` in a test.** It defaults to the terminal's columns, or 80 when there are none, so an exact-match assertion drifts with the window
 unless the test states one.
@@ -215,8 +211,8 @@ await confirm({
 });
 ```
 
-You are choosing three pieces of a sentence: `verb` and `what` complete `About to <verb> <what>`, `detail` lists the things affected after a colon,
-and `consequence` is the one line saying why it cannot be taken back. All three are reused verbatim in the refusal, so write them to read in both.
+You are writing a sentence: `verb` and `what` complete `About to <verb> <what>`, `detail` lists the things affected after a colon, and `consequence`
+is the one line saying why it cannot be taken back. Each is reused verbatim in the refusal, so write them to read in both.
 
 **A non-interactive run is refused, not assumed.** With no TTY and no `yes`, `confirm` throws naming the verb, the object and the consequence, and
 says that `--yes` is how to mean it — so a CI job cannot silently take a destructive path. Pass `input`, `output`, `interactive` and `print` to

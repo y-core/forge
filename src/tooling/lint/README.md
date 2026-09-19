@@ -6,9 +6,8 @@ audience: internal
 
 # `@y-core/forge/tooling/lint`
 
-Name one subpath in `.oxlintrc.json` and oxlint gains forge's rules under the `forge/` prefix. They are read off the AST rather than line by line,
-so a class list bound to a module-scope const and passed by name is judged like an inline literal, and a markup rule reads a tag, an attribute or an
-ancestor chain off `JSXOpeningElement` instead of guessing at one with a regular expression.
+Name one subpath in `.oxlintrc.json` and oxlint gains forge's rules under the `forge/` prefix. They are read off the AST, so a class list bound to a
+module-scope const and passed by name is judged like an inline literal.
 
 Beside the plugin sit its rule catalogs — plain data answering "which document states this rule, and what enforces it?" without opening either side.
 
@@ -38,9 +37,8 @@ this file teaches the use.
 }
 ```
 
-That subpath is the whole installation — no bundling step and no `esbuild` of your own. It resolves to a committed bundle rather than to the
-TypeScript barrel, because node refuses to strip types from a file under `node_modules` and so cannot load the source from a consumer at all. Both
-spellings export the plugin as `lintPlugin` and as the default export, since oxlint reads the default.
+That subpath is the whole installation — no bundling step and no `esbuild` of your own. It resolves to a committed bundle, which is what a consumer
+can load; both spellings export the plugin as `lintPlugin` and as the default export, and oxlint reads the default.
 
 **Every rule is off until you name it.** The plugin registers them; your config decides which ones run and at what severity. `meta.name` is
 `"forge"`, which is where the prefix comes from.
@@ -130,12 +128,11 @@ lintKeyOf("forge-ui-color-token-only"); // "color-token-only" — the oxlint rul
 corpusIdOf("color-token-only"); // "forge-ui-color-token-only" | undefined
 ```
 
-The `forge-ui-` prefix is the whole of the mapping. The register is what makes the round trip total rather than a naming convention nobody checks:
-`validate-design` fails when the register and `.oxlintrc.json` disagree, so a rule cannot drift away from the document that states it.
+The `forge-ui-` prefix is the whole of the mapping, and `validate-design` fails when the register and `.oxlintrc.json` disagree, so a rule cannot
+drift away from the document that states it.
 
-`RULE_ENFORCER` is what keeps a `RULE_CORPUS_PATH` row asserting something once its detector has moved. `checkDesign` reads the enforcer to decide
-which side to hold the row against — a `gate` rule against the gate's own detectors, a `lint` rule against `.oxlintrc.json`, and `contrast` against
-the measured colour pairs, which reads no source at all.
+`RULE_ENFORCER` says which side a row is held against: a `gate` rule against the gate's own detectors, a `lint` rule against `.oxlintrc.json`, and
+`contrast` against the measured colour pairs.
 
 ---
 
@@ -154,13 +151,11 @@ rule.replacement; // "aspect-ratio"
 rule.verify; // what to confirm by hand before taking it
 ```
 
-`modernCssRule` resolves an id from either catalog, so a finding reported under an id the design corpus already owns resolves the same way one
-minted here does. That split is the point: **a pattern the corpus already names is reported under the id it already has**, never under a second one
-minted here, which is what keeps a suppression comment citing an id meaningful for as long as the file lives. `MODERN_CSS_RULES` holds the minted
-ids and `MODERN_CSS_CITED_RULES` the borrowed ones.
+`modernCssRule` resolves an id from either catalog: **a pattern the corpus already names is reported under the id it already has**, never under a
+second one minted here. `MODERN_CSS_RULES` holds the minted ids and `MODERN_CSS_CITED_RULES` the borrowed ones.
 
-A handful of these rules carry `enforcer: "lint"` — the ones this plugin catches in source rather than the gate catching them in a stylesheet. An
-absent `enforcer` means the gate.
+A rule carrying `enforcer: "lint"` is one this plugin catches in source rather than the gate catching it in a stylesheet. An absent `enforcer` means
+the gate.
 
 ---
 

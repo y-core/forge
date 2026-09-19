@@ -6,8 +6,8 @@ audience: consumer
 
 # `@y-core/forge/jsx`
 
-Forge's server-side JSX runtime. It is **not** React: there is no virtual DOM, no hydration and no client runtime. A JSX tree is rendered to an HTML
-string inside the Worker, and nothing from this namespace is shipped to the browser.
+Forge's server-side JSX runtime. It is **not** React: a JSX tree is rendered to an HTML string inside the Worker, with no virtual DOM, no hydration
+and nothing shipped to the browser.
 
 Reach for it whenever a handler has to produce HTML — a whole page, a fragment for an htmx swap, or markup that another component embeds.
 
@@ -37,9 +37,6 @@ function Greeting({ name }: { name: string }) {
 Attributes are spelled the way HTML spells them — `class`, not React's `className`. Set `"jsx": "react-jsxdev"` in a development-only config to get
 `@y-core/forge/jsx/jsx-dev-runtime` instead; the rendered output is identical either way.
 
-Only `renderPage` and `renderToString` are called by hand, and both come from the `@y-core/forge/jsx` barrel. The other subpaths exist for build
-configuration and are never imported from component code.
-
 ---
 
 ## Returning a page from a handler
@@ -68,8 +65,7 @@ export default definePage({
 });
 ```
 
-The optional second argument sets the response status and adds headers — that is the whole of the choice it offers, and it is where an error page
-declares itself:
+The optional second argument sets the response status and adds headers — where an error page declares itself:
 
 ```tsx
 return renderPage(<NotFoundPage />, { status: 404, headers: { "cache-control": "no-store" } });
@@ -92,8 +88,8 @@ const rows = await renderToString(<ResultRows items={items} />);
 return fragmentResponse(rows, 200);
 ```
 
-The result is a `SafeHtml` value: already escaped, and branded so that the renderer and the response builders will pass it through untouched instead
-of escaping it a second time.
+The result is a `SafeHtml` value — already escaped, and passed through untouched by the renderer and the response builders rather than escaped a
+second time.
 
 ---
 
@@ -108,9 +104,8 @@ async function User({ id }: { id: string }) {
 }
 ```
 
-There is no cost to writing the rest of the tree synchronously. A subtree with nothing asynchronous in it is joined into a string without entering
-the microtask queue at all; only the enclosing subtree of a genuinely async component resolves through a `Promise`. Anything thenable is awaited,
-not only an `async function`, so a deferred value of your own works the same way.
+Anything thenable is awaited, not only an `async function`, so a deferred value of your own works the same way. A subtree with nothing asynchronous
+in it costs nothing.
 
 ---
 
@@ -151,14 +146,13 @@ function Row() {
 ```
 
 For a component that adapts an element it was handed rather than one it built, `cloneElement` shallow-merges extra props into a copy, and
-`isValidElement` narrows an `unknown` to an element this runtime produced — a parsed JSON object cannot pass it, because the brand is a
-module-private symbol.
+`isValidElement` narrows an `unknown` to an element this runtime produced — a parsed JSON object cannot pass it.
 
 ---
 
 ## Embedding HTML you already have
 
-A `SafeHtml` value is written into the output verbatim. That is what makes composition work, and it is also the one place escaping stops:
+A `SafeHtml` value is written into the output verbatim — the one place escaping stops:
 
 ```tsx
 import { rawHtml } from "@y-core/forge/http";

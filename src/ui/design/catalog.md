@@ -7,8 +7,8 @@ description: "Which component to reach for, for which job — every rule a rebut
 
 Which component for which job. The Floor (`floor.md`) says what you may never do; this file says what to reach for first.
 
-Every rule here is Tier 2 — it opens with `Default:` and it is rebuttable by an explicit written brief from the consumer, never by preference. Floor
-ids are cited, not restated.
+Every rule here is Tier 2: it opens with `Default:` and is rebuttable only by an explicit written brief from the consumer, never by preference.
+Floor ids are cited, not restated.
 
 ---
 
@@ -34,8 +34,7 @@ ids are cited, not restated.
 
 ## 1. Job → Component
 
-Left column is the job as a builder would say it. Right column is the component and the subpath it comes from. Every import names a subpath; the
-`ui` namespace publishes no bare barrel of its own.
+Every import names a subpath; the `ui` namespace publishes no bare barrel of its own.
 
 ### 1a. Actions, Status and Notification
 
@@ -215,8 +214,6 @@ Override when the page itself is the scroll container, where a nested scroll reg
 ---
 
 ## 3. Wrong Tool → Right Tool
-
-These are the substitutions that actually happen.
 
 | Reached for | When it belongs | Reach for instead |
 | --- | --- | --- |

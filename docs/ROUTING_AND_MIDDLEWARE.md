@@ -23,7 +23,7 @@ audience: consumer
 - §1d No `head` Verb Export: why a HEAD route could never match
 - §1e The Unmatched URL: one `notFound` hook, and the `methodMismatch` choice between hiding a route and advertising it
 - §1f Matcher Resource Budgets: the limits forge sets for every matcher, and where each failure lands
-- §2 Page and Action Route Patterns: the three handler factories
+- §2 Page and Action Route Patterns: the handler factories
 - §2a Full-Page Routes with definePage: loader, view, the render state, and the optional schema
 - §2b Action-Only Routes with defineAction: the handle terminal step and the derive-only drop rule
 - §2c Health Check Route with healthCheck: the bare-handler case
@@ -126,8 +126,7 @@ global middleware's headers land on it as they land on a `404`.
 
 **`"advertise"` governs routed URLs, and an `ANY` catch-all is its limit.** With `assets` configured the catch-all is registered `ANY`, so it
 matches the mismatched method first and `serveAssets` renders `notFound` instead — no `405` is ever reached. This is inherent to a catch-all rather
-than a defect: a route that matches every method has answered the request, and the mismatch never occurs. Under the default the two agree anyway,
-which is the other reason it is the default.
+than a defect: a route that matches every method has answered the request, and the mismatch never occurs. Under the default the two agree anyway.
 
 Because `defaultHandler` runs inside `dispatchMatches`, a no-match flows back out through the pending-header flush and both error-boundary depths
 exactly as a matched route does ([`FORGE_ERRORS.md`][eh-5b] §5b).
@@ -135,7 +134,7 @@ exactly as a matched route does ([`FORGE_ERRORS.md`][eh-5b] §5b).
 ### 1f. Matcher Resource Budgets
 
 **Forge builds every matcher, so forge sets the budget.** The route matcher and each `app.use` guard matcher are constructed with the same
-`limits` — a per-pattern ceiling, a whole-matcher ceiling, and a per-match work budget — and `src/app/forge-app.ts` is authoritative for the three
+`limits` — a per-pattern ceiling, a whole-matcher ceiling, and a per-match work budget — and `src/app/forge-app.ts` is authoritative for their
 values. They are deliberately tighter than route-pattern's own defaults: a consumer cannot reach the matcher to set them, and an unbounded default
 is a budget nobody chose.
 
@@ -152,7 +151,7 @@ measured match, never to a suspicion.
 
 ## 2. Page and Action Route Patterns
 
-A route's handler comes from one of three factories in `@y-core/forge/app` — `definePage`, `defineAction`, `healthCheck` — or from any plain
+A route's handler comes from a factory in `@y-core/forge/app` — `definePage`, `defineAction`, `healthCheck` — or from any plain
 `(c: AppContext<Bindings>) => Response`.
 
 ### 2a. Full-Page Routes with `definePage`
@@ -233,11 +232,10 @@ Because it is already a `RequestHandler`, **register it as a bare handler** with
 **There is one submission sequence, and both builders are terminal steps over it.** The steps themselves — read, guard, drop what a guard consumed,
 validate, refuse or continue — belong to [`INPUT_VALIDATION.md`][iv-1d] §1d. What this section owns is that neither builder has a copy:
 `defineAction`'s terminal step is `handle`, returning a `Response`; `definePage`'s is `action`, whose return value goes on to the loader and view
-(§2a). Validate-before-side-effect is therefore structural in the literal sense — there is no path to either terminal step that goes around the
-sequence — rather than a rule each route is trusted to keep (§5b).
+(§2a). There is no path to either terminal step that goes around the sequence, which is what makes validate-before-side-effect structural (§5b).
 
-**The sequence is internal to `app` and is not exported.** It is an implementation seam, not a public surface; a consumer composes it only by
-declaring a `schema` on a builder, and there is no subpath that yields it directly.
+**The sequence is internal to `app` and is not exported.** It is an implementation seam rather than a public surface, and a consumer composes it
+only by declaring a `schema` on a builder.
 
 **The sequence is shared, and so are its options.** There is **one body-validation surface**: `PageDefinition` inherits `turnstile`,
 `onBotDetected`, `onValidationError` and `maxBytes` from the same projection of `ActionDefinition` the pipeline itself consumes, so the options and
@@ -302,15 +300,15 @@ The app's outermost header pass flushes them once.
 
 ### 3e. `applyMiddlewareChain` Canonical Chain Builder
 
-`applyMiddlewareChain(app, options)` is the primary way to register the global chain — **it encodes the canonical order once so consumers stop
-re-deriving it. This is the normative statement of that order; every other page defers here rather than restating it**:
+`applyMiddlewareChain(app, options)` is the primary way to register the global chain — **it encodes the canonical order once, and this is the
+normative statement of that order; every other page defers here rather than restating it**:
 
     before[] → requestId() → requestLogger(logging) → createSecurityHeaders(securityHeaders)
       → validateBindings(bindings) → session → globals[] → per-path guards (origin → rateLimit → guards[])
 
 **`validateBindings` sits after `createSecurityHeaders` because a shape refusal throws**, and a throw that precedes the header factory strips the
 error page of every header it would have set — measured on a wrong-shaped KV binding, the 500 lost `Strict-Transport-Security`, COOP, CORP,
-`X-Frame-Options` and `X-Request-Id`, and kept all five once the order was the one above. The natural reading, "validate first", is the wrong one
+`X-Frame-Options` and `X-Request-Id`, and kept them all once the order was the one above. The natural reading, "validate first", is the wrong one
 ([`FORGE_ERRORS.md`][eh-5b] §5b).
 
 **A guard group registers its whole chain once, for all of its `paths` at once** — the group's paths compile into one matcher, which
@@ -323,9 +321,8 @@ only order that exists once there is one instance per guard.
 dependencies.
 
 **`before[]` and `globals[]` are the two slots a consumer's own global middleware goes in**, so a chain carrying middleware the builder does not
-name is still the builder's to register rather than a hand-written one. `before[]` is for tracing that must wrap everything, including `requestId`
-— §3d permits it, because pure tracing
-neither reads nor renders with the nonce. `globals[]` is for everything that must see the session: `csrfProtection` resolves its subject before
+name is still the builder's to register rather than a hand-written one. `before[]` is for tracing that must wrap everything, including `requestId`,
+which §3d permits. `globals[]` is for everything that must see the session: `csrfProtection` resolves its subject before
 `next()`, so mounted anywhere earlier it binds the token to nobody.
 
 **A group's `origin` and `rateLimit` are policy data, not middleware.** `buildGuardChain(group, { trustCfHeaders })` expands one group into the
@@ -375,7 +372,7 @@ come from `app.use` middleware.
 Each builder's mutation step has its own shape, and the payload sits at the opposite end of each — `defineAction`'s `handle` takes the validated
 data **first** and always returns a `Response`; `definePage`'s `action` takes it **last** (§2a) and its return value reaches the view as
 `state.actionData` unless it is a `Response`, which short-circuits. A plain action takes the context alone. `src/app/types.ts` is authoritative for
-all three.
+each shape.
 
 **Input validation must occur before any side effect** — which a declared `schema` makes structural rather than a rule each route has to keep. The
 pipeline reads the body and hands the schema's output to the terminal step, so `handle` and a schema-bearing page's `action` are each reachable only
@@ -446,9 +443,8 @@ consumer has already written — so a shell that branches on `mount` needs a def
 ### 6c. Fragments Never Reach the Shell
 
 **A fragment response is swapped into a document that already exists, so it is never wrapped.** `renderShell` is the only path that writes `<html>`,
-which makes the rule structural rather than three independent implementations of it: an htmx partial (`isPartial`, `isHxRequest`), a showcase API
+which makes the rule structural rather than a set of independent implementations of it: an htmx partial (`isPartial`, `isHxRequest`), a showcase API
 endpoint, and a refusal like the log viewer's `403` all answer without calling it.
-
 
 ### 6d. The Meta Descriptor
 

@@ -42,11 +42,11 @@ an artifact holds every row the database does.
 
 ## 2. Proven Before Written
 
-**Both routes are proven before the artifact is written.** Each is replayed into a throwaway database under `.forge/scratch/`, and compared
-against the source: every row of every app table, every row of forge's companion tables, and a digest of the restored schema's app objects
-— a merge-join on the table's key, not a positional zip. Any of those diverging fails the backup, before any manifest is written — so a
-directory holding one is a directory whose proof passed. The schema comparison covers app objects only, since the `_forge_*` companion **tables**
-are created by forge on route `migrations` rather than declared by any migration — their **rows** are restored, and are compared like any others.
+**Both routes are proven before the artifact is written.** Each is replayed into a throwaway database under `.forge/scratch/`, and compared against
+the source: every row of every app table, every row of forge's companion tables, and a digest of the restored schema's app objects — a merge-join on
+the table's key, not a positional zip. Any of those diverging fails the backup, before any manifest is written — so a directory holding one is a
+directory whose proof passed. The schema comparison covers app objects only, since the `_forge_*` companion **tables** are created by forge on route
+`migrations` rather than declared by any migration — their **rows** are restored, and are compared like any others.
 `--no-verify` skips the proof and records in the manifest that nothing was proven, which `restore` repeats back on the way in.
 
 **A backup is a snapshot, and says so.** On a local target it holds the apply lock (`.forge/db-apply.lock`) for the whole run, so a concurrent
@@ -147,8 +147,7 @@ where that stops.
   the artifact is emitted from, and the raw `--json` rows the verification compares against. Peak memory therefore tracks the database's size, not
   the largest table's.
 - **A verified backup reads every row again, once per route.** The proof replays `migrations` and `full` into a scratch and compares row by row
-  (§2), which is two further passes at the same spawn cost. `--no-verify` skips both — and records in the manifest that nothing about the artifact
-  was proven, which is the trade being made.
+  (§2), which is two further passes at the same spawn cost. `--no-verify` skips both, at the cost §2 states.
 
 At tens of thousands of rows this is seconds. At millions it is not the right tool, and Time Travel or a D1 export is.
 

@@ -20,8 +20,7 @@ Every HTTP output concern lands here rather than reaching for `@remix-run/header
 
 ## Getting started
 
-The body builders cover almost every handler. Each fixes its own `content-type` and **throws** if you pass one in `headers`, in any casing — a
-response whose declared type disagrees with its bytes is a bug worth failing on rather than ignoring.
+The body builders cover almost every handler. Each fixes its own `content-type` and **throws** if you pass one in `headers`, in any casing.
 
 ```ts
 import { fragmentResponse, htmlResponse, jsonResponse } from "@y-core/forge/http";
@@ -72,9 +71,9 @@ import { html, rawHtml } from "@y-core/forge/http";
 html`<div>${rawHtml(trustedMarkupFromAnotherRenderer)} ${userInput}</div>`; // only userInput is escaped
 ```
 
-**Inside a `<script>` or `<style>` element, reach for `scriptJson` or `styleText` rather than `rawHtml`.** Those two elements hold _raw text_: the
-parser decodes no character reference inside them, so escaping a child does not protect it — it corrupts it, and `JSON.parse(el.textContent)` throws
-on the result. `rawHtml` has the opposite problem, emitting a `</script>` in your data byte for byte and ending the element early.
+**Inside a `<script>` or `<style>` element, reach for `scriptJson` or `styleText` rather than `rawHtml`.** Those two elements hold _raw text_, so
+escaping a child corrupts it and `JSON.parse(el.textContent)` throws; `rawHtml` has the opposite problem, emitting a `</script>` in your data byte
+for byte and ending the element early.
 
 ```ts
 import { scriptJson, styleText } from "@y-core/forge/http";
@@ -83,9 +82,8 @@ import { scriptJson, styleText } from "@y-core/forge/http";
 <style>{styleText(generatedCss)}</style>; // every `<` becomes the CSS hex escape `\3c `
 ```
 
-Neutralising `<` is what closes `</script`, `</style>` and `<!--` at once, since all three contain it. `scriptJson` also escapes U+2028 and U+2029,
-which are legal inside a JSON string but are line terminators to a script parser, and **throws** on a value `JSON.stringify` cannot represent — a
-function or `undefined` — rather than emitting an element whose content is the word `undefined`.
+`scriptJson` also escapes U+2028 and U+2029, which are legal inside a JSON string but are line terminators to a script parser, and **throws** on a
+value `JSON.stringify` cannot represent — a function or `undefined`.
 
 Outside a template — an error page assembled by hand, a mail body, a string you are concatenating — `escapeHtml` does the same escaping as a plain
 function, and `isSafeHtml` tells you whether a value came from this toolkit. `escapeHtml` covers HTML text nodes and double-quoted attribute values;
@@ -238,11 +236,9 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview"
 render nothing therefore prints `false` into the page — write `${cond ? markup : null}` instead.
 
 **`SafeHtml` is a class, not a string.** Read the markup out with `String(value)` or by interpolating it; `String.prototype` methods are not on it.
-The barrel exports it as a **type only**, which is deliberate: `html` and `rawHtml` are the only ways to make one, so a plain string can never be
-mistaken for vetted markup.
+The barrel exports it as a **type only**, and `html` and `rawHtml` are the only ways to make one.
 
-**Calling `html(value)` as a plain function throws a `TypeError`** rather than emitting its argument unescaped. This is the one mistake that would
-silently turn the whole defence off, so it is refused loudly.
+**Calling `html(value)` as a plain function throws a `TypeError`** rather than emitting its argument unescaped.
 
 **`isSafeHtml` is an `instanceof` check**, so it answers `false` across two copies of this module. Forge ships raw TypeScript and a bundler produces
 one copy per build, so this only bites when two forge versions are bundled together.

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles } from "./source-scan";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { SsrBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -12,8 +12,7 @@ const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 /** What judging one file needs: the boundary itself, plus the manifest a bare self-import is read against. */
 type SsrBoundaryConfig = Pick<SsrBoundaryCheckConfig, "clientDirs" | "entryPoints" | "packageName" | "exports">;
 
-// A spec is not shipped, and a `.browser.ts` spec's whole job is to drive the client runtime.
-const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !/\.(test|browser)\.tsx?$/.test(name);
+const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !isTestSource(name);
 
 /** Whether `file` is itself inside a client directory, and so may import freely within any. */
 function isClientOwned(file: string, clientDirs: readonly string[]): boolean {

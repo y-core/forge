@@ -57,8 +57,6 @@ and lets forge bound its surface.
 **A helper sits beside `v` only while it carries behaviour the pinned valibot does not.** Where valibot covers the behaviour itself, forge ships no
 second name for it: the unknown-key guarantee in §1d is `v.strictObject`'s own, and nothing wraps it.
 
-All valibot primitives, pipes, and combinators are available under the `v` prefix; nothing forge added is.
-
 ### 1b. `v.safeParse` with `abortEarly`
 
 **`abortEarly: true` stops at the first error — use it for form validation.** `defineAction` passes it unconditionally (§1d), and bounding the issue
@@ -120,12 +118,12 @@ guarantee holds for every key a caller can send — a key colliding with an `Obj
 them, nested inside a `v.object` and behind a `v.union` alike. `src/validation/validation.test.ts` is where that guarantee is pinned.
 
 **Normalizing form text is the schema's job, not the reader's** — `formText()` for a single-line control, `formMultilineText()` for a `<textarea>`
-(§1a). The reader hands the schema exactly what was submitted, and that is a deliberate split rather than an omission, for four reasons. It does not
-only see strings, so trimming there would mean one special case for a `File` and another for the array a repeated key produces. `" "` has to stay
-representable, or a schema that wants to refuse whitespace-only input cannot — by the time it runs, an all-spaces submission and a well-formed one
-would be indistinguishable. A normalization the schema cannot see makes the parsed output differ from the declared input for reasons written down
-nowhere in the schema, which is the defect the old named-field reader had. And line-ending folding is right for a `<textarea>` and wrong for an
-`<input>`, a distinction the reader cannot make, because it sees a name and a value and never the control that produced them.
+(§1a). The reader hands the schema exactly what was submitted, and that is a deliberate split rather than an omission. It does not only see strings,
+so trimming there would mean one special case for a `File` and another for the array a repeated key produces. `" "` has to stay representable, or a
+schema that wants to refuse whitespace-only input cannot — by the time it runs, an all-spaces submission and a well-formed one would be
+indistinguishable. A normalization the schema cannot see makes the parsed output differ from the declared input for reasons written down nowhere in
+the schema, which is the defect the old named-field reader had. And line-ending folding is right for a `<textarea>` and wrong for an `<input>`, a
+distinction the reader cannot make, because it sees a name and a value and never the control that produced them.
 
 **`formMultilineText()` folds CRLF, and that is what makes a length check mean one thing:** under `v.pipe(formMultilineText(), v.maxLength(500))`
 each line break counts once, so the limit means the same whether the newline arrived as LF or CRLF rather than silently halving the budget. The
@@ -148,21 +146,19 @@ unless `onError` is supplied. Valibot does not catch what a pipe action throws, 
 reaches that same path instead of escaping the handler.
 
 **A tripped bot guard answers with the refusal the schema itself would have produced** — the same status, one `<li>` naming a field the schema
-declares, never the token field the guard consumed. Because `abortEarly` holds a real refusal to a single issue too, a bot cannot tell a guard from
-a mistyped field by comparing the two answers. `onBotDetected` replaces that default for an app that would rather ban, log, or stall.
+declares, never the token field the guard consumed (§4b). `onBotDetected` replaces that default for an app that would rather ban, log, or stall.
 
 **`onValidationError` receives the issues, not formatted strings.** A valibot issue embeds the rejected value, and under a strict object the
 caller's own key lands in its path — so an app that renders more than the field name is choosing to, and how much of a caller's text travels back is
 a decision only the consuming app can make. The default chooses the field name alone (§1b).
 
-**Transport guards attach to the controller action object `{ middleware, handler }`; body-content guards live inside `defineAction`.** The rule is
-unchanged, and the line it draws is what the guard needs in order to decide. A **transport** guard decides from the request's envelope — an origin,
-a header, a signed token it minted itself — and needs to know nothing about what this route's form contains; that is why CSRF, origin, and
-rate-limit guards sit in the `middleware` array and refuse before any route builder runs. (`csrfProtection` falls back to reading a field out of the
-body, which is a lookup of the one field the guard itself owns and named, not a reading of the route's own fields.) A **body-content** guard decides
-from a field that is part of the form's design — a CAPTCHA token the widget wrote — so it belongs where the body is read, and where the field it
-consumes is dropped in the same step. Neither kind crosses: no middleware runs inside `defineAction`, and no body-content guard is expressible as
-middleware.
+**Transport guards attach to the controller action object `{ middleware, handler }`; body-content guards live inside `defineAction`.** The line it
+draws is what the guard needs in order to decide. A **transport** guard decides from the request's envelope — an origin, a header, a signed token it
+minted itself — and needs to know nothing about what this route's form contains; that is why CSRF, origin, and rate-limit guards sit in the
+`middleware` array and refuse before any route builder runs. (`csrfProtection` falls back to reading a field out of the body, which is a lookup of
+the one field the guard itself owns and named, not a reading of the route's own fields.) A **body-content** guard decides from a field that is part
+of the form's design — a CAPTCHA token the widget wrote — so it belongs where the body is read, and where the field it consumes is dropped in the
+same step. Neither kind crosses: no middleware runs inside `defineAction`, and no body-content guard is expressible as middleware.
 
 ---
 
@@ -258,8 +254,7 @@ along with the signature and a freshness window. The fourth argument is a `CsrfV
 `verifyCsrfToken` accepts a single `CryptoKey` or a `CsrfKeyRing` and returns a `CsrfResult` — a `GuardResult` alias with the reason code in
 `error`. **Inspect `result.ok`; never echo `result.error` to a client.**
 
-**Use this API only when `csrfProtection` cannot be applied directly** — a custom JSON API with non-standard token transport. Prefer the middleware
-for all standard form submissions.
+**Use this API only when `csrfProtection` cannot be applied directly** — a custom JSON API with non-standard token transport.
 
 ---
 

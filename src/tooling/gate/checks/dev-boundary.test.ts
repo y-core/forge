@@ -178,6 +178,37 @@ describe("checkDevBoundary — rule C, only a dev entry imports a dev-only modul
     expect(result.ok).toBe(true);
   });
 
+  it("does not scan a `*.fixture.ts`, which is excluded from `files` and so is never deployed", () => {
+    const result = checkDevBoundary(
+      project(
+        {
+          "src/worker.ts": "export default {};\n",
+          "src/thing.fixture.ts": 'import { devAllowance } from "./dev/allowance";\nexport const fixed = devAllowance;\n',
+          "src/dev/allowance.ts": "export const devAllowance = 1;\n",
+        },
+        { workerConfig: null },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe("1 deployable sources mint no development allowance");
+  });
+
+  it("reports the same import from a production module, so the fixture exemption is the suffix and nothing else", () => {
+    const result = checkDevBoundary(
+      project(
+        {
+          "src/thing.ts": 'import { devAllowance } from "./dev/allowance";\nexport const fixed = devAllowance;\n',
+          "src/dev/allowance.ts": "export const devAllowance = 1;\n",
+        },
+        { workerConfig: null },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.findings[0]?.message).toBe("dev-only module imported — `./dev/allowance` resolves to `src/dev/allowance.ts`");
+  });
+
   it("reports a forbidden published subpath of a dependency that declares `forge.devOnly`", () => {
     const config = project(
       { "src/worker.ts": 'import { fakeKV } from "@y-core/forge/testing";\nexport default fakeKV;\n' },

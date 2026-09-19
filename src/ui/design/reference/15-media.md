@@ -8,10 +8,9 @@ description: "Photographs and glyphs — the two things that arrive on a surface
 A photograph and a glyph arrive on a surface that no token controls. Both defeat the rules the rest of this corpus relies on, and in
 the same way — a photograph is a colour the theme did not choose, and a glyph is a shape whose size is not the box it was dropped into.
 
-Forge ships no image component and no aspect-ratio primitive. The one image element it owns is `Avatar.Image`, and it is worth reading as the
-reference implementation for everything below: it is `aspect-square size-full object-cover` inside a root that is
-`overflow-hidden rounded-full bg-muted`, and its prop type makes `alt` required rather than optional. Every rule in the first section is that
-composition, generalised.
+Forge ships no image component and no aspect-ratio primitive. The one image element it owns is `Avatar.Image`:
+`aspect-square size-full object-cover` inside a root that is `overflow-hidden rounded-full bg-muted`, with a prop type that makes `alt` required
+rather than optional. Every rule in the first section is that composition, generalised.
 
 ## 0. Quick Reference
 
@@ -94,8 +93,8 @@ upload was, and the corner comes from the container.
 ## 2. A carousel is the last resort
 
 `Carousel` shows one slide and hides the rest, and asks the reader to operate it to see any other. Everything it hides is content the reader has not
-read, and most readers never operate it at all. That is a fair trade for a set of same-kind media — product photographs, screenshots of one screen —
-where the reader is choosing between slides rather than reading through them, and no trade at all for content that must be read.
+read. That is a fair trade for a set of same-kind media — product photographs, screenshots of one screen — where the reader is choosing between
+slides rather than reading through them, and no trade at all for content that must be read.
 
 Default: `Carousel` holds only a set of same-kind media the reader chooses between, never content that must be read — features, testimonials,
 announcements — which is a list or a grid, unless the brief fixes a single-slide viewport and every slide is reachable by its own `Carousel.Dots`
@@ -135,8 +134,7 @@ const AppIcon = createIcon("/assets/icons.svg");
 <AppIcon name='inbox' class='size-16 text-muted-foreground' aria-hidden='true' />;
 ```
 
-Costs the mark its weight: at four times its drawn size the stroke is the thinnest line on the surface, and the glyph reads as a low-resolution
-image beside type that is crisp.
+Costs the mark its weight: the stroke is the thinnest line on the surface, and the glyph reads as a low-resolution image beside type that is crisp.
 
 ```tsx
 import { createIcon } from "@y-core/forge/ui/core";

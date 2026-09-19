@@ -16,7 +16,7 @@ audience: internal
 
 ## 0. Quick Reference
 
-- §1 Core Architectural Principles: the four structural commitments
+- §1 Core Architectural Principles: the structural commitments
 - §2 Namespace Dependency Tiers: pointer to the owning classification
 - §3 Runtime-Only Library Constraints: what shipping raw TS requires
 - §3a No Build Step in the Gate: the library is always consumed as source
@@ -31,9 +31,9 @@ audience: internal
 - §7 Pre-1.0 API Evolution: no shim, no compatibility path, and how a breaking change ships instead
 - §8 Type Declarations Live in `types.ts`: one per directory, and what the exported surface owes a reader
 - §8a A Type Is Imported on Its Own Line: why an inline `type` specifier is not the same statement
-- §8b What Enforces It: the two plugin rules, and why neither ships with the toolchain
+- §8b What Enforces It: the plugin rules, and why neither ships with the toolchain
 - §9 A Test-Only Module Is Named `*.fixture.ts`: the one spelling that keeps it out of the tarball
-- §9a What Enforces It: the packaging gate, and the two checks that read the same suffix
+- §9a What Enforces It: the packaging gate, and the checks that read the same suffix
 
 ---
 
@@ -70,7 +70,7 @@ reach `bun:test` through a hand-written stub instead of a package — [`TEST_RUN
 only apps that build assets need them, and none is ever imported by runtime source, so none reaches a Worker bundle.
 
 **A tool the pipeline shells out to is a peer dependency, declared.** `buildCSS` runs `execFileSync("tailwindcss", …)` exactly as `buildJS` runs
-`esbuild` and the image step runs `sharp`; the three are one category. Nothing _imports_ `tailwindcss`, which is exactly how such a requirement
+`esbuild` and the image step runs `sharp`; they are one category. Nothing _imports_ `tailwindcss`, which is exactly how such a requirement
 escapes declaration — but an undeclared requirement does not stop being one, it only stops being checked, and it surfaces as a `command not found`
 mid-build where `bun install` should have warned.
 
@@ -89,7 +89,7 @@ directives, and the component tier is `ui/`.
 declare a utility class must be scanned or explicitly registered as class-free — a new component directory added without either fails the gate
 rather than shipping classes no consumer build generates. The other direction refuses an `@source` path resolving outside `src/ui/`, and a namespace
 outside `ui/` that declares a class string must instead document the `@source` requirement in its own README.
-`src/tooling/gate/checks/css-sources.ts` owns all three, derived from disk, so none is a list to keep in step.
+`src/tooling/gate/checks/css-sources.ts` owns them all, derived from disk, so none is a list to keep in step.
 
 ---
 
@@ -105,7 +105,7 @@ When a namespace wraps a third-party package:
 
 `src/validation/mod.ts` exposes exactly two symbols — `v` and the `ValidationResult` type — never the raw valibot surface.
 
-These facades are deliberately **thin pass-throughs** whose forge-authored surface is minimal:
+These facades are deliberately **thin pass-throughs**:
 
 - **`router`** re-exports the fetch-router and route-pattern engine verbatim; its only forge-authored surface is the `routePaths` / `RouteFilter`
   introspection pair.
@@ -222,8 +222,11 @@ module a subpath reaches — and the packaging gate below is what notices when t
 from each `exports` entry and each `bin` script, and fails any module the tarball carries that only a test reaches. Its remedy is the file's
 `*.fixture.ts` spelling, not a `files` entry, so the fix is always the same fix.
 
-**Further checks read the same suffix.** The co-location check asks no test of a `*.fixture.ts`, on the terms a `types.ts` is excused on (§8);
-the namespace graph classifies one as test source, so a fixture's imports raise no cross-namespace edge.
+**Further checks read the same suffix, from one list.** `isTestSource` is where that list lives, and a check that must not judge a test calls it
+rather than spelling the suffixes again. Each takes the same exemption in its own terms: the co-location check asks no test of a `*.fixture.ts`, on
+the terms a `types.ts` is excused on (§8); the namespace graph classifies one as test source, so a fixture's imports raise no cross-namespace edge;
+and the boundary checks do not scan one, so a fixture may reach `src/testing`, a build-time module, or the browser runtime that a deployable module
+may not.
 
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
 [bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor

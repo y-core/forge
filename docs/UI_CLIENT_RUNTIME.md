@@ -61,7 +61,7 @@ per-root guard: `mountScrollSpy`, `mountCarouselDots`, `mountViewportCollapse`, 
 registered scope's `setup` body is not: `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`, `mountInputFormat`, `mountTurnstile`,
 `mountExpandedState`. Those scopes are `eager`, so `resume()` is their only correct caller and a second call would double-mount. Being internal
 without being un-`@public` is what [`NAMESPACE_DESIGN.md`][nd-1c] §1c permits — its gate proves `@public → barrel`, not the converse.
-`mountRovingFocus` is public despite backing four scopes because it is a primitive those scopes _call_ rather than a scope's `setup`.
+`mountRovingFocus` is public despite backing scopes of its own, because it is a primitive those scopes _call_ rather than a scope's `setup`.
 
 ### 2a. State-Only Islands versus Contract-Bearing Scopes
 
@@ -112,7 +112,7 @@ computed whose sources are dead.
 
 **Runtime auth filtering of the bar arrives as a document event, not through an exported setter.** The `navbar` scope applies the token list the
 event carries to every filterable descendant; the server seeds the same set at render, so the first paint is already correct. A channel rather than
-a forge-held signal for two reasons: the emitter — a login, an htmx swap, an app's own router — need not hold a reference to any forge module, and
+a forge-held signal, because the emitter — a login, an htmx swap, an app's own router — need not hold a reference to any forge module, and because
 every bar on a page resumes its own scope while all of them must follow one push. The listener is removed by the disposer `setup` returns (§2d).
 `src/ui/README.md` owns the event's name and payload shape.
 
@@ -127,7 +127,7 @@ requests will be refused at, which is the same outcome as a stale first paint.
 
 **The capability arrives with the component, and there is no way to summon it without one.** `<Turnstile>` stamps `data-scope="turnstile"` and
 `ui/core/client` registers that scope, so `resume()` mounts a controller exactly where the markup rendered one. `mountTurnstile` is therefore **not
-exported from `ui/client`**: a global one in a shared client entry ran on every route, so 598 pages of 600 paid for a capability two of them wanted.
+exported from `ui/client`**: a global one in a shared client entry runs on every route, so every page pays for a capability a handful of them want.
 
 **Its argument is the tree it searches, and it is required.** Given the scope root — which _is_ the widget — it matches that node before descending;
 given an enclosing element it searches within it, so a page with several widgets mounts one controller each. Searching the whole document instead
@@ -369,8 +369,8 @@ property rather than through `instanceof`, for the cross-realm reason `src/ui/RE
 `createSignal`, `computed` and `effect` are the whole seam. **Use signals for lightweight client state that does not justify an HTMX round trip** —
 state that must survive navigation or be authoritative belongs on the server.
 
-**The engine is deliberately in-house, and those names are the migration boundary.** Exports over roughly two hundred lines sit below the
-cost of a facade over a third-party graph; swapping the implementation behind them is the whole migration if that ever inverts.
+**The engine is deliberately in-house, and those names are the migration boundary.** A seam this small sits below the cost of a facade over a
+third-party graph; swapping the implementation behind them is the whole migration if that ever inverts.
 
 **By the time a write returns, every dependent has observed the settled value.** A write enqueues its subscribers and the queue drains synchronously
 — re-read after each run rather than snapshotted, which collapses a chain to a single run of its shared reader. Synchronous rather than deferred to
@@ -454,11 +454,10 @@ still connected at cleanup time.
 **The delegated event vocabulary is `click`, `input`, `change`, `submit`. There is no `keydown`, by decision.** Composite controllers own `keydown`
 at their **own widget root**, where arrow keys and typeahead belong: a page-level keydown delegation would have to decide, for every keystroke,
 which of several live widgets it was meant for — a question the widget's own root answers by construction. The vocabulary is declared once and
-shared by the runtime's listeners and the server's emitted `data-on-*` attributes, so adding a fifth event changes every attribute the server
-writes.
+shared by the runtime's listeners and the server's emitted `data-on-*` attributes, so adding an event changes every attribute the server writes.
 
-**One further delegated listener bridges native Invoker Commands, and it is not a fifth entry in that vocabulary.** `resume` installs a `command`
-listener alongside the four, routing **only custom commands** — those whose name begins with `--`. The platform's built-ins are left entirely to the
+**One further delegated listener bridges native Invoker Commands, and it is not another entry in that vocabulary.** `resume` installs a `command`
+listener alongside them, routing **only custom commands** — those whose name begins with `--`. The platform's built-ins are left entirely to the
 platform, which is what the markup-only menu of §2e depends on. The invoker enters the same walk a `data-on-*` action does, so one handler table
 serves both routes and the server writes no new attribute. **That listener must be capture-phase**, and that is the platform's constraint rather
 than a preference: `command` is dispatched with `bubbles: false`, so a bubble-phase delegated listener never sees it and every custom invoker action

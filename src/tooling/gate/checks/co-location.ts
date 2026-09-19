@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseCallableExports } from "./barrel-parse";
-import { collectFiles } from "./source-scan";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { CoLocationCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -44,7 +44,7 @@ export function declaredByName(file: string): boolean {
 /** Whether a file is itself a test, a spec, a fixture, or a barrel — none of which need a test of their own. */
 function needsTest(name: string): boolean {
   if (!MODULE_EXTENSIONS.some((ext) => name.endsWith(ext))) return false;
-  if (/\.(test|browser|fixture)\.tsx?$/.test(name)) return false;
+  if (isTestSource(name)) return false;
   // A barrel re-exports and declares nothing, so its coverage is the coverage of what it names.
   return name !== "mod.ts";
 }

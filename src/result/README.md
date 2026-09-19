@@ -6,16 +6,15 @@ audience: consumer
 
 # `@y-core/forge/result`
 
-An operation that can fail predictably returns its failure here instead of throwing it. This namespace is the one type that shape is written in,
-plus the constructors that build it. It is dependency-free and touches no platform API, so it behaves the same in a Worker, a test, or a build
-script.
+An operation that can fail predictably returns its failure here instead of throwing it. This namespace is the type that shape is written in, plus
+the constructors that build it. It touches no platform API, so it behaves the same in a Worker, a test, or a build script.
 
 ```ts
 import { err, ok, result, toError, type GuardResult, type Result, type ValidationResult } from "@y-core/forge/result";
 ```
 
 The contract — one failure field, never `null | T`, never a throw for an expected failure — is [`FORGE_ERRORS.md`][fe-1a] §1a's, and the aliases are
-§1c's. This file shows them in use and settles nothing.
+§1c's.
 
 ---
 
@@ -57,8 +56,8 @@ try {
 
 ## Returning a failure from your own function
 
-When your code decides the failure rather than catching one, build the value with `ok()` and `err()`. `ok()` with no argument is the passing
-`Result<void>`; `ok(data)` carries a value; `err(error)` carries whatever describes the failure — an `Error`, a reason code, a message list.
+When your code decides the failure rather than catching one, build the value with `ok()` and `err()`. `err(error)` carries whatever describes the
+failure — an `Error`, a reason code, a message list.
 
 ```ts
 import { err, ok, type Result } from "@y-core/forge/result";
@@ -88,7 +87,7 @@ return ok(validated.data);
 
 ## Reading the aliases a forge signature hands you
 
-Two aliases appear across forge's own signatures. They narrow `Result`; they do not extend it, so the guard you already write is the whole API.
+These aliases appear across forge's own signatures. They narrow `Result` rather than extending it, so the guard you already write is the whole API.
 
 **`GuardResult<R>` comes back from a check that either passes or gives a reason** — origin, CSRF, Turnstile. There is no success value, so a passing
 check is `ok()` and the reason lives on `.error`, typically as a string-literal union.

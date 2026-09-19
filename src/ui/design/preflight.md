@@ -7,8 +7,8 @@ description: "The pass to run against your own output before reporting work done
 
 Run this against your own output, before you report the work as done.
 
-Every item here produces a **number or a yes/no with the evidence beside it**. That is the whole design of this file: a checklist of judgements ("is
-the hierarchy clear?") is answered by whoever wrote the surface, in their own favour, every time. A checklist of counts is not.
+Every item here produces a **number or a yes/no with the evidence beside it**. A checklist of judgements ("is the hierarchy clear?") is answered by
+whoever wrote the surface, in their own favour; a checklist of counts is not.
 
 Every item names the rule it enforces. A finding is reported as that id, in the line shape `forge-ui-review-report-line` fixes.
 
@@ -18,7 +18,7 @@ Where a command is given, run the command. Scope it to the files you changed.
 
 ## 0. Quick Reference
 
-- §1 Block 1 — Floor: twenty-two non-negotiable items, each a count or a grep with an expected result
+- §1 Block 1 — Floor: non-negotiable items, each a count or a grep with an expected result
 - §1a Design Read, Measure and Contrast: items 1–3
 - §1b Status, Focus, Hit Target and Motion: items 4–7
 - §1c Empty States, Names and Heading Order: items 8–10
@@ -36,14 +36,14 @@ Where a command is given, run the command. Scope it to the files you changed.
 - §2h States and Swaps: items 58–63
 - §2i Interaction and Announcement: items 64–68
 - §2j Tells: items 69–72
-- §2k Platform: items 73–79, the seven platform rules checked on every surface
+- §2k Platform: items 73–79, the platform rules checked on every surface
 - §3 Reporting: the output is the counts, and what an unanswerable item counts as
 
 ---
 
 ## 1. Block 1 — Floor
 
-Non-negotiable. Twenty-two items, no overrides, and a failure here outranks everything in Block 2.
+Non-negotiable, no overrides, and a failure here outranks everything in Block 2.
 
 ### 1a. Design Read, Measure and Contrast
 
@@ -216,9 +216,9 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 
 ### 2k. Platform
 
-Seven of the forty rules in [`reference/16-platform.md`][platform] — the ones an agent writes from muscle memory, and that one grep answers with a
-number. The rest of that file is read when the task reaches it; these are checked on every surface. **Items 73–76 are stated flat and no brief
-rebuts them**; 77–79 are Defaults like the rest of this block.
+The rules in [`reference/16-platform.md`][platform] an agent writes from muscle memory, and that one grep answers with a number. The rest of that
+file is read when the task reaches it; these are checked on every surface. **Items 73–76 are stated flat and no brief rebuts them**; 77–79 are
+Defaults like the rest of this block.
 
 73. **Grep** `rg -o '\b(ml|mr|pl|pr)-[0-9.]+|border-[lr]\b|rounded-[lr]\b|text-(left|right)\b'`. Expect 0 hits; the logical spelling is `ms-`/`me-`,
     `ps-`/`pe-`, `border-s`/`border-e`, `rounded-s`/`rounded-e`, `text-start`/`text-end`. `forge-ui-platform-logical-spacing`

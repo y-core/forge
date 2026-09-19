@@ -1,15 +1,13 @@
 import { posix } from "node:path";
 
-import { lineAt } from "./source-scan";
+import { isTestSource, lineAt } from "./source-scan";
 import type { DeclaredGraph, EdgeKind, EnumerationFinding, GraphFinding, ImportRef, ObservedEdge, SourceFile } from "./types";
 
 /** Filler for masked comment and literal interiors: same length, never a quote, never whitespace. */
 const MASK = "\u0001";
 
 /** Extensions a specifier may carry that must be stripped before namespace attribution. */
-const MODULE_EXTENSIONS = [".ts", ".tsx", ".js"];
-
-const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
+const SPECIFIER_EXTENSIONS = [".ts", ".tsx", ".js"];
 
 // A masked comment is a run of `MASK`, so a clause and a `from` that hold one stay matchable.
 /** Characters an import/export clause may contain between the keyword and its `from`. */
@@ -187,11 +185,6 @@ export function parseImports(source: string): ImportRef[] {
   return [...byIndex.entries()].sort(([a], [b]) => a - b).map(([, ref]) => ref);
 }
 
-/** Whether a file is test-only. */
-export function isTestSource(path: string): boolean {
-  return TEST_SUFFIXES.some((suffix) => path.endsWith(suffix));
-}
-
 /** The namespace owning a repo-relative file by longest prefix, or `null` when it sits outside every namespace. */
 export function namespaceOf(file: string, dirs: readonly string[]): string | null {
   const normalized = posix.normalize(file);
@@ -211,7 +204,7 @@ export function resolveSpecifier(fromFile: string, specifier: string): string | 
   if (!specifier.startsWith("./") && !specifier.startsWith("../")) return null;
 
   const joined = posix.normalize(posix.join(posix.dirname(fromFile), specifier));
-  const extension = MODULE_EXTENSIONS.find((ext) => joined.endsWith(ext));
+  const extension = SPECIFIER_EXTENSIONS.find((ext) => joined.endsWith(ext));
   return extension ? joined.slice(0, -extension.length) : joined;
 }
 

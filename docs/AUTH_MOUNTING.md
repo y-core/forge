@@ -103,12 +103,11 @@ page, both land on a 404. Name a path the deployment actually serves — the acc
 two are read independently: this one is where a completed sign-in lands, the guard's is where a visitor owing nothing is sent off an enrolment page.
 
 **Why that registry is per request, and whether it is the same one `resolveServices` holds.** §3 says the email-OTP and passkey factors are built
-per request because two of their seams read a `UserStore`; the passkey factor also takes **this request's session id**, which is what the WebAuthn
+per request because their seams read a `UserStore`; the passkey factor also takes **this request's session id**, which is what the WebAuthn
 challenge is bound to, so a registry built once at bootstrap issues challenges bound to nobody. `requireEnrolment` and `requireFreshStepUp` read
-only `resolve`, which means their registry and `resolveServices`'s **need not be the same object**. What they must
-share is `offered`: the roles
-and requirements it declares are what decide what is owed, so two registries configured differently leave `requireEnrolment` refusing a page the
-flow believes settled. Building one registry per request and handing it to both, as the starter does, is the cheapest way to make that true by
+only `resolve`, which means their registry and `resolveServices`'s **need not be the same object**. What they must share is `offered`: the roles and
+requirements it declares are what decide what is owed, so two registries configured differently leave `requireEnrolment` refusing a page the flow
+believes settled. Building one registry per request and handing it to both, as the starter does, is the cheapest way to make that true by
 construction.
 
 **Use `createAnonymousSession`, not `sessionMiddleware`, on a Worker.** `sessionMiddleware(storage, cookie)` takes both eagerly, and
@@ -165,10 +164,10 @@ session posting to `auth.enrol.ceremony` gets `401 {"error": "Not signed in."}` 
 ceremony response. On a JSON group `requireAuth` answers 401 and the enrolment guards 403.
 
 **The elevation pair carries no `require-admin`, and that is the point** — it is the first-admin bootstrap, and re-reads the count at write time
-rather than trusting the page. **`auth.verify` admits an anonymous visitor and a signed-in one alike**,
-which is why it carries `resolve-auth` rather than `require-auth`. The page serves two ceremonies that look the same — the second half of a sign-in,
-and a step-up a live session owes — and only the identity tells them apart; `resolve-auth` establishes it when the session carries one and admits an
-anonymous request unchanged. Without it every request there reads as a sign-in, `markAuthStepUp` never runs, and a deployment offering a second
+rather than trusting the page. **`auth.verify` admits an anonymous visitor and a signed-in one alike**, which is why it carries `resolve-auth`
+rather than `require-auth`. The page serves two ceremonies that look the same — the second half of a sign-in, and a step-up a live session owes —
+and only the identity tells them apart; `resolve-auth` establishes it when the session carries one and admits an anonymous request unchanged.
+Without it every request there reads as a sign-in, `markAuthStepUp` never runs, and a deployment offering a second
 factor loops between the enrolment guard and the page meant to satisfy it.
 
 **`auth.verify.ceremony` runs every passkey step-up, including the second half of a sign-in** — no passkey ceremony establishes a session, so none
@@ -210,7 +209,7 @@ Every item here is a seam with a contract and no implementation, and each is req
 | `AuthWebOptions.bootstrapSecret` — `(c) => string \| undefined`, if this deployment claims its first admin through the page | The claim grants the administrator role to whoever posts first, so it fails closed: with no secret configured, `GET` and `POST /admin/elevate` both answer **404** rather than offering an open endpoint. Read it off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` — `(userId) => string \| Promise<string>` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` — `(userId) => { name, displayName }` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
-| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**: the cookie carries only the session id, and the auth keys live server-side. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
+| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | An `@source` line covering the installed package's `src/auth/` directory | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The exact directive is in [`src/auth/README.md`][auth-readme]. |
@@ -229,9 +228,8 @@ which reads the same `AUTH_ROUTE_GROUPS` table the `register*` functions cut the
 and a drifted copy is an unguarded admin page that looks guarded. `createAuthGuards` refuses a group that lists an identity-reading guard before
 `require-auth`.
 
-**`rateLimit` is keyed by the group's own dotted path** — `"auth"`, `"auth.verify"`, `"account"` — rather than declared on `AuthRouteGroup`, so the
-group table stays the one description of what a group is and a consumer never restates it. It is per group and not global because a window right for
-the sign-in POST is wrong for the admin console.
+**`rateLimit` is keyed by the group's dotted path rather than declared on `AuthRouteGroup`** (§1), so the group table stays the one description of
+what a group is and a consumer never restates it.
 
 **Mounting the session middleware is yours, and nothing checks it at bootstrap.** `createAuthGuards` takes no `session` option: an option can only
 be checked for presence, and a middleware other than the one actually mounted satisfies that check while protecting nothing. The check that holds
@@ -246,9 +244,8 @@ None of this is a defect; it is the bill, and it is easier to pay knowingly.
 
 **New non-optional bindings, and a wider config.** The D1 and KV bindings in §3 are required, and your app config grows the secrets that go with
 them. Every test fixture that builds an env or a config **object literal** stops compiling the moment they are added — not because anything broke,
-but because a literal must now name fields it did not before. Expect to touch every such fixture in one pass.
-Building fixtures through a factory with defaults rather than as bare literals is what makes the next binding cost one line instead of one edit per
-fixture.
+but because a literal must now name fields it did not before. Expect to touch every such fixture in one pass. Building fixtures through a factory
+with defaults rather than as bare literals is what makes the next binding cost one line instead of one edit per fixture.
 
 **Every signed-in visitor signs in again within seven days.** `AUTH_SESSION_MAX_MS` is an absolute lifetime measured from the moment the session was
 established, not a window activity extends: a session an attacker took is otherwise one they can keep alive forever. A session carrying no
@@ -261,9 +258,9 @@ well as on your lockfile.
 **A browser bundle entry.** `import "@y-core/forge/auth/client"` has to reach the browser before `resume()`, which for most apps means a new entry
 point or an addition to an existing one.
 
-**The namespace is pre-release, and its signatures move.** Pin the version rather than tracking a branch; and when this page and
-a signature disagree, **the signature wins** — check it against [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts), which compiles,
-rather than against prose, which does not. That file exists precisely so this section's warning has a remedy.
+**The namespace is pre-release, and its signatures move.** Pin the version rather than tracking a branch; and when this page and a signature
+disagree, **the signature wins** — check it against [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts), which compiles, rather than
+against prose, which does not.
 
 ---
 
@@ -278,16 +275,16 @@ if (!view.ok) return view.error;
 return renderPage(<MyPage ctx={ctx}>{view.data.node}</MyPage>, { status: view.data.status ?? 200 });
 ```
 
-**It returns a `Result`, and the failure channel is a `Response`.** Most pages can answer a redirect, a 404 or a 503 instead of props
-— a credential store that is down has no passkey list to render, and a function that could only return a node would have nowhere to put the 503.
-Return `view.error` as it stands; it is already the refusal forge's own route would have given.
+**It returns a `Result`, and the failure channel is a `Response`.** Most pages can answer a redirect, a 404 or a 503 instead of props — a credential
+store that is down has no passkey list to render, and a function that could only return a node would have nowhere to put the 503. Return
+`view.error` as it stands; it is already the refusal forge's own route would have given.
 
-`view.data` carries `name`, the resolved `props` (the escape hatch, when you are composing your own markup), `node` (`props` applied to
-your `views` override or forge's own view), and `status` — `undefined` for an ordinary 200.
+`view.data` carries `name`, the resolved `props` (the escape hatch, when you are composing your own markup), `node` (`props` applied to your `views`
+override or forge's own view), and `status` — `undefined` for an ordinary 200.
 
 **A guarded page needs `guarded`, and the field is a claim you are making.** Most pages render data that only a guard establishes;
-`AUTH_VIEW_GUARDS` names, per page, which guards that is, and names none for a page that needs no guard. Passing `guarded:
-AUTH_VIEW_GUARDS.adminUsers` says _this route runs those guards_:
+`AUTH_VIEW_GUARDS` names, per page, which guards that is, and names none for a page that needs no guard. Passing
+`guarded: AUTH_VIEW_GUARDS.adminUsers` says _this route runs those guards_:
 
 ```ts
 const view = await resolveAuthView(c, authWebOptions, { name: "adminUsers", guarded: AUTH_VIEW_GUARDS.adminUsers });
@@ -299,9 +296,8 @@ mistake, not a request to refuse, so it 500s rather than rendering. An unguarded
 **`require-auth` and `require-admin` are re-checked here and are not taken on trust.** `require-auth` reads the identity off `authCtx` and nowhere
 else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin` off that identity and
 answers the same 403 `requireAdmin` does. The rest — `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` —
-need a factor-registry round trip
-that would cost one per render, so for those `guarded` is the whole check. That is why it is a claim a reviewer can check, and why a lie about it is
-a lie about your own route.
+need a factor-registry round trip that would cost one per render, so for those `guarded` is the whole check. That is why it is a claim a reviewer
+can check, and why a lie about it is a lie about your own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
 the action path — `/auth/signin` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a route embedding

@@ -3,17 +3,13 @@ import { resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { collectFiles } from "./source-scan";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { PackagingCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
 // Both spellings: a lazily loaded module is reached by `import("./x")` and by nothing else.
 const RELATIVE_SPECIFIER = /(?:from\s+|import\s*\(\s*)["'](\.[^"']*)["']/g;
-
-function isTest(file: string): boolean {
-  return /\.(test|browser)\.tsx?$/.test(file);
-}
 
 /** One `files` entry as a matcher over a repo-relative posix path. */
 function toMatcher(pattern: string): (file: string) => boolean {
@@ -107,7 +103,7 @@ export function checkPackaging(config: PackagingCheckConfig): CheckResult {
   }
 
   const findings: Finding[] = walked
-    .filter((file) => !isTest(file) && !reachable.has(file) && (importers.get(file) ?? []).length > 0)
+    .filter((file) => !isTestSource(file) && !reachable.has(file) && (importers.get(file) ?? []).length > 0)
     .filter((file) => isPacked(file, config.files))
     .map((file) =>
       fail("no published subpath reaches this module — only a test does, and the tarball still carries it", {

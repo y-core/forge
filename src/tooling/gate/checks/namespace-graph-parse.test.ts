@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { buildGraph, findEnumerations, isTestSource, namespaceOf, parseImports, resolveSpecifier, sectionWindow } from "./namespace-graph-parse";
+import { buildGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier, sectionWindow } from "./namespace-graph-parse";
 import type { EdgeKind, SourceFile } from "./types";
 
 function sites(source: string): [string, EdgeKind][] {
@@ -155,40 +155,6 @@ describe("parseImports() — a comment inside the statement (the masked interior
 
   it("reads a member commented with the word `type` as a value, since prose binds nothing", () => {
     expect(sites('import { /* type */ A } from "./x";')).toEqual([["./x", "value"]]);
-  });
-});
-
-describe("isTestSource() — test exclusion (the leaf classification)", () => {
-  it("marks the six test suffixes and nothing that merely reads like one", () => {
-    const cases = [
-      "src/alpha/a.test.ts",
-      "src/alpha/a.test.tsx",
-      "src/alpha/a.browser.ts",
-      "src/alpha/a.browser.tsx",
-      "src/alpha/a.fixture.ts",
-      "src/alpha/a.fixture.tsx",
-      "src/alpha/a.ts",
-      "src/alpha/a.tsx",
-      "src/alpha/testing.ts",
-      "src/alpha/browser.ts",
-      "src/alpha/fixture.ts",
-      "src/alpha/a-fixture.ts",
-    ];
-
-    expect(cases.map((path) => [path, isTestSource(path)])).toEqual([
-      ["src/alpha/a.test.ts", true],
-      ["src/alpha/a.test.tsx", true],
-      ["src/alpha/a.browser.ts", true],
-      ["src/alpha/a.browser.tsx", true],
-      ["src/alpha/a.fixture.ts", true],
-      ["src/alpha/a.fixture.tsx", true],
-      ["src/alpha/a.ts", false],
-      ["src/alpha/a.tsx", false],
-      ["src/alpha/testing.ts", false],
-      ["src/alpha/browser.ts", false],
-      ["src/alpha/fixture.ts", false],
-      ["src/alpha/a-fixture.ts", false],
-    ]);
   });
 });
 

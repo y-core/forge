@@ -7,7 +7,7 @@ audience: consumer
 # `@y-core/forge/site`
 
 A route map already knows the entire served surface, so what sits downstream of it — what a crawler may index, what a sitemap advertises, and what
-the edge lets through — should be **derived** from it rather than hand-maintained beside it. This namespace does that derivation.
+the edge lets through — should be **derived** from it rather than hand-maintained beside it.
 
 Reach for it when you are about to write a `robots.txt` by hand, or paste a path list into a Cloudflare rule. Every function here is a pure string
 or data transform — no `fs`, no `fetch` — so the same code serves a build step, a Worker route, or a CLI.
@@ -102,7 +102,7 @@ since the rule is deployed to the apex's own zone, and a source equal to the ape
 `http_request_firewall_custom` runs nine phases later, so a `www` request is answered with its 301 and never reaches the WAF.
 
 **Expression length is the ceiling that binds first.** Cloudflare caps a rule expression at 4096 characters on every plan, failing the write with
-error 20127 rather than truncating. `buildAllowExpression` checks this before the request and names the two ways out — collapse exact paths into a
+error 20127 rather than truncating. `buildAllowExpression` checks this before the request and names the ways out — collapse exact paths into a
 prefix, or move the surface into a Cloudflare list. Rule _count_ (5 on Free, 20 on Pro, 100 on Business) is not the binding limit, since a generated
 allow-list is a single rule.
 

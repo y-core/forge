@@ -64,7 +64,7 @@ work possible:
 | `rateLimitOptional` | `rateLimit` skips enforcement when its binding is absent, instead of answering 503 ([`SECURITY_HARDENING.md`][sh-4b] §4b) |
 | `missingFetchMetadata` | `checkCrossOriginProtection` accepts a request carrying no `Sec-Fetch-Site` header, instead of failing closed |
 | `errorDetail` | `createErrorPage` prints the thrown message instead of a fixed sentence |
-| `turnstileTestingSecrets` | `verifyTurnstile` skips the hostname comparison, and only under one of Cloudflare's three published testing secrets ([`INPUT_VALIDATION.md`][iv-4a] §4a) |
+| `turnstileTestingSecrets` | `verifyTurnstile` skips the hostname comparison, and only under one of Cloudflare's published testing secrets ([`INPUT_VALIDATION.md`][iv-4a] §4a) |
 | `extraOrigins` | `deriveAllowedOrigins` appends these origins to the derived set ([`SECURITY_HARDENING.md`][sh-3f] §3f) |
 
 The options are copied at mint time, so editing your object afterwards grants nothing more.
@@ -74,14 +74,10 @@ The options are copied at mint time, so editing your object afterwards grants no
 ## Gotchas
 
 **A token cannot be forged outside this module.** `DevAllowance` carries a `unique symbol` the module does not export, so no object literal written
-anywhere else satisfies it — minting one means importing `devAllowance`, which is exactly the import the gate looks for. That is two layers, not
-one: the type makes a relaxation unrepresentable without the token, and `validate-dev-boundary` makes the mint a gate failure outside a development
-entry. A `{} as DevAllowance` cast defeats the first, but the second still fails the import the cast exists to avoid, and the cast itself is
-greppable.
+anywhere else satisfies it — minting one means importing `devAllowance`, which is exactly the import the gate looks for.
 
-**This namespace holds no development behaviour** — a token and an option shape, and nothing else. No middleware, no fake binding, no rendering.
-Each relaxation lives in the namespace owning its concern (`security`, `app`, `form`), which is why `dev` is a leaf with no edge out
-([`NAMESPACES.md`][namespaces-5i] §5i).
+**This namespace holds no development behaviour** — a token and an option shape, and nothing else. Each relaxation lives in the namespace owning
+its concern (`security`, `app`, `form`) ([`NAMESPACES.md`][namespaces-5i] §5i).
 
 **It is not the only dev-only subpath.** `@y-core/forge/testing` and `@y-core/forge/tooling/*` are declared dev-only beside it, and the same check
 forbids the same import.

@@ -159,6 +159,19 @@ describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
     expect(result.findings[0]?.detail?.at(-1)).toBe("line 1: `../../../client/signal`");
   });
 
+  it("does not scan a spec or a `*.fixture.ts`, neither of which the tarball carries", () => {
+    const root = fixtureRoot({
+      "src/ui/client/signal.ts": "export const signal = 1;\n",
+      "src/ui/server/panel.test.ts": 'import { signal } from "../client/signal";\nexport const a = signal;\n',
+      "src/ui/server/panel.fixture.ts": 'import { signal } from "../client/signal";\nexport const b = signal;\n',
+    });
+
+    const result = checkSsrBoundary(config(root));
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe("1 files respect the src/ui/client boundary");
+  });
+
   it("passes the same nested file when the crossing import is type-only, which is erased at emit", () => {
     const root = fixtureRoot({
       "src/ui/client/signal.ts": "export type Signal = number;\n",

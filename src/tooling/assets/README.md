@@ -58,8 +58,7 @@ checkout.
 
 ## Declaring what to build
 
-Every top-level block is optional, and each one you add is a stage the build runs. `defineAssetsConfig` only supplies authoring types — it validates
-nothing. `loadConfig` is what validates, and every command calls it, so a malformed config fails at the command rather than at the stage that
+Every top-level block is optional, and each one you add is a stage the build runs. A malformed config fails at the command, not at the stage that
 reads it.
 
 | Block | Add it when you want |
@@ -126,8 +125,6 @@ forge assets build --minify   # production: minified, content-hashed, immutable 
 | `forge assets sprites` | SVG sprite sheets only |
 | `forge assets gen types` | Nothing — derives the generated module from config alone |
 
-**The bare `build` is the union, not a narrower default.** Unlike a scope default it runs everything, so it can never silently do less than asked.
-
 | Flag | Type | Accepted by | Effect |
 | --- | --- | --- | --- |
 | `--minify` | boolean | `build`, `build all`, `build css`, `build js`, `sprites` | Minify output; on `build`, `build all` and `sprites` it also turns on content-hashed filenames |
@@ -182,8 +179,7 @@ dev and deploy:
 }
 ```
 
-The emitted module is shape-identical to a real build — the same exports, the same `createIcon` calls, the same `*_META` keys and therefore the same
-glyph unions. Only the values are placeholders: paths are unhashed logical names and every `viewBox` is empty
+The emitted module is shape-identical to a real build; only the values are placeholders, with unhashed logical paths and an empty `viewBox`
 ([`ASSET_PIPELINE.md`][ap-4b] §4b owns the contract).
 
 Consequences to plan around:
@@ -236,19 +232,13 @@ A font download pins its bytes the same way, under the same rules:
 fonts: { downloads: [{ url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2", sha256: "06df…c9b3" }] }
 ```
 
-Each source SVG is normalised on the way in, which is why an icon set authored at mixed origins still lines up: a non-zero `viewBox` origin is
-rewritten to `0 0 w h` with a compensating `translate`, and root presentation attributes (`fill`, `stroke`, `stroke-width`, `stroke-linecap`,
-`stroke-linejoin`) move to a single wrapping `<g>` so ordinary SVG inheritance lets a child override them. An attribute is read only at an attribute
-boundary, so `data-stroke="…"` on the root contributes no `stroke`.
+Each source SVG is normalised on the way in, so an icon set authored at mixed origins still lines up: a non-zero `viewBox` origin is recentred, and
+root presentation attributes (`fill`, `stroke`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`) move to a wrapping `<g>` a child can override.
 
 ### Choosing which SVGs to trust
 
-Sanitisation here **tokenizes the markup and re-serializes what an allowlist admits**, rather than deleting matches from a string — so a construct
-the tokenizer does not recognise is dropped rather than carried through. It drops `<script>`, `<style>` and `<foreignObject>` with everything inside
-them, terminated or not; every `on*` handler attribute in any casing and with whitespace around the `=`; every URL-valued attribute whose scheme
-resolves to `javascript:` or `data:text/html` once character references and control characters are undone; and every SMIL `<animate>`/`<set>` whose
-`attributeName` is outside a fixed presentation-and-geometry list. `/` counts as an attribute separator, exactly as the HTML tokenizer counts it, so
-`<circle r="5"/onload="…">` carries two attributes and loses the second. Root-`<svg>` handlers are gone anyway, because the root tag is discarded.
+Sanitisation admits an allowlist of elements and attributes, dropping scripting, embedded HTML, `on*` handlers, `javascript:` and `data:text/html`
+URLs, and SMIL animation of anything outside a presentation-and-geometry list.
 
 **For untrusted or user-supplied SVGs this is still not sufficient.** Run a full DOM-based sanitizer such as DOMPurify before the file reaches the
 config. The production CSP remains the primary runtime control.
@@ -284,9 +274,8 @@ icons: {
 ```
 
 **`root: true` pins one output to the asset root, and `favicon.ico` is the one that needs it.** A browser probes `/favicon.ico` whenever there is no
-HTML head to read — a PDF, an image, a JSON response, a download tab, a platform-generated error page — as do unfurlers and feed readers that never
-parse HTML. Safari probes `/apple-touch-icon.png` on the same condition. Everything else is reached only through a tag you emit, so its path is
-yours to choose.
+HTML head to read, and Safari probes `/apple-touch-icon.png` on the same condition. Everything else is reached only through a tag you emit, so its
+path is yours to choose.
 
 A `png` earns a head `<link>` only when it declares a `rel`; one marked `manifest: true` is already declared by the web-app manifest. `sharp` is
 loaded only when a `png` or `ico` output is configured, so an icon set of `svg` and `manifest` alone needs no optional peer at all.
@@ -303,7 +292,7 @@ url("data:image/svg+xml,<encoded-svg>") <hx> <hy>, auto
 ```
 
 Each source declares its own template SVG, so filled arrow cursors and thin snap-indicator cursors can use different wrappers. A template is the
-outer wrapper and receives three placeholders:
+outer wrapper, and receives these placeholders:
 
 | Placeholder | Replaced with |
 | --- | --- |
@@ -373,8 +362,6 @@ to `process.env`, so a caller states what the build may see.
 **Every path the config reads from comes back absolute, and every path it writes to comes back relative.** A CSS `input`, a bundle `entry`, a copy
 or raster `from`, and a local sprite or cursor source are resolved against `root`, so a build run from a subdirectory reads the tree `--root` names
 rather than its own working directory; an already-absolute path — what `forgeUiSpriteSources()` returns — and a remote sprite source are left alone.
-A `to`, an `output`, an `outdir` and a sprite `target` stay relative because each is a manifest key that `safeJoin` contains under the asset root at
-build time.
 
 Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildSprites`, `buildIcons`, `buildFonts`, `buildRasters`, `buildSite`,
 `copyAssets` — and each takes its own slice of the config plus an output directory rather than the whole config
@@ -395,9 +382,6 @@ deleted.
 the file is truncated on every build. A second writer cannot add a rule to it, including for the generated `robots.txt` and `sitemap.xml`. Icons are
 revalidated rather than pinned, because their filenames are not content-hashed; the web-app manifest is `must-revalidate`, because it is how an
 installed app learns its name, colours or icon set changed.
-
-**The generated module is written twice per build, on purpose.** esbuild resolves `@assets` while bundling, so the file must exist before `buildJS`
-runs, and the JS bundle's own hashed names only enter the manifest afterwards. A pass whose content is byte-identical does not touch the file.
 
 **A missing optional peer fails with a sentence, not a resolution stack trace.** `sharp` and `esbuild` are imported only when the config asks for
 what they do, and the error names the config key that demanded the package, the package, and the command that installs it:

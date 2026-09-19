@@ -64,11 +64,9 @@ than repaired. The example below is what the failure looks like when contrast an
 
 ## 2. ARIA alongside data attributes, never instead of
 
-This is the section most specific to forge, and the mistake it names is invisible in a screenshot.
-
 Forge publishes state twice, on purpose. `stateAttrs` (SSR) and `applyStateAttrs` (browser) write the `data-*` attributes registered in
 `STATE_ATTRS` — `data-pressed`, `data-selected`, `data-checked`, `data-invalid` and the rest — and those drive **styling and the client runtime**.
-The ARIA attribute beside them drives **assistive technology**. They are not alternatives, and neither substitutes.
+The ARIA attribute beside them drives **assistive technology**. Neither substitutes for the other.
 
 **A `data-state` with no ARIA counterpart styles perfectly and announces nothing.** The component looks right in every review that is conducted by
 looking.
@@ -128,7 +126,6 @@ rather than an `aria-label`, wherever the layout allows it — unless the sr-onl
 <!-- rule:forge-ui-a11y-icon-plus-text --> `Icon` is `aria-hidden` by default, so it contributes nothing to the name; the `sr-only` span is real
 text that a reviewer can see in the source next to what it names, and that survives translation the way an attribute value tends not to. `Spinner`
 is the shipped example of the pattern: `role="status"` on the wrapper, `aria-hidden` on the glyph, and an `sr-only` label.
-`forge-ui-accessible-name` is the Floor here; this is only the preferred way of meeting it.
 
 Default: an icon-only `Button` — `shape="icon"` or `shape="circle"` — carries an `aria-label` naming the action it performs, unless the
 visually-hidden span above is used instead, which is the preferred form wherever the layout allows it. <!-- rule:forge-ui-icon-button-label -->

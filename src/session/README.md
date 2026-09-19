@@ -74,9 +74,6 @@ const session = sessionCtx.get(c);
 session.set("settings", validated.settings); // dirty → saved to KV, Set-Cookie (id only)
 ```
 
-There is no manual id bookkeeping, no hand-rolled KV keying, and no per-isolate caching to invent — the factory caches internally, keyed on the
-`env` object's identity.
-
 The cookie is signed, `httpOnly`, `Secure` and `SameSite=Lax` in every configuration, with no option to relax any of them.
 
 ---
@@ -224,11 +221,11 @@ rather than a line that is accepted and quietly discarded. The signed `serialize
 catches an `as any` or a decorating wrapper the type never saw.
 
 **`Secure` is not configurable, and that is the point.** A session cookie that loses `Secure` fails silently in every way that would otherwise catch
-it: no test goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and replays the session. The option
-this replaced existed for plain-http development, and the posture it served is the one [`WORKERS_PLATFORM.md`][wp-4e] §4e rules out — **development
-is https at every hop**, so `Secure` is already correct locally and an option to relax it buys nothing a correct dev transport does not. If a local
-server cannot hold a session, the fix is its transport. An in-process test harness never needed the option either: `Secure` is enforced by a
-_browser_ deciding whether to send a cookie back over http, and `app.request(…)` has no browser in it.
+it: no test goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and replays the session.
+[`WORKERS_PLATFORM.md`][wp-4e] §4e rules out the plain-http development posture that would want it — **development is https at every hop**, so
+`Secure` is already correct locally and relaxing it buys nothing a correct dev transport does not. If a local server cannot hold a session, the fix
+is its transport. An in-process test harness does not need it either: `Secure` is enforced by a _browser_ deciding whether to send a cookie back
+over http, and `app.request(…)` has no browser in it.
 
 **A configured lifetime is enforced by the signature, not announced by `Max-Age`.** Where `createSignedCookie` is given `maxAge` or `expires`, the
 expiry is embedded in the value and covered by the HMAC, so a captured cookie stops verifying on the server at the instant its header claimed —

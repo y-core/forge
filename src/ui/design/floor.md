@@ -36,8 +36,6 @@ before you call the work done; hold **Refuse** (§2) the whole time you are gene
 
 ## 1. Verify — the Obligations
 
-Walk this list before you report a UI surface as finished.
-
 ### 1a. The Design Read
 
 **Emit the Design Read before you build.** <!-- rule:forge-ui-design-read --> One line, no template, no ceremony: **who** the surface is for, **the
@@ -68,7 +66,7 @@ field and announces nothing. A red `Alert` with no icon and no `Alert.Title` nam
 **Keep focus visible on every interactive element.** <!-- rule:forge-ui-focus-ring --> `focus-visible:ring-2 focus-visible:ring-ring` against the
 `--ring` token. `outline-none` without a replacement ring is a removed affordance, not a style choice.
 
-This is §1e applied to `outline-none`. It keeps its own id, and is cited by that id.
+This is §1e applied to `outline-none`, and it keeps its own id.
 
 ### 1e. Every Suppressed Affordance Is Replaced
 
@@ -129,8 +127,6 @@ level other than the compound's default.
 ---
 
 ## 2. Refuse — the Prohibitions
-
-These never appear in output, whatever was asked for.
 
 ### 2a. Colour Tokens, Never Literals
 
@@ -211,7 +207,7 @@ it. No per-component radius override, and never square corners next to round one
 ### 2g. Icons from the Sprite
 
 **Take icons from the sprite.** <!-- rule:forge-ui-real-icons --> `Icon` or a `createIcon` binding from `@y-core/forge/ui/core`, typed
-`ForgeIcon<Name>`. Never an emoji, never a hand-rolled inline `<svg>`. Forge's own twelve glyphs are enumerated by `FORGE_UI_ICON_NAMES` in
+`ForgeIcon<Name>`. Never an emoji, never a hand-rolled inline `<svg>`. Forge's own glyphs are enumerated by `FORGE_UI_ICON_NAMES` in
 `@y-core/forge/ui/assets/glyphs`; an app sprite extends that set through the same factory.
 
 ```tsx

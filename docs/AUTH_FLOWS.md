@@ -26,7 +26,7 @@ audience: consumer
 - §3 Passkeys: the two-endpoint ceremony both halves share
 - §3a Enrolment: the registration ceremony and the pending-enrolment gate
 - §3b Sign-in: why a passkey never starts one
-- §3c Management: what the shipped pages do, and the two limits they carry
+- §3c Management: what the shipped pages do, and the limits they carry
 - §4 Authenticator App (TOTP): the secret, the URI, and the confirm step
 - §5 Email Change: the two sealed links, the stage each one carries, and the confirm route you own
 - §6 Admin Management: the user pages, the last-admin guard, and the first-admin bootstrap
@@ -68,13 +68,12 @@ or `second`, and a `second` entry carries what this deployment demands of it.
 | `"mandatory"` | An enrolment, until the user confirms it. |
 | `{ mandatoryForRoles: [...] }` | `"mandatory"` for a user whose roles match, `"optional"` for everyone else. Forge sources no roles — the caller supplies them. |
 
-**Mandatory governs enrolment, not step-up.** `resolve` answers in three steps: a mandatory factor this user has not confirmed is
+**Mandatory governs enrolment, not step-up.** `resolve` answers in order: a mandatory factor this user has not confirmed is
 `enrolment-required` naming **only the owed kinds**; otherwise any confirmed second factor is `step-up-required`; otherwise `satisfied`. So a
 mandatory factor cannot be skipped by enrolling a different one, and an optional factor a visitor did enrol is still demanded at every later
 sign-in.
 
-**A deployment offering no second factor is `satisfied` without a store read.** That is what the retired `{mode: "single"}` named, and it is now
-simply an `offered` list with no `second` entry.
+**A deployment offering no second factor is `satisfied` without a store read** — an `offered` list with no `second` entry.
 
 **An implicit factor is enrolled for everyone the moment it is offered.** Email-OTP has no enrolment row by design, so offering it as a second
 factor puts it in the confirmed set unconditionally — it is never owed, and it always satisfies the step-up.
@@ -143,9 +142,9 @@ enrolment does not sign anyone in.
 ### 3b. Sign-in
 
 **A primary factor must identify the visitor, and a passkey identifies nobody — so no configuration makes one start a sign-in.** The primary variant
-of `AuthFactorOffer` takes a service whose kind is drawn from `AUTH_IDENTIFYING_FACTORS`, today `["email-otp"]`: offering the passkey as primary is
-a type error, and `createFactorRegistry` refuses it at runtime for a consumer casting past the type. The sign-in page therefore renders no passkey
-trigger in any deployment, and there are no discoverable endpoints to answer.
+of `AuthFactorOffer` takes a service whose kind is drawn from `AUTH_IDENTIFYING_FACTORS`: offering the passkey as primary is a type error, and
+`createFactorRegistry` refuses it at runtime for a consumer casting past the type. The sign-in page therefore renders no passkey trigger in any
+deployment, and there are no discoverable endpoints to answer.
 
 A passkey ceremony always requires user verification: it only ever runs as a step-up or an enrolment, and a fresh human gesture is the point of one.
 The second half of a sign-in runs the same step-up pair as any other step-up — §2c describes where its resolution sends the visitor.
@@ -241,13 +240,13 @@ it in your own layout with your own copy; [`AUTH_MOUNTING.md`][am-6] §6 is the 
 
 **It renders in the same document shell the auth pages do**, because that shell belongs to the app rather than to the mount
 ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6). Call `renderShell(c, content, slot)` from your own view with a slot you name yourself — `mount` is an
-open string — and the page comes out inside the chrome every auth page already renders in. There is no adapter to write and no props this route
-cannot supply: forge asks a shell for a document, not for a component typed against `AuthViewName`.
+open string — and the page comes out inside the chrome every auth page already renders in. Forge asks a shell for a document, not for a component
+typed against `AuthViewName`, so there is no adapter to write.
 
 **That route is a `GET` that mutates, and the trade is deliberate.** A confirmation link in an email can only be a `GET`, so the usual rule gives
 way; what makes it safe is that each link is single-use. The first visit does its stage's work, and every visit after it — a link scanner's, a
-prefetch, the user clicking twice — answers `consumed` and changes nothing. Do not add your own idempotency around it, and do not make the route a
-`POST` behind an interstitial unless you want the extra click: the nonce store already carries the guarantee.
+prefetch, the user clicking twice — changes nothing. Do not add your own idempotency around it, and do not make the route a `POST` behind an
+interstitial unless you want the extra click: the nonce store already carries the guarantee.
 
 **The route renders two success pages, and the failure arm needs `instanceof`.** `confirm` returns
 `Result<AuthEmailChangeConfirm, AuthEmailChangeReason | AuthStoreError>`: the success value is a union discriminated on `status`, and the error is a

@@ -22,7 +22,7 @@ audience: consumer
 - §1a Presence, Not Value: why `data-selected` and never `data-selected="true"`
 - §1b ARIA States Are Not Styling Hooks: why both are emitted
 - §1c The Caller Is Authoritative: class precedence and state precedence as one rule
-- §1d Busy Is Server-Stamped, and a Request Is Not: the two writers, and what stays htmx's
+- §1d Busy Is Server-Stamped, and a Request Is Not: the writers, and what stays htmx's
 - §2 Presentational Attributes Are Declared Too: the enum half of the vocabulary, and the frozen-hook technique it keeps
 - §3 The Island Payload Is Not a Presentational Enum: why the serialized state carries its own attribute name
 - §4 The Sweep Is Closed-World: the inverted assertion, the stateful probe, and the independent override expectation
@@ -99,12 +99,12 @@ only stamp what it can keep true ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h); the ru
 ## 2. Presentational Attributes Are Declared Too
 
 **The enum half of the vocabulary is declared beside the state half, and is emitted through `presentationAttrs()` rather than hand-written at each
-call site.** `data-tone`, `data-appearance`, `data-size` and `data-state` are the styling hooks that carry a _choice_ rather than a flag, and they
-had been spelled as string literals in the components that emit them — the same two-places-that-cannot-see-each-other problem §1 solves for the
-boolean states, with the same silent failure mode. A stylesheet is written against a name; nothing held the name to a declaration.
+call site.** `data-tone`, `data-appearance`, `data-size` and `data-state` are the styling hooks that carry a _choice_ rather than a flag, and
+spelling one as a string literal in the component that emits it is the same two-places-that-cannot-see-each-other problem §1 solves for the boolean
+states, with the same silent failure mode: a stylesheet is written against a name, and nothing holds a literal to a declaration.
 
 **They are the attribute mirror of the prop vocabulary** ([`UI_SSR_COMPONENTS.md`][usc-1m] §1m), so the declaration is one list and not two: a prop
-drawn from the ratified seven becomes an attribute drawn from the same names. `data-state` is the one that carries no prop of its own — it is a
+drawn from the ratified vocabulary becomes an attribute drawn from the same names. `data-state` is the one that carries no prop of its own — it is a
 component-local enum a stylesheet reads, and §3 is why it may be nothing else.
 
 **The frozen-hook technique from `state-attrs.ts` carries over unchanged.** A runtime member access on the declaration table retains the whole table
@@ -125,8 +125,8 @@ enum by construction, and leaves `data-state` a declared member of §2's table.
 
 **The sweeps assert that every `data-*` a forge element emits is declared** — in the state table, in §2's presentational set, or in the wiring
 vocabulary, which carries its reason beside each name. The assertion runs in that direction and not the other: filtering the rendered attributes
-down to the declared set before comparing them makes the comparison unfalsifiable, which is how undeclared names came to ship past a test whose
-stated purpose was to stop them.
+down to the declared set before comparing them makes the comparison unfalsifiable, which is how an undeclared name ships past a test whose stated
+purpose is to stop it.
 
 **Each sweep sees different things, which is why they are separate.** One **renders** probes and reads the attributes off the markup, so it sees
 what ships and nothing a component merely mentions; the other **scans source text**, so it reaches the namespaces no probe mounts — at the cost of
@@ -141,9 +141,9 @@ rendered here".
 **Wiring versus enum decides where a name goes.** A name driving a `cva` variant is presentational and belongs in §2's declared table; a few sit in
 wiring today, each recorded where it is declared.
 
-**The probe renders each component twice — once bare, once with every boolean state prop set.** A component only emits `data-pressed`,
-`data-checked`, `data-selected`, `data-disabled`, `data-invalid` or `data-busy` when the corresponding prop is true, so a sweep over a default
-render reaches none of them and the hooks the contract exists for are exactly the ones it never sees.
+**The probe renders each component twice — once bare, once with every boolean state prop set.** A component emits a boolean state hook only when
+the corresponding prop is true, so a sweep over a default render reaches none of them and the hooks the contract exists for are exactly the ones it
+never sees.
 
 **The precedence expectation is derived independently of the table it checks.** Building both sides of an assertion from the same input proves the
 input equals itself; the override case states the caller's value literally, so a change to the declaration cannot silently rewrite what the test

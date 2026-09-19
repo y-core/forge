@@ -52,8 +52,7 @@ which a config file can be checked at all, since nothing imports it before then.
 ### 1b. AssetsConfig Type Shape
 
 **The config shape is owned by `src/tooling/assets/types.ts`** — the valibot schemas there _are_ the type, via `InferInput`, and
-`src/tooling/assets/README.md` carries the field-by-field reference. This document enumerates none of it: a second copy of a field list is
-indistinguishable from an amendment the moment the two disagree.
+`src/tooling/assets/README.md` carries the field-by-field reference. This document enumerates none of it.
 
 One field is named here because readers reliably guess it wrong: **`sprites` is a record of named groups, and a group lists its files explicitly** —
 `sources[].path` plus `sources[].files` — with **no glob anywhere in the pipeline** (§2a).
@@ -61,9 +60,9 @@ One field is named here because readers reliably guess it wrong: **`sprites` is 
 ### 1c. loadConfig — Config Resolution
 
 **`loadConfig` resolves its argument against `process.cwd()`; it does not search.** An omitted argument means `assets.config.ts` in the current
-directory and nothing more — no walk up the tree, and a run from a subdirectory does not find the root's config. Every app in the fleet passes
-`--config` explicitly, so the fallback is effectively unused. **Prefer passing the path**: it is the difference between a build whose inputs are
-stated and one whose inputs depend on where the command was typed. [`BUILD_TOOLING.md`][bt-2h] §2h states the rule this is an instance of.
+directory and nothing more — no walk up the tree, and a run from a subdirectory does not find the root's config. **Prefer passing the path**: it is
+the difference between a build whose inputs are stated and one whose inputs depend on where the command was typed.
+[`BUILD_TOOLING.md`][bt-2h] §2h states the rule this is an instance of.
 
 ---
 
@@ -120,9 +119,8 @@ the Tailwind CLI, esbuild, a font download and a file copy — each one resolves
 build-time exemption [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d grants, and [`LIBRARY_ARCHITECTURE.md`][la-1e] §1e states that exemption as
 **reachability**, not as a path glob: no Worker-executed entry point reaches these modules.
 
-Reachability cuts both ways. It is what admits a Node-API shell into `src/assets`, and it is also what declines to admit an algorithm merely because
-it happens to run at build time. A module that computes rather than orchestrates has no external tool behind it, so nothing about `src/assets`
-explains why it would live there.
+Reachability cuts both ways: it admits a Node-API shell into `src/assets`, and it declines an algorithm that merely happens to run at build time. A
+module that computes rather than orchestrates has no external tool behind it, so nothing about `src/assets` explains why it would live there.
 
 **The compute half lives under `src/ui/assets/build/`**, where the artifact each module produces is already the subject of the surrounding
 namespace — `color.ts` most plainly, since `ui/contracts/theme/color.ts` already owns the same arithmetic (§2b of [`THEME_GENERATION.md`][tg]). It
@@ -156,8 +154,9 @@ degrade to the logical URL — a 404 a developer can read — rather than a 500 
 `manifest.path`. It parses no SVG and knows nothing about symbols; an unknown group name **throws**, because a sprite URL that silently resolves to
 nothing renders every glyph on the page as an empty `<use>`.
 
-Symbol-level data has two other homes: the per-symbol `viewBox` is generated into the `*_META` const at build time (§4), and a glyph's inner markup
-at runtime is `@y-core/forge/ui/assets/glyphs` (`src/ui/README.md`).
+Symbol-level data lives elsewhere: the per-symbol `viewBox` is generated into the `*_META` const at build time (§4), and a glyph's inner markup at
+runtime is `@y-core/forge/ui/assets/glyphs` (`src/ui/README.md`).
+
 ---
 
 ## 4. Generated Assets Module

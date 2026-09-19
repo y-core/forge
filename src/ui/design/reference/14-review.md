@@ -8,15 +8,15 @@ description: "The audit pass run against someone else's markup, or your own an h
 This file _audits_ a surface rather than building one. It is the pass you run against someone else's markup — or your own, an hour later — and its
 output is a list of findings, each one attributable to a rule that already exists in this corpus.
 
-The review has three parts, run in order: a heuristic pass over named dimensions, a persona pass, and a report. The order matters, because the
-persona pass finds things the dimension pass cannot see, and the report shape is what makes both of them arguable.
+The parts below run in order, and the order matters: the persona pass finds things the dimension pass cannot see, and the report shape is what makes
+both of them arguable.
 
 ## 0. Quick Reference
 
-- §1 Part 1 — the heuristic pass: eleven dimensions in order, each scored against the file that owns it
+- §1 Part 1 — the heuristic pass: the dimensions in order, each scored against the file that owns it
 - §2 Part 2 — severity: a scale drawn where it is checkable, and why a Floor violation is always P0
-- §3 Part 3 — personas: the six passes that read use rather than markup
-- §4 Part 4 — the report: one finding per line, five fields, ordered by severity
+- §3 Part 3 — personas: the passes that read use rather than markup
+- §4 Part 4 — the report: one finding per line, ordered by severity
 - §4a The rule that keeps the review honest: a finding with no rule id is promoted or dropped
 
 ---
@@ -40,7 +40,7 @@ rule id it violates.
 | Accessibility | Heading order, focus ring, hit target, contrast, accessible names | `10-accessibility.md` and `floor.md` — every item here is Floor |
 | Density fit | Whether the dial setting matches the surface's signal | `12-density.md` |
 
-Default: a review walks all eleven dimensions in the order above before reporting any of them, because a hierarchy finding often explains a color
+Default: a review walks every dimension in the order above before reporting any of them, because a hierarchy finding often explains a color
 finding and reporting the color one first sends the fix to the wrong place — unless the review is explicitly scoped to one dimension by the request.
 <!-- rule:forge-ui-review-dimension-pass -->
 
@@ -75,7 +75,7 @@ and the P0s go unfixed — unless the review was explicitly requested as a polis
 
 ## 3. Part 3 — personas
 
-The dimension pass reads markup. The persona pass reads _use_, and each persona catches a class of defect that no other one will surface.
+The dimension pass reads markup. The persona pass reads _use_.
 
 | Review as | Do this | What it alone catches |
 | --- | --- | --- |
@@ -86,7 +86,7 @@ The dimension pass reads markup. The persona pass reads _use_, and each persona 
 | Small viewport | Render at the narrowest supported width | A `ScrollArea` that swallows the page scroll; a table with no horizontal strategy; `h-screen` where `min-h-dvh` belongs; a toolbar whose targets collapse below `sm` |
 | Slow network | Render with the client bundle absent and with data pending | Whether the SSR markup is usable before hydration; whether a `Skeleton` matches the shape being awaited or a `Spinner` was used where the shape is known |
 
-Default: a full review runs all six personas, and each persona's findings are attributed to that persona in the report so a partial re-review can
+Default: a full review runs every persona above, and each persona's findings are attributed to that persona in the report so a partial re-review can
 repeat exactly one of them, unless the review is scoped to a specific persona by the request. <!-- rule:forge-ui-review-persona-pass -->
 
 Default: the keyboard-only and screen-reader passes are run on every review regardless of scope, because both surface P0s and neither is inferable
@@ -122,7 +122,7 @@ is still produced first so each change is attributable to a rule. <!-- rule:forg
 2. **It is a preference.** It does not terminate in a forge component, token, utility, or class, so it fails the admission test and it is not
    something this corpus has standing to require. Drop it.
 
-There is no third option, and this is what stops a review from becoming a list of things the reviewer would have done differently.
+There is no third option, and that is what stops a review from becoming a list of things the reviewer would have done differently.
 
 Default: a finding that cannot cite a rule id is either promoted into a new corpus rule or dropped before the report is written, and is never
 reported as an unattributed observation, unless the request explicitly asked for open-ended impressions — which is a critique, not a review, and

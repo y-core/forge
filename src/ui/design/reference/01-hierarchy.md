@@ -5,8 +5,8 @@ description: "What a screen tells a user to do first: how emphasis, size and pla
 
 # Hierarchy
 
-Hierarchy is the answer to one question a user asks of every screen: _what am I supposed to do here?_ Forge's primitives already encode an answer.
-`Button` ships three resting looks for an action, and that is not a shortage — it is the action pyramid, spelled as an API.
+Hierarchy is the answer to one question a user asks of every screen: _what am I supposed to do here?_ Forge's primitives already encode an answer:
+`Button` ships three resting looks for an action — the action pyramid, spelled as an API.
 
 ---
 
@@ -43,8 +43,7 @@ Default: every remaining action uses `appearance='ghost'`, including cancel and 
 surface and would read as decoration without a border. <!-- rule:forge-ui-hierarchy-ghost-remainder -->
 
 The paints themselves make the case: the primary button fills with `--primary`, the outline one draws a border from `--input` and no fill, and the
-ghost one is text with a hover wash of `--accent`. Those are the levels of ink, in descending order. Reaching outside them means fighting the
-system.
+ghost one is text with a hover wash of `--accent`. Those are the levels of ink, in descending order.
 
 ### 1a. Before / after — the three-primary dialog
 
@@ -77,8 +76,8 @@ import { Button, Card } from "@y-core/forge/ui/core";
 
 ## 2. De-emphasise before you emphasise
 
-The instinct when something does not stand out is to make it louder. The cheaper move, almost always, is to make its neighbours quieter — a surface
-has a fixed budget of attention, and lowering three things raises the fourth for free.
+The instinct when something does not stand out is to make it louder. The cheaper move is to make its neighbours quieter: a surface has a fixed
+budget of attention, so lowering three things raises the fourth for free.
 
 Default: when an element does not read as prominent enough, lower the weight of its neighbours before raising its own — reach for
 `appearance='ghost'` over `appearance='outline'`, and a `Badge` with `appearance='outline'` over a filled one — unless a brief sets Variance above
@@ -113,8 +112,8 @@ Every icon-only button still needs an accessible name — `forge-ui-accessible-n
 ## 4. Severity is a ladder, and `neutral` is the bottom rung
 
 `Alert` and `Toast` take the same `tone` scale — `neutral` / `destructive` / `info` / `success` / `warning`, `neutral` being the default. Each
-non-`neutral` tone is a claim about how much the message matters. Making that claim when the message does not carry it is the fastest way to teach a
-user to ignore the component.
+non-`neutral` tone is a claim about how much the message matters. Making that claim when the message does not carry it teaches a user to ignore the
+component.
 
 | The message says | Tone | Note |
 | --- | --- | --- |
@@ -185,8 +184,7 @@ import { Card, Field } from "@y-core/forge/ui/core";
 </Card.Content>;
 ```
 
-`Field` renders its label as a `<span>` at `text-xs font-medium text-muted-foreground` — quieter than the value by construction, and two text colors
-total.
+`Field` renders its label as a `<span>` at `text-xs font-medium text-muted-foreground` — quieter than the value by construction.
 
 ## 6. Where the primary action lives
 
@@ -195,4 +193,4 @@ Default: a `Card`'s single most important action renders in `Card.Footer`, and a
 <!-- rule:forge-ui-hierarchy-card-action-placement -->
 
 `Card.Action` is grid-positioned into the header's second column and spans both header rows, so a `ghost` icon button placed there aligns against
-the title and description without any manual positioning. That is the slot's whole reason for existing.
+the title and description without any manual positioning.

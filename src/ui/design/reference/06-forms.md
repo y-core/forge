@@ -7,17 +7,17 @@ description: "Labels, help text, validation timing and error placement — what 
 
 Everything here is a **Default** — rebuttable only by an explicit written brief. The Floor rules cited below are not.
 
-A form is where craft is most often skipped, because every part of it already works: an unlabelled input still submits. The rules below are about
-the parts that do not announce their absence.
+A form is where craft is easily skipped, because every part of it already works: an unlabelled input still submits. The rules below are about the
+parts that do not announce their absence.
 
 ---
 
 ## 0. Quick Reference
 
 - §1 Which field primitive: `FormField`, `Field`, the group primitives and `OtpInput`, and what separates them
-- §2 `Toggle`, `Switch` and `ToggleGroup`: three two-state controls, picked by what the value means
+- §2 `Toggle`, `Switch` and `ToggleGroup`: the two-state controls, picked by what the value means
 - §3 Never hand-write the wiring: the id helpers, the `field` descriptor, and when a `scope` is owed
-- §3a Before / after: a dangling IDREF from three hand-written ids, against one derived `name`
+- §3a Before / after: a dangling IDREF from hand-written ids, against one derived `name`
 - §4 `ui/core` bases versus `ui/controls` bound variants: which barrel a control comes from, and why never both
 - §5 Error UX: where the message renders, when validation runs, and the invalid triple
 - §6 Form-level composition: challenge placement, one primary, and which set to mark
@@ -83,7 +83,7 @@ A `Switch` is a setting that is on or off, and it is announced as a switch. A `T
 checkbox. Reaching for the wrong one does not lose the value — both carry a `name` and both submit — it tells the reader the wrong thing about what
 they are changing. Override never — the distinction is what the elements announce.
 
-`Filter` is the fourth shape: a row of chips where choosing one hides the others and shows a reset, so the narrowed facet stays visible and
+`Filter` is a different shape: a row of chips where choosing one hides the others and shows a reset, so the narrowed facet stays visible and
 clearable.
 
 Default: `Filter` is for one-of-N facet narrowing where the chosen facet must stay visible and clearable; a set the reader may combine is

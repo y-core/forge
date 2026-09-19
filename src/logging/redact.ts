@@ -1,7 +1,7 @@
 import { cloneLogValue } from "./log-clone";
 import type { LogKeyVerdict, LogRedactionOptions, LogRedactionPolicy } from "./types";
 
-/** The stems `BOUNDARIES.md` §4a's field classes reduce to, matched as a normalized substring. */
+/** The stems that carry a `BOUNDARIES.md` §4a field class safely under substring matching; an application's own field names are its `also`. */
 const BUILT_IN_STEMS: readonly string[] = [
   "email",
   "displayname",

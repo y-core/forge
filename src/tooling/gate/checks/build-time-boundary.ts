@@ -4,13 +4,12 @@ import { resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles } from "./source-scan";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { BuildTimeBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
-// A spec is not shipped, and a `.browser.ts` spec runs under Playwright — neither reaches a Worker.
-const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !/\.(test|browser)\.tsx?$/.test(name);
+const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !isTestSource(name);
 
 /** Whether `file` lives under one of the build-time directories. @public */
 export function isBuildTime(file: string, buildTimeDirs: readonly string[]): boolean {

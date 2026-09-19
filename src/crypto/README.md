@@ -7,8 +7,7 @@ audience: internal
 # `@y-core/forge` — `crypto` (Internal)
 
 **There is no `@y-core/forge/crypto` import path.** This directory is not exported from `package.json`, and nothing outside forge can reach it. It
-holds the low-level encoding, signing, derivation and one-time-code primitives that four namespaces would otherwise each implement — plumbing, not a
-surface.
+holds the low-level encoding, signing, derivation and one-time-code primitives the namespaces below share — plumbing, not a surface.
 
 ---
 
@@ -31,9 +30,8 @@ If none of them exposes what you need, the answer is a new export on the namespa
 ## Gotchas
 
 **Sealed refers to the path, not to every symbol.** Almost everything here is `@internal`, but a capability may live here and still be `@public`,
-surfaced through the barrel of the namespace that owns its concern. `uuid.ts` is the standing example: UUIDv7 (RFC 9562 §5.7, with the §6.2 Method 1
-monotonic counter) and its `BLOB` byte codec live here so that `storage/kv`, `auth` or anything else needing a sortable identifier can consume them
-without a cross-namespace import — and reach them through `@y-core/forge/storage/db`, the namespace whose primary keys they exist for.
+surfaced through the barrel of the namespace that owns its concern. `uuid.ts` is the standing example: UUIDv7 and its `BLOB` byte codec live here,
+and consumers reach them through `@y-core/forge/storage/db`.
 
 **Anything `@public` added here must be added by hand to a surfacing barrel.** `validate-exports` scans only the source files owned by an exported
 namespace, so its source → barrel pass does not see this directory. A `@public` symbol left unexported here is invisible to the gate and to every

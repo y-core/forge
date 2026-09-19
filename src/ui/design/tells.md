@@ -6,7 +6,7 @@ description: "Output patterns that mark a surface as machine-composed rather tha
 # AI Tells
 
 Output patterns that mark a surface as machine-composed rather than designed. None is a bug: each type-checks, renders, passes a test — and each is
-recognisable at a glance to anyone who has seen a hundred generated interfaces, which is now everyone.
+recognisable at a glance to a reader who has seen generated interfaces before.
 
 Everything here is Tier 2, rebuttable only by an explicit written brief. Where a tell is already a Floor violation the Floor id is cited rather than
 restated, and the entry carries only what the Floor does not: why the pattern gets generated, and what to reach for instead.
@@ -39,7 +39,7 @@ restated, and the entry carries only what the Floor does not: why the pattern ge
 - §4 Content: the tells in what the slots were filled with
 - §4a Fabricated Metrics: a slot the size of a number, filled because inventing one was easier
 - §4b Placeholder Identities: the row needed a name, so a name was produced
-- §4c Invented Testimonials: a factual claim about strangers, and the most damaging of the four
+- §4c Invented Testimonials: a factual claim about strangers, and the most damaging form of invented data
 - §4d Lorem Ipsum Shipped as Copy: unreviewable filler that survives because it looks like content
 - §5 Icons and Motion: the tells in the glyphs and the movement
 - §5a Emoji Used as Icons: a different drawing on every OS, and a name nobody chose
@@ -246,9 +246,8 @@ surrounding copy.
 
 A Floor violation — `forge-ui-real-icons`. It happens because an emoji is available without a sprite, a fetch, or a name — but it renders in the
 reader's platform font, so the same glyph is a different drawing on every OS, and it carries a name in the accessibility tree that nobody chose.
-Default: a glyph comes from the sprite through `Icon`, or through a `createIcon` binding typed `ForgeIcon<Name>`, both from `@y-core/forge/ui/core`;
-forge's own glyph set is enumerated by `FORGE_UI_ICON_NAMES` in `@y-core/forge/ui/assets/glyphs`, and an app sprite extends it through the same
-factory. <!-- rule:forge-ui-tell-emoji-icon --> Override never; see the Floor rule.
+Default: a glyph comes from the sprite through `Icon`, or through a `createIcon` binding typed `ForgeIcon<Name>`, both from `@y-core/forge/ui/core`.
+<!-- rule:forge-ui-tell-emoji-icon --> Override never; see the Floor rule.
 
 ```tsx
 import { createIcon } from "@y-core/forge/ui/core";
@@ -273,8 +272,8 @@ a skeleton flash is the more disruptive of the two.
 ### 5d. The Modal Reflex
 
 A `Dialog` for a two-field form, a detail view, an optional filter panel. It reads as generated because `Dialog` is the most recognisable container
-in any component library, so it becomes the answer to "put this somewhere" — and it spends the top layer and the reader's whole attention on
-something that blocks nothing. Default: take the lightest overlay the job survives — `Collapsible` when the content belongs to the page, `Popover`
+in the library, so it becomes the answer to "put this somewhere" — and it spends the top layer and the reader's whole attention on something that
+blocks nothing. Default: take the lightest overlay the job survives — `Collapsible` when the content belongs to the page, `Popover`
 when it is anchored to a trigger, `Dialog` only when the task truly blocks — per `forge-ui-catalog-overlay-weight` and `forge-ui-depth-dialog-last`.
 <!-- rule:forge-ui-tell-modal-reflex --> Override when the content must be read before anything else proceeds, or when a light dismiss would lose
 the reader's work.

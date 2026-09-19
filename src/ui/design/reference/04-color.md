@@ -39,9 +39,9 @@ mapping — is [`04-color-authoring.md`][ca]'s, which also carries the palette a
 - §5 Contrast is per scheme, per mode: one lightness ramp, so one set of measurements describes all four
 - §5a Auditing a pair, a scheme and a theme file: both modes, every scheme, and the pair with least headroom
 - §6 `--destructive` pairs like every other surface token: the fill, the border, and the separate text token
-- §7 Status colour is forge's; the fills are the app's: four intents by five roles, and who may re-point what
+- §7 Status colour is forge's; the fills are the app's: the intents and their roles, and who may re-point what
 - §7a The ownership split: why a failure panel that follows the brand stops meaning "failed"
-- §7b Why no `dark:` twin is written: a step that resolves in both modes, so no twin is written
+- §7b Why no `dark:` twin is written: a step that resolves in both modes
 - §8 Tone by intent, appearance by emphasis: what the message is, and how loudly this surface says it
 - §9 Radius is one decision, not four: one `--radius`, and the whole family computed from it
 
@@ -52,8 +52,7 @@ mapping — is [`04-color-authoring.md`][ca]'s, which also carries the palette a
 ### 1a. Why twelve steps, and never a generated shade
 
 A neutral scale needs enough steps that every surface, border and text role has a defensible one, and few enough that two designers reaching for "a
-light grey" land on the same value. The usual number quoted is 8–10 greys; forge ships twelve, which covers it with room to spare — and each carries
-a published meaning, so a step is looked up rather than eyeballed.
+light grey" land on the same value. Forge ships twelve, and each carries a published meaning, so a step is looked up rather than eyeballed.
 
 Default: a shade comes from a declared step of the scale, or from a semantic token built on one, and is never generated on the fly — no `color-mix`
 against an arbitrary percentage, no one-off opacity faking an intermediate grey — unless a brief introduces a brand hue, which is then declared as
@@ -139,7 +138,7 @@ The `--cast-*` and `--rim-*` families in `theme-colors.css` are the sanctioned m
 | `--ring` | The focus indicator, drawn inside the control. One step beyond `--input`, so a focused control advances. 3:1 |
 | `--overlay` | The modal scrim, on an absolute alpha step so it darkens whatever is behind it in either mode |
 
-The twenty `--status-*` tokens are the other half of the semantic layer, and they answer a different question — see §7.
+The `--status-*` tokens are the other half of the semantic layer, and they answer a different question — see §7.
 
 Default: interactive feedback — hover, open, selected — is expressed with `--accent` and its paired foreground, as `buttonVariants` does for
 `secondary` and `ghost`, unless the element's resting state is already `--accent`, in which case it moves to `--primary`.
@@ -200,26 +199,24 @@ file of its own:
 | `--ring` | `--gray-11` | `#646464` | `#b4b4b4` |
 
 Read the last two columns as the two branches of the _step's_ one declaration, not as the token's value. Each token in the first column is declared
-exactly once and means the same thing in both modes — `--background` is the app background whichever mode is on. That is what makes the number of
-mode-varying decisions at the semantic layer zero, and it is why the override point for a per-mode value is the step. `--accent-12` is an alias of
-`--gray-12`, which is why `--primary` and `--foreground` read the same value here.
+exactly once and means the same thing in both modes — `--background` is the app background whichever mode is on. That is why no mode-varying
+decision exists at the semantic layer, and why the override point for a per-mode value is the step. `--accent-12` is an alias of `--gray-12`, which
+is why `--primary` and `--foreground` read the same value here.
 
 ### 4a. Why a raw utility is a defect
 
 Because `@theme inline` resolves each Tailwind colour utility through `var()`, `bg-card` means whatever `--card` currently means. Toggling `.dark`
 on the document element moves every one of them at once, with no recompile — the class changes `color-scheme`, and the browser re-picks each branch.
 
-This is the whole case for `forge-ui-color-token-only`, and it is worth stating plainly: a raw utility **survives** the theme switch, and that is
-the failure. `bg-gray-100` stays light grey when the page goes dark, so the element it was applied to becomes a bright rectangle in the middle of a
-dark surface. `bg-card` moves with the theme. The rule is not stylistic tidiness — an untokenised colour is a visible defect the moment a user flips
-the theme.
+This is the whole case for `forge-ui-color-token-only`: a raw utility **survives** the theme switch, and that is the failure. `bg-gray-100` stays
+light grey when the page goes dark, so the element it was applied to becomes a bright rectangle in the middle of a dark surface. `bg-card` moves
+with the theme. The rule is not stylistic tidiness — an untokenised colour is a visible defect the moment a user flips the theme.
 
 Default: a colour reaches the page through a semantic token — including the `--status-*` family for the status intents — and a scale step is
 named directly only inside `theme-base.css` or a theme file, unless the colour is a fixed hue no forge token covers, in which case the utility
 carries its own `dark:` counterpart. <!-- rule:forge-ui-color-theme-no-raw-utility -->
 
-The exemption is the `dark:` counterpart, not the fixed hue. A raw utility with no dark half survives the theme switch, and surviving the switch is
-the defect — which is what the paragraph above this rule says at length.
+The exemption is the `dark:` counterpart, not the fixed hue: a raw utility with no dark half survives the theme switch.
 
 The exemption is not the ordinary case. The `--status-*` family covers every status surface, so the paired form is what is left for a hue outside
 the token set — a brand's own signal colour, not "failed" or "succeeded".
@@ -248,13 +245,12 @@ Note the border went away as well — see `forge-ui-layout-muted-panel` in `02-l
 `forge-ui-contrast-floor` fixes the ratios. What that Floor does not say, and what the layering makes easy to forget, is that a passing ratio is a
 property of _one scale in one mode_.
 
-**All four shipped schemes are built on one lightness ramp and differ only in hue**, so every audited ratio is the same across them to within
+**Every shipped scheme is built on one lightness ramp and differs only in hue**, so every audited ratio is the same across them to within
 **0.05** — the widest gap at any audited step is `--muted-foreground` in light, 5.17 through 5.22 — by construction rather than by coincidence,
 which is why the contract in `src/tooling/gate/checks/contrast-parse.ts` can pin one set of numbers and have them describe every scheme alike. A
 scheme swap cannot move a pair across its floor.
 
-One measurement describes any scheme built this way, not merely the ones that have been measured. The ratios themselves are
-`src/tooling/gate/checks/contrast-parse.ts`'s to own.
+The ratios themselves are `src/tooling/gate/checks/contrast-parse.ts`'s to own.
 
 That guarantee is a property of the construction, not of theming in general. A scheme an application authors itself is on its own ramp and is bound
 by no such distance, which is what the rules below are for.
@@ -284,9 +280,9 @@ the hue of `theme-neutral.css`'s ramp and change no step's lightness, which is e
 
 ## 6. `--destructive` pairs like every other surface token
 
-`--destructive` pairs with `--destructive-foreground`, in both modes, exactly as `--success` and `--warning` do. It reads three ways and all three
-are supported: as a fill — where the pair supplies the foreground so no call site has to choose one — as a border, and as text, which is a
-**different token**: `--destructive-text`.
+`--destructive` pairs with `--destructive-foreground`, in both modes, exactly as `--success` and `--warning` do. It reads three ways: as a fill —
+where the pair supplies the foreground so no call site has to choose one — as a border, and as text, which is a **different token**:
+`--destructive-text`.
 
 The split is not a nicety. `--destructive` is held across modes so a near-white foreground clears it in both; a held dark red is unreadable as text
 on a dark page, which is what `--destructive-text` exists for. The same holds for `--info`, `--success` and `--warning`
@@ -317,9 +313,9 @@ a token with no consumer is a token nobody checks.
 
 ### 7a. The ownership split
 
-**The ownership split is the point.** `--destructive`, `--success` and `--warning` are **fills the application owns**: an app may re-point them to
-its brand. `--status-*` are **fixed status hues forge owns**, which no scheme swap and no brand re-point moves — and no shipped scheme moves
-anything else either, since a theme file re-declares the gray steps and nothing more. So `bg-destructive text-destructive-foreground` on a failure
+`--destructive`, `--success` and `--warning` are **fills the application owns**: an app may re-point them to its brand. `--status-*` are **fixed
+status hues forge owns**, which no scheme swap and no brand re-point moves — and no shipped scheme moves anything else either, since a theme file
+re-declares the gray steps and nothing more. So `bg-destructive text-destructive-foreground` on a failure
 panel is still the wrong reach, for the reason it always was: a panel that follows the brand stops meaning "failed". The right reach is a
 `--status-*` token.
 
@@ -357,8 +353,8 @@ Default: `soft` is the resting emphasis for `Alert`, `Badge` and `Toast`, and `s
 never two solid panels in view at once — unless the component is `Button`, whose resting appearance is its own fill.
 <!-- rule:forge-ui-soft-vs-solid -->
 
-Emphasis is relative: a second filled panel does not double the urgency, it halves the first one's. All three components already default to `soft`,
-so the shipped default is the rule and passing `appearance='solid'` is the decision that has to be worth making.
+Emphasis is relative: a second filled panel does not double the urgency, it halves the first one's. Those components already default to `soft`, so
+the shipped default is the rule and passing `appearance='solid'` is the decision that has to be worth making.
 
 ## 9. Radius is one decision, not four
 

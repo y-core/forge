@@ -9,8 +9,7 @@ Focus, keyboard, control state, and motion. Everything here is Tier 2 — a writ
 (`forge-ui-focus-ring`, `forge-ui-hit-target`, `forge-ui-reduced-motion`) may not be rebutted at all; see [`../floor.md`][floor].
 
 The through-line: **forge already implements the interaction models.** Almost every rule below is "call the controller forge ships" rather than
-"write this behaviour". A hand-written key handler is not merely more code, it is a _second_ model of what an arrow key means, on a page that
-already has one.
+"write this behaviour".
 
 ---
 
@@ -36,18 +35,17 @@ already has one.
 
 ### 1a. The ring token and where it is drawn
 
-Default: draw focus with `focus-visible:ring-2 focus-visible:ring-ring`, and reach for no other treatment — one ring, one token, app-wide — unless a
-brief specifies a distinct focus style for a named surface. <!-- rule:forge-ui-interaction-ring-token --> The ring colour is `--ring`, declared once
-in `src/ui/assets/css/theme-base.css` and resolving through `--gray-11` — the scheme file supplies that step's value per mode, so the same class is
-legible on both without the token itself knowing which mode it is in. It is a **solid step in both modes**, one step beyond `--input`: a mix
-carrying alpha composites against whatever is behind it, so the value measured is not the value that paints. A focus indicator is non-text contrast
-under WCAG 1.4.11 and has a 3:1 floor of its own, so it cannot be expressed as a tint. Visibility itself is the Floor (`forge-ui-focus-ring`); this
-rule is about not inventing a second treatment beside it. That is also why `forge-ui-platform-color-mix` in [`16-platform.md`][platform] excludes
-ring, border and outline tokens from the derived form it otherwise asks for.
+Default: draw focus with `focus-visible:ring-2 focus-visible:ring-ring`, and reach for no other treatment — unless a brief specifies a distinct
+focus style for a named surface. <!-- rule:forge-ui-interaction-ring-token --> The ring colour is `--ring`, declared once in
+`src/ui/assets/css/theme-base.css` and resolving through `--gray-11`, whose value the scheme file supplies per mode — so the same class is legible
+in both. It is a **solid step in both modes**, one step beyond `--input`: a mix carrying alpha composites against whatever is behind it, so the
+value measured is not the value that paints. A focus indicator is non-text contrast under WCAG 1.4.11 and has a 3:1 floor of its own, so it cannot
+be expressed as a tint. Visibility itself is the Floor (`forge-ui-focus-ring`); this rule is about not inventing a second treatment beside it. That
+is also why `forge-ui-platform-color-mix` in [`16-platform.md`][platform] excludes ring, border and outline tokens from the derived form it
+otherwise asks for.
 
 **Forge's own controls draw that ring _inside_ the element**, through the `focus-ring` utility. An outer ring is wrong on any control that shares an
 edge with a neighbour — inside a `Join` it cuts the group's silhouette in two — and it is not something a caller can correct from the call site.
-Drawn inset, the group stays one shape and the focused member is the box within it.
 
 Inset, the ring is read against the element's **own** surface rather than the page, and `--ring` is a gray step: it measures 1.03 against
 `--primary` and 1.09 against `--destructive` in light. So a solid fill rings in the same foreground it paints its own label with — already audited
@@ -156,9 +154,8 @@ import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 
 ## 3. Disabled, read-only, hidden
 
-Each of these withholds a control, and each communicates something different. Choosing by convenience is how a reader ends up staring at a greyed
-button with no way to learn why. Withholding a whole _subtree_ is a different matter again and belongs to `forge-ui-platform-inert` in
-[`16-platform.md`][platform].
+Each of these withholds a control, and each communicates something different. Withholding a whole _subtree_ is a different matter again and belongs
+to `forge-ui-platform-inert` in [`16-platform.md`][platform].
 
 | The situation | Use | What the reader learns |
 | --- | --- | --- |

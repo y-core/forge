@@ -9,8 +9,7 @@ audience: consumer
 Everything about an HTTP request that is decided before your handler sees it: which scripts the browser may run, which origins may talk to you, how
 often one client may knock, and what to call this request in the logs.
 
-This namespace works on the raw HTTP layer only. It knows nothing about users, sessions or application state — the boundary is
-[`BOUNDARIES.md`][boundaries-2] §2's.
+This namespace works on the raw HTTP layer only; it knows nothing about users, sessions or application state ([`BOUNDARIES.md`][boundaries-2] §2).
 
 ```ts
 import { cors, createSecurityHeaders, getNonce, NONCE, originProtection, rateLimit, requestId } from "@y-core/forge/security";
@@ -23,7 +22,7 @@ token mechanism. See [Security][sec-anchor].
 
 ## Getting started
 
-Two middleware belong at app level, on every route: a request id, and the security headers.
+A request id and the security headers belong at app level, on every route.
 
 ```ts
 app.use("*", requestId());
@@ -31,8 +30,7 @@ app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
 ```
 
 `createSecurityHeaders` mints a fresh nonce per request, substitutes it wherever the `NONCE` placeholder appears in your directives, and queues the
-whole header set on the request's pending-header channel — the app makes a single flushing pass, so no middleware here rebuilds a `Response` merely
-to add a header. Which headers are in that set, and why each default is what it is, are [`SECURITY_HARDENING.md`][sh-2e] §2e's.
+whole header set onto the response. Which headers are in that set, and why each default is what it is, are [`SECURITY_HARDENING.md`][sh-2e] §2e's.
 
 **The one ordering rule:** `createSecurityHeaders` runs before anything that reads the nonce. `requestId` may come first.
 
@@ -117,9 +115,8 @@ change at all ([`src/tooling/assets/README.md`][assets-readme]); why a font CDN 
 ## Opting out of a CSP restriction
 
 Every unsafe CSP keyword stays reachable, but only as a symbol you import by name. The string spelling throws in every directive,
-case-insensitively, at both entry points — `createSecurityHeaders` at construction and `applySecurityHeaders` per call. So a policy snippet pasted
-from elsewhere can never widen the emitted header, and a real weakening is greppable as an `UNSAFE_` import and visible in the diff. Why that
-asymmetry is the control is [`SECURITY_HARDENING.md`][sh-2e] §2e's.
+case-insensitively, at both entry points — `createSecurityHeaders` at construction and `applySecurityHeaders` per call. So a weakening is greppable
+as an `UNSAFE_` import; why that asymmetry is the control is [`SECURITY_HARDENING.md`][sh-2e] §2e's.
 
 The choice you are making is how much you hand back:
 
@@ -140,12 +137,12 @@ app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE, WASM_UNSAFE_EV
 createSecurityHeaders({ scriptSrc: ["'self'", "'wasm-unsafe-eval'"] });
 ```
 
-A symbol goes in any source list and renders as its token in that directive alone; `mergeSecurityHeaders` carries one through like any
-other source. `UnsafeCspSource` is the union type, should you need to name it.
+A symbol goes in any source list and renders as its token in that directive alone; `mergeSecurityHeaders` carries one through like any other
+source. `UnsafeCspSource` is the union type, should you need to name it.
 
 **`UNSAFE_INLINE` beside a nonce or a hash throws.** CSP Level 3 has the browser ignore `'unsafe-inline'` in any directive that also carries a nonce
-or a hash source, so that pair is an opt-out which cannot take effect; the validator refuses it at construction rather than emit a header reading as
-though it had worked. State the directive without the nonce instead: `scriptSrc: ["'self'", UNSAFE_INLINE]`.
+or a hash source, so that pair is an opt-out which cannot take effect; the validator refuses it at construction. State the directive without the
+nonce instead: `scriptSrc: ["'self'", UNSAFE_INLINE]`.
 
 That bites through a merge too. `scriptSrc` defaults to `["'self'", NONCE]` and `mergeSecurityHeaders` backfills that default, so merging
 `{ scriptSrc: [UNSAFE_INLINE] }` onto a base that never mentioned `scriptSrc` yields `'self'`, the nonce and `UNSAFE_INLINE` together — and throws.
@@ -183,7 +180,7 @@ app.use("/api/*", originProtection<AppEnv>({ allowedOrigins: (c) => originsFor(c
 
 > **List the app's own origin in `allowedOrigins`**, or its own same-origin mutations are refused.
 
-The two single-signal tiers `originProtection` is built from are exported too — `crossOriginProtection` (Fetch Metadata only) and `originGuard` (the
+The single-signal tiers `originProtection` is built from are exported too — `crossOriginProtection` (Fetch Metadata only) and `originGuard` (the
 allowlist only, taking a plain `string[]`). Which to reach for, why `same-site` is refused alongside `cross-site`, and why `Sec-Fetch-Site` is a
 veto rather than a pass are [`SECURITY_HARDENING.md`][sh-3e] §3e's. **Pick one tier per route; do not stack them.**
 
@@ -218,8 +215,8 @@ app.use("/form/*", requireFormContentType());
 app.use("/api/*", cors({ origins: ["https://app.example.com", "https://*.preview.example.com"] }));
 ```
 
-`cors` answers preflights with `204` and adds the CORS headers to allowed responses, rebuilding the response rather than mutating headers that may
-be immutable. An `origins` entry is either an exact origin or a single-label subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`,
+`cors` answers preflights with `204` and adds the CORS headers to allowed responses, rebuilding the response rather than mutating its headers. An
+`origins` entry is either an exact origin or a single-label subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`,
 `:`, `@`, `?` and `#`, so `https://a/b.example.com` does not match `https://*.example.com`. The allowlist compiles once, at `cors()` time.
 `matchOrigin(origin, patterns)` is the same test, exported for custom origin logic.
 
@@ -342,7 +339,7 @@ what `extraOrigins` may hold, and how the set reaches the guards, are [`SECURITY
 
 ## Security
 
-This namespace is transport-layer only, and the guards above are building blocks rather than a posture. Pair them to the threat.
+The guards above are building blocks rather than a posture. Pair them to the threat.
 
 **CSRF defence lives in two places, and this namespace holds only one of them.**
 

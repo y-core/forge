@@ -20,7 +20,7 @@ machine-composed is usually four decisions: which sizes, which weights, how wide
 - §5 Tracking: `tracking-tight` above `text-2xl`, and none at all on body copy
 - §6 Numerals that align: what `tabular-nums` costs a jittering value, and where it is owed
 - §6a Before / after — a stat row: a count that shifts sideways on every update
-- §7 Labels: `FIELD_LABEL_CLASSES` through `cn`, and the four properties that drift when retyped
+- §7 Labels: `FIELD_LABEL_CLASSES` through `cn`, and the properties that drift when retyped
 
 ---
 
@@ -38,12 +38,11 @@ Default: body copy is never smaller than `text-sm`, and `text-xs` is reserved fo
 `Field`'s label span and in `Badge` — unless a brief specifies a dense view and the text is not the primary content.
 <!-- rule:forge-ui-type-min-body-size -->
 
-Undersized UI text is one of the clearest tells of unconsidered work: `text-xs` used for a paragraph reads as a screenshot shrunk to fit, and it
-fails the same reader that `forge-ui-contrast-floor` protects.
+Undersized UI text is a tell of unconsidered work: `text-xs` used for a paragraph reads as a screenshot shrunk to fit, and it fails the same reader
+that `forge-ui-contrast-floor` protects.
 
-The scale runs in the other direction too, and the top of it behaves differently: body copy is one size at every viewport width, while a headline
-chosen to outrank it on a wide screen has to survive a 375px one. The ratio that reads as hierarchy at 1280px reads as four wrapped lines at 375px,
-and four wrapped lines are not a headline — they are a paragraph set in the wrong size.
+The top of the scale behaves differently: body copy is one size at every viewport width, while a headline chosen to outrank it on a wide screen has
+to survive a 375px one. A ratio that reads as hierarchy at 1280px reads as four wrapped lines at 375px — a paragraph set in the wrong size.
 
 Default: a step above `text-3xl` is written as the smaller step with the large one raised at a breakpoint — `text-3xl md:text-5xl` — so the headline
 is sized for the narrow viewport and grows, unless the surface states a minimum width it will never render below, such as an embedded view whose
@@ -164,7 +163,7 @@ import { cn, FIELD_LABEL_CLASSES } from "@y-core/forge/ui/core";
 ```
 
 `FIELD_LABEL_CLASSES` is exported precisely so a second definition of "what a label looks like" never appears. It carries the size, the weight, the
-leading, the gap for an adjacent icon, and the disabled-state opacity — all four drift independently once they are retyped.
+leading, the gap for an adjacent icon, and the disabled-state opacity — each drifts independently once it is retyped.
 
 `Label` also takes `required`, which renders its own marker. Reaching for a hand-written asterisk beside a label duplicates a decision the primitive
 already made, and colour alone would not carry it anyway — see `forge-ui-not-color-alone`.

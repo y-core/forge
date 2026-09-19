@@ -17,8 +17,7 @@ Which subpath you reach for is decided by what you are building:
 | `@y-core/forge/auth/web` | mounting pages, guarding routes, or replacing forge's markup |
 | `@y-core/forge/auth/client` | bundling the browser half of the passkey ceremony. A side-effect import with no value exports |
 
-The edge is one-way — `auth/web` imports `auth`, and `auth` never names `auth/web` ([`NAMESPACES.md`][namespaces-5h] §5h). A domain rule that
-wants to redirect returns a reason instead, and the web layer alone turns it into a `Response`.
+The edge is one-way — `auth/web` imports `auth`, and `auth` never names `auth/web` ([`NAMESPACES.md`][namespaces-5h] §5h).
 
 **Standing the capability up is [`AUTH_MOUNTING.md`][am] §1** — the builders, the one order that works, the guard table and the seams you supply.
 **What each flow then does is [`AUTH_FLOWS.md`][af].** This README teaches the calls.
@@ -27,8 +26,8 @@ wants to redirect returns a reason instead, and the web layer alone turns it int
 
 ## Getting started
 
-Everything the auth pages run against is built **per request**, because a passkey ceremony is bound to this request's session and every store
-needs a binding off `c.env`. That per-request builder is the one function you write:
+Everything the auth pages run against is built **per request** — a passkey ceremony is bound to this request's session, and every store needs a
+binding off `c.env`. That builder is the one function you write:
 
 ```ts
 import {
@@ -93,11 +92,10 @@ Hand that to `AuthWebOptions.resolveServices` and mount the route builders as [`
 build.
 
 The seams above with no default and no way to guess them are `notifier` (next section), `defer` and `address`. `defer` must be
-`executionCtx.waitUntil` or an equivalent — doing the work inline reopens the timing oracle the deferred issue exists to close.
+`executionCtx.waitUntil` or an equivalent, never inline.
 
-**`resolveAuthServices` throws rather than returning a `Result`**, because the failures it can have — an `activeKeyId` the ring has no key for, a
-key under 32 bytes, COSE `-8` on a runtime with no Ed25519 — are configuration that cannot work at all. Resolving a binding throws; operating on
-a resolved store answers a `Result` ([`FORGE_ERRORS.md`][eh-5e] §5e).
+**`resolveAuthServices` throws rather than returning a `Result`**: resolving a binding throws, and operating on a resolved store answers a
+`Result` ([`FORGE_ERRORS.md`][eh-5e] §5e).
 
 ---
 
@@ -115,16 +113,15 @@ const factors = createFactorRegistry(enrolments, {
 });
 ```
 
-**Exactly one entry may be `primary`, and only a factor that identifies the visitor may take it** — today `email-otp`, because the visitor types
-the address. A passkey or an authenticator app proves possession and names nobody, so offering either as primary is a type error, and
-`createFactorRegistry` refuses it at construction for a caller casting past the type. `authIdentifies(kind)` is the guard if you need to test
-one.
+**Exactly one entry may be `primary`, and only a factor that identifies the visitor may take it** — today `email-otp`. Offering a passkey or an
+authenticator app as primary is a type error, and `createFactorRegistry` refuses it at construction for a caller casting past the type.
+`authIdentifies(kind)` is the guard if you need to test one.
 
 The choice you are actually making is the `requirement` on each second factor, and [`AUTH_FLOWS.md`][af-2a] §2a is the table of what each one
 demands. Consequences worth knowing before you pick:
 
-- **An all-optional offering makes the enrolment pages unreachable**, because nobody is ever sent to them — §2a says what to do instead.
-- **A primary factor is not available as a second factor.** Proving it again proves nothing new, so it is excluded by construction.
+- **An all-optional offering makes the enrolment pages unreachable** — §2a says what to do instead.
+- **A primary factor is not available as a second factor.**
 
 Each shipped factor is built per request alongside the stores, and each takes one seam that is a `UserStore` read and is easy to miss:
 `EmailOtpOptions.address`, `PasskeyFactorOptions.subject`, `TotpAppFactorOptions.account`. The passkey factor additionally takes **this request's
@@ -153,17 +150,16 @@ const notifier: AuthNotifier = {
 
 `AuthMessage` carries `to`, `kind`, `expiresAt`, and then `code` on an OTP or `url` on an email change. Return `ok()` on success — not
 `undefined` — and `err(new AuthStoreError("unavailable", "notifier.send"))` on failure; the flows read **any** failure as unavailable and refuse
-the attempt rather than reporting a code that never left the building.
+the attempt.
 
-**A code nobody could receive costs no cooldown.** When `send` fails, the email-OTP factor rolls the claimed cooldown back by discarding that
-named code, so a second issue that raced this one and did send is left alone.
+**A code nobody could receive costs no cooldown.** When `send` fails, the email-OTP factor rolls the claimed cooldown back.
 
 ---
 
 ## Signing a visitor in without forge's pages
 
-The flows are callable on their own, and `auth/web`'s actions are thin wrappers over exactly these calls. Sign-in is two requests: a
-request that defers the issue, and a completion.
+The flows are callable on their own, and `auth/web`'s actions are thin wrappers over exactly these calls. Sign-in is two requests: a request that
+defers the issue, and a completion.
 
 ```ts
 const challenge = services.signin.request(email, Date.now()); // returns immediately; the code is deferred
@@ -180,13 +176,11 @@ switch (outcome.data.resolution.status) {
 }
 ```
 
-**`request` returns synchronously and tells an address it knows nothing from one it does not** — the unknown branch spends the same statements
-the known one spends. That is why `AuthSigninOptions` takes `state` and `nonces` even on a deployment whose primary factor is not the emailed
-code: they are the decoy's stores, and a decoy holding none is a latency oracle.
+**`request` returns synchronously, and its unknown-address branch spends the same statements the known one spends.** So `AuthSigninOptions` takes
+`state` and `nonces` even on a deployment whose primary factor is not the emailed code: they are the decoy's stores.
 
-**A resolution that is not `satisfied` is a success, not a refusal.** Needing to enrol or to step up is a normal outcome of a correct sign-in, so
-it is a page to visit rather than a 4xx — [`AUTH_FLOWS.md`][af-2c] §2c is where each one sends the visitor. `requestStepUp` and `stepUp` run the
-second factor for a session that is already signed in.
+**A resolution that is not `satisfied` is a success, not a refusal** — a page to visit rather than a 4xx, and [`AUTH_FLOWS.md`][af-2c] §2c is
+where each one sends the visitor. `requestStepUp` and `stepUp` run the second factor for a session that is already signed in.
 
 **Pass every sign-in refusal through `redactSigninReason` before it reaches a page.** It folds `AuthSigninReason` into the notices a
 visitor may be shown; the unredacted reason is for your logs and your branching ([`AUTH_FLOWS.md`][af-2b] §2b, [`FORGE_ERRORS.md`][eh-1c] §1c).
@@ -209,16 +203,15 @@ if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sent
 return changedPage(outcome.data.user);
 ```
 
-The shape of that snippet is carrying rules of its own. The **error** channel is a union of a reason string and a class, so both arms are told
-apart with `instanceof` rather than by value. The **success** value is discriminated on `status`, because a change takes two links and the first
-one only forwards the second. And a `forwarded` page has to say a step is left — [`AUTH_FLOWS.md`][af-5] §5 owns both stages, why the first
-link goes to the address the account already holds, and why a completed move signs every session out.
+The **error** channel is a union of a reason string and a class, so the two arms are told apart with `instanceof` rather than by value. The
+**success** value is discriminated on `status`, and a `forwarded` page has to say a step is left — [`AUTH_FLOWS.md`][af-5] §5 owns both stages,
+and why a completed move signs every session out.
 
 On the request side, render `AuthEmailChangeRequest.sentTo` and never the address the visitor typed: which address was mailed
 depends on whether the account's own is verified.
 
 The confirmation page is yours to render and `resolveAuthView` does not reach it — it is no `AuthViewName`. Render it through the same document
-shell the auth pages use ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) and it comes out inside the chrome they already render in.
+shell the auth pages use ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6).
 
 ---
 
@@ -226,22 +219,17 @@ shell the auth pages use ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) and it comes
 
 Hand `resolveServices` an **`AdminUserStore`** as its `admin`. Forge builds the `AdminUserService` over it, per request — the read-and-write
 surface the admin routes hold: `list`, `search`, `view`, `countAdmins`, `claimFirst`, `elevate` / `demote`, `deactivate` / `reactivate`, `remove`.
-The service is forge's, not yours to substitute: the admin write path is written against it, and a surface passed in is a surface that write path
-never authorised.
+The service is forge's, not yours to substitute.
 
-**`UserStore` and `AdminUserStore` are two contracts on purpose.** A sign-in service given a `UserStore` cannot delete a user or set the admin
-flag, because neither method is on the type it was given — not merely unused. Build the administrative one only where an administrative route
-needs it.
+**`UserStore` and `AdminUserStore` are two contracts.** A sign-in service given a `UserStore` cannot delete a user or set the admin flag, because
+neither method is on the type it was given. Build the administrative one only where an administrative route needs it.
 
 Every write answers an `AdminUserOutcome` rather than a boolean, so a refusal says which guard fired: `changed`, `not-found`, `admin-exists`,
-`self`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. The service adds no guard of its own — each is
-decided in the statement that writes, so two concurrent demotions leave one admin standing rather than none. What each refusal means to a
-visitor, the prefix-only search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
+`self`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. What each refusal means to a visitor, the prefix-only
+search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
 
-**The first-admin claim needs `AuthWebOptions.bootstrapSecret`, and both halves answer 404 without one.** It grants the administrator role to
-whoever posts first, so it fails closed: a deployment that configures no secret has no claim endpoint at all rather than an open one, and the
-page is not rendered either. Give it a resolver reading the secret off `c.env` per request — a Worker has none until a request carries bindings —
-and the claim form then asks for it alongside the confirmation.
+**The first-admin claim needs `AuthWebOptions.bootstrapSecret`, and both halves answer 404 without one** — no secret, no claim endpoint and no
+page. Give it a resolver reading the secret off `c.env` per request, and the claim form then asks for it alongside the confirmation.
 
 ```ts
 const options: AuthWebOptions<Env> = { ...rest, bootstrapSecret: (c) => c.env.ADMIN_BOOTSTRAP_SECRET };
@@ -249,7 +237,7 @@ const options: AuthWebOptions<Env> = { ...rest, bootstrapSecret: (c) => c.env.AD
 
 **Deactivation takes effect on the next request, not the next sign-in.** `resolveAuthIdentity` re-reads the user every request and answers `null`
 for a deactivated one, dropping that session's auth keys as it does — so reactivating the account does not revive the cookies issued before it,
-and the visitor signs in again. A store outage denies without clearing, because signing every user out of a database blip is the worse failure.
+and the visitor signs in again. A store outage denies without clearing.
 
 ---
 
@@ -267,19 +255,16 @@ from). The guard primitives are exported for a page you route yourself:
 | `requirePendingEnrolment` | **Only** a visitor who owes an enrolment, so an owed step-up cannot be enrolled around |
 | `requireFreshStepUp` | Every safe method, and a state-changing one only behind a recent step-up — or from a user who owes none |
 
-Order is the contract: every guard below `requireAuth` in that table reads the identity it establishes, and a standalone one cannot know what was
-mounted
-before it, so a wrong order fails on the first request rather than at construction.
+Order is the contract: every guard below `requireAuth` in that table reads the identity it establishes, so a wrong order fails on the first
+request rather than at construction.
 
 Read the identity through `authCtx` — `authCtx.get(c)` where a guard has run, `authCtx.getOptional(c)` otherwise. The store is read once per
 request however many guards run, so mounting `resolveAuth` globally costs the guarded routes nothing extra.
 
-**`resolveAuth` is not a gate, and an identity on `authCtx` is not a finished sign-in.** A session is established when the primary factor lands, so
-a visitor who proved one factor of two carries a full identity while the step-up is still owed — which is exactly what the verify page needs, and
-why that group carries `resolveAuth` rather than `requireAuth`. Anything that renders member data must be behind `requireAuth`, which resolves the
-demand and refuses a session owing one; `resolveAuth` in front of it costs nothing. Use `resolveAuth` for what it is for: a nav that greets a
-visitor by name, a page whose anonymous and signed-in renders differ. A page mixing the two needs `requireAuth` on the half that is not public, or
-its own check of `authCtx.get(c).stepUpAt`.
+**`resolveAuth` is not a gate, and an identity on `authCtx` is not a finished sign-in.** A visitor who proved one factor of two carries a full
+identity while the step-up is still owed. Anything that renders member data must be behind `requireAuth`; use `resolveAuth` for a nav that greets
+a visitor by name, or a page whose anonymous and signed-in renders differ. A page mixing the two needs `requireAuth` on the half that is not
+public, or its own check of `authCtx.get(c).stepUpAt`.
 
 **`requireFreshStepUp` is on unless you turn it off**, and `freshStepUpMaxAgeMs` is its window: omit it for `AUTH_FRESH_STEP_UP_MS`, or pass
 `null`, which is the only opt-out. It demands nothing of a user whose own resolution owes no step-up, so a deployment offering no second factor
@@ -307,16 +292,14 @@ const nav = authNav({ signoutPath: paths.auth.signout(), secret: (c) => importCs
 
 Mark each item in your own nav definition with the tokens that may see it — `filters: [AUTH_NAV_FILTERS.anonymous]` on sign-in,
 `[AUTH_NAV_FILTERS.admin]` on an admin destination — and `activeFilters` does the rest. An administrator holds `signedIn` **and** `admin`, so an
-item marked for members does not vanish for them. Which items carry which tokens is yours to decide; the token names are not, or two apps spell
-them differently.
+item marked for members does not vanish for them. Which items carry which tokens is yours to decide.
 
 **Marking an item does not gate the route.** `filters` only decides what the bar paints — the item's `href` is in the delivered HTML whatever the
-viewer holds. The destination still needs its own guard (`requireSignedIn`, `requireAdmin`); the token is there so the bar does not offer a link it
-would only refuse.
+viewer holds. The destination still needs its own guard (`requireSignedIn`, `requireAdmin`).
 
 `authNav` returns a **factory**, so call it at module scope and reuse the resolver it hands back per request: the signing key is then imported per
 isolate rather than on every render. It reads the identity off `authCtx`, so `resolveAuth` or a `requireAuth` must run before the layout renders.
-An anonymous request gets `activeFilters` and an empty slot map, and no key is imported and no token signed.
+An anonymous request gets `activeFilters` and an empty slot map.
 
 ---
 
@@ -344,7 +327,6 @@ Some shipped views take props an override has to supply as well: `PasskeyEnrolVi
 `AdminUserEditView` needs `self`, and `TotpEnrolView` needs `codeDigits` and `codePeriodSeconds` — read off the factor, never hard-coded.
 
 The pages render into the shell your app registers, the same one every other mount renders into ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6).
-`AuthWebOptions` carries no `layout` and no `document`, so there is no second chrome configuration to keep in step.
 
 ---
 
@@ -358,8 +340,8 @@ relative to the stylesheet, and this is what it is from an `src/` beside `node_m
 ```
 
 Tailwind's scanner follows the symlink a `file:` dependency installs, so it works against a local checkout too. **Do not A/B it against your
-built stylesheet to check.** Every class the auth views use is also produced by forge's `ui/core` and `ui/chrome` scan set today, so both
-builds come out the same size — an overlap of the current markup, not a guarantee. The line is still required.
+built stylesheet to check**: every class the auth views use is also produced today by forge's `ui/core` and `ui/chrome` scan set, so both builds
+come out the same size. The line is still required.
 
 The views also draw their glyphs from **your** sprite rather than a bundled one. `AuthWebOptions.icon` is a `ForgeIcon<AuthIconName>`, and that
 union names every symbol it must cover; where to get them is [`AUTH_MOUNTING.md`][am-3] §3.
@@ -377,18 +359,13 @@ import { resume } from "@y-core/forge/ui/client";
 resume();
 ```
 
-**Without that import the ceremony buttons render correctly and do nothing.** The scope is eager, because the markup carries no `data-on-*`
-action of its own and an unsupported browser must be told before the button is pressed rather than after.
+**Without that import the ceremony buttons render correctly and do nothing.**
 
-The server half stamps a declared DOM contract onto the scope root and the browser half reads it back, so neither side hand-writes a string the
-other has to match. Import the `PASSKEY_*` constants from `@y-core/forge/auth` when you render a ceremony root yourself: `PASSKEY` for the
-`data-ref` names, `PASSKEY_SCOPE`, `PASSKEY_MODE_ATTR`, the `PASSKEY_OPTIONS_*` and `PASSKEY_VERIFY_*` path and token attributes,
-`PASSKEY_CSRF_HEADER_ATTR` with
+Import the `PASSKEY_*` constants from `@y-core/forge/auth` when you render a ceremony root yourself: `PASSKEY` for the `data-ref` names,
+`PASSKEY_SCOPE`, `PASSKEY_MODE_ATTR`, the `PASSKEY_OPTIONS_*` and `PASSKEY_VERIFY_*` path and token attributes, `PASSKEY_CSRF_HEADER_ATTR` with
 its `PASSKEY_CSRF_HEADER_DEFAULT`, and `PASSKEY_REDIRECT_ATTR` with its `PASSKEY_REDIRECT_FALLBACK`.
 
-**A token per endpoint, never one shared**, because `csrfProtection` binds a token to a path and a ceremony spans two endpoints — naming them
-apart is what stops
-either being sent to the wrong one ([`AUTH_FLOWS.md`][af-3] §3).
+**A token per endpoint, never one shared** — `csrfProtection` binds a token to a path, and a ceremony spans two ([`AUTH_FLOWS.md`][af-3] §3).
 
 To react to a ceremony from your own code, listen for `PASSKEY_OUTCOME_EVENT` on the scope root: its `detail` is a `PasskeyOutcomeDetail`, whose
 `reason` is absent exactly when the ceremony succeeded. The scope root is hand-rendered rather than wrapped in `Resumable`
@@ -400,25 +377,22 @@ To react to a ceremony from your own code, listen for `PASSKEY_OUTCOME_EVENT` on
 
 `encodeAuthToken(ring, purpose, payload, ttlMs, options?)` seals a payload under AES-256-GCM with a per-purpose subkey, and `decodeAuthToken`
 answers a `Result<AuthTokenClaims, AuthTokenReason>`. Use them where a value has to survive a round trip through an email or a URL and must not
-be readable on the way — which is why the email-change confirmation is encrypted rather than merely signed: a URL lands in browser history, the
-`Referer` header, link scanners and proxy logs.
+be readable on the way.
 
 A token is authenticated before it is judged expired, so a reason is trustworthy when you get one. `AuthTokenReason` is for your logs and your
 branching, never for a client.
 
-**Every `AuthTokenPurpose` is taken, and `identity` in particular is not a spare.** It is the email-change purpose and nothing else uses it; minting
-a second use against it would open every email-change token to whatever the new caller accepts as a payload. A genuinely new use needs a purpose of
-its own, which is a change to this namespace rather than a call you can make.
+**Every `AuthTokenPurpose` is taken, and `identity` in particular is not a spare** — it is the email-change purpose. A genuinely new use needs a
+purpose of its own, which is a change to this namespace rather than a call you can make.
 
-`authNonceKey(ring, token)` derives the key to spend a token against a `NonceStore` — an HMAC under a secret subkey rather than a bare hash of
-the token, so holding the token is not enough to ask the nonce store whether it has been used.
+`authNonceKey(ring, token)` derives the key to spend a token against a `NonceStore`.
 
 ---
 
 ## Applying the auth schema to your database
 
-`src/auth/schema.sql` is the **desired state** — what the schema is, as one readable file. **This library ships no SQL that runs**, and nothing
-is generated beside it. Your app names the file by path in its own host config, alongside its own:
+`src/auth/schema.sql` is the **desired state**. **This library ships no SQL that runs**, and nothing is generated beside it. Your app names the
+file by path in its own host config, alongside its own:
 
 ```ts
 // config/db.ts
@@ -441,20 +415,19 @@ For a database that will never be migrated, the desired state is also the one-sh
 wrangler d1 execute <DATABASE> --file node_modules/@y-core/forge/src/auth/schema.sql
 ```
 
-The tables carry rulings that change what you write against them. **The `auth_` prefix is fixed** — making it configurable would need raw
-identifier concatenation, which `src/storage/db/sql.ts` exists to forbid. And **case-insensitive addresses are a column, not a collation**: every
-write feeds `email_key` with `normalizeEmail(email)`, which trims, applies NFKC and lowercases, and a `CHECK` refuses an address that expands
-past 254 characters. Plus tags and dots in the local part are **kept** — `aurora+news@` is a different mailbox from `aurora@` everywhere except
-Gmail.
+The tables carry rulings that change what you write against them. **The `auth_` prefix is fixed.** And **case-insensitive addresses are a column,
+not a collation**: every write feeds `email_key` with `normalizeEmail(email)`, which trims, applies NFKC and lowercases, and a `CHECK` refuses an
+address that expands past 254 characters. Plus tags and dots in the local part are **kept** — `aurora+news@` is a different mailbox from
+`aurora@` everywhere except Gmail.
 
-No table carries a TTL and none needs one: every read holds a row against the clock, so an expired row is already inert.
+No table carries a TTL: every read holds a row against the clock.
 
 ---
 
 ## Rotating the signing secret
 
-A rotation is prepending a secret. `importAuthKeyRing` takes hex root secrets **newest first**, and each key id is derived from the key material
-rather than typed, so the id in a token frame and the id in the ring can never disagree:
+A rotation is prepending a secret. `importAuthKeyRing` takes hex root secrets **newest first**, and derives each key id from the key material
+rather than taking one you type:
 
 ```ts
 const keys = await importAuthKeyRing([c.env.AUTH_SECRET_NEW, c.env.AUTH_SECRET_OLD]);
@@ -472,8 +445,8 @@ from Worker secrets, never from a literal.
 
 ## Clearing expired challenges and nonces
 
-Challenges and one-shot nonces live on the same D1 binding every durable store does, and SQLite keeps an expired row where KV would have dropped
-it. Call the purge from your Worker's scheduled handler:
+Challenges and one-shot nonces live on the same D1 binding every durable store does, and SQLite keeps an expired row. Call the purge from your
+Worker's scheduled handler:
 
 ```ts
 export default {
@@ -483,20 +456,17 @@ export default {
 };
 ```
 
-**A deployment that never calls it is slower, not wrong.** Correctness rests on the `expires_at` predicate every read carries, never on a row
-being gone.
+**A deployment that never calls it is slower, not wrong.** Correctness rests on the `expires_at` predicate every read carries.
 
 `createChallengeStore(db, { prefix })` and `createNonceStore(db, { prefix })` namespace their key text inside those shared tables. Omit `prefix`
-for the default; an empty string is **refused**, because it drops the separator with it and the store then shares a keyspace with every other
-store on the binding.
+for the default; an empty string is **refused**.
 
 ---
 
 ## Backing a store contract yourself
 
-Every store is a contract with a shipped D1 adapter, and each adapter is named for the contract it fulfils rather than the product beneath it
-([`NAMESPACES.md`][namespaces-5h] §5h). To back one with something else, implement the contract — and know that **the methods below carry rules the
-caller does none of**, because they are decided in the statement that writes:
+Every store is a contract with a shipped D1 adapter ([`NAMESPACES.md`][namespaces-5h] §5h). To back one with something else, implement the
+contract — and know that **the methods below carry rules the caller does none of**:
 
 | Method | What your statement must do |
 | --- | --- |
@@ -518,16 +488,14 @@ Contract-wide rules hold for every method you write:
 violation the caller can act on, `invalid` says the caller's own value was refused (rendering that as an outage tells a visitor the deployment is
 down when their address was simply too long), and `unavailable` is everything else.
 
-`ChallengeStore` and `NonceStore` are shapes rather than tables, and both are load-bearing: `ChallengeStore.take` is **read-and-delete**, which
-makes "clear the challenge even when verification fails" structural rather than a branch someone forgets; and `NonceStore.markConsumed` reports
-`true` **only the first time**, which is what makes a consumed token stay consumed past its own expiry.
+`ChallengeStore` and `NonceStore` are shapes rather than tables, and both are load-bearing: `ChallengeStore.take` is **read-and-delete**, and
+`NonceStore.markConsumed` reports `true` **only the first time**.
 
 ---
 
 ## Testing a mount
 
-[`src/auth/web/mount.test.ts`](./web/mount.test.ts) is a working mount driven end to end, and reading it is the shortest way in. What follows
-about testing this capability is not derivable from any signature.
+[`src/auth/web/mount.test.ts`](./web/mount.test.ts) is a working mount driven end to end, and reading it is the shortest way in.
 
 **Use `fakeAuthD1` for the durable side and `fakeKV` for the session.** State an account in domain terms and the fake answers the user and factor
 stores' own statements, binding each id as its 16 `BLOB` bytes:
@@ -560,31 +528,24 @@ wrong layer.
 
 **Never render a reason a flow or a store hands back.** `redactSigninReason` is required at the rendering boundary, and `AuthEmailChangeReason`,
 `AuthFactorReason`, `AuthTokenReason` and `AuthStoreError` have no equivalent — they are for logs and branching only ([`FORGE_ERRORS.md`][eh-1c]
-§1c). Telling a known address from an unknown one is the account-enumeration oracle the whole deferred-issue design exists to close.
+§1c).
 
 **Session lifetime is absolute, and two bounds refuse one.** A session is refused once it is older than `AUTH_SESSION_MAX_MS` measured from when
-it was established and never refreshed — a sliding window is one an attacker who took a session can keep alive forever — and again when it was
-established at or before the account's revocation barrier, which is how removing a passkey, removing the authenticator-app factor or completing
-an address change reaches sessions this request cannot see. A session carrying no established-at stamp is over rather than unbounded, so the
-deployment that adds this signs its live population out once.
+it was established and never refreshed, and again when it was established at or before the account's revocation barrier — which is how removing a
+passkey, removing the authenticator-app factor or completing an address change reaches sessions this request cannot see. A session carrying no
+established-at stamp is over rather than unbounded, so the deployment that adds this signs its live population out once.
 
-**The emailed code is rate-limited by a cooldown, not by a count, and the difference matters.** Issuing needs only an address, so any
-per-identity ceiling is a budget an unauthenticated attacker can spend on the victim's behalf — a handful of posts naming an address would buy a day
-with no email-OTP, which where it is the primary factor is a repeatable account outage. A cooldown bounds the mail one address can trigger while
-leaving the victim a minute from a code. **Bounding a caller's rate is a different control, and forge ships no numbers for it**
-([`AUTH_FLOWS.md`][af-7] §7).
+**The emailed code is rate-limited by a cooldown, not by a count.** **Bounding a caller's rate is a different control, and forge ships no numbers
+for it** ([`AUTH_FLOWS.md`][af-7] §7).
 
 **A credential this runtime cannot verify is never advertised.** `AUTH_SUPPORTED_ALGORITHMS` is the default set, and COSE `-8` is opt-in behind a
-probe that throws at resolution rather than at the first sign-in ([`NAMESPACES.md`][namespaces-5h] §5h). Enrolling a credential nothing can check
-locks a user out of the account they just made.
+probe that throws at resolution rather than at the first sign-in ([`NAMESPACES.md`][namespaces-5h] §5h).
 
-**Forge's own auth pages default to `Cache-Control: no-store`** — a sign-in, an account or an admin page has no business in a shared cache or on
-the back button after a sign-out — and carry `robots: "noindex"`. The header is merged rather than imposed, so a page naming its own still wins;
-a page you route yourself has to set both.
+**Forge's own auth pages default to `Cache-Control: no-store`** and carry `robots: "noindex"`. The header is merged rather than imposed, so a page
+naming its own still wins; a page you route yourself has to set both.
 
-**Mount `csrfProtection` after the session middleware, never before.** Its subject resolver runs ahead of `next()`, so one mounted first reads no
-session, binds the token to nobody, and refuses every mutation with a `[csrf]` warning. The chain order that gets this right is
-[`AUTH_MOUNTING.md`][am-1] §1's.
+**Mount `csrfProtection` after the session middleware, never before.** Its subject resolver runs ahead of `next()`, so one mounted first binds the
+token to nobody and refuses every mutation with a `[csrf]` warning. The chain order that gets this right is [`AUTH_MOUNTING.md`][am-1] §1's.
 
 ---
 
@@ -592,28 +553,22 @@ session, binds the token to nobody, and refuses every mutation with a `[csrf]` w
 
 **Every store method is total, including on input you never validated.** An id that is not a canonical UUID answers what that method calls no
 such row — `null`, `false`, or `"not-found"` — and binds no statement at all, so a crafted `?after=u9` is an empty page and not a 500. An insert
-is the one shape with no in-band answer of that kind, so a malformed owner id comes back as `unavailable`, which is what the foreign key would
-have said.
+is the one shape with no in-band answer of that kind, so a malformed owner id comes back as `unavailable`.
 
-**`list` and `search` clamp `limit` in the adapter.** SQLite reads `LIMIT -1` as no limit, so an unclamped page size is a whole-table read a
-query string could ask for.
+**`list` and `search` clamp `limit` in the adapter.**
 
 **Deleting a user removes its children in one batch, and the batch rolls back whole.** The `ON DELETE CASCADE` clauses in the schema are
-documentation: D1 does not guarantee `PRAGMA foreign_keys` is on, so correctness cannot rest on it.
+documentation: D1 does not guarantee `PRAGMA foreign_keys` is on.
 
 **`AuthFactorService` is a union discriminated on `enrolment`, at the top level.** Write `if (service.enrolment === "explicit")` to reach
-`beginEnrolment` and `completeEnrolment`; the discriminant is not nested inside `capabilities` because TypeScript narrows only a direct one, and
-a nested one is the shape that gets papered over with a cast.
+`beginEnrolment` and `completeEnrolment`.
 
-**Offering an implicit factor as a second factor never owes an enrolment.** It has no factor row by design, so it is confirmed the moment it is
-offered and always satisfies the step-up, whatever requirement you give it.
+**Offering an implicit factor as a second factor never owes an enrolment.** It is confirmed the moment it is offered and always satisfies the
+step-up, whatever requirement you give it.
 
 **`authFactorContext(subject)` is the only place forge turns a subject into a role**, mapping `isAdmin` to `AUTH_ADMIN_ROLE`. Passing no context
-at all silently degrades `mandatoryForRoles` to `optional`, which is why no caller in forge does; `resolve(userId, context?)` takes a context of
-your own for a deployment whose roles go beyond `isAdmin`.
-
-**`UserStore.findByWebAuthnId` and the branch of `verifyPasskeyAuthentication` that resolves an account from a user handle alone have no caller in
-forge, and are kept deliberately.** They are the substrate a discoverable login would need, unit-tested and unused.
+at all silently degrades `mandatoryForRoles` to `optional`; `resolve(userId, context?)` takes a context of your own for a deployment whose roles
+go beyond `isAdmin`.
 
 ---
 

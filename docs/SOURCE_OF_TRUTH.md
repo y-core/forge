@@ -43,8 +43,8 @@ audience: internal
 **When a row names a file, that file wins.** A governing document that contradicts it is wrong by default, and the fix is to delete the prose rather
 than to reconcile the two.
 
-The practical instruction: before writing a signature, a constant, a step count, or a file inventory into any document, check whether a row already
-owns it. If one does, **cite the file and stop**.
+Before writing a signature, a constant, a step count, or a file inventory into any document, check whether a row already owns it. If one does,
+**cite the file and stop**.
 
 ### 1b. Adding a Row
 
@@ -179,7 +179,7 @@ the document without moving the row is how a second copy starts.
 
 ## 3. Rows That Name More Than One File
 
-Some rows name more than one file. In each case the concern genuinely spans them, and naming one would send half of its readers to the wrong place.
+In each case the concern genuinely spans the files named, and naming one alone would send half of its readers to the wrong place.
 
 ### 3a. The Barrel Row
 

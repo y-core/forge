@@ -8,14 +8,13 @@ description: "When a surface may lift off the page, and what shadow, border and 
 Everything here is a **Default** — rebuttable only by an explicit written brief, never by preference. The Floor rules cited below are not.
 
 Depth in forge is not decoration. It is a claim about distance: a raised surface is asserting that it sits _closer to the user_ than what it covers.
-The ladder below expresses every distance a product UI has, and forge's primitives already occupy each level, so the design work is choosing a level
-rather than inventing one.
+Forge's primitives already occupy each level of the ladder below, so the design work is choosing a level rather than inventing one.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 The ladder: every distance a product UI has, and the primitive that already occupies each
+- §1 The ladder: the distances a product UI has, and the primitive that already occupies each
 - §1a The two modes spell a level differently: a cast shadow in light, a rim and a falloff in dark
 - §1b Claiming a level: reach for the primitive, raise only what is closer, and keep the body flat
 - §2 Choosing a separator: spacing, a background token, a hairline, a shadow — cheapest first
@@ -41,11 +40,11 @@ Every one of those shadow classes is what the primitive already renders — `Car
 
 ### 1a. The two modes spell a level differently
 
-The two modes spell that claim differently, and the shadow token does the switching so a component does not. In light a level is a cast shadow. In
-dark black ink over a near-black surface would render nothing, so the same value drops the cast layers and carries the level with a 1px inset rim
-plus a soft outer falloff whose radius is the level — a clean edge transition, not a glow, and the falloff is the fainter of the two for exactly
-that reason. Both spellings come out of the `--cast-*` and `--rim-*` families in `src/ui/assets/css/theme-colors.css`; the geometry is Tailwind's,
-unchanged, in `theme-base.css`. Nothing about choosing a level changes: it is still the primitive you reach for.
+The shadow token does the switching, so a component does not. In light a level is a cast shadow. In dark black ink over a near-black surface would
+render nothing, so the same value drops the cast layers and carries the level with a 1px inset rim plus a soft outer falloff whose radius is the
+level — a clean edge transition, not a glow, and the falloff is the fainter of the two for exactly that reason. Both spellings come out of the
+`--cast-*` and `--rim-*` families in `src/ui/assets/css/theme-colors.css`; the geometry is Tailwind's, unchanged, in `theme-base.css`. Nothing about
+choosing a level changes: it is still the primitive you reach for.
 
 ### 1b. Claiming a level
 
@@ -73,7 +72,7 @@ Override when the platform's focus trap is the point — a flow that is genuinel
 
 ## 2. Choosing a separator
 
-Given two regions that must read as distinct, three things separate them and they are not interchangeable.
+Given two regions that must read as distinct, the devices that separate them are not interchangeable.
 
 | Given | Choose | Because |
 | --- | --- | --- |
@@ -194,9 +193,8 @@ already models.
 
 ## 5. Radius
 
-Forge has one radius. `--radius` is declared in `src/ui/assets/css/theme-base.css`, and `--radius-sm`, `--radius-md`, `--radius-lg` and
-`--radius-xl` are computed from it — so a theme that moves `--radius` moves the whole family together, and `forge-ui-one-radius` holds automatically
-as long as you take a step from the family rather than an arbitrary value.
+Forge has one radius: `--radius`, declared in `src/ui/assets/css/theme-base.css`, with `--radius-sm`, `--radius-md`, `--radius-lg` and
+`--radius-xl` computed from it. `forge-ui-one-radius` holds as long as you take a step from the family rather than an arbitrary value.
 
 **Default: let the radius step follow the elevation step rather than the element's size.**
 <!-- rule:forge-ui-depth-radius-tracks-level -->

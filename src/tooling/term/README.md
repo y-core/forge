@@ -11,7 +11,7 @@ built from four code points is one cell. This namespace holds the measuring and 
 expression.
 
 Reach for it when output has to line up, fit a window, or carry colour. An application's own `config/commands.ts` renders with the same primitives
-forge does, which is why this is a published subpath rather than an internal directory.
+forge does.
 
 ```ts
 import { createColorize, definitionList, renderGrid, resolveColorLevel, stringWidth } from "@y-core/forge/tooling/term";
@@ -52,9 +52,8 @@ The options that matter are the ones that decide what happens when the content i
 - **`border`** — `none`, `ascii`, `single` or `markdown`. `none` is not "spaces instead of lines": it is a border whose every slot is zero width,
   and a zero-width slot is skipped rather than drawn.
 
-When the grid still will not fit, width comes off the **widest** column still above its floor, repeatedly. Spreading the loss is what keeps a narrow
-window readable — draining one column first produces a stack of single letters. A wrapping column stops at about a word, a truncating one at `abc…`,
-and when every column has hit its floor the grid overflows, which is the honest outcome.
+When the grid still will not fit, width comes off the **widest** column still above its floor, repeatedly. A wrapping column stops at about a word,
+a truncating one at `abc…`, and when every column has hit its floor the grid overflows.
 
 ---
 
@@ -84,8 +83,7 @@ stringWidth("日本語"); // 6
 stringWidth("[31mred[39m"); // 3
 ```
 
-`truncate` returns the width alongside the text, so a caller laying out a column never measures the same string twice and the two can never
-disagree.
+`truncate` returns the width alongside the text, so a caller laying out a column never measures the same string twice.
 
 ---
 
@@ -108,23 +106,20 @@ styler that returns its input — the right default for a renderer whose caller 
 ## Gotchas
 
 **`RE_ANSI` is for replacement only — never scan with it.** It carries `g`, and a `g`-flagged `.test()` with a manually assigned `lastIndex`
-searches _from_ that offset rather than anchoring _at_ it, so a later match is consumed together with every visible character in between. That is a
-documented bug in the reference this was taken from; `width.ts` compiles its own `"y"`-flagged clone for exactly that reason.
+searches _from_ that offset rather than anchoring _at_ it, so a later match is consumed together with every visible character in between. Scan with
+a `"y"`-flagged clone instead.
 
-**Colour is threaded, never ambient.** There is no detected module-level singleton — `CODE_RULES.md` §1 bans the global that would hold it, and one
-level could not express what forge needs anyway: `forge verify > log.txt` must still colour progress on the attached stderr while the redirected
-stdout stays clean, so `execute()` resolves two. Renderers take a `Colorize` defaulting to `PLAIN`.
+**Colour is threaded, never ambient.** One level could not express what forge needs: `forge verify > log.txt` must still colour progress on the
+attached stderr while the redirected stdout stays clean, so `execute()` resolves two. Renderers take a `Colorize` defaulting to `PLAIN`.
 
 **Nesting restores the outer style rather than resetting**, so `red(green(x) + "y")` comes back red. A style is also closed at every newline and
 reopened after it, so a background colour cannot bleed to the right edge and a multi-line cell cannot break the grid drawn around it. `wrapLines`
 reopens on each line whatever was still open when the previous one ended, for the same reason.
 
-**Grids are rectangular.** No row or column spanning, and no junction selection beyond the corners, because nothing forge prints has needed
-either.
+**Grids are rectangular.** No row or column spanning, and no junction selection beyond the corners.
 
 **This namespace is a sink.** It imports `node:process` and nothing else in this repository — not `tooling/cli`, not `result`. Consumption runs
-`tooling/{cli,gate,release,cf} → tooling/term` and never the reverse, and if `term` ever wants a `CliError` that is the signal it has taken on a
-concern belonging elsewhere, not a reason to add the import.
+`tooling/{cli,gate,release,cf} → tooling/term` and never the reverse.
 
 ---
 

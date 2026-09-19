@@ -38,9 +38,8 @@ log.warn("retrying webhook", { attempt: 2 });
 await log.flush(); // settle the writes already started
 ```
 
-Every record carries `level`, `prefix`, `message`, an ISO `timestamp`, and whatever `data` you passed merged over the logger's `bindings`. The
-message stays a static, greppable label and the variable part goes in fields — that is the rule, and it is also a PII control
-([`BOUNDARIES.md`][boundaries-4] §4).
+Every record carries `level`, `prefix`, `message`, an ISO `timestamp`, and whatever `data` you passed merged over the logger's `bindings`. Keep the
+message a static, greppable label and put the variable part in fields ([`BOUNDARIES.md`][boundaries-4] §4).
 
 `child(bindings)` clones a logger with extra fields, sharing its channels and its pending-write queue. This is how per-request context travels:
 
@@ -49,14 +48,14 @@ const requestLog = log.child({ requestId: "req_abc" });
 requestLog.info("handler entered"); // record.data carries requestId
 ```
 
-An asynchronous channel write does not block the call — the logger tracks it and `flush()` awaits what it is holding.
+An asynchronous channel write does not block the call; `flush()` awaits what the logger is holding.
 
 ---
 
 ## Sending records to more than one place
 
-A logger writes to every channel in its list. The usual production pair is console plus KV: the console stream is what you watch live, the KV
-stream is what you read back. Neither one waits for the other.
+A logger writes to every channel in its list, and neither waits for the other. The usual production pair is console plus KV: the console stream is
+what you watch live, the KV stream what you read back.
 
 Resolve the list from the request context so a missing binding degrades instead of throwing — locally, without `wrangler`, `LOGS_KV` is unbound.
 That fallback is the canonical form and [`STRUCTURED_LOGGING.md`][sl-2d] §2d owns it:
@@ -72,8 +71,7 @@ in your `data`, so a caller cannot forge them. `kvLogChannel(kv, options?)` is r
 
 ## Persisting logs to KV
 
-`kvLogChannel(env.LOGS_KV, options?)` persists each record under a time-ordered key and stores a small metadata blob alongside it, so the viewer can
-list rows without reading each one. Keys sort newest-first by construction; the format and what a purge deletes are
+`kvLogChannel(env.LOGS_KV, options?)` persists each record under a time-ordered key, newest first. The key format and what a purge deletes are
 [`STRUCTURED_LOGGING.md`][sl-2g] §2g's.
 
 ```ts
@@ -126,8 +124,7 @@ const fromEnv = [withLevels(consoleChannel(), parseLogLevels(env.LOG_LEVEL, LOG_
 ```
 
 `parseLogLevel(value, fallback)` is the single-level form, for a `minLevel` driven by a `LOG_LEVEL` variable. Both parsers are case-insensitive and
-fall back rather than failing, so a typo degrades to the configured default instead of to silence. `levelAtLeast(level, min)` compares two levels in
-the `debug < info < warn < error` ordering, and `LOG_LEVELS` is that ordering as a tuple.
+fall back rather than failing, so a typo degrades to the configured default instead of to silence.
 
 Both wrappers pass `read` and `readEntry` through untouched — writes go quiet, history stays readable.
 
@@ -167,10 +164,9 @@ page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4a's.
 
 `prefix` defaults to `"request"` if you do not set one, and `minLevel` may be a level or a per-request function of the context.
 
-**A 500 persists as two correlated records.** The app's error boundary sits below this middleware, so a throwing handler is already a 500 response
-by the time the summary is written — the summary shows `status: 500` and no error detail. The boundary publishes the detail separately on the same
-per-request logger, as an `error` record with the message `unhandled error` carrying the serialized error under `data.error`. Deduplicating the
-pair is out of scope; `message === "unhandled error"` tells them apart.
+**A 500 persists as two correlated records.** The summary shows `status: 500` and no error detail; the app's error boundary publishes the detail
+separately on the same per-request logger, as an `error` record with the message `unhandled error` carrying the serialized error under `data.error`.
+Nothing deduplicates the pair — `message === "unhandled error"` tells them apart.
 
 ---
 
@@ -199,8 +195,9 @@ The field classes that must never reach a record, and why console output counts 
 
 **Every logger redacts every record, on every channel, with no configuration.** A key is matched by normalized substring — lowercased, `_` and `-`
 dropped — so `email`, `emailAddress`, `user_email` and a nested `user.email` are all masked, at any depth, inside arrays and `Map`s too. The masked
-value becomes the fixed literal `"[redacted]"`, never a length-preserving one. The default set covers §4a's classes: emails, display names,
-passwords, keys, tokens, secrets, request bodies and credential headers.
+value becomes the fixed literal `"[redacted]"`, never a length-preserving one. The default set carries emails, display names, passwords, keys,
+tokens, secrets, request bodies and credential headers — not the whole of §4a. A bare `name` and a bare `message` are deliberately absent
+([`STRUCTURED_LOGGING.md`][sl-2e] §2e), so an application whose own fields are spelled that way adds them through `also`.
 
 The controls that adjust it are both bare key stems:
 
@@ -213,10 +210,9 @@ const log = createLogger("billing", {
 });
 ```
 
-The default set over-captures on purpose — `tokenCount` and `emailVerifiedAt` are masked — because a lost debugging field announces itself and a
-leak does not. `allow` is the hatch for the ones you miss. `mode: "remove"` drops the key instead of masking it, at the cost of the signal that
-something was suppressed. `redact: "allow-unredacted-logs"` turns the pass off for the whole logger, and is spelled that way so it is greppable in
-review.
+The default set over-captures on purpose — `tokenCount` and `emailVerifiedAt` are masked — and `allow` is the hatch for the ones you miss.
+`mode: "remove"` drops the key instead of masking it, at the cost of the signal that something was suppressed.
+`redact: "allow-unredacted-logs"` turns the pass off for the whole logger, and is spelled that way so it is greppable in review.
 
 **If the redaction itself fails, you lose the fields and keep the line.** A getter that throws, a `toJSON` that throws, or a structure too deep to
 walk is reported through `onChannelError`, and the record is written with its `data` replaced by `{ redactionFailed: true }` — the exported
@@ -279,9 +275,8 @@ cannot become a second failure on the request path.
 
 ## Mounting the log viewer
 
-`@y-core/forge/logging/show` exports one loader, `loadLogViewer`, plus the two types it takes. Everything that renders a record is internal, so a
-viewer that skipped the access check cannot be built. A single call in a `definePage` loader is the entire mount — a loader returning a `Response`
-short-circuits rendering, so the `view` never runs:
+A single call to `loadLogViewer` in a `definePage` loader is the entire mount — a loader returning a `Response` short-circuits rendering, so the
+`view` never runs:
 
 ```ts
 import { definePage } from "@y-core/forge/app";
@@ -303,18 +298,15 @@ export const logsPage = definePage<AppEnv, AppConfig>({
 });
 ```
 
-`access` and `icon` are required at the type level rather than defaulted, and [`STRUCTURED_LOGGING.md`][sl-5b] §5b says why: logs expose request
-paths, request ids and error messages — a deliberately public mount opts out with the greppable literal `"allow-unauthenticated"` — and this
-namespace need not own an icon set. `basePath` is the URL the viewer is mounted at and is what its own HTMX requests target.
+`access` and `icon` are required rather than defaulted, for the reasons [`STRUCTURED_LOGGING.md`][sl-5b] §5b gives; a deliberately public mount opts
+out with the greppable literal `"allow-unauthenticated"`. `basePath` is the URL the viewer is mounted at, and what its own HTMX requests target.
 
 The loader answers every path itself — the page, the filtered `<tbody>`, the next page of rows, the expanded detail row — in the order
-[`STRUCTURED_LOGGING.md`][sl-5a] §5a sets out. Behaviours worth knowing before you mount it: a channel with no `read` renders an empty
-table rather than an error, and a `read` that _rejects_ is caught and drawn in place as an alert with a retry, with the reason withheld because a
-channel error can name a binding or a key prefix.
+[`STRUCTURED_LOGGING.md`][sl-5a] §5a sets out. A channel with no `read` renders an empty table rather than an error, and a `read` that _rejects_ is
+drawn in place as an alert with a retry, the reason withheld because a channel error can name a binding or a key prefix.
 
 The viewer renders into the shell you registered with `createApp({ shell })` ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) and builds no document of its
-own. That is what puts it inside your nav and your theme — a viewer with its own bare `<html>` would put dark mode out of reach, since the dark
-class and the pre-paint script live on the document. With no shell registered it renders bare and unstyled.
+own, so it sits inside your nav and your theme. With no shell registered it renders bare and unstyled.
 
 For the table to fill the viewport instead of growing the page, the shell's content must be a direct child of a flex column that goes _definite_:
 
@@ -364,18 +356,10 @@ applies `level` and `q` to that page, and returns `complete` plus a `cursor` whe
 `level` or `q` may match nothing on page one. Follow the cursor. The viewer's empty state says exactly this rather than claiming there were no
 matches.
 
-**`flush()` settles the writes already started — it is not a barrier.** Anything dispatched after the splice belongs to the next flush. This is why
-the error boundary schedules its own flush for both records it writes on a 500 — the per-request `unhandled error` and the app logger's
-`Unhandled error`. `requestLogger`'s window has closed by then, and the logger passed to `createApp` has no middleware to flush it at all, so on an
-asynchronous channel either record would otherwise be lost to isolate teardown.
+**`flush()` settles the writes already started — it is not a barrier.** Anything dispatched after it belongs to the next flush.
 
-**A selected purge is inside the `write` promise, not detached.** So `flush()` and `waitUntil()` hold the isolate open until the sweep finishes —
-the alternative is a sweep cancelled mid-pass, which is exactly when the soft cap stops being enforced. On the small fraction of writes that trigger
-one, the flush window covers a `list` and a series of delete batches, post-response under `waitUntil`.
-
-**`record.data` is cloned into a JSON-faithful shape before any channel sees it**, not only before it is persisted. `Date`, `Map` and `Set` carry
-their payload outside enumerable own properties, so each gets an explicit form instead of flattening to `{}`; a reference that reappears on its own
-path becomes `"[circular]"`, so a cyclic structure logs rather than overflowing the stack. Your own object is untouched.
+**A selected purge is inside the `write` promise, not detached**, so `flush()` and `waitUntil()` hold the isolate open until the sweep finishes. On
+the small fraction of writes that trigger one, that window covers a `list` and a series of delete batches, post-response under `waitUntil`.
 
 **A value's own `toJSON` decides its logged form, on every channel.** Give a domain object a `toJSON` that drops its secret, and what you verified
 on the console is what persists. A `URL` is the exception: it logs as `origin + pathname` everywhere, so log a query parameter you need as its own

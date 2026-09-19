@@ -21,7 +21,7 @@ audience: consumer
 - §2b consoleChannel for Development: write-only structured JSON
 - §2c kvLogChannel for Production Persistence: symmetric read/write over KV
 - §2d Channel Selection by Environment: the canonical fallback pattern
-- §2e Redaction Is Logger-Wide and On by Default: the default policy, its two controls, and `persistStack`
+- §2e Redaction Is Logger-Wide and On by Default: the default policy, its controls, and `persistStack`
 - §2f Channel Write Failures and `flush`'s Error Contract: what absorbs a failed write, and who observes it
 - §2g Log Ordering — Newest First by Inverted Key: the key format, the clamps, and what purge deletes
 - §2h One Value, One Meaning Across Sinks: `toJSON`, a narrowed `URL` and one redacted clone, on every channel
@@ -34,7 +34,7 @@ audience: consumer
 - §4c Silencing and Level Allowlists: `withLevels`, and why "off" is a value not a shape
 - §5 Log Viewer (logging/show): the auth-gated mount
 - §5a loadLogViewer — Auth-Gated Response for Every Path: the ordered contract
-- §5b Why access and icon Are Required Options: the two obligations the type enforces
+- §5b Why access and icon Are Required Options: the obligations the type enforces
 - §6 No-PII Rule and Structured Fields: pointer to the governance rule that owns it
 
 ---
@@ -61,8 +61,7 @@ binding. **Pair it with `consoleChannel` for dual output** — see §2d for the 
 `record.data` is cloned into a JSON-faithful shape before persistence. `Date`, `Map` and `Set` carry their payload outside enumerable own
 properties, so each gets an explicit form instead of being flattened to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and
 `{ type: "Set", values: […] }`. A reference that reappears on its own path becomes `"[circular]"`, so a cyclic structure stores rather than
-overflowing the stack. A value's own `toJSON` is honoured, and a `URL` narrows to `origin + pathname` — both on every channel, which is §2h's
-invariant rather than this section's.
+overflowing the stack. `toJSON` handling and `URL` narrowing are §2h's, and hold on every channel.
 
 **The key format is §2g's**, and the viewer inherits its ordering from it.
 
@@ -90,17 +89,18 @@ Exact-key matching fails silently by leaking; substring matching fails loudly by
 was), which is the direction §5 fail-closed chooses. The over-capture is deliberate and pinned by test — `tokenCount` and `emailVerifiedAt` are
 masked — and `allow` is what pays for it.
 
-**The default set covers §4a's field classes** and is owned by `src/logging/redact.ts`. A bare `name` and a bare `message` are deliberately
-**absent**, each pinned by a deletion check: `name` under substring matching would take `hostname`, `filename` and `SerializedError.name` — the only
-place a thrown value's type survives — and `message` would mask `error.message` on every error record in the system. An opaque user id is absent for
-the opposite reason: §4a directs an application to log one, so a `userid` stem would redact the affordance §4a sanctions.
+**The default set covers the §4a field classes a library-wide stem can carry**, and is owned by `src/logging/redact.ts` — it is not the whole of
+§4a, and the classes it leaves are the application's `also`. A bare `name` and a bare `message` are deliberately **absent**, each pinned by a
+deletion check: `name` under substring matching would take `hostname`, `filename` and `SerializedError.name` — the only place a thrown value's type
+survives — and `message` would mask `error.message` on every error record in the system. An opaque user id is absent for the opposite reason: §4a
+directs an application to log one, so a `userid` stem would redact the affordance §4a sanctions.
 
 **Masking, never a length-preserving mask.** A redacted value becomes the fixed literal `LOG_REDACTED` (`"[redacted]"`), so a reader can tell "an
 email was suppressed here" from "there is no email here". The mask is never derived from its value — no repeated `*`, no preserved character, no
 `[redacted:17]` — because a mask sized to its value leaks a password's length and narrows an email by it. `mode: "remove"` deletes the key instead,
 for a byte budget or a typed-column sink, and gives up that signal.
 
-**The two consumer controls are `also` and `allow`,** both bare key stems rather than dotted paths — `data` is a flat merge of bindings and
+**The consumer controls are `also` and `allow`,** both bare key stems rather than dotted paths — `data` is a flat merge of bindings and
 call-site data, so one field class arrives at both `email` and `user.email`, and a path is undefined for a key inside a `Map` or under a shifting
 array index:
 
@@ -121,11 +121,10 @@ publish exactly the values the pass exists to remove, and throwing would let a l
 deliberately not an `"off"` member of `mode`, which §5b forbids: a security relaxation must not share an option name with a choice between two
 equally-safe behaviours. It disables the pass for the whole logger.
 
-**`withRedaction(channel, redact)` survives, and can only tighten.** It wraps a channel so each record passes through `redact` before `write`;
-`read`/`readEntry` pass through unchanged. It now runs **after** the logger-wide floor, on a record whose masked values are already gone, so it
-cannot restore one — the configuration where console is dirtier than KV is unrepresentable, and that is the point of the split rather than an
-accident of ordering. Its remaining use is a sink held to a **stricter** standard than the floor: a third-party destination, or dropping `body` on
-the persisting channel while console keeps it.
+**`withRedaction(channel, redact)` can only tighten.** It wraps a channel so each record passes through `redact` before `write`; `read`/`readEntry`
+pass through unchanged. It runs **after** the logger-wide floor, on a record whose masked values are already gone, so it cannot restore one — the
+configuration where console is dirtier than KV is unrepresentable, and that is the point of the ordering. Its use is a sink held to a **stricter**
+standard than the floor: a third-party destination, or dropping `body` on the persisting channel while console keeps it.
 
 Independently, `kvLogChannel` applies a built-in **stack-redaction default**: `KvLogChannelOptions.persistStack` is `false`, so any `stack` property
 is recursively stripped from a **cloned** `record.data` before persistence — error stacks never enter the 7-day KV retention window. The caller's
@@ -140,10 +139,9 @@ at the one call site that matters: `requestLogger` flushes inside a `finally` (�
 so a rejecting flush could discard a successful response or mask the handler error being rethrown.
 
 Absorbing the rejection removes the last place a persistence outage was visible, so **`LoggerOptions.onChannelError` is the only observer of a
-failed write** — and of a failed redaction (§2e), which is absorbed the same way and for the same reason. Nothing else reports one: `flush`
-resolves, `consoleChannel` writes synchronously and never sees the KV promise, and the handler
-attached at dispatch means the runtime sees no unhandled rejection either. A `LOGS_KV` outage with no observer is an app that looks healthy over an
-empty log store.
+failed write** — and of a failed redaction (§2e), absorbed the same way and for the same reason. Nothing else reports one: `flush` resolves,
+`consoleChannel` writes synchronously and never sees the KV promise, and the handler attached at dispatch means the runtime sees no unhandled
+rejection either. A `LOGS_KV` outage with no observer is an app that looks healthy over an empty log store.
 
 **It is on by default.** Absent a hook, a failed write produces one structured `console.error` line in the shape `consoleChannel` writes, so an
 outage is visible in `wrangler tail` with zero configuration. Supplying a hook replaces that line — route failures to a counter, a health route, or
@@ -155,13 +153,12 @@ buffer by its cap — writes `flush` never sees, and which would otherwise fail 
 best-effort contract over evicted writes are owned by `src/logging/logger.ts`; usage is in `src/logging/README.md`.
 
 **Both failure modes are absorbed, not only the asynchronous one.** A channel may fail two ways: by rejecting the promise it returned, or by
-throwing before it returns one at all. The second is not hypothetical and is reachable through the default channel — `consoleChannel` calls
-`JSON.stringify`, which throws on a cyclic `data` payload, so an object graph holding a back-reference would otherwise take the request down. Since
-§2e, the logger's own clone marks a back-reference `"[circular]"` before any channel sees it, so that payload reaches the throw only on a record
-built by hand or on a logger carrying the `"allow-unredacted-logs"` opt-out — the absorption is unchanged and still what those two paths land on. A
-synchronous throw has no promise to attach a sibling handler to, so it is reported directly instead, and nothing enters the pending buffer for
-`flush` to await. The guard is per channel rather than around the fan-out, so one channel throwing still leaves the rest to run. The claim in the
-first paragraph is therefore unconditional: **no channel failure of either kind reaches the caller.**
+throwing before it returns one at all. The second is reachable through the default channel — `consoleChannel` calls `JSON.stringify`, which throws
+on a cyclic `data` payload, so an object graph holding a back-reference would otherwise take the request down. The logger's own clone marks a
+back-reference `"[circular]"` before any channel sees it (§2e), so that payload reaches the throw only on a hand-built record or a logger carrying
+the `"allow-unredacted-logs"` opt-out — both of which the absorption still covers. A synchronous throw has no promise to attach a sibling handler
+to, so it is reported directly instead, and nothing enters the pending buffer for `flush` to await. The guard is per channel rather than around the
+fan-out, so one channel throwing still leaves the rest to run.
 
 `RequestLoggerOptions` mirrors the option and threads it into the per-request logger (§3a).
 
@@ -236,7 +233,7 @@ whole order is stated. A hand-written chain owes the same two lines:
 
 ### 4a. Level Mapping Convention
 
-`requestLogger` automatically assigns a `LogLevel` to each log record based on the HTTP response status code emitted by the handler:
+`requestLogger` assigns each record a `LogLevel` from the handler's HTTP response status:
 
 | Status range | Level | Meaning |
 | --- | --- | --- |
@@ -253,9 +250,8 @@ mapping in §4a. Avoid enabling `debug` in production channel configs.
 
 ### 4c. Silencing and Level Allowlists
 
-`LogLevel` has no `"silent"` member and `minLevel` has no "off" value, so before `withLevels` the only way to spell "log nothing" was structural —
-`channels: () => []`, a different **shape** of config. That makes silence unreachable from a deployment variable: an env var can carry a value, not
-a channel list.
+`LogLevel` has no `"silent"` member and `minLevel` has no "off" value, so without `withLevels` the only way to spell "log nothing" is structural —
+`channels: () => []`, a different **shape** of config, and unreachable from a deployment variable: an env var can carry a value, not a channel list.
 
 `withLevels(channel, levels)` closes that gap. It names the accepted set rather than a floor, and **an empty set is the configured form of "off"**:
 
@@ -309,8 +305,7 @@ the page's `view` never executes — there is no HX-branch and no fragment call 
 
 `LogViewerOptions` and `LogViewerAccess` are declared in `src/logging/show/route.tsx`, which owns their fields and defaults.
 
-The `channel` factory is called once per request. For `kvLogChannel`, the channel captures the KV namespace and prefix at construction time and uses
-both for write and read — the viewer always reads from the same key space the logger writes to.
+The `channel` factory is called once per request, and §2a's prefix rule is what makes the viewer read the key space the logger writes to.
 
 **`access` is required because logs expose request paths, ids, and error messages** — forgetting a guard is a compile error, and public mounts must
 opt out explicitly.
@@ -324,7 +319,7 @@ filter-bar chevron without owning an icon set. This is what makes `logging/show`
 ## 6. No-PII Rule and Structured Fields
 
 See [`BOUNDARIES.md`][boundaries-4] §4 for the no-PII rule, the prohibited field classes, and the structured-fields-over-interpolation rule. The
-default redaction policy that implements it, its two consumer controls and its opt-out are §2e above.
+default redaction policy that implements it, its consumer controls and its opt-out are §2e.
 
 **Message-string scanning is not offered, and that is deliberate.** §4b concedes that a value interpolated into a message is unreachable by any
 redaction pass. A scanner would cost a regex over every message on the request path, corrupt the grep-friendly labels §4b exists to protect, both

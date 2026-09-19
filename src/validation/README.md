@@ -7,8 +7,7 @@ audience: consumer
 # `@y-core/forge/validation`
 
 This namespace is forge's [valibot](https://valibot.dev) facade: the whole library under one `v`, with a few forge-owned helpers beside it. Every schema in an
-app and in the library is built from here, which is what keeps one valibot version in play. The rule is [`CODE_RULES.md`][cr-3b] §3b's, and it
-reaches test files too.
+app and in the library is built from here, test files included ([`CODE_RULES.md`][cr-3b] §3b).
 
 ```ts
 import { describeValidationIssue, formMultilineText, formText, v, type ValidationResult } from "@y-core/forge/validation";

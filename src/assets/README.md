@@ -13,9 +13,8 @@ a public content-hashed URL out — at request time, in a Worker.
 import { createManifest, createSpriteRegistry } from "@y-core/forge/assets";
 ```
 
-The mapping is **baked into the generated module at build time**. Neither function touches the filesystem, scans a directory, or reads an
-environment variable: they close over a plain record handed to them at construction. That is what makes this subpath Worker-safe — no Node built-in
-is imported anywhere beneath it.
+The mapping is **baked into the generated module at build time**: both functions close over a plain record handed to them at construction, and
+neither reads the filesystem or the environment.
 
 ---
 
@@ -29,8 +28,6 @@ import { assets } from "@assets";
 
 <link rel='stylesheet' href={assets.path("styles.css")} />;
 ```
-
-Reference the logical name everywhere, and let the resolved hash be the build's business.
 
 ---
 
@@ -54,9 +51,8 @@ and `path("x.css")` agree.
 
 ## Gotchas
 
-**An unmapped asset passes through; an unregistered sprite throws.** The asymmetry is deliberate. A name the build did not emit still produces a
-plausible URL rather than `undefined`, which fails visibly in the browser and not in the middle of a render. A sprite group, by contrast, has no
-plausible fallback — an unknown name would resolve to a broken `<use href>` that renders as nothing at all, so it throws instead.
+**An unmapped asset passes through; an unregistered sprite throws.** A name the build did not emit still yields a plausible URL rather than
+`undefined`, so it fails in the browser and not mid-render. `sprites.get` on an unknown group throws.
 
 ---
 

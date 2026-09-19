@@ -88,7 +88,7 @@ import { fragmentResponse } from "@y-core/forge/http";
 return fragmentResponse(body, 200, hxHeaders({ pushUrl: "/results?q=hello", trigger: "resultsLoaded" }));
 ```
 
-The directives fall into four decisions:
+The directives fall into these decisions:
 
 - **Leave the page, or stay on it.** `redirect` navigates the browser; `refresh: true` reloads the whole page, discarding the swap you would
   otherwise have sent.
@@ -103,9 +103,8 @@ The directives fall into four decisions:
 
 ## Attaching htmx behaviour to an element
 
-`hxAttrs` takes a typed, camelCased props object and returns a flat attribute map to spread. Each prop names the htmx attribute it becomes:
-`get`/`post`/`put`/`patch`/`delete` for the verb and URL, `target`, `swap`, `trigger`, `select`, `selectOob`, `include`, `indicator`, `disabledElt`,
-`sync`, `confirm`, `encoding`, `pushUrl`, `replaceUrl` and `params` for the rest.
+`hxAttrs` takes a typed, camelCased props object and returns a flat attribute map to spread. Each prop names the htmx attribute it becomes — `post`
+becomes `hx-post`, `selectOob` becomes `hx-select-oob`.
 
 ```tsx
 <form {...hxAttrs({ post: "/api/contact", target: "#result", swap: "outerHTML" })} />

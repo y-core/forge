@@ -69,8 +69,8 @@ function contactPage(c) {
 `csrfTokenCtx` carries a token bound to **this request's pathname**, so it is the right token only when the form posts back to the page it was
 rendered on. Anything else needs a minted token — see [Minting a token for another path][mint-section] below.
 
-Neither the CSRF field nor the Turnstile field appears in `ContactSchema`, and that is deliberate: a guard that consumed a field is what removes it
-before validation, so a `v.strictObject` never has to declare a token the request did not assert ([`INPUT_VALIDATION.md`][iv-1d] §1d). Validate the
+Neither the CSRF field nor the Turnstile field appears in `ContactSchema`: a guard that consumed a field is what removes it before validation
+([`INPUT_VALIDATION.md`][iv-1d] §1d). Validate the
 credentials themselves at startup with `CsrfConfigSchema` and `TurnstileConfigSchema` ([`INPUT_VALIDATION.md`][iv-5] §5).
 
 ---
@@ -97,9 +97,7 @@ app.use("*", csrfGuard); // after the session middleware, always
 **Register `sessionMiddleware` before `csrfProtection`.** The resolver runs before `next()`, so a guard registered first resolves against a context
 carrying no session at all — and a resolver that returns nothing is a refusal, not a fallback: the mutation answers `403` and one `[csrf]` warning
 names the likely cause. The fixation risk path-only binding leaves open, and why `subject` has no default, are [`INPUT_VALIDATION.md`][iv-3a] §3a's.
-`subject: false` is the only opt-out, and it is greppable so an audit can find every route that took it.
-
-The composed contract is pinned by `src/session/csrf.test.ts`; the mismatch behaviour by `csrf.test.ts`.
+`subject: false` is the only opt-out.
 
 ---
 
@@ -114,9 +112,9 @@ import { mintCsrf } from "@y-core/forge/form";
 const token = await mintCsrf(c, "/api/contact"); // throws if csrfProtection is not mounted here
 ```
 
-That is enough whenever the target path is guarded the same way this one is. It is not enough for shared chrome — a navbar sign-out control rendered
-on every page needs a token for a path whose guard is mounted on prefixes this request never took, under a subject policy this request's guard may
-not share. Mint it with `csrfMinter`, which is `csrfProtection`'s minting half wired directly:
+That is enough whenever the target path is guarded the same way this one is. It is not enough for shared chrome — a navbar sign-out control needs
+a token for a path whose guard this request never ran, under a subject policy this request's guard may not share. Mint it with `csrfMinter`, which
+is `csrfProtection`'s minting half wired directly:
 
 ```ts
 import { csrfMinter, importCsrfKey } from "@y-core/forge/form";
@@ -130,9 +128,9 @@ const mintSignout = csrfMinter({
 const token = await mintSignout(c, "/auth/signout");
 ```
 
-**Pass the same `secret` and `subject` the guard on the target path was given** — that is the whole contract, and the two cannot disagree once you
-do. A `subject` resolver that returns `undefined` throws here rather than minting a token that could only be refused. The key ring is cached per
-`env`, so a control on every page costs one key import per isolate, not one per render.
+**Pass the same `secret` and `subject` the guard on the target path was given** — that is the whole contract. A `subject` resolver that returns
+`undefined` throws here rather than minting a token that could only be refused. The key ring is cached per `env`, so a control on every page costs
+one key import per isolate, not one per render.
 
 For the auth navbar this exists for, reach for `authNav` (`@y-core/forge/auth/web`) instead of wiring the minter yourself.
 
@@ -140,8 +138,8 @@ For the auth navbar this exists for, reach for `authNav` (`@y-core/forge/auth/we
 
 ## Sending a token on a request with no form
 
-An `hx-delete`, or a passkey ceremony, sends no body — so there is no hidden field to fall back on and the token has to travel as a header. The
-guard publishes the header name it checks on `csrfHeaderCtx`, so a builder that must **send** the token cannot disagree with the guard about where:
+An `hx-delete`, or a passkey ceremony, sends no body, so the token travels as a header. The guard publishes the header name it checks on
+`csrfHeaderCtx`:
 
 ```ts
 import { csrfHeaderCtx, csrfTokenCtx } from "@y-core/forge/form";
@@ -154,8 +152,8 @@ explaining it.
 
 `csrfFieldCtx` is the same idea for the form field, and is what the `defineAction` pipeline reads to know which field to drop.
 
-**Read both with `.getOptional`, never `.get`.** Absence is meaningful: it says no guard ran on this request, so nothing was consumed and nothing
-should be dropped for it. That is the derive-only rule in [`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b.
+**Read both with `.getOptional`, never `.get`.** Absence says no guard ran on this request, so nothing was consumed and nothing should be dropped
+for it ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
 
 ---
 
@@ -200,9 +198,9 @@ async function contactAction(c) {
 **Behind a CSRF guard, that `drop` is not optional.** Without it a strict schema refuses `_csrf` and the route rejects every legitimate request.
 Derive the name from `csrfFieldCtx` rather than writing `"_csrf"`, so renaming `tokenField` stays a one-place change.
 
-`formToObject` carries **every** entry through, and four of its properties are why no named-field reader is offered here: an absent field stays
-absent rather than becoming `""`, a repeated key arrives as an array rather than last-wins, a `File` survives, and the result has no prototype — so
-reach for `Object.hasOwn(body, name)`, since `body.hasOwnProperty` is `undefined` and calling it throws. Text normalization is the schema's job, via
+`formToObject` carries **every** entry through: an absent field stays absent rather than becoming `""`, a repeated key arrives as an array rather
+than last-wins, a `File` survives, and the result has no prototype — so reach for `Object.hasOwn(body, name)`, since `body.hasOwnProperty` is
+`undefined` and calling it throws. Text normalization is the schema's job, via
 `formText()`, `formMultilineText()` and `formDigits()` ([`INPUT_VALIDATION.md`][iv-1d] §1d).
 
 `parseFormData` defaults to a 100 KB cap and takes `{ maxBytes }` to raise it; an oversized body rejects with an `Error` carrying `{ status: 413 }`.
@@ -231,8 +229,8 @@ one server-supplied payload, and each is worth setting when a site has more than
 call is never made. `timeoutMs` (default 5 s) bounds how long a submission waits on Cloudflare; `remoteIp` and `tokenField` are wiring rather than
 policy, the latter matching whatever field the widget writes.
 
-`signal` is caller cancellation, and an abort on it **rejects** rather than resolving to a result — a client that went away is not a verification
-outcome. `defineAction` threads `c.request.signal` in by default, and a `verify()` returning its own `signal` wins over that.
+`signal` is caller cancellation, and an abort on it **rejects** rather than resolving to a result. `defineAction` threads `c.request.signal` in by
+default, and a `verify()` returning its own `signal` wins over that.
 
 Relaxing the hostname check for local development takes a `DevAllowance` grant **and** one of Cloudflare's published testing secrets; neither half
 relaxes anything alone ([`INPUT_VALIDATION.md`][iv-4a] §4a).
@@ -241,13 +239,11 @@ relaxes anything alone ([`INPUT_VALIDATION.md`][iv-4a] §4a).
 
 ## Security
 
-**Never surface `CsrfResult.error` or `TurnstileResult.error` to a client.** Echoing a reason code back turns the endpoint into a
-token-introspection oracle on unauthenticated input: an attacker distinguishes "wrong signature" from "expired" from "wrong path" and probes
-accordingly. The codes are server diagnostics. `csrfProtection` collapses every token failure to a bare `403` with no body detail precisely so
-nothing downstream has to remember this, and `defineAction` answers a tripped bot guard in the shape of an ordinary validation refusal
+**Never surface `CsrfResult.error` or `TurnstileResult.error` to a client.** The codes are server diagnostics. `csrfProtection` collapses every
+token failure to a bare `403` with no body detail, and `defineAction` answers a tripped bot guard in the shape of an ordinary validation refusal
 ([`INPUT_VALIDATION.md`][iv-4b] §4b).
 
-**An oversized body is a `413`, never a `403`.** A size failure reported as a token failure sends the client after a problem that does not exist.
+**An oversized body is a `413`, never a `403`.**
 
 **`secretKey` is the Turnstile secret, never the site key**, and both come from bindings rather than literals. The same holds for `CSRF_SECRET`.
 
@@ -258,8 +254,7 @@ nothing downstream has to remember this, and `defineAction` answers a tripped bo
 
 ## Gotchas
 
-**A raised `maxBytes` must be raised in both places.** A body is readable once, so the first caller meters the stream and every later caller
-re-checks the bytes actually read against its own cap. `csrfProtection` parses before the handler does, so a route that raises `defineAction`'s
+**A raised `maxBytes` must be raised in both places.** `csrfProtection` parses before the handler does, so a route that raises `defineAction`'s
 `maxBytes` must raise the guard's to match or the guard rejects first ([`INPUT_VALIDATION.md`][iv-2c] §2c). Forgetting it says so: once the shared
 parse has been **refused** at the smaller cap, a later, larger cap throws a wiring error naming both caps — `isFormCapConflict(error)` identifies
 it — which `csrfProtection`, the pipeline and `readAuthSubmission` all rethrow to the error boundary rather than replaying as a `413`.

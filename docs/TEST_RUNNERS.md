@@ -16,7 +16,7 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 Test Runners: the three runners, their type stub, and which question each answers
+- §1 Test Runners: the runners, their type stub, and which question each answers
 - §1a bun:test Primitives: import source and nesting limit
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
 - §1c The Browser Set: real Chromium behind its own verb
@@ -50,9 +50,9 @@ audience: consumer
 
 ## 1. Test Runners
 
-**Forge has three runners, and they answer different questions.** `bun test` proves that a function returns what it should and that the server
-emitted the markup it promised. The browser set (§1c) proves that a controller does what it claims **to a keystroke**. The workerd set (§1f) proves
-that a request is decoded the way a deployed Worker decodes it. None substitutes for another, and all three are kept.
+**Forge's runners answer different questions.** `bun test` proves that a function returns what it should and that the server emitted the markup it
+promised. The browser set (§1c) proves that a controller does what it claims **to a keystroke**. The workerd set (§1f) proves that a request is
+decoded the way a deployed Worker decodes it. None substitutes for another, and none is dropped.
 
 ### 1a. bun:test Primitives
 
@@ -107,8 +107,7 @@ Demanding a second unit file would buy a fake one, which is worse.
 product. File discovery cannot collide either: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is neither.
 
 **This is also why forge registers no DOM shim.** Registering one defines hundreds of globals and shadows Bun natives the rest of the suite
-exercises, and a shim that models the platform imperfectly certifies a component against features the real browser has and the model does not. The
-browser set guarantees isolation **by construction**: a separate process, and no global ever redefined.
+exercises, and a shim that models the platform imperfectly certifies a component against features the real browser has and the model does not.
 
 **What each runner is sufficient evidence for:**
 
@@ -152,11 +151,11 @@ load-dependent rather than reproducible. `showcase.browser.ts` counts `htmx:afte
 ### 1e. Media Options and the Harness `test`
 
 **`test.use({ reducedMotion })`, `{ forcedColors }` and `{ contrast }` reach the browser, and a spec may take `test` from either module.**
-playwright 1.62 declared all three in `types/test.d.ts` but built none of them into `_combinedContextOptions` (`playwright/lib/index.js`), so
-`test.use({ reducedMotion: "reduce" })` type-checked and emulated nothing at all; `src/ui/client/browser.fixture.ts` reinstated them through an
-overridden `page` fixture. 1.63 builds all three, so the harness overrides nothing and re-exports `@playwright/test`'s `test` unchanged.
+playwright 1.62 declared them in `types/test.d.ts` but built none of them into `_combinedContextOptions` (`playwright/lib/index.js`), so
+`test.use({ reducedMotion: "reduce" })` type-checked and emulated nothing at all. 1.63 builds them, so `src/ui/client/browser.fixture.ts` overrides
+nothing and re-exports `@playwright/test`'s `test` unchanged.
 
-**`browser.fixture.browser.ts` is what made that deletion safe, and is why it stays.** Its cases assert the emulation against the real cascade — a
+**`browser.fixture.browser.ts` is what keeps that safe.** Its cases assert the emulation against the real cascade — a
 `prefers-reduced-motion: no-preference` rule leaving the page, `forced-colors: active` matching — so an option silently reverting to a no-op fails
 there, rather than passing for the wrong reason in a spec written against the reduced-motion branch of `forge-ui.css`. **Nothing enforces the
 import**: taking `test` from the harness alongside `mount` is convention, not a rule.
@@ -203,7 +202,7 @@ and the run a task closes on must not pay a runtime start per spec.
 
 ## 2. Co-Located Test Files
 
-See [`TESTING.md`][testing-2] §2 for co-location, the naming convention, the publish exclusion, and the concrete-file import rule with its two
+See [`TESTING.md`][testing-2] §2 for co-location, the naming convention, the publish exclusion, and the concrete-file import rule with its
 exceptions. forge's browser set follows the same rule under its own suffix (§1c).
 
 **Certain filenames need no test, and none is taken on trust.** A module named `types.ts` or `bin.ts` is exempt by name: the first declares, the
@@ -213,8 +212,7 @@ module that has one. There is no third state: a module that needs a nomination g
 blank reason fails too.
 
 The convention is deliberately narrow. "Exports no function" would have exempted every component written as `export const Button = (…) => …` and
-every lint rule written as an object literal — over a hundred files that carry a test — while catching nothing the nominations did not already
-cover.
+every lint rule written as an object literal — all of which carry a test — while catching nothing the nominations did not already cover.
 
 ---
 
@@ -271,9 +269,9 @@ the whole-element `toBe` is a convention, not a lint.
 
 ### 3d. Assert the Mechanism, Not an Outcome a Second Mechanism Also Guarantees
 
-See [`TESTING.md`][testing-3d] §3d for the delete-the-mechanism check, the two failure shapes it catches, and the rule that a mechanism is pinned
-along with its having been armed. The two shapes look like this here: the disposal guard is `if (disposed) return;` in a lazy-loading controller,
-and the absent subject is `expect(probe?.[0]).not.toBe("x")`, which passes once `probe` has been deleted outright.
+See [`TESTING.md`][testing-3d] §3d for the delete-the-mechanism check, the failure shapes it catches, and the rule that a mechanism is pinned along
+with its having been armed. Here, the disposal guard is `if (disposed) return;` in a lazy-loading controller, and the absent subject is
+`expect(probe?.[0]).not.toBe("x")`, which passes once `probe` has been deleted outright.
 
 This does not weaken §1c's rule that a browser case asserts a DOM state rather than a call count. What is counted here is the **platform's** own
 invocation — a timer callback firing, a property being read — which _is_ the mechanism. §1c bans substituting a count of calls into the test's own
@@ -314,7 +312,7 @@ parameter, or imported from another file — is not reported. §3b is what binds
 **A site is suppressed with `// oxlint-disable-next-line forge/exact-markup-assertion -- <reason>`, and `forge/suppression-needs-reason` fails a
 directive carrying no reason.** Reserve it for a genuine closed-world coverage sweep — the
 `expect(list.filter((x) => !html.includes(…))).toEqual([])` shape, where the substring is how the sweep looks each item up rather than a claim about
-which element an attribute landed on. Two exist in the tree today, each with its reason inline.
+which element an attribute landed on.
 
 ---
 
@@ -369,12 +367,12 @@ See [`TESTING.md`][testing-6] §6 for the one-command-three-modes gate, the flag
 
 **A step sits in `quality` unless it runs the code rather than judging it.** That rule, and not a speed estimate, is what decides a new row: every
 `validate-*` check, both typechecks, `lint`, `format`, `lint:types` and the digest comparison judge source, so `quality` holds them and costs about
-thirteen seconds. `standard` adds `test`, which is over half the gate's wall time on its own. `full` adds `validate-changelog` and the two runtime
+thirteen seconds. `standard` adds `test`, which is over half the gate's wall time on its own. `full` adds `validate-changelog` and the runtime
 suites, `test:browser` and `test:workerd`.
 
 **So the tier a row declares marks what it costs, not what it is**: a table read top to bottom is `quality` except where it says otherwise, which is
-why `config/steps.ts` carries a `tier` key on four rows out of thirty-three. `test` is scoped to `src/`, so `standard` runs the co-located suites
-alone and the workerd set is reached only through its own step (§1d).
+why `config/steps.ts` carries a `tier` key only on the rows that are not. `test` is scoped to `src/`, so `standard` runs the co-located suites alone
+and the workerd set is reached only through its own step (§1f).
 
 The table is not the running order: the selector sorts by tier after filtering, so every `quality` row runs before `test` and both before `full`,
 with declared order preserved inside each tier. This is what makes a wrap or comment-budget failure surface in seconds rather than after the suite —
@@ -396,7 +394,7 @@ private `jsx` render helper**, re-exported as `render()` (§7c).
 
 ### 7b. In-Memory Storage Fakes — fakeKV, fakeD1, fakeR2
 
-Three `Map`-backed fakes implement the real `storage/*` structural contracts, so interface drift breaks tests at compile time
+`Map`-backed fakes implement the real `storage/*` structural contracts, so interface drift breaks tests at compile time
 ([`TESTING.md`][testing-4a] §4a). **Never mock these bindings.**
 
 `fakeKV` implements the full KV contract, including cursor-paginated `list`. **An expiry is enforced against the clock the caller injects** —

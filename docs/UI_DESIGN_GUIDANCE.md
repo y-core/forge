@@ -44,9 +44,8 @@ audience: consumer
 
 ## 1. Corpus Purpose and Composition Gap
 
-Forge's `ui` namespace publishes a large surface — the `@y-core/forge/ui/core` server-rendered components, the bound variants in
-`@y-core/forge/ui/controls`, the application shell in `@y-core/forge/ui/chrome`, a semantic token system in `@y-core/forge/ui/assets`, and the mount
-controllers in `@y-core/forge/ui/client`. Every one of them is documented for _calling_.
+Forge's `ui` namespace publishes a large surface — server-rendered components, bound variants, an application shell, a semantic token system, the
+mount controllers. Every one of them is documented for _calling_.
 
 None of it is documented for _composing_. This is the gap the corpus at `src/ui/design/` exists to close, and it is not a hypothetical one: an agent
 handed only the API reference can wire every component correctly and still ship output that type-checks, passes its tests, and reads as a defect.
@@ -195,7 +194,7 @@ consumers can fail forge's own build: forge is held to the guidance it ships, an
 contradicts the rule beside it teaches the contradiction rather than the rule.
 
 The scope is the whole source tree because the corpus states rules about _markup_, and forge renders markup outside `ui/` — `logging/show/` is an
-entire surface. Narrowed to `ui/`, the second direction was a claim wider than the check behind it, and the gap was not hypothetical. Where a rule
+entire surface. Narrowed to `ui/`, the second direction would be a claim wider than the check behind it. Where a rule
 is genuinely local to one directory, an `overrides` entry in `.oxlintrc.json` scopes it, because that scoping is part of what the rule means rather
 than a property of where a walk happens to start.
 
@@ -213,12 +212,12 @@ Which rules are in the enforced set and what each one matches are the plugin's, 
 
 ### 4b. Two Enforcement Mechanisms
 
-A corpus rule is enforced by one of two mechanisms, and which one is a property of **what the rule has to read** rather than of its tier — or, as
-this was cut when the plugin's only reader was a class-literal visitor, of whether its subject is markup or a class string.
+A corpus rule is enforced by one of two mechanisms, and which one is a property of **what the rule has to read** rather than of its tier, or of
+whether its subject is markup or a class string.
 
 **forge's oxlint plugin** — `@y-core/forge/tooling/lint`, run by the `lint` step — owns every rule a **parsed file settles**. That is both families:
 a class string, and markup structure. A tag name, an attribute, an ancestor chain and the body between two tags are all things `JSXOpeningElement`
-and a parent walk give directly, so the earlier split bought a hand-written scanner nothing the parser was not already offering. The parser is also
+and a parent walk give directly, so a hand-written scanner buys nothing the parser is not already offering. The parser is also
 what makes a rule precise: a CSS property name in a generated table, a sentence containing the word `prose`, and a class name quoted in an assertion
 are not class strings, because the parser says they are not. A plugin rule's per-site suppression is
 `oxlint-disable-next-line forge/<key> -- <why>`, and because the rule is a lint rule it is also eligible for a fixer — a `CheckStep` can never carry
@@ -240,8 +239,8 @@ mechanism, one per rule family**, and an author adding a rule declares its enfor
 - `src/tooling/lint/modern-css-rules.ts` routes every modern-platform rule, through the optional `enforcer` field on the rule's own row — absent
   meaning the modern-CSS check's own detector. `design-rules.ts` names no platform rule at all.
 
-`validate-design` holds each register's rows against the mechanism they name — so deleting a plugin rule fails the gate by name exactly as deleting
-a detector did — and holds the plugin in the other direction against both registers together: a rule the plugin registers that neither register
+`validate-design` holds each register's rows against the mechanism they name — so deleting a plugin rule fails the gate by name — and holds the
+plugin in the other direction against both registers together: a rule the plugin registers that neither register
 routes fails too, because its findings would print an id no register states. The exemptions are the plugin rules that state no corpus rule at all —
 `suppression-needs-reason` and `data-slot-before-spread`, each named in `design.ts` with its reason, neither having a corpus id to route.
 
@@ -252,7 +251,7 @@ not everywhere.
 **Which rules sit on which side is not restated here**, for the reason §4 gives: each register is one file, and a second copy in prose is
 indistinguishable from an amendment the first time the two disagree.
 
-Two of the plugin's rules resolve a class against the design system itself — which utility roots take a spacing value, which take a colour, and what
+Some plugin rules resolve a class against the design system itself — which utility roots take a spacing value, which take a colour, and what
 steps the scale offers. Those facts are generated from the compiled stylesheet into `src/tooling/lint/data/design-scale.ts` and held there by
 `validate-design-scale`, on the same drift contract `validate-class-groups` holds `cn`'s table to.
 
@@ -261,12 +260,12 @@ truth they actually share; but the other one's output is `cn`'s conflict model (
 data to it would make each a hostage of the other's changes.
 
 **`spacing-scale-only` reports an arbitrary value only where a scale step states that exact length.** `p-[8px]` is reported because `p-2` is the
-same eight pixels; `p-[7px]` is not, because no step is seven. That is the rule as it has always been enforced, and it is the promise worth making:
-a suggestion the author can act on. A rule that also flagged the off-scale value would be a different rule, arguing that off-scale lengths are wrong
-in themselves — a case the corpus does not make and this one does not pretend to.
+same eight pixels; `p-[7px]` is not, because no step is seven. The promise worth making is a suggestion the author can act on. A rule that also
+flagged the off-scale value would be a different rule, arguing that off-scale lengths are wrong in themselves — a case the corpus does not make and
+this one does not pretend to.
 
 **A class list bound to a module-scope `const` and passed by name is judged where the name is used.** Forge writes most of its recipes that way, so
-a plugin that read only inline literals was blind to the majority of the class strings it exists to check. An initializer that is already a class
+a plugin reading only inline literals would be blind to most of the class strings it exists to check. An initializer that is already a class
 position of its own — `const R = cva(…)` — is judged where it is written and not a second time through the name. A `const` declared inside a
 function is not resolved: a class list written there is not the shared recipe this reaches for.
 
@@ -274,8 +273,7 @@ function is not resolved: a class list written there is not the shared recipe th
 
 ## 5. Three-Way Documentation Boundary
 
-The boundary between the homes for a statement about forge's UI is the section other documents will cite most. Each home answers a
-different question:
+Each home for a statement about forge's UI answers a different question:
 
 | Home | Owns | The question it answers |
 | --- | --- | --- |
@@ -313,7 +311,7 @@ fields, and the size thresholds. Exactly as this document is, and the gate enfor
 
 The reason is retrieval, not house style. Warden indexes the corpus, and the Quick Reference line is where a section's **gloss** comes from: the
 one-line summary a search result prints under the heading trail, and a ranked column in its own right, weighted far above the section's body text. A
-corpus with no Quick Reference competes on four of five ranked columns and prints a bare heading to every reader who searches it.
+corpus with no Quick Reference forfeits that column and prints a bare heading to every reader who searches it.
 
 The size thresholds bind for the same reason. A section is what `knowledge_read` returns whole, so a section too large to be an answer is a section
 nobody can usefully be handed — and a section that cannot be summarised in one Quick Reference line is carrying more than one idea and wants `###`
@@ -376,7 +374,7 @@ disagreement about taste. Most published design guidance is shaped by marketing 
 motion rewards a scroll. **Forge's primary target is product and app UI**: surfaces seen many times a day, by a user who came to complete a task.
 There, variance costs recognition and motion costs time.
 
-Marketing surfaces are a secondary target, and they are the standing case for a written brief (§2c) raising all three.
+Marketing surfaces are a secondary target, and they are the standing case for a written brief (§2c) raising each dial.
 
 The dials are Defaults, not Floor — each is rebuttable per §2b, and each rebuttal is a brief, not a preference.
 

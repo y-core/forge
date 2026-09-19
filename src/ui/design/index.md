@@ -17,11 +17,11 @@ This file is the corpus's entry point, in any harness.
 
 ## 0. Quick Reference
 
-- §1 How to Read This Corpus: the four-file read, and why reading all 21 is the wrong move
+- §1 How to Read This Corpus: the routed read, and why reading the whole corpus is the wrong move
 - §2 Where to Go: one row per file, keyed by the question that sends you there
 - §3 The Two Tiers and the Citation Scheme: what binds absolutely, what a brief may rebut, and how a finding cites a sentence
 - §4 The Working Contract: load the floor before acting, run preflight before reporting done
-- §5 Worked Flow: the six steps a build takes, and the one substitution a review makes
+- §5 Worked Flow: the steps a build takes, and the one substitution a review makes
 - §6 Sources: the texts the corpus's reasoning rests on, and what was re-derived rather than reproduced
 
 ---
@@ -34,14 +34,14 @@ This file is the corpus's entry point, in any harness.
    `reference/13-marketing.md`.
 4. **[`preflight.md`][preflight] — before you declare the work done.** Run it and report the counts it asks for.
 
-Reading all 21 rule files for one surface is the wrong move. The corpus is routed, not sequential: `floor.md` plus `preflight.md` plus the two files
-your task names is the intended read, and it is what the routing table in §2 exists to make possible.
+Reading the whole corpus for one surface is the wrong move. It is routed, not sequential: `floor.md` plus `preflight.md` plus the files your task
+names is the intended read, and it is what the routing table in §2 exists to make possible.
 
 ---
 
 ## 2. Where to Go
 
-One row per file, keyed by the question that sends you there. This is the corpus's only routing table; nothing else carries a copy.
+This is the corpus's only routing table; nothing else carries a copy.
 
 | The question in front of you | Read |
 | --- | --- |
@@ -88,13 +88,13 @@ well-formed, and the identifier scheme's rules — are `UI_DESIGN_GUIDANCE.md` �
 **Before acting, you must have loaded [`floor.md`][floor].** It is the invariant tier — the obligations you verify before reporting done, and the
 prohibitions you hold the whole time you are generating. There is no surface small enough to skip it, and no brief that overrides it.
 
-**Before finishing, you must have run [`preflight.md`][preflight] and reported its countable evidence.** Counts, not adjectives: how many `primary`
-buttons on the surface, how many text colors, how many spacing steps, which states are designed. "Looks right" is not a preflight result.
+**Before finishing, you must have run [`preflight.md`][preflight] and reported its countable evidence.** Counts, not adjectives: "looks right" is
+not a preflight result.
 
 Between those two, read only what the task names (§1).
 
-Part of acting is the **Design Read** — one line naming who the surface is for, the one primary action, and what failure looks like. It is defined
-as `forge-ui-design-read` in [`floor.md`][floor], with the shape it takes; do not reconstruct it from here.
+Part of acting is the **Design Read**, defined as `forge-ui-design-read` in [`floor.md`][floor] with the shape it takes; do not reconstruct it from
+here.
 
 ---
 
@@ -102,8 +102,7 @@ as `forge-ui-design-read` in [`floor.md`][floor], with the shape it takes; do no
 
 A typical task — "add a settings screen with a notification preferences form":
 
-1. **Design Read.** Emit the one line defined as `forge-ui-design-read` in [`floor.md`][floor]: who the surface is for, the one primary action, what
-   failure looks like.
+1. **Design Read.** Emit the one line defined as `forge-ui-design-read` in [`floor.md`][floor].
 2. **Choose components.** [`catalog.md`][catalog] routes "labelled control with no validation" to `Field` and "validated, can be rejected" to
    `FormField`, each with the subpath it comes from.
 3. **Read the one or two reference files the task names.** Here, [`reference/06-forms.md`][forms] for field structure and

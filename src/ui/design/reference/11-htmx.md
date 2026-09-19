@@ -48,8 +48,7 @@ everything inside the target is destroyed and rebuilt, including scroll position
 
 ## 2. Latency choreography
 
-The swap is the second thing that happens. The first is the request, and what the page does during it is a design decision that is almost always
-made by default — badly.
+The swap is the second thing that happens. The first is the request, and what the page does during it is a design decision.
 
 Which placeholder a wait takes, and that it occupies the box the result will, are [`07-states.md`][states]'s — `forge-ui-state-skeleton-shape`,
 `forge-ui-state-spinner-scope` and `forge-ui-state-preserve-layout`. What is specific to a swap is _when_ the placeholder has to exist.
@@ -123,8 +122,7 @@ list is the smallest region that changed. <!-- rule:forge-ui-htmx-append-not-rep
 ## 5. Focus after a swap
 
 **A swap that replaces the focused element drops focus to `<body>`.** The reader's next Tab starts from the top of the document, and a screen reader
-loses its position entirely. This is a design defect that has to be planned for at layout time, not patched afterwards — it is the single most
-common way an otherwise correct HTMX page becomes unusable by keyboard.
+loses its position entirely. This is a design defect that has to be planned for at layout time, not patched afterwards.
 
 `forge-ui-focus-ring` guarantees focus is _visible_; nothing guarantees it still exists after the DOM under it is replaced.
 

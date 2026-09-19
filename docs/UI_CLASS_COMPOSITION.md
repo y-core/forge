@@ -19,14 +19,13 @@ audience: consumer
 
 - §1 Class Utilities: ratified public composition helpers
 - §1a Conflict Resolution, the Fail-Open Boundary, and the Memo: what the resolver decides, where it stops, the ratified inversion, and the cache
-  that replaced the no-cache ruling
 - §1b Class Order Is Not Load-Bearing Within a Literal: the fixed-point invariant the gate enforces, and what a sorter cannot reach
 - §1c The Table Is Derived From the Compiled Design System: the generator, the drift gate, the scale probe and its agreement condition, the
   equal-reach throw
 - §1d A Narrower Later Utility Layers Rather Than Displaces: why `text-size-hero` and `text-size-[20px]` both survive
 - §1e The `@utility` Recipe Layer: one name per state or chrome recipe, why it is a utility and not a class, the subset-group argument rule, the
   admission test that rules out a paint recipe, and the `--tone` mechanism
-- §1f Which Utility Composes a Class, and In What Order: the four-point rule over `const`, `cva` and `cn`, and why the caller's class is last
+- §1f Which Utility Composes a Class, and In What Order: the rule over `const`, `cva` and `cn`, and why the caller's class is last
 - §2 Colour Scheme Declaration Contract: one declaration site per step, and what selects between the modes
 - §2a OKLCh Solids: why a scheme's steps are written in the space the ramps are authored in
 - §2b The Rejected Wide-Gamut Branch: why a second set of values would outrun the contrast audit
@@ -51,8 +50,8 @@ moment the two disagree. A utility's **modifier prefix** and its **importance ma
 
 **The coverage boundary.** The table covers every utility the stylesheet compiles to (§1c) and nothing beyond it. A consumer's own theme name, a
 utility from a Tailwind release newer than that compile, and a bespoke class alike pass through untouched, so two conflicting utilities from an
-uncovered family are _both_ emitted and stylesheet order decides — the behaviour every consumer had before conflict resolution existed. An uncovered
-family is a gap, not a regression — and not the only way the table is wrong about an app's own theme, §2f being the other.
+uncovered family are _both_ emitted and stylesheet order decides. An uncovered family is a gap, not a regression — and not the only way the table is
+wrong about an app's own theme, §2f being the other.
 
 **Fail-open, and the inversion is deliberate.** An unrecognised utility is always kept, inverting the fail-closed posture of
 [`BOUNDARIES.md`][boundaries-5a] §5a. The reasoning is specific to this seam and does not generalise: the "failure" is forge's incomplete knowledge
@@ -83,8 +82,8 @@ entirely**. Measured on one machine, pre- and post-change in a single process, s
 | `cn(base)`, distinct keys — always a miss | 10.13 µs | 10.48 µs |
 | `cn(base, "px-8")`, distinct keys | 10.42 µs | 10.05 µs |
 
-A hit is 87–138× cheaper and the miss path is unchanged within noise. Against 188 non-test call sites, a page of ~200 elements spent on the order of
-1.5 ms of Worker CPU in `cn` alone, recomputed identically every request. **This overturns the prior no-cache ruling**, which reasoned that
+A hit is 87–138× cheaper and the miss path is unchanged within noise. Across forge's non-test call sites, a page of ~200 elements spent on the order
+of 1.5 ms of Worker CPU in `cn` alone, recomputed identically every request. **This overturns the prior no-cache ruling**, which reasoned that
 Cloudflare evicts isolates often enough that a cold refill is paid rather than amortised: an isolate serves many requests before eviction, and a
 miss costs exactly what an unmemoised call costs.
 
@@ -121,9 +120,9 @@ literal and never moves a token between literals**, so under the invariant sorti
 stylesheet an app compiles, `src/ui/assets/css/tailwind.css`; given only upstream Tailwind it treats every forge token utility as unknown and hoists
 it to the head of its literal.
 
-**The agreement rests on three lists naming the same callees**, and they do: `sortTailwindcss.functions` in `.oxfmtrc.json`, `CLASS_CALLEES` in
-`src/tooling/lint/ast.ts`, and the call spans `design-parse.ts` reads are each exactly `cn` and `cva`. They were not always equal — the formatter
-sorted two callees while the gate judged three, so an `asClass` span was gate-checked in an order no sorter maintained.
+**The agreement rests on the lists naming the same callees**, and they do: `sortTailwindcss.functions` in `.oxfmtrc.json`, `CLASS_CALLEES` in
+`src/tooling/lint/ast.ts`, and the call spans `design-parse.ts` reads are each exactly `cn` and `cva`. A callee one list judges and another does not
+is a span gate-checked in an order no sorter maintains.
 
 **What sorting cannot touch, and this is the consumer-facing guarantee:** cross-argument precedence, so in `cn(BASE, cls)` the caller still wins;
 and `cva`'s `base → variants → matching compounds → class` layering, which is composition order rather than token order inside any one string. An
@@ -185,11 +184,9 @@ asked for.
 
 ### 1e. The `@utility` Recipe Layer
 
-**A state or chrome recipe every component needs is declared once, as an `@utility` in `forge-ui.css`, and spelled nowhere else.** The focus ring
-was written four ways across twenty-seven call sites and the disabled paint five ways before this layer existed, and the spellings had drifted: one
-component ringed at 20% alpha, another at full, a third never cleared the outline. The recipes are `focus-ring`, `focus-ring-outset`,
-`state-disabled`, `state-invalid`, `state-busy`, `field-chrome`, `border-field`, `otp-cells` and `otp-editor`; `forge-ui.css`'s header is
-authoritative over what each one paints.
+**A state or chrome recipe every component needs is declared once, as an `@utility` in `forge-ui.css`, and spelled nowhere else.** Spelled per call
+site, such a recipe drifts: one component ringing at 20% alpha, another at full, a third never clearing the outline. `forge-ui.css`'s header is
+authoritative over which recipes exist and what each one paints.
 
 **Why an `@utility` rather than a component class.** A Tailwind utility is something `cn` can reason about: the derivation (§1c) reads each recipe's
 compiled signature, so `field-chrome` gets override edges to `h-*`, `rounded-*`, `border-*` and `px-*`, and a caller's `rounded-lg` after it still
@@ -201,14 +198,13 @@ inside a label, and `&:has(:focus-visible)` paints the label, so the recipe cove
 cannot reach is a _sibling_ — `Switch`'s track is not an ancestor of its input — which keeps `peer-focus-visible:ring-2` on that track alone, with a
 one-line reason at the site.
 
-**`state-disabled`, `state-invalid` and `state-busy` reach it the same way, and all three must** — a state prop landing on a hidden inner control
-while the recipe sits on the wrapping label is the ordinary shape here, not the exception. `state-busy` shipped without the branch once, and
-`<Switch busy>` and `<Toggle busy>` were silently inert for as long as it did. A new state recipe carries it from the start.
+**`state-disabled`, `state-invalid` and `state-busy` reach it the same way, and each must** — a state prop landing on a hidden inner control while
+the recipe sits on the wrapping label is the ordinary shape here, not the exception. A recipe without the branch leaves `<Switch busy>` and
+`<Toggle busy>` silently inert, so a new state recipe carries it from the start.
 
-**A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** The five that paint nothing in the base state —
-`focus-ring`, `focus-ring-outset`, `state-busy`, `state-disabled`, `state-invalid` — take the group `forge:<name>` rather than their compiled
-signature. `config/steps.ts` names them through `FORGE_STATE_RECIPES`; `reach()` finds no CSS property in such a key, so no override edge is derived
-into or out of one either.
+**A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** A recipe that paints nothing in the base state takes the
+group `forge:<name>` rather than its compiled signature; `config/steps.ts` names them through `FORGE_STATE_RECIPES`. `reach()` finds no CSS property
+in such a key, so no override edge is derived into or out of one either.
 
 **A compiled signature groups a state recipe wrongly in both directions.** `signature()` prefers a utility's `--tw-*` variables over the CSS
 properties it also sets, so `state-invalid` — `border-color` _and_ `--tw-ring-color` — collapses to the group every `ring-*` takes, and since a
@@ -225,12 +221,12 @@ a `state-pressed` would delete the `bg-transparent` beside it. **What works ther
 (`PRESSED_PAINT`), since each token then keeps its own scope. Every signature and scope is pinned in
 `src/tooling/gate/checks/state-recipes.test.ts`.
 
-**`--tone` is a companion mechanism, not an `@utility`.** `toneVariants` in `src/ui/core/utils/tone.ts` sets six custom properties per tone
-(`--tone`, `--tone-fg`, `--tone-text`, `--tone-soft`, `--tone-soft-fg`, `--tone-soft-border`) and one recipe per appearance reads them, so five
-recipes cover thirty-five cells. Each property is its own `cn` conflict group (`arb:--tone`), which is what lets a caller re-tone a component by
-passing `[--tone:…]` after it. Every cell is measured against the 1.4.3 floor in `tone.browser.ts`, and the `warning` tone's text property
-deliberately reads its step-11 rather than its fill because the fill does not clear it — [`THEME_GENERATION.md`][tg-3a] §3a owns the audited pairs
-behind each property.
+**`--tone` is a companion mechanism, not an `@utility`.** `toneVariants` in `src/ui/core/utils/tone.ts` sets the per-tone custom properties
+(`--tone`, `--tone-fg`, `--tone-text`, `--tone-soft`, `--tone-soft-fg`, `--tone-soft-border`) and one recipe per appearance reads them, so one
+recipe covers every tone. Each property is its own `cn` conflict group (`arb:--tone`), which is what lets a caller re-tone a component by passing
+`[--tone:…]` after it. Every cell is measured against the 1.4.3 floor in `tone.browser.ts`, and the `warning` tone's text property deliberately
+reads its step-11 rather than its fill because the fill does not clear it — [`THEME_GENERATION.md`][tg-3a] §3a owns the audited pairs behind each
+property.
 
 ### 1f. Which Utility Composes a Class, and In What Order
 
@@ -285,7 +281,7 @@ stable release.
 
 **A step is written in OKLCh**, the space its value was produced in.
 
-The ramps in `src/ui/contracts/theme/color.ts` are authored in OKLCh, so it is the scheme's own space and hex was a lossy render of it. Writing that
+The ramps in `src/ui/contracts/theme/color.ts` are authored in OKLCh, so it is the scheme's own space and hex is a lossy render of it. Writing that
 space into the file makes a scheme legible and hand-editable: shifting the hue of every step becomes a substitution rather than a regeneration. It
 costs the contrast gate nothing, because the resolver already reads `oklch()`.
 
@@ -335,7 +331,7 @@ Tailwind's `--text-*` namespace carries font size while the `text-*` utility als
 same class name. A conflict table cannot tell them apart, guesses colour — what nearly every unenumerated name under `text-` is — and drops the
 other: `cn("text-hero text-red-500")` returns `text-red-500` alone, in a consuming app's markup, silently.
 
-**`font-*` is the same shape, and the trap is worse for being unenumerated.** Tailwind compiles nine weight utilities against three families, so the
+**`font-*` is the same shape, and the trap is worse for being unenumerated.** Tailwind compiles far more weight utilities than families, so the
 derived row gives root `font` the weight concern and lists `mono | sans | serif` as its exceptions. A consumer's `--font-display` token yields
 `font-display`, which reads as a _weight_, and `cn("font-display", "font-semibold")` silently drops the face. The row is mechanically correct — the
 modal group is the named group — so the answer is not a hand-edit of the table, which is generated (§1c).
@@ -350,7 +346,7 @@ unchanged and still silent.
 **The gate holds forge to it, and holds an opted-in consumer to it.** `validate-css-tokens` fails any `@theme` token declared in an
 overloaded namespace, deriving _overloaded_ from the compiled design system rather than a hand-kept list that would age: a root whose enumerated
 values mean one concern and whose other names mean another. The row is not forge-only — `cloudflareWorkerSteps({ design: { cssDir } })` runs it
-against the app's own CSS directory, so a consumer naming `design.cssDir` has its non-conforming `--text-*` or `--font-*` token flagged today. It is
+against the app's own CSS directory, so a consumer naming `design.cssDir` has its non-conforming `--text-*` or `--font-*` token flagged. It is
 opt-in on that key, so an app that names no `cssDir` runs no such row; for that app the convention is published where it reads it — the `forge.css`
 header and `src/ui/README.md`.
 

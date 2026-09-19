@@ -49,11 +49,11 @@ export default createApp<Bindings>({
 });
 ```
 
-What that expression settles, and why to prefer it over wiring by hand:
+What that expression settles:
 
-- **The wiring hooks run in a fixed order** — `middleware`, `routes`, `finalize`, then `assets` — so the asset catch-all is registered last and
-  cannot shadow a route, whatever order you wrote the fields in. `finalize` is for late registrations that must still precede it, such as a route
-  only a development build registers.
+- **The wiring hooks run in a fixed order** — `middleware`, `routes`, `finalize`, then `assets` — so the asset catch-all cannot shadow a route,
+  whatever order you wrote the fields in. `finalize` is for late registrations that must still precede it, such as a route only a development build
+  registers.
 - **`Bindings` types `c.env` everywhere downstream**, in middleware, loaders, views and handlers alike.
 - **`config` is resolved once per request** and reaches handlers as their `config` argument, and the context as `c.config`. Pass a store built with
   `createConfig` from [`@y-core/forge/config`][config-readme].
@@ -65,9 +65,8 @@ in that order — stays supported for a layout the hooks cannot express, and is 
 
 ## Wiring the middleware chain
 
-Global middleware order is load-bearing: a nonce provider that runs after its consumers produces a page with no styles, and a rate limiter that runs
-before the logger costs you the record of what it refused. `applyMiddlewareChain` encodes that order once, so the choice you are making is **which
-guards cover which paths**, not what runs when.
+`applyMiddlewareChain` encodes the global middleware order once, so the choice you are making is **which guards cover which paths**, not what runs
+when.
 
 ```ts
 applyMiddlewareChain(app, {
@@ -98,8 +97,7 @@ app.use("*", requestId());
 app.use(["/admin/*", "/internal/*"], adminOnly);
 ```
 
-Those two are the only wildcard forms, and `use` throws on any other. `"/admin*"` looks like it guards `/administrator` and `/admin-api/export`; it
-would not, so it is refused at registration rather than left to under-cover in silence.
+Those two are the only wildcard forms, and `use` throws at registration on any other — `"/admin*"` included.
 
 `buildGuardChain(group)` expands one guard group into the ordered array `app.use` takes, for a group you want to register yourself.
 
@@ -171,9 +169,8 @@ still apply to it.
 a redirect or a `no-store` refusal keeps what it said. `headers` is applied last and overrides everything, including `cache`.
 
 **`scope` defaults to `"private"`** — the browser may store the page, a shared cache may not. Write `scope: "public"` when the page is the same for
-every reader and you want an edge or proxy to serve it. The default is the safe one because forgetting it on a personalised page would let
-a shared cache hand one reader's HTML to another, while forgetting it on a public page costs only a cache hit. The full lifecycle,
-including what a `schema` on a page changes, is [`ROUTING_AND_MIDDLEWARE.md`][ram-2a] §2a's.
+every reader and you want an edge or proxy to serve it. The full lifecycle, including what a `schema` on a page changes, is
+[`ROUTING_AND_MIDDLEWARE.md`][ram-2a] §2a's.
 
 A page that also accepts a submission declares a `schema` and an `action`; the options that come with it are the next section's, and they mean the
 same thing on a page as on an action.
@@ -183,8 +180,7 @@ same thing on a page as on an action.
 ## Handling a form submission
 
 `defineAction` answers with a fragment; `definePage` with a whole page. That is the whole basis for choosing between them — both run the identical
-read → guard → validate sequence first, and neither has a path to its own terminal step that goes around it
-([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
+read → guard → validate sequence first ([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
 
 ```ts
 import { defineAction } from "@y-core/forge/app";
@@ -219,10 +215,9 @@ without you supplying anything. Optional hooks replace them one for one, and eac
   mistyped field sees ([`INPUT_VALIDATION.md`][iv-4b] §4b).
 - `onError` replaces the `500` fragment for anything that throws inside the sequence or in `handle`.
 
-**Bot guards that read the body go here; transport guards do not.** `turnstile` names a field of _this_ form, so the pipeline verifies it and drops
-the field before the schema sees it — no schema declares it. CSRF, origin and rate-limit guards decide from the request envelope and belong in the
-controller's `middleware` array. What is dropped is derived from what a guard actually consumed, never declared
-([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
+**Bot guards that read the body go here; transport guards do not.** `turnstile` names a field of _this_ form, and the pipeline drops that field
+before the schema sees it — no schema declares it. CSRF, origin and rate-limit guards decide from the request envelope and belong in the
+controller's `middleware` array ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
 
 ```ts
 turnstile: {
@@ -286,9 +281,8 @@ createApp<Bindings>({
 });
 ```
 
-Your app's per-request context and layout stay inside that closure, which is why no context type parameter reaches forge. `slot` is
-`{ mount, page, meta }`; `mount` is an open string, so a shell that branches on it needs a default arm. `app.setShell(shell)` registers one after
-construction and is the single writer of the slot ([`ROUTING_AND_MIDDLEWARE.md`][ram-6a] §6a).
+`slot` is `{ mount, page, meta }`; `mount` is an open string, so a shell that branches on it needs a default arm. `app.setShell(shell)` registers
+one after construction ([`ROUTING_AND_MIDDLEWARE.md`][ram-6a] §6a).
 
 **When the whole chrome is a stylesheet and a script**, `pageShell` is the shell:
 
@@ -323,13 +317,12 @@ app.map(routes, controller);
 applyAssets(app); // or applyAssets(app, "/static/*") for a narrower pattern
 ```
 
-**`notFound` is the single answer to a URL that matches no route** — the router's no-match and every asset miss alike, so configuring assets changes
-which path reaches it and never what a client gets. Omitted, forge answers a hardened plain-text `404` that does not echo the request path
-([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e).
+**`notFound` is the single answer to a URL that matches no route** — the router's no-match and every asset miss alike. Omitted, forge answers a
+hardened plain-text `404` that does not echo the request path ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e).
 
-**A method mismatch reaches that same hook by default**, so a `POST` to a `GET`-only page is answered exactly as an unknown URL is, and a caller
-cannot tell the two apart. Pass `methodMismatch: "advertise"` for the RFC answer instead — a hardened `405` with `Allow: GET, HEAD` and a body that
-does not echo the method — which is usually what a JSON API wants and rarely what a page surface does:
+**A method mismatch reaches that same hook by default**, so a `POST` to a `GET`-only page is answered exactly as an unknown URL is. Pass
+`methodMismatch: "advertise"` for the RFC answer instead — a hardened `405` with `Allow: GET, HEAD` — which is usually what a JSON API wants and
+rarely what a page surface does:
 
 ```tsx
 const app = createApp<Bindings>({ methodMismatch: "advertise" });
@@ -359,8 +352,8 @@ It is a bare handler in the controller's `actions` map, with no route middleware
 
 ## Validating bindings before anything reads them
 
-Both forms check a Worker's bindings against a valibot schema and **throw** on failure, because a malformed environment is a deployment error rather
-than a runtime condition ([`FORGE_ERRORS.md`][eh-5e] §5e). Choose by where you are standing:
+Both forms check a Worker's bindings against a valibot schema and **throw** on failure ([`FORGE_ERRORS.md`][eh-5e] §5e). Choose by where you are
+standing:
 
 - `validateBindings(schema)` — middleware. Validates `c.env` on the first request and again whenever the env reference changes. Pass it as
   `applyMiddlewareChain`'s `bindings` field, or register it with `app.use("*", …)`.
@@ -402,7 +395,7 @@ A `Reference: <id>` line appears when the `requestId` middleware ran, matching t
 id, so without that middleware the line is absent.
 
 The page is Tailwind-classed markup that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/app";` to your own stylesheet or it renders
-unstyled — the scanning boundary that makes this a README's business is [`FORGE_STRUCTURE.md`][la-3d] §3d.
+unstyled ([`FORGE_STRUCTURE.md`][la-3d] §3d).
 
 ---
 
@@ -433,9 +426,8 @@ A bare path is resolved against `http://localhost`; a full URL is used as given.
 export default { fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx) };
 ```
 
-Dropping `ctx` is a deployment defect, so `fetch` refuses rather than degrading — a stubbed no-op `waitUntil` would discard the request-log flush,
-the D1 schema observation and every `c.executionCtx.waitUntil(auditLog(…))` a route defers, with nothing written and nothing logged. Outside a
-Worker, `@y-core/forge/testing` supplies `mockExecutionContext()` and `collectExecutionContext()`.
+`fetch` refuses a missing `ctx` rather than degrading. Outside a Worker, `@y-core/forge/testing` supplies `mockExecutionContext()` and
+`collectExecutionContext()`.
 
 ---
 
@@ -446,14 +438,13 @@ Worker, `@y-core/forge/testing` supplies `mockExecutionContext()` and `collectEx
 **A `HEAD` request never reaches a handler as itself.** The app copy-constructs it into a `GET`, runs the full chain, then strips the body — so
 handlers never special-case it, and `router` ships no `head` verb ([`ROUTING_AND_MIDDLEWARE.md`][ram-1d] §1d).
 
-**A submission option without a `schema` throws at registration.** `turnstile`, `onBotDetected`, `onValidationError` and `maxBytes` configure a
-pipeline that a schema-less page does not have, so `definePage` refuses them by name rather than ignoring them ([§2d][ram-2d]).
+**A submission option without a `schema` throws at registration.** `definePage` refuses `turnstile`, `onBotDetected`, `onValidationError` and
+`maxBytes` by name rather than ignoring them ([§2d][ram-2d]).
 
 **Raising `maxBytes` on the handler is half the change.** A `csrfProtection` guard on the same route parses the body first, so its own cap is what a
 large submission meets — see [`src/form/README.md`][form-readme].
 
-**An aborted request gets no page and no log record.** A disconnected client is cancellation, not a failure: the boundary answers `499` and both
-builders re-throw to it.
+**An aborted request gets no page and no log record.** The boundary answers `499`.
 
 **No config store means `c.config` is `undefined`**, and handlers receive `undefined` for their `config` argument. Nothing throws.
 

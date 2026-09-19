@@ -3,6 +3,16 @@ import { basename, posix, relative, resolve, sep } from "node:path";
 
 import type { CommentSpan } from "./types";
 
+/** The suffixes that mark a file test-only. The one list — every check that must not judge a test reads it. */
+const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
+
+// None of the three is deployed: a spec is not shipped, a `.browser.ts` spec runs under Playwright,
+// and `files` excludes every `*.fixture.ts`. So each is free to reach what a deployable module may not.
+/** Whether `path` is test-only, decided by its suffix alone. @public */
+export function isTestSource(path: string): boolean {
+  return TEST_SUFFIXES.some((suffix) => path.endsWith(suffix));
+}
+
 /** Every file under `dir` matching `accept`, repo-relative to `root`, posix-separated and sorted. @public */
 export function collectFiles(root: string, dir: string, accept: (name: string) => boolean): string[] {
   const base = resolve(root, dir);

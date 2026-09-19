@@ -23,11 +23,11 @@ audience: consumer
 ## 0. Quick Reference
 
 - §1 Forward-Only Migrations: why no migration has a Down, and what replaces one
-- §2 Targets and Homes: the `place[:database]` grammar, the four places, and where each one's state lives
+- §2 Targets and Homes: the `place[:database]` grammar, the places, and where each one's state lives
 - §2a Standby — a Second Local Database: what it is for, why it is generated rather than checked in, and the one verb that rebuilds it
 - §3 The Undo, Per Place: a Time Travel bookmark on a deployed database, reset-and-restore locally, and a backup from any place
 - §4 The Companion Tables: the two tables forge keeps, why their names begin `_forge_`, and that forge owns the migration history outright
-- §4a `_forge_migrations` — The Migration History: what each column holds, the three states status reports, and what a NULL fingerprint means
+- §4a `_forge_migrations` — The Migration History: what each column holds, the states status reports, and what a NULL fingerprint means
 - §4c `_forge_seed_history` — What Has Been Seeded: a seed that already ran, and one that was edited since
 - §5 The Migration Lint Rules: what each rule matches and why, when a level aborts, and the compose warning that never does
 - §6 Applying: the lock, the `--to` cut, and the status gate
@@ -77,9 +77,9 @@ Consequences a consumer acts on:
 
 ## 2. Targets and Homes
 
-Every verb takes `--target place[:database]`, and `place` is one of four. The default is `local`. The optional `:database` names the `d1_databases`
-entry when the wrangler config declares more than one; `--db <binding|database_name>` is the same choice spelled as a flag. A config declaring
-several databases and a run naming none is refused rather than resolved to the first entry.
+Every verb takes `--target place[:database]`, and the places are the table below. The default is `local`. The optional `:database` names the
+`d1_databases` entry when the wrangler config declares more than one; `--db <binding|database_name>` is the same choice spelled as a flag. A config
+declaring several databases and a run naming none is refused rather than resolved to the first entry.
 
 | Place | Which database | Where its state is | Written by |
 | --- | --- | --- | --- |
@@ -135,7 +135,7 @@ fingerprint — `--allow-drift` is the way past that refusal, and the apply then
 first, so a migration that only fails on real rows fails on the copy (§6f).
 
 **On `local` and `standby`, the undo is a verified backup and a reset.** Time Travel does not exist off Cloudflare, so the sequence is explicit and
-in three verbs rather than one: back up, reset, restore. The README spells the invocation.
+in separate verbs rather than one: back up, reset, restore. The README spells the invocation.
 
 `reset` is the only verb that empties a database, and it does so by removing miniflare's state files rather than by deleting rows. It refuses to run
 against a database that holds rows and has no verified backup that still describes those rows ([`DATABASE_BACKUPS.md`][db-6] §6). It also demands
@@ -193,7 +193,7 @@ index, as a raw SQLite unique-constraint error rather than a forge message. A co
 that applied its last migration and then failed before certifying leaves behind, and `forge db migrate status` reports it — while still exiting zero
 on that clause, since nothing about the schema is known to be wrong (§6c).
 
-`forge db migrate status` compares this table against the files on disk into three states a reader must act on:
+`forge db migrate status` compares this table against the files on disk into the states a reader must act on:
 
 | State | Means |
 | --- | --- |
@@ -269,8 +269,8 @@ deletion ([`SCHEMA_COMPOSITION.md`][sc-3] §3).
 **An error aborts any apply. A warning aborts a deployed apply only**, and `--allow-warnings` lets one through after it has been read; against a
 local database a warning is logged and the apply proceeds. `forge db lint --strict` fails on a warning too, which is the spelling for a gate.
 `forge db lint --seeds` runs the seed rule and, at warning level, `unbounded-update`, `unbounded-delete`, `drop-no-if-exists` and `attach-database`
-(§7). Compose's own warnings (`SCHEMA_COMPOSITION.md` §4) are a fourth channel beside errors, warnings and `--strict`: printed with the plan, never
-aborting, and carried in the JSON outcome as `warnings`.
+(§7). Compose's own warnings (`SCHEMA_COMPOSITION.md` §4) are a channel of their own beside errors, warnings and `--strict`: printed with the plan,
+never aborting, and carried in the JSON outcome as `warnings`.
 
 ---
 
@@ -325,8 +325,8 @@ outage. The repair is `forge db migrate`.
 
 ### 6d. Check, then Apply
 
-`forge db migrate` reads `_forge_migrations` before it plans anything, and holds the database against it three ways. Each is a refusal that names
-its own repair:
+`forge db migrate` reads `_forge_migrations` before it plans anything and holds the database against it. Each check is a refusal that names its own
+repair:
 
 1. **An edited history.** An applied migration whose file does not hash to the `sha256` its history row recorded. The hash covers the file with its
    `forge:compose` stamp blanked, so an edit to the stamp line alone — a `--restamp` — is not an edit. Restore the file from version control, or
@@ -370,7 +370,7 @@ follows from what the verb does to the database:
 | Verb | On a mismatch | Why that and not the other |
 | --- | --- | --- |
 | `forge db migrate` | Refuses; `--allow-drift` applies anyway and certifies the fingerprint again | It is the verb that can explain the schema, so it is the one that insists |
-| `forge db seed` | Refuses; `--allow-drift` seeds anyway | A seed writes rows into whatever schema is there. Held before the lint, the confirmation and the first load, so a schema nothing explains stops the run with nothing written rather than halfway through the set — and `--allow-drift` certifies nothing, so `migrate` goes on refusing |
+| `forge db seed` | Refuses; `--allow-drift` seeds anyway | A seed writes rows into whatever schema is there, and the check is held early (§7). `--allow-drift` certifies nothing, so `migrate` goes on refusing |
 | `forge db backup` | Says so, records the state in `manifest.json`, and takes the backup | An artifact of a drifted database is still worth having ([`DATABASE_BACKUPS.md`][db-4] §4) |
 
 **`forge db schema check` is not on that list, and stays off it.** It reads files and opens no database, which is what lets it run in a checkout, in
@@ -446,7 +446,7 @@ neither. There is no `seed apply --dry-run`, because `seed status` is that verb.
 
 Seeds are ordinary SQL, so idempotence within one file is the author's: write `INSERT OR IGNORE`, or `INSERT … ON CONFLICT DO NOTHING`, rather than
 relying on the history table to be the only guard. `seed-insert-not-idempotent` (a warning) names an `INSERT` with none of them — `seed apply` logs
-it, and `forge db lint --seeds` fails on it under `--strict`. Four of the migration rules run over a seed as well — `unbounded-update`,
+it, and `forge db lint --seeds` fails on it under `--strict`. These migration rules run over a seed as well — `unbounded-update`,
 `unbounded-delete`, `drop-no-if-exists` and `attach-database` (§5) — as warnings rather than the errors they are for a migration, so an existing
 seed keeps applying locally with the warning logged, and a deployed target refuses it until `--allow-warnings` says it was read.
 
@@ -496,7 +496,7 @@ an empty diff" a usable check in a consumer's gate.
 contributes no DDL to your database because it happens to ship some; it contributes DDL because the app asked for it, by path, in a file a reviewer
 can see.
 
-It declares five positions: the desired-state files in load order, the seeds directories in run order, the one migrations directory, where the
+It declares these positions: the desired-state files in load order, the seeds directories in run order, the one migrations directory, where the
 composed snapshot lives, and where backups go. The fields, their defaults and a worked `db.ts` are the README's; `DbHostConfig` in
 `src/tooling/db/types.ts` is authoritative over both ([`SOURCE_OF_TRUTH.md`][sot] §2a).
 
@@ -517,8 +517,8 @@ directory in `source` (§4c).
 library change that needs a backfill is documented in its CHANGELOG, and the consumer writes it as `forge db migrate compose --custom`.
 
 **`forge db schema check`** is the gate over the declared schemas (`SCHEMA_COMPOSITION.md` §6), and what the bare `forge db schema` runs. There is
-no verb that prints the declarations as one document: a file is read by opening it, and a concatenation of files nothing consumes is a fourth
-rendering of the schema to keep in step with the other three.
+no verb that prints the declarations as one document: a file is read by opening it, and a concatenation of files nothing consumes is another
+rendering of the schema to keep in step with the rest.
 
 **A library generates nothing beside its `schema.sql`.** A checkout that declares a schema and composes no migration has no snapshot and needs
 none: there is no history to remember and nothing to hold in step. `forge db schema check --replay` in that checkout loads the declarations into a

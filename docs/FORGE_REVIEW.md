@@ -9,8 +9,8 @@ audience: internal
 > Owns the review process: what blocks a merge, how to _detect_ each violation rather than hand-inspect for it, how to calibrate severity, and which
 > suspicious-looking patterns are correct.
 >
-> **This document restates no rule.** Every item below is either a `detect:` command or a link to the document that owns the rule. If you want to
-> know _why_ a rule exists, follow the link.
+> **This document restates no rule.** Every item below is either a `detect:` command or a link to the document that owns the rule — follow the link
+> for the _why_.
 >
 > Defers to: [`CODE_REVIEW.md`][cr] for the fleet's review standard — this document adds forge's own invariants and detection commands to it, and
 > replaces none of them.
@@ -97,13 +97,14 @@ reaching a log record. Each still blocks a merge. Read both tables, or read the 
 **Hand-spelled focus ring or disabled paint in `src/ui`**
 
 ```bash
-rg -n 'focus-visible:ring-2|has-\[:focus-visible\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\[:disabled\]:opacity' src/ui --glob '!*.test.*' --glob '!forge-ui.css'
+rg -n 'focus-visible:ring-2|has-\[:focus-visible\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\[:disabled\]:opacity' src/ui \
+  --glob '!*.test.*' --glob '!forge-ui.css' --glob '!src/ui/design/**'
 ```
 
 _Triage:_ any hit is a component re-spelling a recipe `forge-ui.css` publishes as an `@utility` (`focus-ring`, `state-disabled`, `state-invalid`,
-`state-busy`, `field-chrome`) — see [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e. The one legitimate spelling that is not a hit is `Switch`'s
-`peer-focus-visible:ring-2` on the track, which reaches across a sibling that `&:has()` cannot; it is excluded by the `!forge-ui.css` glob only
-because the utility itself lives there. The design corpus under `src/ui/design` is excluded by the same reasoning as every other Tier 2 command.
+`state-busy`, `field-chrome`) — see [`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e, whose own definitions the `!forge-ui.css` glob drops. The design
+corpus under `src/ui/design` quotes the utilities it teaches, so it is dropped for the same reason every other Tier 2 command drops it. One hit
+remains and is legitimate: `Switch`'s `peer-focus-visible:ring-2` on the track, which reaches across a sibling that `&:has()` cannot.
 
 **Valibot facade breach**
 
@@ -130,15 +131,18 @@ excludes the one legitimate class — a published-surface assertion importing a 
 
 ```bash
 rg -n '\bBun\.|from "node:' src/ \
-  --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' \
+  --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/workerd.ts' \
   --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
   --glob '!**/*.fixture.ts'
 ```
 
 _Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption ([`NAMESPACES.md`][namespaces-4a] §4a) — and `ui/assets/build`
-is the one runtime-owned namespace that carries the same exemption behind its own subpath. Tests and `.browser.ts` specs run under Bun or
-Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker does. **Without those globs the
-command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a genuine runtime-portability break.
+is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/workerd.ts` starts the runtime a spec runs
+against, from a test runner, and is reached only through its own subpath and never from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f]
+§7f) — so reachability exempts it ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the glob names the file, not the namespace around it. Tests and
+`.browser.ts` specs run under Bun or Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker
+does. **Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a genuine
+runtime-portability break.
 
 _The direction that matters most is already a gate step._ `validate-build-time-boundary` fails any runtime module that imports a build-time one, so
 a review does not have to find that by hand; run this command for the case the step cannot see — a Node API used **inside** a runtime namespace
@@ -178,7 +182,7 @@ correctly, which is the one shape a looser pattern picks up as a false positive.
 
 **The unparameterised spelling never reaches review**: `ForgeIcon` declares no default for `Name`, so `tsc` rejects a bare `ForgeIcon` at the
 declaration site and the gate's `typecheck` step fails before this command runs. The command stays because `ForgeIcon<string>` is still spellable,
-still compiles, and is still always wrong in a prop position — catching that explicit spelling is its remaining job.
+still compiles, and is still always wrong in a prop position.
 
 Restating-the-code and narration are not reachable by any command; they belong to §3c.
 
@@ -285,7 +289,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 
 ### 7a. Why `categories.suspicious` is off
 
-`.oxlintrc.json` enables `correctness` as a category and names every other rule individually. That is a deliberate default-deny, for two reasons.
+`.oxlintrc.json` enables `correctness` as a category and names every other rule individually — a deliberate default-deny.
 
 **A category is a standing subscription to oxc's editorial judgement.** `lintStep` is published through `src/tooling/gate/mod.ts`, so a rule oxc
 moves into `suspicious` would fail the gate of every consumer app that builds its table from forge's preset, on the next install and with no
@@ -378,6 +382,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [iv-1a]: ./INPUT_VALIDATION.md#1a-v-namespace--complete-valibot-re-export
 [iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
+[la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-4a]: ./FORGE_STRUCTURE.md#4a-re-export-rules-for-facade-namespaces
 [la-6]: ./FORGE_STRUCTURE.md#6-cloudflare-workers-runtime-model
 [la-7]: ./FORGE_STRUCTURE.md#7-pre-10-api-evolution

@@ -60,8 +60,7 @@ const assets = resolveObjectStore(c, { binding: (c) => c.env.ASSETS, store: { pr
 
 ## Querying D1
 
-`query` reads rows, `queryOne` reads the first or `null`, `execute` writes, and `batch` runs several statements as one transaction. Each takes a
-fragment built by the `sql` tag and resolves to a `Result`.
+Every read and write takes a fragment built by the `sql` tag and resolves to a `Result`.
 
 ```ts
 const rows = await db.query<User>(sql`SELECT id, email FROM users WHERE status = ${status} LIMIT ${limit}`);
@@ -153,7 +152,7 @@ when JavaScript has to reproduce an `ORDER BY` it did not run.
 ## Reporting schema drift from a Worker
 
 A Worker can read whether the schema it serves is the one `forge db migrate` certified, and say so. `checkSchemaHealth(db)` is the raw read,
-resolving to `{ state, recorded, actual }`; two surfaces build on it.
+resolving to `{ state, recorded, actual }`; the surfaces below build on it.
 
 ```ts
 import { healthCheck } from "@y-core/forge/app";
@@ -231,9 +230,8 @@ const served = await assets.serveObject(c.request, "avatars/42.png", { cacheCont
 return served.ok ? served.data : new Response("Unavailable", { status: 503 });
 ```
 
-Alongside `put` and `serveObject` the store offers `get` (metadata plus a streamable body), `head` (metadata only), `delete` (one key or an array)
-and `list`. A key that starts with `/` or carries a `.` or `..` segment is rejected, and reaches the caller as `{ ok: false, error }` like any other
-failure — so an untrusted key goes to the store, never straight to the backend.
+A key that starts with `/` or carries a `.` or `..` segment is rejected, and reaches the caller as `{ ok: false, error }` like any other failure —
+so an untrusted key goes to the store, never straight to the backend.
 
 **When `contentType` is omitted, `put` infers it from the key's extension** (`inferContentType`, falling back to `CONTENT_TYPE_DEFAULT`) — **except
 for the extensions a browser would execute**: `html`, `htm`, `svg`, `xml`, `js` and `mjs` all infer `application/octet-stream`, because a key is

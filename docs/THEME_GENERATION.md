@@ -112,8 +112,8 @@ application's own shape file follows the same shape: one `:root` block, those to
 [`UI_CLASS_COMPOSITION.md`][ucc-2f] §2f names as overloaded between colour and width, so the width recipe is declared as a static utility in
 `forge-ui.css` where `cn` reads its compiled signature unambiguously.
 
-**The customiser's shape dials drive these tokens directly**, as `--radius` always was (§2b): a dial whose whole output is one custom property, with
-no scale behind it. `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH` writes
+**The customiser's shape dials drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is one custom property, with no
+scale behind it. `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH` writes
 `--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it. Every dialled property but `--radius` is named by
 `SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector` and `--border-width` are not dialled: a pill is a pill at every
 radius, and a hairline that moves with a slider is a different decision from a corner that does.
@@ -164,8 +164,7 @@ output is one custom property.
 
 **Shape is emitted as a second block, under its own comment, rather than folded into the scheme.** The scheme block stays exactly what §1d says a
 scheme is — colour steps and nothing else — so the shape declarations `SHAPE_PROPERTIES` names follow it as a file a reader saves separately, the
-way `shape-compact.css` ships. `--radius` is painted rather than emitted, and
-stays where it was.
+way `shape-compact.css` ships. `--radius` is painted rather than emitted.
 
 ### 2d. No Generated Colour Reaches Markup
 
@@ -272,15 +271,14 @@ Each intent owns three tokens, mirroring primary:
 `UI_CLASS_COMPOSITION.md` §2c already rules that `--destructive` / `--success` / `--warning` **are** fills, so the naming follows from a decision
 already taken. Every call site that painted error or status text off the fill moves to the `-text` token.
 
-The audit follows the tokens. The "as text on a page surface" rows that measured a step 9 against `--gray-3` now measure `--destructive-text`
-/ `--info-text` / `--success-text` on step 11, and `--warning-text` gains the row it never had. No status pair is live-measured — `scalePairs()`
-keeps only pairs with both sides on a generated scale, and every status side is fixed — so the contrast step is the sole detector of a regression
-here.
+The audit follows the tokens: the "as text on a page surface" rows measure `--destructive-text` / `--info-text` / `--success-text` on step 11, and
+`--warning-text` carries one of its own. No status pair is live-measured — `scalePairs()` keeps only pairs with both sides on a generated scale, and
+every status side is fixed — so the contrast step is the sole detector of a regression here.
 
 ### 4c. Success Unifies on Emerald
 
-Success is one hue. The emerald ramp already carried the subtle, strong and border steps; the fill and its contrast step join it, and `--green-9`
-and `--green-contrast` retire. The audit rows that already named `--emerald-contrast` and `--emerald-9` become true rather than needing a rewrite.
+Success is one hue: the emerald ramp carries the subtle, strong and border steps alongside the fill and its contrast step, and `--green-9` and
+`--green-contrast` are retired.
 
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules

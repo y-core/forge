@@ -28,8 +28,8 @@ alone, none of them related to any other.
 ## 1. The scale is the vocabulary
 
 Tailwind v4 builds every spacing utility from one base unit of `0.25rem` (4px), so `p-4` is 16px and `gap-6` is 24px. Anything expressible as a
-multiple of that unit is a legal utility, which is exactly why a rule is needed: legality is not the constraint here, restraint is.
-`forge-ui-spacing-scale-only` is the Floor — no arbitrary values, no hand-typed pixel offsets.
+multiple of that unit is a legal utility, which is why a rule is needed: the constraint is restraint, not legality. `forge-ui-spacing-scale-only` is
+the Floor — no arbitrary values, no hand-typed pixel offsets.
 
 Default: a surface draws its spacing from a small set of steps chosen up front — `2`, `3`, `4`, `6`, `8`, `12`, `16` is a workable default set —
 rather than picking a fresh value at each decision, unless a brief specifies a density other than forge's ratified default.
@@ -38,9 +38,6 @@ rather than picking a fresh value at each decision, unless a brief specifies a d
 Default: no two spacing values on one surface sit within 25% of each other — `gap-5` beside `gap-6` reads as a mistake rather than a distinction,
 while `gap-4` beside `gap-6` reads as deliberate — unless the two values are set by two different forge primitives whose internals the surface does
 not control. <!-- rule:forge-ui-layout-step-distance -->
-
-The 25% test is easy to apply in your head: 12px and 16px differ by a third and read as two levels; 20px and 24px differ by a fifth and read as one
-level rendered inconsistently.
 
 ## 2. Ambiguous spacing
 
@@ -118,7 +115,7 @@ together — in which case both move, and the ratio between them is preserved. <
 | `Card.Footer` | `px-6 py-4` | `gap-2` between actions |
 
 The title and its description sit 6px apart; the header and the content sit 40px apart, because each contributes its own 20px of vertical padding.
-Title-to-description is unmistakably tighter than section-to-section, and the header's bottom border makes the boundary explicit besides.
+The header's bottom border makes the boundary explicit besides.
 
 Default: content inside a `Card` uses the section components rather than padding the root directly, so the section rhythm survives, unless the card
 holds a single edge-to-edge element such as an image or a table that should bleed to the border. <!-- rule:forge-ui-layout-card-section-rhythm -->
@@ -182,8 +179,8 @@ and need a hover background that a `<hr>` would interrupt. <!-- rule:forge-ui-la
 Default: a panel that needs to read as recessed rather than raised uses a `--muted` background with no border, unless it sits directly on a
 `--muted` surface already, where the two would merge. <!-- rule:forge-ui-layout-muted-panel -->
 
-`forge-ui-no-nested-card` is the Floor here: a `Card` inside a `Card` produces two borders and two elevations that between them communicate nothing.
-When a card's content needs internal grouping, that is exactly the case the `--muted` panel above exists for.
+`forge-ui-no-nested-card` is the Floor here. When a card's content needs internal grouping, that is exactly the case the `--muted` panel above
+exists for.
 
 ### 6a. Before / after — the bordered list
 

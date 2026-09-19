@@ -10,12 +10,9 @@ pairs: the hand-written form, and the platform feature that replaced it.
 
 This file is organised by how strongly forge holds each pair, because the strength is what decides the shape of the sentence.
 
-- **Tier A** is stated flat, as the Floor is. The hand-written form and the platform form are the same rendering, so there is nothing to weigh — the
-  pattern is simply the older spelling, and it is refused.
-- **Tier B** is behaviour the platform now implements: a dialog, a disclosure, a reveal. Each is a `Default:`, because adopting the platform's
-  implementation also adopts its semantics, and there are real interactions whose semantics differ.
-- **Tier C** is the authoring form — how a stylesheet is ordered, scoped and wrapped. Each is a `Default:` too, and its override is usually a
-  specificity or a containment consequence rather than a design one.
+- **Tier A** is stated flat, as the Floor is: the pattern is simply the older spelling, and it is refused.
+- **Tier B** is behaviour the platform now implements: a dialog, a disclosure, a reveal. Each is a `Default:`.
+- **Tier C** is the authoring form — how a stylesheet is ordered, scoped and wrapped. Each is a `Default:` too.
 
 Two patterns in this territory are already named elsewhere and keep the ids they have: `forge-ui-reduced-motion` in [`../floor.md`][floor], and
 `forge-ui-interaction-focus-visible` in [`09-interaction.md`][interaction]. They are cited from here, never restated, because an id is a permanent
@@ -377,13 +374,11 @@ where a mix carrying alpha composites against whatever is behind it and the valu
 **Ring, border and outline tokens are excluded outright**, and the exclusion is a finding rather than a preference. A mix with `transparent`
 composites against the backdrop, so a ring expressed that way measures against whatever is behind it rather than against the surface, and lands
 under the 3:1 non-text floor WCAG 1.4.11 sets for a focus indicator. [`09-interaction.md`][interaction]'s `forge-ui-interaction-ring-token` states
-the rule: `--ring` is a solid step in both modes, one beyond `--input`, resolving through `--gray-11`. A focus indicator cannot be expressed as a
-tint.
+what those tokens are instead.
 
-So for those three, the modern answer is the wrong answer in forge, and this file says so rather than narrowing the rule and leaving a reader to
-wonder why the derived token they wrote was never suggested. `forge-ui-contrast-floor` is Floor and outranks this Default wherever the two meet;
-`forge-ui-color-scale-no-adhoc-tint` is the same instinct stated in utility terms — move a stop along the ramp rather than faking the step in
-between.
+Stating the exclusion here, rather than narrowing the rule, is what keeps a reader from wondering why the derived token they wrote was never
+suggested. `forge-ui-contrast-floor` is Floor and outranks this Default wherever the two meet; `forge-ui-color-scale-no-adhoc-tint` is the same
+instinct stated in utility terms — move a stop along the ramp rather than faking the step in between.
 
 ```css
 /* Wrong — a second literal, and a ring expressed as a tint. */

@@ -6,14 +6,12 @@ import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles } from "./source-scan";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { DevBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
-// A spec is not shipped, and a `.browser.ts` spec runs under Playwright — neither is deployed, so
-// each is free to drive the development entry it covers.
-const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !/\.(test|browser)\.tsx?$/.test(name);
+const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !isTestSource(name);
 
 /** The filename convention a development entry point is derived from. */
 const DEV_ENTRY = /\.dev\.tsx?$/;

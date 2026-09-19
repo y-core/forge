@@ -34,8 +34,7 @@ forge cf sync --commit        # the same run, permitted to write
 `wrangler.jsonc`. No combination of other flags mutates anything — `--force` without `--commit` is an error rather than a no-op, since a flag about
 _how_ to write should not be silently ignored on a run that cannot write.
 
-There is deliberately no separate `status` command and no `--dry-run`. Both were spellings of the default, and a second way to say "do nothing" is a
-second thing to keep honest.
+There is no separate `status` command and no `--dry-run`: both are spellings of the default.
 
 ---
 
@@ -44,15 +43,11 @@ second thing to keep honest.
 The grammar is `cf · verb · object`, and the object is always nameable. `verify`, `release` and `assets` stay at forge's top level because they act
 on the repository; **a bare verb takes the repo as its object, a noun opens a domain where the verb and the object are both spelled out.**
 
-**`account` and `zone` are Cloudflare's scopes, not names invented here.** They are the axis the API paths divide on (`/accounts/{id}` versus
-`/zones/{id}`) and the axis API-token permissions divide on, so learning the CLI teaches the thing you needed anyway.
+**`account` and `zone` are Cloudflare's scopes**, the axis both the API paths (`/accounts/{id}` versus `/zones/{id}`) and API-token permissions
+divide on.
 
-**A bare `cf sync` means `cf sync account`.** That default is legible only because the full form exists beside it and `cf sync --help` lists both
-scopes — an implicit object is a wart when there is no way to say it, and a convenience when there is.
-
-Note the asymmetry with `forge assets build`, which defaults to `build all`: that one defaults to the **union**, so it cannot quietly do less than
-asked. `cf sync` defaults to **one of two peers**, so each report names its scope in the header, and a defaulted run says so when a zone config
-exists that it did not touch.
+**A bare `cf sync` means `cf sync account`**, and `cf sync --help` lists both scopes. Each report names its scope in the header, and a defaulted run
+says so when a zone config exists that it did not touch.
 
 ---
 
@@ -78,7 +73,7 @@ What the vocabulary is precise about, because each has been misread:
 - **`unavailable` means a missing remote _target_** — a Pages project or Worker script that is not there. A binding a `--commit` would create is
   `would-create`.
 - **A row saying `in-sync` has either queried the remote or explains why there was nothing to query.** No handler claims a remote resource is
-  present without having looked, and a registry-wide test enforces it.
+  present without having looked.
 - **`created` and `updated` are per-row claims about that row.** A `sync zone` phase the commit loop skipped because it was already in step reads
   `in-sync`, even on a run where another phase was written.
 - **`Remote` is presence, not success.** A write that failed against a name the listing already proved was there still says `Remote: yes` — the old
@@ -92,10 +87,9 @@ A binding declared locally and not matched remotely is **offered to be created**
 Once a binding has a matching remote id it never needs creating again.
 
 **The id is the identity.** A KV namespace, D1 database or queue is looked up first by the id in the config, and only then by name. A resource found
-by id already exists whatever it happens to be called, so nothing is created and nothing is written back — the name this run would have computed is
-not a reason to provision a second copy of a resource the worker already binds. When the id resolves to nothing, the lookup falls back to the name
-and the row says which id failed. An R2 bucket has no id, so an explicit `bucket_name` plays that role; so does an explicit `database_name` or
-`queue`.
+by id already exists whatever it happens to be called, so nothing is created and nothing is written back. When the id resolves to nothing, the
+lookup falls back to the name and the row says which id failed. An R2 bucket has no id, so an explicit `bucket_name` plays that role; so does an
+explicit `database_name` or `queue`.
 
 Naming follows what the resource is:
 
@@ -204,11 +198,10 @@ Credentials are `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN`, read from the e
 **No single permission covers both phases:** the firewall phase needs Zone → _Zone WAF: Edit_, the redirect phase Zone → _Dynamic Redirect: Edit_,
 and both need Zone → _Zone: Read_.
 
-**Zone read access is not ruleset access.** Probed live against a token that returns a full `GET /zones/{zone_id}` for the same zone: both
-`/rulesets/phases/{phase}/entrypoint` reads answered HTTP 403, code 10000 "Authentication error". A token can be valid, active and scoped to the
-right zone and still read nothing here, and the failure carries no hint that a _different_ permission is missing. The permission that unlocks both
-phases at once is account-scoped: **Account → _Account Rulesets: Edit_**. That it is account-level, on an endpoint addressed entirely by zone, is
-what nothing in the response suggests — and the reason both phases fail together, where a missing per-phase zone permission would fail only one.
+**Zone read access is not ruleset access.** A token valid, active and scoped to the right zone still reads the phase entry points as HTTP 403, code
+10000 "Authentication error", with no hint that a _different_ permission is missing. The permission that unlocks both phases at once is
+account-scoped: **Account → _Account Rulesets: Edit_**. Both phases failing together is the signature; a missing per-phase zone permission fails
+only one.
 
 ---
 
@@ -279,22 +272,18 @@ Worker**, as a `ratelimit` entry in its settings, and on Worker targets only —
 
 **Vars are reported, never written.** A var lives in the wrangler config and `wrangler deploy` is what puts it on the remote, so `sync` compares and
 stops there, `--commit` included. A var that is absent is reported as `deploy-pushes` and one that has drifted as `drift`, with both values in the
-detail, and the next deploy pushes it. Writing one here would only be undone by that deploy.
+detail, and the next deploy pushes it.
 
-**A Pages `secret_text` value is not readable.** `pages secret list` filters `env_vars` to `type === "secret_text"` and prints the literal "Value
-Encrypted"; only a `plain_text` entry has a readable `value`. So on a Pages target a secret is compared by name and nothing more, and the row says
-so rather than implying the values match. A Worker's secret list carries name and type only, so the same holds there.
+**A secret's value is not readable on either target.** Cloudflare returns a secret's name and type and never its value, so a secret is compared by
+name and nothing more, and the row says so rather than implying the values match.
 
 **Worker or Pages is detected from the config, never from a flag.** `main` and `pages_build_output_dir` are mutually exclusive and neither wins:
 wrangler rejects a config carrying both, so such a config is already invalid. `detectTarget` treats it as a Worker, matching wrangler's own advice.
 
-**A config write-back is a surgical splice.** The original file is parsed with byte offsets retained and only the bytes of the value being written
-are replaced, so comments, blank lines, key order, indentation and line endings survive byte-for-byte — a `git diff` after a successful `sync
---commit` shows inserted `"id"` lines and nothing else. Guarantees hold around it: an **inexpressible edit refuses** (an added array, a removed
-key, a changed type) and names the exact paths and how many comments were at risk, with `--force` taking the destructive whole-file rewrite and
-reporting what it destroyed; and a **splice is verified before it lands** — the spliced text is reparsed and compared against the intended config,
-and a mismatch writes nothing, not even under `--force`, because a bug in the writer must not be resolved by falling back to the destructive path.
-Writes are atomic: a temp file beside the config, then a rename.
+**A config write-back is a surgical splice.** Comments, blank lines, key order, indentation and line endings survive byte-for-byte, so a `git diff`
+after a successful `sync --commit` shows inserted `"id"` lines and nothing else. An **inexpressible edit refuses** (an added array, a removed key, a
+changed type), naming the exact paths and how many comments are at risk; `--force` takes the destructive whole-file rewrite and reports what it
+destroyed. A splice that fails its own verification writes nothing, `--force` included.
 
 ---
 

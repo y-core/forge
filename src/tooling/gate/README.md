@@ -101,7 +101,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `chromiumBundleStep` → `validate-chromium-bundle` | The committed chromium-resolution bundle a `playwright.config.ts` imports matches a fresh build of its source |
 
 The tool rows carry no check and simply spawn: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep`
-(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Three more spawn something a machine may not have —
+(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Others spawn something a machine may not have —
 `browserStep` (`test:browser`), `workerdStep` (`test:workerd`) and `dbSchemaStep`, which returns the **pair** `db:schema:digests` and `db:schema`.
 
 **The documentation, changelog, design and knowledge-index rows are warden's, not this namespace's.** `docsStep` (`validate-docs`), `changelogStep`
@@ -115,11 +115,8 @@ can emit them: this namespace lives under `src/`, and nothing there may import w
 
 Presets compose the tables this fleet shares, so a repository names its policy rather than its rows.
 
-**`cloudflareWorkerSteps(options?)` — a Worker application.** In declared order: `types:cf-runtime` → `types:cf-bindings` → (`types:assets` →
-`validate-asset-manifest`) → `typecheck` → `lint` → `format` → (`validate-jsx`) → (`validate-markdown`) → `lint:types` → (`warden`) →
-(`validate-modern-css` → `validate-class-order` → `validate-class-tokens` → `validate-css-tokens`) → `test` → (`validate-ssr-boundary`) →
-(`validate-contrast`) → (`validate-asset-root`) → (`validate-exposure`) → `validate-dev-boundary` → (`db:schema:digests` → `db:schema`) →
-(`test:browser`) → (`test:workerd`). Generation leads judgement, so a stale generated type surfaces as a type error rather than a mystery.
+**`cloudflareWorkerSteps(options?)` — a Worker application.** Generation leads judgement in the order it declares, so a stale generated type
+surfaces as a type error rather than a mystery; `verify --list` prints the rows a given mode resolved to.
 
 Most rows are opt-in, and each option is a question about your repository rather than a switch:
 
@@ -141,11 +138,9 @@ Most rows are opt-in, and each option is a question about your repository rather
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing` — whose fakes lose every write — or
 `@y-core/forge/dev`, whose token is what opens each dev-only relaxation ([`NAMESPACES.md`][namespaces-5i] §5i).
 
-**Only `test` defaults above the `quality` tier**, to `standard`: every other row judges the source rather than running it. The type-aware lint
-row sits immediately after `format` so a run that is going to fail a sub-second finding never pays for a browser first. `design.sources`
-deliberately does not fall back to the
-table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should inherit deferrals keyed to
-`src/ui/…` paths.
+**Only `test` defaults above the `quality` tier**, to `standard`: every other row judges the source rather than running it. `design.sources` does
+not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should
+inherit deferrals keyed to `src/ui/…` paths.
 
 **`forgeChecks({ root, pkg })` — a library published under an `exports` map.** In execution order: `typecheck` → `lint` → `format` → `test` →
 `validate-exports` → `validate-jsx` → `validate-class-order`. `pkg` is `{ name, version, exports, files }` verbatim from `package.json`, and
@@ -156,8 +151,7 @@ live here; anything carrying project-specific policy is named alongside.
 
 ## Configuring a check
 
-Configuration goes to the builder, in the step table itself. That file already answers "what does this repository's gate do?", so a check's
-allowlists belong with it rather than in a config file of their own.
+Configuration goes to the builder, in the step table itself — a check's allowlists live there rather than in a config file of their own.
 
 ```ts
 // config/steps.ts
@@ -193,8 +187,7 @@ takes a `scope` of path prefixes, for the common case of a tree where part alrea
 
 **The fixer applies only the mechanical rules** — table padding, list markers and nested indent, emphasis delimiters, fence style and language
 aliases, hard tabs, trailing whitespace, thematic breaks, and the blank line around a block. **Some rules are report-only**: a bare fence, a bare
-URL, a second `# ` heading, and an over-long line. A fixer that guessed a language or rewrapped an author's prose would do more harm than the
-finding does.
+URL, a second `# ` heading, and an over-long line.
 
 ### Deferring a CSS finding you cannot fix yet
 
@@ -255,8 +248,7 @@ red gate. A failing step's untruncated output is written to a temp file and its 
 window is still recoverable. A narrowed run brands its summary as scoped, so a scoped green never reads as a green gate.
 
 **`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only lint` runs the check and writes nothing; `--fix`
-writes and checks nothing, and closes by naming the run that confirms it. Scripting them as `lint` and `fix` keeps that distinction at the call site
-— a `lint` that quietly rewrote your files would be the one that surprises.
+writes and checks nothing, and closes by naming the run that confirms it. Script them as `lint` and `fix` so the distinction shows at the call site.
 
 **`createGateCommand({ cwd, steps, binDir? })` stays published** for the case the binary cannot serve. It takes the same flags minus `--config` and
 `--root`, because the bin command delegates to it as soon as the table is loaded:
@@ -284,8 +276,8 @@ the **thing**, not the CLI that uses it — `hasChromium` resolves `CHROME_PATH`
 for the runtime rather than for `bun`. Probing the CLI instead would pass vacuously and let every spec fail at launch.
 
 **`browserStep` spawns `playwright test` — the installed binary off `binDir`, whose shebang is node.** Not `bunx`, which installs from the registry
-when it resolves nothing locally; and not under bun, because a dev server playwright spawns itself binds where a sandboxed browser cannot reach it,
-so a repository whose specs need a `webServer` cannot run. Match your own `test:browser` script to the same command so the two cannot diverge.
+when it resolves nothing locally, and not under bun, where a `webServer` playwright spawns binds somewhere a sandboxed browser cannot reach. Match
+your own `test:browser` script to the same command so the two cannot diverge.
 
 ---
 
@@ -309,10 +301,8 @@ process.exit(reportCheck(checkBindings({ root, sources: ["src"] })));
 `ok` is **derived** from the findings and never passed: a `fail` finding fails the check, a `warn` is reported and does not. `checkStep(label, run,
 options)` wraps the function as a table row, and `run` is handed the run's mode, so one row can vary its strictness by tier.
 
-**Why a check runs in-process.** A check already returns findings with file, line and detail; a subprocess would flatten that to stdout text and
-then truncate it to `tail` lines. The runner prints the findings directly instead — nothing to truncate, warnings survive a passing step, and no
-project needs a spawnable file per check. A check that throws fails its own step rather than unwinding the run, because a defect in a check still
-owes the gate a verdict line. Its fixer runs in-process too, and nothing is probed before it: an in-process fixer spawns no tool.
+A check runs in-process: the runner prints its findings directly, so nothing is truncated to `tail` lines and warnings survive a passing step. A
+check that throws fails its own step rather than unwinding the run. Its fixer runs in-process too, and nothing is probed before it.
 
 The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function belongs to; the vocabulary and its purity rules
 are [`BUILD_TOOLING.md`][bt-2i] §2i's. The barrel parsers (`parseBarrelExports`, `findPublicSymbols` and their siblings) are published because
@@ -344,7 +334,7 @@ expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
 
 Refusals come back as `{ ok: false, error }` rather than a throw: a duplicate label, an unknown `--only` label, and a selection of zero steps.
 **The duplicate check is a property of the table**, so it runs before the mode is applied and before `--only` narrows — a malformed table is refused
-whichever run was asked for. That is what makes a step table self-validating; a project needs no test of its own to assert the rule.
+whichever run was asked for.
 
 ---
 
@@ -392,8 +382,7 @@ running `validate-markdown` must put `**/*.md` in `.oxfmtrc.json`'s `ignorePatte
 
 **A types-only assets artifact passes a quality run alone.** `gen types` maps every logical name to itself and those files deliberately do not
 exist, which is what lets `tsc` run on a clean checkout — so `validate-asset-manifest` lets it through on `quality` and fails it on `standard` and
-`full`. A
-release gate has no such excuse: passing there on an artifact nobody built is exactly the 404 the check exists to prevent.
+`full`, where passing on an artifact nobody built is exactly the 404 the check exists to prevent.
 
 **Import `resolveChromiumPath` from `@y-core/forge/tooling/gate/chromium`, not from the barrel.** Node refuses to strip types from a file under
 `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a `playwright.config.ts` must load the prebuilt `.mjs` at that subpath.

@@ -34,7 +34,7 @@ audience: consumer
 - §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring, and why suppressing won
 - §1k One Consumption Path, Not Two: JSX as the terminal surface, the `data-scope` route, the rejected Custom Element mirror
 - §1l Chrome Navigation Announces Only What It Implements: the not-a-menubar and not-a-rail-stop rulings
-- §1m The Prop Vocabulary: the seven ratified props, the ban on `variant`, and the one `size` exemption
+- §1m The Prop Vocabulary: the ratified props, the ban on `variant`, and the one `size` exemption
 - §1n Optional Input Props Carry an Explicit `| undefined`: why the union is universal on input types, and what the guard-form spread was hiding
   from a11y lint
 - §2 The Signal-Binding Seam: how SSR markup names a client-side binding
@@ -46,7 +46,7 @@ audience: consumer
 
 ## 1. ui/core Component Contract
 
-**Put every English name forge emits in `src/ui/contracts/labels.ts`, and give it a prop that overrides it** (`decision-260918-49`). Forge ships no
+**Put every English name forge emits in `src/ui/contracts/labels.ts`, and give it a prop that overrides it.** Forge ships no
 i18n surface, so a name a consumer cannot reach cannot be translated, and a default spelled at its call site is a second home for the string the
 table exists to hold. `LABEL_DEFAULTS` is `@public` because a translating consumer's only other option is re-typing each string in a repository
 forge's gate cannot see, where it silently stops matching. A conformance scan enforces this with no exemption row: no literal label default, no
@@ -86,7 +86,7 @@ rather than degrading** — a ratified invariant, consistent with [`ERROR_HANDLI
 **Check the fragment case in `cloneAsChild`, not at the call site.** `isValidElement` accepts a `Fragment` — it is an element of this runtime — but
 a fragment carries no attributes, so cloning onto one merges the class, the `data-slot` and every caller prop into a value the renderer never reads.
 The failure is silent and total, and every `asChild` compound can reach it, so the guard belongs in the one place they all pass through. `Button`
-reached it by wrapping its children to make room for a loading spinner; the spinner is now injected into the cloned child instead.
+would reach it by wrapping its children to make room for a loading spinner; the spinner is injected into the cloned child instead.
 
 **Merge into `data-slot`; never replace it.** It is a token list, under `asChild` and on plain render alike, so composing compounds yields one
 element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Tooltip.Trigger>` renders a single button carrying
@@ -264,8 +264,9 @@ forge markup inside a consumer's own open shadow root.
 **Leave form participation to the platform.** Every form control wraps a real `<input>` (§1e), so it submits, restores and validates with no script;
 a form-associated element would hand-maintain `setFormValue` and `setValidity` to reach less, and lose it entirely without JS.
 
-**Rejected — Custom Elements as a second path.** Three costs, each sufficient: the spec's mandated hyphenated name moves the namespace out of the
-import and into every consumer's markup as a vendor prefix; the registry is process-global and early-binding, reintroducing global mutable state
+**Rejected — Custom Elements as a second path.** Each of these costs is sufficient alone: the spec's mandated hyphenated name moves the namespace
+out of the import and into every consumer's markup as a vendor prefix; the registry is process-global and early-binding, reintroducing global
+mutable state
 ([`CODE_RULES.md`][cr-1] §1) plus collision and FOUC failure modes late-binding delegation does not have; and the audience does not exist under the
 no-build-step constraint ([`FORGE_STRUCTURE.md`][la-2] §2), since a consumer able to load the registering module already runs the bundler that
 compiles the JSX. **Form-associated elements for the form controls alone** are rejected for the narrower version of the same reason.
@@ -309,7 +310,7 @@ side is `labelPlacement` (§1i), and `FormField`'s width-driven collapse a separ
 level, so `aria-labelledby` still resolves. It is the tool `forge-ui-heading-order` needed. Not `as`, which already names a type scale on
 `FormField.Legend`.
 
-**`conformance.test.tsx` enforces all three** by scanning `ui/core`, `ui/chrome` and `ui/controls`, carrying each exemption with its reason — so
+**`conformance.test.tsx` enforces these rules** by scanning `ui/core`, `ui/chrome` and `ui/controls`, carrying each exemption with its reason — so
 adding one is visible, not a quiet edit.
 
 ### 1n. Optional Input Props Carry an Explicit `| undefined`
@@ -317,12 +318,12 @@ adding one is visible, not a quiet edit.
 **Declare every optional property of a type a consumer passes values into as `name?: T | undefined`** — the whole of `src/jsx/types.ts` and every
 `*Props` in `src/ui`. **Keep the bare `?:` for internal data structures and options objects**, the distinction `exactOptionalPropertyTypes` is
 actually for. **Ask "does a consumer construct a value of this type", not "is it named `*Props`"**: a definition object handed to a component —
-`NavSlot`, `NavMegaMenu`, `ToolbarPopover` — is a consumer input as much as an attribute bag is, and the suffix reading let those three drift.
+`NavSlot`, `NavMegaMenu`, `ToolbarPopover` — is a consumer input as much as an attribute bag is, and the suffix reading lets such a type drift.
 
 **The second of these reasons is a correctness one.** `renderToString` skips a null or undefined attribute value (`src/jsx/render-to-string.ts`), so
 absent and `undefined` are the same state at runtime and the flag would guard a distinction the renderer does not have. And without the union a
 caller under the flag writes `{...(x !== undefined ? { "aria-label": x } : {})}` rather than `aria-label={x}` — a spread, which `jsx-a11y` cannot
-see as an attribute; forge carried forty-seven, every one unlinted, and `@types/react` writes `className?: string | undefined` for the same reason.
+see as an attribute, leaving every such site unlinted. `@types/react` writes `className?: string | undefined` for the same reason.
 **Never fix such an error at a forge call site with a guard-form spread; widen the declaration instead.** What stays is the **truthiness** spread,
 `{...(open ? { open: true } : {})}`, an omit-when-false HTML semantic.
 

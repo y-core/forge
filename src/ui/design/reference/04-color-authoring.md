@@ -26,7 +26,7 @@ Read it when a brief introduces a brand hue, or when a per-mode value has to cha
 - §2d Measuring the authored scale: the pairs `theme-base.css` consumes, and the repair that is not chroma
 - §3 Sources: the texts these two files' values and reasoning rest on
 - §3a Radix for lightness, Tailwind for chroma and hue: numbers taken, not packages, in both directions
-- §3b The reasoning re-derived, and what carries no id: three claims read and deliberately not given one
+- §3b The reasoning re-derived, and what carries no id: the claims read and deliberately not given one
 
 ---
 
@@ -106,8 +106,8 @@ is silent: the light mode keeps working, and only the dark half is wrong.
 ## 2. Authoring a scale for a brand hue
 
 Everything above this point assumes a twelve-step scale already exists. A consumer whose product has a brand hue has to author them, and forge gives
-that job a shape that most colour advice does not: the steps are not decoration, they are the operands of a mapping `theme-base.css` has already
-written. Read the mapping first, then pick values that survive it.
+that job a shape: the steps are not decoration, they are the operands of a mapping `theme-base.css` has already written. Read the mapping first,
+then pick values that survive it.
 
 The shipped schemes are worked examples of the _shape_ — a twelve-step scale, each step declared once, and nothing else — but not of the authoring,
 because each of them sidesteps the hard half the same way: every step's lightness is Radix's, so no lightness in them was chosen against forge's
@@ -117,7 +117,7 @@ mapping. Only the hue was chosen. The example of a scale with _authored_ values 
 
 Default: a scale is authored in a colour space that carries lightness as its own coordinate — `oklch()`, the form `src/ui/README.md` writes it in —
 so that a step can be moved lighter or darker without dragging its hue and its chroma along, unless the scale inherits its lightness from an
-existing ramp that already holds balanced steps, which is what all four shipped schemes do. <!-- rule:forge-ui-color-ramp-author-lightness -->
+existing ramp that already holds balanced steps, which is what every shipped scheme does. <!-- rule:forge-ui-color-ramp-author-lightness -->
 
 The reason to reach for that space is not fashion. Every repair in this section is "move one step's lightness and leave everything else alone", and
 in a notation where lightness is entangled with the other two coordinates that edit cannot be expressed — so it is made by eye, and the scale drifts
@@ -129,8 +129,7 @@ Default: steps 1, 2, 11 and 12 keep a visible amount of the brand hue rather tha
 `theme-base.css` puts the page ground, the raised surface and the default text in the two modes, unless a brief pins a neutral page and confines the
 brand hue to `--primary` — the per-token override `src/ui/README.md` documents. <!-- rule:forge-ui-color-ramp-author-endpoint-tint -->
 
-A scale that bleaches its ends spends its brand on the steps nobody looks at and publishes a grey page, which is the opposite of the intent that
-motivated authoring one at all.
+A scale that bleaches its ends spends its brand on the steps nobody looks at and publishes a grey page.
 
 Default: the tint runs through the whole scale, not only its ends — the middle steps carry the same hue at a chroma low enough to read as neutral —
 which is the _only_ thing separating the shipped schemes from one another: `theme-stone.css` is warm, `theme-gray.css` cool and
@@ -144,8 +143,8 @@ brief fixes untinted greys, usually because a second brand colour has to sit bes
 because the accent is doing the work; a scheme that is _all_ there is has to carry the identity itself, and a lean that reads as deliberate under an
 accent reads as a rendering artifact without one. Forge is the second case — `--accent-12` aliases `--gray-12`, near-black — and the headers of the
 tinted scheme files carry the measurement that settled how far their steps had to move. Measured as max−min across R/G/B at step 11, the muted-text
-step, the four form a ladder: `theme-neutral.css` 0, `theme-stone.css` 12, `theme-gray.css` 20, `theme-slate.css` 42. `theme-gray.css` exists
-because the first three clustered at the bottom of that ladder — neutral and stone sit twelve units apart and read as almost the same scheme — so a
+step, they form a ladder: `theme-neutral.css` 0, `theme-stone.css` 12, `theme-gray.css` 20, `theme-slate.css` 42. `theme-gray.css` exists because
+the schemes before it clustered at the bottom of that ladder — neutral and stone sit twelve units apart and read as almost the same scheme — so a
 rung at every strength is what the fourth buys, not a closing of that gap.
 
 **How far a scheme leans is a dial, and turning it is free.** `theme-gray.css` is the first scheme to scale its chroma rather than take the Tailwind
@@ -192,7 +191,7 @@ against forge's own system: the twelve-step scale in the scheme files and the se
 step's mode, and the `--status-*` family the `Badge`, `Alert` and `Toast` tones render. The scale-authoring section draws on the same book's account
 of building a palette before building screens, re-derived here against the steps `theme-base.css` consumes.
 
-Three of that account's claims were read and deliberately **not** given rule ids:
+These claims of that account's were read and deliberately **not** given rule ids:
 
 - **"Prefer HSL to hex."** Forge's own worked scale in `src/ui/README.md` is `oklch()`. Publishing the preference would have the corpus contradict
   the example it points readers at, so the rule above states what the notation has to _do_ — carry lightness as its own coordinate — and lets the

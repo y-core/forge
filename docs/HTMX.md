@@ -69,9 +69,8 @@ own:
 - **The runtime and the CSP each refuse a cross-origin fetch.** `htmx.config.selfRequestsOnly` defaults to `true` in htmx 2, and a consumer's
   `connect-src` directive ([`SECURITY_HARDENING.md`][sh-2a] §2a) bounds where a request may go at all.
 
-The caller's obligation is therefore identical to §7's even though the argument differs: build these values from route definitions and static
-configuration, never from request data. What changes is the remedy available when that obligation is broken — for a selector there is none, and for
-a URL the available one is rejected above rather than missing.
+The caller's obligation is therefore identical to §7's even though the argument differs. What changes is the remedy available when that obligation
+is broken — for a selector there is none, and for a URL the available one is rejected above rather than missing.
 
 **Adding `hx-*` names to the renderer's URL-attribute set is the specific change this section refuses.** `src/jsx/render-to-string.test.ts` pins it:
 an element carrying one value on both `href` and `hx-push-url` must render `href="#"` beside an unchanged `hx-push-url`, an assertion that fails the
@@ -89,8 +88,8 @@ string: it is script, and the only thing that decides whether it is safe is who 
   surface tells the two forms apart.
 
 **Constructing any of these values from anything other than literal, developer-authored source is the defect this section names.** That is the one
-control, and it is the same for all three. It is not a stronger version of §7's trust obligation but the same one at the point where it carries the
-most weight, because here a broken obligation is direct evaluation rather than a misrouted swap.
+control, and it is the same for each. It is not a stronger version of §7's trust obligation but the same one at the point where it carries the most
+weight, because here a broken obligation is direct evaluation rather than a misrouted swap.
 
 **`hxAttrs` cannot emit a `js:` value**, so the exposure is a hand-written attribute: its `values` and `headers` are `Record<string, string>` and
 are JSON-encoded (`src/html/htmx/htmx-attrs.ts`). Forge's own code already treats the prefix as the evaluated form — `<Form>` refuses to merge a

@@ -156,6 +156,18 @@ describe("checkBuildTimeBoundary", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("allows a `*.fixture.ts` the same import, because `files` excludes one from the tarball", () => {
+    const result = checkBuildTimeBoundary(
+      project({
+        "src/http/mod.ts": "export const html = 1;\n",
+        "src/ui/thing.fixture.ts": 'import { safeJoin } from "../tooling/assets/paths";\nexport const x = safeJoin;\n',
+        "src/tooling/assets/paths.ts": "export const safeJoin = 1;\n",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
   it("allows a build-time module to import another one, which is the whole point of the container", () => {
     const result = checkBuildTimeBoundary(
       project({

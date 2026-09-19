@@ -10,6 +10,7 @@ import {
   collectFiles,
   collectSource,
   excludedBy,
+  isTestSource,
   listDirectories,
   listFiles,
   resolveSources,
@@ -199,5 +200,43 @@ describe("resolveSources() — the walk a `!` entry narrows", () => {
 
   it("returns nothing when every source is excluded", () => {
     expect(resolveSources(root, ["src", "!src"], () => true)).toEqual([]);
+  });
+});
+
+describe("isTestSource() — the one suffix list every check reads", () => {
+  it("marks the six test suffixes and nothing that merely reads like one", () => {
+    const cases = [
+      "src/alpha/a.test.ts",
+      "src/alpha/a.test.tsx",
+      "src/alpha/a.browser.ts",
+      "src/alpha/a.browser.tsx",
+      "src/alpha/a.fixture.ts",
+      "src/alpha/a.fixture.tsx",
+      "src/alpha/a.ts",
+      "src/alpha/a.tsx",
+      "src/alpha/testing.ts",
+      "src/alpha/browser.ts",
+      "src/alpha/fixture.ts",
+      "src/alpha/a-fixture.ts",
+    ];
+
+    expect(cases.map((path) => [path, isTestSource(path)])).toEqual([
+      ["src/alpha/a.test.ts", true],
+      ["src/alpha/a.test.tsx", true],
+      ["src/alpha/a.browser.ts", true],
+      ["src/alpha/a.browser.tsx", true],
+      ["src/alpha/a.fixture.ts", true],
+      ["src/alpha/a.fixture.tsx", true],
+      ["src/alpha/a.ts", false],
+      ["src/alpha/a.tsx", false],
+      ["src/alpha/testing.ts", false],
+      ["src/alpha/browser.ts", false],
+      ["src/alpha/fixture.ts", false],
+      ["src/alpha/a-fixture.ts", false],
+    ]);
+  });
+
+  it("judges a bare filename the same as a repo-relative path, which is how the walkers call it", () => {
+    expect(["a.fixture.ts", "a.ts"].map((name) => isTestSource(name))).toEqual([true, false]);
   });
 });

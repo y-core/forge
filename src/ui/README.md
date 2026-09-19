@@ -7,15 +7,14 @@ audience: consumer
 # `@y-core/forge/ui`
 
 Source-distributed UI primitives for forge apps. Every component is a thin wrapper over a native element with default Tailwind styling, predictable
-prop pass-through, and explicit composition. Field state and icon sprites are owned through composition, not configuration.
+prop pass-through, and explicit composition.
 
-**This README answers one question: how do I call this, with what arguments.** Which component to reach for, and what good looks like once it is
-composed, is the design corpus's question — see [`@y-core/forge/ui/design/*.md`](#y-coreforgeuidesignmd). The SSR-vs-client split, the island
-pattern, field binding and the colour-scheme contract are rulings owned by [`UI_SSR_COMPONENTS.md`][usc], [`UI_CLASS_COMPOSITION.md`][ucc],
-[`UI_CLIENT_RUNTIME.md`][ucr] and [`THEME_GENERATION.md`][tg].
+Which component to reach for, and what good looks like once it is composed, is the design corpus's question — see
+[`@y-core/forge/ui/design/*.md`](#y-coreforgeuidesignmd). The SSR-vs-client split, the island pattern, field binding and the colour-scheme contract
+are rulings owned by [`UI_SSR_COMPONENTS.md`][usc], [`UI_CLASS_COMPOSITION.md`][ucc], [`UI_CLIENT_RUNTIME.md`][ucr] and
+[`THEME_GENERATION.md`][tg].
 
-**The inventory of what a subpath exports is its own `mod.ts`.** Read the barrel for the list of names; read the section below for what you do with
-them.
+**The inventory of what a subpath exports is its own `mod.ts`.**
 
 | Sub-path | What it is |
 | --- | --- |
@@ -74,7 +73,7 @@ nested inside a file you do not control:
 ```
 
 `forge.css` never imports Tailwind itself, which is what keeps that path open. **Take one path or the other, never both** — importing Tailwind twice
-emit preflight twice.
+emits preflight twice.
 
 ### Tell Tailwind which directories to scan
 
@@ -152,8 +151,7 @@ Nothing above wires the toggle itself; that is [`ui/chrome`](#y-coreforgeuichrom
 ## `@y-core/forge/ui/design/*.md`
 
 A pure-markdown **design corpus**, shipped inside this package at `src/ui/design/` and reachable file by file through the `./ui/design/*.md`
-subpath. The boundary between it and this README is one sentence: **this README says how to call a component; the corpus says which one to reach
-for, and what good looks like once it is composed.**
+subpath.
 
 It is already sitting in `node_modules`, so read `src/ui/design/index.md` — the corpus's entry point in any harness, carrying the routing table that
 sends a question to the one file answering it. **Load `src/ui/design/floor.md` before any UI work** — it is the only unconditional file;
@@ -306,8 +304,7 @@ const className = buttonVariants({ tone, appearance, size, shape, class: cls });
 <button class={buttonVariants({ tone: "primary", class: cn(isLoading && "opacity-50", cls) })}>Click</button>;
 ```
 
-`cn` memoises on its joined arguments, so a repeated class string is close to free; a static base still belongs in a `const` regardless, since a
-name shared across call sites is worth more than the cache. The `tone` × `appearance` paint every toned component composes over is published as
+The `tone` × `appearance` paint every toned component composes over is published as
 `toneVariants`, for markup of your own that must sit in the same palette ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e).
 
 ### Put a glyph inside a file input
@@ -427,7 +424,7 @@ One module registers every scope `ui/core` markup names — the keyboard layers,
 the CAPTCHA controller. `src/ui/core/client.ts` is the list; what each one does is [`UI_CLIENT_RUNTIME.md`][ucr-2] §2's.
 
 **Almost every scope here is eager, and out of necessity rather than preference.** Its markup carries no `data-on-*` action, so a lazy scope would
-have nothing that could ever resume it ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). The two lazy ones are `alert` and `slider`, which do carry one; and
+have nothing that could ever resume it ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). The lazy ones are `alert` and `slider`, which do carry one; and
 `toast` is eager despite carrying one too, because its auto-dismiss timer must be armed before anybody interacts with it.
 
 A `Toast` you render yourself carries its auto-dismiss delay as island state under the key `ui/contracts` publishes; a positive value schedules
@@ -484,9 +481,8 @@ also submits carries both.
 
 **Runtime-neutral.** Pure data and pure functions — no DOM, no Node built-ins, no side effects.
 
-The names forge's SSR components and its browser controllers **both** write, declared once so they cannot drift. They are published rather than
-internal because an app consuming forge's components addresses the same DOM, and its only other option is to re-type each name as a string literal
-in a repository forge's gate cannot see.
+The names forge's SSR components and its browser controllers **both** write, declared once so they cannot drift — and published, because an app
+consuming forge's components addresses the same DOM.
 
 **Import the modules, not the barrel, in code you bundle** — forge's own components import each module directly, so a bundle retains one table
 rather than every table.
@@ -514,8 +510,7 @@ menu-role popup is `Menu.Popup`, which comes with a trigger that agrees with it.
 
 Forge ships no i18n surface, so every English name it emits is a default you can override by a prop. `LABEL_DEFAULTS` is where all of them live —
 one table for the whole library, so a translation layer has one seam rather than one per component. `STEP_STATE_LABELS` sits beside it for the
-table
-indexed by a runtime value, a `Steps.Step` or `Timeline.Item` state.
+table indexed by a runtime value, a `Steps.Step` or `Timeline.Item` state.
 
 ```ts
 import { LABEL_DEFAULTS } from "@y-core/forge/ui/contracts";
@@ -566,9 +561,8 @@ composite controller owns keyboard at its own widget root.
 
 **Runtime-neutral.** Pure data and pure functions — safe in a Worker, a browser bundle, or a build script.
 
-The colour model a forge scheme is generated from, and the contrast audit the gate and the theme customiser share. It sits in `ui/contracts`
-because three consumers read the same declarations: the customiser page, the gate's contrast check ([`config/steps.ts`](../../config/steps.ts)), and
-the scheme files themselves. The generation pipeline is [`THEME_GENERATION.md`][tg]'s.
+The colour model a forge scheme is generated from, and the contrast audit the gate, the customiser page and the scheme files share. The generation
+pipeline is [`THEME_GENERATION.md`][tg]'s.
 
 ### Generate a scheme file from a set of dials
 
@@ -591,8 +585,8 @@ itself audits, and the criterion binding each, are declared here — so a check 
 that drifts from it. The decorative pairs WCAG 1.4.11 does not bind are declared separately, each pinned at its measured value with a mandatory
 reason.
 
-The OKLab→sRGB arithmetic is published too, because `ui/assets/build` and the gate's contrast check need the same conversion under two different
-gamut policies. `toSrgbGamut` is the one that reduces chroma alone to reach a representable coordinate.
+The OKLab→sRGB arithmetic is published too, under either gamut policy; `toSrgbGamut` is the one that reduces chroma alone to reach a representable
+coordinate.
 
 ---
 
@@ -623,8 +617,7 @@ Every glyph forge's own chrome needs ships in `forgeUiSpriteSources()`, so a `Fo
 **Build-time only.** Reaches `node:fs`, `node:path` and `node:url`; never import it from a Worker-executed file.
 
 The computation behind the artifacts `ui/assets` owns — glyph source paths, SVG symbol assembly, OKLCh-to-sRGB conversion, theme-token extraction
-and cursor baking. It computes; it drives no external builder, which is why it lives beside the artifact rather than in the asset pipeline
-([`ASSET_PIPELINE.md`][ap-2c] §2c).
+and cursor baking. Why it lives beside the artifact rather than in the asset pipeline is [`ASSET_PIPELINE.md`][ap-2c] §2c's.
 
 ### Assemble a sprite, read a theme token, bake a cursor
 
@@ -773,9 +766,9 @@ is present — only a real access answers, so the helper returns the store or `n
 `resume()`'s teardown runs it. The runtime owns effects, not listeners, so a `setup`'s own disposer covers the controllers and listeners it
 installed and never the effects it created.
 
-**A platform constructor is read off the resolved window too**, for two reasons the obvious regression test cannot see. A realm **may not have the
-constructor at all**, and reading it off the resolved window doubles as the feature check, so the controller degrades to a no-op disposer rather
-than throwing; and an observer, timer id or media-query list held past the teardown of the realm that minted it is a **cross-realm retention**.
+**A platform constructor is read off the resolved window too.** A realm **may not have the constructor at all**, and reading it off the resolved
+window doubles as the feature check, so the controller degrades to a no-op disposer rather than throwing; and an observer, timer id or media-query
+list held past the teardown of the realm that minted it is a **cross-realm retention**.
 **Direction is resolved where it is consumed, never cached at mount**, and **an id reference is resolved in the tree that declares it**, because ids
 do not cross a shadow boundary.
 
@@ -1114,8 +1107,7 @@ buttons, and the carousel, table-of-contents, context-menu and chrome demos — 
 behind them. `src/ui/show/client.ts` is the list.
 
 Nearly all of them are `eager`, for the reason that runs through this whole runtime: a demo whose markup stamps no `data-on-*` action has nothing a
-lazy resume could ever trigger on. The bound-controls band is the clearest case — `bindControls` listens on the scope root, and no bound control
-stamps an action of its own.
+lazy resume could ever trigger on.
 
 ---
 

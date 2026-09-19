@@ -7,8 +7,7 @@ audience: internal
 # `@y-core/forge/tooling/db`
 
 `forge db` is how a D1 database gets from a hand-written `schema.sql` to a running database and back again. You edit the desired state; forge
-composes the migration, proves it on a replay, applies it forward-only, and records what it applied. Seeds, backups and the undo hang off the same
-run context.
+composes the migration, applies it forward-only, and records what it applied. Seeds, backups and the undo hang off the same run context.
 
 ```bash
 forge db migrate                # apply every pending migration
@@ -353,11 +352,11 @@ and reached by file, not from the barrel.
 
 **`--json` owns stdout.** Progress lines, confirmations and warnings go to stderr under it, so the document on stdout is parseable whole.
 
-**`--to` needs no scratch database.** It filters the pending set and applies against the real home. Compose, rehearsal and backup verification are
-what build throwaway homes, under `.forge/scratch/`.
+**Scratch databases live under `.forge/scratch/`.** Compose, rehearsal and backup verification are what build them; `--to` applies against the real
+home.
 
-**A drop that followed a file leaving `config/db.ts` names the file that declared it.** The snapshot records the names each declared file owned, so
-the refusal can attribute the drop instead of presenting it as unexplained ([`SCHEMA_COMPOSITION.md`][sc-3] §3).
+**A drop that followed a file leaving `config/db.ts` names the file that declared it**, so the refusal is attributable rather than unexplained
+([`SCHEMA_COMPOSITION.md`][sc-3] §3).
 
 ---
 

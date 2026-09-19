@@ -60,9 +60,9 @@ a config whose first field is `cwd`; the `bin.ts` a package script points at res
 **Flags are a record keyed by long name, not an array of definitions.** The key _is_ the `--long` form and `short` is a field on the definition, so
 a flag cannot be declared with a name that disagrees with the one that reads it.
 
-**The flag types are `"boolean"` and `"string"`.** `ResolvedFlags<F>` derives the handler's flag argument from the declaration: a `string`
-flag with a `default` or `required: true` resolves to `string`, every other `string` flag to `string | undefined`, and a boolean to `boolean`. No
-handler casts, and a renamed flag fails to typecheck at its reader.
+**The flag types are `"boolean"` and `"string"`.** `ResolvedFlags<F>` derives the handler's flag argument from the declaration: a `string` flag with
+a `default` or `required: true` resolves to `string`, every other `string` flag to `string | undefined`, and a boolean to `boolean`. No handler
+casts, and a renamed flag fails to typecheck at its reader.
 
 **Number parsing is deliberately absent.** A numeric flag is a string plus the caller's own validation, which keeps the parser total — it has no way
 to fail on input it was handed.
@@ -117,9 +117,8 @@ pass one argument.
 It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the next version, reaches a verdict on the changelog and
 promotes it in memory (§2d), prints the previous and next versions with the tag and what the promotion would write, refuses to re-tag, refuses a
 branch the remote does not publish from, runs the verification gate, updates `package.json`, writes the promoted changelog, commits, and creates the
-tag. **It is the only blessed way to cut a forge release**, and **all three
-places a version lives are computed here** — the git tag, the `package.json` field, the changelog's version heading. A hand-typed version anywhere
-is a defect, and §2e is the gate that says so.
+tag. **It is the only blessed way to cut a forge release**, and **every place a version lives is computed here** — the git tag, the `package.json`
+field, the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that says so.
 
 **It never pushes.** The last thing it prints is the push command for a human to run, so the irreversible step — publishing a tag to a remote —
 stays a deliberate act.
@@ -152,8 +151,7 @@ release, which is the guard permanently off.
 
 **The gate runs here, not only in CI.** `.github/workflows/release.yml` fires `on: push: tags`, so its `bun run verify` runs against a tag that is
 already public: a failure there aborts before `gh release create` and leaves a fetchable tag with no asset, whose only recoveries are deleting a
-published tag or burning the version. The branch check and the gate run after the re-tag check and before the first write, and both are skipped
-under `--dry`, which writes nothing for them to protect.
+published tag or burning the version. The branch check and the gate run after the re-tag check and before the first write.
 
 **A failure between the version write and the commit names its own recovery.** The bump, the promotion and the commit run as one guarded step; if
 the commit fails — a pre-commit hook, most often — the refusal states `git checkout -- package.json CHANGELOG.md`. Without it the next run refuses
@@ -163,9 +161,9 @@ as dirty, and forcing past that promotes the changelog a second time under the s
 operator sees the same output while the guard stays reachable from a test that mocks no process. **The changelog verdict is reached after the
 version is resolved** — it has to know whether commits exist — **and before `package.json` is written**, so no mutation can precede a refusal.
 
-**`--dry` prints the resolved version and what would be promoted, then stops before any write.** It skips the clean-tree check too, so it is safe to
-run at any time — but it resolves from `<latest-tag>..HEAD`, so running it _before_ committing reports "nothing to release" rather than the version
-a release would produce. Commit first, then dry-run. **It skips the clean-tree check, the branch check and the gate** — every other refusal, the
+**`--dry` prints the resolved version and what would be promoted, then stops before any write.** It is safe to run at any time — but it resolves
+from `<latest-tag>..HEAD`, so running it _before_ committing reports "nothing to release" rather than the version a release would produce. Commit
+first, then dry-run. **It skips the clean-tree check, the branch check and the gate** — every other refusal, the
 shrinking-surface guard included, fires under `--dry`, because a preview that hides the refusal it is previewing is worse than no preview.
 
 **An automatic bump prints the evidence for itself**, as a `because:` row beside `next:`: the short sha and subject of the commit whose prefix won,
@@ -269,14 +267,14 @@ Failing invariants:
 
 A heading with _no_ link definition is a warning only — promotion writes the definition, and some entries legitimately lack one.
 
-Deliberately not checked, each because the file disproves it: **`---` separators between sections** (not a per-section invariant
-— consecutive released versions carry none), **version contiguity** (a resolved version that never shipped leaves a hole the next compare link
-simply spans), and **a trailing newline** (the file has none, and promotion round-trips that exactly, §2d).
+Deliberately not checked, each because the file disproves it: **`---` separators between sections** (not a per-section invariant — consecutive
+released versions carry none), **version contiguity** (a resolved version that never shipped leaves a hole the next compare link simply spans), and
+**a trailing newline** (the file has none, and promotion round-trips that exactly, §2d).
 
 ### 2f. createGateCommand — the Published Verification Gate
 
-**One runner, one table per project.** The runner is published; the table is not. That split is the whole design: five repositories share the
-selection logic, the fail-fast ordering, the `requires` probe and the full-log file, while each keeps its own steps as its own source of truth —
+**One runner, one table per project.** The runner is published; the table is not. That split is the whole design: the fleet shares the selection
+logic, the fail-fast ordering, the `requires` probe and the full-log file, while each repository keeps its own steps as its own source of truth —
 forge's in `config/steps.ts` (see [`TESTING.md`][testing-6a] §6a).
 
 **The bin is the entry point; the factory is the escape hatch.** `forge verify` resolves `config/steps.ts` (or `--config`) and delegates to
@@ -291,30 +289,29 @@ assembled at run time, or a gate embedded in a larger CLI.
 
 **One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a task closes on; `verify --mode quality` is the
 writing loop — every row that judges the source without running it — and `verify --full` (sugar for `--mode full`) adds everything, including the
-steps needing a machine prerequisite. Verbs sharing every flag and
-differing only in a membership filter are a mode by definition, and modelling them as separate verbs costs a duplicated binding file per repo, a
+steps needing a machine prerequisite. Verbs sharing every flag and differing only in a membership filter are a mode by definition, and modelling
+them as separate verbs costs a duplicated binding file per repo, a
 `gate` config field, and a superset invariant that must be _tested_ rather than being true by construction. **A bare `verify` means `standard`**
 because `verify` is "the gate": the cheap run is the one that has to be asked for.
 
 **A dependency's absence is answered by the mode, not the table.** A step carries one `requires` — tool, probe, install hint — and the runner asks
-the probe once: a `quality` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the four design-system
-steps run on every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips, because it is the
+the probe once: a `quality` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the design-system steps
+run on every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips, because it is the
 release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could state only one of them. `--list` words a step's dependency per
 mode: conditional, or required.
 
 **`GateMode` is a closed union derived from the ordered `GATE_MODES` tuple, and `Step.tier` names the lowest mode a step runs in.** Together they
 carry the invariant [`TESTING.md`][testing-6c] §6c exists to settle. The tier is ordered rather than a _set_ of modes, so selection is a rank
 comparison and a table cannot express a step a lower mode has and a higher one does not — `quality ⊆ standard ⊆ full` by construction. The
-prerequisite
-question stays binary regardless of how many tiers there are: only a full run fails on an absent one. Neither is a restriction the runner enforces
-at runtime — both are shapes that make the wrong thing unsayable.
+prerequisite question stays binary regardless of how many tiers there are: only a full run fails on an absent one. Neither is a restriction the
+runner enforces at runtime — both are shapes that make the wrong thing unsayable.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
-different prefix, and one config field is cheaper than five forks of the runner. The temp-directory prefix behind the full-log file stays hardcoded
-— configuring it would be surface for nothing.
+different prefix, and one config field is cheaper than a fork of the runner per app. The temp-directory prefix behind the full-log file stays
+hardcoded — configuring it would be surface for nothing.
 
 **The formatters in `src/tooling/gate/report.ts` stay unpublished.** Publishing them would freeze the exact glyphs and wording of every gate line
-across five repositories, and would hand the next repository the parts to build an alternate runner from — the fork this consolidation removed.
+across every repository that runs it, and would hand the next one the parts to build an alternate runner from — the fork this consolidation removed.
 
 **`selectSteps` _is_ published**, because it is pure — an app unit-tests its own table against it at zero step cost, the same argument that makes
 forge's `steps.test.ts` worth having.
@@ -345,10 +342,10 @@ assertable literally — a table that type-checks but names a command no app can
 it.
 
 **Every preset step is prerequisite-free and on the `quality` tier**, so the whole preset is legal in a quality run
-([`TESTING.md`][testing-6c] §6c). A
-`requires` added to any of them would break that for every app at once, which is why `presets.test.ts` asserts the absence as a property.
+([`TESTING.md`][testing-6c] §6c). A `requires` added to any of them would break that for every app at once, which is why `presets.test.ts` asserts
+the absence as a property.
 
-`assetConfig` is optional and omitting it drops the `types:assets` step entirely — an app with no asset pipeline gets a four-step table, not a step
+`assetConfig` is optional and omitting it drops the `types:assets` step entirely — an app with no asset pipeline gets a shorter table, not a step
 that succeeds vacuously.
 
 ### 2h. Roots Are Stated or Derived, Never Discovered
@@ -475,8 +472,7 @@ These habits carry the rest:
 **A commit that alters or removes a published export carries the `minor:` subject prefix** (`major:` once forge is 1.0). `resolveVersion` reads only
 the `major:` and `minor:` prefixes and defaults everything else to patch, so the prefix is the sole machine-readable "this will break you" — and
 pre-1.0 forge ships breaking changes with no shim while consumers pin by tag, which makes that signal the only warning they get. The surface guard
-(`removedSurfaceSince` in `surface.ts`) refuses a shrinking export surface under an auto-patch release, and its refusal names the prefix as the
-remedy: `--allow-semver` silences the guard rather than answering it, and is described there as the deliberate override it is — for a shrink where a
+(§2b) names the prefix as the remedy for its refusal: `--allow-semver` silences the guard rather than answering it, and is for a shrink where a
 patch bump is genuinely correct.
 
 ### 2k. `forge dev sync` Is Asked For, Never Automatic

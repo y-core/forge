@@ -44,7 +44,7 @@ verbatim, which is how a literal default sits beside a binding.
 
 ## Choosing where a value belongs
 
-A production app has two layers, and they have different owners. Getting a value into the wrong one is the most common mistake here.
+A production app has two layers, and they have different owners.
 
 | Layer | Owns | Written by |
 | --- | --- | --- |
@@ -63,8 +63,7 @@ export const options: Partial<GenOptions> = {
 };
 ```
 
-Layer 2 — the `Config` stores below — then consumes already-validated vars. It is where mapping, shaping and caching happen, and it never re-checks
-that a binding exists.
+Layer 2 — the `Config` stores below — then consumes already-validated vars, and never re-checks that a binding exists.
 
 ---
 
@@ -114,8 +113,8 @@ present.
 ## Insisting an integration is configured
 
 `optionalGroup` is for a feature that may genuinely be off. Reach for `requiredGroup` whenever the group's absence removes a guard rather than a
-feature — a bot check, a signing key, a webhook secret. A consumer that writes `...(config.turnstile ? { turnstile: … } : {})` registers the route
-with no bot guard at all when the group gates to `null`, and nothing anywhere reports it.
+feature — a bot check, a signing key, a webhook secret. A consumer writing `...(config.turnstile ? { turnstile: … } : {})` against an optional
+group registers the route with no bot guard at all when the group gates to `null`, and nothing reports it.
 
 ```ts
 import { requiredGroup } from "@y-core/forge/config";
@@ -128,8 +127,7 @@ const schema = v.object({
 ```
 
 The throw names the key, not just the group, and it surfaces through the app's error boundary as a 500 on the **first** request and every request
-after it — a deployment that forgot a secret cannot serve unguarded traffic while looking healthy. `defaults` works exactly as it does on
-`optionalGroup`; there is no `required` option, because every key is.
+after it. `defaults` works exactly as it does on `optionalGroup`; there is no `required` option, because every key is.
 
 The absence boundary is the same one: a key holding `""` is reported `missing`, and a `defaults` entry fills it:
 
@@ -166,8 +164,8 @@ registerConfig(hostObject, emailConfig);
 const cfg = resolveConfig(retrieveConfig<EmailCfg>(hostObject), c.env);
 ```
 
-`resolveConfig` tolerates a missing store, returning `{}` cast to the config type — which is what makes it the natural pairing for `retrieveConfig`,
-whose result may be `undefined`. Entries are garbage-collected with their host, so there is no unregister.
+`resolveConfig` tolerates a missing store, returning `{}` cast to the config type, so it pairs with `retrieveConfig`'s possibly-`undefined` result.
+Entries are garbage-collected with their host, so there is no unregister.
 
 `InferConfig<E>` extracts the resolved type from a record carrying a `Config` field, for code that reads config off an env-shaped object.
 
@@ -195,13 +193,12 @@ force re-resolution for the same `env`.
 
 **Resolution is cached per distinct `env` object, not once per process.** The cache is a `WeakMap` keyed on `env` identity: each distinct `env`
 resolves once, and a different `env` resolves independently. There is no first-env-wins behaviour, and the cache lives as long as the V8 isolate
-rather than a request — which is correct on Workers, where bindings are stable per isolate.
+rather than a request.
 
 **`optionalGroup` strips undeclared keys.** A group is projected out of an `env` carrying many unrelated bindings, so only keys named in `entries`
 reach the parsed config.
 
-**A schema failure throws; it does not return a `Result`.** A malformed environment is a deployment error, not a runtime condition a handler can
-recover from.
+**A schema failure throws; it does not return a `Result`.**
 
 ---
 

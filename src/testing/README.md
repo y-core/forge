@@ -8,7 +8,7 @@ audience: consumer
 
 Every suite for a forge app needs the same handful of fixtures: a request context the production accessors accept, storage bindings that behave the
 way the real ones do, a CSRF token that actually verifies, and a way to turn a component into the string you assert against. This namespace ships
-them, so a consumer's suite hand-rolls none of it.
+them.
 
 Import it from test files only. Everything is reached from the barrel except the `wrangler dev` helper, which has its own subpath and is
 deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
@@ -43,8 +43,8 @@ const res = await settingsHandler(c);
 ## Exercising one handler or middleware
 
 `createTestContext` takes the request and, optionally, whatever else the router injects. Every one you leave out gets an inert
-stand-in: an empty `env`, an `ExecutionContext` whose members do nothing, no config, and `nullLogger`. So the options bag is a list of what this
-test cares about — pass a field only when the assertion touches it.
+stand-in: an empty `env`, an `ExecutionContext` whose members do nothing, no config, and `nullLogger`. Pass a field only when the assertion touches
+it.
 
 ```ts
 const c = createTestContext(buildRequest("/settings", { formData: { theme: "dark" } }), { env: { SETTINGS_KV: fakeKV() } });
@@ -82,7 +82,7 @@ mapHandler(app, "POST", "/settings", { middleware: [requireSignIn], handler: set
 const res = await app.request("/settings", { method: "POST", body: new URLSearchParams({ theme: "dark" }) }, TEST_ENV);
 ```
 
-The action is either a bare handler or a `{ middleware, handler }` object — the same two shapes a real controller accepts. When the test is about
+The action is either a bare handler or a `{ middleware, handler }` object — the same shapes a real controller accepts. When the test is about
 the production registration path itself, register it that way instead ([`TEST_RUNNERS.md`][testing-7e] §7e).
 
 ---
@@ -113,7 +113,7 @@ expect(found).toEqual({ ok: true, data: [{ id: 1, email: "ada@example.com" }] })
 expect(db.calls[0]).toEqual({ sql: "SELECT * FROM users WHERE id = ?", params: [1] });
 ```
 
-Its options bag is two decisions about the database's behaviour, not its data. `failOn` is how a test reaches an error path — return an `Error` for
+Its options bag is about the database's behaviour, not its data. `failOn` is how a test reaches an error path — return an `Error` for
 the statement that should blow up, `null` for every other. `rowsWritten` is how a write claims to have changed something: the default is zero, which
 is what makes a `requireRowsWritten()` guard fire, so a batch that is meant to commit has to say so.
 
@@ -141,8 +141,8 @@ now += 301_000;
 expect(await kv.get("otp:ada", { type: "text" })).toBeNull();
 ```
 
-The clock is milliseconds and defaults to `Date.now`, which is why a suite that leaves it out and waits for a real TTL only ever fails by being
-slow. An expired key is gone from `get`, `getWithMetadata` and `list` alike, as it is in a real namespace.
+The clock is milliseconds and defaults to `Date.now`. An expired key is gone from `get`, `getWithMetadata` and `list` alike, as it is in a real
+namespace.
 
 ---
 
@@ -157,7 +157,7 @@ const DB = fakeAuthD1([{ id: ADA, email: "ada@example.com", isAdmin: true, facto
 ```
 
 `id` and `email` are the whole requirement. Everything else defaults to the ordinary case — a verified, active, non-admin account with no factors
-and no revocation barrier — so each field you write is a departure from it. The two departures worth knowing: `deactivatedAt` gives you the
+and no revocation barrier — so each field you write is a departure from it. The departures worth knowing: `deactivatedAt` gives you the
 suspended account, and `confirmedAt: null` on a factor gives the enrolment that was begun and never finished, which is how the pending-enrolment
 and step-up paths are reached.
 
@@ -217,11 +217,10 @@ expect(attrOf(elementOf(html, "form"), "action")).toBe("/auth/signout");
 ```
 
 `elementOf(html, tag, selector?)` is the whole first element of that tag, children included — or, given a selector, the first whose opening tag
-carries that attribute spelled exactly as rendered. A void element such as `<meta>` is its opening tag. `innerOf` strips an element's own tags
-when the case is about its children rather than its attributes; `attrOf`, `attrsOf` and `classesOf` read the opening tag when it is about one
-attribute, every attribute, or the class list, and `variantClasses(html, baseline, selector?)` names which class tokens one render added and
-dropped against another, so a variant's test asserts only the difference it is about. Every one answers `""` or an empty record for an
-element the page never rendered, and a `toBe` against the expected markup is what turns that into a failure.
+carries that attribute spelled exactly as rendered; a void element such as `<meta>` is its opening tag. Reach for `innerOf` when the case is about
+an element's children, `attrOf`, `attrsOf` or `classesOf` when it is about one attribute, every attribute or the class list, and
+`variantClasses(html, baseline, selector?)` when it is about which class tokens one render added and dropped against another. Each answers `""` or
+an empty record for an element the page never rendered, which a `toBe` against the expected markup turns into a failure.
 
 Children are cut at the first closing tag of the same name, so for an element nested inside another of its own kind, name the inner one by a
 selector rather than reaching for the outer.
@@ -249,7 +248,7 @@ beforeAll(async () => {
 afterAll(() => server?.stop());
 ```
 
-Every option is optional, and each answers one question. `entry` and `config` say what to serve. `vars` are written to a temp env file, which
+Every option is optional. `entry` and `config` say what to serve. `vars` are written to a temp env file, which
 replaces `.dev.vars` discovery rather than adding to it, so name every secret the fixture needs. `readyPath` is what the readiness probe fetches —
 any answer counts, a 404 included, so point it at something cheap. `capture` keeps stdout and stderr for `server.logs()` and folds them into the
 error when the server never comes up; without it they are discarded.

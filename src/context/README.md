@@ -42,16 +42,15 @@ async function handler(context: RequestContext) {
 }
 ```
 
-The call is an assertion as much as a cast: it throws if forge never injected per-request state, rather than handing back a context whose `env` is
-`undefined`. What else is safe to read off `c` — and the rule that a response is built with the `http` helpers rather than by hand — is
-[`ROUTING_AND_MIDDLEWARE.md`][ram-5d] §5d's.
+The call is an assertion as much as a cast: it throws if forge never injected per-request state. What else is safe to read off `c` — and the rule
+that a response is built with the `http` helpers rather than by hand — is [`ROUTING_AND_MIDDLEWARE.md`][ram-5d] §5d's.
 
 ---
 
 ## Carrying a value from middleware to a handler
 
-Authentication resolves a user; a handler downstream needs it. `contextVar` mints one accessor that owns both ends of that slot, so the key and its
-type cannot drift apart and no caller has to remember a string.
+Authentication resolves a user; a handler downstream needs it. `contextVar` mints one accessor that owns both ends of that slot, so no caller has
+to remember a string.
 
 ```ts
 import { contextVar } from "@y-core/forge/context";
@@ -115,8 +114,8 @@ returns the typed env.
 with a hand-built `RequestContext` is missing — reach for `createTestContext` from [`src/testing/README.md`][testing-readme] instead. An empty
 bindings object counts as present, so a context built with `{}` satisfies the assertion.
 
-**A binding failure is a throw, not a `Result`.** A malformed environment is a deployment error rather than a runtime condition a handler could
-recover from ([`FORGE_ERRORS.md`][fe-5e] §5e), and the message carries the field and the reason but never the rejected value.
+**A binding failure is a throw, not a `Result`** ([`FORGE_ERRORS.md`][fe-5e] §5e). The message carries the field and the reason, never the
+rejected value.
 
 ---
 

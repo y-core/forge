@@ -9,7 +9,7 @@ audience: internal
 `forge release` cuts a release from what git already knows. It resolves the next version from the commit subjects since the latest tag, refuses a
 few things that should not ship, promotes `CHANGELOG.md`, updates `package.json`, commits both, and creates the tag. It never pushes.
 
-It is a command, not a script you write: it stages exactly what it wrote, so the common project configures nothing at all.
+It stages exactly what it wrote, so the common project configures nothing at all.
 
 **Node.js / Bun only.** This namespace shells out to `git` and reads and writes `package.json` and the changelog. Do not import it into a Cloudflare
 Worker or a client bundle.
@@ -109,7 +109,7 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 
 **Every refusal except the clean-tree check, the branch check and the gate fires under `--dry` too**, so a preview never hides the refusal it is
 previewing. Those three are skipped because a dry run writes nothing for them to protect. A remote that cannot be reached at all is reported and
-non-fatal: releasing from a machine with no route out is ordinary, and an unanswerable question is not a failed one.
+non-fatal.
 
 The surface guard compares the exports the previous tag published against the working tree's and names each entry that has gone. It runs only on an
 auto-patch with a previous tag — an explicit version and a `minor:`/`major:` bump have already said what they are
@@ -131,9 +131,8 @@ export default { stageFiles: ["package.json", "CHANGELOG.md", "bun.lock"] } sati
 
 **`stageFiles` replaces the derived list rather than adding to it**, so name the changelog yourself if you still want it staged.
 
-`cwd` is the one field the module may not set: it comes from `--root` or the working directory, which is what keeps the module describing the
-release rather than the machine it runs on. A `--config` naming a missing file is an error; only the unnamed default may be absent, because that
-absence is the zero-config case rather than a mistake.
+`cwd` is the one field the module may not set: it comes from `--root` or the working directory. A `--config` naming a missing file is an error; only
+the unnamed default may be absent.
 
 ---
 
@@ -156,11 +155,10 @@ export default { gateCommand: ["bun", "run", "check"] } satisfies Omit<ReleaseCo
 a failing one exits. The refusal names `gateCommand` rather than telling you to fix what nothing reported.
 
 **The branch check reports rather than refuses when the remote names no publishing branch.** `refs/remotes/origin/HEAD` is written by `git clone`
-and by `git remote set-head`, so a repository created locally and pushed has none — and an unanswerable question is not a failed one, the same rule
-the previous-tag push check follows.
+and by `git remote set-head`, so a repository created locally and pushed has none.
 
-**A detached HEAD is refused either way**, because whether HEAD is on a branch at all needs no remote to answer. Releasing from one commits to no
-branch: the printed `git push` would push nothing while `git push --tags` published a tag no branch carries.
+**A detached HEAD is refused either way.** Releasing from one commits to no branch: the printed `git push` would push nothing while
+`git push --tags` published a tag no branch carries.
 
 A consumer then depends on the artifact by URL:
 
@@ -220,8 +218,8 @@ reachable from a test that mocks no process.
 `promoteUnreleased`, `formatReleaseDate` and the `SemVer` functions all live there, because the gate's own changelog and export-surface checks read
 them too. This namespace depends on the gate and never the reverse.
 
-**The git and `package.json` helpers are deliberately unpublished.** What forge publishes is the policy over git — the ordered, refusing release
-command — not a thin wrapper you would have to rebuild the policy around ([`BUILD_TOOLING.md`][bt-2c] §2c).
+**The git and `package.json` helpers are deliberately unpublished** ([`BUILD_TOOLING.md`][bt-2c] §2c). What forge publishes is the release command
+itself.
 
 **A tag that fails to create after the commit landed says so.** The message names the commit as unpushed and untagged, because that is the state you
 have to clean up.

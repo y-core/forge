@@ -41,7 +41,7 @@ component into their app and gets it back with their layout, their icons and the
 registration entry point and nothing else, because a route helper is the only thing an app needs to mount it — and the browser half is the
 side-effect import `@y-core/forge/ui/show/client`, which registers every scope the demos bind and therefore exports no symbol an app may call.
 
-These consequences are real costs, and both are accepted deliberately:
+Both consequences are real costs, and both are accepted deliberately:
 
 - **Its markup is demo markup that ships to every consumer.** The utility classes it uses are therefore opt-in: an app that mounts the showcase adds
   one line to its stylesheet so those classes compile, exactly as it does for the log viewer. `config/steps.ts` owns that line, and the CSS
@@ -88,8 +88,8 @@ and the registration helpers ([`NAMESPACE_DESIGN.md`][nd-1c] §1c permits an unb
 ### 1d. The Turnstile Page Demonstrates Forge's Own Surface
 
 **Turnstile has its own page because it is the one component whose demo is a configuration, not a variant.** A catalog band shows a component's axes
-side by side; the widget's behaviour depends on ten props at once, so what a reader needs is one widget they can reconfigure. Its state model is the
-customiser's — the query string is the whole configuration, so a setting worth reporting is a link.
+side by side; the widget's behaviour depends on many props at once, so what a reader needs is one widget they can reconfigure. Its state model is
+the customiser's — the query string is the whole configuration, so a setting worth reporting is a link.
 
 **The panel offers exactly the props `TurnstileProps` declares, and nothing Cloudflare's API has that forge does not expose.** A control for an
 option the component cannot take would document a component forge does not ship, and the reader could not tell which half was real. Options forge
@@ -106,9 +106,9 @@ rather than claiming a verification that never happened.
 
 ### 1e. Every Band Is Built From One Grammar
 
-**A demo composes the band primitives in `components.tsx`; it does not spell a band's layout in utilities of its own.** The showcase is forge's
-most-read worked example, so a page whose bands each invent their own heading weight, note size and column widths is a demonstration of the opposite
-of what the design corpus asks for. These are the pieces, and a demo needs no other:
+**A demo composes the band primitives in `components.tsx`; it does not spell a band's layout in utilities of its own.** A page whose bands each
+invent their own heading weight, note size and column widths demonstrates the opposite of what the design corpus asks for. These are the pieces, and
+a demo needs no other:
 
 | Piece | The band it makes |
 | --- | --- |
@@ -163,7 +163,7 @@ coverage failure is otherwise a key with no obvious next step.
 
 ### 2c. The Three Assertions
 
-The contract is enforced by three assertions, and the directions matter more than the count:
+The directions matter more than the count:
 
 - **Every component export in every published UI barrel is declared in the manifest.** This is the direction that catches a _new_ component: adding
   one to a barrel fails the build until it is either demonstrated or written down as owed.

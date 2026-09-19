@@ -176,10 +176,14 @@ Where a handler must reference a user for debugging, use an **opaque internal id
 **Stack traces stay out of persisted logs.** A stack embeds argument values and file paths, and a persisted record is a far longer-lived artifact
 than a console line.
 
-**Do not relax the platform's default redaction without a reviewed exception.** Where the platform redacts every record by default, the application
-writes nothing to get §4a compliance, and the only thing that has to be visible is the relaxation: an allowed-back field class, or the opt-out that
-disables the pass. Each one is a reviewed decision recorded where the configuration lives, and a hand-rolled deny list beside the default is a
-second copy free to disagree with it. A per-channel wrapper is for holding one sink to a **stricter** standard than the default, never a looser one.
+**Do not relax the platform's default redaction without a reviewed exception.** Where the platform redacts every record by default, the relaxation
+is the thing that has to be visible: an allowed-back field class, or the opt-out that disables the pass. Each one is a reviewed decision recorded
+where the configuration lives, and a hand-rolled deny list reimplementing the default beside it is a second copy free to disagree with it. A
+per-channel wrapper is for holding one sink to a **stricter** standard than the default, never a looser one.
+
+**A default set is not §4a compliance, and the application owns the gap.** A platform carries only the field names it can name for every consumer,
+so one that collides with a general-purpose key is left to the application that knows its own fields are spelled that way. Extending the default is
+the sanctioned mechanism and not the second copy above — it adds rather than restates, so the two cannot disagree.
 
 ### 4b. Structured Fields Over String Interpolation
 

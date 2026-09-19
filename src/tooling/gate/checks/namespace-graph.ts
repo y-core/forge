@@ -3,8 +3,8 @@ import { dirname, resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { buildGraph, diffGraph, findEnumerations, isTestSource } from "./namespace-graph-parse";
-import { collectFiles } from "./source-scan";
+import { buildGraph, diffGraph, findEnumerations } from "./namespace-graph-parse";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { ExportsMap } from "./types";
 import type { DeclaredGraph, SourceFile } from "./types";
 import type { NamespaceGraphCheckConfig } from "./types";

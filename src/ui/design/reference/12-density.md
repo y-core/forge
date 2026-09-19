@@ -5,9 +5,8 @@ description: "The dials that tune a forge surface, each on a scale, and the spec
 
 # Density, Variance, and Motion
 
-Density, variance and motion describe how a forge surface is tuned, each on a 1–10 scale. They are not style presets — each one cashes out in
-specific class choices and specific component choices, and the whole point of naming them is that a brief can move one without moving the other
-two.
+Density, variance and motion describe how a forge surface is tuned, each on a 1–10 scale. They are not style presets — each cashes out in specific
+class and component choices, and naming them is what lets a brief move one without moving the others.
 
 | Dial | What it sets | Forge's app-UI default |
 | --- | --- | --- |
@@ -15,8 +14,8 @@ two.
 | Variance | How far a surface departs from the plainest arrangement that works | **4** |
 | Motion | How much movement the interface carries | **3** |
 
-Those defaults are ratified in `docs/UI_DESIGN_GUIDANCE.md` §8, and they are deliberately restrained because forge's primary target is product and
-app UI — surfaces a user sees many times a day, having arrived to finish a task. Variance costs recognition there, and motion costs time.
+Those defaults are ratified in `docs/UI_DESIGN_GUIDANCE.md` §8: restrained, because forge's primary target is product and app UI, where variance
+costs recognition and motion costs time.
 
 Default: an app surface is built at density 5, variance 4, and motion 3 unless a written brief sets a different value, and a dial moved by inference
 from the surrounding code is not a brief. <!-- rule:forge-ui-density-app-default -->
@@ -57,7 +56,7 @@ keeps the looser one, unless the brief describes the two as one continuous surfa
 
 ## 2. What raised density actually changes
 
-Density is not a scale factor applied to everything. It moves five specific things, all of which terminate in a forge primitive.
+Density is not a scale factor applied to everything. What it moves is specific, and each of those things terminates in a forge primitive.
 
 **Control size.** Sizes run `sm` / `md` / `lg`, and `shape` decides the footprint at each — `md` is the default row. At density 7 and above, `sm` is
 the row, and an icon-only control is `shape='icon'` at that same `sm`.
@@ -77,7 +76,7 @@ density decision.
 Default: raised density selects a lower step on Tailwind's spacing scale — `gap-2` in place of `gap-4` — and never an arbitrary value, unless a
 forge component's own class needs overriding, in which case the override is still a scale value. <!-- rule:forge-ui-density-gap-scale -->
 
-**One card, not one card per row.** A `Card` per list item is the most common way a dense surface becomes a loose one, and it collides with
+**One card, not one card per row.** A `Card` per list item is how a dense surface becomes a loose one, and it collides with
 `forge-ui-no-nested-card` the moment the list is inside a card already.
 
 Default: a dense list renders as rows separated by `Separator` inside a single `Card.Content`, unless each item carries its own independent set of
@@ -145,9 +144,8 @@ import { Badge, Button, Card, ScrollArea, Separator } from "@y-core/forge/ui/cor
 
 ## 3. What density never changes
 
-This is the paragraph that matters most, because density is the standing excuse for shrinking a control past the point where it can be used. **The
-Floor does not have a density setting.** At density 10, on the densest table forge can render, all of the following hold exactly as they hold at
-density 3:
+Density is the standing excuse for shrinking a control past the point where it can be used. **The Floor does not have a density setting.** At
+density 10, on the densest table forge can render, all of the following hold exactly as they hold at density 3:
 
 - **`forge-ui-hit-target`** — the `Button` `sm` box is the floor of the size scale, and there is nothing below it. A dense layout that does not fit
   gives way; the control does not shrink. Padding may tighten around a target, but the target's own box may not go under `sm`.
@@ -160,7 +158,7 @@ Default: a density increase is implemented by lowering spacing steps and control
 supplies a different mechanism for fitting the content — pagination, a `ScrollArea`, or fewer columns — which it should, because the rules a
 further squeeze would break are Floor and no brief reaches them. <!-- rule:forge-ui-density-floor-holds -->
 
-Two more that a dense surface reaches for and should not: `forge-ui-text-color-budget` still caps a surface at two text colors, and
+A dense surface reaches past these too and should not: `forge-ui-text-color-budget` still caps a surface at two text colors, and
 `forge-ui-measure-cap` still holds on any body copy that survives into the dense layout — a description does not become full-bleed because the rows
 around it are tight.
 

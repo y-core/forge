@@ -45,8 +45,8 @@ audience: consumer
 
 ### 1a. The Unified `Result` Primitive, `ok`/`err`, `result` and `toError`
 
-forge has exactly **one** result primitive, published from `@y-core/forge/result` as the type `Result<T, E>` plus four values — `ok`, `err`,
-`result` and `toError`. **`src/result/mod.ts` is authoritative for every one of those signatures**, including `ok`'s void overload and `result`'s
+forge has exactly **one** result primitive, published from `@y-core/forge/result` as the type `Result<T, E>` plus the values `ok`, `err`, `result`
+and `toError`. **`src/result/mod.ts` is authoritative for every one of those signatures**, including `ok`'s void overload and `result`'s
 sync/async/promise overloads; `src/result/README.md` shows them in use.
 
 **Return `Result` from any function that can fail predictably.** Never return `null | T` and never throw for an expected failure.
@@ -62,7 +62,7 @@ See [`ERROR_HANDLING.md`][eh-1b] §1b for the guard shape, the early-return rule
 
 ### 1c. `GuardResult` and `ValidationResult` Domain Aliases
 
-Both are plain aliases of §1a that narrow only the failure type `E`. The discriminant stays `ok`; the failure channel stays `error`.
+Both are plain aliases of §1a. The discriminant stays `ok`; the failure channel stays `error`.
 `ValidationResult<T>` narrows `E` to a readonly string list, `GuardResult<R>` narrows the success type to `void`; both are declared in
 `src/result/mod.ts`, and `ValidationResult` is re-exported from `@y-core/forge/validation`.
 
@@ -78,7 +78,7 @@ reason codes. Construct with `ok()` and `err(reason)`.
 
 ## 2. Fragment Renderers (`http` namespace)
 
-All three render HTMX-compatible partial HTML — never a full `<html>` document — and return `SafeHtml`, not a `Response`. Import from
+Each renders HTMX-compatible partial HTML — never a full `<html>` document — and returns `SafeHtml`, not a `Response`. Import from
 `@y-core/forge/http`.
 
 **Set the status on `fragmentResponse(body, status?, headers?)`, not on the renderer.** `fragmentResponse` fixes `content-type` to
@@ -253,8 +253,8 @@ the terminating layer and reports it there. A builder that recovers the error it
 records carries `serializeError(error)`, so the shape is the same wherever it was written. `requestLogger`'s per-request summary is a separate
 record by design — it carries the `method`, `path` and `duration` the error record does not.
 
-**A throwing `onError` is attributed to the hook, not folded into the original.** All three hooks — `createApp`'s, `definePage`'s and
-`defineAction`'s — log their own failure with the original error alongside it, then fall through as if no hook had been supplied.
+**A throwing `onError` is attributed to the hook, not folded into the original.** Every hook — `createApp`'s, `definePage`'s and `defineAction`'s —
+logs its own failure with the original error alongside it, then falls through as if no hook had been supplied.
 
 **Use these hooks for per-route recovery instead of ad-hoc `try/catch`.**
 
@@ -284,7 +284,7 @@ and returns a `Response` — `200` / `206` (range) / `304` (conditional) / `404`
 value straight back from the handler.
 
 **The bound `store.serveObject` is not the exception, and returns `Result<Response>`** — a rejected key and a backend fault are failures, not
-rendered ones, and the store's other five operations already say so ([`STORAGE_BINDINGS.md`][sb-3b] §3b).
+rendered ones, and the store's other operations already say so ([`STORAGE_BINDINGS.md`][sb-3b] §3b).
 
 ### 5f. Configuration Knobs — Asserted Where They Are Accepted
 

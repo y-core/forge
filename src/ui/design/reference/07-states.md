@@ -170,12 +170,10 @@ A `tone='neutral' appearance='outline'` `Button` in the same `Alert`. Override w
 
 Note on tokens: `Alert` and `Toast` take their non-`neutral` colours from the `--status-*` family rather than from `--destructive` / `--success` /
 `--warning`, through the soft appearance each tone resolves to. That is the shipped behaviour, and it is why `forge-ui-foreground-pairing` has
-nothing to pair here: the surface, its foreground and its border are one audited triple, chosen inside the tone. The hue is fixed and the mode is
-not — each status step resolves through a scale step that carries both — so a status panel is a tinted region on a dark page rather than a
-near-white island. Do not "fix" it by passing `class="bg-destructive"`: `--destructive` does pair with `--destructive-foreground`, so the pairing is
-not the objection. The objection is that `--destructive` is the _application's_ destructive colour and an app may legitimately re-point it, whereas
-a status panel has to stay red to mean "failed". `--destructive` is also a _fill_, held across modes so a near-white foreground clears it; error
-**text** is `text-destructive-text`, which is the step that flips ([`THEME_GENERATION.md`][tg-4] §4).
+nothing to pair here: the surface, its foreground and its border are one audited triple, chosen inside the tone. Do not "fix" it by passing
+`class="bg-destructive"` — the ownership split in [`04-color.md`][color-7a] is the objection, not the pairing. `--destructive` is also a _fill_,
+held across modes so a near-white foreground clears it; error **text** is `text-destructive-text`, which is the step that flips
+([`THEME_GENERATION.md`][tg-4] §4).
 
 ---
 
@@ -237,5 +235,6 @@ import { Meter } from "@y-core/forge/ui/core";
 </Meter>;
 ```
 
+[color-7a]: ./04-color.md#7a-the-ownership-split
 [htmx]: ./11-htmx.md
 [tg-4]: ../../../../docs/THEME_GENERATION.md#4-a-status-hue-holds-its-fill

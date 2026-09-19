@@ -17,7 +17,7 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 What Is Not in security: the four symbols routinely looked for here
+- §1 What Is Not in security: the symbols routinely looked for here
 - §2 createSecurityHeaders and CSP Nonce: the header factory and its nonce contract
 - §2a createSecurityHeaders Factory Pattern: per-request nonce, queued headers
 - §2b NONCE Constant: the CSP placeholder
@@ -72,7 +72,7 @@ names the nonce, the header names the same nonce, and nothing else in the docume
 **Every request gets a fresh nonce** — a static nonce defeats nonce enforcement entirely.
 
 **Only the nonce is per-request.** The CSP is rendered once at factory time into a template holding a NUL placeholder where the nonce goes, the
-other eight headers are computed once and frozen, and a request does one `replaceAll` over the template. The placeholder is unreachable to a caller:
+other headers are computed once and frozen, and a request does one `replaceAll` over the template. The placeholder is unreachable to a caller:
 `CSP_SOURCE_TOKEN` is `/^[\x21-\x7e]+$/`, which excludes NUL, and `assertValidCspOptions` still throws from the factory — before the first request —
 rather than from the render.
 
@@ -86,7 +86,7 @@ each middleware rebuilding its own `Response`.
   with no CSP and no HSTS.
 - **Header-name conflicts resolve inner-wins.** `setPendingHeader` is last-writer-wins per name and a middleware registered deeper queues later, so
   a consumer middleware that queues an overlapping name overrides the security default rather than being overridden by it. Nothing inside forge
-  overlaps — `createSecurityHeaders` owns its 8–9 names, `requestId` owns `x-request-id`, and session and flash use `set-cookie` with
+  overlaps — `createSecurityHeaders` owns the names it sets, `requestId` owns `x-request-id`, and session and flash use `set-cookie` with
   `{ append: true }` — so this is observable only from consumer middleware. Pinned in `src/security/headers.test.ts`.
 
 Both the pending channel and a header baked into the handler's own `Response` are still resolved in the channel's favour: `applyPendingHeaders`
@@ -135,8 +135,6 @@ a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both 
 
 ### 2e. Default Header Set
 
-The emitted defaults, and the reasoning where a choice was available:
-
 `src/security/headers.ts` owns the emitted values. What this section owns is which headers are in the set and why:
 
 - **Emitted with a hardened default:** `Content-Security-Policy` (strict, per-request nonce), `Strict-Transport-Security`, `X-Content-Type-Options`,
@@ -154,8 +152,8 @@ The emitted defaults, and the reasoning where a choice was available:
   partitioning means it is never a shared cache hit, so it costs two connection setups and a visitor-IP disclosure and buys nothing back.
   Self-hosting through the asset pipeline's `fonts.downloads` needs no widening at all, which is why the directives are a plain escape hatch rather
   than a convenience API.
-- **Every unsafe CSP keyword is refused as a string and admitted only as an imported symbol.** The four — `'unsafe-inline'`, `'unsafe-eval'`,
-  `'unsafe-hashes'`, `'wasm-unsafe-eval'` — throw when named as a string source, case-insensitively, in every directive and at both entry points
+- **Every unsafe CSP keyword is refused as a string and admitted only as an imported symbol.** `'unsafe-inline'`, `'unsafe-eval'`,
+  `'unsafe-hashes'` and `'wasm-unsafe-eval'` throw when named as a string source, case-insensitively, in every directive and at both entry points
   (`createSecurityHeaders` at construction, `applySecurityHeaders` per call). The opt-out is a `unique symbol` per keyword (`UNSAFE_INLINE`,
   `UNSAFE_EVAL`, `UNSAFE_HASHES`, `WASM_UNSAFE_EVAL`), placed in the source list exactly where the string would have gone; the validator skips
   non-strings, which is the same seam `NONCE` rides.
@@ -228,7 +226,7 @@ one and `validate-dev-boundary` fails the import that would try.
 
 ### 3e. Origin-Guard Tiering — Which Guard When
 
-Three middleware defend against cross-origin mutation. They form a deliberate tiering: **pick one per route rather than stacking them.**
+The middleware below defend against cross-origin mutation. They form a deliberate tiering: **pick one per route rather than stacking them.**
 
 | Guard | Signal | When the signal is absent | Use when |
 | --- | --- | --- | --- |
@@ -236,9 +234,9 @@ Three middleware defend against cross-origin mutation. They form a deliberate ti
 | `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless a dev allowance grants `missingFetchMetadata` | Stricter, no allowlist |
 | `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Webhook/privileged endpoints keyed purely on an origin allowlist |
 
-**`originProtection` is the authoritative recommended default** — the other two are the single-signal tiers it is built from.
+**`originProtection` is the recommended default** — the others are the single-signal tiers it is built from.
 
-All three exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing requests are gated. `originProtection` treats
+All of them exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing requests are gated. `originProtection` treats
 `Sec-Fetch-Site` as a **veto, not a pass**: any value other than `same-origin`/`none` rejects outright, and a good value does _not_ short-circuit
 the allowlist. `allowedOrigins` — a static `string[]` or a per-request resolver — is consulted on every mutating request carrying an `Origin` or
 `Referer`; only when both are absent does the guard fall back to the browser's Fetch-Metadata vouching, and with no signal at all it fails closed.
@@ -340,7 +338,7 @@ headers unconditionally lets a client forge its own request id or rate-limit key
 
 **Forge therefore defaults to distrust: the CF headers are used only when the caller opts in with `trustCfHeaders: true`.**
 
-The flag surfaces in three places, all defaulting to `false`:
+Every surface it reaches defaults to `false`:
 
 | Surface | With `trustCfHeaders: true` | Default |
 | --- | --- | --- |

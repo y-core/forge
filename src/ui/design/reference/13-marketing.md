@@ -20,7 +20,7 @@ announcement — unless the brief names it a marketing surface explicitly. <!-- 
 
 ## 0. Quick Reference
 
-- §1 What actually changes: four levers — type steps, vertical rhythm, the hero, the one accent moment
+- §1 What actually changes: type steps, vertical rhythm, the hero, the one accent moment
 - §2 Building it from components forge actually has: which primitive serves which marketing section
 - §2a Before / after — the hero: a card framing the thesis as one item, against a plain section
 - §3 What does not change: every Floor rule, and the fabrication rule most of all
@@ -125,16 +125,14 @@ brief reaches it. Specifically:
 
 - `forge-ui-color-token-only` — a brand hue is expressed by overriding `--primary` in the app's stylesheet, not by writing a hex literal into a
   hero's `class`.
-- `forge-ui-contrast-floor` — large display type at low contrast is the single most common marketing accessibility failure. 3:1 for large text, in
-  both `:root` and `.dark`.
+- `forge-ui-contrast-floor` — large display type at low contrast is a standing marketing accessibility failure. 3:1 for large text, in both `:root`
+  and `.dark`.
 - `forge-ui-focus-ring` and `forge-ui-hit-target` — a landing page is still operated by keyboard, and a hero button is still a button.
 - `forge-ui-reduced-motion` — motion at 5 is the setting most likely to produce a scroll-triggered animation, and every one of them needs a
   `motion-reduce:` path.
 - `forge-ui-heading-order` — the hero `<h1>` is the page's only one, and section headings descend from it without a skip. Sizing is a class, never a
   tag choice.
 - `forge-ui-one-radius` — a marketing page is not the place to introduce a second corner radius.
-
-And the one that fails most often, stated hard:
 
 **`forge-ui-no-fabricated-data` applies with full force here.** No invented metric, no invented testimonial, no invented company logo, no invented
 person. "Trusted by 12,000 teams", "312% faster", a quote attributed to a fictional VP of Engineering, an `Avatar` holding a stock face — every one
