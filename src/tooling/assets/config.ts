@@ -78,7 +78,8 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
         { ...group, sources: group.sources.map((source) => ({ ...source, path: resolveSource(root, source.path) })) },
       ]),
     ),
-    fonts: { downloads: parsed.fonts?.downloads ?? [] },
+    fonts: { downloads: parsed.fonts?.downloads ?? [], subsets: parsed.fonts?.subsets ?? [], emit: parsed.fonts?.emit ?? null },
+    marks: parsed.marks ?? [],
     icons: icons === null ? null : { ...icons, src: resolve(root, icons.src), outDir: resolve(root, icons.outDir) },
     cursors:
       cursors === null

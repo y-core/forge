@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse } from "./response";
+import { ContentDisposition } from "./headers";
+import { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, pdfResponse } from "./response";
 
 describe("htmlResponse", () => {
   it("defaults to status 200", () => {
@@ -167,6 +168,44 @@ describe("jsonResponse — content-type is fixed", () => {
   it("throws on any casing of a caller-supplied content-type", () => {
     expect(() => jsonResponse({}, 200, { "Content-Type": "text/html" })).toThrow(
       "jsonResponse: content-type is fixed for JSON responses — remove it from headers",
+    );
+  });
+});
+
+describe("pdfResponse", () => {
+  const BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+
+  it("sets the PDF content type and returns the bytes unchanged", async () => {
+    const res = pdfResponse(BYTES);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(BYTES);
+  });
+
+  it("defaults to 200 and honours an explicit status", () => {
+    expect(pdfResponse(BYTES).status).toBe(200);
+    expect(pdfResponse(BYTES, 201).status).toBe(201);
+  });
+
+  it("carries a ContentDisposition through headers rather than an option of its own", () => {
+    const disposition = new ContentDisposition({ type: "attachment", filename: "declaration.pdf" }).toString();
+    const res = pdfResponse(BYTES, 200, { "content-disposition": disposition });
+    expect(res.headers.get("content-disposition")).toBe("attachment; filename=declaration.pdf");
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+  });
+});
+
+describe("pdfResponse — content-type is fixed", () => {
+  const BYTES = new Uint8Array([0x25]);
+
+  it("throws on a lowercase caller-supplied content-type", () => {
+    expect(() => pdfResponse(BYTES, 200, { "content-type": "text/html" })).toThrow(
+      "pdfResponse: content-type is fixed for PDF responses — remove it from headers",
+    );
+  });
+
+  it("throws on any casing of a caller-supplied content-type", () => {
+    expect(() => pdfResponse(BYTES, 200, { "Content-Type": "text/html" })).toThrow(
+      "pdfResponse: content-type is fixed for PDF responses — remove it from headers",
     );
   });
 });

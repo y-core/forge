@@ -107,8 +107,7 @@ per request because their seams read a `UserStore`; the passkey factor also take
 challenge is bound to, so a registry built once at bootstrap issues challenges bound to nobody. `requireEnrolment` and `requireFreshStepUp` read
 only `resolve`, which means their registry and `resolveServices`'s **need not be the same object**. What they must share is `offered`: the roles and
 requirements it declares are what decide what is owed, so two registries configured differently leave `requireEnrolment` refusing a page the flow
-believes settled. Building one registry per request and handing it to both, as the starter does, is the cheapest way to make that true by
-construction.
+believes settled. Building one registry per request and handing it to both is the cheapest way to make that true by construction.
 
 **Use `createAnonymousSession`, not `sessionMiddleware`, on a Worker.** `sessionMiddleware(storage, cookie)` takes both eagerly, and
 `createKVSessionStorage` needs a KV binding that exists only per request; `createAnonymousSession` resolves the secret and the binding from the

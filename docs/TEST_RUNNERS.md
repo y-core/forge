@@ -43,8 +43,9 @@ audience: consumer
 - §7c render() — SSR Render-to-String: the assertion entry point
 - §7d buildRequest() — Request Builder: options and body helpers
 - §7e mapHandler() and TestAction: single-route registrar
-- §7f The One Subpath That Is Not on the Barrel: why `@y-core/forge/testing/workerd` is imported by name
+- §7f A Subpath That Is Not on the Barrel: why `@y-core/forge/testing/workerd` is imported by name
 - §7g elementOf() and the Markup Readers: the exact assertion on one element of a whole page
+- §7h matchTextSnapshot() — The Second Off-Barrel Subpath: what it writes, what it refuses, and what it never reads
 
 ---
 
@@ -175,7 +176,7 @@ helper's source states neither half of it.
 **The helper itself is published, and forge's specs import it the way a consumer does.** `startDevServer` lives in `src/testing/workerd.ts` and is
 reached as `@y-core/forge/testing/workerd`; there is no copy under `tests/`. A spec here imports the published specifier rather than a relative
 path, so what forge exercises is the module a consumer loads — including its wrangler resolution, which walks the _consumer's_ `node_modules` and
-would be wrong if it were computed from this file's own location. §7f owns why the subpath is off the `./testing` barrel.
+would be wrong if it were computed from this file's own location. §7f owns why that subpath is off the `./testing` barrel.
 
 **The compose cases run four at a time.** Each case is a dozen wrangler spawns of roughly 250MB apiece, so running every case at once peaked near
 4GB and the OOM killer took the gate down; four in flight keeps most of the wall-clock win and holds the peak near a gigabyte.
@@ -383,8 +384,9 @@ and `browserStep` sitting above `dbSchemaStep` in the file does not put Chromium
 ## 7. Testing Namespace Utilities (`@y-core/forge/testing`)
 
 The `testing` namespace ships the fixtures every consumer suite would otherwise hand-roll. **Import them from the barrel** — consumer test code sits
-outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f is the one stated exception, and it is a
-second published subpath rather than a file reached past a barrel. `src/testing/README.md` teaches the fixtures by the task each one serves.
+outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f and §7h are the stated exceptions, and
+each is a published subpath of its own rather than a file reached past a barrel. `src/testing/README.md` teaches the fixtures by the task each
+one serves.
 
 ### 7a. Declared Integration Edge — testing Imports app and jsx
 
@@ -444,9 +446,9 @@ cannot express.
 **Use `mapHandler` for a namespace's own unit tests; use a full `route()` / `createController` map (§5a) when the test must exercise the production
 registration path itself.**
 
-### 7f. The One Subpath That Is Not on the Barrel — `@y-core/forge/testing/workerd`
+### 7f. A Subpath That Is Not on the Barrel — `@y-core/forge/testing/workerd`
 
-`@y-core/forge/testing/workerd` publishes `startDevServer`, `DevServer` and `DevServerOptions`, and it is **the stated exception to §7's opening
+`@y-core/forge/testing/workerd` publishes `startDevServer`, `DevServer` and `DevServerOptions`, and it is **a stated exception to §7's opening
 line.** Import it by its own subpath; it is not re-exported from `src/testing/mod.ts` and will not be.
 
 **The reason is what the module reads.** It runs `wrangler dev` as a child process, so it imports `node:child_process`, `node:fs`, `node:net`,
@@ -496,10 +498,40 @@ so `elementOf(html, tag, selector?)` cuts the whole first element of a tag — o
 consumer's seam suite and forge's own component specs (§3c) reach the same shape rather than a private copy per file. Each answers `""` or an
 empty record for an element the page never rendered; the `toBe` against the expected markup is what makes that a failure.
 
+### 7h. matchTextSnapshot() — The Second Off-Barrel Subpath
+
+`@y-core/forge/testing/snapshot` publishes `matchTextSnapshot`, which compares text against a committed fixture on disk. It reads `node:fs` and
+`node:path`, so it is off the `./testing` barrel for the reason §7f gives, declares its surface in the same `src/testing/node.d.ts` shim, and is
+held to that shim's sufficiency by `tests/fixtures/workers-consumer/snapshot-suite.ts`.
+
+**It is format-agnostic, and depends on no other namespace.** It takes a string. It is what `formatPdfLayout` ([`README.md`][pdf-readme]) was
+built to feed, and it knows nothing about PDF, about layout or about forge's own output — a consumer comparing rendered markup, a generated SQL
+schema or a CLI transcript uses the same function.
+
+**An absent fixture is written and the call passes — except under `ci`.** The first run of a new suite should not fail on a file nobody could have
+committed yet; a CI run must not regenerate one silently, so `ci: true` turns the absence into `reason: "missing"` and writes nothing at all.
+
+**`update` is explicit, and no environment variable is ever read.** Whether fixtures are rewritten is an argument a caller passes, so it is visible
+at the call site rather than in an ambient variable a runner may or may not have set. **`ci` overrides `update`**: a CI run carrying `update` from a
+stale script rewrites nothing.
+
+**It returns a `Result` and never throws** ([`FORGE_ERRORS.md`][errors-1a] §1a). An unreadable or unwritable path is a `reason` on the failure
+channel with the original `Error` as `cause`, not an exception — rethrowing is the caller's decision rather than the library's.
+
+**The diff is anchored-positional, not an LCS.** The identical run at each end is trimmed and the remaining band is paired positionally, each side
+sliced to its own length so the shorter pads with `null`. That is O(n) and about twenty lines, and it reads an insertion correctly, where a raw
+positional compare would report every following line as changed. The residual case — an insertion adjacent to a change, which pairs and reads as a
+rewrite — is disclosed by the report's header carrying both files' line counts. Every rendered line is quoted, because a trailing space, a tab for
+spaces and a stray `\r` are what "files differ" is most useless about; the comparison itself is byte-exact and happens before any of that.
+
+`diff` carries every differing line and `report` is capped at `limit`, so a caller inspecting the data programmatically never fights the renderer.
+
+[errors-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [namespaces-3c]: NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [nd-1c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1c-what-the-export-gate-proves
+[pdf-readme]: ../src/output/pdf/README.md
 [sb-1g]: ./STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
 [sb-2c]: ./STORAGE_BINDINGS.md#2c-kvstore-operations
 [sot-2a]: ./SOURCE_OF_TRUTH.md#2a-package-and-configuration-facts

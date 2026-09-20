@@ -78,6 +78,7 @@ the difference between a build whose inputs are stated and one whose inputs depe
 | `buildSprites` | One sheet per named sprite group, from its explicit `sources[].files` list |
 | `copyAssets` | Each `copy[]` rule, `from` → `to` |
 | `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values |
+| `buildMarks` | One `marks[]` entry per SVG, converted to the paths a renderer draws without parsing XML |
 
 None of these takes the whole config — each takes its own slice plus an output directory; `src/tooling/assets/README.md` teaches driving them.
 
@@ -205,6 +206,18 @@ values, "does this build artifact still fit the config?" is answerable: blank ev
 means the build artifact is current, and `gen types` keeps it. Unequal — an added bundle, a renamed sprite target, a new glyph, a changed prefix —
 means the module on disk describes a config that has moved on, and rewriting it as a types artifact is the correct outcome: a stale build must not
 be pinned in place of one the config can still be typechecked against. `buildAll` is unaffected; a build always writes.
+
+**The emitted faces module is the exception, and deliberately carries no types-only variant.** A `fonts.emit` block writes the built subsets —
+bytes, glyph ids, advances and kerning inlined — as a TypeScript module a Worker can import, because a Worker cannot read from the asset tree and
+fetching a face at request time would put a font parser or a round trip on the render path. Unlike a CSS or JS entry, a face is derivable from the
+config and `node_modules` alone: it has no dependency on the built output tree and no content hash to blank, so there is nothing a placeholder
+version could stand in for. Both `buildAll` and `generateAssetsTypes` therefore emit the _real_ module, and byte-identically — which is what lets a
+clean checkout typecheck and test against embedded faces with no asset build in the gate.
+
+**A face the config names but the build did not produce is a refusal, not a gap in the module** — a family with no subset, a weight the family was
+not built at, and a `defaults` entry naming a face nothing is called each fail the build where the config is wrong rather than at the render that
+discovers a missing face. The module's two export names are config too, so a consuming app spells them in its own domain rather than adapting to
+forge's default.
 
 **The guard keeps `gen types` from degrading the manifest; `validate-asset-manifest` catches it being ahead of the tree for any other reason** — a
 `public/` nobody rebuilt, a pruned hashed output, a hand-edited artifact. The check asserts one thing: every `DATA` value resolves to a file under

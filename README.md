@@ -250,6 +250,10 @@ through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and ow
 | `@y-core/forge/validation` | Schema validation — the valibot facade and the form-field shapes | [src/validation/README.md][validation-readme] |
 | `@y-core/forge/form` | Capped body reads, stateless CSRF, Turnstile verification | [src/form/README.md][form-readme] |
 | `@y-core/forge/http` | HTTP output — response builders, header classes, `SafeHtml` | [src/http/README.md][http-readme] |
+| `@y-core/forge/output/pdf` | Printable documents rendered to bytes — no browser, no dependency | [src/output/pdf/README.md][output-pdf-readme] |
+| `@y-core/forge/output/pdf/audit` | What stands between a render and the conformance it aims at, read before any bytes | [src/output/pdf/README.md][output-pdf-readme] |
+| `@y-core/forge/output/pdf/fonts` | Font packs and the CSS matching ladder a document selects a face through | [src/output/pdf/README.md][output-pdf-readme] |
+| `@y-core/forge/output/pdf/jsx-runtime` | The `jsxImportSource` that lets a PDF document be written as markup | [src/output/pdf/README.md][output-pdf-readme] |
 | `@y-core/forge/result` | The failure-as-data primitive every client answers with | [src/result/README.md][result-readme] |
 | `@y-core/forge/security` | Transport hardening — CSP nonces, origin, CORS, rate limits, ids | [src/security/README.md][security-readme] |
 | `@y-core/forge/session` | Hardened cookies and the session lifecycle middleware | [src/session/README.md][session-readme] |
@@ -303,7 +307,8 @@ through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and ow
 | `@y-core/forge/storage/r2` | R2 through a swappable object-storage backend | [src/storage/README.md][storage-readme] |
 | `@y-core/forge/testing` | Fixtures and fakes — context, storage, CSRF, SSR render | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/workerd` | `wrangler dev` fixture server (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
-| `@y-core/forge/testing/node` | Types only: the node surface `testing/workerd` reaches | [src/testing/README.md][testing-readme] |
+| `@y-core/forge/testing/snapshot` | Text against a committed fixture, as a line diff (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
+| `@y-core/forge/testing/node` | Types only: the node surface those two reach | [src/testing/README.md][testing-readme] |
 
 ### The command layer
 
@@ -363,6 +368,7 @@ MIT — see [LICENSE](LICENSE). This covers everything the package ships, includ
 [lint-readme]: src/tooling/lint/README.md
 [logging-readme]: src/logging/README.md
 [namespaces]: docs/NAMESPACES.md
+[output-pdf-readme]: src/output/pdf/README.md
 [release-readme]: src/tooling/release/README.md
 [result-readme]: src/result/README.md
 [router-readme]: src/router/README.md

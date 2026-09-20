@@ -264,7 +264,7 @@ describe("schemaHealthMonitor()", () => {
     const res = await app(logger).request("/", {}, { DB: fakeD1(() => [], { failOn: () => error }) });
     expect(res.status).toBe(200);
     expect(records).toEqual([
-      { level: "warn", message: "d1.schema.health.failed", data: { error: { name: "Error", message: error.message, stack: error.stack } } },
+      { level: "warn", message: "d1.schema.health.failed", data: { error: { type: "Error", detail: error.message, stack: error.stack } } },
     ]);
   });
 

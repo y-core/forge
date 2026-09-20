@@ -1,0 +1,5 @@
+page=1 kind=text tag=title x=56.000 y=74.000 size=14.000 face=bold tracking=1.100 text="DECLARATION"
+page=1 kind=path tag=rule
+page=1 kind=text tag=label x=56.000 y=103.000 size=9.000 face=bold tracking=0.000 text="Surname"
+page=1 kind=text tag=value x=110.511 y=103.000 size=10.000 face=regular tracking=0.000 text="Du Toit"
+page=1 kind=path tag=artwork alt="The mark"

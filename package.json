@@ -24,6 +24,7 @@
       "./dev",
       "./testing",
       "./testing/node",
+      "./testing/snapshot",
       "./testing/workerd",
       "./tooling/*"
     ]
@@ -60,8 +61,10 @@
     "valibot": "^1.5.0"
   },
   "devDependencies": {
+    "@expo-google-fonts/oswald": "^0.4.2",
     "@playwright/test": "^1.63.0",
     "esbuild": "^0.28.2",
+    "harfbuzzjs": "^1.6.1",
     "oxfmt": "0.68.0",
     "oxlint": "1.83.0",
     "oxlint-tsgolint": "7.0.2001",
@@ -159,6 +162,22 @@
       "types": "./src/logging/show/mod.ts",
       "import": "./src/logging/show/mod.ts"
     },
+    "./output/pdf": {
+      "types": "./src/output/pdf/mod.ts",
+      "import": "./src/output/pdf/mod.ts"
+    },
+    "./output/pdf/audit": {
+      "types": "./src/output/pdf/audit/mod.ts",
+      "import": "./src/output/pdf/audit/mod.ts"
+    },
+    "./output/pdf/fonts": {
+      "types": "./src/output/pdf/fonts/mod.ts",
+      "import": "./src/output/pdf/fonts/mod.ts"
+    },
+    "./output/pdf/jsx-runtime": {
+      "types": "./src/output/pdf/jsx-runtime.ts",
+      "import": "./src/output/pdf/jsx-runtime.ts"
+    },
     "./result": {
       "types": "./src/result/mod.ts",
       "import": "./src/result/mod.ts"
@@ -197,6 +216,10 @@
     },
     "./testing/node": {
       "types": "./src/testing/node.d.ts"
+    },
+    "./testing/snapshot": {
+      "types": "./src/testing/snapshot.ts",
+      "import": "./src/testing/snapshot.ts"
     },
     "./testing/workerd": {
       "types": "./src/testing/workerd.ts",
@@ -339,6 +362,7 @@
     "src/http/",
     "src/jsx/",
     "src/logging/",
+    "src/output/",
     "src/result/",
     "src/router/",
     "src/security/",

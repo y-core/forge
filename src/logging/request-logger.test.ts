@@ -229,9 +229,9 @@ describe("requestLogger — per-request summary record", () => {
     const detail = records[0]!;
     expect(detail.level).toBe("error");
     expect(detail.message).toBe("unhandled error");
-    const error = detail.data?.error as { name: string; message: string; stack?: string };
-    expect(error.name).toBe("Error");
-    expect(error.message).toBe("handler exploded");
+    const error = detail.data?.error as { type: string; detail: string; stack?: string };
+    expect(error.type).toBe("Error");
+    expect(error.detail).toBe("handler exploded");
     expect(typeof error.stack).toBe("string");
 
     const summary = records[1]!;
@@ -267,9 +267,9 @@ describe("requestLogger — per-request summary record", () => {
     expect(records.map((r) => r.message)).toStrictEqual(["request.failed", "unhandled error"]);
     const rec = records[0]!;
     expect(rec.level).toBe("error");
-    const error = rec.data?.error as { name: string; message: string; stack?: string };
-    expect(error.name).toBe("Error");
-    expect(error.message).toBe("middleware exploded");
+    const error = rec.data?.error as { type: string; detail: string; stack?: string };
+    expect(error.type).toBe("Error");
+    expect(error.detail).toBe("middleware exploded");
     expect(typeof error.stack).toBe("string");
     expect("status" in (rec.data ?? {})).toBe(false);
   });
@@ -391,7 +391,7 @@ describe("requestLogger — a failing channel never changes the request outcome"
 
     expect(res.status).toBe(500);
     const detail = records.find((r) => r.message === "unhandled error");
-    expect((detail?.data?.error as { message: string } | undefined)?.message).toBe("middleware exploded");
+    expect((detail?.data?.error as { detail: string } | undefined)?.detail).toBe("middleware exploded");
   });
 });
 
@@ -415,13 +415,13 @@ describe("requestLogger — persisted error detail", () => {
 
     await app.request("/boom");
 
-    const live = records[0]!.data?.error as { name: string; message: string; stack?: string };
+    const live = records[0]!.data?.error as { type: string; detail: string; stack?: string };
     expect(typeof live.stack).toBe("string");
 
     const stored = persisted.map((raw) => JSON.parse(raw) as { message: string; data?: { error?: Record<string, unknown> } });
     const storedDetail = stored.find((r) => r.message === "unhandled error");
     expect(storedDetail).toBeDefined();
-    expect(storedDetail?.data?.error).toStrictEqual({ name: "Error", message: "handler exploded" });
+    expect(storedDetail?.data?.error).toStrictEqual({ type: "Error", detail: "handler exploded" });
   });
 });
 
@@ -572,7 +572,7 @@ describe("requestLogger — onChannelError", () => {
     expect(report.message).toBe("log channel write failed");
     expect(report.prefix).toBe("logger");
     expect(report.level).toBe("error");
-    expect(report.error).toStrictEqual({ name: "Error", message: "kv down", stack: boom.stack });
+    expect(report.error).toStrictEqual({ type: "Error", detail: "kv down", stack: boom.stack });
   });
 });
 
@@ -603,12 +603,12 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload, re
     return node;
   }
 
-  function stringifyFailure(value: unknown): { name: string; message: string } {
+  function stringifyFailure(value: unknown): { type: string; detail: string } {
     try {
       JSON.stringify(value);
     } catch (err) {
       const error = err as Error;
-      return { name: error.name, message: error.message };
+      return { type: error.name, detail: error.message };
     }
     throw new Error("expected JSON.stringify to throw on a cyclic structure");
   }
@@ -640,8 +640,8 @@ describe("requestLogger — the real consoleChannel on a cyclic data payload, re
     expect(report.message).toBe("log channel write failed");
     expect(report.prefix).toBe("logger");
     expect(report.level).toBe("error");
-    expect(report.error.name).toBe(expected.name);
-    expect(report.error.message).toBe(expected.message);
+    expect(report.error.type).toBe(expected.type);
+    expect(report.error.detail).toBe(expected.detail);
   });
 
   it("the summary record still reaches the log stream, so the request is not lost from the record", async () => {

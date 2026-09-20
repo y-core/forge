@@ -665,7 +665,7 @@ describe("checkDocs() — a citable root cited under a prefix that is not its di
   const runLibrary = (root: string) =>
     checkDocs({
       root,
-      packageName: "forge-starter",
+      packageName: "consumer-app",
       exports: {},
       decisionsDir: "docs",
       citableDirs: [{ dir: "node_modules/forge/docs", as: "forge" }],

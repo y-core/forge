@@ -41,6 +41,13 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   form: { dev: "type" },
   jsx: { http: "value" },
   logging: { "storage/kv": "type" },
+  "output/pdf": { jsx: "value" },
+  // One way: the audit reads the engine's types and its declared defaults, and the engine never
+  // reaches back for it — which is what keeps the `output/pdf` container acyclic.
+  "output/pdf/audit": { "output/pdf": "value" },
+  // Type-only, and one way for the same reason: a pack is adapted into the face shape the engine
+  // embeds, so the names cross but nothing does at runtime and the container stays acyclic.
+  "output/pdf/fonts": { "output/pdf": "type" },
   "logging/show": { app: "value", "html/htmx": "value", http: "value", jsx: "value", logging: "value", "ui/contracts": "type", "ui/core": "value" },
   security: { dev: "type", logging: "value" },
   "storage/db": { logging: "value" },

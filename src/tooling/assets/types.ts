@@ -109,6 +109,33 @@ const CursorsConfigSchema = v.object({
 
 const FontDownloadSchema = v.object({ url: v.string(), to: v.string(), sha256: v.string() });
 
+// A subset is declared by the text it must set rather than by code points, because a corpus is what
+// a caller actually has — and the set it implies is derived rather than kept in step by hand.
+const FontSubsetSchema = v.object({
+  family: v.string(),
+  from: v.string(),
+  to: v.string(),
+  covering: v.string(),
+  weight: v.optional(v.number()),
+  style: v.optional(v.picklist(["normal", "italic", "oblique"])),
+  stretch: v.optional(v.number()),
+});
+
+// An emitted export name is interpolated into TypeScript source rather than quoted into it, so it
+// is held to an identifier here — anything else would be a config that writes a syntax error.
+const EmittedNameSchema = v.pipe(v.string(), v.regex(/^[A-Za-z_$][A-Za-z0-9_$]*$/, "not a TypeScript identifier"));
+
+// A Worker cannot import from the asset tree, so a document's faces travel as a module instead of a
+// pack read off disk: `faces` names each built weight the way the document refers to it.
+const FontEmitSchema = v.object({
+  to: v.string(),
+  faces: v.record(v.string(), v.record(v.string(), v.string())),
+  defaults: v.object({ regular: v.string(), bold: v.string() }),
+  exports: v.optional(v.object({ fonts: EmittedNameSchema, defaults: EmittedNameSchema })),
+});
+
+const MarkBuildSchema = v.object({ from: v.string(), to: v.string() });
+
 const PathsConfigSchema = v.object({ sourceDir: v.optional(v.string()), publicDir: v.optional(v.string()), publicPrefix: v.optional(v.string()) });
 
 // `outDir` is the asset-tree root, not `paths.publicDir` — `robots.txt` and `sitemap.xml` are only
@@ -125,7 +152,14 @@ export const AssetsConfigSchema = v.object({
   copy: v.optional(v.array(CopyEntrySchema)),
   rasters: v.optional(v.array(RasterEntrySchema)),
   sprites: v.optional(v.record(v.string(), SpriteGroupSchema)),
-  fonts: v.optional(v.object({ downloads: v.optional(v.array(FontDownloadSchema)) })),
+  fonts: v.optional(
+    v.object({
+      downloads: v.optional(v.array(FontDownloadSchema)),
+      subsets: v.optional(v.array(FontSubsetSchema)),
+      emit: v.optional(FontEmitSchema),
+    }),
+  ),
+  marks: v.optional(v.array(MarkBuildSchema)),
   icons: v.optional(IconsConfigSchema),
   cursors: v.optional(CursorsConfigSchema),
   site: v.optional(SiteBuildConfigSchema),
@@ -144,6 +178,8 @@ export type SpriteSource = v.InferOutput<typeof SpriteSourceSchema>;
 export type SpriteGroup = v.InferOutput<typeof SpriteGroupSchema>;
 export type Sprites = Record<string, SpriteGroup>;
 export type FontDownload = v.InferOutput<typeof FontDownloadSchema>;
+/** Which built faces a document embeds, under which names, and where the module saying so is written. @public */
+export type FontEmit = v.InferOutput<typeof FontEmitSchema>;
 export type PathsConfig = v.InferOutput<typeof PathsConfigSchema>;
 export type IconOutput = v.InferOutput<typeof IconOutputSchema>;
 export type IconsConfig = v.InferOutput<typeof IconsConfigSchema>;
@@ -168,7 +204,8 @@ export interface ResolvedConfig {
   copy: CopyEntry[];
   rasters: RasterEntry[];
   sprites: Sprites;
-  fonts: { downloads: FontDownload[] };
+  fonts: { downloads: FontDownload[]; subsets: FontSubset[]; emit: FontEmit | null };
+  marks: MarkBuild[];
   icons: IconsConfig | null;
   cursors: CursorsConfig | null;
   site: SiteBuildConfig | null;
@@ -204,3 +241,89 @@ export interface SpriteBuildResult {
 
 /** A map from build key to the content hash last emitted for it. @public */
 export type BuildState = Record<string, string>;
+
+/** A font reduced to the code points a document sets, and where the subsetter's module lives. @public */
+export interface SubsetRequest {
+  sfnt: Uint8Array;
+  codePoints: Iterable<number>;
+  /** Path to `harfbuzz-subset.wasm`; build-time only, and never bundled into a Worker. */
+  wasm: string;
+}
+
+/** What one built face ships beside its bytes, so the engine never parses a font at runtime. @public */
+export interface FontMetricsData {
+  unitsPerEm: number;
+  ascent: number;
+  descent: number;
+  /** The face's own bounding box in font units, as `head` declares it: xMin, yMin, xMax, yMax. */
+  bbox: readonly [number, number, number, number];
+  /** Advance per 1000 units of the em, keyed by code point as a string. */
+  advances: Record<string, number>;
+  /** The glyph id the subset assigned each code point, which `Identity-H` addresses. */
+  glyphs: Record<string, number>;
+  /** Pair adjustments per 1000 units, keyed `"<left>,<right>"` by code point. */
+  kerning: Record<string, number>;
+}
+
+/** One face to build: the sfnt it starts from and the code points it must cover. @public */
+export interface FontBuild extends SubsetRequest {}
+
+/** One face the asset pipeline subsets, declared by the text it must be able to set. @public */
+export interface FontSubset {
+  family: string;
+  /** The sfnt to subset, relative to the project root. */
+  from: string;
+  /** Where the subset face is written, relative to `publicDir`. */
+  to: string;
+  /** Every character the face must cover; the code-point set is derived from it. */
+  covering: string;
+  weight?: number | undefined;
+  style?: "normal" | "italic" | "oblique" | undefined;
+  stretch?: number | undefined;
+}
+
+/** One step of a converted mark, in the artwork's own coordinate space and always cubic. @public */
+export type MarkCommandData =
+  | { op: "move"; x: number; y: number }
+  | { op: "line"; x: number; y: number }
+  | { op: "curve"; x1: number; y1: number; x2: number; y2: number; x: number; y: number }
+  | { op: "close" };
+
+/** One run of a converted mark and the paint it carries, as device-RGB fractions. @public */
+export interface MarkPathData {
+  commands: MarkCommandData[];
+  fill?: [number, number, number] | undefined;
+  stroke?: [number, number, number] | undefined;
+  weight?: number | undefined;
+}
+
+// The artifact is the contract between this step and the renderer: plain JSON, so neither namespace
+// names the other's types and the file on disk is what has to stay in step.
+/** An SVG converted to paths, with the coordinate space its commands are drawn out of. @public */
+export interface MarkData {
+  width: number;
+  height: number;
+  paths: MarkPathData[];
+}
+
+/** One mark the asset pipeline converts: the SVG it reads, and where the artifact is written. @public */
+export interface MarkBuild {
+  /** The SVG to convert, relative to the project root. */
+  from: string;
+  /** Where the converted artifact is written, relative to `publicDir`. */
+  to: string;
+}
+
+/** The artifact a subset writes beside its bytes, which `output/pdf/fonts` reads as a pack. @public */
+export interface FontPackData {
+  family: string;
+  faces: {
+    /** What the file's `/BaseFont` is written as, read off the built face's own `name` table. */
+    postScriptName: string;
+    weight: number;
+    style: "normal" | "italic" | "oblique";
+    stretch: number;
+    sfnt: string;
+    metrics: FontMetricsData;
+  }[];
+}

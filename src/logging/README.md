@@ -172,7 +172,7 @@ Nothing deduplicates the pair — `message === "unhandled error"` tells them apa
 
 ## Logging a caught error
 
-`serializeError(err)` turns any thrown value — including a thrown string, number or `null` — into a JSON-safe `{ name, message, stack? }`. It never
+`serializeError(err)` turns any thrown value — including a thrown string, number or `null` — into a JSON-safe `{ type, detail, stack? }`. It never
 throws, so it is safe directly on a `catch` binding:
 
 ```ts
@@ -197,7 +197,8 @@ The field classes that must never reach a record, and why console output counts 
 dropped — so `email`, `emailAddress`, `user_email` and a nested `user.email` are all masked, at any depth, inside arrays and `Map`s too. The masked
 value becomes the fixed literal `"[redacted]"`, never a length-preserving one. The default set carries emails, display names, passwords, keys,
 tokens, secrets, request bodies and credential headers — not the whole of §4a. A bare `name` and a bare `message` are deliberately absent
-([`STRUCTURED_LOGGING.md`][sl-2e] §2e), so an application whose own fields are spelled that way adds them through `also`.
+([`STRUCTURED_LOGGING.md`][sl-2e] §2e), so an application whose own fields are spelled that way adds them through `also`. Doing so is safe for error
+records: `serializeError` emits `type` and `detail`, so no forge record field collides with either stem.
 
 The controls that adjust it are both bare key stems:
 

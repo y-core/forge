@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { LOG_REDACTED } from "./log-clone";
 import { applyLogRedaction, DEFAULT_LOG_REDACTION, defineLogRedaction, normalizeLogKey } from "./redact";
+import { serializeError } from "./serialize-error";
 
 function masked(data: Record<string, unknown>): Record<string, unknown> {
   return applyLogRedaction(data, DEFAULT_LOG_REDACTION);
@@ -63,10 +64,6 @@ describe("DEFAULT_LOG_REDACTION — substring matching over a normalized key", (
 });
 
 describe("DEFAULT_LOG_REDACTION — the stems deliberately absent from the set", () => {
-  it("keeps `error.name`, the only place a thrown value's type survives", () => {
-    expect(masked({ error: { name: "TypeError", message: "boom" } })).toStrictEqual({ error: { name: "TypeError", message: "boom" } });
-  });
-
   it("keeps `hostname` and `filename`, which a bare `name` stem would have taken with it", () => {
     expect(masked({ hostname: "app.example.com", filename: "a.ts" })).toStrictEqual({ hostname: "app.example.com", filename: "a.ts" });
   });
@@ -89,6 +86,21 @@ describe("DEFAULT_LOG_REDACTION — the stems deliberately absent from the set",
 
   it("keeps a KV `key`, which only the compound key stems match", () => {
     expect(masked({ key: "session||1" })).toStrictEqual({ key: "session||1" });
+  });
+});
+
+describe("an application's `also` over its own `name` and `message` fields", () => {
+  it("masks both, and leaves the error record they no longer collide with", () => {
+    const thrown = new TypeError("x.y is not a function");
+    const policy = defineLogRedaction({ also: ["name", "message"] });
+
+    const result = applyLogRedaction({ name: "Jane Example", message: "hello", error: serializeError(thrown) }, policy);
+
+    expect(result).toStrictEqual({
+      name: LOG_REDACTED,
+      message: LOG_REDACTED,
+      error: { type: "TypeError", detail: "x.y is not a function", stack: thrown.stack },
+    });
   });
 });
 

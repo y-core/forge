@@ -4,13 +4,11 @@ import { relative, resolve, sep } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { findClassDeclarations, findSourceDirectives } from "./css-parse";
-import { collectFiles, listDirectories, listFiles } from "./source-scan";
+import { collectFiles, isTestSource, listDirectories, listFiles } from "./source-scan";
 import type { CssSourcesCheckConfig } from "./types";
 
-const SKIP_FILE = (name: string): boolean => name.endsWith(".test.ts") || name.endsWith(".test.tsx") || name.endsWith(".browser.ts");
-
 function collectSources(dir: string): string[] {
-  return collectFiles(dir, ".", (name) => /\.tsx?$/.test(name) && !SKIP_FILE(name)).map((file) => resolve(dir, file));
+  return collectFiles(dir, ".", (name) => /\.tsx?$/.test(name) && !isTestSource(name)).map((file) => resolve(dir, file));
 }
 
 /** Run all three passes. @public */
@@ -94,7 +92,7 @@ export function checkCssSources(config: CssSourcesCheckConfig): CheckResult {
       findings.push(fail(`registered class-free, but does not exist on disk`, { file: `${config.uiDir}/${name}` }));
     }
   }
-  for (const name of listFiles(ui, (file) => /\.tsx?$/.test(file) && !SKIP_FILE(file))) suspects.push(resolve(ui, name));
+  for (const name of listFiles(ui, (file) => /\.tsx?$/.test(file) && !isTestSource(file))) suspects.push(resolve(ui, name));
 
   for (const file of suspects.sort()) {
     for (const { literal, anchors } of findClassDeclarations(readFileSync(file, "utf-8"))) {

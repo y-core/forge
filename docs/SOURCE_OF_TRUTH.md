@@ -165,6 +165,7 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `site` namespace's rulings — what a site descriptor carries and what reads it | `src/site/README.md` |
 | The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
+| The `output/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/output/pdf/README.md` |
 
 **The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document
 per namespace whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to
@@ -173,7 +174,8 @@ as the owner, and do not restate its rulings in a `docs/` document. Every other 
 rulings to the `docs/` document that owns them ([`AGENT_GUIDE.md`][ag-6c] §6c).
 
 **A row moves the day a `docs/` document is written for one of these namespaces**, and the README is reduced to reference in the same change. Adding
-the document without moving the row is how a second copy starts.
+the document without moving the row is how a second copy starts. **The move runs both ways**: retiring such a document returns the row here, which
+is how `output/pdf` arrived — its rulings were a `docs/` document whose content the README already carried.
 
 ---
 

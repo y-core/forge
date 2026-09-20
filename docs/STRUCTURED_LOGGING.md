@@ -91,9 +91,9 @@ masked — and `allow` is what pays for it.
 
 **The default set covers the §4a field classes a library-wide stem can carry**, and is owned by `src/logging/redact.ts` — it is not the whole of
 §4a, and the classes it leaves are the application's `also`. A bare `name` and a bare `message` are deliberately **absent**, each pinned by a
-deletion check: `name` under substring matching would take `hostname`, `filename` and `SerializedError.name` — the only place a thrown value's type
-survives — and `message` would mask `error.message` on every error record in the system. An opaque user id is absent for the opposite reason: §4a
-directs an application to log one, so a `userid` stem would redact the affordance §4a sanctions.
+deletion check: `name` under substring matching would take `hostname` and `filename` with it, and masking every `message` in the system is log
+destruction rather than redaction. An opaque user id is absent for the opposite reason: §4a directs an application to log one, so a `userid` stem
+would redact the affordance §4a sanctions.
 
 **Masking, never a length-preserving mask.** A redacted value becomes the fixed literal `LOG_REDACTED` (`"[redacted]"`), so a reader can tell "an
 email was suppressed here" from "there is no email here". The mask is never derived from its value — no repeated `*`, no preserved character, no
@@ -110,6 +110,19 @@ array index:
 
 `allow` is consulted first, so it wins over both the built-in set and the application's own `also`. An `allow` entry that matches nothing is a no-op
 rather than an error: validating it would forbid allowing back one's own `also`, and a throw at logger construction is a throw on the request path.
+
+**Forge spells its own record fields so an application's `also` cannot collide with them.** A stem matches by substring at every depth, and there is
+no scoped form to reach past that — so a field forge writes into a record and a field an application writes are redacted by one rule.
+`serializeError` therefore emits `{ type, detail, stack? }` rather than `{ name, message }`: `also: ["name", "message"]` masks the app's own two and
+leaves the thrown value's type and text, which is the only place either survives.
+
+**The rule covers the fields forge invents, not the request shape it reports.** `requestLogger` writes `method`, `path`, `status` and `duration`
+(`src/logging/request-logger.ts`), and those spellings are the request's own — renaming them to dodge a stem would cost every reader of a log the
+words the HTTP request is described in, which is a worse trade than the collision. So the rule binds a field forge names for itself, including
+`serializeError`'s three: if an application might plausibly log a field of that name, forge picks another spelling. **`path` is the accepted cost of
+the exception.** A URL carries ids and occasionally a token, so `also: ["path"]` is a stem an application may genuinely want — and it masks `path`
+on `request.completed` and `request.failed` too. `allow` cannot separate them, so an application needing both writes its own path field under a
+name of its own and leaves the stem off.
 
 **A redaction that cannot run costs the payload, never the request.** Both halves of the pass execute caller-supplied code — the bindings merge
 invokes a getter, the walk invokes a `toJSON` — and either can throw, as a deep enough structure can exhaust the walk's recursion. All of it is

@@ -559,11 +559,11 @@ describe("kvLogChannel — stack stripping", () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
 
-    await channel.write(makeRecord({ level: "error", data: { error: { name: "Error", message: "boom", stack: "Error: boom\n  at main.ts:1" } } }));
+    await channel.write(makeRecord({ level: "error", data: { error: { type: "Error", detail: "boom", stack: "Error: boom\n  at main.ts:1" } } }));
 
     const entry = [...stub._store.values()][0]!;
     const stored = JSON.parse(entry.value) as { data?: { error?: Record<string, unknown> } };
-    expect(stored.data?.error).toStrictEqual({ name: "Error", message: "boom" });
+    expect(stored.data?.error).toStrictEqual({ type: "Error", detail: "boom" });
     expect(entry.value).not.toContain("stack");
   });
 

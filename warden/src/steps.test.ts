@@ -69,7 +69,7 @@ describe("wardenQueriesStep()", () => {
 describe("wardenAppSteps()", () => {
   const options = {
     root: "/nowhere/forge-no-such-root",
-    packageName: "forge-starter",
+    packageName: "consumer-app",
     queries: [{ query: "where do tests live", expect: "canon:TESTING.md#2a", dimension: "placement" }] as const,
     citableDirs: ["node_modules/@y-core/forge/warden/canon/shared"],
   };

@@ -3,7 +3,7 @@ import { relative, resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { collectFiles } from "./source-scan";
+import { collectFiles, isTestSource } from "./source-scan";
 import type { JsxCheckConfig } from "./types";
 
 const DEFAULT_PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/jsx"] as const;
@@ -11,7 +11,7 @@ const DEFAULT_PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forg
 /** The `.tsx` files the check will judge, as absolute paths. @public */
 export function resolveJsxSources(config: JsxCheckConfig): string[] {
   const sources = config.sources ?? ["src"];
-  const accept = (name: string): boolean => name.endsWith(".tsx") && !name.endsWith(".test.tsx");
+  const accept = (name: string): boolean => name.endsWith(".tsx") && !isTestSource(name);
   return sources.flatMap((dir) => collectFiles(config.root, dir, accept)).map((file) => resolve(config.root, file));
 }
 

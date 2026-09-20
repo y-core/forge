@@ -220,6 +220,7 @@ describe("loadConfig()", () => {
         rasters: [{ from: "brand/logo.svg", to: "img/logo.png", width: 360 }],
         sprites: { ui: { target: "sprites/ui.svg", sources: [{ path: "src/svg/ui", files: ["check.svg"] }] } },
         fonts: { downloads: [{ url: "https://cdn.example.com/f.woff2", to: "fonts/f.woff2", sha256: "${"0".repeat(64)}" }] },
+        marks: [{ from: "brand/logo.svg", to: "marks/letterhead.json" }],
       };`,
     );
     const config = await loadConfig({ root });
@@ -230,5 +231,6 @@ describe("loadConfig()", () => {
     expect(config.rasters[0]?.to).toBe("img/logo.png");
     expect(config.sprites.ui?.target).toBe("sprites/ui.svg");
     expect(config.fonts.downloads[0]?.to).toBe("fonts/f.woff2");
+    expect(config.marks[0]).toEqual({ from: "brand/logo.svg", to: "marks/letterhead.json" });
   });
 });

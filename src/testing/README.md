@@ -10,8 +10,8 @@ Every suite for a forge app needs the same handful of fixtures: a request contex
 way the real ones do, a CSRF token that actually verifies, and a way to turn a component into the string you assert against. This namespace ships
 them.
 
-Import it from test files only. Everything is reached from the barrel except the `wrangler dev` helper, which has its own subpath and is
-deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
+Import it from test files only. Everything is reached from the barrel except the two node-only helpers — the `wrangler dev` server and the fixture
+comparison — each of which has its own subpath and is deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 ---
 
@@ -264,6 +264,40 @@ leaves nothing behind ([`TEST_RUNNERS.md`][testing-1f] §1f).
 
 ---
 
+## Comparing text against a committed fixture
+
+`@y-core/forge/testing/snapshot` compares a string against a file on disk and reports the lines they disagree on. It is node-only and reached the
+same way as the dev server above — by name, with the types shim referenced in the importing file ([`TEST_RUNNERS.md`][testing-7h] §7h). It takes a
+string and nothing else, so anything that renders to text can use it: a PDF layout description, a generated schema, a CLI transcript.
+
+```ts
+/// <reference types="@y-core/forge/testing/node" />
+import { expect, test } from "bun:test";
+import { matchTextSnapshot } from "@y-core/forge/testing/snapshot";
+
+test("the declaration lays out where it did", async () => {
+  const outcome = await matchTextSnapshot(actual, "tests/fixtures/declaration.txt", { ci: process.env.CI === "true" });
+  expect(outcome.ok ? "" : outcome.error.report).toBe("");
+});
+```
+
+**A fixture that is not there yet is written, and the run passes.** The first run of a new suite should not fail on a file nobody could have
+committed. Pass `ci: true` where a run must not create one — the absence is then `reason: "missing"` and nothing is written. **`ci` overrides
+`update`**, so a CI run carrying `update` from a stale script rewrites nothing.
+
+**Rewriting fixtures is an argument, never an environment variable.** `{ update: true }` is what regenerates them; nothing in the module reads the
+environment, so what your suite does is visible in the call rather than in a variable the runner may or may not have set. Wire `ci` and `update` to
+whatever your own suite already knows, as above.
+
+**It returns a `Result` and never throws.** `outcome.error.report` is the rendered, line-numbered text to put in front of a reviewer;
+`outcome.error.diff` is the same information as data, uncapped, for a caller that wants to inspect it. `limit` caps the report alone. An unreadable
+or unwritable path is a `reason` with the original `Error` as `cause` — a broken checkout is data like anything else, and rethrowing is your call.
+
+**Assert on the report, not on `ok`.** `expect(outcome.ok).toBe(true)` tells a reviewer that something differed; the shape above puts the differing
+lines in the failure message.
+
+---
+
 ## Gotchas
 
 **`app.request` takes a `RequestInit`, not a `Request`.** A `buildRequest` result goes to `createTestContext`, or to `app.fetch(request, env, ctx)`
@@ -302,4 +336,5 @@ to survive a round trip through an unmodelled table hands the code its own store
 [testing-7b]: ../../docs/TEST_RUNNERS.md#7b-in-memory-storage-fakes--fakekv-faked1-faker2
 [testing-7d]: ../../docs/TEST_RUNNERS.md#7d-buildrequest--request-builder
 [testing-7e]: ../../docs/TEST_RUNNERS.md#7e-maphandler-and-testaction--single-route-registrar
-[testing-7f]: ../../docs/TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7f]: ../../docs/TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7h]: ../../docs/TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath

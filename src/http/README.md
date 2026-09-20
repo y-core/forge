@@ -23,14 +23,25 @@ Every HTTP output concern lands here rather than reaching for `@remix-run/header
 The body builders cover almost every handler. Each fixes its own `content-type` and **throws** if you pass one in `headers`, in any casing.
 
 ```ts
-import { fragmentResponse, htmlResponse, jsonResponse } from "@y-core/forge/http";
+import { fragmentResponse, htmlResponse, jsonResponse, pdfResponse } from "@y-core/forge/http";
 
 htmlResponse("<html>…</html>"); // full page; a leading <!DOCTYPE html> is ensured
 fragmentResponse("<div>saved</div>", 200); // HTMX partial; no DOCTYPE, because it is swapped into a live document
 jsonResponse({ id: 7 }, 201); // JSON.stringify + application/json; charset=utf-8
+pdfResponse(bytes); // rendered bytes + application/pdf
 ```
 
 The second argument is the status (`200` by default), the third is extra headers.
+
+**`pdfResponse` takes bytes and nothing more.** Whatever rendered them — [`@y-core/forge/output/pdf`][pdf-readme] or a byte array you built yourself
+— is this namespace's business only as a `BufferSource`, which is what keeps the dependency one-way. A download filename is a header rather than an
+option of its own: build it with `ContentDisposition` (§7) and pass it through `headers`.
+
+```ts
+import { ContentDisposition, pdfResponse } from "@y-core/forge/http";
+
+return pdfResponse(bytes, 200, { "content-disposition": new ContentDisposition({ type: "attachment", filename: "declaration.pdf" }).toString() });
+```
 
 **If you are rendering JSX, you want `renderPage` from [`@y-core/forge/jsx`][jsx-readme] instead** — it calls `htmlResponse` for you. Reach for
 `htmlResponse` when you already hold a markup string. For a fragment, `renderToString` returns `SafeHtml` that `fragmentResponse` takes directly.
@@ -270,5 +281,6 @@ that genuinely contains a space must arrive percent-encoded.
 [forge-css]: ../ui/assets/css/forge.css
 [jsx-readme]: ../jsx/README.md
 [namespaces-5d]: ../../docs/NAMESPACES.md#5d-http--all-http-output-concerns
+[pdf-readme]: ../output/pdf/README.md
 [session-readme]: ../session/README.md
 [sh-2d]: ../../docs/SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

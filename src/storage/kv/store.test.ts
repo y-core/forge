@@ -247,10 +247,10 @@ describe("createKVStore() logging", () => {
     const res = await store.get("broken");
 
     expect(res.ok).toBe(false);
-    const error = records[0]?.data?.error as { name: string; message: string; stack?: string };
+    const error = records[0]?.data?.error as { type: string; detail: string; stack?: string };
     expect(records[0]?.message).toBe("kv.decode-error");
-    expect(error.name).toBe("SyntaxError");
-    expect(error.message).not.toBe("");
+    expect(error.type).toBe("SyntaxError");
+    expect(error.detail).not.toBe("");
     expect(error.stack).toContain("store.ts");
   });
 });

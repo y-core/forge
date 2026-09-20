@@ -1,5 +1,5 @@
-// Ambient declarations for the node surface `src/testing/workerd.ts` reaches. Not `@types/node`:
-// that declares node's globals into scope, so a Worker program typechecks code that cannot run.
+// The node surface `src/testing/workerd.ts` and `src/testing/snapshot.ts` reach. Not `@types/node`,
+// which declares node's globals into scope so a Worker program typechecks code that cannot run.
 
 // Node's Buffer extends Uint8Array; declared only as far as decoding a captured stdout chunk needs.
 declare interface Buffer extends Uint8Array {
@@ -33,7 +33,10 @@ declare module "node:child_process" {
 }
 
 declare module "node:fs" {
+  export function existsSync(path: string): boolean;
+  export function mkdirSync(path: string, options: { recursive: true }): string | undefined;
   export function mkdtempSync(prefix: string): string;
+  export function readFileSync(path: string, encoding: "utf-8"): string;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function writeFileSync(path: string, data: string, encoding: "utf-8"): void;
 }
@@ -56,6 +59,7 @@ declare module "node:os" {
 }
 
 declare module "node:path" {
+  export function dirname(path: string): string;
   export function join(...paths: string[]): string;
 }
 

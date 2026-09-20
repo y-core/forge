@@ -48,7 +48,7 @@ describe("Forge — constructor", () => {
     const record = records[0]!;
     expect(record.level).toBe("error");
     expect(record.message).toBe("Unhandled error");
-    expect((record.data as { error: { message: string } }).error.message).toBe("handler exploded");
+    expect((record.data as { error: { detail: string } }).error.detail).toBe("handler exploded");
   });
 
   it("leaves the logger silent for a request that succeeds", async () => {
@@ -515,7 +515,7 @@ describe("Forge — the app logger's error-path flush", () => {
 
     expect(res.status).toBe(500);
     expect(records.map((r) => r.message)).toStrictEqual(["Unhandled error"]);
-    expect((records[0]!.data as { error: { message: string } }).error.message).toBe("handler exploded");
+    expect((records[0]!.data as { error: { detail: string } }).error.detail).toBe("handler exploded");
   });
 
   it("covers the onError-override record on the same flush", async () => {

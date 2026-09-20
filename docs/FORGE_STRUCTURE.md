@@ -226,7 +226,8 @@ from each `exports` entry and each `bin` script, and fails any module the tarbal
 rather than spelling the suffixes again. Each takes the same exemption in its own terms: the co-location check asks no test of a `*.fixture.ts`, on
 the terms a `types.ts` is excused on (§8); the namespace graph classifies one as test source, so a fixture's imports raise no cross-namespace edge;
 and the boundary checks do not scan one, so a fixture may reach `src/testing`, a build-time module, or the browser runtime that a deployable module
-may not.
+may not. The CSS source scan skips one, so a class string written to exercise the parser is not read as a declaration the stylesheet must cover; and
+the JSX pragma check skips one, because the pragma pair exists for a file compiling under a _consumer's_ tsconfig and a fixture reaches none.
 
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
 [bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
@@ -243,4 +244,4 @@ may not.
 [testing-1b]: ./TEST_RUNNERS.md#1b-custom-buntest-stub--no-bun-types
 [testing-2]: ./TEST_RUNNERS.md#2-co-located-test-files
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
-[testing-7f]: ./TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd

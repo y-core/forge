@@ -1087,9 +1087,9 @@ describe("defineAction — error reporting", () => {
     expect(record.prefix).toBe("action");
     expect(record.level).toBe("error");
     expect(record.message).toBe("Action threw");
-    const error = record.error as { name: string; message: string; stack?: string };
-    expect(error.name).toBe("Error");
-    expect(error.message).toBe("handle exploded");
+    const error = record.error as { type: string; detail: string; stack?: string };
+    expect(error.type).toBe("Error");
+    expect(error.detail).toBe("handle exploded");
     expect(typeof error.stack).toBe("string");
   });
 
@@ -1138,8 +1138,8 @@ describe("defineAction — error reporting", () => {
     const record = records[0]!;
     expect(record.message).toBe("defineAction onError threw");
     expect(record.level).toBe("error");
-    expect((record.error as { message: string }).message).toBe("hook exploded");
-    expect((record.original as { message: string }).message).toBe("handle exploded");
+    expect((record.error as { detail: string }).detail).toBe("hook exploded");
+    expect((record.original as { detail: string }).detail).toBe("handle exploded");
   });
 });
 

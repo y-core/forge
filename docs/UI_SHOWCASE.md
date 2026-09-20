@@ -48,7 +48,7 @@ Both consequences are real costs, and both are accepted deliberately:
   source-coverage step is what keeps it stated rather than remembered.
 - **It is forge's most-read worked example**, which is why §3 refuses it any exemption from the rules it demonstrates.
 
-**Forge publishes the showcase and does not host it.** The canonical host is the consumer app — `/src/starter` mounts it — and in-repo verification
+**Forge publishes the showcase and does not host it.** The canonical host is whichever consumer app mounts it, and in-repo verification
 is `render()` over the component plus Playwright over the rendered string. Forge runs no in-repo dev worker for it — that adds a machine
 prerequisite to the gate for a surface no forge code imports — and no Playwright `webServer` harness, which would make the demos viewable in CI
 without any consumer having mounted them, the one thing dogfooding is for.

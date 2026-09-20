@@ -2,8 +2,12 @@ import { describe, expect, it, mock, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
+import { createPdfFontSet, readPdfFontPack } from "../../output/pdf/fonts/mod";
+import type { PdfFontPackData } from "../../output/pdf/fonts/types";
+import { createPdfRenderer } from "../../output/pdf/mod";
+import type { PdfArtwork, PdfLetterhead } from "../../output/pdf/types";
 import { buildAll, generateAssetsTypes, readEmittedManifest, structuralSignature } from "./pipeline";
 import type { ResolvedConfig } from "./types";
 
@@ -54,7 +58,8 @@ describe("buildAll() — emitHeaders", () => {
           copy: [],
           rasters: [],
           sprites: {},
-          fonts: { downloads: [] },
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
           icons: null,
           cursors: null,
           site: null,
@@ -90,7 +95,8 @@ describe("buildAll() — emitHeaders", () => {
           copy: [],
           rasters: [],
           sprites: {},
-          fonts: { downloads: [] },
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
           icons: {
             src: srcPath,
             outDir: join(tmpDir, "public"),
@@ -145,7 +151,8 @@ describe("buildAll() — emitHeaders", () => {
           copy: [],
           rasters: [],
           sprites: {},
-          fonts: { downloads: [] },
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
           icons: null,
           cursors: null,
           site: null,
@@ -177,7 +184,8 @@ describe("buildAll() — emitHeaders", () => {
           copy: [],
           rasters: [],
           sprites: {},
-          fonts: { downloads: [] },
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
           icons: null,
           cursors: null,
           site: null,
@@ -229,7 +237,8 @@ describe("buildAll() — rasters", () => {
           copy: [],
           rasters: [{ from, to: "email/logo@2x.png", width: 360 }],
           sprites: {},
-          fonts: { downloads: [] },
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
           icons: null,
           cursors: null,
           site: null,
@@ -275,7 +284,8 @@ describe("buildAll() — generated module available to the JS bundle", () => {
           copy: [],
           rasters: [],
           sprites: {},
-          fonts: { downloads: [] },
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
           icons: null,
           cursors: null,
           site: null,
@@ -320,7 +330,8 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
           ui: { target: "sprites/ui.svg", sources: [{ path: svgDir, files: ["arrow-right.svg"] }] },
           brand: { target: "sprites/brand.svg", prefix: "glyph-", sources: [{ path: svgDir, files: [{ key: "close", file: "x-mark.svg" }] }] },
         },
-        fonts: { downloads: [] },
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks: [],
         icons: null,
         cursors: null,
         site: null,
@@ -395,7 +406,8 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
         copy: [],
         rasters: [],
         sprites: { ui: { target: "sprites/ui.svg", sources: [{ path: svgDir, files: ["arrow-right.svg"] }] } },
-        fonts: { downloads: [] },
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks: [],
         icons: null,
         cursors: null,
         site: null,
@@ -525,7 +537,8 @@ describe("readEmittedManifest()", () => {
         copy: [],
         rasters: [],
         sprites: {},
-        fonts: { downloads: [] },
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks: [],
         icons: null,
         cursors: null,
         site: null,
@@ -577,7 +590,8 @@ describe("generateAssetsTypes() — glyph-name union", () => {
       copy: [],
       rasters: [],
       sprites,
-      fonts: { downloads: [] },
+      fonts: { downloads: [], subsets: [], emit: null },
+      marks: [],
       icons: null,
       cursors: null,
       site: null,
@@ -644,7 +658,8 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
         copy: [],
         rasters: [],
         sprites: {},
-        fonts: { downloads: [] },
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks: [],
         icons: {
           src: join(tmpDir, "logo.svg"),
           outDir: join(tmpDir, "public"),
@@ -687,7 +702,8 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
         copy: [],
         rasters: [],
         sprites: {},
-        fonts: { downloads: [] },
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks: [],
         icons: null,
         site: null,
         cursors: null,
@@ -730,7 +746,12 @@ describe("generateAssetsTypes() — derives from config alone", () => {
             ],
           },
         },
-        fonts: { downloads: [{ url: "https://example.invalid/inter.woff2", to: "fonts/inter.woff2", sha256: "a".repeat(64) }] },
+        fonts: {
+          downloads: [{ url: "https://example.invalid/inter.woff2", to: "fonts/inter.woff2", sha256: "a".repeat(64) }],
+          subsets: [],
+          emit: null,
+        },
+        marks: [],
         icons: null,
         site: null,
         cursors: {
@@ -755,6 +776,215 @@ describe("generateAssetsTypes() — derives from config alone", () => {
     } finally {
       execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildAll() — the mark conversion stage", () => {
+  const REPO = resolve(import.meta.dir, "../../..");
+
+  async function build(marks: ResolvedConfig["marks"]): Promise<string> {
+    const tmpDir = join(tmpdir(), `forge-pipeline-marks-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const publicDir = join(tmpDir, "public", "assets");
+    mkdirSync(publicDir, { recursive: true });
+    await buildAll(
+      {
+        root: REPO,
+        paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
+        css: [],
+        js: { bundles: [] },
+        copy: [],
+        rasters: [],
+        sprites: {},
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks,
+        icons: null,
+        cursors: null,
+        site: null,
+      },
+      { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+    );
+    return publicDir;
+  }
+
+  const CONFIGURED: ResolvedConfig["marks"] = [{ from: "tests/fixtures/mark/mark.svg", to: "marks/letterhead.json" }];
+
+  it("writes the artifact when a mark is configured", async () => {
+    const publicDir = await build(CONFIGURED);
+    try {
+      expect(existsSync(join(publicDir, "marks", "letterhead.json"))).toBe(true);
+    } finally {
+      rmSync(join(publicDir, "..", ".."), { recursive: true, force: true });
+    }
+  });
+
+  it("writes nothing when no mark is configured, so the stage is the guard it looks like", async () => {
+    const publicDir = await build([]);
+    try {
+      expect(existsSync(join(publicDir, "marks"))).toBe(false);
+    } finally {
+      rmSync(join(publicDir, "..", ".."), { recursive: true, force: true });
+    }
+  });
+
+  // The join, with no hand-written fixture on the path: what the build wrote is what the engine draws.
+  it("produces an artifact the engine renders as a letterhead's mark", async () => {
+    const publicDir = await build(CONFIGURED);
+    try {
+      const mark = JSON.parse(readFileSync(join(publicDir, "marks", "letterhead.json"), "utf-8")) as PdfArtwork;
+      const plain = { name: "Meridian", tagline: "Practice", email: "a@b.example", phone: "+27 21 555 0143" };
+      const fills = async (letterhead: PdfLetterhead): Promise<number> => {
+        const rendered = await createPdfRenderer({ compress: false }).render({ title: "Declaration", letterhead, content: [] });
+        if (!rendered.ok) throw new Error(rendered.error.message);
+        return [...new TextDecoder("latin1").decode(rendered.data).matchAll(/ f\n/g)].length;
+      };
+      // Each shape the SVG declares is one more filled path on the page than the same letterhead
+      // draws without it, which is the artifact reaching the renderer rather than merely parsing.
+      expect(mark.paths.length).toBeGreaterThan(0);
+      expect((await fills({ ...plain, mark })) - (await fills(plain))).toBe(mark.paths.length);
+    } finally {
+      rmSync(join(publicDir, "..", ".."), { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildAll() — the font subset stage", () => {
+  const SOURCE = "node_modules/@expo-google-fonts/oswald/400Regular/Oswald_400Regular.ttf";
+
+  async function build(subsets: ResolvedConfig["fonts"]["subsets"]): Promise<string> {
+    const tmpDir = join(tmpdir(), `forge-pipeline-fonts-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const publicDir = join(tmpDir, "public", "assets");
+    mkdirSync(publicDir, { recursive: true });
+    await buildAll(
+      {
+        root: tmpDir,
+        paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
+        css: [],
+        js: { bundles: [] },
+        copy: [],
+        rasters: [],
+        sprites: {},
+        fonts: { downloads: [], subsets, emit: null },
+        marks: [],
+        icons: null,
+        cursors: null,
+        site: null,
+      },
+      { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+    );
+    return publicDir;
+  }
+
+  it("writes the subset face and packs.json when a subset is configured", async () => {
+    const publicDir = await build([
+      { family: "Oswald", from: SOURCE, to: "fonts/oswald-400.ttf", covering: "Declaration of interest", weight: 400 },
+    ]);
+    try {
+      expect(existsSync(join(publicDir, "fonts", "oswald-400.ttf"))).toBe(true);
+      const packs = join(publicDir, "fonts", "packs.json");
+      expect(existsSync(packs)).toBe(true);
+      expect(readFileSync(packs, "utf-8").endsWith("\n")).toBe(true);
+    } finally {
+      rmSync(join(publicDir, "..", ".."), { recursive: true, force: true });
+    }
+  });
+
+  it("writes neither when no subset is configured, so the stage is the guard it looks like", async () => {
+    const publicDir = await build([]);
+    try {
+      expect(existsSync(join(publicDir, "fonts", "packs.json"))).toBe(false);
+    } finally {
+      rmSync(join(publicDir, "..", ".."), { recursive: true, force: true });
+    }
+  });
+
+  // The join, with no hand-written fixture on the path: what the build wrote is what the engine reads.
+  it("produces a packs.json the engine resolves a face from", async () => {
+    const publicDir = await build([
+      { family: "Oswald", from: SOURCE, to: "fonts/oswald-400.ttf", covering: "Declaration", weight: 400 },
+      { family: "Oswald", from: SOURCE, to: "fonts/oswald-700.ttf", covering: "Declaration", weight: 700 },
+    ]);
+    try {
+      const written = JSON.parse(readFileSync(join(publicDir, "fonts", "packs.json"), "utf-8")) as PdfFontPackData[];
+      const set = createPdfFontSet(written.map((pack) => readPdfFontPack(pack, (path) => new Uint8Array(readFileSync(join(publicDir, path))))));
+      expect(set.families).toEqual(["Oswald"]);
+      const bold = set.match({ family: "Oswald", weight: 700 });
+      expect(bold.ok).toBe(true);
+      if (!bold.ok) return;
+      expect(bold.data.weight).toBe(700);
+      expect(bold.data.metrics.advances.get("D".codePointAt(0) ?? 0)).toBeGreaterThan(0);
+      expect(bold.data.sfnt?.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(join(publicDir, "..", ".."), { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildAll() / generateAssetsTypes() — the emitted faces module", () => {
+  const REGULAR = "node_modules/@expo-google-fonts/oswald/400Regular/Oswald_400Regular.ttf";
+  const BOLD = "node_modules/@expo-google-fonts/oswald/700Bold/Oswald_700Bold.ttf";
+
+  function configOf(root: string): ResolvedConfig {
+    return {
+      root,
+      paths: { sourceDir: root, publicDir: join(root, "public", "assets"), publicPrefix: "/assets" },
+      css: [],
+      js: { bundles: [] },
+      copy: [],
+      rasters: [],
+      sprites: {},
+      fonts: {
+        downloads: [],
+        subsets: [
+          { family: "Oswald", from: REGULAR, to: "fonts/oswald-400.ttf", covering: "Declaration", weight: 400 },
+          { family: "Oswald", from: BOLD, to: "fonts/oswald-700.ttf", covering: "Declaration", weight: 700 },
+        ],
+        emit: {
+          to: ".forge/faces.ts",
+          faces: { Oswald: { "400": "oswald", "700": "oswald-bold" } },
+          defaults: { regular: "oswald", bold: "oswald-bold" },
+        },
+      },
+      marks: [],
+      icons: null,
+      cursors: null,
+      site: null,
+    };
+  }
+
+  function tmpRoot(): string {
+    const root = join(tmpdir(), `forge-pipeline-faces-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(join(root, "public", "assets"), { recursive: true });
+    return root;
+  }
+
+  // A face has no content hash to blank and no dependency on the built tree, so `gen types` emits
+  // the real module rather than a placeholder — which is what lets a clean checkout test against it.
+  it("emits byte-identical modules from a build and from `gen types`", async () => {
+    const built = tmpRoot();
+    const typed = tmpRoot();
+    try {
+      await buildAll(configOf(built), { minify: false, assetsPath: join(built, ".forge", "assets.ts") });
+      await generateAssetsTypes(configOf(typed), { assetsPath: join(typed, ".forge", "assets.ts") });
+
+      const fromBuild = readFileSync(join(built, ".forge", "faces.ts"), "utf-8");
+      expect(readFileSync(join(typed, ".forge", "faces.ts"), "utf-8")).toBe(fromBuild);
+      expect(fromBuild).toContain(`postScriptName: "Oswald-Bold",`);
+      expect(fromBuild).toContain(`export const DEFAULT_FACES: PdfDefaultFaces`);
+    } finally {
+      rmSync(built, { recursive: true, force: true });
+      rmSync(typed, { recursive: true, force: true });
+    }
+  });
+
+  it("writes no faces module when the config emits none", async () => {
+    const root = tmpRoot();
+    const config = configOf(root);
+    try {
+      await buildAll({ ...config, fonts: { ...config.fonts, emit: null } }, { minify: false, assetsPath: join(root, ".forge", "assets.ts") });
+      expect(existsSync(join(root, ".forge", "faces.ts"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

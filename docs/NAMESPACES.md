@@ -38,6 +38,7 @@ audience: internal
   Worker-reachable
 - §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
 - §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
+- §5j `output` — One Namespace per Output Format: the container and its children, the bare-component carve-out, the call shape, and the JSX edge
 - §6 When to Add a New Namespace: criteria and checklist
 - §7 Binding a Subpath to Its Governance: a row lists a subpath, a prose rule binds it
 
@@ -70,8 +71,6 @@ than a runtime namespace, and its module subpaths — `./warden`, `./warden/chec
 published all the same, alongside the `./warden/canon/*.md` asset pattern the canon is read through. Their absence from this table is deliberate, so
 that a reader can tell it from a namespace that lost its row.
 
-**Asset rows are entries whose target is not a module**, and they carry rules a barrel row does not.
-
 **A non-module file a consumer must name by path is published too, or the facade has a hole in it.** `@y-core/forge/auth/schema.sql` is the standing
 case: a consumer composing its database names forge's identity tables in its own load order, ahead of its own DDL, and the only alternative to a
 subpath is a literal reach into `node_modules/@y-core/forge/src/` — which is the one thing a facade exists to make unnecessary, and which no rename
@@ -82,16 +81,14 @@ inside forge would then survive.
 
 **A family of assets is one subpath pattern, not one key per file.** `./ui/assets/css/*.css` is a Node subpath pattern — the supported replacement
 for the directory exports removed in Node 17 — and `files[]` already ships the whole of `src/ui/`, so a new stylesheet is addressable the moment it
-is written. Exactly one `*` is permitted per key and per target, `*` matches greedily across `/`, and exact keys take precedence over patterns, so
-both forms mix safely.
+is written.
 
 **What the gate asserts changed with it, and got stronger.** A literal key could only be checked for _declaration_; a pattern is checked by
-**expansion and resolution**. `validate-exports` expands each pattern against disk and requires every member to be published and to actually
-`import.meta.resolve`, failing a pattern that matches nothing as dead config. Reverse pass C then works the other way — every stylesheet on disk
-must resolve under some key or pattern. _Reachability is the property that ever went wrong here_, and it is now the property being tested: forge
-shipped release after release with stylesheets that existed, were inside `files[]`, and could not be imported. `validate-docs` matches a documented
-subpath against patterns too, and for a pattern match additionally requires the file to exist — otherwise a citation of `theme-forest.css` would
-satisfy the shape and send a reader to a resolution error.
+**expansion and resolution**. `validate-exports` expands each pattern against disk, requires every member to publish and to actually
+`import.meta.resolve`, and fails a pattern matching nothing as dead config; its reverse pass then requires every stylesheet on disk to resolve under
+some key or pattern. _Reachability is the property that ever went wrong here_ — forge shipped release after release with stylesheets that existed,
+were inside `files[]`, and could not be imported. `validate-docs` matches a documented subpath against patterns too, additionally requiring the file
+to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send a reader to a resolution error.
 
 | Export Path | Source | Key Exports |
 | --- | --- | --- |
@@ -120,9 +117,13 @@ satisfy the shape and send a reader to a resolution error.
 | `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | automatic-runtime dev transform target |
 | `@y-core/forge/jsx/register` | `src/jsx/register.ts` | global JSX runtime registration |
 | `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
-| `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `scriptJson`, `styleText`, `htmlResponse`, `fragmentResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
+| `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `scriptJson`, `styleText`, `htmlResponse`, `fragmentResponse`, `pdfResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
 | `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withLevels`, `withRedaction`, `requestLogger`, `requestLog`, `serializeError`, and the redaction policy set `defineLogRedaction` / `DEFAULT_LOG_REDACTION` / `LOG_REDACTED` |
 | `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
+| `@y-core/forge/output/pdf` | `src/output/pdf/mod.ts` | The PDF engine: a document composed from components and rendered to bytes, with no browser and no runtime dependency. It sets type in the base-14 faces or in embedded ones, paginates under a page ceiling, writes a structure tree a screen reader can follow, and answers a layout projection a test can assert on instead of opaque bytes. First child of the `output/` container (§5j); the response builder that returns its bytes is `http`'s `pdfResponse` (§5d) |
+| `@y-core/forge/output/pdf/audit` | `src/output/pdf/audit/mod.ts` | `auditPdf`; types `PdfAuditFinding`, `PdfAuditRule` — the accessibility and conformance checks a caller runs over a render before making it, kept out of the render path. Its edge back to `output/pdf` is one-way `type`, which keeps the `output/` container acyclic (§5j) |
+| `@y-core/forge/output/pdf/fonts` | `src/output/pdf/fonts/mod.ts` | `createPdfFontSet`, `readPdfFontPack`; types `PdfFace`, `PdfFontPack`, `PdfFontPackData`, `PdfFontSet`, `PdfFontRequest`, `PdfFontMetrics`, `PdfFontError` and the axis types — font packs and the CSS font-matching ladder a request is resolved through. Reads the pack the asset pipeline writes as plain JSON, which is what keeps the two halves from naming each other's types. The second child of the `output/` container (§5j) |
+| `@y-core/forge/output/pdf/jsx-runtime` | `src/output/pdf/jsx-runtime.ts` | `jsx`, `jsxs`, `Fragment` re-exported, plus this namespace's own `JSX` declaration — the `jsxImportSource` a `.tsx` file names to write a document as markup, and separate from `./jsx/jsx-runtime` for the reason §5j gives |
 | `@y-core/forge/result` | `src/result/mod.ts` | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
 | `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
 | `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
@@ -133,7 +134,8 @@ satisfy the shape and send a reader to a resolution error.
 | `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend`, `UnsatisfiableRangeError` |
 | `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TEST_RUNNERS.md`][testing-7] §7 |
 | `@y-core/forge/testing/workerd` | `src/testing/workerd.ts` | `startDevServer`, `DevServer`, `DevServerOptions` — a `wrangler dev` fixture server for a suite the node process runs. A file target, not a barrel, and deliberately off `./testing`: it reads `node:child_process`/`node:fs`/`node:net` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
-| `@y-core/forge/testing/node` | `src/testing/node.d.ts` | No runtime: ambient declarations for the node surface `testing/workerd` reaches, referenced per file by the suite that imports it so a `"types": []` program needs no `exclude` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
+| `@y-core/forge/testing/snapshot` | `src/testing/snapshot.ts` | `matchTextSnapshot` — text against a committed fixture, answering a `Result` carrying the differing lines. A file target off `./testing` for the same reason, and format-agnostic: it knows nothing of what produced the text ([`TEST_RUNNERS.md`][testing-7h] §7h) |
+| `@y-core/forge/testing/node` | `src/testing/node.d.ts` | No runtime: ambient declarations for the node surface `testing/workerd` and `testing/snapshot` reach, referenced per file by the suite that imports it so a `"types": []` program needs no `exclude` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/build` | `src/ui/assets/build/mod.ts` | `forgeUiSpriteSources`, `svgToSymbol`, `sanitizeSVG`, `extractViewBoxes`, `parseColor`, `toHex`, `readThemeTokens`, `resolveToken`, `buildCursors` — build-time only; it computes the artifacts `ui/assets` owns and drives no external builder ([`ASSET_PIPELINE.md`][ap-2c] §2c) |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
@@ -243,11 +245,10 @@ a second way: **every module under it qualifies for the build-time exemption** (
 module under `src/tooling/` is a visible contradiction rather than an argument to re-litigate.
 
 **The exemption is reachability, and a path is only evidence of it.** That section says so in those words: membership in `src/tooling/` does not
-_confer_ the exemption, it makes the reachability answer obvious enough to check per file. Where path and reachability come apart, the cases are
-named: `src/ui/assets/build/`, a `buildTimeDirs` entry for that reason, and `src/testing/workerd.ts`, the mixed-namespace case the same section
-settles: **the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So that module is published
-under its own subpath and left off `src/testing/mod.ts`, stopping a Worker-side `"types": []` program reaching it
-([`TEST_RUNNERS.md`][testing-7f] §7f).
+_confer_ the exemption, it makes the reachability answer obvious enough to check per file. Where the two come apart the cases are named:
+`src/ui/assets/build/`, a `buildTimeDirs` entry for that reason, and `src/testing/workerd.ts` and `src/testing/snapshot.ts`, the mixed-namespace
+case the same section settles — **the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So each
+is published under its own subpath and left off `src/testing/mod.ts` ([`TEST_RUNNERS.md`][testing-7f] §7f), out of a `"types": []` program's reach.
 
 **`validate-build-time-boundary` is what makes that a fact rather than a convention.** It fails any source outside `src/tooling/` or
 `src/ui/assets/build/` that imports one of their modules at value — by relative path or by package subpath, barrelled or not. The rule it enforces
@@ -495,6 +496,35 @@ not this namespace's: fakes are `testing`'s, and a dev route is the app's own `*
 every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). The token is for the ones that are not legitimate, and the difference must stay
 visible at the call site.
 
+### 5j. `output` — One Namespace per Output Format
+
+**`output/` is a container, not a namespace.** It holds one child per format a Worker renders a document in — `output/pdf` today, `output/email`
+the intended second — and owns no code of its own. The shape is precedented by `tooling/`: the parent directory names a concern, and every namespace
+under it is classified, catalogued and gated separately. A format's own children are namespaces too, matched by the same longest-prefix rule — so a
+parent reaching into `@y-core/forge/output/pdf/fonts` is a declared edge, never an internal import, and the pair never points both ways at value.
+
+**A format's renderer goes in its own child, never in `http`.** `http` owns the _response_ — `pdfResponse` is its, because handing bytes to a client
+is an HTTP output concern (§5d) — and takes bytes without knowing how they were made. That is what keeps the dependency one-way and lets a format
+namespace carry a large engine without any of it reaching the response path.
+
+**Inside `output/*`, components carry bare names.** `Text`, `Row`, `Stack` and `Box` are the spelling, and this is a deliberate carve-out from
+[`CODE_RULES.md`][cr-7] §7's domain-word requirement: the namespace qualifier is the domain word at every call site, and `pdf.Text` reads as a
+domain-scoped name that `PdfText` would only repeat. `warden-review` cites this section rather than re-arguing the point per review. The carve-out
+covers component names only — a factory, a type or a constant leaving the barrel takes its domain word as usual (§5e). **A bare name may mean
+something else in another namespace**: `ui/core`'s `Stack` layers its children where `output/pdf`'s sequences them, and a file importing both
+aliases one.
+
+**A component takes one props object, with `children` inside it.** Never `Component(options, children)` — the single-argument shape is what forge's
+JSX runtime calls (`src/jsx/jsx-runtime.ts`, `FC<P>` in `src/jsx/types.ts`), so the same component is callable by hand and as JSX, and a second call
+convention never has to be kept in step with the first.
+
+**A format that takes markup depends on `jsx` at value and publishes its own `jsx-runtime`.** `jsx()` builds a descriptor rather than calling the
+component, so the format lowers the tree itself, and recognising a fragment means holding `jsx`'s `Fragment` marker — a value import, which is why
+`output/pdf` is not a leaf. The runtime is its own because TypeScript resolves the `JSX` namespace through `jsxImportSource`:
+`@y-core/forge/output/pdf/jsx-runtime` admits a component answering with a `PdfElement` and declares no intrinsic elements, so `<div>` is a mistake
+rather than a fallback. Widening
+`./jsx/jsx-runtime` instead would let a PDF component stand where `renderToString` is called, which is the guarantee that runtime exists to keep.
+
 ---
 
 ## 6. When to Add a New Namespace
@@ -538,6 +568,7 @@ second repository needs it.
 [bt-2f]: ./BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ./BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [cr]: ../warden/canon/shared/CODE_RULES.md
+[cr-7]: ../warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
 [dev-readme]: ../src/dev/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-1]: ./FORGE_ERRORS.md#1-result-monad
@@ -555,7 +586,8 @@ second repository needs it.
 [sb-1e]: ./STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
 [testing-7]: ./TEST_RUNNERS.md#7-testing-namespace-utilities-y-coreforgetesting
-[testing-7f]: ./TEST_RUNNERS.md#7f-the-one-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7h]: ./TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath
 [tg]: ./THEME_GENERATION.md
 [ucc]: ./UI_CLASS_COMPOSITION.md
 [ucr-2]: ./UI_CLIENT_RUNTIME.md#2-mount-controllers

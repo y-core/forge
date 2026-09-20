@@ -71,8 +71,8 @@ describe("createApp", () => {
       const parsed = JSON.parse(logs[0]!) as Record<string, unknown>;
       expect(parsed.prefix).toBe("app");
       const error = parsed.error as SerializedError;
-      expect(error.message).toBe("secret db error");
-      expect(error.name).toBe("Error");
+      expect(error.detail).toBe("secret db error");
+      expect(error.type).toBe("Error");
       expect(typeof error.stack).toBe("string");
     });
 
@@ -110,8 +110,8 @@ describe("createApp", () => {
       const records = logs.map((line) => JSON.parse(line) as Record<string, unknown>);
       const attribution = records.find((r) => r.message === "onError override threw")!;
       expect(attribution.level).toBe("error");
-      expect((attribution.error as SerializedError).message).toBe("override boom");
-      expect((attribution.original as SerializedError).message).toBe("original");
+      expect((attribution.error as SerializedError).detail).toBe("override boom");
+      expect((attribution.original as SerializedError).detail).toBe("original");
       expect(records.some((r) => r.message === "Unhandled error")).toBe(true);
     });
   });

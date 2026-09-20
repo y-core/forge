@@ -6,14 +6,17 @@ import { CacheControl } from "../../http/headers";
 import { buildCursors } from "../../ui/assets/build/cursors";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
+import { buildFontPacks, buildFontSubsets, HARFBUZZ_SUBSET_WASM } from "./font-build";
+import { renderFacesModule } from "./font-emit";
 import { buildFonts } from "./fonts";
 import { buildIcons, iconLinks, iconTarget } from "./icons";
 import { buildJS } from "./js";
-import { deployRoot } from "./paths";
+import { buildMarks } from "./mark-build";
+import { deployRoot, safeJoin } from "./paths";
 import { buildRasters } from "./rasters";
 import { buildSite } from "./site";
 import { buildSprites, SPRITE_CACHE_DIR } from "./sprites";
-import type { AssetsTypesOutcome, BuildOptions, IconsConfig, SpriteGroupResult } from "./types";
+import type { AssetsTypesOutcome, BuildOptions, FontPackData, IconsConfig, SpriteGroupResult } from "./types";
 import type { ResolvedConfig } from "./types";
 
 /** Runs every configured build step and writes the generated assets module; `minify` also enables content-hashed filenames. @public */
@@ -47,6 +50,19 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
     await buildFonts(config.fonts, publicDir);
   }
 
+  let packs: FontPackData[] = [];
+  if (config.fonts.subsets.length > 0) {
+    packs = await buildFontSubsets(config.fonts.subsets, publicDir, HARFBUZZ_SUBSET_WASM);
+    const dest = join(publicDir, "fonts", "packs.json");
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, `${JSON.stringify(packs, null, 2)}\n`);
+  }
+  emitFaces(config, packs, (path) => readFileSync(safeJoin(publicDir, path)));
+
+  if (config.marks.length > 0) {
+    buildMarks(config.marks, config.root, publicDir);
+  }
+
   if (config.icons) {
     await buildIcons(config.icons);
   }
@@ -74,6 +90,14 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   await generateAssetsModule(spec(), outputPath);
 
   emitHeaders(config.root, publicDir, publicPrefix, shouldHash, config.icons);
+}
+
+// Emitted identically from `buildAll` and from `gen types`: a face is derivable from the config and
+// `node_modules` alone, so the cheap artifact is the real one and a clean checkout can test with it.
+function emitFaces(config: ResolvedConfig, packs: readonly FontPackData[], sfnt: (path: string) => Uint8Array | undefined): void {
+  const emit = config.fonts.emit;
+  if (emit === null) return;
+  writeGeneratedModule(join(config.root, emit.to), renderFacesModule(packs, sfnt, emit));
 }
 
 /** Where the generated assets module is written when no path is stated. @internal */
@@ -169,14 +193,14 @@ export const assets = createManifest(DATA, ${JSON.stringify(publicPrefix)});
   return content;
 }
 
-function writeAssetsModule(outputPath: string, content: string): void {
+function writeGeneratedModule(outputPath: string, content: string): void {
   if (existsSync(outputPath) && readFileSync(outputPath, "utf-8") === content) return;
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, content);
 }
 
 async function generateAssetsModule(spec: ModuleSpec, outputPath: string): Promise<void> {
-  writeAssetsModule(outputPath, renderAssetsModule(spec));
+  writeGeneratedModule(outputPath, renderAssetsModule(spec));
 }
 
 /** The emitted module with every value blanked — the shape `ASSET_PIPELINE.md` §4b holds the build and types artifacts to. @internal */
@@ -217,6 +241,11 @@ function keepsExistingBuild(outputPath: string, typesContent: string): boolean {
 
 /** Writes the generated assets module from `assets.config.ts` alone, with placeholder values, unless an existing build artifact still fits the config. @public */
 export async function generateAssetsTypes(config: ResolvedConfig, opts?: { assetsPath?: string }): Promise<AssetsTypesOutcome> {
+  if (config.fonts.emit !== null) {
+    const built = await buildFontPacks(config.fonts.subsets, HARFBUZZ_SUBSET_WASM);
+    emitFaces(config, built.packs, (path) => built.sfnt.get(path));
+  }
+
   const manifest: Record<string, string> = {};
 
   for (const css of config.css) {
@@ -268,7 +297,7 @@ export async function generateAssetsTypes(config: ResolvedConfig, opts?: { asset
     header: TYPES_HEADER,
   });
   if (keepsExistingBuild(outputPath, content)) return "kept-build-artifact";
-  writeAssetsModule(outputPath, content);
+  writeGeneratedModule(outputPath, content);
   return "written";
 }
 

@@ -17,7 +17,122 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+
+### Added
+
+- **`@y-core/forge/output/pdf` — a PDF engine, and the first child of the `output/` container.**
+  A document is composed from components and rendered to bytes with no browser and no runtime
+  dependency: `createPdfRenderer` answers a `Result`, so a document that cannot be rendered comes
+  back as a named error rather than an exception. It ships a general component set — `Stack`, `Row`,
+  `Box`, `Text`, `Table`, `Path`, `Image`, `Panel`, `Link` and the page primitives — over a printed-
+  form vocabulary of `Heading`, `Field`, `Note`, `TickList`, `OptionGroup` and `SignatureRow`;
+  `createPdfPalette` for named inks, `createPdfGrid`, `createPdfImage` and `createPdfPen`, a page
+  ceiling that bounds pagination rather than being compared to its result, orphan and widow control
+  decided at the split index, and a structure tree a screen reader can follow. `PDF_PAGE_SIZES`,
+  `resolvePdfPage` and `pdfContentBox` answer what a page is before anything is drawn on it, and
+  `toPdfElements` is the seam a caller reaches for its own content. Markup is admitted through its own
+  `@y-core/forge/output/pdf/jsx-runtime`, which declares no intrinsic elements, and
+  `@y-core/forge/output/pdf/fonts` embeds and subsets a face.
+
+  Published as the surface the engine honours, which is narrower than the one first drafted: there
+  is no `hyphenate` option and no `PdfHyphenator` (the seam shipped refusing every value it was
+  given), no `orphans` or `widows` on an individual `PdfElement` (only on the renderer, where the
+  whole document reads them), no `names` on `PdfPalette`, and the outline a reader navigates by
+  follows `metadata: "standard"` rather than a flag of its own.
+
+- **`defaultFont` on `PdfRendererOptions`, which sets a whole document in embedded type.** It takes
+  `PdfDefaultFaces` — `Record<PdfBaseFace, string>`, so a face is named for each weight and the
+  distinction cannot collapse by omitting one; a single default would set every heading, label and
+  title in the regular weight, because a run's base face is discarded once it carries an embedded
+  one. The default reaches the printed-form vocabulary, the title, the intro and the letterhead
+  alike. `Text({ font })` still outranks it and still ends its per-code-point ladder at the base-14
+  pair; a run that took the default is held to the default, so an uncovered glyph is refused naming
+  the face. Naming a face `fonts` does not carry — or naming one with `fonts` unset — is the new
+  `PdfRenderError` kind `"font"`, and the `"encoding"` message now names the face rather than
+  always saying "the base-14 faces". A document supplying no `defaultFont` renders byte-identically:
+  measurement travels as an optional `PdfTypesetting` parameter that defaults to the base-14 pair.
+
+- **`describePdfLayout` and `formatPdfLayout` on `@y-core/forge/output/pdf`.** A consumer can now
+  assert on where a document's drawings landed instead of on opaque bytes: `describePdfLayout`
+  answers a per-page projection carrying position, size, face, tracking, structure tag and alt —
+  never the display list — and `formatPdfLayout` writes it as one drawing per line, every token
+  `key=value`. It is refused with the same error a render is refused with, because both go through
+  one `preparePdfRender` step. `PdfTag` and `PdfBaseFace` are published with it.
+
+- **`@y-core/forge/output/pdf/audit` — `auditPdf`.** Answers every way a document's options and
+  front matter fall short of a conformant file, as a list of `PdfAuditFinding` naming a
+  `PdfAuditRule` and what setting it right means. It reads what a render is *configured* to produce
+  rather than the bytes it produced, so it costs no render: an untagged document, a blank `lang`,
+  `metadata` short of `"standard"`, an `info.title` that is empty or disagrees with the document's
+  own, a letterhead mark with no `alt`, and a tagged document set in the base-14 faces.
+
+- **`pdfResponse` on `@y-core/forge/http`.** Constructs a `Response` from rendered bytes with
+  `content-type: application/pdf` fixed, and throws where a caller supplies a `content-type` of
+  their own — the rule `htmlResponse` and `fragmentResponse` already hold, so the one namespace
+  owning HTTP output owns this one too.
+
+- **`@y-core/forge/tooling/assets` builds the faces and marks a PDF embeds.** `subsetFont` reduces a
+  face to the code points a document actually sets, `extractFontMetrics` reads the advances and
+  vertical metrics beside it and `postScriptName` reads `name` ID 6, so the Worker never parses a
+  font at runtime; `buildFont`, `buildFontSubsets` and `buildFontPacks` are the whole-config forms,
+  over `HARFBUZZ_SUBSET_WASM` as the subsetter's default path. `svgToMark` and `svgPathCommands`
+  convert an SVG to the paths a renderer draws, and `buildMarks` does it for a config. Three new
+  optional config blocks drive them: `fonts.subsets` declares a subset by the text it must set
+  rather than by code points, `fonts.emit` writes the module a document imports its faces from
+  (because a Worker cannot import from the asset tree), and `marks` names the SVGs to convert. All
+  three are build-time only, and `harfbuzzjs` is a dev dependency — no runtime dependency was added.
+
+- **`@y-core/forge/testing/snapshot` — `matchTextSnapshot`.** Compares text against a committed
+  fixture and answers a `Result` carrying the differing lines and a rendered, line-numbered report.
+  It writes an absent fixture and passes, except under `ci`; `update` rewrites; `ci` overrides
+  `update`; no environment variable is ever read. Node-only and off the `./testing` barrel, like
+  `./testing/workerd`.
+
+### Fixed
+
+- **A rendered PDF declares Helvetica and Helvetica-Bold only when a run actually selects them.**
+  Every file previously carried the base-14 pair, including one set wholly in embedded faces via
+  `defaultFont` — two font objects nothing pointed at, and a conformance checker reads that as a
+  face the file names and does not carry. The pair is now emitted only when some text node would
+  address it, which includes a `Text({ font })` run whose fallback ladder reaches base-14. A
+  document supplying no `fonts` is byte-identical: with nothing embedded every node selects the
+  pair, and it still lands at objects 3 and 4.
+
+### Changed
+
+- **`tagged` now defaults to on wherever `fonts` carries a face.** A structure tree over the base-14
+  faces conforms only as far as whatever face the viewer substitutes, so the default follows the one
+  thing that decides whether the output can conform at all. Name `tagged` explicitly to override it
+  in either direction; `auditPdf` reads the same resolver, so the audit and the render can no longer
+  disagree about whether a document is tagged.
+
+- **`PdfFace` in `@y-core/forge/output/pdf` is renamed `PdfBaseFace`.** It was internal until this
+  release; the rename keeps it distinct from `PdfFace` on `@y-core/forge/output/pdf/fonts`, which is
+  a concrete face rather than one of the base-14 pair.
+
+- **Every gate check decides what is test-only by one `isTestSource`.** It moves to
+  `tooling/gate/checks/source-scan` and each check reads it in place of a regex of its own, so a
+  check can no longer judge a file the check beside it exempts. Five now skip more than they did:
+  `ssr-boundary`, `jsx`, `css-sources`, `dev-boundary` and `packaging` exempt `*.fixture.ts(x)`, and
+  `css-sources` and `jsx` also exempt `*.browser.tsx`. A consumer running these checks over a tree
+  with fixtures in it sees the findings they raised against those files disappear.
+
+### Breaking Changes
+
+- **`SerializedError` is now `{ type, detail, stack? }`, renamed from `{ name, message, stack? }`.**
+  A redaction stem matches by substring at every depth and has no scoped form, so an application
+  writing `also: ["name", "message"]` to mask its own two fields was also masking
+  `error.name` and `error.message` on every record forge writes — and on `kvLogChannel`, which
+  strips `stack` by default, that left an error record with no type, no text and no stack.
+  Renaming the collision away is the whole fix: `also: ["name"]` now means what an application
+  writing it expects. Update any consumer reading `.name` or `.message` off a `serializeError`
+  result — producers passing the object through as `data.error` are unaffected.
+
+- **`ResolvedConfig` in `@y-core/forge/tooling/assets` carries three more required fields.**
+  `fonts.subsets`, `fonts.emit` and `marks` are always present on what `loadConfig` answers — the
+  config keys behind them are optional, so an existing `assets.config.ts` still loads and an
+  existing reader of the result still typechecks. Anything *constructing* a `ResolvedConfig`, such
+  as a test double or a custom pipeline driver, must name all three.
 
 ---
 

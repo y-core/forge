@@ -585,7 +585,7 @@ describe("createLogger — the default channel-error reporter", () => {
     expect(report.prefix).toBe("logger");
     expect(report.message).toBe("log channel write failed");
     expect(new Date(report.timestamp).toISOString()).toBe(report.timestamp);
-    expect(report.error).toStrictEqual({ name: "Error", message: "kv down", stack: boom.stack });
+    expect(report.error).toStrictEqual({ type: "Error", detail: "kv down", stack: boom.stack });
     expect(JSON.stringify(report.error)).not.toBe("{}");
   });
 
@@ -597,7 +597,7 @@ describe("createLogger — the default channel-error reporter", () => {
 
     expect(capturedErrors).toHaveLength(1);
     const report = JSON.parse(capturedErrors[0]!);
-    expect(report.error).toStrictEqual({ name: "string", message: "binding is undefined" });
+    expect(report.error).toStrictEqual({ type: "string", detail: "binding is undefined" });
   });
 
   it("is replaced entirely when a hook is supplied", async () => {

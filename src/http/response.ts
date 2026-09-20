@@ -37,6 +37,14 @@ export function jsonResponse(body: unknown, status = 200, headers?: Record<strin
   return new Response(JSON.stringify(body), { status, headers: { ...headers, "content-type": "application/json; charset=utf-8" } });
 }
 
+/** Constructs a PDF `Response` from rendered bytes; throws on a caller-supplied `content-type`. @public */
+export function pdfResponse(body: BufferSource, status = 200, headers?: Record<string, string>): Response {
+  if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+    throw new Error("pdfResponse: content-type is fixed for PDF responses — remove it from headers");
+  }
+  return new Response(body, { status, headers: { ...headers, "content-type": "application/pdf" } });
+}
+
 /** Constructs an HTML fragment `Response` with no DOCTYPE; throws on a caller-supplied `content-type`. @public */
 export function fragmentResponse(body: string | SafeHtml, status = 200, headers?: Record<string, string>): Response {
   if (headers && Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {

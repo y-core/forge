@@ -96,10 +96,11 @@
       "rules": { "forge/type-import-external": "off" }
     },
     {
-      // A file that is itself a published subpath is its own `types.ts`: `./testing/workerd` is off
-      // the `./testing` barrel on purpose, and moving its two shapes into the namespace's `types.ts`
-      // would put them on that barrel — the one place `TESTING.md` §7f says they do not belong.
-      "files": ["src/testing/workerd.ts"],
+      // A file that is itself a published subpath is its own `types.ts`: `./testing/workerd` and
+      // `./testing/snapshot` are off the `./testing` barrel on purpose, and moving their shapes into
+      // the namespace's `types.ts` would put them on that barrel — the one place `TEST_RUNNERS.md`
+      // §7f and §7h say they do not belong.
+      "files": ["src/testing/snapshot.ts", "src/testing/workerd.ts"],
       "rules": { "forge/type-import-external": "off" }
     },
     {

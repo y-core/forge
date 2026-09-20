@@ -345,6 +345,24 @@ pasted into a mail client has to keep working. `currentColor` is not substituted
 
 ---
 
+## Converting an SVG for a renderer that cannot parse one
+
+`marks` converts an SVG into the paths a renderer draws, so a Worker never parses XML to put a logo on a page. Its output is what
+`@y-core/forge/output/pdf` takes as a letterhead's mark:
+
+```ts
+marks: [{ from: "src/svg/logo-lockup.svg", to: "marks/letterhead.json" }],
+```
+
+The artifact carries the source's `viewBox` as its coordinate space and one entry per shape, each with its commands and its paint as device-RGB
+fractions. `<path>`, `<circle>`, `<ellipse>`, `<rect>` and `<polygon>` convert; **every curve comes out cubic**, because that is the only curve
+PDF's own operators draw.
+
+Some inputs are refused by name rather than converted badly: an elliptical arc (`A`) — export the mark with its arcs flattened; a colour written
+as anything but `#rgb` or `#rrggbb`; and an SVG declaring neither a `viewBox` nor a width and height, which has no coordinate space to scale out of.
+
+---
+
 ## Driving the pipeline from your own code
 
 Pair `loadConfig` with `buildAll` to run the pipeline outside the CLI:

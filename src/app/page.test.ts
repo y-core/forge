@@ -831,9 +831,9 @@ describe("definePage — error reporting", () => {
     expect(record.prefix).toBe("page");
     expect(record.level).toBe("error");
     expect(record.message).toBe("Page handler threw");
-    const error = record.error as { name: string; message: string; stack?: string };
-    expect(error.name).toBe("Error");
-    expect(error.message).toBe("view exploded");
+    const error = record.error as { type: string; detail: string; stack?: string };
+    expect(error.type).toBe("Error");
+    expect(error.detail).toBe("view exploded");
     expect(typeof error.stack).toBe("string");
   });
 
@@ -856,8 +856,8 @@ describe("definePage — error reporting", () => {
     const records = parse(await captureLogs(() => app.request("/test")));
     const attribution = records.find((r) => r.message === "definePage onError threw")!;
     expect(attribution.level).toBe("error");
-    expect((attribution.error as { message: string }).message).toBe("hook exploded");
-    expect((attribution.original as { message: string }).message).toBe("view exploded");
+    expect((attribution.error as { detail: string }).detail).toBe("hook exploded");
+    expect((attribution.original as { detail: string }).detail).toBe("view exploded");
     expect(records.some((r) => r.message === "Unhandled error")).toBe(true);
   });
 });

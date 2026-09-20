@@ -164,6 +164,20 @@ describe("checkCssSources() — pass B, whether a directory is registered", () =
     expect(messages(tree, { classFree: new Map([["assets", "it ships stylesheets, not markup"]]) })).toEqual([]);
   });
 
+  it("scans a class-free directory's deployable module and skips the `.fixture.tsx` beside it", () => {
+    const tree = {
+      "src/css/tailwind.css": '@source "../ui/core";\n',
+      "src/ui/core/button.ts": CLASSES,
+      "src/ui/assets/tokens.ts": CLASSES,
+      "src/ui/assets/tokens.fixture.tsx": CLASSES,
+    };
+
+    expect(messages(tree, { classFree: new Map([["assets", "it ships stylesheets, not markup"]]) })).toEqual([
+      "string literal declares utility classes — flex gap-2",
+      AGGREGATE,
+    ]);
+  });
+
   it("checks a file sitting loose at the component root, which no subdirectory registration covers", () => {
     const tree = { "src/css/tailwind.css": '@source "../ui/core";\n', "src/ui/core/button.ts": CLASSES, "src/ui/mod.ts": CLASSES };
 

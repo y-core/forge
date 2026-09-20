@@ -162,7 +162,7 @@ export interface KvLogMetadata {
 
 /** Plain-object form of a thrown value, safe to put in a `LogRecord`'s `data`. @public */
 export interface SerializedError {
-  name: string;
-  message: string;
+  type: string;
+  detail: string;
   stack?: string;
 }

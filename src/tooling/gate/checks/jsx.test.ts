@@ -97,6 +97,16 @@ describe("checkJsx()", () => {
     expect(result.findings[1]?.message).toContain("must carry every JSX pragma line");
   });
 
+  it("holds a pragma-free `.tsx` to the rule and exempts the `.fixture.tsx` beside it", () => {
+    const bare = "export const B = () => <div />;";
+    const result = checkJsx({ root: fixtureRoot({ "src/bad.tsx": bare, "src/bad.fixture.tsx": bare }) });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings).toHaveLength(2);
+    expect(result.findings[0]?.file).toBe("src/bad.tsx");
+    expect(result.summary).toBe("1 .tsx files carry every JSX pragma.");
+  });
+
   it("reports paths relative to the root, never absolute", () => {
     const root = fixtureRoot({ "src/deep/bad.tsx": "export const B = () => <div />;" });
     const result = checkJsx({ root });
