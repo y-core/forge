@@ -33,6 +33,16 @@ export interface ExposureCheckConfig {
 /** `"stated"`: any explicit value passes. `"unroutable"`: the value must be the one that keeps the Worker off the public internet. @public */
 export type ExposurePosture = "stated" | "unroutable";
 
+/** What the compatibility-flag check needs to find the Worker config it reads the runtime posture from. @public */
+export interface CompatibilityCheckConfig {
+  /** Application root. The worker config path resolves against it. */
+  root: string;
+  /** Wrangler config path, relative to `root`. Defaults to `wrangler.jsonc`. */
+  workerConfig?: string;
+  /** The flags every deployment must carry at least; a `no_*` entry also refuses its own opposite. Defaults to forge's posture. */
+  require?: readonly string[];
+}
+
 /** What the build-time-boundary check needs to know about the project. @public */
 export interface BuildTimeBoundaryCheckConfig {
   /** Repository root; every reported path is relative to it. */

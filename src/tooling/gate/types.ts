@@ -3,7 +3,7 @@ import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { DeferredFinding } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
-import type { ExposureCheckConfig } from "./checks/types";
+import type { CompatibilityCheckConfig, ExposureCheckConfig } from "./checks/types";
 import type { ExportsMap } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
@@ -129,6 +129,8 @@ export interface CloudflareWorkerStepOptions {
   workerConfig?: string;
   /** How the exposure row judges each deployment; omit to take `require: "stated"`. Read only when `workerConfig` is set. */
   exposure?: Omit<ExposureCheckConfig, "root" | "workerConfig">;
+  /** Overrides the flag set the compatibility row demands; omit to take forge's posture. Read only when `workerConfig` is set. */
+  compatibility?: Omit<CompatibilityCheckConfig, "root" | "workerConfig">;
   /** Whether to check the synced `.claude/` trees against the installed corpus. Defaults to `false`. */
   warden?: boolean;
   /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */

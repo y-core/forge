@@ -14,6 +14,7 @@ export {
   classTokensStep,
   coLocationStep,
   commentBudgetStep,
+  compatibilityStep,
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
@@ -114,6 +115,8 @@ export type { ExportsCheckConfig, ExportsMap } from "./checks/types";
 export { checkExports, isBrowserSubpath, isPublished, parseSubpathPatterns } from "./checks/exports";
 export type { ExposureCheckConfig, ExposurePosture } from "./checks/types";
 export { checkExposure } from "./checks/exposure";
+export type { CompatibilityCheckConfig } from "./checks/types";
+export { checkCompatibility } from "./checks/compatibility";
 export type { JsxCheckConfig } from "./checks/types";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
 export type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";

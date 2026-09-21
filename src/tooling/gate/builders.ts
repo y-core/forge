@@ -8,6 +8,7 @@ import { checkClassOrder } from "./checks/class-order";
 import { checkClassTokens } from "./checks/class-tokens";
 import { checkCoLocation } from "./checks/co-location";
 import { checkCommentBudget } from "./checks/comment-budget";
+import { checkCompatibility } from "./checks/compatibility";
 import { checkContrast } from "./checks/contrast";
 import { checkCssSources } from "./checks/css-sources";
 import { checkCssTokens } from "./checks/css-tokens";
@@ -32,6 +33,7 @@ import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ClassTokensCheckConfig } from "./checks/types";
 import type { CoLocationCheckConfig } from "./checks/types";
 import type { CommentBudgetCheckConfig } from "./checks/types";
+import type { CompatibilityCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { CssSourcesCheckConfig } from "./checks/types";
 import type { CssTokensCheckConfig } from "./checks/types";
@@ -199,6 +201,11 @@ export function assetRootStep(config: AssetRootCheckConfig, options: StepOptions
 /** Fails on any Worker config key whose default runs toward exposure being unstated, in the top level and every `env.*` block; requiring a *value* rather than statedness is opt-in via `require`. @public */
 export function exposureStep(config: ExposureCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-exposure", () => checkExposure(config), options);
+}
+
+/** Fails a Worker config whose `compatibility_flags` omits or contradicts the runtime posture, in the top level and every `env.*` block that states a set of its own. @public */
+export function compatibilityStep(config: CompatibilityCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-compatibility", () => checkCompatibility(config), options);
 }
 
 /** Checks every path the emitted assets manifest maps to exists under the served asset directory. @public */

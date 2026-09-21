@@ -4,6 +4,7 @@ import {
   browserStep,
   classOrderStep,
   classTokensStep,
+  compatibilityStep,
   contrastStep,
   cssTokensStep,
   dbSchemaStep,
@@ -126,9 +127,11 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push(assetRootStep({ root, assetConfig: options.assetConfig, workerConfig: options.workerConfig }));
   }
 
-  // Only the wrangler config is read here, so this row needs no assets half of the coupling.
+  // Only the wrangler config is read here, so these rows need no assets half of the coupling. The flag
+  // row is not opt-in beside it: an app free to decline it decides its own Node surface, which is the folklore.
   if (options.workerConfig !== undefined) {
     steps.push(exposureStep({ root, workerConfig: options.workerConfig, ...options.exposure }));
+    steps.push(compatibilityStep({ root, workerConfig: options.workerConfig, ...options.compatibility }));
   }
 
   // Default-on and not opt-out: the forbidden specifiers are read from forge's own installed manifest,

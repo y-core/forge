@@ -93,6 +93,7 @@ describe("cloudflareWorkerSteps() — the exposure row", () => {
       "lint:types",
       "test",
       "validate-exposure",
+      "validate-compatibility",
       "validate-dev-boundary",
     ]);
   });
@@ -100,12 +101,23 @@ describe("cloudflareWorkerSteps() — the exposure row", () => {
   it("orders it after validate-asset-root when both halves are configured", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" }));
 
-    expect(labels.slice(-3)).toEqual(["validate-asset-root", "validate-exposure", "validate-dev-boundary"]);
+    expect(labels.slice(-4)).toEqual(["validate-asset-root", "validate-exposure", "validate-compatibility", "validate-dev-boundary"]);
   });
 
   it("omits the row for an app naming no worker config", () => {
     expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-exposure");
     expect(labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }))).not.toContain("validate-exposure");
+  });
+});
+
+describe("cloudflareWorkerSteps() — the compatibility row", () => {
+  it("omits the row for an app naming no worker config, since there is nothing to read the flags from", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-compatibility");
+    expect(labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }))).not.toContain("validate-compatibility");
+  });
+
+  it("emits the row from the worker config alone, with no opt-in of its own", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" }))).toContain("validate-compatibility");
   });
 });
 
@@ -119,10 +131,11 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
     expect(labelsOf(cloudflareWorkerSteps()).at(-1)).toBe("validate-dev-boundary");
   });
 
-  it("orders it after validate-exposure, the other row read from the worker config", () => {
+  it("orders it after the two rows read from the worker config", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" }));
 
-    expect(labels.indexOf("validate-dev-boundary")).toBe(labels.indexOf("validate-exposure") + 1);
+    expect(labels.indexOf("validate-dev-boundary")).toBe(labels.indexOf("validate-compatibility") + 1);
+    expect(labels.indexOf("validate-compatibility")).toBe(labels.indexOf("validate-exposure") + 1);
   });
 
   it("keeps the long rows last, so a sub-second boundary finding is not paid for with a browser", () => {

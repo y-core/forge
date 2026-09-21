@@ -71,7 +71,7 @@
     "oxlint-tsgolint": "7.0.2001",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "wrangler": "^4.134.0"
+    "wrangler": "^4.136.0"
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",
