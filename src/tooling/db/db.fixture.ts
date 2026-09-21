@@ -2,8 +2,10 @@ import { join } from "node:path";
 
 import type { CliIO } from "../cli/types";
 import { SqlReal } from "./backup/artifact";
+import { persistRoot } from "./home";
 import { formatComposeHeader } from "./schema/header";
-import type { FakeDbIo, Spawned } from "./types";
+import { schemaModelSelects } from "./schema/introspect";
+import type { FakeDbIo, Home, Spawned } from "./types";
 
 /** True when `words` occur in argv in this order, not necessarily adjacent. */
 export function argvHas(args: readonly string[], ...words: string[]): boolean {
@@ -29,6 +31,26 @@ export function jsonBatches(batches: readonly Record<string, unknown>[][]): Spaw
 /** One `--command` answered statement by statement, terminator dropped. */
 export function routedReply(command: string, answer: (statement: string) => Record<string, unknown>[]): Spawned {
   return jsonBatches(command.split("\n").map((statement) => answer(statement.trim().replace(/;$/, ""))));
+}
+
+/** The rows one statement of `readSchemaModel`'s batch answers with, by which read it is. */
+export function schemaModelRows(
+  statement: string,
+  rows: {
+    inventory?: Record<string, unknown>[];
+    columns?: Record<string, unknown>[];
+    indexList?: Record<string, unknown>[];
+    indexColumns?: Record<string, unknown>[];
+    foreignKeys?: Record<string, unknown>[];
+  },
+): Record<string, unknown>[] {
+  const selects = schemaModelSelects();
+  if (statement === selects.inventory) return rows.inventory ?? [];
+  if (statement === selects.columns) return rows.columns ?? [];
+  if (statement === selects.indexList) return rows.indexList ?? [];
+  if (statement === selects.indexColumns) return rows.indexColumns ?? [];
+  if (statement === selects.foreignKeys) return rows.foreignKeys ?? [];
+  return [];
 }
 
 /** The one batched reply `readSchemaModel` expects: the result sets in the order it asks for them. */
@@ -108,6 +130,37 @@ export function projectReadRows(rows: readonly Record<string, unknown>[]): Recor
 /** A successful run with nothing to say. */
 export const OK: Spawned = { code: 0, stdout: "", stderr: "" };
 
+/** Terminated statements, quotes respected, as `unstable_splitSqlQuery` hands them to the real port. */
+export function splitStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const char of sql) {
+    if (quote !== null) {
+      current += char;
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === '"') quote = char;
+    if (char === ";") {
+      statements.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  statements.push(current);
+  return statements.map((statement) => statement.trim()).filter((statement) => statement !== "");
+}
+
+/** The rows the fake answers one statement with: the first rule that matches it, else none — a statement writing rows answers none. */
+function answerStatement(io: FakeDbIo, statement: string, home: Home): Record<string, unknown>[] {
+  for (const rule of io.d1Rules) {
+    if (rule.match(statement, home)) return typeof rule.reply === "function" ? rule.reply(statement, home) : rule.reply;
+  }
+  return [];
+}
+
 /** Builds a fake `DbIo` with an optional seed filesystem. Unmatched wrangler calls fail loudly. */
 export function fakeDbIo(seed: Record<string, string> = {}, options: { now?: Date; env?: Record<string, string> } = {}): FakeDbIo {
   const files = new Map(Object.entries(seed));
@@ -117,12 +170,25 @@ export function fakeDbIo(seed: Record<string, string> = {}, options: { now?: Dat
     calls: [],
     logs: [],
     rules: [],
+    d1Calls: [],
+    d1Rules: [],
+    closed: [],
     spawn(cmd, args) {
       io.calls.push([cmd, ...args]);
       for (const rule of io.rules) {
         if (rule.match(args)) return typeof rule.reply === "function" ? rule.reply(args) : rule.reply;
       }
       return { code: 1, stdout: "", stderr: `fake wrangler: no rule matches ${cmd} ${args.join(" ")}` };
+    },
+    d1(home, sql) {
+      const statements = sql.flatMap((text) => splitStatements(text));
+      const source = sql.length === 1 ? ([...files].find(([, text]) => text === sql[0])?.[0] ?? null) : null;
+      io.d1Calls.push({ home: home.label, place: home.place, persistTo: persistRoot(home), statements, source });
+      return Promise.resolve(statements.map((statement) => answerStatement(io, statement, home)));
+    },
+    closeD1(home) {
+      io.closed.push(home === null ? "*" : persistRoot(home));
+      return Promise.resolve();
     },
     exists: (p) => files.has(p) || dirs.has(p) || [...files.keys()].some((k) => k.startsWith(`${p}/`)),
     readText: (p) => {

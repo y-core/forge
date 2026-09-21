@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { CliError } from "../../cli/errors";
 import { sharedD1Databases } from "../config";
 import { sha256 } from "../digest";
+import { persistRoot } from "../home";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbRunContext } from "../types";
@@ -84,7 +85,7 @@ function compareCounts(manifest: BackupManifest, counts: ReadonlyMap<string, num
 }
 
 /** Everything a reset checks before it asks: the target, the state directory, its rows, and the artifact that proves them recoverable. @public */
-export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPlan {
+export async function prepareReset(run: DbRunContext, options: ResetOptions): Promise<ResetPlan> {
   const { io, home, config } = run;
   if (isRemotePlace(config.target.place)) {
     throw new CliError(
@@ -107,12 +108,12 @@ export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPla
     throw new CliError("invalid-args", `--expect ${options.expect} does not name this target, which is ${home.database}`);
   }
 
-  const state = join(home.persistTo ?? home.dir, "v3", "d1", "miniflare-D1DatabaseObject");
+  const state = join(persistRoot(home), "d1", "miniflare-D1DatabaseObject");
   if (!io.exists(state)) return { database: home.database, state: null, rows: 0, backedUpBy: null };
 
-  const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
+  const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
   const appTables = objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app").map((object) => object.name);
-  const counted = queryBatches(io, home, appTables.map(rowCountSelect));
+  const counted = await queryBatches(io, home, appTables.map(rowCountSelect));
   const counts = new Map<string, number>(appTables.map((name, index) => [name, Number(counted[index]?.[0]?.rows ?? 0)]));
   const rows = [...counts.values()].reduce((total, count) => total + count, 0);
 
@@ -123,8 +124,8 @@ export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPla
     const stale = compareCounts(selected.manifest, counts);
     if (stale.length === 0) {
       const digests = new Map(selected.manifest.tables.map((table) => [table.name, table.digest]));
-      for (const table of describeTables(io, home, [...counts.keys()].sort())) {
-        const read = readWholeTable(io, home, table);
+      for (const table of await describeTables(io, home, [...counts.keys()].sort())) {
+        const read = await readWholeTable(io, home, table);
         if (digests.get(table.name) !== sha256(read.rows.map((row) => row.canonical).join("\n"))) {
           stale.push(`${table.name}: ${read.rows.length} row(s) in both, and their contents differ`);
         }
@@ -143,7 +144,11 @@ export function prepareReset(run: DbRunContext, options: ResetOptions): ResetPla
 }
 
 /** Removes the state directory a prepared reset named, if any, and reports. @public */
-export function executeReset(run: DbRunContext, plan: ResetPlan): ResetOutcome {
-  if (plan.state !== null) run.io.remove(plan.state);
+export async function executeReset(run: DbRunContext, plan: ResetPlan): Promise<ResetOutcome> {
+  // The handle over this state is released before the directory holding it is removed.
+  if (plan.state !== null) {
+    await run.io.closeD1(run.home);
+    run.io.remove(plan.state);
+  }
   return { database: plan.database, rows: plan.rows, removed: plan.state, backedUpBy: plan.backedUpBy };
 }

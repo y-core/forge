@@ -1,12 +1,22 @@
 import { describe, expect, it } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 import type { WranglerConfig } from "../../cf/types";
 import { CliError } from "../../cli/errors";
 import { PLAIN } from "../../term/color";
-import { argvHas, fakeDbIo, OK } from "../db.fixture";
+import { fakeDbIo } from "../db.fixture";
 import { appHome } from "../home";
 import type { DbConfig, DbRunContext, FakeDbIo, Migration } from "../types";
-import { cachedSchemaModel, composeScratchHome, forgeVersion, loadDesired, localScratchConfig, replayBaseline, scratchModelKey } from "./scratch";
+import {
+  cachedSchemaModel,
+  composeScratchHome,
+  forgeVersion,
+  loadDesired,
+  localScratchConfig,
+  replayBaseline,
+  scratchModelKey,
+  scratchWranglerVersion,
+} from "./scratch";
 import type { DesiredState, SchemaModel } from "./types";
 
 const MIGRATIONS = "/app/migrations";
@@ -60,16 +70,17 @@ describe("localScratchConfig", () => {
 });
 
 describe("composeScratchHome", () => {
-  it("writes a synthesized config under the side's compose directory", () => {
+  it("writes a synthesized config under the side's compose directory", async () => {
     const { run, io } = context();
-    const home = composeScratchHome(run, "baseline");
+    const home = await composeScratchHome(run, "baseline");
     expect(home.dir).toBe(`${COMPOSE}/baseline`);
     expect(home.configPath).toBe(`${COMPOSE}/baseline/wrangler.jsonc`);
     expect(home.database).toBe("app-db-compose-baseline");
     expect(home.place).toBe("local");
     expect(home.persistTo).toBe(`${COMPOSE}/baseline/.wrangler/state`);
     expect(home.synthesized).toBe(true);
-    const generated = JSON.parse(io.readText(home.configPath)) as { d1_databases: Record<string, unknown>[] };
+    const text = io.readText(home.configPath);
+    const generated = JSON.parse(text.slice(text.indexOf("\n") + 1)) as { d1_databases: Record<string, unknown>[] };
     expect(generated.d1_databases[0]).toEqual({
       binding: "DB",
       database_name: "app-db-compose-baseline",
@@ -77,64 +88,43 @@ describe("composeScratchHome", () => {
     });
   });
 
-  it("removes the miniflare state directory under the home's persist path", () => {
+  it("removes the miniflare state directory under the home's persist path", async () => {
     const state = `${COMPOSE}/desired/.wrangler/state/v3/d1/miniflare-D1DatabaseObject`;
     const { run, io } = context({ [`${state}/db.sqlite`]: "stale", "/app/keep.sql": "kept" });
-    composeScratchHome(run, "desired");
+    await composeScratchHome(run, "desired");
     expect(io.exists(`${state}/db.sqlite`)).toBe(false);
     expect(io.exists("/app/keep.sql")).toBe(true);
   });
 });
 
 describe("replayBaseline", () => {
-  it("stages every migration's SQL in the baseline scratch and loads each with its own execute", () => {
+  it("stages every migration's SQL in the baseline scratch and loads each with its own execute", async () => {
     const { run, io } = context();
-    io.rules.push({ match: (a) => argvHas(a, "execute", "--file"), reply: OK });
-    const home = replayBaseline(run, [
+    const home = await replayBaseline(run, [
       migration("0001_init", "CREATE TABLE a (id INTEGER);"),
       migration("0002_next", "CREATE TABLE b (id INTEGER);"),
     ]);
     expect(io.readText(`${COMPOSE}/baseline/0001_init.sql`)).toBe("CREATE TABLE a (id INTEGER);");
     expect(io.readText(`${COMPOSE}/baseline/0002_next.sql`)).toBe("CREATE TABLE b (id INTEGER);");
-    expect(io.calls).toEqual([
-      [
-        "wrangler",
-        "d1",
-        "execute",
-        "app-db-compose-baseline",
-        "-c",
-        `${COMPOSE}/baseline/wrangler.jsonc`,
-        "--local",
-        "--persist-to",
-        `${COMPOSE}/baseline/.wrangler/state`,
-        "--yes",
-        "--file",
-        `${COMPOSE}/baseline/0001_init.sql`,
-      ],
-      [
-        "wrangler",
-        "d1",
-        "execute",
-        "app-db-compose-baseline",
-        "-c",
-        `${COMPOSE}/baseline/wrangler.jsonc`,
-        "--local",
-        "--persist-to",
-        `${COMPOSE}/baseline/.wrangler/state`,
-        "--yes",
-        "--file",
-        `${COMPOSE}/baseline/0002_next.sql`,
-      ],
+    expect(io.calls).toEqual([]);
+    expect(io.d1Calls.map((call) => [call.source, call.persistTo])).toEqual([
+      [`${COMPOSE}/baseline/0001_init.sql`, `${COMPOSE}/baseline/.wrangler/state/v3`],
+      [`${COMPOSE}/baseline/0002_next.sql`, `${COMPOSE}/baseline/.wrangler/state/v3`],
     ]);
     expect(home.database).toBe("app-db-compose-baseline");
   });
 
-  it("wraps a failing load in a CliError naming the replay", () => {
+  it("wraps a failing load in a CliError naming the replay", async () => {
     const { run, io } = context();
-    io.rules.push({ match: (a) => argvHas(a, "execute", "--file"), reply: { code: 1, stdout: "", stderr: 'near "CREAT": syntax error' } });
+    io.d1Rules.push({
+      match: (statement) => statement.startsWith("CREAT "),
+      reply: () => {
+        throw new Error('near "CREAT": syntax error');
+      },
+    });
     let caught: unknown;
     try {
-      replayBaseline(run, [migration("0001_init", "CREAT TABLE a;")]);
+      await replayBaseline(run, [migration("0001_init", "CREAT TABLE a;")]);
     } catch (error) {
       caught = error;
     }
@@ -146,35 +136,26 @@ describe("replayBaseline", () => {
 });
 
 describe("loadDesired", () => {
-  it("writes each namespace's file and executes them in order", () => {
+  it("writes each namespace's file and executes them in order", async () => {
     const { run, io } = context();
-    io.rules.push({ match: (a) => argvHas(a, "execute", "--file"), reply: OK });
-    loadDesired(run, [desired("app", "CREATE TABLE a (id INTEGER);"), desired("lib-auth", "CREATE TABLE b (id INTEGER);")]);
+    await loadDesired(run, [desired("app", "CREATE TABLE a (id INTEGER);"), desired("lib-auth", "CREATE TABLE b (id INTEGER);")]);
     expect(io.readText(`${COMPOSE}/desired/files/app.sql`)).toBe("CREATE TABLE a (id INTEGER);");
     expect(io.readText(`${COMPOSE}/desired/files/lib-auth.sql`)).toBe("CREATE TABLE b (id INTEGER);");
-    expect(io.calls.map((call) => call.at(-1))).toEqual([`${COMPOSE}/desired/files/app.sql`, `${COMPOSE}/desired/files/lib-auth.sql`]);
-    expect(io.calls[0]).toEqual([
-      "wrangler",
-      "d1",
-      "execute",
-      "app-db-compose-desired",
-      "-c",
-      `${COMPOSE}/desired/wrangler.jsonc`,
-      "--local",
-      "--persist-to",
-      `${COMPOSE}/desired/.wrangler/state`,
-      "--yes",
-      "--file",
-      `${COMPOSE}/desired/files/app.sql`,
-    ]);
+    expect(io.d1Calls.map((call) => call.source)).toEqual([`${COMPOSE}/desired/files/app.sql`, `${COMPOSE}/desired/files/lib-auth.sql`]);
+    expect(io.d1Calls[0]?.persistTo).toBe(`${COMPOSE}/desired/.wrangler/state/v3`);
   });
 
-  it("wraps a failing execute in a CliError naming the desired path", () => {
+  it("wraps a failing execute in a CliError naming the desired path", async () => {
     const { run, io } = context();
-    io.rules.push({ match: (a) => argvHas(a, "execute", "--file"), reply: { code: 1, stdout: "", stderr: "no such table: main.users" } });
+    io.d1Rules.push({
+      match: (statement) => statement.startsWith("ALTER"),
+      reply: () => {
+        throw new Error("no such table: main.users");
+      },
+    });
     let caught: unknown;
     try {
-      loadDesired(run, [desired("schema.sql", "ALTER TABLE users ADD COLUMN x TEXT;")]);
+      await loadDesired(run, [desired("schema.sql", "ALTER TABLE users ADD COLUMN x TEXT;")]);
     } catch (error) {
       caught = error;
     }
@@ -196,52 +177,71 @@ describe("scratchModelKey", () => {
   });
 });
 
+describe("scratchWranglerVersion", () => {
+  // The model is built in process through the imported wrangler, and `node_modules/.bin` puts the
+  // app's CLI ahead of forge's, so a spawned version would stamp the key with one that built nothing.
+  it("reads the version of the wrangler this process imports, spawning none", () => {
+    const { run, io } = context();
+    io.rules.push({ match: () => true, reply: { code: 0, stdout: "wrangler 9.9.9\n", stderr: "" } });
+    const manifest = fileURLToPath(import.meta.resolve("wrangler/package.json"));
+    io.files.set(manifest, JSON.stringify({ version: "4.136.0" }));
+
+    expect(scratchWranglerVersion(run)).toBe("4.136.0");
+    expect(io.calls).toEqual([]);
+  });
+
+  it("is unknown when the package cannot be read, so a key is still stamped with something", () => {
+    const { run } = context();
+    expect(scratchWranglerVersion(run)).toBe("unknown");
+  });
+});
+
 describe("cachedSchemaModel", () => {
-  it("returns the cached model without producing one", () => {
+  it("returns the cached model without producing one", async () => {
     const { run, io } = context({ [`${COMPOSE}/desired/cache/k1/model.json`]: `${JSON.stringify(CACHED)}\n` });
     let produced = 0;
-    const model = cachedSchemaModel(run, "desired", "k1", true, () => {
+    const model = await cachedSchemaModel(run, "desired", "k1", true, () => {
       produced += 1;
-      return MODEL;
+      return Promise.resolve(MODEL);
     });
     expect(produced).toBe(0);
     expect(model).toEqual(CACHED);
     expect(io.calls).toEqual([]);
   });
 
-  it("rebuilds rather than returns a cache entry that is not a schema model", () => {
+  it("rebuilds rather than returns a cache entry that is not a schema model", async () => {
     for (const text of ['{"tables":[],"indexes":[],"triggers":[]}', '{"tables":{}}', "null", "[]", "{", '"a model"']) {
       const { run } = context({ [`${COMPOSE}/desired/cache/k1/model.json`]: text });
       let produced = 0;
-      const model = cachedSchemaModel(run, "desired", "k1", true, () => {
+      const model = await cachedSchemaModel(run, "desired", "k1", true, () => {
         produced += 1;
-        return MODEL;
+        return Promise.resolve(MODEL);
       });
       expect(produced).toBe(1);
       expect(model).toEqual(MODEL);
     }
   });
 
-  it("bypasses the cache when caching is off", () => {
+  it("bypasses the cache when caching is off", async () => {
     const { run } = context({ [`${COMPOSE}/desired/cache/k1/model.json`]: `${JSON.stringify(CACHED)}\n` });
     let produced = 0;
-    const model = cachedSchemaModel(run, "desired", "k1", false, () => {
+    const model = await cachedSchemaModel(run, "desired", "k1", false, () => {
       produced += 1;
-      return MODEL;
+      return Promise.resolve(MODEL);
     });
     expect(produced).toBe(1);
     expect(model).toEqual(MODEL);
   });
 
-  it("writes the produced model to the key's path", () => {
+  it("writes the produced model to the key's path", async () => {
     const { run, io } = context();
-    cachedSchemaModel(run, "baseline", "k2", true, () => MODEL);
+    await cachedSchemaModel(run, "baseline", "k2", true, () => Promise.resolve(MODEL));
     expect(io.readText(`${COMPOSE}/baseline/cache/k2/model.json`)).toBe(`${JSON.stringify(MODEL)}\n`);
   });
 
-  it("removes every other key's directory, keeping one model per side", () => {
+  it("removes every other key's directory, keeping one model per side", async () => {
     const { run, io } = context({ [`${COMPOSE}/desired/cache/old1/model.json`]: "{}", [`${COMPOSE}/desired/cache/old2/model.json`]: "{}" });
-    cachedSchemaModel(run, "desired", "new", false, () => MODEL);
+    await cachedSchemaModel(run, "desired", "new", false, () => Promise.resolve(MODEL));
     expect(io.exists(`${COMPOSE}/desired/cache/old1`)).toBe(false);
     expect(io.exists(`${COMPOSE}/desired/cache/old2`)).toBe(false);
     expect(io.readDir(`${COMPOSE}/desired/cache`)).toEqual(["new"]);

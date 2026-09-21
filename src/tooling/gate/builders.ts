@@ -147,12 +147,12 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
   };
 }
 
-/** `bun test` over `sources` (default `tests/workerd/`), `parallel` files at once (default 2), defaulting to the `full` tier: each spec starts a real Workers runtime. @public */
+/** `bun test` over `sources` (default `tests/workerd/`), `parallel` files at once (default 2), defaulting to the `full` tier: it needs the workerd runtime installed. @public */
 export function workerdStep(options: { hint?: string; parallel?: number } & SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["tests/workerd/"];
   return {
     label: "test:workerd",
-    // Defaults to `full` — a workerd start costs tens of seconds — but the caller may state it, so
+    // Defaults to `full` — it needs the workerd runtime installed — but the caller may state it, so
     // the step table can be read for which steps run in which mode without opening this file.
     ...tier(options.tier, "full"),
     tail: 120,

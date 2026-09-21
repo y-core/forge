@@ -1,6 +1,6 @@
 export { timeTravelInfo, timeTravelRestore } from "./bookmark";
 export { createDbCommands } from "./commands";
-export { confirmPrinter, resolveDbContext } from "./context";
+export { confirmPrinter, resolveDbContext, withDbRun } from "./context";
 export type {
   ApplyPlan,
   BackupManifest,

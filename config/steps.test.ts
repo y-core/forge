@@ -1,10 +1,15 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { declaredByName } from "../src/tooling/gate/checks/co-location";
 import { isBrowserSubpath } from "../src/tooling/gate/checks/exports";
 import { type GateMode, selectSteps } from "../src/tooling/gate/mod";
 import { BROWSER_ONLY, CO_LOCATION_EXEMPT } from "./exemptions";
 import { STEPS } from "./steps";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const labels = (mode: GateMode): string[] => {
   const selection = selectSteps(STEPS, { mode });
@@ -23,6 +28,23 @@ describe("the gate's step table", () => {
 
   it("selects without calling a probe, so what it selects never depends on the machine", () => {
     expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
+  });
+
+  it("runs the suite of the directory this file lives in, so an assertion here can redden the gate", () => {
+    const row = STEPS.find((step) => step.label === "test");
+    expect((row?.cmd ?? []).join(" ")).toContain("config/");
+  });
+
+  // The number is tuned against this machine's cores and against `db-compose.test.ts`, which already
+  // runs four cases at once; the script is how it is run by hand, and the two disagreeing is a trap.
+  it("runs the workerd row at the same file parallelism the package script does", () => {
+    const row = STEPS.find((step) => step.label === "test:workerd");
+    const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
+    const flag = (command: readonly string[] | string) =>
+      /--parallel=(\d+)/.exec(typeof command === "string" ? command : command.join(" "))?.[1] ?? null;
+
+    expect(flag(row?.cmd ?? [])).toBe("2");
+    expect(flag(scripts["test:workerd"] ?? "")).toBe(flag(row?.cmd ?? []));
   });
 });
 

@@ -14,7 +14,7 @@ export async function runStandbyReset(run: DbRunContext, options: StandbyResetOp
       `standby reset only builds a standby database, and --target names ${run.config.target.place} — pass --target standby[:<database>]`,
     );
   }
-  clearLocalState(run.io, run.home);
+  await clearLocalState(run.io, run.home);
 
   const migrated = await runMigrate(run, {
     dryRun: false,

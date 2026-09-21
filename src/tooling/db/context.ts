@@ -52,6 +52,21 @@ export async function resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, o
   return { config, home, io, host, json, yes: Boolean(flags.yes), style: json ? PLAIN : (ctx?.out ?? PLAIN), print };
 }
 
+/** The lifetime of one `forge db` verb: every handle it opened over local state is released before it returns, since an open one keeps a workerd process alive and the process would never exit. @public */
+export async function withDbRun<T>(
+  flags: SharedDbFlags,
+  ctx: CliContext | undefined,
+  overrides: DbContextOverrides,
+  body: (run: DbRunContext) => Promise<T>,
+): Promise<T> {
+  const run = await resolveDbContext(flags, ctx, overrides);
+  try {
+    return await body(run);
+  } finally {
+    await run.io.closeD1(null);
+  }
+}
+
 /** Where a confirmation prints: stderr under `--json`, so stdout stays the one JSON document, and stdout otherwise. @public */
 export function confirmPrinter(run: DbRunContext): (line: string) => void {
   return run.json ? (line) => run.io.log(line) : run.print;

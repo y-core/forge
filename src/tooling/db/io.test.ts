@@ -1,11 +1,11 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { realDbIo } from "./io";
-import type { Spawned } from "./types";
+import { realDbIo, wranglerUnreachable } from "./io";
+import type { Home, Spawned } from "./types";
 
 const roots: string[] = [];
 
@@ -139,5 +139,128 @@ describe("realDbIo() — ambient", () => {
   it("reads the clock rather than a fixed instant", () => {
     const now = realDbIo(tempRoot()).now();
     expect(Math.abs(now.getTime() - Date.now())).toBeLessThan(5000);
+  });
+});
+
+/** A binding that answers every statement with no rows, so the port's own behaviour is what is read. */
+const stubDb = () => ({ prepare: (sql: string) => sql, batch: (statements: string[]) => Promise.resolve(statements.map(() => ({ results: [] }))) });
+
+const opened: Record<string, unknown>[] = [];
+let opens = 0;
+let disposals = 0;
+let refuseOpen = false;
+let holdOpen: ((error: Error) => void) | null = null;
+
+// One registration for the file: `mock.module` re-registered later does not reach an import another
+// module already made.
+void mock.module("wrangler", () => ({ getPlatformProxy: platformProxy, unstable_splitSqlQuery: (sql: string) => [sql] }));
+
+function platformProxy(options: Record<string, unknown>) {
+  opened.push(options);
+  opens += 1;
+  if (refuseOpen) return Promise.reject(new Error("Unexpected token } in JSON at position 0"));
+  // Left pending until the test rejects it, so a sweep can reach an open that has not settled.
+  if (holdOpen !== null) return new Promise((_resolve, reject) => (holdOpen = reject));
+  return Promise.resolve({
+    env: { DB: stubDb() },
+    dispose: () => {
+      disposals += 1;
+      return Promise.resolve();
+    },
+  });
+}
+
+function localHome(root: string): Home {
+  return {
+    label: "local",
+    database: "app-db",
+    binding: "DB",
+    dir: root,
+    configPath: join(root, "wrangler.jsonc"),
+    persistTo: join(root, ".wrangler", "state"),
+    place: "local",
+    env: null,
+    synthesized: false,
+  };
+}
+
+describe("wranglerUnreachable()", () => {
+  // A broken install reported as an absent one sends the user to reinstall a package that is there.
+  it("keeps the module's own error text for a wrangler that would not load", () => {
+    const cause = new Error("Cannot find module '@cloudflare/workerd-linux-64'");
+    const error = wranglerUnreachable(localHome("/app"), cause);
+    expect(error.kind).toBe("external");
+    expect(error.message).toContain("wrangler would not load");
+    expect(error.message).toContain("Cannot find module '@cloudflare/workerd-linux-64'");
+    expect(error.cause).toBe(cause);
+  });
+
+  it("reserves the not-installed wording for a module that loaded without the export", () => {
+    const error = wranglerUnreachable(localHome("/app"), null);
+    expect(error.message).toBe(
+      "wrangler is not installed, or is too old to export getPlatformProxy — `forge db` reaches local (app-db) through it",
+    );
+    expect(error.cause).toBeUndefined();
+  });
+});
+
+describe("realDbIo() — the local D1 port", () => {
+  it("opens the binding over the home's own `v3` state, with remote bindings off", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    await io.d1(localHome(root), ["SELECT 1"]);
+    await io.closeD1(null);
+
+    // `remoteBindings` defaults to true, and a binding marked remote would open a network session
+    // from a handle that answers for local state alone.
+    expect(opened.at(-1)).toMatchObject({
+      configPath: join(root, "wrangler.jsonc"),
+      persist: { path: join(root, ".wrangler", "state", "v3") },
+      remoteBindings: false,
+      envFiles: [],
+    });
+  });
+
+  it("opens one handle for repeated calls against the same state, and none after it is closed", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    const before = opens;
+    await io.d1(localHome(root), ["SELECT 1"]);
+    await io.d1(localHome(root), ["SELECT 2"]);
+    expect(opens - before).toBe(1);
+
+    const closed = disposals;
+    await io.closeD1(localHome(root));
+    expect(disposals - closed).toBe(1);
+    await io.closeD1(localHome(root));
+    expect(disposals - closed).toBe(1);
+  });
+
+  // A failed open is a bad `wrangler.jsonc` away, and every caller releases from a `finally`: the
+  // sweep must reach the handles after it, and must not replace the error the run is failing on.
+  it("keeps no handle for an open that failed, and sweeps past it to release the ones that opened", async () => {
+    const failing = tempRoot();
+    const working = tempRoot();
+    const io = realDbIo(failing);
+
+    refuseOpen = true;
+    await expect(io.d1(localHome(failing), ["SELECT 1"])).rejects.toThrow("Unexpected token }");
+    refuseOpen = false;
+
+    // Nothing was kept, so this opens again rather than meeting the first failure a second time.
+    await io.d1(localHome(failing), ["SELECT 1"]);
+    const disposedBefore = disposals;
+    await io.d1(localHome(working), ["SELECT 1"]);
+
+    await expect(io.closeD1(null)).resolves.toBeUndefined();
+    expect(disposals - disposedBefore).toBe(2);
+  });
+
+  it("refuses a deployed home, which nothing reaches in process", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
+      "remote (app-db) is deployed, and nothing reaches a deployed database in process",
+    );
   });
 });

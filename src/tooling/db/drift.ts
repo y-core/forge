@@ -16,9 +16,9 @@ export function schemaDrift(recorded: readonly RecordedChecksum[] | null, invent
 }
 
 /** The same comparison for a verb holding neither read already. @internal */
-export function readDrift(io: DbIo, home: Home): SchemaDrift {
-  const rows = queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
-  const inventory = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
+export async function readDrift(io: DbIo, home: Home): Promise<SchemaDrift> {
+  const rows = await queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
+  const inventory = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
   return schemaDrift(rows === null ? null : toRecordedChecksums(rows), inventory);
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { argvHas, fakeDbIo, OK } from "../db.fixture";
+import { fakeDbIo } from "../db.fixture";
 import { appHome } from "../home";
 import type { DbConfig, FakeDbIo, Home } from "../types";
 import { ensureCompanionTables, FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL } from "./companions";
@@ -18,22 +18,16 @@ function dbConfig(): DbConfig {
 
 const home: Home = appHome(dbConfig());
 
-/** A fake that accepts the one batch `ensureCompanionTables` writes. */
-function database(): FakeDbIo {
-  const io = fakeDbIo();
-  io.rules.push({ match: (a) => argvHas(a, "execute", "--yes", "--command"), reply: OK });
-  return io;
-}
+const database = (): FakeDbIo => fakeDbIo();
 
-const written = (io: FakeDbIo) =>
-  io.calls.filter((call) => argvHas(call.slice(1), "execute", "--yes", "--command")).map((call) => call.at(-1) ?? "");
+const written = (io: FakeDbIo) => io.d1Calls.flatMap((call) => call.statements);
 
 describe("ensureCompanionTables()", () => {
-  it("creates both tables in one batch", () => {
+  it("creates both tables in one batch", async () => {
     const io = database();
-    ensureCompanionTables(io, home);
+    await ensureCompanionTables(io, home);
 
-    const [batch = ""] = written(io);
+    const batch = written(io).join("\n");
     expect(batch.includes("CREATE TABLE IF NOT EXISTS _forge_migrations")).toBe(true);
     expect(batch.includes("CREATE UNIQUE INDEX IF NOT EXISTS _forge_seed_history_source_name")).toBe(true);
     expect(batch.includes("CREATE TABLE IF NOT EXISTS _forge_seed_history")).toBe(true);
@@ -55,31 +49,22 @@ describe("ensureCompanionTables()", () => {
     );
   });
 
-  it("spawns once, with the two DDL constants and no read of any kind", () => {
+  it("reaches the database once, with the two DDL constants and no read of any kind", async () => {
     const io = database();
-    ensureCompanionTables(io, home);
+    await ensureCompanionTables(io, home);
 
-    expect(io.calls.length).toBe(1);
-    expect(io.calls[0]).toEqual([
-      "wrangler",
-      "d1",
-      "execute",
-      "app-db",
-      "-c",
-      "/app/wrangler.jsonc",
-      "--local",
-      "--persist-to",
-      "/app/.wrangler/state",
-      "--yes",
-      "--command",
-      [FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL].join("\n"),
-    ]);
+    expect(io.calls).toEqual([]);
+    expect(io.d1Calls.length).toBe(1);
+    expect(io.d1Calls[0]?.persistTo).toBe("/app/.wrangler/state/v3");
+    const declared = [FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL].join("\n");
+    expect(written(io).length).toBe(4);
+    expect(written(io).every((statement) => declared.includes(statement))).toBe(true);
   });
 
-  it("writes no cleanup of any older forge's rows, because pre-1.0 ships none", () => {
+  it("writes no cleanup of any older forge's rows, because pre-1.0 ships none", async () => {
     const io = database();
-    ensureCompanionTables(io, home);
+    await ensureCompanionTables(io, home);
 
-    expect((written(io)[0] ?? "").includes("DELETE")).toBe(false);
+    expect(written(io).join("\n").includes("DELETE")).toBe(false);
   });
 });

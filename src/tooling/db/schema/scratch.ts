@@ -6,7 +6,7 @@ import { sha256 } from "../digest";
 import { clearLocalState, synthesizeHome } from "../home";
 import { applyMigrations } from "../migrate/applier";
 import type { DbConfig, DbIo, DbRunContext, Home, Migration } from "../types";
-import { executeFile, wranglerVersion } from "../wrangler";
+import { executeFile } from "../wrangler";
 import { readSchemaModel } from "./introspect";
 import { isSchemaModel } from "./snapshot";
 import { SCHEMA_MODEL_VERSION } from "./types";
@@ -22,22 +22,22 @@ function scratchDir(config: DbConfig, side: ScratchSide): string {
 }
 
 /** A fresh, empty scratch database for one side. @internal */
-export function composeScratchHome(run: DbRunContext, side: ScratchSide): Home {
+export async function composeScratchHome(run: DbRunContext, side: ScratchSide): Promise<Home> {
   const config = localScratchConfig(run.config);
   const home = synthesizeHome(config, run.io, {
     label: `scratch:compose-${side}`,
     database: `${run.config.entry.databaseName}-compose-${side}`,
     dir: scratchDir(config, side),
   });
-  clearLocalState(run.io, home);
+  await clearLocalState(run.io, home);
   return home;
 }
 
 /** Replays the merged migrations into an empty scratch database exactly as an apply would, naming the file that fails. @internal */
-export function replayBaseline(run: DbRunContext, migrations: readonly Migration[]): Home {
-  const home = composeScratchHome(run, "baseline");
+export async function replayBaseline(run: DbRunContext, migrations: readonly Migration[]): Promise<Home> {
+  const home = await composeScratchHome(run, "baseline");
   try {
-    applyMigrations(run, home, migrations, { label: join("compose", "baseline"), record: false });
+    await applyMigrations(run, home, migrations, { label: join("compose", "baseline"), record: false });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new CliError("invalid-args", `the baseline replay failed — a migration on disk does not apply to an empty database:\n${detail}`);
@@ -46,17 +46,17 @@ export function replayBaseline(run: DbRunContext, migrations: readonly Migration
 }
 
 /** Loads every declared schema into one empty scratch database in the order `config/db.ts` names them, naming the one that does not execute. @internal */
-export function loadDesired(run: DbRunContext, desired: readonly DesiredState[], side: ScratchSide = "desired"): Home {
+export async function loadDesired(run: DbRunContext, desired: readonly DesiredState[], side: ScratchSide = "desired"): Promise<Home> {
   const dir = scratchDir(localScratchConfig(run.config), side);
   const filesDir = join(dir, "files");
   run.io.remove(filesDir);
   run.io.mkdir(filesDir);
-  const home = composeScratchHome(run, side);
+  const home = await composeScratchHome(run, side);
   for (const state of desired) {
     const file = join(filesDir, `${state.source.replace(/[^A-Za-z0-9_-]+/g, "_")}.sql`);
     run.io.writeText(file, state.text);
     try {
-      executeFile(run.io, home, file);
+      await executeFile(run.io, home, file);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new CliError("invalid-args", `${state.path} does not execute against an empty database:\n${detail}`);
@@ -81,7 +81,13 @@ export function scratchModelKey(wrangler: string, inputsDigest: string): string 
 }
 
 /** A side's model from its cache when the key matches, else from `produce`, which is then cached; one model is kept per side. @internal */
-export function cachedSchemaModel(run: DbRunContext, side: ScratchSide, key: string, cache: boolean, produce: () => SchemaModel): SchemaModel {
+export async function cachedSchemaModel(
+  run: DbRunContext,
+  side: ScratchSide,
+  key: string,
+  cache: boolean,
+  produce: () => Promise<SchemaModel>,
+): Promise<SchemaModel> {
   const cacheDir = join(scratchDir(localScratchConfig(run.config), side), "cache");
   const path = join(cacheDir, key, "model.json");
   if (cache && run.io.exists(path)) {
@@ -92,7 +98,7 @@ export function cachedSchemaModel(run: DbRunContext, side: ScratchSide, key: str
       // An unreadable cache entry is rebuilt below and overwritten.
     }
   }
-  const model = produce();
+  const model = await produce();
   if (run.io.exists(cacheDir)) for (const entry of run.io.readDir(cacheDir)) if (entry !== key) run.io.remove(join(cacheDir, entry));
   run.io.mkdir(join(cacheDir, key));
   run.io.writeText(path, `${JSON.stringify(model)}\n`);
@@ -105,12 +111,24 @@ const versions = new WeakMap<DbRunContext, string>();
 export function scratchWranglerVersion(run: DbRunContext): string {
   const known = versions.get(run);
   if (known !== undefined) return known;
-  const version = wranglerVersion(run.io, run.home);
+  // The imported wrangler, not a spawned one: the model is built in process, and `node_modules/.bin`
+  // puts the app's CLI ahead of forge's, so a spawn would stamp the key with a version that built nothing.
+  const version = importedWranglerVersion(run.io);
   versions.set(run, version);
   return version;
 }
 
 /** Reads a scratch home's model, with forge's own tables filtered out. @internal */
-export function readScratchModel(run: DbRunContext, home: Home): SchemaModel {
+export function readScratchModel(run: DbRunContext, home: Home): Promise<SchemaModel> {
   return readSchemaModel(run.io, home);
+}
+
+/** The version of the wrangler this process imports, which is the one that builds every model. */
+function importedWranglerVersion(io: DbIo): string {
+  try {
+    const manifest = JSON.parse(io.readText(fileURLToPath(import.meta.resolve("wrangler/package.json")))) as { version?: unknown };
+    return typeof manifest.version === "string" ? manifest.version : "unknown";
+  } catch {
+    return "unknown";
+  }
 }

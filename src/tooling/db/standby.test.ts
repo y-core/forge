@@ -1,14 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
-import { INVENTORY_SELECT } from "../../storage/db/schema";
 import type { WranglerConfig } from "../cf/types";
 import { PLAIN } from "../term/color";
-import { argvHas, composed, fakeDbIo, jsonRows, OK } from "./db.fixture";
+import { composed, fakeDbIo } from "./db.fixture";
 import { resolveHome } from "./home";
 import { RECORDED_CHECKSUM_SELECT } from "./migrate/checksum";
 import { migrationChecksum } from "./migrate/files";
 import { runStandbyReset } from "./standby";
-import type { DbConfig, DbRunContext, FakeDbIo, Place, Spawned } from "./types";
+import type { DbConfig, DbRunContext, FakeDbIo, Place } from "./types";
 
 const STATE = "/app/.forge/standby/app-db-standby/.wrangler/state/v3/d1/miniflare-D1DatabaseObject/db.sqlite";
 const INIT = composed("CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;");
@@ -41,27 +40,22 @@ function context(place: Place = "standby"): { run: DbRunContext; io: FakeDbIo } 
   return { run, io };
 }
 
-const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table: _forge_migrations" };
-const command = (a: readonly string[]) => (argvHas(a, "execute", "--json", "--command") ? (a.at(-1) ?? "") : "");
+const noTable = () => {
+  throw new Error("no such table: _forge_migrations");
+};
 
 /** The history read answers as the database would: nothing until a migration's body and record have loaded, that migration afterwards. */
 function wire(io: FakeDbIo): void {
-  const applied = () => io.calls.some((call) => (call.at(-1) ?? "").includes("/scratch/migrate/"));
-  io.rules.push(
-    {
-      match: (a) => command(a) === RECORDED_CHECKSUM_SELECT,
-      reply: () => (applied() ? jsonRows([{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: null }]) : NO_TABLE),
-    },
-    { match: (a) => command(a) === INVENTORY_SELECT, reply: jsonRows([]) },
-    { match: (a) => command(a) !== "", reply: jsonRows([]) },
-    { match: (a) => argvHas(a, "execute", "--yes", "--file"), reply: OK },
-    { match: (a) => argvHas(a, "execute", "--yes", "--command"), reply: OK },
-  );
+  const applied = () => staged(io).some((file) => file.startsWith("migrate/"));
+  io.d1Rules.push({
+    match: (statement) => statement === RECORDED_CHECKSUM_SELECT,
+    reply: () => (applied() ? [{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: null }] : (noTable() as never)),
+  });
 }
 
-/** What each `--file` load was aimed at, in order, so the wipe-migrate-seed sequence is readable. */
+/** What each file load was aimed at, in order, so the wipe-migrate-seed sequence is readable. */
 function staged(io: FakeDbIo): string[] {
-  return io.calls.filter((call) => call.includes("--file")).map((call) => (call.at(-1) ?? "").replace("/app/.forge/scratch/", ""));
+  return io.d1Calls.flatMap((call) => (call.source === null ? [] : [call.source.replace("/app/.forge/scratch/", "")]));
 }
 
 const OPTIONS = { seed: true, lint: true };
@@ -74,7 +68,7 @@ describe("runStandbyReset()", () => {
     await expect(runStandbyReset(run, OPTIONS)).rejects.toThrow(
       "standby reset only builds a standby database, and --target names local — pass --target standby[:<database>]",
     );
-    expect(io.calls).toEqual([]);
+    expect(io.d1Calls).toEqual([]);
   });
 
   it("refuses a deployed target too, naming the place rather than the generated home", async () => {
@@ -107,12 +101,14 @@ describe("runStandbyReset()", () => {
 
   it("runs no seed when the migrations fail", async () => {
     const { run, io } = context();
-    io.rules.push(
-      { match: (a) => command(a) === RECORDED_CHECKSUM_SELECT, reply: NO_TABLE },
-      { match: (a) => command(a) === INVENTORY_SELECT, reply: jsonRows([]) },
-      { match: (a) => command(a) !== "", reply: jsonRows([]) },
-      { match: (a) => argvHas(a, "execute", "--yes", "--file"), reply: { code: 1, stdout: "", stderr: "SQLITE_ERROR" } },
-      { match: (a) => argvHas(a, "execute", "--yes", "--command"), reply: OK },
+    io.d1Rules.push(
+      { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: () => noTable() as never },
+      {
+        match: (statement) => statement.includes("CREATE TABLE users"),
+        reply: () => {
+          throw new Error("SQLITE_ERROR");
+        },
+      },
     );
 
     await expect(runStandbyReset(run, OPTIONS)).rejects.toThrow("SQLITE_ERROR");

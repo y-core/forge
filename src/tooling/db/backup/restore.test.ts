@@ -5,19 +5,7 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
-import {
-  argvHas,
-  fakeDbIo,
-  jsonRows,
-  keyProbeAsked,
-  keyProbeReply,
-  minimalWranglerConfig,
-  OK,
-  routedReply,
-  tableInfoAsked,
-  tableSqlAsked,
-  tableSqlReply,
-} from "../db.fixture";
+import { fakeDbIo, keyProbeAsked, keyProbeReply, minimalWranglerConfig, tableInfoAsked, tableSqlAsked, tableSqlReply } from "../db.fixture";
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { migrationsDigest } from "../migrate/files";
@@ -95,13 +83,13 @@ function fakeDatabase(seed: Record<string, string>, rows: number | Readonly<Reco
     if (count !== null) return [{ rows: typeof rows === "number" ? rows : (rows[count[1] ?? ""] ?? 0) }];
     return [];
   };
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
+  io.d1Rules.push({ match: () => true, reply: answer });
   return io;
 }
 
-function refusal(run: () => unknown): { kind: string; message: string } {
+async function refusal(run: () => unknown): Promise<{ kind: string; message: string }> {
   try {
-    run();
+    await run();
   } catch (error) {
     if (error instanceof CliError) return { kind: error.kind, message: error.message };
     throw error;
@@ -123,7 +111,7 @@ describe("readBackupManifest", () => {
     const artifact = join(root, "nowhere");
     const run = await context(root, fakeDbIo());
 
-    expect(refusal(() => readBackupManifest(run, artifact))).toEqual({
+    expect(await refusal(() => readBackupManifest(run, artifact))).toEqual({
       kind: "invalid-args",
       message: `${join(artifact, "manifest.json")} does not exist — --artifact takes the directory, not a file inside it`,
     });
@@ -133,7 +121,7 @@ describe("readBackupManifest", () => {
     const root = appRoot();
     const artifact = join(root, "artifact");
     const run = await context(root, fakeDbIo({ [join(artifact, "manifest.json")]: "{ this is not json" }));
-    const thrown = refusal(() => readBackupManifest(run, artifact));
+    const thrown = await refusal(() => readBackupManifest(run, artifact));
 
     expect(thrown.kind).toBe("invalid-args");
     expect(thrown.message.startsWith(`${join(artifact, "manifest.json")} is not JSON: `)).toBe(true);
@@ -145,7 +133,7 @@ describe("readBackupManifest", () => {
     const io = fakeDbIo({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { formatVersion: 3 })) });
     const run = await context(root, io);
 
-    expect(refusal(() => readBackupManifest(run, artifact)).message).toBe(
+    expect((await refusal(() => readBackupManifest(run, artifact))).message).toBe(
       `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
     );
   });
@@ -161,7 +149,7 @@ describe("readBackupManifest", () => {
     });
     const run = await context(root, io);
 
-    expect(refusal(() => readBackupManifest(run, artifact))).toEqual({
+    expect(await refusal(() => readBackupManifest(run, artifact))).toEqual({
       kind: "invalid-args",
       message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql\n  schema.digest is not a 64-character hex SHA-256`,
     });
@@ -169,14 +157,15 @@ describe("readBackupManifest", () => {
 });
 
 describe("prepareRestore + executeRestore — the pair the CLI confirms between", () => {
-  const runRestore = (run: DbRunContext, options: RestoreOptions): RestoreOutcome => executeRestore(run, prepareRestore(run, options));
+  const runRestore = async (run: DbRunContext, options: RestoreOptions): Promise<RestoreOutcome> =>
+    executeRestore(run, await prepareRestore(run, options));
 
   it("refuses a deployed database before reading the artifact", async () => {
     const root = appRoot();
     const io = fakeDbIo();
     const run = await context(root, io, { target: "remote" });
 
-    expect(refusal(() => runRestore(run, { artifact: join(root, "artifact"), route: "full" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact: join(root, "artifact"), route: "full" }))).toEqual({
       kind: "invalid-args",
       message:
         "restore is refused for remote — return a deployed database to a point in time with `forge db bookmark restore`, which is D1's own undo",
@@ -190,7 +179,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const io = fakeDbIo({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("other-db")), [join(artifact, "schema.sql")]: SCHEMA_SQL });
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "full", expect: "app-db" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "full", expect: "app-db" }))).toEqual({
       kind: "invalid-args",
       message: "--expect app-db does not match this artifact, which was taken from other-db",
     });
@@ -202,7 +191,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const io = fakeDbIo({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db", { verified: [] })) });
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
       kind: "invalid-args",
       message: `data.sql is missing from ${artifact}, and route migrations loads it`,
     });
@@ -221,7 +210,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     });
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
       kind: "invalid-args",
       message: `data.sql is missing from ${artifact}, and route migrations loads it`,
     });
@@ -241,7 +230,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
       kind: "invalid-args",
       message: "app-db already holds data (tasks 2, _forge_migrations 2) — run `forge db reset` first; a restore adds rows and never removes them",
     });
@@ -261,7 +250,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
+    expect((await refusal(() => runRestore(run, { artifact, route: "migrations" }))).message).toBe(
       "app-db already holds data (_forge_migrations 2) — run `forge db reset` first; a restore adds rows and never removes them",
     );
     expect(io.calls.filter((call) => call.includes("--file"))).toEqual([]);
@@ -287,7 +276,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
       kind: "invalid-args",
       message: `${artifact} was proven by route migrations with 2 divergence(s) — its own run refused it; take the backup again`,
     });
@@ -320,14 +309,10 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       // The restored target carries the companions the migrations route created, which the digest ignores.
       INVENTORY,
     );
-    io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
-    io.rules.unshift({
-      match: (args) => argvHas(args, "execute", "--command") && args.at(-1) === RECORDED_CHECKSUM_SELECT,
-      reply: jsonRows([{ name: "0001_init" }]),
-    });
+    io.d1Rules.unshift({ match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: [{ name: "0001_init" }] });
     const run = await context(root, io);
 
-    expect(runRestore(run, { artifact, route: "migrations" })).toEqual({
+    expect(await runRestore(run, { artifact, route: "migrations" })).toEqual({
       database: "app-db",
       route: "migrations",
       artifact,
@@ -356,7 +341,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     // The restore fails its digest checks against this hand-built manifest; what matters is which
     // file wrangler was pointed at, and it is the artifact's own.
     try {
-      runRestore(run, { artifact, route: "migrations" });
+      await runRestore(run, { artifact, route: "migrations" });
     } catch {}
 
     expect(io.files.get(join(root, ".forge", "scratch", "restore", "0001_init.sql"))).toBe(taken);
@@ -378,7 +363,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const run = await context(root, io);
 
     try {
-      runRestore(run, { artifact, route: "migrations" });
+      await runRestore(run, { artifact, route: "migrations" });
     } catch {}
 
     const staged = io.files.get(join(root, ".forge", "scratch", "restore", "0001_init.sql")) ?? "";
@@ -398,17 +383,18 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       },
       0,
     );
-    io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
     const run = await context(root, io);
 
     try {
-      runRestore(run, { artifact, route: "migrations" });
+      await runRestore(run, { artifact, route: "migrations" });
     } catch {
       // The manifest is a fixture, not a real artifact's.
     }
 
-    const created = io.calls.findIndex((call) => call.some((arg) => arg.includes("CREATE TABLE IF NOT EXISTS _forge_migrations")));
-    const loaded = io.calls.findIndex((call) => call.includes("--file") && call.includes(join(artifact, "data.sql")));
+    const created = io.d1Calls.findIndex((call) =>
+      call.statements.some((statement) => statement.includes("CREATE TABLE IF NOT EXISTS _forge_migrations")),
+    );
+    const loaded = io.d1Calls.findIndex((call) => call.source === join(artifact, "data.sql"));
     expect(created).toBeGreaterThan(-1);
     expect(loaded).toBeGreaterThan(created);
   });
@@ -427,7 +413,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
+    expect((await refusal(() => runRestore(run, { artifact, route: "migrations" }))).message).toBe(
       `${join(artifact, "schema.sql")} does not hash to what the manifest declares for it — this artifact is damaged`,
     );
     expect(io.calls).toEqual([]);
@@ -439,7 +425,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const io = fakeDatabase({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")), [join(artifact, "data.sql")]: DATA_SQL }, 0);
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
+    expect((await refusal(() => runRestore(run, { artifact, route: "migrations" }))).message).toBe(
       `${join(artifact, "schema.sql")} is declared in the manifest and missing from the artifact`,
     );
     expect(io.calls).toEqual([]);
@@ -461,7 +447,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
+    expect((await refusal(() => runRestore(run, { artifact, route: "migrations" }))).message).toBe(
       "data.sql is not what a data-only artifact must be:\n  line 2: sqlite_sequence is the engine's and is restored only by schema.sql, which clears it first — an insert here would duplicate a row in a table with no UNIQUE index on name",
     );
     expect(io.calls).toEqual([]);
@@ -473,7 +459,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const io = fakeDbIo({ [join(artifact, "manifest.json")]: JSON.stringify({ ...manifest("app-db"), label: "edited after the fact" }) });
     const run = await context(root, io);
 
-    expect(refusal(() => readBackupManifest(run, artifact)).message).toBe(
+    expect((await refusal(() => readBackupManifest(run, artifact))).message).toBe(
       `${join(artifact, "manifest.json")} does not hash to the selfDigest it carries — it has been truncated, swapped or corrupted since it was written. The digest detects damage and not tampering: anyone who edits a manifest can recompute it.`,
     );
   });
@@ -495,7 +481,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "migrations" }))).toEqual({
       kind: "invalid-args",
       message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  migrations[0].name "../../../migrations/0001_init" is not a migration name — <NNNN>_<name>, with no path separator`,
     });
@@ -517,7 +503,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "migrations" })).message).toBe(
+    expect((await refusal(() => runRestore(run, { artifact, route: "migrations" }))).message).toBe(
       `${join(artifact, "migrations", "0001_init.sql")} does not hash to what the manifest declares for it`,
     );
   });
@@ -528,7 +514,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
     const io = fakeDatabase({ [join(artifact, "manifest.json")]: JSON.stringify(manifest("app-db")), [join(artifact, "data.sql")]: DATA_SQL }, 0);
     const run = await context(root, io);
 
-    expect(refusal(() => runRestore(run, { artifact, route: "full" }))).toEqual({
+    expect(await refusal(() => runRestore(run, { artifact, route: "full" }))).toEqual({
       kind: "invalid-args",
       message: `schema.sql is missing from ${artifact}, and route full loads it`,
     });
@@ -556,33 +542,26 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       [join(artifact, "migrations", "0001_init.sql")]: taken,
     });
     // The target is empty until both files have been loaded, which is what route full demands of it.
-    let loaded = false;
-    io.rules.push({
-      match: (args) => argvHas(args, "execute", "--file"),
-      reply: () => {
-        loaded = true;
-        return OK;
-      },
-    });
+    const loadedFiles = () => io.d1Calls.filter((call) => call.source !== null).length;
     const answer = (statement: string): Record<string, unknown>[] => {
       if (tableInfoAsked(statement) !== null) return [];
       const ddl = tableSqlAsked(statement);
       if (ddl !== null) return tableSqlReply(restored.find((object) => object.name === ddl)?.sql);
-      if (statement === RECORDED_CHECKSUM_SELECT) return loaded ? [{ name: "0001_init" }] : [];
-      if (statement.includes("sqlite_master")) return loaded ? restored : [];
+      if (statement === RECORDED_CHECKSUM_SELECT) return loadedFiles() > 0 ? [{ name: "0001_init" }] : [];
+      if (statement.includes("sqlite_master")) return loadedFiles() > 0 ? restored : [];
       const probe = keyProbeAsked(statement);
       return probe === null ? [] : keyProbeReply(probe.asks, [], probe.column);
     };
-    io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
+    io.d1Rules.push({ match: () => true, reply: answer });
     const run = await context(root, io);
 
-    expect(runRestore(run, { artifact, route: "full" })).toEqual({
+    expect(await runRestore(run, { artifact, route: "full" })).toEqual({
       database: "app-db",
       route: "full",
       artifact,
       tables: [{ name: "tasks", rows: 0, matches: true }],
     });
-    expect(io.calls.filter((call) => call.includes("--file")).map((call) => call[call.length - 1])).toEqual([
+    expect(io.d1Calls.flatMap((call) => (call.source === null ? [] : [call.source]))).toEqual([
       join(artifact, "schema.sql"),
       join(artifact, "data.sql"),
     ]);

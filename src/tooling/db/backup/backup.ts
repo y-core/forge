@@ -57,49 +57,55 @@ function tableInserts(source: SourceTable): string[] {
   }
 }
 
-function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute, name: string): void {
+async function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute, name: string): Promise<void> {
   if (route === "full") {
     // D1 accepts `PRAGMA defer_foreign_keys=TRUE` without honouring it, so the order below is what
     // carries the foreign keys instead.
-    executeFile(run.io, scratch, join(directory, "schema.sql"));
-    executeFile(run.io, scratch, join(directory, "data.sql"));
+    await executeFile(run.io, scratch, join(directory, "schema.sql"));
+    await executeFile(run.io, scratch, join(directory, "data.sql"));
     return;
   }
   // `record: false`: `data.sql` carries the artifact's own `_forge_migrations` rows, with their
   // original ids, `applied_at` and `fingerprint`, so recording here would collide with every one.
-  applyMigrations(run, scratch, discoverMigrations(readMigrationFiles(run.io, join(directory, "migrations"))), {
+  await applyMigrations(run, scratch, discoverMigrations(readMigrationFiles(run.io, join(directory, "migrations"))), {
     label: `restore-${name}`,
     record: false,
   });
   // The migrations build the app's tables and no companion: `data.sql` carries the companion rows,
   // so the tables holding them have to exist before it is loaded.
-  ensureCompanionTables(run.io, scratch);
-  executeFile(run.io, scratch, join(directory, "data.sql"));
+  await ensureCompanionTables(run.io, scratch);
+  await executeFile(run.io, scratch, join(directory, "data.sql"));
 }
 
 /** Restores one artifact into a throwaway database of its own, so a claim can be tried against real rows without touching anything live. @internal */
-export function restoreScratch(run: DbRunContext, directory: string, name: string, route: RestoreRoute): Home {
+export async function restoreScratch(run: DbRunContext, directory: string, name: string, route: RestoreRoute): Promise<Home> {
   // Route `migrations` replays the artifact's own embedded copy, which is the property being proven.
   // The scratch is local whatever the run's target: a remote artifact is proven here, never there.
   const scratch = scratchHome(localScratchConfig(run.config), run.io, name, `${run.home.database}-${name}`);
   // A restore into a non-empty target is refused by design, and nothing in this tool removes a row.
-  clearLocalState(run.io, scratch);
-  restoreInto(run, scratch, directory, route, name);
+  await clearLocalState(run.io, scratch);
+  await restoreInto(run, scratch, directory, route, name);
   return scratch;
 }
 
-function proveRoute(run: DbRunContext, directory: string, route: RestoreRoute, sources: readonly SourceTable[], appDigest: string): number {
-  const scratch = restoreScratch(run, directory, `verify-${route}`, route);
+async function proveRoute(
+  run: DbRunContext,
+  directory: string,
+  route: RestoreRoute,
+  sources: readonly SourceTable[],
+  appDigest: string,
+): Promise<number> {
+  const scratch = await restoreScratch(run, directory, `verify-${route}`, route);
 
   let divergent = 0;
   run.io.log(`  route ${route}:`);
-  const restored = sha256(appSchemaDigestInput(toSchemaObjects(queryRows(run.io, scratch, INVENTORY_SELECT))));
+  const restored = sha256(appSchemaDigestInput(toSchemaObjects(await queryRows(run.io, scratch, INVENTORY_SELECT))));
   if (restored !== appDigest) {
     divergent += 1;
     run.io.log(`    ✗ schema — the app objects digest ${appDigest} at the source and ${restored} once restored`);
   }
   for (const source of sources) {
-    const comparison = compareTable(run.io, source, scratch);
+    const comparison = await compareTable(run.io, source, scratch);
     divergent += comparison.divergent;
     run.io.log(
       `    ${comparison.divergent === 0 ? "✓" : "✗"} ${source.table.name} — ${comparison.sourceRows} rows, ${comparison.divergent} divergent`,
@@ -107,38 +113,38 @@ function proveRoute(run: DbRunContext, directory: string, route: RestoreRoute, s
     for (const divergence of comparison.divergences) run.io.log(`        ${formatDivergence(divergence, 60)}`);
     if (comparison.truncated) run.io.log(`        … ${comparison.divergent - comparison.divergences.length} further divergences not shown`);
   }
-  clearLocalState(run.io, scratch);
+  await clearLocalState(run.io, scratch);
   return divergent;
 }
 
 /** Writes a verified backup artifact directory, proving by both restore routes unless `verify` is false. @public */
-export function runBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
+export async function runBackup(run: DbRunContext, options: BackupOptions): Promise<BackupOutcome> {
   // Taken against the app's own home, never a scratch one, because `lock.ts` keys on `home.dir`; it
   // is a file under the checkout, so a deployed database is excluded by nothing and takes none.
   const release = isRemotePlace(run.config.target.place) ? () => {} : acquireApplyLock(run.io, run.home, "backup");
   try {
-    return takeBackup(run, options);
+    return await takeBackup(run, options);
   } finally {
     release();
   }
 }
 
-function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
+async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<BackupOutcome> {
   const { io, home, config } = run;
 
-  const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
+  const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
   const inventory = checkInventory(objects);
   if (inventory.length > 0) {
     throw new CliError("invalid-args", `${home.database} is not a database this tool can back up:\n  ${inventory.join("\n  ")}`);
   }
 
-  const appTables = discoverAppTables(io, home);
+  const appTables = await discoverAppTables(io, home);
   const companionNames = objects
     .filter((object) => object.type === "table" && COMPANION_TABLES.includes(object.name))
     .map((object) => object.name)
     .sort();
 
-  const recorded = queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
+  const recorded = await queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
   const onDisk = readMigrations(run);
   // Both reads are already in hand, so the state costs nothing. An artifact taken from a drifted
   // database is still worth having — what it may not do is pass its own schema off as the certified one.
@@ -155,8 +161,10 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
     migrationsDigest: migrationsDigest(onDisk),
   };
 
-  const sources = appTables.map((table) => readWholeTable(io, home, table));
-  const companions = describeTables(io, home, companionNames).map((table) => readWholeTable(io, home, table));
+  const sources: SourceTable[] = [];
+  for (const table of appTables) sources.push(await readWholeTable(io, home, table));
+  const companions: SourceTable[] = [];
+  for (const table of await describeTables(io, home, companionNames)) companions.push(await readWholeTable(io, home, table));
   io.log(`read ✓ ${sources.reduce((total, source) => total + source.rows.length, 0)} rows across ${sources.length} tables`);
 
   const directory = join(resolveBackupsDir(run, options.out), formatBackupDirectory(home.database, io.now()));
@@ -167,7 +175,7 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
   // Exported to a temporary name and renamed, like every other file here: route `full` loads this one,
   // so a torn export must not be left under the name the manifest declares.
   const schemaPath = join(directory, "schema.sql");
-  exportSql(io, home, `${schemaPath}.tmp`, ["--no-data"]);
+  await exportSql(io, home, `${schemaPath}.tmp`, ["--no-data"]);
   const schemaSql = io.readText(`${schemaPath}.tmp`);
   io.rename(`${schemaPath}.tmp`, schemaPath);
 
@@ -197,11 +205,14 @@ function takeBackup(run: DbRunContext, options: BackupOptions): BackupOutcome {
 
   const routes: readonly RestoreRoute[] = ["full", "migrations"];
   const proved = [...sources, ...companions];
-  const verified = options.verify ? routes.map((route) => ({ route, divergent: proveRoute(run, directory, route, proved, appDigest) })) : [];
+  const verified: { route: RestoreRoute; divergent: number }[] = [];
+  if (options.verify) {
+    for (const route of routes) verified.push({ route, divergent: await proveRoute(run, directory, route, proved, appDigest) });
+  }
 
   // Counted after the reads and after the proof, which is the widest window a concurrent write can
   // be caught in: the manifest records the rows the artifact holds, and this says they are all of them.
-  const counted = queryBatches(
+  const counted = await queryBatches(
     io,
     home,
     proved.map((source) => rowCountSelect(source.table.name)),

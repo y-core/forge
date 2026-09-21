@@ -33,6 +33,6 @@ export const FORGE_SEED_HISTORY_DDL = [
 export const COMPANION_TABLES = ["_forge_migrations", "_forge_seed_history"];
 
 /** Creates the companion tables, so every path after it can read and write them without checking. @internal */
-export function ensureCompanionTables(io: DbIo, home: Home): void {
-  executeSql(io, home, [FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL].join("\n"));
+export async function ensureCompanionTables(io: DbIo, home: Home): Promise<void> {
+  await executeSql(io, home, [FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL].join("\n"));
 }

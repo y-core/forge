@@ -9,6 +9,7 @@ function home(over: Partial<Home> = {}): Home {
   return {
     label: "remote",
     database: "app-db",
+    binding: "DB",
     dir: "/app",
     configPath: "/app/wrangler.jsonc",
     persistTo: null,

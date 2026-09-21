@@ -136,9 +136,9 @@ export function assembleSchemaModel(rows: {
 }
 
 /** Reads a home's schema into a model: every read in one wrangler spawn, however many objects there are. @internal */
-export function readSchemaModel(io: DbIo, home: Home): SchemaModel {
+export async function readSchemaModel(io: DbIo, home: Home): Promise<SchemaModel> {
   const selects = schemaModelSelects();
-  const [inventory = [], columns = [], indexList = [], indexColumns = [], foreignKeys = []] = queryBatches(io, home, [
+  const [inventory = [], columns = [], indexList = [], indexColumns = [], foreignKeys = []] = await queryBatches(io, home, [
     selects.inventory,
     selects.columns,
     selects.indexList,

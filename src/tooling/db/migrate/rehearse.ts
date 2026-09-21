@@ -26,19 +26,19 @@ function selectArtifact(run: DbRunContext, artifact: string | undefined): string
 }
 
 /** Which pending migration wrangler stopped on: the first one the rehearsal did not record. */
-function failedMigration(run: DbRunContext, home: Home, pending: readonly Migration[]): string | null {
-  const recorded = toRecordedChecksums(queryRowsIfTable(run.io, home, RECORDED_CHECKSUM_SELECT) ?? []);
+async function failedMigration(run: DbRunContext, home: Home, pending: readonly Migration[]): Promise<string | null> {
+  const recorded = toRecordedChecksums((await queryRowsIfTable(run.io, home, RECORDED_CHECKSUM_SELECT)) ?? []);
   const applied = new Set(recorded.map((record) => record.appliedName));
   return pending.find((migration) => !applied.has(migration.name))?.name ?? null;
 }
 
 /** Applies the pending migrations to a database restored from a backup artifact — the one check that runs them over rows — and reports. @internal */
-export function rehearseMigrations(
+export async function rehearseMigrations(
   run: DbRunContext,
   pending: readonly Migration[],
   artifact: string | undefined,
   applied: readonly string[],
-): RehearsalOutcome {
+): Promise<RehearsalOutcome> {
   if (isRemotePlace(run.config.target.place)) {
     throw new CliError(
       "invalid-args",
@@ -64,17 +64,17 @@ export function rehearseMigrations(
   }
   const rows = manifest.tables.reduce((total, table) => total + table.rows, 0);
 
-  const scratch = restoreScratch(run, directory, "rehearse", "migrations");
+  const scratch = await restoreScratch(run, directory, "rehearse", "migrations");
   try {
-    applyMigrations(run, scratch, pending, { label: "rehearse-apply", record: true });
+    await applyMigrations(run, scratch, pending, { label: "rehearse-apply", record: true });
   } catch (error) {
-    const failed = failedMigration(run, scratch, pending);
+    const failed = await failedMigration(run, scratch, pending);
     const detail = error instanceof Error ? error.message : String(error);
     throw new CliError(
       "invalid-args",
       `the rehearsal failed${failed === null ? "" : ` on ${failed}`} — these migrations do not apply to the ${rows} row(s) ${directory} holds, and the target is unchanged:\n${detail}`,
     );
   }
-  clearLocalState(run.io, scratch);
+  await clearLocalState(run.io, scratch);
   return { artifact: directory, rows, applied: pending.map((migration) => migration.name) };
 }

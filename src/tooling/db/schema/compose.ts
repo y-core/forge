@@ -56,9 +56,9 @@ export function readSchemaInputs(run: DbRunContext): SchemaInputs {
 }
 
 /** The replayed model of every migration on disk, from the cache when the migrations have not changed. @internal */
-export function baselineSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): SchemaModel {
+export function baselineSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): Promise<SchemaModel> {
   const key = scratchModelKey(scratchWranglerVersion(run), migrationsDigest(inputs.migrations));
-  return cachedSchemaModel(run, "baseline", key, cache, () => readScratchModel(run, replayBaseline(run, inputs.migrations)));
+  return cachedSchemaModel(run, "baseline", key, cache, async () => readScratchModel(run, await replayBaseline(run, inputs.migrations)));
 }
 
 /** Each declared schema's digest, keyed as `config/db.ts` declared it — what the snapshot records and `--check` compares against. @internal */
@@ -67,9 +67,9 @@ export function declaredDigests(states: readonly DesiredState[]): Record<string,
 }
 
 /** The model every declared schema builds together, from the cache when none of them has changed. @internal */
-export function desiredSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): SchemaModel {
+export function desiredSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): Promise<SchemaModel> {
   const key = scratchModelKey(scratchWranglerVersion(run), sha256(inputs.states.map((state) => `${state.source}\0${state.digest}`).join("\0\0")));
-  return cachedSchemaModel(run, "desired", key, cache, () => readScratchModel(run, loadDesired(run, inputs.states)));
+  return cachedSchemaModel(run, "desired", key, cache, async () => readScratchModel(run, await loadDesired(run, inputs.states)));
 }
 
 function writeCustom(run: DbRunContext, inputs: SchemaInputs, options: ComposeOptions): ComposeOutcome {
@@ -140,12 +140,12 @@ function restampMigration(run: DbRunContext, inputs: SchemaInputs, name: string,
 }
 
 /** Applies the emitted SQL to a fresh replay and refuses to write it unless the result is the desired model; returns what the replay then holds. */
-function proveEmitted(run: DbRunContext, inputs: SchemaInputs, sql: string, desired: SchemaModel): SchemaModel {
-  const home = replayBaseline(run, inputs.migrations);
+async function proveEmitted(run: DbRunContext, inputs: SchemaInputs, sql: string, desired: SchemaModel): Promise<SchemaModel> {
+  const home = await replayBaseline(run, inputs.migrations);
   const file = join(home.dir, "proof.sql");
   run.io.writeText(file, sql);
   try {
-    executeFile(run.io, home, file);
+    await executeFile(run.io, home, file);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new CliError(
@@ -153,7 +153,7 @@ function proveEmitted(run: DbRunContext, inputs: SchemaInputs, sql: string, desi
       `the composed migration does not apply to the baseline — this is a forge bug, and the file was not written:\n${detail}`,
     );
   }
-  const model = readSchemaModel(run.io, home);
+  const model = await readSchemaModel(run.io, home);
   const difference = describeSchemaDifference(model, desired, { left: "after the migration", right: "the declared schema" });
   if (difference.length > 0) {
     throw new CliError(
@@ -165,7 +165,7 @@ function proveEmitted(run: DbRunContext, inputs: SchemaInputs, sql: string, desi
 }
 
 /** Composes the next migration from every declared schema, proving it against a replay of the migrations before writing it. @public */
-export function composeMigration(run: DbRunContext, options: ComposeOptions): ComposeOutcome {
+export async function composeMigration(run: DbRunContext, options: ComposeOptions): Promise<ComposeOutcome> {
   const inputs = readSchemaInputs(run);
   if (options.custom) return writeCustom(run, inputs, options);
   if (options.restamp !== undefined) return restampMigration(run, inputs, options.restamp, options.dryRun);
@@ -174,8 +174,8 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
   const renames: SchemaRename[] = options.renames.map(parseSchemaRename);
   const migrationsDir = declaredMigrations(run).path;
 
-  const baselineAll = baselineSchemaModel(run, inputs, options.cache);
-  const desired = desiredSchemaModel(run, inputs, options.cache);
+  const baselineAll = await baselineSchemaModel(run, inputs, options.cache);
+  const desired = await desiredSchemaModel(run, inputs, options.cache);
   assignOwnership(inputs.claims, desired);
 
   let baseline = baselineAll;
@@ -184,7 +184,7 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
   if (renameProblems.length > 0) throw new CliError("invalid-args", renameProblems.join("\n"));
   if (renames.length > 0) {
     // The rename runs on a real SQLite, which rewrites every index, trigger and REFERENCES that names the old name.
-    const home = replayBaseline(run, inputs.migrations);
+    const home = await replayBaseline(run, inputs.migrations);
     const file = join(home.dir, "renames.sql");
     run.io.writeText(
       file,
@@ -204,8 +204,8 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
         renames,
       ),
     );
-    executeFile(run.io, home, file);
-    baseline = readSchemaModel(run.io, home);
+    await executeFile(run.io, home, file);
+    baseline = await readSchemaModel(run.io, home);
   }
 
   const diff = diffSchemaModels(baseline, desired);
@@ -292,13 +292,15 @@ export function composeMigration(run: DbRunContext, options: ComposeOptions): Co
     return { path: null, snapshotPath: null, plan, warnings, causes, sql, dryRun: true };
   }
 
-  const proven = proveEmitted(run, inputs, sql, desired);
+  const proven = await proveEmitted(run, inputs, sql, desired);
 
   run.io.mkdir(migrationsDir);
   run.io.writeText(path, sql);
   const next = [...inputs.migrations, { name: file.slice(0, -".sql".length), sha256: migrationChecksum(sql) }];
   // The proof's replay is exactly the baseline the next compose or `--check --replay` will want, so it is cached under that key now.
-  cachedSchemaModel(run, "baseline", scratchModelKey(scratchWranglerVersion(run), migrationsDigest(next)), false, () => proven);
+  await cachedSchemaModel(run, "baseline", scratchModelKey(scratchWranglerVersion(run), migrationsDigest(next)), false, () =>
+    Promise.resolve(proven),
+  );
   writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(next)));
   say(`wrote ${path}`);
   for (const line of plan) say(`  ${line}`);

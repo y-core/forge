@@ -91,10 +91,10 @@ function checkStamps(run: DbRunContext, discovered: readonly Migration[], pendin
 }
 
 /** Reads what the target records about itself, one tolerant read each, so a database forge has never migrated answers too. @internal */
-export function readTargetFacts(io: DbIo, home: Home): TargetFacts {
+export async function readTargetFacts(io: DbIo, home: Home): Promise<TargetFacts> {
   return {
-    recorded: toRecordedChecksums(queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT) ?? []),
-    inventory: toSchemaObjects(queryRows(io, home, INVENTORY_SELECT)),
+    recorded: toRecordedChecksums((await queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT)) ?? []),
+    inventory: toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT)),
   };
 }
 
@@ -115,7 +115,7 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
   // `home.dir` and a lock under `.forge/scratch/` would exclude nothing. A dry run takes none.
   const release = options.dryRun ? () => {} : acquireApplyLock(io, home);
   try {
-    const facts = readTargetFacts(io, home);
+    const facts = await readTargetFacts(io, home);
     const applied = facts.recorded.map((record) => record.appliedName);
 
     const plan = planApply({ discovered, applied, ...(options.to === undefined ? {} : { to: options.to }) });
@@ -139,7 +139,7 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     // nothing to ask about until the migrations are known to apply to rows like its own.
     let rehearsed: RehearsalOutcome | undefined;
     if (options.rehearse && plan.pending.length > 0 && !options.dryRun) {
-      rehearsed = rehearseMigrations(run, plan.pending, options.artifact, applied);
+      rehearsed = await rehearseMigrations(run, plan.pending, options.artifact, applied);
       say(`rehearsal ✓ ${rehearsed.applied.length} migration(s) over ${rehearsed.rows} row(s) restored from ${rehearsed.artifact}`);
     }
 
@@ -154,13 +154,13 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     }
 
     if (plan.pending.length === 0) {
-      ensureCompanionTables(io, home);
+      await ensureCompanionTables(io, home);
       if (options.allowDrift && drift.recorded !== actualFingerprint) {
         // The fingerprint rides on the last applied row, so with none applied there is nothing to certify it on.
         if (applied.length === 0)
           say(`${actualFingerprint} was not certified — no migration is applied, and the fingerprint rides on the last one`);
         else {
-          executeSql(io, home, certifyFingerprintSql(actualFingerprint));
+          await executeSql(io, home, certifyFingerprintSql(actualFingerprint));
           say(`certified the schema fingerprint as ${actualFingerprint}`);
         }
       }
@@ -177,10 +177,10 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
         say(`undo: ${bookmark.restoreCommand}`);
       }
 
-      applyMigrations(run, home, plan.pending, { label: "migrate", record: true });
+      await applyMigrations(run, home, plan.pending, { label: "migrate", record: true });
 
-      const inventory = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-      executeSql(io, home, certifyFingerprintSql(schemaFingerprint(inventory)));
+      const inventory = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
+      await executeSql(io, home, certifyFingerprintSql(schemaFingerprint(inventory)));
 
       return {
         applied: names,

@@ -4,10 +4,10 @@ import { join } from "node:path";
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
 import { BACKUP_FORMAT_VERSION, manifestSelfDigest } from "../backup/artifact";
-import { argvHas, fakeDbIo, jsonRows, OK } from "../db.fixture";
+import { fakeDbIo } from "../db.fixture";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
-import type { BackupManifest, DbConfig, DbRunContext, FakeDbIo, Migration, Place, Spawned } from "../types";
+import type { BackupManifest, DbConfig, DbRunContext, FakeDbIo, Migration, Place } from "../types";
 import { recordMigrationSql } from "./checksum";
 import { rehearseMigrations } from "./rehearse";
 
@@ -80,22 +80,18 @@ function context(files: Record<string, string>, place: Place = "local"): { run: 
 }
 
 function wire(io: FakeDbIo, options: { failApply?: boolean } = {}): void {
-  io.rules.push(
-    {
-      match: (a) => argvHas(a, "execute", "--yes", "--file"),
-      reply: (a) =>
-        options.failApply === true && a.some((arg) => arg.includes("rehearse-apply"))
-          ? ({ code: 1, stdout: "", stderr: "NOT NULL constraint failed: users.email" } as Spawned)
-          : OK,
+  if (options.failApply !== true) return;
+  io.d1Rules.push({
+    match: (_statement, _home) => io.d1Calls.at(-1)?.source?.includes("rehearse-apply") === true,
+    reply: () => {
+      throw new Error("NOT NULL constraint failed: users.email");
     },
-    { match: (a) => argvHas(a, "execute", "--file"), reply: OK },
-    { match: (a) => argvHas(a, "execute", "--command"), reply: jsonRows([]) },
-  );
+  });
 }
 
-function capture(run: () => unknown): string {
+async function capture(run: () => unknown): Promise<string> {
   try {
-    run();
+    await run();
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -103,11 +99,11 @@ function capture(run: () => unknown): string {
 }
 
 describe("rehearseMigrations()", () => {
-  it("restores the latest verified backup, applies the pending migrations to it, and reports its rows", () => {
+  it("restores the latest verified backup, applies the pending migrations to it, and reports its rows", async () => {
     const { run, io } = context(artifactFiles());
     wire(io);
 
-    expect(rehearseMigrations(run, PENDING, undefined, APPLIED)).toEqual({ artifact: ARTIFACT, rows: 218, applied: ["0002_email_not_null"] });
+    expect(await rehearseMigrations(run, PENDING, undefined, APPLIED)).toEqual({ artifact: ARTIFACT, rows: 218, applied: ["0002_email_not_null"] });
     const migration = PENDING[0];
     if (migration === undefined) throw new Error("PENDING must not be empty");
     expect(io.files.get(`${ROOT}/.forge/scratch/rehearse-apply/0002_email_not_null.sql`)).toBe(
@@ -115,69 +111,69 @@ describe("rehearseMigrations()", () => {
     );
   });
 
-  it("takes the artifact it is given, resolved against the root", () => {
+  it("takes the artifact it is given, resolved against the root", async () => {
     const { run, io } = context(artifactFiles());
     wire(io);
 
-    expect(rehearseMigrations(run, PENDING, ".forge/backups/app-db-20260911T090000Z", APPLIED).artifact).toBe(ARTIFACT);
+    expect((await rehearseMigrations(run, PENDING, ".forge/backups/app-db-20260911T090000Z", APPLIED)).artifact).toBe(ARTIFACT);
   });
 
-  it("touches nothing outside the scratch, so the app's own state is never restored into", () => {
+  it("touches nothing outside the scratch, so the app's own state is never restored into", async () => {
     const { run, io } = context(artifactFiles());
     wire(io);
 
-    rehearseMigrations(run, PENDING, undefined, APPLIED);
+    await rehearseMigrations(run, PENDING, undefined, APPLIED);
 
-    const live = io.calls.filter((call) => call.includes("--persist-to") && call.includes(`${ROOT}/.wrangler/state`));
+    const live = io.d1Calls.filter((call) => call.persistTo === `${ROOT}/.wrangler/state/v3`);
     expect(live).toEqual([]);
   });
 
-  it("names the migration the rehearsal stopped on and repeats what the database said", () => {
+  it("names the migration the rehearsal stopped on and repeats what the database said", async () => {
     const { run, io } = context(artifactFiles());
     wire(io, { failApply: true });
 
-    expect(capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toContain(
+    expect(await capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toContain(
       "the rehearsal failed on 0002_email_not_null — these migrations do not apply to the 218 row(s)",
     );
-    expect(capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toContain("NOT NULL constraint failed: users.email");
+    expect(await capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toContain("NOT NULL constraint failed: users.email");
   });
 
-  it("refuses when no verified backup of this database exists, naming the verb that makes one", () => {
+  it("refuses when no verified backup of this database exists, naming the verb that makes one", async () => {
     const { run, io } = context({});
     wire(io);
 
-    expect(capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toBe(
+    expect(await capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toBe(
       `--rehearse needs an artifact and no verified backup of app-db exists under ${BACKUPS} — run \`forge db backup\` first, or name one with --artifact`,
     );
   });
 
-  it("refuses an artifact taken from another database", () => {
+  it("refuses an artifact taken from another database", async () => {
     const { run, io } = context(artifactFiles({ database: { name: "other-db", id: null, target: "local", persistPath: null } }));
     wire(io);
 
-    expect(capture(() => rehearseMigrations(run, PENDING, ARTIFACT, APPLIED))).toBe(
+    expect(await capture(() => rehearseMigrations(run, PENDING, ARTIFACT, APPLIED))).toBe(
       `${ARTIFACT} was taken from other-db and this target is app-db`,
     );
   });
 
-  it("refuses an artifact taken with other migrations applied than this target has, naming each side, before it restores", () => {
+  it("refuses an artifact taken with other migrations applied than this target has, naming each side, before it restores", async () => {
     const { run, io } = context(artifactFiles());
     wire(io);
 
-    expect(capture(() => rehearseMigrations(run, PENDING, ARTIFACT, ["0001_init", "0002_x"]))).toBe(
+    expect(await capture(() => rehearseMigrations(run, PENDING, ARTIFACT, ["0001_init", "0002_x"]))).toBe(
       `${ARTIFACT} was taken with [0001_init] applied and this target has [0001_init, 0002_x] (missing: 0002_x; extra: none) — a rehearsal needs an artifact of this target as it stands; run \`forge db backup\` first, or name one with --artifact`,
     );
-    expect(capture(() => rehearseMigrations(run, PENDING, ARTIFACT, []))).toBe(
+    expect(await capture(() => rehearseMigrations(run, PENDING, ARTIFACT, []))).toBe(
       `${ARTIFACT} was taken with [0001_init] applied and this target has [] (missing: none; extra: 0001_init) — a rehearsal needs an artifact of this target as it stands; run \`forge db backup\` first, or name one with --artifact`,
     );
     expect(io.calls.filter((call) => call.includes("--file"))).toEqual([]);
   });
 
-  it("refuses a deployed target, which has no local scratch to restore into", () => {
+  it("refuses a deployed target, which has no local scratch to restore into", async () => {
     const { run, io } = context(artifactFiles(), "remote");
     wire(io);
 
-    expect(capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toBe(
+    expect(await capture(() => rehearseMigrations(run, PENDING, undefined, APPLIED))).toBe(
       "--rehearse restores an artifact into a local scratch database, and remote is deployed — rehearse the same migrations against `--target local` or `--target standby`, then apply here",
     );
     expect(io.calls).toEqual([]);

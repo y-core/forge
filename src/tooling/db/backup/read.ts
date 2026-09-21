@@ -12,8 +12,8 @@ import type { AppTable, CanonicalRow, ReadCursor, RowPage, SourceTable, TableCom
 const PAGE_ROWS = 256;
 
 /** One table's columns in declaration order. @internal */
-export function readColumns(io: DbIo, home: Home, table: string): readonly ColumnInfo[] {
-  return toColumnInfo(queryRows(io, home, tableInfoSelect(table)));
+export async function readColumns(io: DbIo, home: Home, table: string): Promise<readonly ColumnInfo[]> {
+  return toColumnInfo(await queryRows(io, home, tableInfoSelect(table)));
 }
 
 /** The collation the DDL declares on `key`, or null when it declares none and SQLite's own BINARY applies. @internal */
@@ -98,15 +98,15 @@ function analyseTable(
 }
 
 /** Describes several tables as a bounded read addresses them, in the order asked, in two spawns rather than two each. @internal */
-export function describeTables(io: DbIo, home: Home, names: readonly string[]): AppTable[] {
-  const described = queryBatches(
+export async function describeTables(io: DbIo, home: Home, names: readonly string[]): Promise<AppTable[]> {
+  const described = await queryBatches(
     io,
     home,
     names.flatMap((name) => [tableInfoSelect(name), tableSqlSelect(name)]),
   );
   const analysed = names.map((name, index) => analyseTable(name, described[index * 2] ?? [], described[index * 2 + 1] ?? []));
   const probed = analysed.filter((analysis): analysis is { table: AppTable; probe: string } => analysis.probe !== null);
-  const answers = queryBatches(
+  const answers = await queryBatches(
     io,
     home,
     probed.flatMap((analysis) => keyProbeSelects(analysis.table.name, analysis.probe)),
@@ -118,8 +118,8 @@ export function describeTables(io: DbIo, home: Home, names: readonly string[]): 
 }
 
 /** The table as a bounded read addresses it: the column it orders by, and the page size. @internal */
-export function describeTable(io: DbIo, home: Home, name: string): AppTable {
-  const [table] = describeTables(io, home, [name]);
+export async function describeTable(io: DbIo, home: Home, name: string): Promise<AppTable> {
+  const [table] = await describeTables(io, home, [name]);
   if (table === undefined) throw new CliError("invalid-args", `${name} could not be described — the read returned nothing for it`);
   return table;
 }
@@ -164,8 +164,8 @@ export function dependencyOrder(names: readonly string[], edges: readonly { read
 }
 
 /** Every table the app owns, parents first, each with the key a paged read of it orders by. @internal */
-export function discoverAppTables(io: DbIo, home: Home): AppTable[] {
-  const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
+export async function discoverAppTables(io: DbIo, home: Home): Promise<AppTable[]> {
+  const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
   const tables = objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app");
   const edges = tables.flatMap((table) => referencedTables(table.sql ?? "").map((parent) => ({ child: table.name, parent })));
   return describeTables(
@@ -179,8 +179,8 @@ export function discoverAppTables(io: DbIo, home: Home): AppTable[] {
 }
 
 /** Reads one page, ordered by the table's key and seeking past `after`. @internal */
-export function readPage(io: DbIo, home: Home, table: AppTable, columns: readonly string[], after: ReadCursor): RowPage {
-  const read = queryRows(io, home, verificationSelect(table, columns, after));
+export async function readPage(io: DbIo, home: Home, table: AppTable, columns: readonly string[], after: ReadCursor): Promise<RowPage> {
+  const read = await queryRows(io, home, verificationSelect(table, columns, after));
   const raw = read.map((row) => decodeReadRow(columns, row));
   const rows = raw.map((row) => canonicaliseRow(columns, table.key, row));
   const last = raw[raw.length - 1];
@@ -199,13 +199,13 @@ function advanced(table: AppTable, previous: ReadCursor, next: ReadCursor): Read
 }
 
 /** Every row of one table, read a page at a time. @internal */
-export function readWholeTable(io: DbIo, home: Home, table: AppTable): SourceTable {
+export async function readWholeTable(io: DbIo, home: Home, table: AppTable): Promise<SourceTable> {
   const columns = table.columns.includes(table.key) ? table.columns : [table.key, ...table.columns];
   const rows: CanonicalRow[] = [];
   const raw: Record<string, unknown>[] = [];
   let cursor: ReadCursor = null;
   for (;;) {
-    const page = readPage(io, home, table, columns, cursor);
+    const page = await readPage(io, home, table, columns, cursor);
     rows.push(...page.rows);
     raw.push(...page.raw);
     if (page.exhausted) break;
@@ -215,11 +215,11 @@ export function readWholeTable(io: DbIo, home: Home, table: AppTable): SourceTab
 }
 
 /** One table on a restored target, against the source held in memory. @internal */
-export function compareTable(io: DbIo, source: SourceTable, target: Home): TableComparison {
+export async function compareTable(io: DbIo, source: SourceTable, target: Home): Promise<TableComparison> {
   let state = mergeRowPage(emptyComparison(), source.rows, [], { source: true, target: false });
   let cursor: ReadCursor = null;
   for (;;) {
-    const page = readPage(io, target, source.table, source.columns, cursor);
+    const page = await readPage(io, target, source.table, source.columns, cursor);
     state = mergeRowPage(state, [], page.rows, { source: true, target: page.exhausted });
     if (page.exhausted) break;
     cursor = advanced(source.table, cursor, page.cursor);

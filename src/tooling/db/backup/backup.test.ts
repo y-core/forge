@@ -8,7 +8,6 @@ import { resolveDbContext } from "../context";
 import {
   argvHas,
   fakeDbIo,
-  jsonRows,
   keyProbeAsked,
   keyProbeReply,
   minimalWranglerConfig,
@@ -96,15 +95,25 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
       return OK;
     },
   });
+  // A deployed backup reads through the CLI, so the same answers are wired to both effects.
   io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
   io.rules.push({
     match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) => {
-      // A proof reads its scratch under a database named for the route, which is what tells the two apart.
-      const scratch = args.some((arg) => arg.includes("-verify-"));
+    reply: (args) =>
+      routedReply(args[args.length - 1] ?? "", (statement) =>
+        answerFor(
+          statement,
+          args.some((arg) => arg.includes("-verify-")),
+        ),
+      ),
+  });
+  io.d1Rules.push({ match: () => true, reply: (statement, home) => answerFor(statement, home.database.includes("-verify-")) });
+  // A proof reads its scratch under a database named for the route, which is what tells the two apart.
+  function answerFor(statement: string, scratch: boolean): Record<string, unknown>[] {
+    {
       const rows = scratch ? (over.scratchRows ?? ROWS) : ROWS;
       const inventory = scratch ? (over.scratchInventory ?? INVENTORY) : INVENTORY;
-      const answer = (statement: string): Record<string, unknown>[] => {
+      const answer = (): Record<string, unknown>[] => {
         const info = tableInfoAsked(statement);
         if (info !== null) return (over.columns ?? COLUMNS)[info] ?? [];
         const ddl = tableSqlAsked(statement);
@@ -126,15 +135,15 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
         const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
         return projectReadRows(seek.slice(0, limit));
       };
-      return routedReply(args[args.length - 1] ?? "", answer);
-    },
-  });
+      return answer();
+    }
+  }
   return io;
 }
 
-function refusal(run: () => unknown): { kind: string; message: string } {
+async function refusal(run: () => unknown): Promise<{ kind: string; message: string }> {
   try {
-    run();
+    await run();
   } catch (error) {
     if (error instanceof CliError) return { kind: error.kind, message: error.message };
     throw error;
@@ -161,7 +170,7 @@ describe("runBackup", () => {
   it("writes the two artifacts and a manifest, and proves nothing when verify is off", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    const outcome = runBackup(await context(root, io), { out: null, verify: false, label: "before the cut" });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: "before the cut" });
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
     expect(outcome.directory).toBe(directory);
@@ -191,11 +200,11 @@ describe("runBackup", () => {
     const root = appRoot();
     const io = fakeWrangler();
     const certified = "f".repeat(64);
-    io.rules.unshift({
-      match: (args) => (args.at(-1) ?? "") === RECORDED_CHECKSUM_SELECT,
-      reply: jsonRows([{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: certified }]),
+    io.d1Rules.unshift({
+      match: (statement) => statement === RECORDED_CHECKSUM_SELECT,
+      reply: [{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: certified }],
     });
-    const outcome = runBackup(await context(root, io), { out: null, verify: false, label: null });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null });
     const actual = schemaFingerprint(toSchemaObjects(INVENTORY));
 
     expect(outcome.manifest.drift).toBe("mismatch");
@@ -212,7 +221,7 @@ describe("runBackup", () => {
   it("writes the artifact directory under out, resolved against the root", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    const outcome = runBackup(await context(root, io), { out: "var/dumps", verify: false, label: null });
+    const outcome = await runBackup(await context(root, io), { out: "var/dumps", verify: false, label: null });
 
     expect(outcome.directory).toBe(join(root, "var/dumps", DIRECTORY_NAME));
     expect(io.files.has(join(root, "var/dumps", DIRECTORY_NAME, "manifest.json"))).toBe(true);
@@ -221,26 +230,20 @@ describe("runBackup", () => {
   it("backs up a remote database read-only, proving into a local scratch", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    const outcome = runBackup(await context(root, io, { target: "remote" }), { out: null, verify: true, label: null });
+    const outcome = await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: true, label: null });
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
     const d1 = io.calls.filter((call) => call[1] === "d1");
     const database = (call: string[]) => (call[2] === "migrations" ? call[4] : call[3]) ?? "";
     const app = d1.filter((call) => database(call) === "app-db");
-    const scratch = d1.filter((call) => database(call).includes("-verify-"));
-    expect(app.length + scratch.length).toBe(d1.length);
+    // The deployed source is read by spawning and the local proof in process, which is the split itself.
+    const scratch = io.d1Calls.filter((call) => call.home.includes("verify-"));
+    expect(app.length).toBe(d1.length);
     expect(app.length).toBeGreaterThan(0);
     expect(scratch.length).toBeGreaterThan(0);
     expect(app.every((call) => call.includes("--remote") && !call.includes("--persist-to"))).toBe(true);
     expect(app.some((call) => call[2] === "time-travel" || (call.includes("--yes") && call.includes("--file")))).toBe(false);
-    expect(
-      scratch.every(
-        (call) =>
-          call.includes("--local") &&
-          !call.includes("--remote") &&
-          (call[call.indexOf("--persist-to") + 1] ?? "").startsWith(join(root, ".forge", "scratch") + "/"),
-      ),
-    ).toBe(true);
+    expect(scratch.every((call) => call.place === "local" && call.persistTo.startsWith(join(root, ".forge", "scratch") + "/"))).toBe(true);
     expect(d1.find((call) => call[2] === "export")?.slice(2)).toEqual([
       "export",
       "app-db",
@@ -277,7 +280,7 @@ describe("runBackup", () => {
     });
     writeFileSync(config.path, config.text);
     const io = fakeWrangler();
-    const outcome = runBackup(await context(root, io, { target: "preview" }), { out: null, verify: false, label: null });
+    const outcome = await runBackup(await context(root, io, { target: "preview" }), { out: null, verify: false, label: null });
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
     expect(io.calls.find((call) => call[2] === "export")?.slice(2)).toEqual([
@@ -309,11 +312,12 @@ describe("runBackup", () => {
       scratchRows: { ...ROWS, tasks },
     });
     // The source is answered from the same rows the scratch is, so the proof compares a REAL read on both sides.
-    io.rules.unshift({
-      match: (args) => argvHas(args, "execute", "--command") && /FROM "tasks"/.test(args.at(-1) ?? "") && !/COUNT/.test(args.at(-1) ?? ""),
-      reply: () => jsonRows(projectReadRows(tasks)),
+    io.d1Rules.unshift({
+      match: (statement) =>
+        /FROM "tasks"/.test(statement) && !/COUNT/.test(statement) && !/IS NULL LIMIT 1|COUNT\(DISTINCT typeof\(/.test(statement),
+      reply: () => projectReadRows(tasks),
     });
-    const outcome = runBackup(await context(root, io), { out: null, verify: true, label: null });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: true, label: null });
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
     expect(io.files.get(join(directory, "data.sql"))?.split("\n").slice(1, 3)).toEqual([
@@ -329,7 +333,7 @@ describe("runBackup", () => {
   it("records the rows the artifact holds, not a count taken after them", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    const outcome = runBackup(await context(root, io), { out: null, verify: false, label: null });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null });
 
     expect(outcome.manifest.tables).toEqual([{ name: "tasks", rows: 2, digest: outcome.manifest.tables[0]?.digest ?? "" }]);
   });
@@ -339,10 +343,10 @@ describe("runBackup", () => {
     const io = fakeWrangler();
     const run = await context(root, io);
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
-    runBackup(run, { out: null, verify: false, label: null });
+    await runBackup(run, { out: null, verify: false, label: null });
     const before = new Map([...io.files].filter(([path]) => path.startsWith(`${directory}/`)));
 
-    expect(refusal(() => runBackup(run, { out: null, verify: false, label: null }))).toEqual({
+    expect(await refusal(() => runBackup(run, { out: null, verify: false, label: null }))).toEqual({
       kind: "invalid-args",
       message: `${directory} already exists — a backup a second ago took this name; wait a second and take it again`,
     });
@@ -355,7 +359,7 @@ describe("runBackup", () => {
     const run = await context(root, io);
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
-    expect(refusal(() => runBackup(run, { out: null, verify: false, label: null }))).toEqual({
+    expect(await refusal(() => runBackup(run, { out: null, verify: false, label: null }))).toEqual({
       kind: "invalid-args",
       message: `app-db changed while it was being read, so this artifact is not a snapshot of any one instant:\n  tasks: 2 rows read and 3 now in the table\nStop whatever is writing to it and take the backup again — ${directory} is incomplete and holds no manifest, so no verb will read it.`,
     });
@@ -372,7 +376,7 @@ describe("runBackup", () => {
     });
     const run = await context(root, io);
 
-    expect(refusal(() => runBackup(run, { out: null, verify: true, label: null })).message).toBe(
+    expect((await refusal(() => runBackup(run, { out: null, verify: true, label: null }))).message).toBe(
       "route full left 1 divergence(s); route migrations left 1 divergence(s)",
     );
     expect(io.logs.filter((line) => line.startsWith("    ✗ schema")).length).toBe(2);
@@ -382,7 +386,7 @@ describe("runBackup", () => {
   it("records the app objects' digest as the schema digest — the value the proof compares, with the managed tables left out", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    const outcome = runBackup(await context(root, io), { out: null, verify: false, label: null });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null });
 
     expect(outcome.manifest.schema.digest).toBe(sha256(appSchemaDigestInput(toSchemaObjects(INVENTORY))));
     expect(outcome.manifest.schema.digest).not.toBe(sha256(schemaDigestInput(toSchemaObjects(INVENTORY))));
@@ -393,7 +397,7 @@ describe("runBackup", () => {
     const io = fakeWrangler({ scratchRows: { ...ROWS, _forge_migrations: [{ name: "0001_init", sha256: "cd" }] } });
     const run = await context(root, io);
 
-    expect(refusal(() => runBackup(run, { out: null, verify: true, label: null })).message).toBe(
+    expect((await refusal(() => runBackup(run, { out: null, verify: true, label: null }))).message).toBe(
       "route full left 1 divergence(s); route migrations left 1 divergence(s)",
     );
     expect(io.logs.filter((line) => line.includes("✗ _forge_migrations")).length).toBe(2);
@@ -404,7 +408,7 @@ describe("runBackup", () => {
     const io = fakeWrangler();
     const lock = join(root, ".forge", "db-apply.lock");
 
-    runBackup(await context(root, io), { out: null, verify: false, label: null });
+    await runBackup(await context(root, io), { out: null, verify: false, label: null });
 
     expect(io.files.has(lock)).toBe(false);
   });
@@ -412,24 +416,26 @@ describe("runBackup", () => {
   it("proves route full by loading the two files in order, rather than one file in parts", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    runBackup(await context(root, io), { out: null, verify: true, label: null });
+    await runBackup(await context(root, io), { out: null, verify: true, label: null });
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
-    expect(io.calls.filter((call) => call.includes("--file")).map((call) => call[call.length - 1])).toEqual([
+    expect(io.d1Calls.flatMap((call) => (call.source === null ? [] : [call.source]))).toEqual([
       join(directory, "schema.sql"),
       join(directory, "data.sql"),
       join(directory, "data.sql"),
     ]);
   });
 
-  // The guard on the whole win: a regression into a spawn per table or a part per 64 KiB shows up here
-  // and nowhere else.
-  it("takes a verified backup of one app table and one companion in a bounded number of spawns", async () => {
+  // The guard on the whole win: a regression into a round trip per table, a part per 64 KiB, or back
+  // into a process per statement shows up here and nowhere else.
+  it("takes a verified backup of one app table and one companion in a bounded number of round trips", async () => {
     const root = appRoot();
     const io = fakeWrangler();
-    runBackup(await context(root, io), { out: null, verify: true, label: null });
+    await runBackup(await context(root, io), { out: null, verify: true, label: null });
 
-    expect(io.calls.filter((call) => call[1] === "d1").length).toBe(21);
+    expect(io.d1Calls.length).toBe(20);
+    expect(io.calls.filter((call) => call[1] === "d1").length).toBe(1);
+    expect(io.calls[0]?.[2]).toBe("export");
   });
 
   it("refuses a schema.sql that grew a row, which route full would restore twice", async () => {
@@ -444,7 +450,7 @@ describe("runBackup", () => {
     });
     const run = await context(root, io);
 
-    expect(refusal(() => runBackup(run, { out: null, verify: false, label: null })).message).toBe(
+    expect((await refusal(() => runBackup(run, { out: null, verify: false, label: null }))).message).toBe(
       "schema.sql is not what a schema-only artifact must be:\n  line 5: an INSERT into tasks — a schema artifact declares tables and carries no row, because route full loads data.sql after it",
     );
     expect(io.files.has(join(root, ".forge/backups", DIRECTORY_NAME, "manifest.json"))).toBe(false);
@@ -456,7 +462,7 @@ describe("runBackup", () => {
     const io = fakeWrangler({ seed: { [lock]: JSON.stringify({ pid: 4242, startedAt: new Date("2026-09-11T09:59:00Z").getTime() }) } });
     const run = await context(root, io);
 
-    expect(refusal(() => runBackup(run, { out: null, verify: false, label: null }))).toEqual({
+    expect(await refusal(() => runBackup(run, { out: null, verify: false, label: null }))).toEqual({
       kind: "invalid-args",
       message: `Another backup holds ${lock} (pid 4242, since 2026-09-11T09:59:00.000Z). Wait for it to finish, or delete that file if the process is gone.`,
     });

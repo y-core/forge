@@ -95,6 +95,8 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
     const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
     return projectReadRows(seek.slice(0, limit));
   };
+  io.d1Rules.push({ match: () => true, reply: answer });
+  // A deployed verb reads through the CLI, so the same answers are wired to both effects.
   io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }

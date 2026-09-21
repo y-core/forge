@@ -24,8 +24,8 @@ function refuseUndeclaredPath(run: DbRunContext, path: string): void {
 }
 
 /** Each table's declared columns in `cid` order, read in one spawn; a table the schema does not declare is refused by name. */
-function declaredColumns(run: DbRunContext, home: Home, tables: readonly string[]): Map<string, string[]> {
-  const batches = queryBatches(run.io, home, tables.map(tableInfoSelect));
+async function declaredColumns(run: DbRunContext, home: Home, tables: readonly string[]): Promise<Map<string, string[]>> {
+  const batches = await queryBatches(run.io, home, tables.map(tableInfoSelect));
   const columns = new Map<string, string[]>();
   tables.forEach((table, index) => {
     const names = toColumnInfo(batches[index] ?? []).map((column) => column.name);
@@ -37,13 +37,13 @@ function declaredColumns(run: DbRunContext, home: Home, tables: readonly string[
 }
 
 /** Composes a seed file from rows in memory, proving every one loads into the declared schema before the file is written. @public */
-export function composeSeedFixture(run: DbRunContext, options: SeedFixtureOptions): SeedFixtureOutcome {
+export async function composeSeedFixture(run: DbRunContext, options: SeedFixtureOptions): Promise<SeedFixtureOutcome> {
   refuseUndeclaredPath(run, options.path);
 
   // The fixture's own scratch side: a regeneration must not empty the database a cached compose model
   // was built against, and `loadDesired` forces `local`, so nothing here can reach the resolved target.
-  const home = loadDesired(run, readSchemaInputs(run).states, "fixture");
-  const foreignKeys = Number(queryOne(run.io, home, "SELECT foreign_keys FROM pragma_foreign_keys").foreign_keys ?? 0);
+  const home = await loadDesired(run, readSchemaInputs(run).states, "fixture");
+  const foreignKeys = Number((await queryOne(run.io, home, "SELECT foreign_keys FROM pragma_foreign_keys")).foreign_keys ?? 0);
   if (foreignKeys !== 1) {
     throw new CliError(
       "invalid-args",
@@ -51,7 +51,7 @@ export function composeSeedFixture(run: DbRunContext, options: SeedFixtureOption
     );
   }
 
-  const columns = declaredColumns(run, home, options.tables);
+  const columns = await declaredColumns(run, home, options.tables);
   const statements: string[] = [];
   const tables = options.tables.map((table) => {
     const declared = columns.get(table) ?? [];
@@ -82,7 +82,7 @@ export function composeSeedFixture(run: DbRunContext, options: SeedFixtureOption
   const staged = join(home.dir, "fixture.sql");
   run.io.writeText(staged, sql);
   try {
-    executeFile(run.io, home, staged);
+    await executeFile(run.io, home, staged);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new CliError("invalid-args", `the fixture does not load into the declared schema — a row is refused by a constraint:\n${detail}`);
@@ -90,7 +90,7 @@ export function composeSeedFixture(run: DbRunContext, options: SeedFixtureOption
 
   // `OR IGNORE` is what the lint rule asks of a seed, and what it costs is a silent skip on a
   // duplicate key. Counting is what buys that back: it catches the row the load never wrote.
-  const counted = queryBatches(run.io, home, options.tables.map(rowCountSelect));
+  const counted = await queryBatches(run.io, home, options.tables.map(rowCountSelect));
   options.tables.forEach((table, index) => {
     const loaded = Number(counted[index]?.[0]?.rows ?? 0);
     const authored = (options.rows[table] ?? []).length;

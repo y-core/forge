@@ -61,6 +61,7 @@ describe("wranglerPlaceFlags()", () => {
   const home = (over: Partial<Home>): Home => ({
     label: "local",
     database: "app",
+    binding: "DB",
     dir: "/app",
     configPath: "/app/wrangler.jsonc",
     persistTo: "/app/.wrangler/state",

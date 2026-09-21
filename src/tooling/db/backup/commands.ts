@@ -2,7 +2,7 @@ import { createCommand } from "../../cli/command";
 import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import type { CliContext, CommandBase } from "../../cli/types";
-import { confirmPrinter, resolveDbContext, sharedDbFlags } from "../context";
+import { confirmPrinter, sharedDbFlags, withDbRun } from "../context";
 import type { DbContextOverrides, RestoreRoute, SharedDbFlags } from "../types";
 import { runBackup } from "./backup";
 import { executeReset, prepareReset } from "./reset";
@@ -28,14 +28,15 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
       label: { type: "string" as const, description: "A note recorded in the manifest, for saying what this backup was taken before" },
     },
     run: async (_args, flags, ctx?: CliContext) => {
-      const run = await resolveDbContext(flags as unknown as SharedDbFlags, ctx, overrides);
-      const outcome = runBackup(run, { out: flags.out ?? null, verify: flags["no-verify"] !== true, label: flags.label ?? null });
-      if (run.json) run.print(JSON.stringify({ directory: outcome.directory, manifest: outcome.manifest }));
-      else {
-        run.print(`✓ ${outcome.directory}`);
-        for (const route of outcome.manifest.verified) run.print(`  route ${route.route}: ${route.divergent} divergent`);
-        for (const warning of outcome.manifest.warnings) run.print(`  ! ${warning}`);
-      }
+      return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
+        const outcome = await runBackup(run, { out: flags.out ?? null, verify: flags["no-verify"] !== true, label: flags.label ?? null });
+        if (run.json) run.print(JSON.stringify({ directory: outcome.directory, manifest: outcome.manifest }));
+        else {
+          run.print(`✓ ${outcome.directory}`);
+          for (const route of outcome.manifest.verified) run.print(`  route ${route.route}: ${route.divergent} divergent`);
+          for (const warning of outcome.manifest.warnings) run.print(`  ! ${warning}`);
+        }
+      });
     },
   });
 
@@ -54,23 +55,24 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
     },
     run: async (_args, flags, ctx?: CliContext) => {
       const route = readRoute(flags.route);
-      const run = await resolveDbContext(flags as unknown as SharedDbFlags, ctx, overrides);
-      const plan = prepareRestore(run, { artifact: flags.artifact, route, expect: flags.expect });
-      await confirm({
-        verb: "restore",
-        what: `${plan.artifact} into ${run.home.database} (${run.config.target.place}) by route ${route}`,
-        detail: `${plan.rows} row(s) across ${plan.expectedTables.length} table(s), artifact verified`,
-        consequence: "A restore adds rows and never removes them, so the target must already be empty and a partial load has no repair path.",
-        yes: run.yes,
-        print: confirmPrinter(run),
-        cancelMessage: "Restore cancelled; the database is unchanged.",
+      return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
+        const plan = await prepareRestore(run, { artifact: flags.artifact, route, expect: flags.expect });
+        await confirm({
+          verb: "restore",
+          what: `${plan.artifact} into ${run.home.database} (${run.config.target.place}) by route ${route}`,
+          detail: `${plan.rows} row(s) across ${plan.expectedTables.length} table(s), artifact verified`,
+          consequence: "A restore adds rows and never removes them, so the target must already be empty and a partial load has no repair path.",
+          yes: run.yes,
+          print: confirmPrinter(run),
+          cancelMessage: "Restore cancelled; the database is unchanged.",
+        });
+        const outcome = await executeRestore(run, plan);
+        if (run.json) run.print(JSON.stringify(outcome));
+        else {
+          for (const table of outcome.tables) run.print(`  ${table.matches ? "✓" : "✗"} ${table.name} — ${table.rows} rows`);
+          run.print(`✓ ${outcome.database} matches the manifest in ${outcome.artifact}`);
+        }
       });
-      const outcome = executeRestore(run, plan);
-      if (run.json) run.print(JSON.stringify(outcome));
-      else {
-        for (const table of outcome.tables) run.print(`  ${table.matches ? "✓" : "✗"} ${table.name} — ${table.rows} rows`);
-        run.print(`✓ ${outcome.database} matches the manifest in ${outcome.artifact}`);
-      }
     },
   });
 
@@ -91,24 +93,25 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
       "allow-unbacked": { type: "boolean" as const, description: "Empty a database that holds rows and has no verified backup" },
     },
     run: async (_args, flags, ctx?: CliContext) => {
-      const run = await resolveDbContext(flags as unknown as SharedDbFlags, ctx, overrides);
-      const plan = prepareReset(run, { expect: flags.expect, allowUnbacked: flags["allow-unbacked"] === true, backup: flags.backup });
-      await confirm({
-        verb: "reset",
-        what: `${run.home.database} (${run.config.target.place})`,
-        detail: `${plan.rows} row(s), ${plan.backedUpBy === null ? "no artifact relied on" : `backed up by ${plan.backedUpBy}`}`,
-        consequence: "Its local state files are removed and miniflare recreates it empty. Nothing here restores them.",
-        yes: run.yes,
-        print: confirmPrinter(run),
-        cancelMessage: "Reset cancelled; the database is unchanged.",
+      return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
+        const plan = await prepareReset(run, { expect: flags.expect, allowUnbacked: flags["allow-unbacked"] === true, backup: flags.backup });
+        await confirm({
+          verb: "reset",
+          what: `${run.home.database} (${run.config.target.place})`,
+          detail: `${plan.rows} row(s), ${plan.backedUpBy === null ? "no artifact relied on" : `backed up by ${plan.backedUpBy}`}`,
+          consequence: "Its local state files are removed and miniflare recreates it empty. Nothing here restores them.",
+          yes: run.yes,
+          print: confirmPrinter(run),
+          cancelMessage: "Reset cancelled; the database is unchanged.",
+        });
+        const outcome = await executeReset(run, plan);
+        if (run.json) run.print(JSON.stringify(outcome));
+        else if (outcome.removed === null) run.print(`✓ ${outcome.database} has no local state to remove`);
+        else {
+          if (outcome.backedUpBy !== null) run.print(`  backed up by ${outcome.backedUpBy}`);
+          run.print(`✓ removed ${outcome.removed} (${outcome.rows} rows) — miniflare recreates it on next use`);
+        }
       });
-      const outcome = executeReset(run, plan);
-      if (run.json) run.print(JSON.stringify(outcome));
-      else if (outcome.removed === null) run.print(`✓ ${outcome.database} has no local state to remove`);
-      else {
-        if (outcome.backedUpBy !== null) run.print(`  backed up by ${outcome.backedUpBy}`);
-        run.print(`✓ removed ${outcome.removed} (${outcome.rows} rows) — miniflare recreates it on next use`);
-      }
     },
   });
 

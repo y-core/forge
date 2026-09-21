@@ -10,6 +10,7 @@ const NOW = new Date("2026-09-11T10:00:00Z");
 const home: Home = {
   label: "local",
   database: "app-db",
+  binding: "DB",
   dir: "/app",
   configPath: "/app/wrangler.jsonc",
   persistTo: "/app/.wrangler/state",

@@ -20,7 +20,7 @@ function movedSchemas(inputs: SchemaInputs, snapshot: SchemaSnapshot): string[] 
 }
 
 /** Holds every declared schema against the snapshot by digest, and under `replay` the migrations against the declarations. @public */
-export function checkSchema(run: DbRunContext, options: { replay: boolean; cache: boolean }): SchemaCheckReport {
+export async function checkSchema(run: DbRunContext, options: { replay: boolean; cache: boolean }): Promise<SchemaCheckReport> {
   const inputs = readSchemaInputs(run);
   const report = { snapshotPath: inputs.snapshotPath, schemas: inputs.schemas.map((source) => source.declared) };
 
@@ -37,7 +37,7 @@ export function checkSchema(run: DbRunContext, options: { replay: boolean; cache
       return { ...report, problems: [`${inputs.snapshotPath} does not exist — run \`forge db migrate compose\` once to write it`] };
     // A checkout that declares a schema and composes nothing — a library's. The whole check is that
     // the declarations execute, which loading them into an empty database is.
-    if (options.replay) loadDesired(run, inputs.states);
+    if (options.replay) await loadDesired(run, inputs.states);
     return { ...report, snapshotPath: null, problems: [] };
   }
 
@@ -50,8 +50,8 @@ export function checkSchema(run: DbRunContext, options: { replay: boolean; cache
 
   // Both sides are rebuilt from what is on disk, so the check is the one that matters: the
   // migrations build what the schemas declare. Nothing stored is compared against itself.
-  const loaded = desiredSchemaModel(run, inputs, options.cache);
-  const replay = baselineSchemaModel(run, inputs, options.cache);
+  const loaded = await desiredSchemaModel(run, inputs, options.cache);
+  const replay = await baselineSchemaModel(run, inputs, options.cache);
   problems.push(...describeSchemaDifference(replay, loaded, { left: "the replayed migrations", right: "the declared schema" }));
   return { ...report, problems };
 }

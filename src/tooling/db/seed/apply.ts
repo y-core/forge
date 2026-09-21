@@ -21,8 +21,8 @@ import { discoverSeeds, expandSeedEnv } from "./files";
 import { lintSeed, lintSeeds } from "./lint";
 import { planSeeds, recordSeedSql } from "./plan";
 
-function readSeedHistory(run: DbRunContext): SeedRecord[] {
-  const rows = queryRowsIfTable(run.io, run.home, "SELECT source, name, sha256, applied_at FROM _forge_seed_history ORDER BY source, name");
+async function readSeedHistory(run: DbRunContext): Promise<SeedRecord[]> {
+  const rows = await queryRowsIfTable(run.io, run.home, "SELECT source, name, sha256, applied_at FROM _forge_seed_history ORDER BY source, name");
   if (rows === null) return [];
   return rows.map((row) => ({
     source: String(row.source ?? ""),
@@ -38,8 +38,8 @@ export function readSeeds(run: DbRunContext, dir?: string | undefined): readonly
   return sources.flatMap((source) => discoverSeeds(run.io, source));
 }
 
-function refusePendingMigrations(run: DbRunContext): void {
-  const recorded = toRecordedChecksums(queryRowsIfTable(run.io, run.home, RECORDED_CHECKSUM_SELECT) ?? []);
+async function refusePendingMigrations(run: DbRunContext): Promise<void> {
+  const recorded = toRecordedChecksums((await queryRowsIfTable(run.io, run.home, RECORDED_CHECKSUM_SELECT)) ?? []);
   const plan = planApply({ discovered: readMigrations(run), applied: recorded.map((record) => record.appliedName) });
   if (plan.pending.length === 0) return;
   throw new CliError(
@@ -97,19 +97,19 @@ export async function runSeedApply(
     bookmark: boolean;
   },
 ): Promise<SeedOutcome> {
-  if (!options.allowPending) refusePendingMigrations(run);
+  if (!options.allowPending) await refusePendingMigrations(run);
   // A seed writes rows into whatever schema is there. Held before the lint and the confirmation, so a
   // schema nothing explains stops the run with nothing written rather than halfway through the set.
   refuseSchemaDrift(
     run,
-    readDrift(run.io, run.home),
+    await readDrift(run.io, run.home),
     options.allowDrift,
     "pass --allow-drift to seed anyway; a seed certifies no fingerprint, so `forge db migrate` goes on refusing until an apply explains the schema.",
   );
   const remote = isRemotePlace(run.config.target.place);
   const say = run.json ? (line: string) => run.io.log(line) : run.print;
   const seeds = readSeeds(run, options.dir);
-  const plan = planSeeds(seeds, readSeedHistory(run), { only: options.only, rerun: options.rerun, place: run.config.target.place });
+  const plan = planSeeds(seeds, await readSeedHistory(run), { only: options.only, rerun: options.rerun, place: run.config.target.place });
   for (const seed of plan.excluded) {
     run.io.log(
       `excluded from ${run.config.target.place}: ${seedName(seed)} — add \`-- forge:places ${run.config.target.place}\` on line 1 to include it`,
@@ -127,14 +127,14 @@ export async function runSeedApply(
   let bookmark: Bookmark | undefined;
   const applied: string[] = [];
   try {
-    ensureCompanionTables(run.io, run.home);
+    await ensureCompanionTables(run.io, run.home);
     if (remote && plan.apply.length > 0 && options.bookmark) {
       bookmark = timeTravelInfo(run.io, run.home, undefined, run.config);
       say(`undo: ${bookmark.restoreCommand}`);
     }
 
     for (const seed of plan.apply) {
-      applyRecordedSql(run, run.home, {
+      await applyRecordedSql(run, run.home, {
         label: join("seed", seed.source.replace(/[^A-Za-z0-9_-]+/g, "_")),
         name: seed.name,
         sql: expanded.get(seed) ?? seed.sql,
@@ -170,17 +170,17 @@ export async function runSeedApply(
 }
 
 /** Reads which seeds would run, which are already in, and which changed since they ran. @internal */
-export function runSeedStatus(run: DbRunContext, options: { dir?: string | undefined }): SeedPlan {
-  return planSeeds(readSeeds(run, options.dir), readSeedHistory(run), { rerun: false, place: run.config.target.place });
+export async function runSeedStatus(run: DbRunContext, options: { dir?: string | undefined }): Promise<SeedPlan> {
+  return planSeeds(readSeeds(run, options.dir), await readSeedHistory(run), { rerun: false, place: run.config.target.place });
 }
 
 /** Forgets one directory's seed records, or every one, so the next apply runs them again. @internal */
-export function runSeedReset(run: DbRunContext, source?: string | undefined): void {
+export async function runSeedReset(run: DbRunContext, source?: string | undefined): Promise<void> {
   const release = acquireApplyLock(run.io, run.home, "seed");
   try {
-    ensureCompanionTables(run.io, run.home);
+    await ensureCompanionTables(run.io, run.home);
     const where = source === undefined ? "" : ` WHERE source = ${quoteSqlLiteral(source)}`;
-    executeSql(run.io, run.home, `DELETE FROM _forge_seed_history${where};`);
+    await executeSql(run.io, run.home, `DELETE FROM _forge_seed_history${where};`);
   } finally {
     release();
   }

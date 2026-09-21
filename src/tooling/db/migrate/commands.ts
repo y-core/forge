@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { addCommand, createCommand } from "../../cli/command";
 import { CliError } from "../../cli/errors";
 import type { CliContext, CommandBase, ResolvedFlags } from "../../cli/types";
-import { resolveDbContext, sharedDbFlags } from "../context";
+import { sharedDbFlags, withDbRun } from "../context";
 import { schemaDrift } from "../drift";
 import { composeMigration } from "../schema/compose";
 import { readSeeds } from "../seed/apply";
@@ -43,27 +43,28 @@ async function applyMigrations(
   ctx: CliContext | undefined,
   overrides: DbContextOverrides,
 ): Promise<void> {
-  const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-  const outcome = await runMigrate(run, {
-    dryRun: Boolean(flags["dry-run"]),
-    ...(flags.to === undefined ? {} : { to: flags.to }),
-    lint: !flags["no-lint"],
-    allowWarnings: Boolean(flags["allow-warnings"]),
-    allowDrift: Boolean(flags["allow-drift"]),
-    bookmark: !flags["no-bookmark"],
-    rehearse: Boolean(flags.rehearse) || flags.artifact !== undefined,
-    ...(flags.artifact === undefined ? {} : { artifact: flags.artifact }),
-  });
+  return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+    const outcome = await runMigrate(run, {
+      dryRun: Boolean(flags["dry-run"]),
+      ...(flags.to === undefined ? {} : { to: flags.to }),
+      lint: !flags["no-lint"],
+      allowWarnings: Boolean(flags["allow-warnings"]),
+      allowDrift: Boolean(flags["allow-drift"]),
+      bookmark: !flags["no-bookmark"],
+      rehearse: Boolean(flags.rehearse) || flags.artifact !== undefined,
+      ...(flags.artifact === undefined ? {} : { artifact: flags.artifact }),
+    });
 
-  if (run.json) {
-    run.print(JSON.stringify({ target: formatTarget(run.config.target), database: run.home.database, ...outcome }));
-    return;
-  }
-  if (outcome.rehearsed !== undefined) {
-    run.print(`rehearsed on ${outcome.rehearsed.rows} row(s) from ${outcome.rehearsed.artifact}`);
-  }
-  if (outcome.applied.length > 0) run.print(`applied ${outcome.applied.length}: ${outcome.applied.join(", ")}`);
-  if (outcome.skipped.length > 0) run.print(`left for a later run: ${outcome.skipped.join(", ")}`);
+    if (run.json) {
+      run.print(JSON.stringify({ target: formatTarget(run.config.target), database: run.home.database, ...outcome }));
+      return;
+    }
+    if (outcome.rehearsed !== undefined) {
+      run.print(`rehearsed on ${outcome.rehearsed.rows} row(s) from ${outcome.rehearsed.artifact}`);
+    }
+    if (outcome.applied.length > 0) run.print(`applied ${outcome.applied.length}: ${outcome.applied.join(", ")}`);
+    if (outcome.skipped.length > 0) run.print(`left for a later run: ${outcome.skipped.join(", ")}`);
+  });
 }
 
 /** The `forge db migrate apply` verb: forward-only, linted, checksummed, and locked while it runs. */
@@ -106,29 +107,30 @@ function createComposeCommand(overrides: DbContextOverrides): CommandBase {
       },
     },
     run: async (args, flags, ctx?: CliContext) => {
-      const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-      const outcome = composeMigration(run, {
-        name: args[0],
-        custom: Boolean(flags.custom),
-        dryRun: Boolean(flags["dry-run"]),
-        allowDestructive: flags["allow-destructive"],
-        renames: flags.rename ?? [],
-        cache: !flags["no-cache"],
-        restamp: flags.restamp,
+      return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+        const outcome = await composeMigration(run, {
+          name: args[0],
+          custom: Boolean(flags.custom),
+          dryRun: Boolean(flags["dry-run"]),
+          allowDestructive: flags["allow-destructive"],
+          renames: flags.rename ?? [],
+          cache: !flags["no-cache"],
+          restamp: flags.restamp,
+        });
+        if (run.json) run.print(JSON.stringify(outcome));
+        else if (outcome.dryRun && outcome.sql !== "") run.print(outcome.sql);
+        else if (outcome.path !== null && outcome.plan[0]?.startsWith("custom migration"))
+          run.print(`wrote ${outcome.path} — fill it in, then \`forge db lint\``);
       });
-      if (run.json) run.print(JSON.stringify(outcome));
-      else if (outcome.dryRun && outcome.sql !== "") run.print(outcome.sql);
-      else if (outcome.path !== null && outcome.plan[0]?.startsWith("custom migration"))
-        run.print(`wrote ${outcome.path} — fill it in, then \`forge db lint\``);
     },
   });
 }
 
 /** Measures the target database against the migrations on disk. */
-function readStatusReport(run: DbRunContext): StatusReport {
+async function readStatusReport(run: DbRunContext): Promise<StatusReport> {
   const { config, home, io } = run;
   const discovered = readMigrations(run);
-  const { recorded, inventory } = readTargetFacts(io, home);
+  const { recorded, inventory } = await readTargetFacts(io, home);
   const drift = schemaDrift(recorded, inventory);
 
   const applied = recorded.map((record) => ({ name: record.appliedName, appliedAt: new Date(record.appliedAt).toISOString() }));
@@ -153,12 +155,13 @@ function createStatusCommand(overrides: DbContextOverrides): CommandBase {
     description: "Report which migrations are applied, which are pending, and where the database and the files disagree",
     flags: { ...sharedDbFlags, check: { type: "boolean" as const, description: "Exit non-zero when anything is pending or out of step. For CI" } },
     run: async (_args, flags, ctx?: CliContext) => {
-      const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-      const report = readStatusReport(run);
-      run.print(run.json ? JSON.stringify(report) : formatStatus(report, run.style));
-      if (flags.check && migrationStatusExitCode(report) === 1) {
-        throw new CliError("invalid-args", `${report.database} (${report.target}) is not in step with its migrations — see the report above.`);
-      }
+      return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+        const report = await readStatusReport(run);
+        run.print(run.json ? JSON.stringify(report) : formatStatus(report, run.style));
+        if (flags.check && migrationStatusExitCode(report) === 1) {
+          throw new CliError("invalid-args", `${report.database} (${report.target}) is not in step with its migrations — see the report above.`);
+        }
+      });
     },
   });
 }
@@ -179,31 +182,32 @@ function createLintCommand(overrides: DbContextOverrides): CommandBase {
       },
     },
     run: async (args, flags, ctx?: CliContext) => {
-      const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-      const wanted = flags.dir;
-      const findings: LintFinding[] =
-        args.length > 0
-          ? args.flatMap((file) => {
-              const path = resolve(run.config.root, file);
-              return lintMigration(path, run.io.readText(path));
-            })
-          : flags.seeds
-            ? lintSeeds(readSeeds(run, wanted))
-            : lintMigrations(readMigrations(run));
+      return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+        const wanted = flags.dir;
+        const findings: LintFinding[] =
+          args.length > 0
+            ? args.flatMap((file) => {
+                const path = resolve(run.config.root, file);
+                return lintMigration(path, run.io.readText(path));
+              })
+            : flags.seeds
+              ? lintSeeds(readSeeds(run, wanted))
+              : lintMigrations(readMigrations(run));
 
-      const errors = findings.filter((f) => f.level === "error").length;
-      const warnings = findings.length - errors;
+        const errors = findings.filter((f) => f.level === "error").length;
+        const warnings = findings.length - errors;
 
-      if (run.json) run.print(JSON.stringify({ findings, errors, warnings }));
-      else if (findings.length === 0) run.print("no findings");
-      else for (const finding of findings) run.print(formatLintFinding(finding));
+        if (run.json) run.print(JSON.stringify({ findings, errors, warnings }));
+        else if (findings.length === 0) run.print("no findings");
+        else for (const finding of findings) run.print(formatLintFinding(finding));
 
-      if (errors > 0 || (Boolean(flags.strict) && warnings > 0)) {
-        throw new CliError(
-          "invalid-args",
-          `lint found ${errors} error(s) and ${warnings} warning(s)${flags.strict ? ", and --strict fails on both" : ""}.`,
-        );
-      }
+        if (errors > 0 || (Boolean(flags.strict) && warnings > 0)) {
+          throw new CliError(
+            "invalid-args",
+            `lint found ${errors} error(s) and ${warnings} warning(s)${flags.strict ? ", and --strict fails on both" : ""}.`,
+          );
+        }
+      });
     },
   });
 }

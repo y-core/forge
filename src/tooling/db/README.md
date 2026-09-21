@@ -19,8 +19,8 @@ forge db backup                 # a verified artifact you can restore from
 `migrate`, `seed` and `schema` carry verbs, and a bare group runs its first verb with the same flags: `forge db migrate` is
 `migrate apply`, `forge db seed` is `seed apply`, `forge db schema` is `schema check`.
 
-**Node-only, like every `tooling` namespace.** It shells out to `wrangler` for every statement and is never reachable from a Worker. The runtime
-client a Worker reads the same database through is [`STORAGE_BINDINGS.md`][sb-1] §1.
+**Node-only, like every `tooling` namespace.** It reaches a local database through `wrangler`'s own `getPlatformProxy` and a deployed one by running
+the CLI, and is never reachable from a Worker. The runtime client a Worker reads the same database through is [`STORAGE_BINDINGS.md`][sb-1] §1.
 
 ---
 
@@ -315,25 +315,28 @@ await execute(root);
 ```
 
 It takes a `DbContextOverrides` — `io` and `host`, both optional. `io` is the seam every test in this namespace drives: pass a `DbIo` and no command
-touches a filesystem or spawns `wrangler`. `host` supplies the `config/db.ts` that would otherwise be loaded from disk.
+touches a filesystem, spawns `wrangler` or opens a database. `host` supplies the `config/db.ts` that would otherwise be loaded from disk.
 
-To drive one verb without the command layer, resolve a run context first and hand it to the verb. `resolveDbContext` takes a whole
-`SharedDbFlags`, so every key is present even where the value is not:
+`DbIo` carries both ways a verb reaches a database: `spawn`, for a deployed one and for `d1 export`, and `d1`/`closeD1`, for a local one —
+statements in, rows out, one call being one transaction. The fake records each separately, so a test reads what a run put to a database apart
+from what it ran.
+
+To drive one verb without the command layer, run it inside `withDbRun`, which resolves the context and releases what the verb opened. It takes a
+whole `SharedDbFlags`, so every key is present even where the value is not:
 
 ```ts
-import { resolveDbContext, runMigrate } from "@y-core/forge/tooling/db";
+import { runMigrate, withDbRun } from "@y-core/forge/tooling/db";
 
-const run = await resolveDbContext({
-  target: "local",
-  db: undefined,
-  config: "wrangler.jsonc",
-  env: undefined,
-  root: undefined,
-  json: false,
-  yes: true,
-});
-const outcome = await runMigrate(run, { dryRun: true, lint: true, allowWarnings: false, allowDrift: false, bookmark: true, rehearse: false });
+const outcome = await withDbRun(
+  { target: "local", db: undefined, config: "wrangler.jsonc", env: undefined, root: undefined, json: false, yes: true },
+  undefined,
+  {},
+  (run) => runMigrate(run, { dryRun: true, lint: true, allowWarnings: false, allowDrift: false, bookmark: true, rehearse: false }),
+);
 ```
+
+A local verb reaches its database in process, through a binding that holds a workerd child open for as long as the run does. `withDbRun` releases it
+on the way out; a caller that resolves a context itself with `resolveDbContext` owns that release, and a process that skips it never exits.
 
 The barrel publishes one entry point per verb on this pattern — `runMigrate`, `runBackup`, `checkSchema`, `composeMigration`, `runStandbyReset`, the
 lint functions, and the `prepare*` / `execute*` pairs that split a destructive verb around its confirmation. The engine beneath them is `@internal`

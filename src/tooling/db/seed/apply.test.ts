@@ -28,11 +28,12 @@ function seedIo(root: string, history: SeedRecord[], files: Record<string, strin
   const seeded: Record<string, string> = {};
   for (const [name, sql] of Object.entries(files)) seeded[join(root, "seeds", name)] = sql;
   const io = fakeDbIo(seeded, { now: new Date("2026-09-11T10:00:00Z") });
+  const rows = history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }));
+  io.d1Rules.push({ match: (statement) => statement.includes("pragma_table_info"), reply: [{ name: "source" }, { name: "name" }] });
+  io.d1Rules.push({ match: () => true, reply: rows });
+  // A deployed place reads through the CLI, which is the one place a seed run still spawns.
   io.rules.push({ match: isColumns, reply: jsonRows([{ name: "source" }, { name: "name" }]) });
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--json", "--command"),
-    reply: jsonRows(history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }))),
-  });
+  io.rules.push({ match: (args) => argvHas(args, "execute", "--json", "--command"), reply: jsonRows(rows) });
   io.rules.push({ match: (args) => argvHas(args, "execute", "--yes"), reply: OK });
   return io;
 }
@@ -44,22 +45,30 @@ function record(name: string, hash: string): SeedRecord {
 
 const SECRET_SEED = "INSERT INTO users (email) VALUES ('${SECRET}');";
 
-/** What each `--file` load read from the scratch file at the moment it ran, since the file is gone afterwards. */
+/** What each load read from the scratch file at the moment it ran, since the file is gone afterwards. */
 function recordLoads(io: FakeDbIo): (string | undefined)[] {
   const loaded: (string | undefined)[] = [];
-  io.rules.unshift({
-    match: (args) => args.includes("--file"),
-    reply: (args) => {
-      loaded.push(io.files.get(args[args.indexOf("--file") + 1] ?? ""));
-      return OK;
+  io.d1Rules.unshift({
+    match: (_statement, home) => home.persistTo !== null,
+    reply: () => {
+      const source = io.d1Calls.at(-1)?.source;
+      if (source !== null && source !== undefined && loaded.at(-1) !== io.files.get(source)) loaded.push(io.files.get(source));
+      return [];
     },
   });
   return loaded;
 }
 
-/** The statements the run sent with `--command`, and the files it sent with `--file`. */
+// A deployed run reaches the database only by spawning and a local one only in process, so the two
+// recorders never interleave and concatenating them is the order the run made them in.
+/** The statements the run put to the database, and the files it loaded. */
 function sent(io: FakeDbIo, flag: "--command" | "--file"): string[] {
-  return io.calls.filter((call) => call.includes(flag)).map((call) => call[call.indexOf(flag) + 1] ?? "");
+  const spawned = io.calls.filter((call) => call.includes(flag)).map((call) => call[call.indexOf(flag) + 1] ?? "");
+  const local =
+    flag === "--file"
+      ? io.d1Calls.flatMap((call) => (call.source === null ? [] : [call.source]))
+      : io.d1Calls.filter((call) => call.source === null).flatMap((call) => call.statements);
+  return [...spawned, ...local];
 }
 
 async function run(io: FakeDbIo, argv: string[]): Promise<ReturnType<typeof bufferedIO>> {
@@ -220,7 +229,10 @@ describe("db seed apply --target remote", () => {
 
     expect(cli.code).toBe(null);
     expect(timeTravelCalls(io).length).toBe(1);
-    const order = io.calls.map((call) => (argvHas(call.slice(1), "time-travel", "info") ? "bookmark" : call.includes("--file") ? "seed" : "other"));
+    const order = [
+      ...io.calls.map((call) => (argvHas(call.slice(1), "time-travel", "info") ? "bookmark" : call.includes("--file") ? "seed" : "other")),
+      ...io.d1Calls.map((call) => (call.source === null ? "other" : "seed")),
+    ];
     expect(order.indexOf("bookmark")).toBeLessThan(order.indexOf("seed"));
     expect(cli.out).toEqual([
       `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
@@ -400,15 +412,12 @@ describe("db seed apply against a schema nothing certified", () => {
 
   /** Puts a certified fingerprint on the history and an inventory that does not hash to it. */
   function drifted(io: FakeDbIo): void {
-    io.rules.unshift(
+    io.d1Rules.unshift(
       {
-        match: (args) => (args.at(-1) ?? "") === RECORDED_CHECKSUM_SELECT,
-        reply: jsonRows([{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: CERTIFIED }]),
+        match: (statement) => statement === RECORDED_CHECKSUM_SELECT,
+        reply: [{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: CERTIFIED }],
       },
-      {
-        match: (args) => (args.at(-1) ?? "") === INVENTORY_SELECT,
-        reply: jsonRows([{ type: "table", name: "users", tbl_name: "users", sql: USERS_SQL }]),
-      },
+      { match: (statement) => statement === INVENTORY_SELECT, reply: [{ type: "table", name: "users", tbl_name: "users", sql: USERS_SQL }] },
     );
   }
 
@@ -483,11 +492,11 @@ describe("db seed apply locking", () => {
     const root = appRoot();
     const io = seedIo(root, []);
     const heldWhileLoading: boolean[] = [];
-    io.rules.unshift({
-      match: (args) => args.includes("--file"),
+    io.d1Rules.unshift({
+      match: (statement) => statement.startsWith("INSERT INTO users") || statement.startsWith("INSERT INTO posts"),
       reply: () => {
         heldWhileLoading.push(io.files.has(lockPath(root)));
-        return OK;
+        return [];
       },
     });
     const cli = await run(io, ["seed", "apply", "--root", root]);
@@ -582,7 +591,7 @@ describe("db seed reset", () => {
     const io = seedIo(root, []);
     const cli = await run(io, ["seed", "reset", "--root", root, "--yes"]);
 
-    expect(sent(io, "--command").filter((command) => command.startsWith("DELETE"))).toEqual(["DELETE FROM _forge_seed_history;"]);
+    expect(sent(io, "--command").filter((command) => command.startsWith("DELETE"))).toEqual(["DELETE FROM _forge_seed_history"]);
     expect(cli.out).toEqual(["seed history cleared — the rows the seeds wrote are untouched"]);
   });
 });

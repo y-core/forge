@@ -50,14 +50,23 @@ function deployableRoot(): string {
   return root;
 }
 
-function wire(io: FakeDbIo, over: { recorded?: Spawned } = {}): void {
+function wire(io: FakeDbIo, over: { recorded?: Record<string, unknown>[] } = {}): void {
+  io.d1Rules.push(
+    { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: () => over.recorded ?? (noTable() as never) },
+    { match: (statement) => statement === INVENTORY_SELECT, reply: INVENTORY },
+  );
+  // A deployed place still reads through the CLI, so both effects are wired.
   io.rules.push(
-    { match: isRecordedSelect, reply: over.recorded ?? NO_TABLE },
+    { match: isRecordedSelect, reply: over.recorded === undefined ? NO_TABLE : jsonRows(over.recorded) },
     { match: isInventorySelect, reply: jsonRows(INVENTORY) },
     { match: (a) => argvHas(a, "execute", "--yes", "--command"), reply: OK },
     { match: (a) => argvHas(a, "execute", "--yes", "--file"), reply: OK },
   );
 }
+
+const noTable = () => {
+  throw new Error("no such table: _forge_migrations");
+};
 
 async function drive(
   io: FakeDbIo,
@@ -245,7 +254,7 @@ describe("forge db migrate status", () => {
   it("exits 0 under --check when every migration is applied and its fingerprint certified", async () => {
     const root = appRoot();
     const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
-    wire(io, { recorded: jsonRows([{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: FINGERPRINT }]) });
+    wire(io, { recorded: [{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: FINGERPRINT }] });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 
@@ -256,7 +265,7 @@ describe("forge db migrate status", () => {
   it("exits 1 under --check when the schema fingerprint has moved since it was certified", async () => {
     const root = appRoot();
     const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
-    wire(io, { recorded: jsonRows([{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: "ff" }]) });
+    wire(io, { recorded: [{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: "ff" }] });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 
@@ -266,7 +275,7 @@ describe("forge db migrate status", () => {
   it("exits 1 under --check when an applied file was edited since", async () => {
     const root = appRoot();
     const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
-    wire(io, { recorded: jsonRows([{ name: "0001_init", sha256: "stale-hash", applied_at: 1, fingerprint: FINGERPRINT }]) });
+    wire(io, { recorded: [{ name: "0001_init", sha256: "stale-hash", applied_at: 1, fingerprint: FINGERPRINT }] });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 

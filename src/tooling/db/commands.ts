@@ -4,7 +4,7 @@ import { CliError } from "../cli/errors";
 import type { CliContext, CommandBase } from "../cli/types";
 import { createBackupCommands } from "./backup/commands";
 import { timeTravelInfo, timeTravelRestore } from "./bookmark";
-import { confirmPrinter, resolveDbContext, sharedDbFlags } from "./context";
+import { confirmPrinter, sharedDbFlags, withDbRun } from "./context";
 import { createMigrateCommands } from "./migrate/commands";
 import { createSchemaCommands } from "./schema/commands";
 import { createSeedCommands } from "./seed/commands";
@@ -32,10 +32,11 @@ function createBookmarkCommands(overrides: DbContextOverrides): CommandBase {
         timestamp: { type: "string" as const, description: "An ISO 8601 instant or a Unix timestamp to bookmark instead of now" },
       },
       run: async (_args, flags, ctx?: CliContext) => {
-        const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-        const info = timeTravelInfo(run.io, run.home, flags.timestamp, run.config);
-        if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, ...info }));
-        else run.print(`bookmark ${info.bookmark}\nrestore with: ${info.restoreCommand}`);
+        return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+          const info = timeTravelInfo(run.io, run.home, flags.timestamp, run.config);
+          if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, ...info }));
+          else run.print(`bookmark ${info.bookmark}\nrestore with: ${info.restoreCommand}`);
+        });
       },
     }),
   );
@@ -54,20 +55,21 @@ function createBookmarkCommands(overrides: DbContextOverrides): CommandBase {
         if ((flags.bookmark === undefined) === (flags.timestamp === undefined)) {
           throw new CliError("invalid-args", "Name the point to return to with exactly one of --bookmark or --timestamp.");
         }
-        const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-        const point = flags.bookmark === undefined ? { timestamp: flags.timestamp ?? "" } : { bookmark: flags.bookmark };
-        await confirm({
-          verb: "restore",
-          what: `${run.home.database} (${run.config.target.place}) to ${"bookmark" in point ? point.bookmark : point.timestamp}`,
-          consequence:
-            "Every write since that point is discarded. Capture the current point first with `forge db bookmark info` if you may want it back.",
-          yes: run.yes,
-          print: confirmPrinter(run),
-          cancelMessage: "Restore cancelled; the database is unchanged.",
+        return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+          const point = flags.bookmark === undefined ? { timestamp: flags.timestamp ?? "" } : { bookmark: flags.bookmark };
+          await confirm({
+            verb: "restore",
+            what: `${run.home.database} (${run.config.target.place}) to ${"bookmark" in point ? point.bookmark : point.timestamp}`,
+            consequence:
+              "Every write since that point is discarded. Capture the current point first with `forge db bookmark info` if you may want it back.",
+            yes: run.yes,
+            print: confirmPrinter(run),
+            cancelMessage: "Restore cancelled; the database is unchanged.",
+          });
+          const output = timeTravelRestore(run.io, run.home, point);
+          if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, restored: point }));
+          else run.print(output === "" ? "restored" : output);
         });
-        const output = timeTravelRestore(run.io, run.home, point);
-        if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, restored: point }));
-        else run.print(output === "" ? "restored" : output);
       },
     }),
   );
@@ -96,18 +98,19 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
         "no-lint": { type: "boolean" as const, description: "Apply without checking the pending migrations for destructive SQL first" },
       },
       run: async (_args, flags, ctx?: CliContext) => {
-        const run = await resolveDbContext(flags as SharedDbFlags, ctx, overrides);
-        await confirm({
-          verb: "rebuild",
-          what: `${run.home.database} (${run.config.target.place})`,
-          consequence: "Every row in it is discarded; what it holds afterwards comes from the migrations and the seeds alone.",
-          yes: run.yes,
-          print: confirmPrinter(run),
-          cancelMessage: "Reset cancelled; the standby database is unchanged.",
+        return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+          await confirm({
+            verb: "rebuild",
+            what: `${run.home.database} (${run.config.target.place})`,
+            consequence: "Every row in it is discarded; what it holds afterwards comes from the migrations and the seeds alone.",
+            yes: run.yes,
+            print: confirmPrinter(run),
+            cancelMessage: "Reset cancelled; the standby database is unchanged.",
+          });
+          const outcome = await runStandbyReset(run, { dir: flags.dir, seed: !flags["no-seed"], lint: !flags["no-lint"] });
+          if (run.json) run.print(JSON.stringify({ ...where(run), ...outcome }));
+          else run.print(`${outcome.database}: ${outcome.applied.length} migration(s), ${outcome.seeded.length} seed(s)`);
         });
-        const outcome = await runStandbyReset(run, { dir: flags.dir, seed: !flags["no-seed"], lint: !flags["no-lint"] });
-        if (run.json) run.print(JSON.stringify({ ...where(run), ...outcome }));
-        else run.print(`${outcome.database}: ${outcome.applied.length} migration(s), ${outcome.seeded.length} seed(s)`);
       },
     }),
   );

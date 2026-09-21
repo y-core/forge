@@ -196,8 +196,8 @@ orphan actually escapes through.
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same ground the browser set is held back on (§1c).
 `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
 
-**`test` is scoped to `src/` so that this set is not also `standard`'s.** A spec here costs a runtime start; a co-located test costs milliseconds,
-and the run a task closes on must not pay a runtime start per spec.
+**`test` does not reach `tests/workerd/`, so that this set is not also `standard`'s.** A spec here costs a runtime start; a co-located test costs
+milliseconds, and the run a task closes on must not pay a runtime start per spec.
 
 ---
 
@@ -372,8 +372,8 @@ thirteen seconds. `standard` adds `test`, which is over half the gate's wall tim
 suites, `test:browser` and `test:workerd`.
 
 **So the tier a row declares marks what it costs, not what it is**: a table read top to bottom is `quality` except where it says otherwise, which is
-why `config/steps.ts` carries a `tier` key only on the rows that are not. `test` is scoped to `src/`, so `standard` runs the co-located suites alone
-and the workerd set is reached only through its own step (§1f).
+why `config/steps.ts` carries a `tier` key only on the rows that are not. `test` covers every co-located suite that judges nothing external —
+`src/`, `config/` and `warden/src/` — so `standard` runs those alone and the workerd set is reached only through its own step (§1f).
 
 The table is not the running order: the selector sorts by tier after filtering, so every `quality` row runs before `test` and both before `full`,
 with declared order preserved inside each tier. This is what makes a wrap or comment-budget failure surface in seconds rather than after the suite —

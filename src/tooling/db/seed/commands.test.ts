@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { addCommand, createCommand } from "../../cli/command";
 import { execute } from "../../cli/execute";
 import type { CommandBase } from "../../cli/types";
-import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../db.fixture";
+import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig } from "../db.fixture";
 import { sha256 } from "../digest";
 import type { FakeDbIo, SeedRecord } from "../types";
 import { createSeedCommands } from "./commands";
@@ -23,12 +23,14 @@ function appRoot(): string {
 
 function seedIo(root: string, history: SeedRecord[] = []): FakeDbIo {
   const io = fakeDbIo({ [join(root, "seeds", "001_users.sql")]: USERS, [join(root, "seeds", "002_posts.sql")]: POSTS });
+  const rows = history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }));
+  io.d1Rules.push({ match: (statement) => statement.includes("_forge_seed_history"), reply: rows });
+  // A deployed target reads through the CLI, which is the one place a seed run still spawns.
   io.rules.push({
     match: (args) => argvHas(args, "execute", "--json", "--command") && (args.at(-1) ?? "").includes("_forge_seed_history"),
-    reply: jsonRows(history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }))),
+    reply: jsonRows(rows),
   });
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--json", "--command"), reply: jsonRows([]) });
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--yes"), reply: OK });
+  io.rules.push({ match: (args) => argvHas(args, "execute"), reply: jsonRows([]) });
   return io;
 }
 

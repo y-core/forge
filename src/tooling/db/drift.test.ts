@@ -4,12 +4,12 @@ import { INVENTORY_SELECT } from "../../storage/db/schema";
 import type { WranglerConfig } from "../cf/types";
 import { CliError } from "../cli/errors";
 import { PLAIN } from "../term/color";
-import { argvHas, fakeDbIo } from "./db.fixture";
+import { fakeDbIo } from "./db.fixture";
 import { readDrift, refuseSchemaDrift, schemaDrift } from "./drift";
 import { appHome } from "./home";
 import { RECORDED_CHECKSUM_SELECT } from "./migrate/checksum";
 import { schemaFingerprint } from "./migrate/fingerprint";
-import type { DbConfig, DbRunContext, FakeDbIo, RecordedChecksum, SchemaObject, Spawned } from "./types";
+import type { DbConfig, DbRunContext, FakeDbIo, RecordedChecksum, SchemaObject } from "./types";
 
 const USERS_SQL = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT";
 const INVENTORY: readonly SchemaObject[] = [{ type: "table", name: "users", tblName: "users", sql: USERS_SQL }];
@@ -69,36 +69,29 @@ describe("schemaDrift()", () => {
 });
 
 describe("readDrift()", () => {
-  const command = (a: readonly string[]) => (argvHas(a, "execute", "--json", "--command") ? (a.at(-1) ?? "") : "");
-  const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table: _forge_migrations" };
+  const noTable = () => {
+    throw new Error("no such table: _forge_migrations");
+  };
 
-  function wire(io: FakeDbIo, history: Spawned): void {
-    io.rules.push(
-      { match: (a) => command(a) === RECORDED_CHECKSUM_SELECT, reply: history },
-      {
-        match: (a) => command(a) === INVENTORY_SELECT,
-        reply: {
-          code: 0,
-          stdout: JSON.stringify([{ results: [{ type: "table", name: "users", tbl_name: "users", sql: USERS_SQL }] }]),
-          stderr: "",
-        },
-      },
+  function wire(io: FakeDbIo, history: Record<string, unknown>[] | (() => never)): void {
+    io.d1Rules.push(
+      { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: history },
+      { match: (statement) => statement === INVENTORY_SELECT, reply: [{ type: "table", name: "users", tbl_name: "users", sql: USERS_SQL }] },
     );
   }
 
-  it("reads both sides itself, for a verb holding neither", () => {
+  it("reads both sides itself, for a verb holding neither", async () => {
     const { run, io } = context();
-    const rows = [{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: ACTUAL }];
-    wire(io, { code: 0, stdout: JSON.stringify([{ results: rows }]), stderr: "" });
+    wire(io, [{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: ACTUAL }]);
 
-    expect(readDrift(run.io, run.home)).toEqual({ state: "match", recorded: ACTUAL, actual: ACTUAL });
+    expect(await readDrift(run.io, run.home)).toEqual({ state: "match", recorded: ACTUAL, actual: ACTUAL });
   });
 
-  it("is unavailable rather than a throw when the history table is absent", () => {
+  it("is unavailable rather than a throw when the history table is absent", async () => {
     const { run, io } = context();
-    wire(io, NO_TABLE);
+    wire(io, noTable);
 
-    expect(readDrift(run.io, run.home).state).toBe("unavailable");
+    expect((await readDrift(run.io, run.home)).state).toBe("unavailable");
   });
 });
 

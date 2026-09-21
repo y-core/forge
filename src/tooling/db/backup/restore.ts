@@ -67,13 +67,13 @@ function discoverArtifactMigrations(run: DbRunContext, artifact: string, manifes
   });
 }
 
-function inspect(run: DbRunContext): RestoreTargetState {
-  const objects = toSchemaObjects(queryRows(run.io, run.home, INVENTORY_SELECT));
+async function inspect(run: DbRunContext): Promise<RestoreTargetState> {
+  const objects = toSchemaObjects(await queryRows(run.io, run.home, INVENTORY_SELECT));
   const carried = objects
     .filter((object) => object.type === "table")
     .map((object) => object.name)
     .filter((name) => classifyTable(name) === "app" || (classifyTable(name) === "managed" && COMPANION_TABLES.includes(name)));
-  const counted = queryBatches(run.io, run.home, carried.map(rowCountSelect));
+  const counted = await queryBatches(run.io, run.home, carried.map(rowCountSelect));
   const counts: Record<string, number> = {};
   carried.forEach((name, index) => {
     counts[name] = Number(counted[index]?.[0]?.rows ?? 0);
@@ -82,7 +82,7 @@ function inspect(run: DbRunContext): RestoreTargetState {
 }
 
 /** Everything a restore checks before it asks: the manifest, the artifact whole, its embedded migrations, and an empty target. @public */
-export function prepareRestore(run: DbRunContext, options: RestoreOptions): RestorePlan {
+export async function prepareRestore(run: DbRunContext, options: RestoreOptions): Promise<RestorePlan> {
   refuseRemoteRestore(run);
   const { io, home, config } = run;
   const artifact = resolve(config.root, options.artifact);
@@ -110,7 +110,7 @@ export function prepareRestore(run: DbRunContext, options: RestoreOptions): Rest
   verifyBackupArtifact(io, artifact, manifest);
 
   const expectedTables = manifest.tables.map((table) => table.name);
-  const before = inspect(run);
+  const before = await inspect(run);
   const occupied = Object.entries(before.counts).filter(([, count]) => count > 0);
   if (occupied.length > 0) {
     throw new CliError(
@@ -125,7 +125,7 @@ export function prepareRestore(run: DbRunContext, options: RestoreOptions): Rest
 }
 
 /** Loads a prepared restore into the target and checks the result against the manifest's own digests. @public */
-export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOutcome {
+export async function executeRestore(run: DbRunContext, plan: RestorePlan): Promise<RestoreOutcome> {
   const { io, home } = run;
   const { artifact, manifest, expectedTables, before } = plan;
   if (plan.route === "full") {
@@ -133,21 +133,21 @@ export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOut
     if (problems.length > 0) throw new CliError("invalid-args", `the target is not empty:\n  ${problems.join("\n  ")}`);
     // The schema declares the tables, then the rows fill them — the repeated `PRAGMA
     // defer_foreign_keys=TRUE;` the second file opens with is accepted and not honoured, as it is anywhere.
-    executeFile(io, home, join(artifact, "schema.sql"));
-    executeFile(io, home, join(artifact, "data.sql"));
+    await executeFile(io, home, join(artifact, "schema.sql"));
+    await executeFile(io, home, join(artifact, "data.sql"));
   } else {
     // `record: false`: `data.sql` carries the artifact's own `_forge_migrations` rows, with their
     // original ids, `applied_at` and `fingerprint`, so recording here would collide with every one.
-    applyMigrations(run, home, plan.migrations, { label: "restore", record: false });
-    ensureCompanionTables(io, home);
-    const after = inspect(run);
+    await applyMigrations(run, home, plan.migrations, { label: "restore", record: false });
+    await ensureCompanionTables(io, home);
+    const after = await inspect(run);
     const problems = checkRestoreTarget("migrations", after.objects, after.counts, expectedTables);
     if (problems.length > 0) throw new CliError("invalid-args", `the target is not ready for a data-only load:\n  ${problems.join("\n  ")}`);
-    executeFile(io, home, join(artifact, "data.sql"));
+    await executeFile(io, home, join(artifact, "data.sql"));
   }
 
-  const objects = toSchemaObjects(queryRows(io, home, INVENTORY_SELECT));
-  const recorded = queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
+  const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
+  const recorded = await queryRowsIfTable(io, home, RECORDED_CHECKSUM_SELECT);
   const bindings = compareManifests(manifest, {
     migrations: (recorded ?? []).map((row) => String(row.name ?? "")),
     digest: sha256(appSchemaDigestInput(objects)),
@@ -155,14 +155,15 @@ export function executeRestore(run: DbRunContext, plan: RestorePlan): RestoreOut
   });
 
   const declared = new Map(manifest.tables.map((table) => [table.name, table.digest]));
-  const tables = describeTables(io, home, expectedTables).map((table) => {
-    const read = readWholeTable(io, home, table);
-    return {
+  const tables: { name: string; rows: number; matches: boolean }[] = [];
+  for (const table of await describeTables(io, home, expectedTables)) {
+    const read = await readWholeTable(io, home, table);
+    tables.push({
       name: table.name,
       rows: read.rows.length,
       matches: declared.get(table.name) === sha256(read.rows.map((row) => row.canonical).join("\n")),
-    };
-  });
+    });
+  }
 
   for (const binding of bindings) io.log(`! ${binding}`);
   const divergent = tables.filter((table) => !table.matches).length;

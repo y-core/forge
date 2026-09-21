@@ -46,6 +46,10 @@ export interface Spawned {
 /** The side effects every I/O module reaches the world through, so a test injects a fake. @public */
 export interface DbIo {
   spawn(cmd: string, args: readonly string[], opts: { cwd: string }): Spawned;
+  /** Statements against a local home's own state, in one transaction, each answered with its own rows. */
+  d1(home: Home, sql: readonly string[]): Promise<Record<string, unknown>[][]>;
+  /** Releases the handle over `home`'s state — which anything about to delete or to spawn against that state must do first — or every handle when `home` is null. */
+  closeD1(home: Home | null): Promise<void>;
   exists(path: string): boolean;
   readText(path: string): string;
   writeText(path: string, text: string): void;
@@ -68,6 +72,8 @@ export interface DbIo {
 export interface Home {
   readonly label: string;
   readonly database: string;
+  /** The `d1_databases` binding the database is reached through in-process. */
+  readonly binding: string;
   /** Directory `wrangler` runs in; `d1 export` resolves state relative to it. */
   readonly dir: string;
   readonly configPath: string;
@@ -431,10 +437,31 @@ export interface FakeWranglerRule {
   reply: Spawned | ((args: readonly string[]) => Spawned);
 }
 
-/** An in-memory `DbIo`: a map for the filesystem, a rule table for wrangler, and every call recorded. @internal */
+/** One group of statements the run put to a local database, and where they came from. @internal */
+export interface FakeD1Call {
+  readonly home: string;
+  readonly place: Place;
+  /** `persistRoot(home)`, so the recorder carries the `v3` segment. */
+  readonly persistTo: string;
+  readonly statements: readonly string[];
+  /** The file, when the statements came from one. */
+  readonly source: string | null;
+}
+
+/** One canned answer to an in-process statement, matched against its text and the home it was put to. @internal */
+export interface FakeD1Rule {
+  match: (statement: string, home: Home) => boolean;
+  reply: Record<string, unknown>[] | ((statement: string, home: Home) => Record<string, unknown>[]);
+}
+
+/** An in-memory `DbIo`: a map for the filesystem, a rule table for each of the two effects, and every call recorded. @internal */
 export interface FakeDbIo extends DbIo {
   files: Map<string, string>;
   calls: string[][];
   logs: string[];
   rules: FakeWranglerRule[];
+  d1Calls: FakeD1Call[];
+  d1Rules: FakeD1Rule[];
+  /** Persist paths in close order, which is what pins the obligations to close before a delete and before a spawn. */
+  closed: string[];
 }

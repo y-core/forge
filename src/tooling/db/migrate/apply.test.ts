@@ -74,20 +74,38 @@ function stamped(body: string, baseline: string): string {
 
 const STAMPED_INIT = stamped(INIT, migrationsDigest([]));
 
+const noTable = () => {
+  throw new Error("no such table: _forge_migrations");
+};
+
 /** The rule table a run that reaches the database needs, with the recorded rows it should read back. */
-function wire(io: FakeDbIo, recorded: Spawned = NO_TABLE): void {
+function wire(io: FakeDbIo, recorded: Record<string, unknown>[] | null = null): void {
+  io.d1Rules.push(
+    { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: () => recorded ?? (noTable() as never) },
+    { match: (statement) => statement === INVENTORY_SELECT, reply: INVENTORY },
+  );
   io.rules.push(
     { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
-    { match: isRecordedSelect, reply: recorded },
+    { match: isRecordedSelect, reply: recorded === null ? NO_TABLE : jsonRows(recorded) },
     { match: isInventorySelect, reply: jsonRows(INVENTORY) },
     { match: isWrite, reply: OK },
     { match: isFileApply, reply: OK },
   );
 }
 
-/** The verb of each wrangler call, in the order it was made. */
+/** What one group of statements did, named as the trace names it. */
+function verbOf(statements: readonly string[], source: string | null): string {
+  if (source !== null) return `stage:${source.split("/").at(-1)}`;
+  if (statements[0] === RECORDED_CHECKSUM_SELECT) return "read-recorded";
+  if (statements[0] === INVENTORY_SELECT) return "read-inventory";
+  return "write";
+}
+
+// A deployed run reaches the database only by spawning and a local one only in process, so the two
+// recorders never interleave and concatenating them is the order the run made them in.
+/** The verb of each thing the run did against the database, in order. */
 function trace(io: FakeDbIo): string[] {
-  return io.calls.map((call) => {
+  const spawned = io.calls.map((call) => {
     const args = call.slice(1);
     if (isFileApply(args)) return `stage:${(args.at(-1) ?? "").split("/").at(-1)}`;
     if (argvHas(args, "time-travel", "info")) return "bookmark";
@@ -96,9 +114,13 @@ function trace(io: FakeDbIo): string[] {
     if (isWrite(args)) return "write";
     return args.join(" ");
   });
+  return [...spawned, ...io.d1Calls.map((call) => verbOf(call.statements, call.source))];
 }
 
-const writes = (io: FakeDbIo) => io.calls.filter((call) => isWrite(call.slice(1))).map((call) => call.at(-1) ?? "");
+const writes = (io: FakeDbIo) => [
+  ...io.calls.filter((call) => isWrite(call.slice(1))).map((call) => call.at(-1) ?? ""),
+  ...io.d1Calls.filter((call) => verbOf(call.statements, call.source) === "write").map((call) => call.statements.join("\n")),
+];
 
 describe("runMigrate()", () => {
   it("applies every pending migration, then records the checksum and certifies the fingerprint", async () => {
@@ -166,14 +188,14 @@ describe("runMigrate()", () => {
 
   it("reads the applied names out of _forge_migrations when it exists", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]));
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]);
 
     expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
 
   it("says the database is up to date and writes only the companion tables when nothing is pending", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]));
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]);
 
     const outcome = await runMigrate(run, OPTIONS);
 
@@ -206,7 +228,7 @@ describe("runMigrate()", () => {
 
   it("lints only the pending files, so a rule added since cannot abort an apply over an applied one", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: DROP, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: DROP_SHA, applied_at: 1, fingerprint: null }]));
+    wire(io, [{ name: "0001_init", sha256: DROP_SHA, applied_at: 1, fingerprint: null }]);
 
     expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
@@ -257,14 +279,14 @@ describe("runMigrate()", () => {
 
   it("refuses to apply over an applied migration whose file is gone, naming it", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0002_next.sql`]: NEXT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: DROP_SHA, applied_at: 1, fingerprint: null }]));
+    wire(io, [{ name: "0001_init", sha256: DROP_SHA, applied_at: 1, fingerprint: null }]);
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow("app-db (local) has applied migrations that are no longer on disk:\n  0001_init");
   });
 
   it("refuses an applied migration whose file was edited since, before the lock and the apply", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: "old-hash", applied_at: 1, fingerprint: null }]));
+    wire(io, [{ name: "0001_init", sha256: "old-hash", applied_at: 1, fingerprint: null }]);
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
       "app-db (local) has applied migrations whose files were edited after they were applied:\n  0001_init\nRestore each file from version control to the bytes _forge_migrations recorded, or reset the database; forge will not apply over an edited history.",
@@ -274,7 +296,7 @@ describe("runMigrate()", () => {
   });
 
   it("refuses a schema fingerprint that moved since the last apply certified it, until --allow-drift says so", async () => {
-    const recorded = jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }]);
+    const recorded = [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }];
 
     const refused = context({ [`${MIGRATIONS}/0001_init.sql`]: composed("CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;") }, "local");
     wire(refused.io, recorded);
@@ -288,19 +310,19 @@ describe("runMigrate()", () => {
     expect((await runMigrate(allowed.run, { ...OPTIONS, allowDrift: true })).applied).toEqual(["0002_next"]);
 
     const matching = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT }, "local");
-    wire(matching.io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]));
+    wire(matching.io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]);
     expect((await runMigrate(matching.run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
 
   it("certifies a moved fingerprint under --allow-drift when there is nothing to apply", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }]));
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }]);
 
     const outcome = await runMigrate(run, { ...OPTIONS, allowDrift: true });
 
     expect(outcome).toEqual({ applied: [], skipped: [], dryRun: false });
     expect(writes(io).at(-1)).toBe(
-      `UPDATE _forge_migrations SET fingerprint = '${ACTUAL_FINGERPRINT}' WHERE id = (SELECT id FROM _forge_migrations ORDER BY id DESC LIMIT 1);`,
+      `UPDATE _forge_migrations SET fingerprint = '${ACTUAL_FINGERPRINT}' WHERE id = (SELECT id FROM _forge_migrations ORDER BY id DESC LIMIT 1)`,
     );
     expect(out).toEqual([`certified the schema fingerprint as ${ACTUAL_FINGERPRINT}`, "app-db (local) is up to date — 1 migration(s) applied"]);
   });
@@ -308,7 +330,7 @@ describe("runMigrate()", () => {
   it("does not certify a moved fingerprint under --allow-drift when nothing is applied yet", async () => {
     const { run, io, out } = context({}, "local");
     io.mkdir(MIGRATIONS);
-    wire(io, jsonRows([]));
+    wire(io, []);
 
     const outcome = await runMigrate(run, { ...OPTIONS, allowDrift: true });
 
@@ -321,7 +343,7 @@ describe("runMigrate()", () => {
 
   it("passes the fingerprint check when none was ever certified", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
-    wire(io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]));
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]);
 
     expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
@@ -330,7 +352,7 @@ describe("runMigrate()", () => {
     const wrong = stamped(NEXT, "wrong");
     const digest = migrationsDigest([{ name: "0001_init", sha256: INIT_SHA }]);
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_schema.sql`]: wrong });
-    wire(io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]));
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]);
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
       `app-db (local): 1 pending generated migration(s) were composed against a different migration history than is now on disk:\n  0002_schema (stamped wrong, on disk ${digest.slice(0, 12)})\nCompose again, or once the files before it are correct, restamp with \`forge db migrate compose --restamp 0002_schema\`.`,
@@ -343,7 +365,7 @@ describe("runMigrate()", () => {
     // A custom migration moves data and never carries DDL, which `custom-ddl` refuses outright.
     for (const sql of [stamped(NEXT, digest), stamped(NEXT, ""), "-- custom\n-- forge:custom {}\nINSERT INTO users (id) VALUES (1);\n"]) {
       const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_schema.sql`]: sql });
-      wire(io, jsonRows([{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]));
+      wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]);
 
       expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_schema"]);
     }
@@ -353,13 +375,10 @@ describe("runMigrate()", () => {
     const wrong = stamped(NEXT, "wrong");
     const digest = migrationsDigest([{ name: "0001_init", sha256: INIT_SHA }]);
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_schema.sql`]: wrong });
-    wire(
-      io,
-      jsonRows([
-        { name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null },
-        { name: "0002_schema", sha256: WRONG_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT },
-      ]),
-    );
+    wire(io, [
+      { name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null },
+      { name: "0002_schema", sha256: WRONG_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT },
+    ]);
 
     const outcome = await runMigrate(run, OPTIONS);
 
@@ -394,15 +413,14 @@ describe("runMigrate()", () => {
   it("takes the apply lock against the app's own home", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
     let heldDuringApply = false;
-    io.rules.push(
-      { match: isRecordedSelect, reply: NO_TABLE },
-      { match: isInventorySelect, reply: jsonRows([]) },
-      { match: isWrite, reply: OK },
+    io.d1Rules.push(
+      { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: () => noTable() as never },
+      { match: (statement) => statement === INVENTORY_SELECT, reply: [] },
       {
-        match: isFileApply,
+        match: (statement) => statement.includes("CREATE TABLE users"),
         reply: () => {
           heldDuringApply = io.files.has(LOCK);
-          return OK;
+          return [];
         },
       },
     );
@@ -520,11 +538,11 @@ describe("runMigrate()", () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
     wire(io);
     const heldWhileWriting: boolean[] = [];
-    io.rules.unshift({
-      match: isWrite,
+    io.d1Rules.unshift({
+      match: (statement) => statement.includes("CREATE TABLE IF NOT EXISTS _forge_migrations") || statement.includes("UPDATE _forge_migrations"),
       reply: () => {
         heldWhileWriting.push(io.files.has(LOCK));
-        return OK;
+        return [];
       },
     });
 

@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 
 import { type DevServer, startDevServer } from "@y-core/forge/testing/workerd";
 
+import { type D1Handle, openD1 } from "./d1";
+import { wrangler } from "./wrangler";
+
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(FORGE, "tests", "fixtures", "db-migrate");
 const CONFIG = join(FIXTURE, "wrangler.jsonc");
@@ -19,6 +22,7 @@ function forgeDb(args: string[]): { code: number; stdout: string; stderr: string
 }
 
 let server: DevServer;
+let db: D1Handle;
 
 beforeAll(async () => {
   rmSync(join(FIXTURE, ".wrangler"), { recursive: true, force: true });
@@ -34,11 +38,13 @@ beforeAll(async () => {
   expect(migrate.code, `migrate failed\n${migrate.stdout}\n${migrate.stderr}`).toBe(0);
   expect(`${migrate.stdout}\n${migrate.stderr}`.includes("0001_init")).toBe(true);
   server = await startDevServer({ config: CONFIG, readyPath: "/tables" });
+  db = await openD1(FIXTURE);
 }, 240_000);
 
 // Symmetric with `beforeAll`, so the tables the last two cases create in the shared fixture database
 // leave with the run that made them rather than waiting on the next run's cleanup.
-afterAll(() => {
+afterAll(async () => {
+  await db?.dispose();
   server?.stop();
   rmSync(join(FIXTURE, ".wrangler"), { recursive: true, force: true });
   rmSync(join(FIXTURE, ".forge"), { recursive: true, force: true });
@@ -158,28 +164,11 @@ describe("forge db migrate --target local against real D1", () => {
     expect(Object.keys(health).sort()).toEqual(["actual", "recorded", "state"]);
   });
 
-  it("refuses a migration that only fails on data, on a copy restored from a backup, leaving the target alone", () => {
-    const execute = (command: string) =>
-      spawnSync(
-        "bunx",
-        [
-          "wrangler",
-          "d1",
-          "execute",
-          "db-migrate-fixture",
-          "--local",
-          "--persist-to",
-          join(FIXTURE, ".wrangler", "state"),
-          "--yes",
-          "--command",
-          command,
-        ],
-        { cwd: FIXTURE, encoding: "utf-8" },
-      );
+  it("refuses a migration that only fails on data, on a copy restored from a backup, leaving the target alone", async () => {
     const user = (id: string, key: string) =>
       `INSERT INTO auth_users (id, email, email_key, is_admin, created_at, updated_at) VALUES (X'${id}', 'ada@example.com', '${key}', 0, 1, 1)`;
-    expect(execute(user("01010101010101010101010101010101", "one@example.com")).status).toBe(0);
-    expect(execute(user("02020202020202020202020202020202", "two@example.com")).status).toBe(0);
+    await db.exec(user("01010101010101010101010101010101", "one@example.com"));
+    await db.exec(user("02020202020202020202020202020202", "two@example.com"));
 
     const backup = forgeDb(["backup", "--target", "local", "--yes"]);
     expect(backup.code, `backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
@@ -187,6 +176,7 @@ describe("forge db migrate --target local against real D1", () => {
     const rehearsed = mkdtempSync(join(tmpdir(), "forge-db-rehearse-"));
     cpSync(FIXTURE, rehearsed, { recursive: true });
     writeFileSync(join(rehearsed, "migrations", "0002_email_unique.sql"), "CREATE UNIQUE INDEX auth_users_email ON auth_users (email);\n");
+    let copy: D1Handle | null = null;
     try {
       const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--rehearse", "--root", rehearsed], {
         cwd: FORGE,
@@ -195,100 +185,55 @@ describe("forge db migrate --target local against real D1", () => {
       expect(migrate.status).toBe(1);
       expect(migrate.stderr.includes("the rehearsal failed on 0002_email_unique")).toBe(true);
 
-      const indexes = spawnSync(
-        "bunx",
-        [
-          "wrangler",
-          "d1",
-          "execute",
-          "db-migrate-fixture",
-          "--local",
-          "--persist-to",
-          join(rehearsed, ".wrangler", "state"),
-          "--json",
-          "--command",
-          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'auth_users_email'",
-        ],
-        { cwd: rehearsed, encoding: "utf-8" },
-      );
-      expect(indexes.stdout.includes("auth_users_email")).toBe(false);
+      copy = await openD1(rehearsed);
+      const indexes = await copy.rows<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'auth_users_email'");
+      expect(indexes.length).toBe(0);
     } finally {
+      await copy?.dispose();
       rmSync(rehearsed, { recursive: true, force: true });
     }
   }, 240_000);
 
   it("reports mismatch once DDL is run by hand", async () => {
-    const args = ["wrangler", "d1", "execute", "db-migrate-fixture", "--local", "--persist-to", join(FIXTURE, ".wrangler", "state"), "--yes"];
-    const stray = spawnSync("bunx", [...args, "--command", "CREATE TABLE stray (id INTEGER)"], { cwd: FIXTURE, encoding: "utf-8" });
-    expect(stray.status).toBe(0);
+    const args = ["d1", "execute", "db-migrate-fixture", "--local", "--persist-to", join(FIXTURE, ".wrangler", "state"), "--yes"];
+    const stray = await wrangler([...args, "--command", "CREATE TABLE stray (id INTEGER)"], FIXTURE);
+    expect(stray.code).toBe(0);
     const health = await get<{ state: string }>("/schema-health");
     expect(health.state).toBe("mismatch");
+    // The CLI and the handle are one database, and the handle sees a write another process made —
+    // which cannot hold if the handle's persist path has lost the `v3` segment wrangler wrote under.
+    expect((await db.rows("SELECT name FROM sqlite_master WHERE name = 'stray'")).length).toBe(1);
   }, 60_000);
 
-  it("lets D1's authorizer describe a table named with a leading underscore", () => {
-    const execute = (command: string, json: boolean) =>
-      spawnSync(
-        "bunx",
-        [
-          "wrangler",
-          "d1",
-          "execute",
-          "db-migrate-fixture",
-          "--local",
-          "--persist-to",
-          join(FIXTURE, ".wrangler", "state"),
-          ...(json ? ["--json"] : ["--yes"]),
-          "--command",
-          command,
-        ],
-        { cwd: FIXTURE, encoding: "utf-8" },
-      );
-    const created = execute(
-      "CREATE TABLE IF NOT EXISTS _forge_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, sha256 TEXT NOT NULL, applied_at INTEGER NOT NULL, fingerprint TEXT) STRICT;",
-      false,
-    );
-    expect(created.status).toBe(0);
+  it("reads nothing through a handle pointed at the `--persist-to` parent of the state wrangler wrote", async () => {
+    const parent = await openD1(FIXTURE, join(FIXTURE, ".wrangler", "state"));
+    try {
+      await expect(parent.rows("SELECT name FROM _forge_migrations")).rejects.toThrow(/no such table/i);
+    } finally {
+      await parent.dispose();
+    }
+  }, 60_000);
 
-    const info = execute("SELECT name FROM pragma_table_info('_forge_migrations') ORDER BY cid", true);
-    expect(info.status).toBe(0);
-    const columns = (JSON.parse(info.stdout.slice(info.stdout.indexOf("["))) as { results: { name: string }[] }[])[0]?.results ?? [];
+  it("lets D1's authorizer describe a table named with a leading underscore", async () => {
+    await db.exec(
+      "CREATE TABLE IF NOT EXISTS _forge_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, sha256 TEXT NOT NULL, applied_at INTEGER NOT NULL, fingerprint TEXT) STRICT;",
+    );
+
+    const columns = await db.rows<{ name: string }>("SELECT name FROM pragma_table_info('_forge_migrations') ORDER BY cid");
     expect(columns.map((column) => column.name)).toEqual(["id", "name", "sha256", "applied_at", "fingerprint"]);
 
-    const model = execute(
+    const rows = await db.rows<{ tbl: string }>(
       "SELECT m.name AS tbl, x.name FROM sqlite_master m JOIN pragma_table_xinfo(m.name) x WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' ORDER BY m.name, x.cid",
-      true,
     );
-    expect(model.status).toBe(0);
-    const rows = (JSON.parse(model.stdout.slice(model.stdout.indexOf("["))) as { results: { tbl: string }[] }[])[0]?.results ?? [];
     expect(rows.some((row) => row.tbl === "_forge_migrations")).toBe(true);
   }, 60_000);
 
-  it("filters _forge_migrations out of the model read and leaves a decoy named xforge_decoy in it", () => {
-    const execute = (command: string, json: boolean) =>
-      spawnSync(
-        "bunx",
-        [
-          "wrangler",
-          "d1",
-          "execute",
-          "db-migrate-fixture",
-          "--local",
-          "--persist-to",
-          join(FIXTURE, ".wrangler", "state"),
-          ...(json ? ["--json"] : ["--yes"]),
-          "--command",
-          command,
-        ],
-        { cwd: FIXTURE, encoding: "utf-8" },
-      );
-    expect(execute("CREATE TABLE IF NOT EXISTS xforge_decoy (id INTEGER PRIMARY KEY) STRICT;", false).status).toBe(0);
+  it("filters _forge_migrations out of the model read and leaves a decoy named xforge_decoy in it", async () => {
+    await db.exec("CREATE TABLE IF NOT EXISTS xforge_decoy (id INTEGER PRIMARY KEY) STRICT;");
 
-    const read = execute(
+    const tables = await db.rows<{ tbl: string }>(
       "SELECT m.name AS tbl FROM sqlite_master m JOIN pragma_table_xinfo(m.name) x WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\' ORDER BY m.name, x.cid",
-      true,
     );
-    expect(read.status).toBe(0);
-    const tables = (JSON.parse(read.stdout.slice(read.stdout.indexOf("["))) as { results: { tbl: string }[] }[])[0]?.results ?? [];
     expect(tables.some((row) => row.tbl === "_forge_migrations")).toBe(false);
     expect(tables.some((row) => row.tbl === "xforge_decoy")).toBe(true);
   }, 60_000);

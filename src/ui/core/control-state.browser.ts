@@ -94,9 +94,9 @@ test.describe("Toast auto-dismiss", () => {
       }),
     );
     await mount(page, html, EXPOSE);
+    await page.locator("#a [data-slot~='toast-close']").focus();
     await start(page);
 
-    await page.locator("#a [data-slot~='toast-close']").focus();
     await expect.poll(() => page.evaluate(() => document.querySelector("#a") !== null)).toBe(false);
 
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
@@ -110,9 +110,9 @@ test.describe("Toast auto-dismiss", () => {
       }),
     );
     await mount(page, html, EXPOSE);
+    await page.locator("#b [data-slot~='toast-close']").focus();
     await start(page);
 
-    await page.locator("#b [data-slot~='toast-close']").focus();
     await expect.poll(() => page.evaluate(() => document.querySelector("#a") !== null)).toBe(false);
 
     expect(await page.evaluate(() => document.querySelector("#b")?.contains(document.activeElement))).toBe(true);

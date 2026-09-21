@@ -6,18 +6,17 @@ import { join } from "node:path";
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
 import {
-  argvHas,
   fakeDbIo,
   keyProbeAsked,
   keyProbeReply,
   minimalWranglerConfig,
   projectReadRows,
-  routedReply,
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
 } from "../db.fixture";
 import { sha256 } from "../digest";
+import { persistRoot } from "../home";
 import type { BackupManifest, DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 import { executeReset, findVerifiedBackup, prepareReset } from "./reset";
@@ -119,13 +118,13 @@ function fakeDatabase(seed: Record<string, string>, tasks: readonly Record<strin
     const seek = after === null ? tasks : tasks.filter((row) => String(row[key]) > (after[1] ?? ""));
     return projectReadRows(seek.slice(0, limit));
   };
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
+  io.d1Rules.push({ match: () => true, reply: answer });
   return io;
 }
 
-function refusal(run: () => unknown): { kind: string; message: string } {
+async function refusal(run: () => unknown): Promise<{ kind: string; message: string }> {
   try {
-    run();
+    await run();
   } catch (error) {
     if (error instanceof CliError) return { kind: error.kind, message: error.message };
     throw error;
@@ -172,14 +171,14 @@ describe("findVerifiedBackup", () => {
 });
 
 describe("prepareReset + executeReset — the pair the CLI confirms between", () => {
-  const runReset = (run: DbRunContext, options: ResetOptions): ResetOutcome => executeReset(run, prepareReset(run, options));
+  const runReset = async (run: DbRunContext, options: ResetOptions): Promise<ResetOutcome> => executeReset(run, await prepareReset(run, options));
 
   it("refuses a deployed database, naming the bookmark verb that does reach one", async () => {
     const root = appRoot();
     const io = fakeDbIo();
     const run = await context(root, io, { target: "remote" });
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
+    expect(await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
       kind: "invalid-args",
       message:
         "remote cannot be reset from here — return a deployed database to a point in time with `forge db bookmark restore`, or replace it with `wrangler d1 create`",
@@ -192,7 +191,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDbIo({ [join(root, ".wrangler", "state", ...STATE, "db.sqlite")]: "" });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "other-db", allowUnbacked: false }))).toEqual({
+    expect(await refusal(() => runReset(run, { expect: "other-db", allowUnbacked: false }))).toEqual({
       kind: "invalid-args",
       message: "--expect other-db does not name this target, which is app-db",
     });
@@ -203,7 +202,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const root = appRoot();
     const io = fakeDbIo();
 
-    expect(runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
+    expect(await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
       database: "app-db",
       rows: 0,
       removed: null,
@@ -221,13 +220,37 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
       ...artifactFiles(join(root, ".forge/backups", "app-db-20260911T090000Z")),
     });
 
-    expect(runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
+    expect(await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
       database: "app-db",
       rows: 2,
       removed: state,
       backedUpBy: "app-db-20260911T090000Z",
     });
     expect(io.exists(join(state, "db.sqlite"))).toBe(false);
+  });
+
+  // The state directory is named from `persistRoot`, so the `v3` segment is spelled in one place and
+  // a handle over it is released before the directory holding it goes.
+  it("releases the handle over the state it is about to remove, naming the path `persistRoot` gives", async () => {
+    const root = appRoot();
+    const state = join(root, ".wrangler", "state", ...STATE);
+    const io = fakeDatabase({
+      [join(state, "db.sqlite")]: "",
+      [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
+      ...artifactFiles(join(root, ".forge/backups", "app-db-20260911T090000Z")),
+    });
+    const run = await context(root, io);
+    const remove = io.remove;
+    let closedFirst = false;
+    io.remove = (path: string) => {
+      closedFirst = io.closed.includes(persistRoot(run.home));
+      remove(path);
+    };
+
+    await runReset(run, { expect: "app-db", allowUnbacked: false });
+
+    expect(closedFirst).toBe(true);
+    expect(persistRoot(run.home)).toBe(join(root, ".wrangler", "state", "v3"));
   });
 
   // `takeBackup` writes both `.sql` files for every backup, so a manifest declaring none was never
@@ -243,7 +266,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     });
     const run = await context(root, io);
 
-    const refused = refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }));
+    const refused = await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }));
 
     expect(refused.kind).toBe("invalid-args");
     expect(refused.message).toContain("declares no schema.sql and no data.sql");
@@ -263,7 +286,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false })).kind).toBe("invalid-args");
+    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).kind).toBe("invalid-args");
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
   });
 
@@ -275,7 +298,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({ [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(declared) });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false })).kind).toBe("invalid-args");
+    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).kind).toBe("invalid-args");
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
   });
 
@@ -303,7 +326,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
     const run = await context(root, io, { env: "staging", db: "DB" });
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: true })).message).toBe(
+    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: true }))).message).toBe(
       `${join(root, "wrangler.jsonc")} declares 2 d1 databases across its environments (app-db, reports-db) and the miniflare state filename is a hash — this tool cannot reset one of several`,
     );
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
@@ -327,7 +350,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: true })).message).toBe(
+    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: true }))).message).toBe(
       `${join(root, "wrangler.jsonc")} declares 2 d1 databases across its environments (app-db, app-db-staging) and the miniflare state filename is a hash — this tool cannot reset one of several`,
     );
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
@@ -340,7 +363,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
+    expect(await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
       kind: "invalid-args",
       message: `app-db holds 2 rows and no verified backup of it exists under ${join(root, ".forge/backups")} — run \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
     });
@@ -357,7 +380,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
+    expect(await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
       kind: "invalid-args",
       message: `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 3 rows are recoverable:\n  tasks: the artifact holds 2 row(s) and the database now holds 3\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
     });
@@ -378,7 +401,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     );
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false })).message).toBe(
+    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).message).toBe(
       `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 2 rows are recoverable:\n  tasks: 2 row(s) in both, and their contents differ\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
     );
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
@@ -396,12 +419,9 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
       [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
     });
 
-    expect(runReset(await context(root, io), { expect: "app-db", allowUnbacked: false, backup: "elsewhere/app-db-20260910T090000Z" })).toEqual({
-      database: "app-db",
-      rows: 2,
-      removed: state,
-      backedUpBy: chosen,
-    });
+    expect(
+      await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false, backup: "elsewhere/app-db-20260910T090000Z" }),
+    ).toEqual({ database: "app-db", rows: 2, removed: state, backedUpBy: chosen });
   });
 
   it("refuses a named artifact that its own run never proved", async () => {
@@ -414,9 +434,9 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false, backup: "elsewhere/app-db-20260910T090000Z" })).message).toBe(
-      `${chosen} was taken from app-db and its own run never proved it rebuilds — a reset relies on an artifact that did`,
-    );
+    expect(
+      (await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false, backup: "elsewhere/app-db-20260910T090000Z" }))).message,
+    ).toBe(`${chosen} was taken from app-db and its own run never proved it rebuilds — a reset relies on an artifact that did`);
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
   });
 
@@ -427,9 +447,9 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const io = fakeDatabase({ [join(state, "db.sqlite")]: "", [join(chosen, "manifest.json")]: JSON.stringify(manifest("other-db")) });
     const run = await context(root, io);
 
-    expect(refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false, backup: "elsewhere/other-db-20260910T090000Z" })).message).toBe(
-      `${chosen} was taken from other-db and this target is app-db`,
-    );
+    expect(
+      (await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false, backup: "elsewhere/other-db-20260910T090000Z" }))).message,
+    ).toBe(`${chosen} was taken from other-db and this target is app-db`);
   });
 
   it("empties an unbacked database when allowUnbacked says so, and reports no artifact", async () => {
@@ -437,7 +457,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const state = join(root, ".wrangler", "state", ...STATE);
     const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
 
-    expect(runReset(await context(root, io), { expect: "app-db", allowUnbacked: true })).toEqual({
+    expect(await runReset(await context(root, io), { expect: "app-db", allowUnbacked: true })).toEqual({
       database: "app-db",
       rows: 2,
       removed: state,

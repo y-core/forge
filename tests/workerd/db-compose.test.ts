@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { type D1Handle, openD1 } from "./d1";
+
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(FORGE, "tests", "fixtures", "db-compose");
 const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
@@ -38,21 +40,6 @@ async function forgeDb(root: string, args: string[]): Promise<Step> {
   const proc = Bun.spawn(["bun", "run", BIN, "db", ...args, "--root", root], { cwd: FORGE, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   return { code, stdout, stderr };
-}
-
-async function d1(root: string, sql: string, json = false): Promise<string> {
-  const args = ["wrangler", "d1", "execute", "db-compose-fixture", "--local", "--persist-to", join(root, ".wrangler", "state"), "--yes"];
-  const proc = Bun.spawn(["bunx", ...args, ...(json ? ["--json"] : []), "--command", sql], { cwd: root, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
-  if (code !== 0) throw new Error(`wrangler: ${stderr}\n${stdout}`);
-  return stdout;
-}
-
-async function rows(root: string, sql: string): Promise<unknown> {
-  const lines = (await d1(root, sql, true)).split("\n");
-  const start = lines.findIndex((line) => /^\s*\[/.test(line));
-  const payload = JSON.parse(lines.slice(start).join("\n")) as { results: unknown }[];
-  return payload[0]?.results;
 }
 
 function freshRoot(): string {
@@ -99,6 +86,7 @@ function numbered(index: number, name: string): string {
 
 async function runCase(dir: string, spec: Case): Promise<Observed> {
   const root = freshRoot();
+  let db: D1Handle | null = null;
   try {
     writeFileSync(join(root, "schema.sql"), readFileSync(join(dir, "before.sql")));
     if (spec.lib !== undefined) {
@@ -108,7 +96,8 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
     const first = await forgeDb(root, ["migrate", "compose", "init"]);
     const firstWritten = existsSync(join(root, "migrations", "0001_init.sql"));
     const migratedFirst = await forgeDb(root, ["migrate", "--yes"]);
-    await d1(root, spec.seed);
+    db = await openD1(root);
+    await db.exec(spec.seed);
 
     const changeFile = join(root, "migrations", numbered(2, "change"));
     writeFileSync(join(root, "schema.sql"), readFileSync(join(dir, "after.sql")));
@@ -130,17 +119,17 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
         status: null,
         again: null,
         againWritten: false,
-        rows: await rows(root, spec.query),
+        rows: await db.rows(spec.query),
       };
     }
     const migratedSecond = await forgeDb(root, ["migrate", "--yes"]);
-    if (spec.after !== undefined) await d1(root, spec.after);
+    if (spec.after !== undefined) await db.exec(spec.after);
 
     const check = await forgeDb(root, ["schema", "check", "--replay"]);
     const status = await forgeDb(root, ["migrate", "status", "--check"]);
     const again = await forgeDb(root, ["migrate", "compose", "again", "--dry-run"]);
     const againWritten = existsSync(join(root, "migrations", numbered(3, "again")));
-    const read = await rows(root, spec.query);
+    const read = await db.rows(spec.query);
     return {
       first,
       firstWritten,
@@ -156,6 +145,8 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
       rows: read,
     };
   } finally {
+    // Disposed before the state it holds open is removed.
+    await db?.dispose();
     rmSync(root, { recursive: true, force: true });
   }
 }
