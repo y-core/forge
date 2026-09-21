@@ -17,6 +17,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.2.5] — 2026-09-21
+
 ### Changed
 
 - **`output/pdf` writes a cross-reference stream and packs its dictionaries into an `/ObjStm`.** A
@@ -4513,6 +4519,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.2.5]: https://github.com/y-core/forge/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/y-core/forge/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/y-core/forge/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/y-core/forge/compare/v0.2.1...v0.2.2
