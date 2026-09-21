@@ -6,7 +6,7 @@ import { CacheControl } from "../../http/headers";
 import { buildCursors } from "../../ui/assets/build/cursors";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
-import { buildFontPacks, buildFontSubsets, HARFBUZZ_SUBSET_WASM } from "./font-build";
+import { buildFontPacks, buildFontSubsets } from "./font-build";
 import { renderFacesModule } from "./font-emit";
 import { buildFonts } from "./fonts";
 import { buildIcons, iconLinks, iconTarget } from "./icons";
@@ -52,7 +52,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
 
   let packs: FontPackData[] = [];
   if (config.fonts.subsets.length > 0) {
-    packs = await buildFontSubsets(config.fonts.subsets, publicDir, HARFBUZZ_SUBSET_WASM);
+    packs = await buildFontSubsets(config.fonts.subsets, publicDir);
     const dest = join(publicDir, "fonts", "packs.json");
     mkdirSync(dirname(dest), { recursive: true });
     writeFileSync(dest, `${JSON.stringify(packs, null, 2)}\n`);
@@ -242,7 +242,7 @@ function keepsExistingBuild(outputPath: string, typesContent: string): boolean {
 /** Writes the generated assets module from `assets.config.ts` alone, with placeholder values, unless an existing build artifact still fits the config. @public */
 export async function generateAssetsTypes(config: ResolvedConfig, opts?: { assetsPath?: string }): Promise<AssetsTypesOutcome> {
   if (config.fonts.emit !== null) {
-    const built = await buildFontPacks(config.fonts.subsets, HARFBUZZ_SUBSET_WASM);
+    const built = await buildFontPacks(config.fonts.subsets);
     emitFaces(config, built.packs, (path) => built.sfnt.get(path));
   }
 

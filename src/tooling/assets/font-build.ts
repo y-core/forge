@@ -1,10 +1,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { Blob as HbBlob, Buffer as HbBuffer, Face, Font, shape } from "harfbuzzjs";
+import type { Face, Font } from "harfbuzzjs";
 
 import { safeJoin } from "./paths";
+import { shaper, subsetWasm } from "./peers";
 import type { FontBuild, FontMetricsData, FontPackData, FontSubset, SubsetRequest } from "./types";
+
+type Harfbuzz = typeof import("harfbuzzjs");
 
 // The subset API is HarfBuzz's C surface, which harfbuzzjs does not wrap, so the module is
 // instantiated directly. Build-time only: no Worker ever loads this, and no runtime dependency.
@@ -29,9 +32,6 @@ interface SubsetExports {
 
 const MEMORY_MODE_WRITABLE = 2;
 
-/** Where the subsetter's module ships, which is the path the pipeline uses unless a caller names another. @public */
-export const HARFBUZZ_SUBSET_WASM = "node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm";
-
 const subsetters = new Map<string, Promise<SubsetExports>>();
 
 function exports(wasmPath: string): Promise<SubsetExports> {
@@ -47,7 +47,7 @@ function exports(wasmPath: string): Promise<SubsetExports> {
 
 /** Reduces a font to the code points a document actually sets, keeping every table consistent. @public */
 export async function subsetFont(request: SubsetRequest): Promise<Uint8Array> {
-  const hb = await exports(request.wasm);
+  const hb = await exports(request.wasm ?? subsetWasm("fonts.subsets"));
   const heap = (): Uint8Array => new Uint8Array(hb.memory.buffer);
   const source = hb.malloc(request.sfnt.length);
   heap().set(request.sfnt, source);
@@ -115,9 +115,10 @@ export function postScriptName(sfnt: Uint8Array): string {
 }
 
 /** The advances and vertical metrics a face sets at, read once so the Worker never parses a font. @public */
-export function extractFontMetrics(sfnt: Uint8Array, codePoints: Iterable<number>): FontMetricsData {
-  const face = new Face(new HbBlob(sfnt), 0);
-  const font = new Font(face);
+export async function extractFontMetrics(sfnt: Uint8Array, codePoints: Iterable<number>): Promise<FontMetricsData> {
+  const hb = await shaper("fonts.subsets");
+  const face = new hb.Face(new hb.Blob(sfnt), 0);
+  const font = new hb.Font(face);
   const extents = font.hExtents();
   const advances: Record<string, number> = {};
   // The subset reassigns glyph ids, so the mapping is read off the built face rather than guessed —
@@ -136,20 +137,20 @@ export function extractFontMetrics(sfnt: Uint8Array, codePoints: Iterable<number
     bbox: boundingBox(face),
     advances,
     glyphs,
-    kerning: extractKerning(font, codePoints),
+    kerning: extractKerning(hb, font, codePoints),
   };
 }
 
 // Shaping the pair is what reads GPOS, so the adjustment is whatever HarfBuzz would apply — rather
 // than a second parser of the table that could disagree with the one that laid the text out.
-function extractKerning(font: Font, codePoints: Iterable<number>): Record<string, number> {
+function extractKerning(hb: Harfbuzz, font: Font, codePoints: Iterable<number>): Record<string, number> {
   const points = [...codePoints];
   const pairs: Record<string, number> = {};
   const single = new Map<number, number>();
-  for (const code of points) single.set(code, advanceOf(font, String.fromCodePoint(code)));
+  for (const code of points) single.set(code, advanceOf(hb, font, String.fromCodePoint(code)));
   for (const left of points) {
     for (const right of points) {
-      const together = advanceOf(font, String.fromCodePoint(left) + String.fromCodePoint(right));
+      const together = advanceOf(hb, font, String.fromCodePoint(left) + String.fromCodePoint(right));
       const apart = (single.get(left) ?? 0) + (single.get(right) ?? 0);
       const adjustment = together - apart;
       if (adjustment !== 0) pairs[`${left},${right}`] = (adjustment * 1000) / font.face.upem;
@@ -158,18 +159,18 @@ function extractKerning(font: Font, codePoints: Iterable<number>): Record<string
   return pairs;
 }
 
-function advanceOf(font: Font, run: string): number {
-  const buffer = new HbBuffer();
+function advanceOf(hb: Harfbuzz, font: Font, run: string): number {
+  const buffer = new hb.Buffer();
   buffer.addText(run);
   buffer.guessSegmentProperties();
-  shape(font, buffer);
+  hb.shape(font, buffer);
   return buffer.getGlyphPositions().reduce((sum, glyph) => sum + glyph.xAdvance, 0);
 }
 
 /** Builds the artifacts `output/pdf/fonts` ships: a subset face and the metrics beside it. @public */
 export async function buildFont(build: FontBuild): Promise<{ sfnt: Uint8Array; metrics: FontMetricsData }> {
   const sfnt = await subsetFont({ sfnt: build.sfnt, codePoints: build.codePoints, wasm: build.wasm });
-  return { sfnt, metrics: extractFontMetrics(sfnt, build.codePoints) };
+  return { sfnt, metrics: await extractFontMetrics(sfnt, build.codePoints) };
 }
 
 // Kept separate from the write below because the faces module is emitted from a config and
@@ -177,7 +178,7 @@ export async function buildFont(build: FontBuild): Promise<{ sfnt: Uint8Array; m
 /** Subsets every configured face in memory, returning the pack the engine reads and the bytes it names. @public */
 export async function buildFontPacks(
   subsets: readonly FontSubset[],
-  wasm: string,
+  wasm?: string,
 ): Promise<{ packs: FontPackData[]; sfnt: ReadonlyMap<string, Uint8Array> }> {
   const byFamily = new Map<string, FontPackData>();
   const bytes = new Map<string, Uint8Array>();
@@ -201,7 +202,7 @@ export async function buildFontPacks(
 }
 
 /** Subsets every configured face and writes it beside the pack the engine reads. @public */
-export async function buildFontSubsets(subsets: readonly FontSubset[], publicDir: string, wasm: string): Promise<FontPackData[]> {
+export async function buildFontSubsets(subsets: readonly FontSubset[], publicDir: string, wasm?: string): Promise<FontPackData[]> {
   const { packs, sfnt } = await buildFontPacks(subsets, wasm);
   for (const [to, bytes] of sfnt) {
     const dest = safeJoin(publicDir, to);

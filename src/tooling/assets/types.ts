@@ -246,8 +246,8 @@ export type BuildState = Record<string, string>;
 export interface SubsetRequest {
   sfnt: Uint8Array;
   codePoints: Iterable<number>;
-  /** Path to `harfbuzz-subset.wasm`; build-time only, and never bundled into a Worker. */
-  wasm: string;
+  /** Path to `harfbuzz-subset.wasm`; build-time only, and never bundled into a Worker. Omitted resolves the one `harfbuzzjs` ships. */
+  wasm?: string | undefined;
 }
 
 /** What one built face ships beside its bytes, so the engine never parses a font at runtime. @public */

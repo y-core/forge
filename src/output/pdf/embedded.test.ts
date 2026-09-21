@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildFontPacks, HARFBUZZ_SUBSET_WASM } from "../../tooling/assets/font-build";
+import { buildFontPacks } from "../../tooling/assets/font-build";
 import { Stack, Text } from "./components";
 import { kernedArray } from "./embed";
 import { readPdfEmbeddedFonts } from "./fonts/embedded";
@@ -12,7 +12,7 @@ const decoder = new TextDecoder("latin1");
 const SOURCE = "node_modules/@expo-google-fonts/oswald/400Regular/Oswald_400Regular.ttf";
 const CORPUS = "Declaration of interest AV";
 
-const built = await buildFontPacks([{ family: "Oswald", from: SOURCE, to: "fonts/oswald-400.ttf", covering: CORPUS }], HARFBUZZ_SUBSET_WASM);
+const built = await buildFontPacks([{ family: "Oswald", from: SOURCE, to: "fonts/oswald-400.ttf", covering: CORPUS }]);
 
 const FONT: PdfEmbeddedFont = readPdfEmbeddedFonts(
   built.packs[0]!,

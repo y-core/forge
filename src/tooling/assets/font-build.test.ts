@@ -18,6 +18,13 @@ describe("subsetFont", () => {
     expect(subset.length).toBeLessThan(sfnt.length / 4);
   });
 
+  // The pipeline names no path, so an omitted `wasm` is the production call rather than a convenience.
+  test("omitting the wasm path subsets through the module harfbuzzjs ships", async () => {
+    const named = await subsetFont({ sfnt, codePoints: points("abc"), wasm: WASM });
+    const resolved = await subsetFont({ sfnt, codePoints: points("abc") });
+    expect([...resolved]).toEqual([...named]);
+  });
+
   test("a wider corpus produces a larger subset, so the request is what decides the size", async () => {
     const narrow = await subsetFont({ sfnt, codePoints: points("abc"), wasm: WASM });
     const wide = await subsetFont({ sfnt, codePoints: points("abcdefghijklmnopqrstuvwxyz0123456789"), wasm: WASM });
@@ -26,14 +33,14 @@ describe("subsetFont", () => {
 
   test("the subset still resolves the glyphs it was asked for", async () => {
     const subset = await subsetFont({ sfnt, codePoints: points("Du Toit"), wasm: WASM });
-    const metrics = extractFontMetrics(subset, points("Du Toit"));
+    const metrics = await extractFontMetrics(subset, points("Du Toit"));
     for (const code of points("Du Toit")) expect(metrics.advances[String(code)]).toBeGreaterThan(0);
   });
 });
 
 describe("extractFontMetrics", () => {
-  test("reads the em square and the vertical metrics from the face", () => {
-    const metrics = extractFontMetrics(sfnt, points("A"));
+  test("reads the em square and the vertical metrics from the face", async () => {
+    const metrics = await extractFontMetrics(sfnt, points("A"));
     expect(metrics.unitsPerEm).toBe(1000);
     expect(metrics.ascent).toBeGreaterThan(0);
     expect(metrics.descent).toBeLessThan(0);
@@ -41,31 +48,33 @@ describe("extractFontMetrics", () => {
 
   // The box is read out of `head` because harfbuzzjs exposes no accessor for it, so the exact four
   // numbers are the claim: a plausible-looking constant would pass every inequality and fail this.
-  test("reads the face's own bounding box out of its head table", () => {
-    expect(extractFontMetrics(sfnt, points("A")).bbox).toEqual([-197, -287, 1223, 1297]);
+  test("reads the face's own bounding box out of its head table", async () => {
+    expect((await extractFontMetrics(sfnt, points("A"))).bbox).toEqual([-197, -287, 1223, 1297]);
   });
 
   test("carries the same box through a subset, which HarfBuzz does not recompute", async () => {
     const subset = await subsetFont({ sfnt, codePoints: points("."), wasm: WASM });
-    expect(extractFontMetrics(subset, points(".")).bbox).toEqual([-197, -287, 1223, 1297]);
+    expect((await extractFontMetrics(subset, points("."))).bbox).toEqual([-197, -287, 1223, 1297]);
   });
 
-  test("scales every advance to 1000 units of the em, whatever the face measures in", () => {
-    const metrics = extractFontMetrics(sfnt, points("AB"));
+  test("scales every advance to 1000 units of the em, whatever the face measures in", async () => {
+    const metrics = await extractFontMetrics(sfnt, points("AB"));
     for (const advance of Object.values(metrics.advances)) {
       expect(advance).toBeGreaterThan(0);
       expect(advance).toBeLessThan(1000);
     }
   });
 
-  test("skips a code point the face has no glyph for, rather than recording a zero advance", () => {
-    const metrics = extractFontMetrics(sfnt, [0x4fa1]);
+  test("skips a code point the face has no glyph for, rather than recording a zero advance", async () => {
+    const metrics = await extractFontMetrics(sfnt, [0x4fa1]);
     expect(metrics.advances["20385"]).toBeUndefined();
   });
 });
 
+const kerned = await extractFontMetrics(sfnt, points("AVWTavo"));
+
 describe("GPOS pair kerning", () => {
-  const metrics = extractFontMetrics(sfnt, points("AVWTavo"));
+  const metrics = kerned;
 
   test("pulls the pairs the face actually kerns, and leaves the rest out", () => {
     expect(Object.keys(metrics.kerning).length).toBeGreaterThan(0);

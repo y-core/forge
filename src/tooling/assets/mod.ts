@@ -4,7 +4,7 @@ export { defineAssetsConfig, env, flag, loadConfig } from "./config";
 export { copyAssets } from "./copy";
 export { buildCSS } from "./css";
 export { fetchURL } from "./download";
-export { buildFont, buildFontPacks, buildFontSubsets, extractFontMetrics, HARFBUZZ_SUBSET_WASM, postScriptName, subsetFont } from "./font-build";
+export { buildFont, buildFontPacks, buildFontSubsets, extractFontMetrics, postScriptName, subsetFont } from "./font-build";
 export { buildFonts } from "./fonts";
 export { hashFile, hashString } from "./hash";
 export { buildIcons, iconLinks, iconTarget } from "./icons";

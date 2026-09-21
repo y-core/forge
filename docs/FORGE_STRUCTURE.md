@@ -66,13 +66,22 @@ reach `bun:test` through a hand-written stub instead of a package — [`TEST_RUN
 
 ### 3c. Peer Dependencies for Build Tools
 
-`esbuild`, `sharp` and `tailwindcss` are **optional peer dependencies** for the `tooling/assets` pipeline. None is in the main dependency tree —
-only apps that build assets need them, and none is ever imported by runtime source, so none reaches a Worker bundle.
+`esbuild`, `harfbuzzjs`, `sharp` and `tailwindcss` are **optional peer dependencies** for the `tooling/assets` pipeline. None is in the main
+dependency tree — only apps that build assets need them, and none is ever imported by runtime source, so none reaches a Worker bundle.
+
+**An optional peer is reached lazily or it is not optional.** `src/tooling/assets/peers.ts` is the one door: `peer()` dynamic-imports the module
+and `peerFile()` resolves a file the package ships, both failing with the config key that demanded it and the command that installs it. A
+**static** import at the top of a module the barrel re-exports defeats the whole arrangement — `tooling/assets/mod.ts` is loaded by every consumer
+that reads an asset config, so the package becomes required for apps that configure no fonts, no images and no bundle at all.
 
 **A tool the pipeline shells out to is a peer dependency, declared.** `buildCSS` runs `execFileSync("tailwindcss", …)` exactly as `buildJS` runs
 `esbuild` and the image step runs `sharp`; they are one category. Nothing _imports_ `tailwindcss`, which is exactly how such a requirement
 escapes declaration — but an undeclared requirement does not stop being one, it only stops being checked, and it surfaces as a `command not found`
 mid-build where `bun install` should have warned.
+
+**A file a peer ships is resolved through it, never addressed by path.** The subsetter's `.wasm` lives inside `harfbuzzjs`, and a literal
+`node_modules/harfbuzzjs/dist/…` assumes both a flat install and a process started at the project root; `peerFile()` uses `import.meta.resolve`, so
+the lookup runs from forge's own module and follows the install wherever it landed.
 
 Declaring it also makes forge's own palette **readable**. Tailwind v4 ships its default theme as CSS (`tailwindcss/theme.css`,
 `--color-red-700: oklch(…)`), which is what lets the contrast audit resolve the status hues rather than pinning a human's measurement of them

@@ -75,12 +75,16 @@
   },
   "peerDependencies": {
     "esbuild": ">=0.20.0",
+    "harfbuzzjs": ">=1.6.0",
     "sharp": ">=0.33.0",
     "tailwindcss": ">=4.0.0",
     "wrangler": ">=4.0.0"
   },
   "peerDependenciesMeta": {
     "esbuild": {
+      "optional": true
+    },
+    "harfbuzzjs": {
       "optional": true
     },
     "sharp": {

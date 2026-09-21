@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildFontPacks, HARFBUZZ_SUBSET_WASM } from "../../tooling/assets/font-build";
+import { buildFontPacks } from "../../tooling/assets/font-build";
 import { Stack, Text } from "./components";
 import { readPdfEmbeddedFonts } from "./fonts/embedded";
 import { Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
@@ -18,7 +18,7 @@ const COVERED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz 0123456789
 
 async function face(weight: string, name: string): Promise<PdfEmbeddedFont> {
   const from = `node_modules/@expo-google-fonts/oswald/${weight}/Oswald_${weight}.ttf`;
-  const built = await buildFontPacks([{ family: "Oswald", from, to: `fonts/${name}.ttf`, covering: COVERED }], HARFBUZZ_SUBSET_WASM);
+  const built = await buildFontPacks([{ family: "Oswald", from, to: `fonts/${name}.ttf`, covering: COVERED }]);
   return readPdfEmbeddedFonts(
     built.packs[0]!,
     (path) => built.sfnt.get(path) ?? new Uint8Array(),
