@@ -86,7 +86,9 @@ function paintBand(page: PdfPage, band: PdfBand, box: PdfBox, y: number, channel
   const scratch = createCursor(undefined, { channel, paper, typesetting: set });
   scratch.newPage();
   scratch.y = y;
-  for (const element of band.elements) place(scratch, element, box);
+  scratch.furniture("pagination", () => {
+    for (const element of band.elements) place(scratch, element, box);
+  });
   page.nodes.push(...(scratch.pages[0]?.nodes ?? []));
 }
 

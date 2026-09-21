@@ -1,6 +1,6 @@
 import { err, ok } from "../../result/result";
 import { DEFAULT_PDF_LANG, pdfTaggingOn } from "./limits";
-import { fileIdentifier, infoDictionary } from "./metadata";
+import { fileIdentifier, infoDictionary, pdfWritableInfo } from "./metadata";
 import { preparePdfRender } from "./prepare";
 import type { PdfFileMetadata, PdfPage, PdfRenderer, PdfRendererOptions, PdfResolvedPage } from "./types";
 import { composePdf, deflate, writePdf } from "./writer";
@@ -10,19 +10,20 @@ import { xmpPacket } from "./xmp";
 // streams are filtered — and two renders of it produce the same file, byte for byte.
 async function assemble(pages: readonly PdfPage[], paper: PdfResolvedPage, options: PdfRendererOptions): Promise<Uint8Array<ArrayBuffer>> {
   const tagging = pdfTaggingOn(options) ? { lang: options.lang ?? DEFAULT_PDF_LANG } : undefined;
-  const composed = composePdf(pages, paper, options.fonts, tagging);
+  const composed = composePdf(pages, paper, options.fonts, tagging, options.archival);
   const standard = options.metadata === "standard";
   // The packet and the dictionary are derived from one title rather than given two, because two
   // metadata blocks disagreeing is the ordinary way a conformant file fails a conformance check.
+  const info = pdfWritableInfo(options.info ?? {});
   const metadata: PdfFileMetadata | undefined = standard
     ? {
-        info: infoDictionary(options.info ?? {}),
+        info: infoDictionary(info),
         id: await fileIdentifier(composed.streams.join("\n")),
-        xmp: xmpPacket(options.info?.title, tagging !== undefined),
+        xmp: xmpPacket(info, tagging !== undefined, options.archival),
       }
     : undefined;
   const filtered = options.compress === false ? undefined : await Promise.all(composed.streams.map(deflate));
-  return writePdf(composed, filtered, metadata);
+  return await writePdf(composed, filtered, metadata);
 }
 
 /** Builds a renderer that draws every document it is given on the same options and palette. @public */

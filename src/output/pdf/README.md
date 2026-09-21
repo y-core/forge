@@ -74,8 +74,6 @@ is no `grow`, `shrink`, `basis` or `justify` — one model, so a document is nev
 Row({ tracks: [{ points: 120 }, 1, 1], gap: 12, children: [label, first, second] });
 ```
 
-`createPdfGrid()` builds the twelve-column grid a printed form is set on, as tracks rather than a column count of its own.
-
 ### The same components, written as JSX
 
 Every component takes **one props object with `children` inside it**, which is exactly what forge's JSX runtime calls. So the tree above can be
@@ -184,10 +182,13 @@ word. `Text({ breakWord: true })` opts a run into the cut where that is the less
 
 ## Compression and metadata
 
-**Compression is on by default**, through `CompressionStream("deflate")`. Pass `compress: false` for a file you want to read in a text editor — and
-note that a deflate stream's bytes belong to the runtime's compressor, so assert what a stream _inflates to_ rather than the stream itself.
+**Compression is on by default**, through `CompressionStream("deflate")`. It also settles the file's shape: the default writes a `%PDF-1.5` file
+whose dictionaries are packed into an `/ObjStm` behind a cross-reference stream, which is what makes a tagged document cost roughly what an
+untagged one does. Pass `compress: false` for a `%PDF-1.4` file with a classic `xref` table that you can read in a text editor — and note that a
+deflate stream's bytes belong to the runtime's compressor, so assert what a stream _inflates to_ rather than the stream itself.
 
-`metadata: "standard"` writes an `/Info` dictionary from `info` and an `/ID` in the trailer. **`/ID` is derived, never random**: it is the first
+`metadata: "standard"` writes an `/Info` dictionary from `info` and an `/ID` beside the document's root — in the trailer under `compress: false`,
+and in the cross-reference stream's own dictionary otherwise. **`/ID` is derived, never random**: it is the first
 sixteen bytes of the SHA-256 of the uncompressed operators, with both halves equal, so two renders of one document are the same file and a caller
 can cache on content. Hashing the uncompressed material keeps the identity stable across a change of compressor.
 
@@ -248,8 +249,9 @@ structure element carries an object reference to its own annotation, which is wh
 the ordinary way an otherwise correct file fails a conformance check. The packet carries `dc:title`, and `pdfuaid:part` where the document is also
 tagged. It is never compressed, because a checker reads it out of the file as it stands.
 
-**The outline is the document's own heads**, nested one level: a section head sits under the title before it. Nothing else becomes a bookmark, and a
-head that set no words is left out rather than listed blank.
+**The outline is the document's own heads**, nested exactly as the structure tree's sections are: a `Heading({ level: 2 })` sits under the
+`Heading` before it, and neither reads a level table of its own. Nothing else becomes a bookmark, and a head that set no words is left out rather
+than listed blank.
 
 ---
 
@@ -373,7 +375,11 @@ if (findings.length > 0) throw new Error(findings.map((finding) => finding.messa
 
 It reports no structure tree, a blank language, metadata that writes no dictionary, a title the printed page and the dictionary disagree on, a
 letterhead mark with no `alt`, and a tagged document set in faces the file does not carry. **Each finding says what to do as well as what is
-wrong.** It reads no bytes: reading an existing PDF is not something this engine does.
+wrong.** It reads no bytes: it answers from the document and the options, before a render is made.
+
+It reads `content`, and a container's children through it, so a `Table` or a drawing nested in a `Stack` is reported as a bare one is. It says
+nothing about `header` or `footer`: a running band is painted as a pagination artifact, and PDF/UA-1 exempts an artifact from the structure tree
+and from `alt` alike — so an `alt` added there would reach no byte of the file. **Put anything a reader must hear in `content`.**
 
 ---
 
@@ -567,9 +573,47 @@ not a near miss.
 
 ---
 
+## Producing an archival copy
+
+**`archival` asks for PDF/A, and a document that does not ask pays nothing for it** — no output intent, no profile bytes, no page group. Ask for a
+level and the file gains an `/OutputIntents` entry with an embedded sRGB profile (ICC v2, about 3 KB), a `pdfaid` block in the XMP packet, and a
+`/Group` on any page that composites. The header becomes `%PDF-1.7`.
+
+```ts
+createPdfRenderer({
+  archival: "a-2b",
+  metadata: "standard",
+  fonts: [face],
+  defaultFont: { regular: "body", bold: "body" },
+  info: { title: "Declaration of interest", created: new Date("2026-09-21T09:30:00Z") },
+});
+```
+
+The levels, each a superset of the one before: **`a-2b`** is visual reproducibility, **`a-2u`** adds the Unicode mapping every embedded face
+already carries, and **`a-2a`** adds the full tagging requirement and so needs `tagged: true`.
+
+**A-1 and A-3 are not admitted.** A-1 is a PDF 1.4 part and forbids both the cross-reference stream and the object streams that make a tagged file
+affordable, so admitting it would mean keeping a second, worse writer path for an obsolete part. A-3 differs from A-2 in exactly one respect — it
+permits an embedded file — and forge has no attachment facility, so it reopens as attachment work rather than as a question about levels.
+
+**The date is yours to supply, and that is not an oversight.** `/ID` is derived from the content so two renders of one document are the same file;
+a wall-clock date would destroy that. PDF/A requires a creation date, so a render asking for a level without `info.created` is **refused by name**
+rather than stamped with the moment it ran.
+
+**Every prohibition is refused before a byte is written**, on the `pdfa` error kind, with the remedy in the message: a run left in the base-14 pair,
+a face supplied without `sfnt`, `metadata` that writes no packet, a missing creation date, `a-2a` without tagging, a link scheme an archive cannot
+follow, and a CMYK image an sRGB intent cannot explain. **`auditPdf` reports every one of them from that same table before you render**, which is
+what a Worker can run; a prohibition the audit reports but the renderer does not refuse is a test failure rather than something to notice.
+
+**What is held is forge's own rules, not the specifications.** Every claim in this section is pinned by a test reading the bytes that were actually
+written, but nothing checks the `pdfaid` and `pdfuaid` declarations against PDF/A and PDF/UA themselves. Run an external checker before you rely on
+a file being conformant.
+
+---
+
 ## What it is not
 
 Not a browser. There is no CSS engine and no HTML input — a document is composed from components, not from a stylesheet. Complex-script shaping,
-runtime SVG, AES encryption, signatures, reading an existing PDF, AcroForms and PDF/A are all out of scope.
+runtime SVG, AES encryption, signatures, reading an existing PDF and AcroForms are all out of scope.
 
 [ns-5j]: ../../../docs/NAMESPACES.md#5j-output--one-namespace-per-output-format

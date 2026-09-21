@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { PageBreak } from "./components";
+import { parsePdfText } from "./conform/parse.fixture";
 import { Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
 import { Image } from "./graphics";
 import { createPdfImage } from "./image";
@@ -31,17 +32,31 @@ function documentOf(breaks: number): PdfDocument {
 }
 
 describe("createPdfRenderer", () => {
-  test("renders a document to the bytes of a PDF file", async () => {
+  test("renders a document to the bytes of a PDF 1.5 file, the version its cross-reference stream needs", async () => {
     const rendered = await createPdfRenderer().render(documentOf(0));
     expect(rendered.ok).toBe(true);
     if (!rendered.ok) return;
     expect(rendered.data).toBeInstanceOf(Uint8Array);
+    expect(decoder.decode(rendered.data).startsWith("%PDF-1.5\n")).toBe(true);
+  });
+
+  test("renders the plainest file it can write: uncompressed, untagged, carrying no metadata and readable as text", async () => {
+    const rendered = await createPdfRenderer({ compress: false, metadata: "none", tagged: false }).render(documentOf(0));
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
     expect(decoder.decode(rendered.data).startsWith("%PDF-1.4\n")).toBe(true);
   });
 
-  test("renders the plainest file it can write: uncompressed, untagged, and carrying no metadata", async () => {
-    const rendered = await createPdfRenderer({ compress: false, metadata: "none", tagged: false }).render(documentOf(0));
-    expect(rendered.ok).toBe(true);
+  // Pinned rather than derived: `/ID` hashes the uncompressed operators, so a caller caching a
+  // render on its content must see the same identity across a change to how objects are located.
+  test("keeps the identity v0.2.4 gave this document, under either cross-reference form", async () => {
+    const identity = "[<cd88ebf78c7dab678001be8877ca70b3> <cd88ebf78c7dab678001be8877ca70b3>]";
+    for (const compress of [true, false]) {
+      const rendered = await createPdfRenderer({ metadata: "standard", compress }).render(documentOf(0));
+      expect(rendered.ok).toBe(true);
+      if (!rendered.ok) return;
+      expect(decoder.decode(rendered.data)).toContain(`/ID ${identity}`);
+    }
   });
 
   test("answers a Result rather than throwing, so a failure is data", async () => {
@@ -206,29 +221,31 @@ describe("maxPages", () => {
     const rendered = await createPdfRenderer({ maxPages: 3 }).render(documentOf(2));
     expect(rendered.ok).toBe(true);
     if (!rendered.ok) return;
-    expect(decoder.decode(rendered.data)).toContain("/Count 3");
+    expect(await parsePdfText(rendered.data)).toContain("/Count 3");
   });
 });
 
 describe("a document carrying an image reaches the file, on both the filtered and the plain path", () => {
-  async function drawn(compress: boolean): Promise<string> {
+  async function drawn(compress: boolean): Promise<Uint8Array<ArrayBuffer>> {
     const image = await createPdfImage(jpegBytes(10, 10, 3));
     if (!image.ok) throw new Error(image.error.message);
     const doc: PdfDocument = { title: "Declaration", content: Image({ image: image.data, width: 50 }) };
     const rendered = await createPdfRenderer({ compress }).render(doc);
     expect(rendered.ok).toBe(true);
     if (!rendered.ok) throw new Error(rendered.error.message);
-    return decoder.decode(rendered.data);
+    return rendered.data;
   }
 
+  // The filtered leg asks the resolved objects and the plain leg asks the bytes, because a page
+  // dictionary is packed into an `/ObjStm` on one and written where a reader can see it on the other.
   test("names the image object in the page's resources, with its stream deflated", async () => {
-    const text = await drawn(true);
+    const text = await parsePdfText(await drawn(true));
     expect(text).toContain("/XObject << /Im0");
     expect(text).toContain("/Type /XObject /Subtype /Image");
   });
 
   test("names it identically where the streams are left as they are", async () => {
-    const text = await drawn(false);
+    const text = decoder.decode(await drawn(false));
     expect(text).toContain("/XObject << /Im0");
     expect(text).toContain("/Im0 Do Q");
   });

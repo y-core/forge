@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import { parsePdfText } from "./conform/parse.fixture";
 import { Field, Note } from "./form";
-import { fileIdentifier, infoDictionary, pdfDate } from "./metadata";
+import { fileIdentifier, infoDictionary, pdfDate, pdfWritableInfo } from "./metadata";
 import { createPdfRenderer } from "./renderer";
-import type { PdfDocument } from "./types";
+import type { PdfDocument, PdfInfo } from "./types";
+import { xmpPacket } from "./xmp";
 
 const decoder = new TextDecoder("latin1");
 
@@ -52,6 +54,68 @@ describe("infoDictionary", () => {
   test("is nothing at all where the caller named no field", () => {
     expect(infoDictionary({})).toBeUndefined();
     expect(infoDictionary(undefined)).toBeUndefined();
+  });
+});
+
+// The dictionary and the packet are written from one value, so what either cannot carry has to be
+// gone before both read it: a codepoint stripped from one alone is the disagreement PDF/A refuses on.
+describe("what both metadata blocks are written from", () => {
+  const EVERY: Required<PdfInfo> = {
+    title: "Report\u0000X",
+    author: "Du\u000BToit",
+    subject: "FICA\u0000",
+    keywords: "fica\u000B",
+    creator: "forge\u0000",
+    producer: "@y-core/forge\u000B",
+    created: new Date(Date.UTC(2026, 8, 19)),
+    modified: new Date(Date.UTC(2026, 8, 19)),
+  };
+
+  // `pdfTextString` writes UTF-16BE hex the moment a value leaves ASCII, so the dictionary is read
+  // back through the same two forms it is written in rather than matched as text.
+  function written(dictionary: string, key: string): string {
+    const literal = new RegExp(`/${key} \\(((?:\\\\.|[^()\\\\])*)\\)`).exec(dictionary)?.[1];
+    if (literal !== undefined) return literal.replaceAll(/\\(.)/g, "$1");
+    const hex = new RegExp(`/${key} <FEFF([\\dA-F]*)>`).exec(dictionary)?.[1] ?? "";
+    return (hex.match(/.{4}/g) ?? []).map((unit) => String.fromCharCode(Number.parseInt(unit, 16))).join("");
+  }
+
+  test("strips every codepoint XML cannot carry, field by field", () => {
+    const clean = pdfWritableInfo(EVERY);
+    const outside = /[^\t\n\r\u{20}-\u{D7FF}\u{E000}-\u{FFFD}\u{10000}-\u{10FFFF}]/u;
+    for (const [field, value] of Object.entries(clean)) {
+      if (typeof value !== "string") continue;
+      expect([field, outside.test(value)]).toEqual([field, false]);
+    }
+    expect(clean.title).toBe("ReportX");
+  });
+
+  // The defect this closes: the strip lived in the packet's own escaper, so `/Info` kept the
+  // codepoint and the dictionary carried a different string from the packet for the same property.
+  test("leaves the dictionary and the packet carrying the same string for every property", () => {
+    const clean = pdfWritableInfo(EVERY);
+    const dictionary = infoDictionary(clean) ?? "";
+    const packet = xmpPacket(clean, true, "a-2b");
+    const pairs: [string, string][] = [
+      ["Title", "dc:title"],
+      ["Author", "dc:creator"],
+      ["Subject", "dc:description"],
+      ["Keywords", "pdf:Keywords"],
+      ["Creator", "xmp:CreatorTool"],
+      ["Producer", "pdf:Producer"],
+    ];
+    for (const [key, property] of pairs) {
+      const shown = new RegExp(`<${property}(?:[^>]*)>([\\S\\s]*?)</${property}>`).exec(packet)?.[1] ?? "";
+      expect([key, written(dictionary, key)]).toEqual([key, shown.replaceAll(/<[^>]*>/g, "").trim()]);
+    }
+  });
+
+  test("keeps the whitespace XML admits, so a tab or a newline in a value survives", () => {
+    expect(pdfWritableInfo({ keywords: "fica\tdeclaration\ninterests" }).keywords).toBe("fica\tdeclaration\ninterests");
+  });
+
+  test("drops a lone surrogate and a non-character, and keeps the astral pair that is legal", () => {
+    expect(pdfWritableInfo({ title: "A\uD800B\uFFFEC\u{1F600}" }).title).toBe("ABC\u{1F600}");
   });
 });
 
@@ -106,14 +170,14 @@ describe("metadata carries what a page run cannot", () => {
     const rendered = await createPdfRenderer({ metadata: "standard", info: { title: "価" } }).render(DOC);
     expect(rendered.ok).toBe(true);
     if (!rendered.ok) return;
-    expect(decoder.decode(rendered.data)).toContain("/Title <FEFF4FA1>");
+    expect(await parsePdfText(rendered.data)).toContain("/Title <FEFF4FA1>");
   });
 
   test("every other entry is carried the same way, not only the title", async () => {
     const rendered = await createPdfRenderer({ metadata: "standard", info: { author: "価" } }).render(DOC);
     expect(rendered.ok).toBe(true);
     if (!rendered.ok) return;
-    expect(decoder.decode(rendered.data)).toContain("/Author <FEFF4FA1>");
+    expect(await parsePdfText(rendered.data)).toContain("/Author <FEFF4FA1>");
   });
 
   test("a page run outside those faces is still refused, which is the check that did not move", async () => {

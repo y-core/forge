@@ -23,6 +23,7 @@ export {
   exposureStep,
   formatStep,
   jsxStep,
+  iccProfileStep,
   lintPluginStep,
   lintStep,
   markdownStep,
@@ -115,8 +116,9 @@ export type { ExposureCheckConfig, ExposurePosture } from "./checks/types";
 export { checkExposure } from "./checks/exposure";
 export type { JsxCheckConfig } from "./checks/types";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
-export type { BundleCheckConfig } from "./checks/types";
+export type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
 export { bundleSource, checkBundle, hasEsbuild, writeBundle } from "./checks/bundle";
+export { checkIccProfile, renderIccModule } from "./checks/icc-profile";
 export type { MarkdownCheckConfig } from "./checks/types";
 export { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./checks/markdown";
 export type {

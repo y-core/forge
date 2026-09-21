@@ -22,6 +22,7 @@ import {
   devBoundaryStep,
   exportsStep,
   formatStep,
+  iccProfileStep,
   jsxStep,
   lintPluginStep,
   lintStep,
@@ -149,6 +150,7 @@ export const STEPS: readonly Step[] = [
   }),
   designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
   // node refuses to strip types under `node_modules`, so a consumer loads a prebuilt copy of each surface a node process imports.
+  iccProfileStep({ root: ROOT, profile: "src/output/pdf/sRGB2014.icc", module: "src/output/pdf/icc.ts" }),
   lintPluginStep({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN }),
   chromiumBundleStep({ root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN }),
   contrastStep({

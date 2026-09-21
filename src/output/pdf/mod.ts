@@ -1,5 +1,6 @@
 export { Box, Divider, KeepTogether, PageBreak, PageNumber, Row, Spacer, Stack, Text } from "./components";
-export { createPdfGrid, Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
+export { Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
+export { ROW_COLUMNS } from "./geometry";
 export { Image, Panel, Path } from "./graphics";
 export { createPdfImage } from "./image";
 export { Link } from "./link";
@@ -24,11 +25,14 @@ export type {
   PageNumberProps,
   PanelProps,
   PathProps,
+  PdfArchival,
   PdfArtwork,
   PdfArtworkPath,
   PdfBaseFace,
   PdfCell,
   PdfCorners,
+  PdfConformanceRule,
+  PdfConformanceViolation,
   PdfContent,
   PdfDefaultFaces,
   PdfDestination,
@@ -37,9 +41,8 @@ export type {
   PdfEmbeddedMetrics,
   PdfDocument,
   PdfElement,
+  PdfElementAudit,
   PdfField,
-  PdfGrid,
-  PdfGridOptions,
   PdfImage,
   PdfInfo,
   PdfLabels,

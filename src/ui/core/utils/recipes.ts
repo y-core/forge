@@ -11,8 +11,17 @@ export const PANEL_FOOTER = "flex items-center gap-2 border-t border-border px-6
 /** A separator drawn as a filled box rather than a border, so its thickness is its size. @internal */
 export const RULE = "border-0 bg-border";
 
+const FIELD_HEIGHT = { sm: "h-control-sm", md: "h-control-md", lg: "h-control-lg" } as const;
+
+/** Type size per control `Size`, for a control that takes its own height rather than the token's. @internal */
+export const FIELD_TEXT_SIZE = { sm: "text-sm", md: "text-sm", lg: "text-base" } as const;
+
 /** Height and type size per control `Size`, read from the `--control-h-*` tokens. @internal */
-export const FIELD_SIZE = { sm: "h-control-sm text-sm", md: "h-control-md text-sm", lg: "h-control-lg text-base" } as const;
+export const FIELD_SIZE = {
+  sm: `${FIELD_HEIGHT.sm} ${FIELD_TEXT_SIZE.sm}`,
+  md: `${FIELD_HEIGHT.md} ${FIELD_TEXT_SIZE.md}`,
+  lg: `${FIELD_HEIGHT.lg} ${FIELD_TEXT_SIZE.lg}`,
+} as const;
 
 /** The marker circle a Steps step or a Timeline item paints its state into. @internal */
 export const STEP_MARKER = "inline-flex size-control-sm items-center justify-center rounded-selector border-field text-sm font-medium";

@@ -1,10 +1,10 @@
 import { resolveTracks, trackOffsets } from "./tracks";
-import type { PdfBox, PdfCursor, PdfElement, PdfFragment, PdfTrack, PdfTypesetting, TableProps } from "./types";
+import type { PdfBox, PdfCursor, PdfElement, PdfFragment, PdfScopeFrame, PdfTrack, PdfTypesetting, TableProps } from "./types";
 
 interface Laid {
   boxes: PdfBox[];
   rowHeight(cells: readonly PdfElement[]): number;
-  paintRow(cursor: PdfCursor, cells: readonly PdfElement[]): void;
+  paintRow(cursor: PdfCursor, cells: readonly PdfElement[], header?: boolean): void;
 }
 
 // One resolution for the whole table, not one per row: a column that measured itself row by row
@@ -18,13 +18,19 @@ function lay(box: PdfBox, tracks: readonly PdfTrack[], gap: number, set?: PdfTyp
   return {
     boxes,
     rowHeight,
-    paintRow(cursor, cells) {
+    // A fresh row frame on every call, which is what makes a header repainted on a continuation
+    // its own `/TR`: the repeat is real ink and is announced where it is drawn.
+    paintRow(cursor, cells, header = false) {
       const top = cursor.y;
-      cells.forEach((cell, index) => {
-        const own = boxes[index];
-        if (own === undefined) return;
-        cursor.y = top;
-        for (const fragment of cell.fragments(own, set)) fragment.paint(cursor);
+      cursor.grouped({ kind: "row" }, () => {
+        cells.forEach((cell, index) => {
+          const own = boxes[index];
+          if (own === undefined) return;
+          cursor.y = top;
+          cursor.grouped({ kind: "cell", ...(header ? { header } : {}) }, () => {
+            for (const fragment of cell.fragments(own, set)) fragment.paint(cursor);
+          });
+        });
       });
       cursor.y = top + rowHeight(cells);
     },
@@ -38,6 +44,10 @@ export function Table(props: TableProps): PdfElement {
   const tracks = props.tracks ?? Array.from({ length: columns }, () => 1);
 
   return {
+    audit: { table: { header: props.header !== undefined } },
+    // Cells rather than `pdfContainer`: a table holds its children in a grid, so the first of them
+    // opens no section a page break could honour.
+    children: [...(props.header ?? []), ...props.rows.flat()],
     measure(width, set) {
       const laid = lay({ x: 0, width, height: Number.POSITIVE_INFINITY }, tracks, gap, set);
       const header = props.header === undefined ? 0 : laid.rowHeight(props.header);
@@ -53,6 +63,9 @@ export function Table(props: TableProps): PdfElement {
       const headerHeight = header === undefined ? 0 : laid.rowHeight(header);
       const fragments: PdfFragment[] = [];
       let painted = -1;
+      // One frame for the whole table, shared by every fragment: a table continuing onto a second
+      // page is one `/Table` whose rows sit on both, and identity is what says so.
+      const table: PdfScopeFrame = { kind: "table" };
 
       if (header !== undefined) {
         fragments.push({
@@ -60,7 +73,9 @@ export function Table(props: TableProps): PdfElement {
           advance: headerHeight,
           paint(cursor) {
             painted = cursor.pages.length;
-            laid.paintRow(cursor, header);
+            cursor.grouped(table, () => {
+              laid.paintRow(cursor, header, true);
+            });
           },
         });
       }
@@ -72,11 +87,13 @@ export function Table(props: TableProps): PdfElement {
           reserve: advance,
           advance,
           paint(cursor) {
-            if (header !== undefined && cursor.pages.length !== painted) {
-              painted = cursor.pages.length;
-              laid.paintRow(cursor, header);
-            }
-            laid.paintRow(cursor, row);
+            cursor.grouped(table, () => {
+              if (header !== undefined && cursor.pages.length !== painted) {
+                painted = cursor.pages.length;
+                laid.paintRow(cursor, header, true);
+              }
+              laid.paintRow(cursor, row);
+            });
           },
         });
       }

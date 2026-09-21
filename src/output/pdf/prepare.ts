@@ -1,4 +1,5 @@
 import { err, ok } from "../../result/result";
+import { conformanceViolations } from "./conformance";
 import { DEFAULT_ORPHANS, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, LINK_SCHEMES } from "./limits";
 import { resolvePdfPage } from "./page";
 import { paginateWithin } from "./paginate";
@@ -105,6 +106,11 @@ export function preparePdfRender(doc: PdfDocument, options: PdfRendererOptions):
   if (unreached !== undefined) return err(unreached);
   const unset = unsettable(pages, options.fonts);
   if (unset !== undefined) return err(unset);
+  // Read from the table `auditPdf` reports the same prohibitions out of, so the two cannot come to
+  // disagree about which documents may declare a level.
+  const broken = options.archival === undefined ? [] : conformanceViolations(pages, options, options.archival);
+  const first = broken[0];
+  if (first !== undefined) return err({ kind: "pdfa", message: first.message });
   if (over) return err(overCeiling(maxPages));
   return ok({ pages, paper });
 }

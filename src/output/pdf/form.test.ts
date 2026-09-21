@@ -2,9 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { createCursor } from "./cursor";
 import { place } from "./elements";
-import { createPdfGrid, Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
+import { Field, Heading, Note, OptionGroup, SignatureRow, TickList } from "./form";
 import { COLUMN_GUTTER, MARGIN, PAGE_WIDTH, ROW_COLUMNS } from "./geometry";
-import { resolveTracks } from "./tracks";
 import type { PdfBox, PdfElement, PdfNode } from "./types";
 
 const MEASURE: PdfBox = { x: MARGIN, width: PAGE_WIDTH - MARGIN * 2, height: 700 };
@@ -92,30 +91,19 @@ describe("the printed-form vocabulary", () => {
   });
 });
 
-describe("createPdfGrid", () => {
-  test("lowers to tracks rather than carrying a column count of its own", () => {
-    const grid = createPdfGrid();
-    expect(grid.tracks).toHaveLength(ROW_COLUMNS);
-    expect(grid.widths(MEASURE.width)).toEqual(resolveTracks(grid.tracks, MEASURE.width, COLUMN_GUTTER));
-  });
+describe("ROW_COLUMNS", () => {
+  const COLUMN = (MEASURE.width - COLUMN_GUTTER * (ROW_COLUMNS - 1)) / ROW_COLUMNS;
 
-  test("starts the first column at nothing and ends a full span on the measure", () => {
-    const grid = createPdfGrid();
-    expect(grid.columnX(MEASURE.width, 1)).toBe(0);
-    expect(grid.spanWidth(MEASURE.width, 1, ROW_COLUMNS)).toBeCloseTo(MEASURE.width, 9);
-  });
-
-  test("takes a column count and a gap of its own where the caller names them", () => {
-    const grid = createPdfGrid({ columns: 4, gap: 0 });
-    expect(grid.widths(400)).toEqual([100, 100, 100, 100]);
-    expect(grid.columnX(400, 3)).toBe(200);
-    expect(grid.spanWidth(400, 2, 2)).toBe(200);
-  });
-
-  test("places a field at the same x the grid resolves for its span", () => {
-    const grid = createPdfGrid();
+  test("is the count a field's start is measured in", () => {
     const nodes = nodesOf(Field({ fields: [{ label: "Code", value: "7700", span: 4, start: 5 }] }));
     const label = nodes.find((node) => node.kind === "text");
-    expect(label?.kind === "text" ? label.x : 0).toBeCloseTo(MEASURE.x + grid.columnX(MEASURE.width, 5), 9);
+    expect(label?.kind === "text" ? label.x : 0).toBeCloseTo(MEASURE.x + (COLUMN + COLUMN_GUTTER) * 4, 9);
+  });
+
+  test("is the span that fills the measure", () => {
+    const rule = rulesIn(nodesOf(Field({ fields: [{ label: "Signature", labels: "above", span: ROW_COLUMNS }] })))[0];
+    const commands = rule?.kind === "path" ? rule.commands : [];
+    const xs = commands.flatMap((command) => (command.op === "close" ? [] : [command.x]));
+    expect((xs.at(-1) ?? 0) - (xs[0] ?? 0)).toBeCloseTo(MEASURE.width, 9);
   });
 });

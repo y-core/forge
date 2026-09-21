@@ -44,6 +44,7 @@ import type {
   PdfField,
   PdfFragment,
   PdfMark,
+  PdfScopeFrame,
   PdfTick,
   PdfTypesetting,
   TextStyle,
@@ -177,7 +178,7 @@ export function subheadingElement(text: string): PdfElement {
         advance,
         paint(cursor) {
           cursor.y += SUBHEADING_LEAD;
-          cursor.tagged("label", () => {
+          cursor.tagged("subheading", () => {
             for (const line of lines) {
               cursor.y += LINE;
               cursor.text(line, box.x, cursor.y, "bold", LABEL_SIZE);
@@ -249,6 +250,7 @@ export function optionsElement(label: string, options: readonly PdfTick[]): PdfE
     }
     if (row.length > 0) rows.push(row);
 
+    const list: PdfScopeFrame = { kind: "list" };
     const advance = Math.max(labelLines.length, rows.length) * LINE + PAIR_LEAD;
     return [
       {
@@ -261,16 +263,21 @@ export function optionsElement(label: string, options: readonly PdfTick[]): PdfE
               cursor.text(line, box.x, top + LINE * (index + 1), "bold", LABEL_SIZE);
             });
           });
-          rows.forEach((line, index) => {
-            const y = top + LINE * (index + 1);
-            let x = valueX;
-            for (const option of line) {
-              drawMark(cursor, x, y, option.mark);
-              cursor.tagged("value", () => {
-                cursor.text(option.label, x + MARK_SIZE + TICK_GAP, y, "regular", VALUE_SIZE);
-              });
-              x += optionWidth(option, set) + OPTION_GUTTER;
-            }
+          cursor.grouped(list, () => {
+            rows.forEach((line, index) => {
+              const y = top + LINE * (index + 1);
+              let x = valueX;
+              for (const option of line) {
+                const at = x;
+                cursor.grouped({ kind: "item" }, () => {
+                  drawMark(cursor, at, y, option.mark);
+                  cursor.tagged("value", () => {
+                    cursor.text(option.label, at + MARK_SIZE + TICK_GAP, y, "regular", VALUE_SIZE);
+                  });
+                });
+                x += optionWidth(option, set) + OPTION_GUTTER;
+              }
+            });
           });
           cursor.y = top + advance;
         },
@@ -288,6 +295,9 @@ export function ticksElement(items: readonly PdfTick[]): PdfElement {
       const width = span - COLUMN_GUTTER - MARK_SIZE - TICK_GAP;
       const laid = items.map((item) => ({ mark: item.mark, lines: set.wrap(item.label, VALUE_SIZE, width) }));
       const fragments: PdfFragment[] = [];
+      // Two items to a row is a layout fact with no structural meaning, so the row never becomes an
+      // element: the list is one `/L` across every fragment, and each item is a sibling `/LI`.
+      const list: PdfScopeFrame = { kind: "list" };
       for (let index = 0; index < laid.length; index += TICK_COLUMNS) {
         const row = laid.slice(index, index + TICK_COLUMNS);
         const advance = row.reduce((most, cell) => Math.max(most, cell.lines.length), 0) * LINE + PAIR_LEAD;
@@ -296,12 +306,16 @@ export function ticksElement(items: readonly PdfTick[]): PdfElement {
           advance,
           paint(cursor) {
             const top = cursor.y;
-            row.forEach((cell, column) => {
-              const x = box.x + span * column;
-              drawMark(cursor, x, top + LINE, cell.mark);
-              cursor.tagged("value", () => {
-                cell.lines.forEach((line, at) => {
-                  cursor.text(line, x + MARK_SIZE + TICK_GAP, top + LINE * (at + 1), "regular", VALUE_SIZE);
+            cursor.grouped(list, () => {
+              row.forEach((cell, column) => {
+                const x = box.x + span * column;
+                cursor.grouped({ kind: "item" }, () => {
+                  drawMark(cursor, x, top + LINE, cell.mark);
+                  cursor.tagged("value", () => {
+                    cell.lines.forEach((line, at) => {
+                      cursor.text(line, x + MARK_SIZE + TICK_GAP, top + LINE * (at + 1), "regular", VALUE_SIZE);
+                    });
+                  });
                 });
               });
             });

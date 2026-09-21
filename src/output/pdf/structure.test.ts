@@ -16,8 +16,9 @@ function pageOf(nodes: PdfNode[]): PdfPage {
 }
 
 describe("a tag becomes the structure type PDF names for it", () => {
-  test("a title is a first-level head and a section head a second-level one", () => {
-    expect([structureType("title"), structureType("heading"), structureType("subtitle")]).toEqual(["H1", "H2", "H2"]);
+  test("a section head is a first-level head and a sub-head a second-level one", () => {
+    expect([structureType("title"), structureType("heading")]).toEqual(["H1", "H1"]);
+    expect([structureType("subtitle"), structureType("subheading")]).toEqual(["H2", "H2"]);
   });
 
   test("copy of every kind is a paragraph, because that is what a reader announces it as", () => {

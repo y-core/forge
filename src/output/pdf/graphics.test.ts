@@ -110,6 +110,11 @@ describe("Panel", () => {
     expect(panel.fragments(MEASURE)).toHaveLength(1);
   });
 
+  test("declares the children it holds, so a drawing inside it is not invisible to an audit", () => {
+    const inside = Text({ children: "Inside" });
+    expect(Panel({ children: [inside] }).children).toEqual([inside]);
+  });
+
   test("rounds each corner on its own radius", () => {
     const nodes = nodesOf(Panel({ children: [Text({ children: "x" })], radius: { topLeft: 12 }, fill: [0, 0, 0] }));
     const box = nodes.find((node) => node.kind === "path");

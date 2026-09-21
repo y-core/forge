@@ -116,8 +116,8 @@ export function embedFont(manager: PdfObjectManager, font: PdfEmbeddedFont, into
       `/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> ` +
       `/FontDescriptor ${descriptor} 0 R /DW 1000 /W [${widthArray(font)}] /CIDToGIDMap /Identity >>`,
   );
-  const cmap = toUnicodeCMap(font.glyphs);
-  const toUnicode = manager.allocate(`<< /Length ${cmap.length} >>\nstream\n${cmap}\nendstream`);
+  const cmap = new TextEncoder().encode(toUnicodeCMap(font.glyphs));
+  const toUnicode = manager.allocate({ head: `<< /Length ${cmap.length} >>\nstream\n`, bytes: cmap, tail: "\nendstream" });
   manager.fill(
     into,
     `<< /Type /Font /Subtype /Type0 /BaseFont /${pdfName(font.postScriptName)} /Encoding /Identity-H ` +

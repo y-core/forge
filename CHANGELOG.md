@@ -17,7 +17,71 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **`output/pdf` writes a cross-reference stream and packs its dictionaries into an `/ObjStm`.** A
+  compressed render — the default — is now a `%PDF-1.5` file, and a structure element costs about
+  19 bytes where an uncompressed top-level object cost about 112. `compress: false` is unchanged:
+  `%PDF-1.4`, a classic `xref` table and a plain trailer, still readable in a text editor.
+- **`/ID` moves from the trailer into the cross-reference stream's dictionary** on the compressed
+  path. Its value is unchanged — it still hashes the uncompressed operators, so a document renders
+  to the same identity it did in 0.2.4.
+- `writePdf` is now `async`, because deflating the cross-reference rows is.
+- **The structure tree is nested, and PDF/UA-1 is much closer to true.** `/StructTreeRoot` now holds
+  one `/Document` with a `/Sect` per heading; a `Table` reaches the tree as `/Table` → `/TR` →
+  `/TH`/`/TD` with `/Scope /Column`; `TickList` and `OptionGroup` become `/L` → `/LI` → `/Lbl` +
+  `/LBody`, so a tick box's state finally reaches a reader; and a running header, footer or repeated
+  letterhead is a `/Artifact << /Type /Pagination >>` rather than prose announced once per page.
+- **`Heading({ level: 2 })` is an `/H2`.** It reached the tree as a plain `/P` before. `Heading`
+  without a level is now an `/H1` where it was an `/H2`. The outline reads the tree's own sections
+  instead of a level table of its own.
+- **A link annotation carries `/StructParent`, `/Contents` and `/F 4`, and every tagged page carries
+  `/Tabs /S`.** The edge from an annotation back to the element describing it did not exist before.
+- **An `info` value is stripped of what XML cannot carry before either metadata block is written.**
+  Most of C0, every lone surrogate and `U+FFFE`/`U+FFFF` are outside XML 1.0's `Char` production and
+  cannot be written as entities, so a title carrying one produced an XMP packet no parser accepts —
+  and, under `archival`, a file declaring a conformance it did not have. The codepoints are dropped
+  from `/Info` and the packet alike, so the two still say the same thing; `\t`, `\n` and `\r` survive.
+  `auditPdf` judges the same stripped value the render writes.
+- **A container opening with a `Heading` now starts a section, as the bare `Heading` does.** `Stack`,
+  `Box`, `Row`, `Panel`, `KeepTogether` and `Link` take their first child's `startsSection`, so a
+  heading wrapped for spacing no longer loses its page break. A document that wraps one this way can
+  paginate onto a different page than it did in 0.2.4. Only the *first* child propagates: a container
+  lays out as one element, so a break further down is not one pagination could honour.
+
+### Added
+
+- **PDF/A.** `archival: "a-2b" | "a-2u" | "a-2a"` writes an `/OutputIntents` entry with an embedded
+  sRGB v2 profile, a `pdfaid` block in the XMP packet, a `/Group` on any page that composites, and a
+  `%PDF-1.7` header. A document asking for no level is byte-identical to one rendered before this
+  change. A-1 and A-3 are not admitted — A-1 is a PDF 1.4 part that forbids the object streams a
+  tagged file is affordable through, and A-3 differs only by the embedded files forge has no facility
+  for. The namespace README records both.
+- **Every PDF/A prohibition is refused before a byte is written**, on the new `pdfa` error kind, from
+  one table `auditPdf` reports the same prohibitions out of: a base-14 run, a face with no `sfnt`,
+  `metadata` writing no packet, a missing `info.created`, `a-2a` without tagging, a link scheme an
+  archive cannot follow, and a CMYK image an sRGB intent cannot explain.
+- `PdfArchival`, `PdfConformanceRule` and `PdfConformanceViolation`.
+- A `validate-icc-profile` gate step, re-encoding the committed profile module from the `.icc` beside
+  it and holding the profile to a device class PDF/A admits.
+- `PdfElementAudit` — what an element declares about itself, which is the only thing `auditPdf` can
+  read without a render.
+- `PdfElement.children` — the elements a container holds, which is what lets `auditPdf` read past a
+  wrapper. A `Table` or an undescribed drawing nested in a `Stack` was audited as if it were absent.
+- `auditPdf` reports three new blockers: `table-header`, `embedded-face` (a face supplied with no
+  `sfnt` bytes), and a malformed `lang` tag under the existing `lang` rule.
+- `ROW_COLUMNS` from `@y-core/forge/output/pdf` — the column count a form field's `span` and `start`
+  are counted in. Its type is the literal `12`, so a caller needs no cast to use it as a span.
+
+### Breaking Changes
+
+- **`createPdfGrid`, `PdfGrid` and `PdfGridOptions` are removed**, having shipped in 0.2.4. The
+  factory was a second spelling of column arithmetic the engine already owned: nothing inside forge
+  laid anything out through it, and its `columns` and `gap` options reached no layout decision — a
+  form was set on the engine's own twelve tracks whatever the caller passed. `ROW_COLUMNS` is
+  exported in its place, so a consumer reading `createPdfGrid().columns` to learn the column count
+  imports the constant instead. There is no replacement for `columnX`, `spanWidth` or `widths`:
+  a field's placement is declared by its `span` and `start`, and the engine resolves it.
 
 ---
 

@@ -18,7 +18,10 @@ function fontOf(run: string): PdfEmbeddedFont {
 function bodiesOf(font: PdfEmbeddedFont): string[] {
   const manager = createObjectManager();
   embedFont(manager, font, manager.reserve());
-  return manager.objects().map((object) => (typeof object.body === "string" ? object.body : object.body.head + object.body.tail));
+  const decoder = new TextDecoder("latin1");
+  return manager
+    .objects()
+    .map((object) => (typeof object.body === "string" ? object.body : object.body.head + decoder.decode(object.body.bytes) + object.body.tail));
 }
 
 describe("an embedded face is written as Type0 over CIDFontType2", () => {

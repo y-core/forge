@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { parsePdfText } from "./conform/parse.fixture";
 import { Field } from "./form";
 import { MARGIN, PAGE_HEIGHT, PAGE_WIDTH } from "./geometry";
 import { pdfContentBox, PDF_PAGE_SIZES, resolvePdfPage } from "./page";
@@ -13,7 +14,7 @@ const DOC: PdfDocument = { title: "Declaration", content: [Field({ fields: [{ la
 async function mediaBoxOf(spec: Parameters<typeof resolvePdfPage>[0]): Promise<string> {
   const rendered = await createPdfRenderer({ page: spec }).render(DOC);
   if (!rendered.ok) throw new Error(rendered.error.message);
-  return /\/MediaBox \[([^\]]+)\]/.exec(decoder.decode(rendered.data))?.[1] ?? "";
+  return /\/MediaBox \[([^\]]+)\]/.exec(await parsePdfText(rendered.data))?.[1] ?? "";
 }
 
 describe("page geometry is data, not a branch inside the engine", () => {

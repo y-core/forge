@@ -718,3 +718,10 @@ export interface SsrBoundaryCheckConfig {
   /** The manifest's `exports` map, read for the subpaths that reach the browser runtime. */
   exports?: ExportsMap;
 }
+
+/** Where the committed ICC module and the profile it is generated from live. @public */
+export interface IccProfileCheckConfig {
+  root: string;
+  profile: string;
+  module: string;
+}

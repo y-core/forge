@@ -70,9 +70,23 @@ export interface PdfField {
   labels?: PdfLabels | undefined;
 }
 
+// A-1 is excluded: it is PDF 1.4 and forbids the object streams that make a tagged file affordable.
+// A-3 is excluded: it differs only in permitting an embedded file, and nothing here attaches one.
+/** The PDF/A part and conformance level a render declares. @public */
+export type PdfArchival = "a-2b" | "a-2u" | "a-2a";
+
+/** One thing PDF/A forbids that this engine can otherwise do. @public */
+export type PdfConformanceRule = "colour-space" | "date" | "font-embedded" | "font-supplied" | "link-scheme" | "metadata" | "tagged";
+
+/** One prohibition an option set breaks, named by its rule and said with its remedy. @public */
+export interface PdfConformanceViolation {
+  rule: PdfConformanceRule;
+  message: string;
+}
+
 /** Why a document could not be rendered, as the one failure channel this namespace answers on. @public */
 export interface PdfRenderError {
-  kind: "max-pages" | "colour-notation" | "compress" | "image" | "link" | "metadata" | "tagged" | "encoding" | "font";
+  kind: "max-pages" | "colour-notation" | "compress" | "image" | "link" | "metadata" | "tagged" | "encoding" | "font" | "pdfa";
   message: string;
 }
 
@@ -80,7 +94,34 @@ export interface PdfRenderError {
 export type PdfResult<T> = Result<T, PdfRenderError>;
 
 /** What a node is, in the document's own terms, so the structure tree reads a role and not a shape. @public */
-export type PdfTag = "artwork" | "heading" | "intro" | "label" | "letterhead" | "link" | "mark" | "note" | "rule" | "subtitle" | "title" | "value";
+export type PdfTag =
+  | "artwork"
+  | "heading"
+  | "intro"
+  | "label"
+  | "letterhead"
+  | "link"
+  | "mark"
+  | "note"
+  | "rule"
+  | "subheading"
+  | "subtitle"
+  | "title"
+  | "value";
+
+/** What a run is furniture for, where it is furniture rather than content a reader announces. @internal */
+export type PdfArtifact = "pagination";
+
+/** What a grouping means to a reader: the containers a structure tree nests its leaves in. @internal */
+export type PdfScopeKind = "cell" | "document" | "item" | "list" | "row" | "sect" | "table";
+
+// Frames are compared by identity and carry no id of their own: two cells holding the same words are
+// two cells, and nothing but the object the cursor pushed can tell them apart.
+/** One grouping open at the moment a node was painted. @internal */
+export interface PdfScopeFrame {
+  kind: PdfScopeKind;
+  header?: boolean | undefined;
+}
 
 /** Which of the two base-14 faces a run is set in. @public */
 export type PdfBaseFace = "regular" | "bold";
@@ -90,6 +131,12 @@ export interface PdfTagged {
   tag: PdfTag;
   /** What a reader announces in place of a drawing; a drawing with none is decoration. */
   alt?: string | undefined;
+  /** The groupings open when this node was painted, outermost first. */
+  scope?: readonly PdfScopeFrame[] | undefined;
+  /** Set where this node is page furniture, which keeps it out of the reading order entirely. */
+  artifact?: PdfArtifact | undefined;
+  /** Which of its page's links this node was drawn inside, which is what binds it to an annotation. */
+  link?: number | undefined;
 }
 
 /** A run of type at an absolute position, measured down from the page's top edge. @internal */
@@ -275,6 +322,9 @@ export interface PdfMarkedRun {
   /** The id the content stream marks this run with, which the structure element points back at. */
   mcid: number;
   alt?: string | undefined;
+  scope?: readonly PdfScopeFrame[] | undefined;
+  artifact?: PdfArtifact | undefined;
+  link?: number | undefined;
 }
 
 /** One entry of the structure tree: what it is, which page carries it, and the run it covers. @internal */
@@ -285,6 +335,23 @@ export interface PdfStructureElement {
   alt?: string | undefined;
   /** The run's own words, which is what an outline entry is titled with. */
   text?: string | undefined;
+  /** The groupings this run was painted inside, which is what nests it in the tree. */
+  scope?: readonly PdfScopeFrame[] | undefined;
+  /** Which of its page's links this element covers, where it is a link at all. */
+  link?: number | undefined;
+}
+
+/** One node of the nested structure tree: a container with children, or a leaf naming the run it covers. @internal */
+export interface PdfStructureNode {
+  type: string;
+  children: PdfStructureNode[];
+  /** The `/A` attribute object this container declares, where its type takes one. */
+  attributes?: string | undefined;
+  page?: number | undefined;
+  mcid?: number | undefined;
+  alt?: string | undefined;
+  text?: string | undefined;
+  link?: number | undefined;
 }
 
 /** Where a link goes: a page of this document, or an address outside it. @public */
@@ -360,6 +427,10 @@ export interface PdfCursor {
   y: number;
   readonly empty: boolean;
   tagged(tag: PdfTag, draw: () => void, alt?: string): void;
+  /** Draws inside a grouping, so every node `draw` paints records it and the tree can nest them. */
+  grouped(frame: PdfScopeFrame, draw: () => void): void;
+  /** Draws page furniture, which a reader skips rather than announcing once per page. */
+  furniture(kind: PdfArtifact, draw: () => void): void;
   // `null` is not `undefined` here: a run that resolved its own face down to the base-14 pair has
   // decided, and the document default must not put it back on a face that cannot set it (§7c).
   /** Draws a run. `undefined` takes the document's default face, `null` is base-14 decided. */
@@ -570,22 +641,6 @@ export interface SignatureRowProps {
   cells: readonly PdfCell[];
 }
 
-/** How many columns a grid divides its measure into, and what sits between them. @public */
-export interface PdfGridOptions {
-  columns?: number | undefined;
-  gap?: number | undefined;
-}
-
-/** A column grid expressed as tracks: a span is a run of them, never a count of its own. @public */
-export interface PdfGrid {
-  readonly columns: number;
-  readonly gap: number;
-  readonly tracks: readonly PdfTrack[];
-  widths(available: number): number[];
-  columnX(available: number, start: number): number;
-  spanWidth(available: number, start: number, span: number): number;
-}
-
 /** What an element wants, what it needs at minimum, and how tall it is at the width it was asked about. @internal */
 export interface PdfMeasure {
   preferred: number;
@@ -625,6 +680,18 @@ export interface PdfElement {
   fragments(box: PdfBox, set?: PdfTypesetting): readonly PdfFragment[];
   /** Whether this opens a run that is kept with what follows it, as a heading keeps its section. */
   startsSection?: boolean | undefined;
+  /** What this element declares about itself, which is the only thing an audit can read. */
+  audit?: PdfElementAudit | undefined;
+  /** The elements this one contains, which is what lets an audit read past a wrapper. */
+  children?: readonly PdfElement[] | undefined;
+}
+
+// Declared rather than derived from a render: `auditPdf` answers before a byte is laid out, and an
+// element's own closures say nothing a caller could be told.
+/** What an element tells an audit about itself, each field present only where it has that fact. @public */
+export interface PdfElementAudit {
+  table?: { header: boolean } | undefined;
+  drawing?: { alt: boolean } | undefined;
 }
 
 /** How few lines may be stranded either side of a page break. @internal */
@@ -684,6 +751,8 @@ export interface PdfRendererOptions {
   widows?: number | undefined;
   /** What the document information dictionary carries; written only when `metadata` is `"standard"`. */
   info?: PdfInfo | undefined;
+  /** The archival level a render declares; a document asking for none pays nothing for it. */
+  archival?: PdfArchival | undefined;
 }
 
 /** What a document and a set of options settle to once the refusals are past. @internal */
@@ -767,6 +836,10 @@ export interface PdfComposition {
   images: ReadonlyMap<PdfImage, number>;
   writesBase14: boolean;
   firstPage: number;
+  /** The archival level this render declares, which the writer reads for its intent and groups. */
+  archival?: PdfArchival | undefined;
+  /** The nested tree, built once here because the writer and the outline both read it. */
+  structure: PdfStructureNode;
 }
 
 /** An object allocated a number in document order, which is what makes the xref offsets reproducible. @internal */
@@ -774,6 +847,9 @@ export interface PdfObject {
   id: number;
   body: string | { head: string; bytes: Uint8Array; tail: string };
 }
+
+/** Where a cross-reference row sends a reader: a file offset, or the container an object is packed in. @internal */
+export type PdfXrefEntry = { offset: number } | { container: number; index: number };
 
 /** Allocates object numbers in the order the document declares them. @internal */
 export interface PdfObjectManager {

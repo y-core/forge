@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Box, Divider, KeepTogether, PageBreak, Row, Spacer, Stack, Text } from "./components";
 import { createCursor } from "./cursor";
 import { place } from "./elements";
+import { Heading } from "./form";
 import { LINE, MARGIN, PAGE_WIDTH } from "./geometry";
 import { pdfContentBox, resolvePdfPage } from "./page";
 import { paginate } from "./paginate";
@@ -35,6 +36,25 @@ describe("every component takes one props object with children inside it", () =>
     ];
     expect(built.every((one) => one !== undefined)).toBe(true);
     expect(built.every((one) => typeof one.measure === "function" && typeof one.fragments === "function")).toBe(true);
+  });
+
+  // A container that forgets this is audited as if it held nothing, so the omission is caught where
+  // the container is written rather than as a clean audit of a document that is not.
+  test("every container declares the children it holds, which is all an audit can reach them by", () => {
+    const leaf = Text({ children: "x" });
+    const containers = [Stack, Row, Box, KeepTogether].map((of) => of({ children: [leaf] }));
+    expect(containers.map((one) => one.children)).toEqual(containers.map(() => [leaf]));
+    expect(Text({ children: "a run" }).children).toBeUndefined();
+  });
+
+  // The narrow rule: a break three children down is one pagination cannot honour, because a
+  // container lays out as one element.
+  test("a container opens a section only where its own first child does", () => {
+    const heading = Heading({ children: "Interests" });
+    const body = Text({ children: "x" });
+    expect(Stack({ children: [heading, body] }).startsSection).toBe(true);
+    expect(Stack({ children: [body, heading] }).startsSection).toBeUndefined();
+    expect(Stack({ children: [] }).startsSection).toBeUndefined();
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { Stack } from "./components";
 import { Field, Heading } from "./form";
 import { paginate, paginateWithin } from "./paginate";
 import type { PdfDocument, PdfElement, PdfLetterhead, PdfNode } from "./types";
@@ -54,6 +55,25 @@ describe("pagination", () => {
     const pages = paginate(doc);
     const headingPage = pages.findIndex((page) => runsOf(page.nodes).includes("PART B"));
     expect(runsOf(pages[headingPage]?.nodes ?? []).length).toBeGreaterThan(1);
+  });
+
+  // A wrapped heading kept its section break only at the top level, so putting a Stack around one
+  // silently lost the break — and the wrapper is the ordinary way a section is given a gap.
+  test("breaks for a heading a container opens with, exactly as it does for a bare one", () => {
+    const opener = [...filled(40), Stack({ children: [Heading({ children: "Part B" }), ...filled(6)] })];
+    const bare = paginate({ title: "Declaration", content: [...filled(40), Heading({ children: "Part B" }), ...filled(6)] });
+    const wrapped = paginate({ title: "Declaration", content: opener });
+    const pageOf = (pages: readonly { nodes: readonly PdfNode[] }[]): number => pages.findIndex((page) => runsOf(page.nodes).includes("PART B"));
+    expect(pageOf(wrapped)).toBe(pageOf(bare));
+    expect(runsOf(wrapped[pageOf(wrapped)]?.nodes ?? []).length).toBeGreaterThan(1);
+  });
+
+  test("does not break for a container that opens with body copy, whatever it holds further down", () => {
+    const inner = [Heading({ children: "Part B" }), ...filled(6)];
+    const opener = paginate({ title: "Declaration", content: [...filled(40), Stack({ children: inner })] });
+    const body = paginate({ title: "Declaration", content: [...filled(40), Stack({ children: [...filled(1), ...inner] })] });
+    expect(runsOf(opener[0]?.nodes ?? [])).not.toContain("PART B");
+    expect(runsOf(body[0]?.nodes ?? []).length).toBeGreaterThan(runsOf(opener[0]?.nodes ?? []).length);
   });
 
   test("repeats the letterhead at the head of every page it opens", () => {

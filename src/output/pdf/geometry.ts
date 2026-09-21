@@ -80,5 +80,6 @@ export const KAPPA = 0.5523;
 export const REGULAR = "F1";
 export const BOLD = "F2";
 
+/** The number of columns a form field's `span` and `start` are counted in. @public */
 // Twelve columns and eleven gutters across the measure, as a CSS grid divides one.
 export const ROW_COLUMNS = 12;

@@ -1,17 +1,5 @@
 import { columnsElement, fieldsElement, headingElement, noteElement, optionsElement, subheadingElement, ticksElement } from "./elements";
-import { COLUMN_GUTTER, ROW_COLUMNS } from "./geometry";
-import { resolveTracks, spanOf, trackOffsets } from "./tracks";
-import type {
-  FieldProps,
-  HeadingProps,
-  NoteProps,
-  OptionGroupProps,
-  PdfElement,
-  PdfGrid,
-  PdfGridOptions,
-  SignatureRowProps,
-  TickListProps,
-} from "./types";
+import type { FieldProps, HeadingProps, NoteProps, OptionGroupProps, PdfElement, SignatureRowProps, TickListProps } from "./types";
 
 /** A section heading, or a sub-heading where `level` says so. @public */
 export function Heading(props: HeadingProps): PdfElement {
@@ -41,24 +29,4 @@ export function OptionGroup(props: OptionGroupProps): PdfElement {
 /** A row of signature cells, each a label over an answer or a rule to write one on. @public */
 export function SignatureRow(props: SignatureRowProps): PdfElement {
   return columnsElement(props.cells);
-}
-
-/** Builds a column grid as tracks, so a span is a run of them rather than a count of its own. @public */
-export function createPdfGrid(options: PdfGridOptions = {}): PdfGrid {
-  const count = options.columns ?? ROW_COLUMNS;
-  const gap = options.gap ?? COLUMN_GUTTER;
-  const tracks = Array.from({ length: count }, () => 1);
-  return {
-    columns: count,
-    gap,
-    tracks,
-    widths: (available) => resolveTracks(tracks, available, gap),
-    columnX(available, start) {
-      const offsets = trackOffsets(resolveTracks(tracks, available, gap), gap);
-      return offsets[start - 1] ?? 0;
-    },
-    spanWidth(available, start, span) {
-      return spanOf(resolveTracks(tracks, available, gap), start - 1, span, gap);
-    },
-  };
 }

@@ -1,4 +1,4 @@
-import { Box } from "./components";
+import { Box, pdfContainer } from "./components";
 import { roundedBoxCommands, transformCommands } from "./path";
 import type { ImageProps, Ink, PathProps, PanelProps, PdfCursor, PdfElement, PdfPathCommand, PdfPathPaint, PdfShading } from "./types";
 
@@ -36,6 +36,7 @@ function draw(
 export function Path(props: PathProps): PdfElement {
   const tag = props.tag ?? "artwork";
   return {
+    audit: { drawing: { alt: props.alt !== undefined } },
     measure: () => ({ preferred: 0, minimum: 0, height: props.height }),
     fragments: (box) => [
       {
@@ -64,6 +65,7 @@ export function Image(props: ImageProps): PdfElement {
     return { width, height: props.height ?? (width * props.image.height) / props.image.width };
   };
   return {
+    audit: { drawing: { alt: props.alt !== undefined } },
     measure: (width) => ({ preferred: props.width ?? props.image.width, minimum: 0, height: drawn(width).height }),
     fragments(box) {
       const { width, height } = drawn(box.width);
@@ -93,6 +95,7 @@ export function Panel(props: PanelProps): PdfElement {
   const inner = Box({ children: props.children, gap: props.gap ?? 0, padding });
   const radius = props.radius ?? 0;
   return {
+    ...pdfContainer(props.children),
     measure: (width, set) => inner.measure(width, set),
     fragments(box, set) {
       const height = inner.measure(box.width, set).height;

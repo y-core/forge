@@ -23,6 +23,7 @@ export const LICENCE_HEADERS: ReadonlyMap<string, string> = new Map([
   ["src/tooling/term/capability.ts", "@visulima/is-ansi-color-supported (MIT), itself after chalk/supports-color (MIT)"],
   ["src/tooling/term/codes.ts", "@visulima/colorize (MIT), itself after ansis (ISC), plus color-convert (MIT)"],
   ["src/tooling/term/color.ts", "@visulima/colorize (MIT), itself after ansis (ISC)"],
+  ["src/output/pdf/icc.ts", "sRGB2014.icc — International Color Consortium, redistributable without restriction"],
 ]);
 
 /** Modules exempt from needing a co-located test, each mapped to why. */

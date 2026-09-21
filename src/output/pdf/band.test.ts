@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { Stack, PageBreak, PageNumber, Text } from "./components";
-import { Field } from "./form";
+import { Field, Heading } from "./form";
 import { BLANK_LEAD, LINE, VALUE_SIZE } from "./geometry";
 import { DEFAULT_PDF_MAX_PAGES } from "./limits";
 import { pdfContentBox, resolvePdfPage } from "./page";
 import { paginate } from "./paginate";
 import { createPdfRenderer } from "./renderer";
+import { markedRuns, structureElements } from "./structure";
 import { textWidth } from "./text";
 import type { PdfContent, PdfDocument, PdfElement, PdfNode } from "./types";
 import { operatorsFor } from "./writer";
@@ -163,5 +164,46 @@ describe("a letterhead document breaks where the content box actually ends", () 
     const footed = lowestLabelOnAFullPage(documentOf({ letterhead: MARK, footer: Text({ children: "f" }) }, rows(200)));
     expect(CONTENT.bottom - footed).toBeLessThan(LINE * 3);
     expect(footed).toBeLessThan(CONTENT.bottom);
+  });
+});
+
+describe("page furniture is a pagination artifact, outside the reading order", () => {
+  const BANDED = documentOf({ header: Text({ children: "Declaration of interest" }), footer: PageNumber({ total: true }) }, [
+    Text({ children: "The undersigned declares the following." }),
+    PageBreak(),
+    Text({ children: "No further interest." }),
+  ]);
+
+  async function taggedText(doc: PdfDocument): Promise<string> {
+    const rendered = await createPdfRenderer({ tagged: true, compress: false }).render(doc);
+    if (!rendered.ok) throw new Error(rendered.error.message);
+    return decoder.decode(rendered.data);
+  }
+
+  test("brackets a band's runs as pagination, which a bare BMC cannot express", async () => {
+    expect(await taggedText(BANDED)).toContain("/Artifact << /Type /Pagination >> BDC");
+  });
+
+  test("keeps a rule a bare artifact, because decoration is not pagination", async () => {
+    const text = await taggedText(documentOf({}, [Heading({ children: "Part A" }), Text({ children: "A line." })]));
+    expect(text).toContain("/Artifact BMC");
+    expect(text).not.toContain("/Type /Pagination");
+  });
+
+  test("gives a band's runs no structure element, so the page number is never announced", () => {
+    const pages = paginate(BANDED);
+    expect(pages.flatMap((page) => page.nodes.filter((node) => node.artifact !== undefined)).length).toBeGreaterThan(0);
+    expect(structureElements(pages).some((element) => element.text?.includes("Page") === true)).toBe(false);
+  });
+
+  // The regression the reclassification could cause: dropping runs from the tree must close the
+  // numbering behind them, or a parent tree has a hole at an offset no element fills.
+  test("leaves the remaining MCIDs contiguous from zero on every page", () => {
+    for (const page of paginate(BANDED)) {
+      const numbered = markedRuns(page)
+        .filter((run) => run.type !== undefined)
+        .map((run) => run.mcid);
+      expect(numbered).toEqual(numbered.map((_id, at) => at));
+    }
   });
 });

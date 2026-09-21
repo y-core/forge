@@ -91,8 +91,17 @@
     { "files": ["src/tooling/**", "src/**/*.test.ts", "src/**/*.test.tsx"], "rules": { "forge/sql-explicit-transaction": "off" } },
     {
       // A `types.ts` is where the rule sends a declaration, so it cannot itself be a violation. A
-      // spec's fixture types are its own business — nothing outside the file can name them.
-      "files": ["src/**/types.ts", "src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.browser.ts", "src/**/*.browser.tsx"],
+      // spec's fixture types are its own business — nothing shipped can name them, and `files`
+      // excludes every `*.fixture.ts`, which is where `validate-packaging` sends a test-only module.
+      "files": [
+        "src/**/types.ts",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.browser.ts",
+        "src/**/*.browser.tsx",
+        "src/**/*.fixture.ts",
+        "src/**/*.fixture.tsx"
+      ],
       "rules": { "forge/type-import-external": "off" }
     },
     {

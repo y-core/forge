@@ -108,6 +108,47 @@ describe("Select", () => {
   });
 });
 
+describe("Select — rows", () => {
+  it("renders the rows it was given as the control's own size, so the browser draws a listbox", async () => {
+    expect(attrsOf(await render(<Select icon={icon} rows={5} />), 'data-slot="select"')).toEqual({
+      "data-slot": "select",
+      "data-size": "md",
+      size: "5",
+    });
+  });
+
+  it("draws no chevron, because a listbox has no popup to point at", async () => {
+    const html = await render(
+      <Select icon={icon} rows={5}>
+        <Select.Option value='a'>A</Select.Option>
+      </Select>,
+    );
+
+    expect(html).not.toContain("select-icon");
+    expect([...html.matchAll(/data-slot="([^"]+)"/g)].map((match) => match[1])).toEqual(["select-wrapper", "select", "select-option"]);
+  });
+
+  it("fills the wrapper instead of the single-row height, dropping the padding that cleared the chevron", async () => {
+    const md = await render(<Select icon={icon} />);
+
+    expect(variantClasses(await render(<Select icon={icon} rows={5} />), md, 'data-slot="select"')).toEqual({
+      added: ["h-full"],
+      dropped: ["pe-10", "h-control-md"],
+    });
+    expect(classesOf(await render(<Select icon={icon} rows={5} size='lg' />), 'data-slot="select"')).toContain("text-base");
+  });
+
+  it("still dresses the wrapper with the caller's class, so a scroll bound reaches the control", async () => {
+    const html = await render(<Select icon={icon} rows={5} class='max-h-48' />);
+
+    expect(classesOf(html, 'data-slot="select-wrapper"').at(-1)).toBe("max-h-48");
+  });
+
+  it("stamps no size attribute at all when no rows are asked for", async () => {
+    expect(attrsOf(await render(<Select icon={icon} />), 'data-slot="select"')).toEqual({ "data-slot": "select", "data-size": "md" });
+  });
+});
+
 describe("Select — size, invalid and busy", () => {
   it("stamps the size it was given and swaps the control height it comes with", async () => {
     const sizes = ["sm", "lg"] as const;

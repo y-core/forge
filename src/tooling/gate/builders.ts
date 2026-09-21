@@ -16,6 +16,7 @@ import { hasTailwind } from "./checks/design-system";
 import { checkDevBoundary } from "./checks/dev-boundary";
 import { checkExports } from "./checks/exports";
 import { checkExposure } from "./checks/exposure";
+import { checkIccProfile } from "./checks/icc-profile";
 import { checkJsx } from "./checks/jsx";
 import { checkMarkdown, fixMarkdown } from "./checks/markdown";
 import { checkModernCss } from "./checks/modern-css";
@@ -25,7 +26,7 @@ import { checkSsrBoundary } from "./checks/ssr-boundary";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
 import type { BuildTimeBoundaryCheckConfig } from "./checks/types";
-import type { BundleCheckConfig } from "./checks/types";
+import type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
 import type { ClassGroupsCheckConfig } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ClassTokensCheckConfig } from "./checks/types";
@@ -266,6 +267,11 @@ export function classGroupsStep(config: ClassGroupsCheckConfig, options: StepOpt
 /** Regenerates the design-scale data forge's oxlint plugin reads and fails on any drift from the committed copy. @public */
 export function designScaleStep(config: DesignScaleCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-design-scale", () => checkDesignScale(config), options, { requires: tailwindRequired() });
+}
+
+/** Re-encodes the committed ICC module from the profile beside it and fails on any drift. @public */
+export function iccProfileStep(config: IccProfileCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-icc-profile", () => checkIccProfile(config), options);
 }
 
 /** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source. @public */

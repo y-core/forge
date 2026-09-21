@@ -12,7 +12,18 @@ import {
 } from "./geometry";
 import { pdfContentBox, resolvePdfPage } from "./page";
 import { createPdfPen, roundedBoxCommands, transformCommands } from "./path";
-import type { Ink, PdfArtwork, PdfCursor, PdfCursorOptions, PdfLetterhead, PdfPage, PdfResolvedPage, PdfTag } from "./types";
+import type {
+  Ink,
+  PdfArtifact,
+  PdfArtwork,
+  PdfCursor,
+  PdfCursorOptions,
+  PdfLetterhead,
+  PdfPage,
+  PdfResolvedPage,
+  PdfScopeFrame,
+  PdfTag,
+} from "./types";
 import { BASE14_TYPESETTING } from "./typesetting";
 
 // Closing a translucent run has to restore opacity as well as colour: alpha is graphics state, and
@@ -55,13 +66,20 @@ export function createCursor(letterhead: PdfLetterhead | undefined, options: Pdf
   let page: PdfPage = { nodes: [], links: [], y: content.top, letterheadNodes: 0 };
   let tag: PdfTag = "value";
   let alt: string | undefined;
-  let linking = false;
+  let linking: number | undefined;
+  // Replaced rather than mutated on each push, so a node holds the stack as it stood when it was
+  // painted; the frames inside are shared, which is what makes identity the comparison.
+  let scope: readonly PdfScopeFrame[] = [];
+  let artifact: PdfArtifact | undefined;
   // A node belongs to the run the cursor is tagged for, so a page's structure is a property of where
   // a node was drawn; a link's content is a link whatever it is made of, so that wins over the tag.
-  const marked = (): { tag: PdfTag; alt?: string } => {
-    const own = linking ? "link" : tag;
-    return alt === undefined ? { tag: own } : { tag: own, alt };
-  };
+  const marked = (): { tag: PdfTag; alt?: string; scope?: readonly PdfScopeFrame[]; artifact?: PdfArtifact; link?: number } => ({
+    tag: linking === undefined ? tag : "link",
+    ...(alt === undefined ? {} : { alt }),
+    ...(scope.length === 0 ? {} : { scope }),
+    ...(artifact === undefined ? {} : { artifact }),
+    ...(linking === undefined ? {} : { link: linking }),
+  });
 
   const cursor: PdfCursor = {
     pages,
@@ -86,6 +104,18 @@ export function createCursor(letterhead: PdfLetterhead | undefined, options: Pdf
       draw();
       [tag, alt] = [wasTag, wasAlt];
     },
+    grouped(frame, draw) {
+      const was = scope;
+      scope = [...scope, frame];
+      draw();
+      scope = was;
+    },
+    furniture(kind, draw) {
+      const was = artifact;
+      artifact = kind;
+      draw();
+      artifact = was;
+    },
     text(run, x, y, face, size, tracking = 0, placeholder, embedded) {
       // The one place the document default is applied, which is what makes it reach the form
       // vocabulary, the front matter and the letterhead alike.
@@ -103,13 +133,17 @@ export function createCursor(letterhead: PdfLetterhead | undefined, options: Pdf
         ...(set === undefined ? {} : { embedded: set }),
       });
     },
+    // The slot is taken before the draw and the geometry patched into it after, so a link nested
+    // inside another owns its index by construction rather than by out-counting the inner one.
     linked(target, box, draw) {
       const was = linking;
-      linking = true;
       const from = page.y;
+      const link = { target, x: box.x, y: from, width: box.width, height: 0 };
+      linking = page.links?.length ?? 0;
+      page.links?.push(link);
       draw();
+      link.height = page.y - from;
       linking = was;
-      page.links?.push({ target, x: box.x, y: from, width: box.width, height: page.y - from });
     },
     path(commands, paint = {}) {
       page.nodes.push({ kind: "path", ...marked(), commands, ...paint });
@@ -163,11 +197,19 @@ export function createCursor(letterhead: PdfLetterhead | undefined, options: Pdf
       page = { nodes: [], links: [], y: content.top, letterheadNodes: 0 };
       pages.push(page);
       if (letterhead !== undefined) {
-        drawLetterhead(cursor, letterhead, content);
-        page.y = letterheadTop(letterhead, paper);
+        // It carries the firm's identity, which is content the first time a reader meets it and
+        // furniture every time after — so it enters the tree once and repeats outside it.
+        const masthead = (): void => {
+          drawLetterhead(cursor, letterhead, content);
+          page.y = letterheadTop(letterhead, paper);
+        };
+        if (pages.length > 1) cursor.furniture("pagination", masthead);
+        else masthead();
       }
       if (header !== undefined && measure !== undefined) {
-        for (const element of header.elements) for (const fragment of element.fragments(measure)) fragment.paint(cursor);
+        cursor.furniture("pagination", () => {
+          for (const element of header.elements) for (const fragment of element.fragments(measure)) fragment.paint(cursor);
+        });
       }
       top = page.y;
       page.letterheadNodes = page.nodes.length;

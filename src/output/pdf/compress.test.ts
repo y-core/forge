@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { parsePdfObjects } from "./conform/parse.fixture";
 import { Field } from "./form";
 import { paginate } from "./paginate";
 import { createPdfRenderer } from "./renderer";
@@ -54,13 +55,15 @@ describe("compression defaults on", () => {
     expect([...(await bytesOf())]).toEqual([...(await bytesOf())]);
   });
 
-  test("keeps the file structurally readable, with its xref still resolving", async () => {
-    const text = decoder.decode(await bytesOf());
-    const start = Number(/startxref\n(\d+)\n/.exec(text)?.[1]);
-    expect(text.slice(start, start + 4)).toBe("xref");
-    const offsets = [...text.slice(text.indexOf("xref\n")).matchAll(/^(\d{10}) 00000 n $/gm)].map((found) => Number(found[1]));
-    offsets.forEach((offset, index) => {
-      expect(text.slice(offset).startsWith(`${index + 1} 0 obj`)).toBe(true);
-    });
+  // Asked as a question of the resolved file rather than of its byte layout: the layout is exactly
+  // what the cross-reference stream changes, and a test scraping it asserts the writer's habits.
+  test("keeps the file structurally readable, with every reference it makes resolving to an object", async () => {
+    const file = await parsePdfObjects(await bytesOf());
+    expect(file.trailer).toContain("/Root 1 0 R");
+    expect(file.objects.get(2)?.dict).toContain("/Type /Pages");
+    const kids = /\/Kids \[([^\]]*)\]/.exec(file.objects.get(2)?.dict ?? "")?.[1] ?? "";
+    const referenced = [...kids.matchAll(/(\d+) 0 R/g)].map((found) => Number(found[1]));
+    expect(referenced.length).toBeGreaterThan(0);
+    for (const id of referenced) expect(file.objects.get(id)?.dict).toContain("/Type /Page ");
   });
 });

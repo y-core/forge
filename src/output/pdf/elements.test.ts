@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { createCursor } from "./cursor";
 import { columnsElement, fieldsElement, gridTracks, headingElement, noteElement, optionsElement, place, ticksElement } from "./elements";
+import { OptionGroup, TickList } from "./form";
 import { COLUMN_GUTTER, MARGIN, PAGE_WIDTH, ROW_COLUMNS } from "./geometry";
-import type { PdfBox, PdfElement } from "./types";
+import { paginate } from "./paginate";
+import { createPdfRenderer } from "./renderer";
+import { structureTreeOf } from "./structure";
+import type { PdfBox, PdfContent, PdfElement, PdfStructureNode } from "./types";
 
 const MEASURE: PdfBox = { x: MARGIN, width: PAGE_WIDTH - MARGIN * 2, height: 700 };
 
@@ -65,5 +69,70 @@ describe("the printed grid is the track model", () => {
     const widths = gridTracks(MEASURE.width);
     expect(widths).toHaveLength(ROW_COLUMNS);
     expect(widths[0]).toBeCloseTo((MEASURE.width - COLUMN_GUTTER * (ROW_COLUMNS - 1)) / ROW_COLUMNS, 9);
+  });
+});
+
+function pathsOf(node: PdfStructureNode, above: readonly string[] = []): { path: string[]; leaf: PdfStructureNode }[] {
+  const here = [...above, node.type];
+  return node.children.length === 0 ? [{ path: here, leaf: node }] : node.children.flatMap((child) => pathsOf(child, here));
+}
+
+function treeOf(content: PdfContent): PdfStructureNode {
+  return structureTreeOf(paginate({ title: "Declaration", content }));
+}
+
+describe("a tick list reaches the tree as a list whose items say their own state", () => {
+  const TICKS = TickList({
+    items: [
+      { label: "Certified copy of identity document attached", mark: "ticked" },
+      { label: "Proof of residential address attached", mark: "empty" },
+    ],
+  });
+
+  test("makes one list of two items, with no element for the row they share", () => {
+    const found = pathsOf(treeOf([TICKS])).filter((entry) => entry.path.includes("L"));
+    const items = found.map((entry) => entry.path.slice(entry.path.indexOf("L")));
+    expect(items.every((path) => path[1] === "LI")).toBe(true);
+    expect(new Set(items.map((path) => path.length))).toEqual(new Set([3]));
+    expect(items.filter((path) => path[2] === "Lbl")).toHaveLength(2);
+    expect(items.filter((path) => path[2] === "LBody")).toHaveLength(2);
+  });
+
+  // The state is the only thing the box says, and before this it reached no reader at all.
+  test("gives each item's label the alternate text that distinguishes the two states", () => {
+    const labels = pathsOf(treeOf([TICKS]))
+      .filter((entry) => entry.leaf.type === "Lbl")
+      .map((entry) => entry.leaf.alt);
+    expect(labels).toEqual(["ticked", "empty"]);
+  });
+
+  test("carries the item's own words in its body", () => {
+    const bodies = pathsOf(treeOf([TICKS]))
+      .filter((entry) => entry.leaf.type === "LBody")
+      .map((entry) => entry.leaf.text);
+    expect(bodies[0]).toContain("Certified copy");
+    expect(bodies[1]).toContain("Proof of residential address");
+  });
+
+  test("declares the list unnumbered, since a tick box is not an ordinal", async () => {
+    const rendered = await createPdfRenderer({ tagged: true, compress: false }).render({ title: "Declaration", content: [TICKS] });
+    if (!rendered.ok) throw new Error(rendered.error.message);
+    expect(new TextDecoder("latin1").decode(rendered.data)).toContain("/A << /O /List /ListNumbering /None >>");
+  });
+});
+
+describe("an option group is the same list, asked as a question", () => {
+  test("makes one list whose items each carry a label and a body", () => {
+    const options = OptionGroup({
+      label: "In what capacity is the interest held?",
+      options: [
+        { label: "In my own name", mark: "ticked" },
+        { label: "Through a trust", mark: "empty" },
+        { label: "Through a company", mark: "crossed" },
+      ],
+    });
+    const found = pathsOf(treeOf([options])).filter((entry) => entry.path.includes("L"));
+    expect(found.filter((entry) => entry.leaf.type === "Lbl").map((entry) => entry.leaf.alt)).toEqual(["ticked", "empty", "crossed"]);
+    expect(found.filter((entry) => entry.leaf.type === "LBody")).toHaveLength(3);
   });
 });

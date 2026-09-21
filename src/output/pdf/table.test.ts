@@ -5,8 +5,10 @@ import { createCursor } from "./cursor";
 import { place } from "./elements";
 import { MARGIN, PAGE_WIDTH } from "./geometry";
 import { paginate } from "./paginate";
+import { createPdfRenderer } from "./renderer";
+import { structureTreeOf } from "./structure";
 import { Table } from "./table";
-import type { PdfBox, PdfElement, PdfNode, PdfTextNode } from "./types";
+import type { PdfBox, PdfDocument, PdfElement, PdfNode, PdfStructureNode, PdfTextNode } from "./types";
 
 const MEASURE: PdfBox = { x: MARGIN, width: PAGE_WIDTH - MARGIN * 2, height: 700 };
 
@@ -97,5 +99,87 @@ describe("a table measures before it is drawn", () => {
   test("an empty table draws nothing and takes no room", () => {
     expect(nodesOf(Table({ rows: [] }))).toEqual([]);
     expect(Table({ rows: [] }).measure(MEASURE.width).height).toBe(0);
+  });
+});
+
+// The tree is asked rather than the bytes for shape, and the bytes for the one attribute a shape
+// cannot carry — `/Scope` is what tells a reader which column a cell it announces belongs to.
+function pathsOf(node: PdfStructureNode, above: readonly string[] = []): string[][] {
+  const here = [...above, node.type];
+  return node.children.length === 0 ? [here] : node.children.flatMap((child) => pathsOf(child, here));
+}
+
+describe("what a Table declares about itself", () => {
+  test("declares every cell it holds, header row first, which is the order a reader takes them in", () => {
+    const heading = cell("Interest");
+    const first = cell("Meridian");
+    const second = cell("2019");
+    expect(Table({ header: [heading], rows: [[first], [second]] }).children).toEqual([heading, first, second]);
+  });
+
+  // A cell opens no section: a table lays out as one element, so a break inside it is one pagination
+  // has no way to take.
+  test("opens no section, whatever a cell of its own would open", () => {
+    expect(Table({ rows: [[cell("Meridian")]] }).startsSection).toBeUndefined();
+  });
+});
+
+describe("a Table reaches the tree as a table rather than as loose paragraphs", () => {
+  const words = (run: string): PdfElement => Text({ children: run });
+  const TABLED: PdfDocument = {
+    title: "Declaration",
+    content: [
+      Table({
+        header: [words("Interest"), words("Held since")],
+        rows: [
+          [words("Meridian Holdings"), words("2019")],
+          [words("Rondebosch Trust"), words("2021")],
+        ],
+      }),
+    ],
+  };
+
+  test("nests every cell under a row and every row under one table", () => {
+    const paths = pathsOf(structureTreeOf(paginate(TABLED)));
+    const inTable = paths.filter((path) => path.includes("Table"));
+    expect(inTable.length).toBeGreaterThan(0);
+    for (const path of inTable) expect(path.slice(path.indexOf("Table"), path.indexOf("Table") + 2)).toEqual(["Table", "TR"]);
+    expect(new Set(inTable.map((path) => path.filter((type) => type === "Table").length))).toEqual(new Set([1]));
+  });
+
+  test("makes the header row header cells and every body cell a data cell", () => {
+    const paths = pathsOf(structureTreeOf(paginate(TABLED))).filter((path) => path.includes("Table"));
+    const cells = paths.map((path) => path[path.indexOf("TR") + 1]);
+    expect(cells).toContain("TH");
+    expect(cells).toContain("TD");
+    expect(cells.filter((type) => type === "TH")).toHaveLength(2);
+  });
+
+  test("declares the header cell's scope, which is what names the column a reader is in", async () => {
+    const rendered = await createPdfRenderer({ tagged: true, compress: false }).render(TABLED);
+    if (!rendered.ok) throw new Error(rendered.error.message);
+    const text = new TextDecoder("latin1").decode(rendered.data);
+    expect(text).toContain("/S /TH");
+    expect(text).toContain("/A << /O /Table /Scope /Column >>");
+  });
+
+  test("a table continuing onto a second page is one table carrying its own header set there", () => {
+    const long: PdfDocument = {
+      title: "Declaration",
+      content: [
+        Table({
+          header: [words("Interest"), words("Held since")],
+          rows: Array.from({ length: 70 }, (_row, at) => [words(`Holding ${at}`), words("2019")]),
+        }),
+      ],
+    };
+    const pages = paginate(long);
+    expect(pages.length).toBeGreaterThan(1);
+    const tree = structureTreeOf(pages);
+    const tables = pathsOf(tree).filter((path) => path.includes("Table"));
+    expect(new Set(tables.map((path) => path.filter((type) => type === "Table").length))).toEqual(new Set([1]));
+    // One `/TH` set per page it continues onto, because the repeat is ink a reader meets again.
+    const headers = tables.filter((path) => path[path.indexOf("TR") + 1] === "TH");
+    expect(headers.length).toBe(pages.length * 2);
   });
 });

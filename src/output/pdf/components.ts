@@ -28,8 +28,17 @@ function widestPageNumber(digits: number): string {
   return "0".repeat(Math.max(digits, 1));
 }
 
+// A wrapper inherits only its *first* child's section break: that is the one position where the
+// break lands where it would have without the wrapper, and pagination cannot break inside a container.
+/** What a container declares about the elements it was given: them, and whether it opens a section. @internal */
+export function pdfContainer(children: readonly PdfElement[]): Pick<PdfElement, "children" | "startsSection"> {
+  const opens = children[0]?.startsSection;
+  return { children, ...(opens === undefined ? {} : { startsSection: opens }) };
+}
+
 function stack(children: readonly PdfElement[], gap: number): PdfElement {
   return {
+    ...pdfContainer(children),
     measure(width, set) {
       const measured = children.map((child) => child.measure(width, set));
       return {
@@ -124,6 +133,7 @@ export function Row(props: RowProps): PdfElement {
     return widths.map((width, index) => ({ x: box.x + (offsets[index] ?? 0), width, height: box.height }));
   };
   return {
+    ...pdfContainer(props.children),
     measure(width, set) {
       const boxes = boxesIn({ x: 0, width, height: Number.POSITIVE_INFINITY });
       const measured = props.children.map((child, index) => child.measure(boxes[index]?.width ?? width, set));
@@ -164,6 +174,7 @@ export function Box(props: BoxProps): PdfElement {
   const padding = props.padding ?? 0;
   const inner = stack(props.children, props.gap ?? 0);
   return {
+    ...pdfContainer(props.children),
     measure(width, set) {
       const measured = inner.measure(width - padding * 2, set);
       return { preferred: measured.preferred + padding * 2, minimum: measured.minimum + padding * 2, height: measured.height + padding * 2 };
@@ -250,6 +261,7 @@ export function PageBreak(): PdfElement {
 export function KeepTogether(props: KeepTogetherProps): PdfElement {
   const inner = stack(props.children, props.gap ?? 0);
   return {
+    ...pdfContainer(props.children),
     measure: (width, set) => inner.measure(width, set),
     fragments(box, set) {
       const own = inner.fragments(box, set);

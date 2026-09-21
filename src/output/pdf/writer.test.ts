@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { inflate, parsePdfObjects } from "./conform/parse.fixture";
 import { PAGE_HEIGHT } from "./geometry";
 import type { PdfEmbeddedFont, PdfImage, PdfLink, PdfNode, PdfPage } from "./types";
-import { composePdf, createObjectManager, operatorsFor, writePdf } from "./writer";
+import { composePdf, createObjectManager, deflate, operatorsFor, writePdf } from "./writer";
 
 const decoder = new TextDecoder("latin1");
 
@@ -38,12 +39,12 @@ describe("the y-up conversion happens in the writer and nowhere else", () => {
   });
 });
 
-describe("the file structure", () => {
-  const bytes = writePdf(
-    composePdf([pageOf([{ kind: "text", tag: "value", x: 56, y: 100, run: "hello", face: "regular", size: 10, tracking: 0 }])]),
-  );
-  const text = decoder.decode(bytes);
+const bytes = await writePdf(
+  composePdf([pageOf([{ kind: "text", tag: "value", x: 56, y: 100, run: "hello", face: "regular", size: 10, tracking: 0 }])]),
+);
+const text = decoder.decode(bytes);
 
+describe("the file structure", () => {
   test("opens with a PDF 1.4 header and a binary comment, and closes with the end-of-file marker", () => {
     expect(text.startsWith("%PDF-1.4\n")).toBe(true);
     expect([...bytes.slice(9, 15)]).toEqual([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]);
@@ -70,8 +71,8 @@ describe("the file structure", () => {
   });
 });
 
-describe("a page declares the graphics states and gradients its own stream reaches for", () => {
-  const bytes = writePdf(
+const painted = decoder.decode(
+  await writePdf(
     composePdf([
       pageOf([
         { kind: "ink", tag: "artwork", channel: "fill", ink: [1, 0, 0, 0.5] },
@@ -91,52 +92,55 @@ describe("a page declares the graphics states and gradients its own stream reach
         },
       ]),
     ]),
-  );
-  const text = decoder.decode(bytes);
+  ),
+);
 
+describe("a page declares the graphics states and gradients its own stream reaches for", () => {
   test("names the state an ink's alpha registered, in the page's resource dictionary", () => {
-    expect(text).toContain("/ExtGState << /GS0 << /Type /ExtGState /ca 0.5 /CA 0.5 >> >>");
-    expect(text).toContain("/GS0 gs 1 0 0 rg");
+    expect(painted).toContain("/ExtGState << /GS0 << /Type /ExtGState /ca 0.5 /CA 0.5 >> >>");
+    expect(painted).toContain("/GS0 gs 1 0 0 rg");
   });
 
   test("names the gradient the path is clipped to, and paints it through that clip", () => {
-    expect(text).toContain("/Shading << /Sh0 << /ShadingType 2");
-    expect(text).toContain("W n /Sh0 sh Q");
+    expect(painted).toContain("/Shading << /Sh0 << /ShadingType 2");
+    expect(painted).toContain("W n /Sh0 sh Q");
   });
 });
 
-describe("an image is one object, pointed at from the page that draws it", () => {
-  const image: PdfImage = {
-    width: 2,
-    height: 1,
-    bytes: new Uint8Array([1, 2]),
-    bitsPerComponent: 8,
-    colourSpace: "/DeviceRGB",
-    filter: "FlateDecode",
-    mask: { width: 2, height: 1, bytes: new Uint8Array([3]), bitsPerComponent: 8, colourSpace: "/DeviceGray", filter: "FlateDecode" },
-  };
-  const text = decoder.decode(writePdf(composePdf([pageOf([{ kind: "image", tag: "artwork", x: 10, y: 100, width: 40, height: 20, image }])])));
+const image: PdfImage = {
+  width: 2,
+  height: 1,
+  bytes: new Uint8Array([1, 2]),
+  bitsPerComponent: 8,
+  colourSpace: "/DeviceRGB",
+  filter: "FlateDecode",
+  mask: { width: 2, height: 1, bytes: new Uint8Array([3]), bitsPerComponent: 8, colourSpace: "/DeviceGray", filter: "FlateDecode" },
+};
+const drawn = decoder.decode(
+  await writePdf(composePdf([pageOf([{ kind: "image", tag: "artwork", x: 10, y: 100, width: 40, height: 20, image }])])),
+);
 
+describe("an image is one object, pointed at from the page that draws it", () => {
   test("numbers the image and its mask before the first page, so the page numbering stays derivable", () => {
-    expect(text).toContain("/SMask 6 0 R");
-    expect(text).toContain("/Type /Pages /Kids [7 0 R]");
+    expect(drawn).toContain("/SMask 6 0 R");
+    expect(drawn).toContain("/Type /Pages /Kids [7 0 R]");
   });
 
   test("names it in the page's resources and draws it through a bracketed transform", () => {
-    expect(text).toContain("/XObject << /Im0 5 0 R >>");
-    expect(text).toContain(`q 40 0 0 20 10 ${PAGE_HEIGHT - 120} cm /Im0 Do Q`);
+    expect(drawn).toContain("/XObject << /Im0 5 0 R >>");
+    expect(drawn).toContain(`q 40 0 0 20 10 ${PAGE_HEIGHT - 120} cm /Im0 Do Q`);
   });
 });
 
-describe("a tagged document carries the tree its own display-list tags describe", () => {
-  const nodes: PdfNode[] = [
-    { kind: "text", tag: "title", x: 0, y: 10, run: "Declaration", face: "bold", size: 14, tracking: 0 },
-    { kind: "path", tag: "rule", commands: [{ op: "move", x: 0, y: 20 }], paint: "stroke", weight: 0.5 },
-    { kind: "text", tag: "value", x: 0, y: 30, run: "Du Toit", face: "regular", size: 10, tracking: 0 },
-  ];
-  const tagged = decoder.decode(writePdf(composePdf([pageOf(nodes)], undefined, undefined, { lang: "en-ZA" })));
-  const plain = decoder.decode(writePdf(composePdf([pageOf(nodes)])));
+const nodes: PdfNode[] = [
+  { kind: "text", tag: "title", x: 0, y: 10, run: "Declaration", face: "bold", size: 14, tracking: 0 },
+  { kind: "path", tag: "rule", commands: [{ op: "move", x: 0, y: 20 }], paint: "stroke", weight: 0.5 },
+  { kind: "text", tag: "value", x: 0, y: 30, run: "Du Toit", face: "regular", size: 10, tracking: 0 },
+];
+const tagged = decoder.decode(await writePdf(composePdf([pageOf(nodes)], undefined, undefined, { lang: "en-ZA" })));
+const plain = decoder.decode(await writePdf(composePdf([pageOf(nodes)])));
 
+describe("a tagged document carries the tree its own display-list tags describe", () => {
   test("brackets each run in the stream, and marks a rule as an artifact rather than content", () => {
     expect(tagged).toContain("/H1 << /MCID 0 >> BDC");
     expect(tagged).toContain("/Artifact BMC");
@@ -155,15 +159,15 @@ describe("a tagged document carries the tree its own display-list tags describe"
     expect(tagged).toContain("/ViewerPreferences << /DisplayDocTitle true >>");
   });
 
-  test("a figure enters the tree only with the text a reader announces in its place", () => {
+  test("a figure enters the tree only with the text a reader announces in its place", async () => {
     const drawing = (alt?: string): PdfNode => ({
       kind: "path",
       tag: "artwork",
       commands: [{ op: "close" }],
       ...(alt === undefined ? {} : { alt }),
     });
-    const described = decoder.decode(writePdf(composePdf([pageOf([drawing("A mark")])], undefined, undefined, { lang: "en" })));
-    const bare = decoder.decode(writePdf(composePdf([pageOf([drawing()])], undefined, undefined, { lang: "en" })));
+    const described = decoder.decode(await writePdf(composePdf([pageOf([drawing("A mark")])], undefined, undefined, { lang: "en" })));
+    const bare = decoder.decode(await writePdf(composePdf([pageOf([drawing()])], undefined, undefined, { lang: "en" })));
     expect(described).toContain("/S /Figure");
     expect(described).toContain("/Alt (A mark)");
     expect(bare).not.toContain("/Figure");
@@ -179,43 +183,45 @@ describe("a tagged document carries the tree its own display-list tags describe"
 });
 
 describe("a link is an annotation the page lists, and an element the tree reaches", () => {
+  // `link: 0` is what `cursor.linked` records: it is the index of the annotation this run sits in,
+  // and the writer binds element to annotation by it rather than by counting links as it walks.
   const linked = (target: PdfLink["target"]): PdfPage => ({
-    nodes: [{ kind: "text", tag: "link", x: 10, y: 20, run: "Terms", face: "regular", size: 10, tracking: 0 }],
+    nodes: [{ kind: "text", tag: "link", link: 0, x: 10, y: 20, run: "Terms", face: "regular", size: 10, tracking: 0 }],
     links: [{ target, x: 10, y: 10, width: 40, height: 12 }],
     y: 0,
     letterheadNodes: 0,
   });
 
-  test("an external address becomes a URI action, in a rectangle flipped into user space", () => {
-    const text = decoder.decode(writePdf(composePdf([linked({ uri: "https://example.org/terms" })])));
-    expect(text).toContain("/Type /Annot /Subtype /Link");
-    expect(text).toContain("/A << /S /URI /URI (https://example.org/terms) >>");
-    expect(text).toContain(`/Rect [10 ${PAGE_HEIGHT - 22} 50 ${PAGE_HEIGHT - 10}]`);
+  test("an external address becomes a URI action, in a rectangle flipped into user space", async () => {
+    const written = decoder.decode(await writePdf(composePdf([linked({ uri: "https://example.org/terms" })])));
+    expect(written).toContain("/Type /Annot /Subtype /Link");
+    expect(written).toContain("/A << /S /URI /URI (https://example.org/terms) >>");
+    expect(written).toContain(`/Rect [10 ${PAGE_HEIGHT - 22} 50 ${PAGE_HEIGHT - 10}]`);
   });
 
-  test("an internal destination names the page object rather than an address", () => {
-    expect(decoder.decode(writePdf(composePdf([linked({ page: 0 }), linked({ page: 0 })])))).toContain("/Dest [7 0 R /Fit]");
+  test("an internal destination names the page object rather than an address", async () => {
+    expect(decoder.decode(await writePdf(composePdf([linked({ page: 0 }), linked({ page: 0 })])))).toContain("/Dest [7 0 R /Fit]");
   });
 
-  test("the page lists what it carries, and a page with no link lists nothing", () => {
-    expect(decoder.decode(writePdf(composePdf([linked({ page: 0 })])))).toContain("/Annots [5 0 R]");
-    expect(decoder.decode(writePdf(composePdf([pageOf([])])))).not.toContain("/Annots");
+  test("the page lists what it carries, and a page with no link lists nothing", async () => {
+    expect(decoder.decode(await writePdf(composePdf([linked({ page: 0 })])))).toContain("/Annots [5 0 R]");
+    expect(decoder.decode(await writePdf(composePdf([pageOf([])])))).not.toContain("/Annots");
   });
 
-  test("a tagged link reaches a reader through its annotation as well as its words", () => {
-    const text = decoder.decode(writePdf(composePdf([linked({ uri: "https://example.org" })], undefined, undefined, { lang: "en" })));
-    expect(text).toContain("/S /Link");
-    expect(text).toContain("/K [0 << /Type /OBJR /Obj 5 0 R >>]");
+  test("a tagged link reaches a reader through its annotation as well as its words", async () => {
+    const written = decoder.decode(await writePdf(composePdf([linked({ uri: "https://example.org" })], undefined, undefined, { lang: "en" })));
+    expect(written).toContain("/S /Link");
+    expect(written).toContain("/K [0 << /Type /OBJR /Obj 5 0 R >>]");
   });
 });
 
-describe("what the metadata option writes beyond the information dictionary", () => {
-  const heads: PdfNode[] = [
-    { kind: "text", tag: "title", x: 0, y: 10, run: "Declaration", face: "bold", size: 14, tracking: 0 },
-    { kind: "text", tag: "heading", x: 0, y: 30, run: "PART A", face: "bold", size: 12, tracking: 0 },
-  ];
-  const written = decoder.decode(writePdf(composePdf([pageOf(heads)]), undefined, { xmp: "<?xpacket?>" }));
+const heads: PdfNode[] = [
+  { kind: "text", tag: "title", x: 0, y: 10, run: "Declaration", face: "bold", size: 14, tracking: 0 },
+  { kind: "text", tag: "heading", x: 0, y: 30, run: "PART A", face: "bold", size: 12, tracking: 0 },
+];
+const written = decoder.decode(await writePdf(composePdf([pageOf(heads)]), undefined, { xmp: "<?xpacket?>" }));
 
+describe("what the metadata option writes beyond the information dictionary", () => {
   test("carries the XMP packet unfiltered, so a checker finds it in the file as it stands", () => {
     expect(written).toContain("/Type /Metadata /Subtype /XML");
     expect(written).toContain("<?xpacket?>");
@@ -229,57 +235,115 @@ describe("what the metadata option writes beyond the information dictionary", ()
     expect(written).toContain("/PageMode /UseOutlines");
   });
 
-  test("writes neither where the option names neither, so a plain file declares no metadata it has not got", () => {
-    const bare = decoder.decode(writePdf(composePdf([pageOf(heads)])));
+  test("writes neither where the option names neither, so a plain file declares no metadata it has not got", async () => {
+    const bare = decoder.decode(await writePdf(composePdf([pageOf(heads)])));
     expect(bare).not.toContain("/Metadata");
     expect(bare).not.toContain("/Outlines");
   });
 });
 
 describe("/Length counts bytes, because that is what a reader seeks by", () => {
-  test("a stream carrying a multi-byte character declares its byte length, not its character count", () => {
+  test("a stream carrying a multi-byte character declares its byte length, not its character count", async () => {
     // Every byte above 0x7e is written as a three-character octal escape, so a character count
     // equals the byte count only while the stream is ASCII — and a reader seeking by it overruns.
     const stream = "BT /F1 10 Tf 0 Tc 56 742 Td (caf\\351) Tj ET";
-    const bytes = writePdf(
+    const accented = await writePdf(
       composePdf([pageOf([{ kind: "text", tag: "value", x: 56, y: 100, run: "café", face: "regular", size: 10, tracking: 0 }])]),
     );
-    const declared = Number(/\/Length (\d+) >>/.exec(decoder.decode(bytes))?.[1]);
+    const declared = Number(/\/Length (\d+) >>/.exec(decoder.decode(accented))?.[1]);
     expect(declared).toBe(new TextEncoder().encode(stream).length);
   });
 });
 
-describe("an embedded face is addressed by where it sits in the document's fonts", () => {
-  // Addressed by position rather than by a name hash: `Face1000` and `Face3661` are the collision
-  // class, and two faces on one resource name set one's runs in the other's glyphs, undisclosed.
-  const faceOf = (name: string): PdfEmbeddedFont => ({
-    name,
-    postScriptName: `${name}-Regular`,
-    sfnt: new Uint8Array([0]),
-    glyphs: new Map([[65, 3]]),
-    metrics: { unitsPerEm: 1000, ascent: 800, descent: -200, bbox: [0, 0, 1000, 1000], advances: new Map([[65, 500]]) },
-  });
-  const fonts = [faceOf("Face1000"), faceOf("Face3661")];
-  const run = (embedded: string): PdfNode => ({
-    kind: "text",
-    tag: "value",
-    x: 0,
-    y: 10,
-    run: "A",
-    face: "regular",
-    size: 10,
-    tracking: 0,
-    embedded,
-  });
-  const text = decoder.decode(writePdf(composePdf([pageOf([run("Face1000"), run("Face3661")])], undefined, fonts)));
+// Addressed by position rather than by a name hash: `Face1000` and `Face3661` are the collision
+// class, and two faces on one resource name set one's runs in the other's glyphs, undisclosed.
+const faceOf = (name: string): PdfEmbeddedFont => ({
+  name,
+  postScriptName: `${name}-Regular`,
+  sfnt: new Uint8Array([0]),
+  glyphs: new Map([[65, 3]]),
+  metrics: { unitsPerEm: 1000, ascent: 800, descent: -200, bbox: [0, 0, 1000, 1000], advances: new Map([[65, 500]]) },
+});
+const embeddedRun = (embedded: string): PdfNode => ({
+  kind: "text",
+  tag: "value",
+  x: 0,
+  y: 10,
+  run: "A",
+  face: "regular",
+  size: 10,
+  tracking: 0,
+  embedded,
+});
+const faced = decoder.decode(
+  await writePdf(composePdf([pageOf([embeddedRun("Face1000"), embeddedRun("Face3661")])], undefined, [faceOf("Face1000"), faceOf("Face3661")])),
+);
 
+describe("an embedded face is addressed by where it sits in the document's fonts", () => {
   test("gives each face its own resource name, where a hash of the name gave them one", () => {
-    expect(text).toContain("/E0 ");
-    expect(text).toContain("/E1 ");
+    expect(faced).toContain("/E0 ");
+    expect(faced).toContain("/E1 ");
   });
 
   test("sets each run in the face it names, rather than in whichever face won the collision", () => {
-    expect(text).toContain("BT /E0 10 Tf");
-    expect(text).toContain("BT /E1 10 Tf");
+    expect(faced).toContain("BT /E0 10 Tf");
+    expect(faced).toContain("BT /E1 10 Tf");
+  });
+});
+
+const composed = composePdf([pageOf([{ kind: "text", tag: "value", x: 56, y: 100, run: "hello", face: "regular", size: 10, tracking: 0 }])]);
+const compact = await writePdf(composed, await Promise.all(composed.streams.map(deflate)));
+const compactText = decoder.decode(compact);
+
+describe("a filtered file carries a cross-reference stream rather than a classic table", () => {
+  test("declares PDF 1.5, because a cross-reference stream is not a 1.4 construct", () => {
+    expect(compactText.startsWith("%PDF-1.5\n")).toBe(true);
+    expect(text.startsWith("%PDF-1.4\n")).toBe(true);
+  });
+
+  test("writes an /XRef stream and no xref keyword at all", () => {
+    expect(compactText).toContain("/Type /XRef /W [1 4 2]");
+    expect(compactText).not.toContain("xref\n0 ");
+    expect(compactText).not.toContain("trailer");
+  });
+
+  test("points startxref at the /XRef object, which carries its own entry", () => {
+    const start = Number(/startxref\n(\d+)\n/.exec(compactText)?.[1]);
+    const size = Number(/\/Size (\d+)/.exec(compactText)?.[1]);
+    expect(compactText.slice(start)).toStartWith(`${size - 1} 0 obj\n<< /Type /XRef`);
+  });
+
+  test("resolves every inflated row to where that object actually is, in the file or in a container", async () => {
+    const at = compactText.indexOf("stream\n", compactText.indexOf("/Type /XRef")) + "stream\n".length;
+    const declared = Number(/\/Length (\d+) >>\nstream\n$/.exec(compactText.slice(0, at))?.[1]);
+    const rows = await inflate(compact.subarray(at, at + declared));
+    const view = new DataView(rows.buffer, rows.byteOffset, rows.byteLength);
+    const file = await parsePdfObjects(compact);
+    expect(rows.length % 7).toBe(0);
+    expect(rows[0]).toBe(0);
+    for (let index = 1; index < rows.length / 7; index += 1) {
+      const row = index * 7;
+      const target = view.getUint32(row + 1);
+      if (rows[row] === 2) expect(file.objects.get(index)?.container).toBe(target);
+      else expect(compactText.slice(target)).toStartWith(`${index} 0 obj`);
+    }
+  });
+
+  test("packs the dictionaries into a container and leaves every stream where a reader can seek to it", async () => {
+    const file = await parsePdfObjects(compact);
+    const packed = [...file.objects.values()].filter((object) => object.container !== undefined);
+    expect(packed.length).toBeGreaterThan(0);
+    // The type distinction the packer trusts, asserted rather than assumed: a body carrying a stream
+    // inside an `/ObjStm` is a file that passes every `toContain` here and opens in no reader.
+    for (const object of packed) expect(object.dict).not.toContain("stream");
+  });
+
+  test("keeps the XMP packet a top-level unfiltered stream, which is where a checker looks for it", async () => {
+    const withXmp = composePdf([pageOf(nodes)]);
+    const file = await parsePdfObjects(await writePdf(withXmp, await Promise.all(withXmp.streams.map(deflate)), { xmp: "<?xpacket?>" }));
+    const metadata = [...file.objects.values()].find((object) => object.dict.includes("/Type /Metadata"));
+    expect(metadata?.container).toBeUndefined();
+    expect(metadata?.dict).not.toContain("/Filter");
+    expect(decoder.decode(metadata?.stream)).toBe("<?xpacket?>");
   });
 });
