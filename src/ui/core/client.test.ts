@@ -134,17 +134,20 @@ describe("alert scope", () => {
 
   // Driven through a real click and the delegated runtime: calling `root.remove()` by hand passes
   // whether or not `client.ts` registered a `dismiss` action at all.
-  it("removes the alert when its dismiss button is clicked", () => {
+  it("removes the alert when its dismiss button is clicked, and rehomes the focus it was holding", () => {
     const { doc, el } = fakeTree();
+    const region = el("SECTION", { id: "region" });
     const root = el("DIV", { "data-scope": ALERT_SCOPE, id: "alert" });
     const close = el("BUTTON", { "data-slot": "alert-dismiss", "data-on-click": "dismiss" });
     root.append(close);
-    doc.root.append(root);
+    region.append(root);
+    doc.root.append(region);
+    close.focus();
 
     const release = resume(doc as never);
     close.dispatchEvent(new FakeEvent("click"));
     release();
 
-    expect(doc.root.querySelector("#alert")).toBe(null);
+    expect({ alert: doc.root.querySelector("#alert"), focused: doc.activeElement?.id }).toEqual({ alert: null, focused: "region" });
   });
 });

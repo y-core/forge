@@ -28,6 +28,18 @@ function field(inputAttrs: Record<string, string> = {}) {
 const click = (el: FakeElement) => el.dispatchEvent(new FakeEvent("click"));
 
 describe("mountNumberField", () => {
+  // APG's Spinbutton keeps focus on the field throughout, which is also the only announcement there
+  // is: a reader left on the button hears nothing of the value that changed.
+  it("hands focus back to the field after a step, wherever the press came from", () => {
+    const { doc, root, inc } = field();
+    const dispose = mountNumberField(root as never);
+
+    click(inc);
+    dispose();
+
+    expect(doc.activeElement?.id).toBe("n");
+  });
+
   it("steps the input up and down from the two buttons", () => {
     const { root, dec, inc, input } = field();
     mountNumberField(root as never);

@@ -1,11 +1,12 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
-import { MENU_ITEM_CLASS, MENU_SCOPE, menuItemAttrs } from "../contracts/menu-contract";
+import { MENU_ITEM_CLASS, MENU_KEEP_OPEN_ATTR, MENU_SCOPE, menuItemAttrs } from "../contracts/menu-contract";
+import { nameAttrs, triggerId } from "../contracts/naming";
 import { invokerAttrs, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { MenuItemAttrsOptions } from "../contracts/types";
-import type { Align, Side } from "../contracts/types";
+import type { Align, MenuPopupNaming, Side } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { RULE } from "./utils/recipes";
@@ -20,7 +21,9 @@ interface MenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], "childr
   children?: JSXNode | undefined;
 }
 
-interface MenuPopupProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+type MenuPopupProps = MenuPopupNaming & MenuPopupOwnProps;
+
+interface MenuPopupOwnProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Element id — the `commandfor` target named by the matching `Menu.Trigger`. */
   id: string;
   /** Which side of its anchor the popup opens on. */
@@ -42,6 +45,8 @@ type MenuCheckboxItemProps = MenuItemProps & { checked?: boolean | undefined };
 type MenuRadioItemProps = MenuItemProps & { checked?: boolean | undefined };
 
 interface MenuLinkItemProps extends Omit<JSX.IntrinsicElements["a"], "children"> {
+  /** `false` leaves the menu open on activation. A link takes no id: it closes the panel it sits in. */
+  for?: false | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -80,7 +85,10 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, class: cls, children, 
     commandfor={target}
     {...invokerAttrs(target, "menu")}
     class={cn("cursor-pointer focus-ring", cls)}
-    {...rest}>
+    {...rest}
+    // After `rest`, because the popup's `aria-labelledby` points here: a caller's own `id` would
+    // leave `role="menu"` with no name at all, which is what it has today.
+    id={triggerId(target)}>
     {children}
   </button>
 );
@@ -88,6 +96,9 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, class: cls, children, 
 /** The menu surface — a native `popover="auto"` carrying the keyboard-behaviour scope. */
 const MenuPopup: FC<MenuPopupProps> = ({
   id,
+  triggered,
+  label,
+  labelledby,
   side = "bottom",
   align = "start",
   coords = false,
@@ -99,6 +110,9 @@ const MenuPopup: FC<MenuPopupProps> = ({
   <div
     id={id}
     role='menu'
+    // The derived reference is reachable only through `triggered`, which is the caller asserting the
+    // forge trigger it points at: a popup opened from an invoker of their own has no such element.
+    {...(triggered ? { "aria-labelledby": triggerId(id) } : nameAttrs({ label, labelledby }))}
     data-slot={slotToken("menu-popup", inherited)}
     data-scope={MENU_SCOPE}
     popover='auto'
@@ -144,8 +158,13 @@ const MenuRadioItem: FC<MenuRadioItemProps> = ({ for: target, checked = false, c
 );
 
 /** A menu row that navigates as a real `<a href>`. */
-const MenuLinkItem: FC<MenuLinkItemProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <a role='menuitem' data-slot={slotToken("menu-link-item", inherited)} class={cn(ITEM_BASE, cls)} {...rest}>
+const MenuLinkItem: FC<MenuLinkItemProps> = ({ for: closes, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <a
+    role='menuitem'
+    data-slot={slotToken("menu-link-item", inherited)}
+    {...(closes === false ? { [MENU_KEEP_OPEN_ATTR]: "" } : {})}
+    class={cn(ITEM_BASE, cls)}
+    {...rest}>
     {children}
   </a>
 );
@@ -160,7 +179,8 @@ const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ for: target, class: c
     commandfor={target}
     {...invokerAttrs(target, "menu")}
     class={cn(ITEM_BASE, cls)}
-    {...rest}>
+    {...rest}
+    id={triggerId(target)}>
     {children}
   </button>
 );

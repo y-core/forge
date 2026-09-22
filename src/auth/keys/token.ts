@@ -20,7 +20,7 @@ import type { Result } from "../../result/types";
 import { AUTH_KEY_ID_LENGTH } from "../config";
 import type { AuthKeyRing } from "../types";
 import { lookupAuthKey } from "./ring";
-import type { AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./types";
+import type { AuthAtRestOpened, AuthAtRestRefusal, AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./types";
 
 /** The only frame version this codec writes or accepts. @public */
 export const AUTH_TOKEN_VERSION = 1;
@@ -112,26 +112,31 @@ export async function sealAtRest(
   return concatBytes(base64urlDecode(kid), nonce, await aeadSeal(await subkey, nonce, plaintext, context));
 }
 
-/** Opens a frame `sealAtRest` wrote, answering `null` when its length, its key or its context does not match. @internal */
+// The key id comes back with the bytes rather than being re-read off the frame by the caller: a
+// caller deciding whether to re-seal would otherwise decode the same six bytes a second time.
+/** Opens a frame `sealAtRest` wrote, refusing with `no-key` when the ring cannot resolve its key id. @internal */
 export async function openAtRest(
   ring: AuthKeyRing,
   purpose: AuthTokenPurpose,
   context: Uint8Array<ArrayBuffer>,
   frame: Uint8Array<ArrayBuffer>,
-): Promise<Uint8Array<ArrayBuffer> | null> {
-  if (frame.byteLength <= AT_REST_HEADER_BYTES) return null;
-  const subkey = resolveAeadKey(ring, base64urlEncode(frame.subarray(0, AUTH_KID_BYTES)), purpose);
-  if (!subkey) return null;
-  return aeadOpen(await subkey, frame.slice(AUTH_KID_BYTES, AT_REST_HEADER_BYTES), frame.slice(AT_REST_HEADER_BYTES), context);
+): Promise<Result<AuthAtRestOpened, AuthAtRestRefusal>> {
+  if (frame.byteLength <= AT_REST_HEADER_BYTES) return err("unopenable");
+  const kid = base64urlEncode(frame.subarray(0, AUTH_KID_BYTES));
+  const subkey = resolveAeadKey(ring, kid, purpose);
+  if (!subkey) return err("no-key");
+  const plaintext = await aeadOpen(await subkey, frame.slice(AUTH_KID_BYTES, AT_REST_HEADER_BYTES), frame.slice(AT_REST_HEADER_BYTES), context);
+  return plaintext ? ok({ plaintext, kid }) : err("unopenable");
 }
 
 function writeTimestamp(view: DataView, offset: number, value: number): void {
   view.setBigUint64(offset, BigInt(Math.trunc(value)), false);
 }
 
-function assertKeyId(kid: string): void {
+/** Refuses a key id that is not the shape `importAuthKeyRing` derives, naming the caller that was handed it. @internal */
+export function assertAuthKeyId(operation: string, kid: string): void {
   if (kid.length !== AUTH_KEY_ID_LENGTH || !/^[A-Za-z0-9_-]+$/.test(kid)) {
-    throw new Error(`encodeAuthToken: key id "${kid}" must be ${AUTH_KEY_ID_LENGTH} base64url characters — use importAuthKeyRing to derive one`);
+    throw new Error(`${operation}: key id "${kid}" must be ${AUTH_KEY_ID_LENGTH} base64url characters — use importAuthKeyRing to derive one`);
   }
 }
 
@@ -145,7 +150,7 @@ export async function encodeAuthToken(
 ): Promise<string> {
   if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("encodeAuthToken: ttlMs must be a positive number of milliseconds");
   const kid = ring.activeKeyId;
-  assertKeyId(kid);
+  assertAuthKeyId("encodeAuthToken", kid);
   const key = resolveAeadKey(ring, kid, purpose);
   if (!key) throw new Error(`encodeAuthToken: the key ring has no key for its active key id "${kid}"`);
 

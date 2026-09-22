@@ -30,6 +30,7 @@ const COORD_RULE = `
 async function markup(coords = true): Promise<string> {
   const menu = await render(
     Menu.Popup({
+      label: "Context actions",
       id: "ctx",
       ...(coords ? { coords: true } : {}),
       class: "h-20 w-[120px]",

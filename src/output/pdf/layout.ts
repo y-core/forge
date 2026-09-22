@@ -1,7 +1,7 @@
 import { ok } from "../../result/result";
 import { preparePdfRender } from "./prepare";
 import type { PdfDocument, PdfLayout, PdfLayoutNode, PdfNode, PdfPagePosition, PdfRendererOptions, PdfResult } from "./types";
-import { substitutedRun } from "./writer";
+import { substitutedRun } from "./writer/content-stream";
 
 // `num` from `text.ts` trims trailing zeros, because a PDF operand is read by a parser; a fixture is
 // read by a person, and a variable-width number puts every token after it in a different column.

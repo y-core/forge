@@ -332,9 +332,10 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
     section: "filter",
     where: "FilterSection",
     axes: [
+      child("Group", "filter-group"),
       child("Item", "filter-item"),
       child("Reset", "filter-reset"),
-      { axis: "nested", value: "true", marker: { kind: "pattern", source: '<fieldset data-slot="filter' } },
+      { axis: "nested", value: "true", marker: { kind: "pattern", source: '<fieldset data-slot="filter"' } },
       { axis: "checked", value: "true", marker: { kind: "pattern", source: 'data-slot="filter-input"[^>]*checked' } },
     ],
   },
@@ -438,7 +439,11 @@ export const DEMO_COVERAGE: readonly CoverageDemo[] = [
     axes: [
       { axis: "snap", value: "center", marker: { kind: "attr", name: "data-snap", value: "center" } },
       { axis: "child", value: "Dots", marker: { kind: "slot", token: "carousel-dots" } },
-      { axis: "dots", value: "current", marker: { kind: "pattern", source: 'data-slot="pagination carousel-dots"[\\s\\S]*?aria-current="page"' } },
+      {
+        axis: "dots",
+        value: "current",
+        marker: { kind: "pattern", source: 'data-slot="pagination carousel-dots"[\\s\\S]*?aria-current="location"' },
+      },
     ],
   },
   {

@@ -34,6 +34,8 @@ audience: internal
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
+- §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
+- §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
 
 ---
 
@@ -130,6 +132,10 @@ fail the release outright.
 
 **`stageFiles` is an override, not an addition.** Naming it replaces the derived list. It exists for what a release touches _beyond_ its own writes
 — a lockfile, a monorepo's sibling manifests, a version constant in source — and those callers state the full list deliberately.
+
+**`sectionsFile` is the one exception, because it is not a project's choice.** The section manifest is forge's own write, and the gate's
+`checkChangelog` refuses a version with no recorded digest — so it is staged on every run that promotes a changelog, whether or not `stageFiles`
+names it. A run that promotes nothing neither writes it nor stages it, for the same reason the changelog is left out of that run's default.
 
 The refusals are guards, not conveniences:
 
@@ -486,6 +492,43 @@ on purpose: the installed tree stops matching the tag the lockfile pins. Making 
 swapped a published dependency for a working copy, and the failure mode — a bug reproducing only on one machine, against code no tag contains — is
 the worst kind to diagnose. Because it is a command, a plain `bun i` restores the pinned tag and the override has to be asked for again, which is
 the behaviour a consumer can reason about.
+
+---
+
+## 3. The Compatibility-Flag Posture Every Forge App States
+
+**Every forge app states `no_nodejs_compat`, `no_nodejs_compat_v2` and `new_module_registry`, at whatever compatibility date it already carries.**
+The first two are the posture: forge targets the pure Workers/V8 surface, so a Node built-in is available only where Cloudflare offers it natively,
+and a dependency reaching for one is refused rather than shimmed. If your build refuses `node:path`, this is the rule that refused it — and the
+remedy is to drop the dependency or find its Workers-native equivalent, not to add `nodejs_compat`.
+
+```jsonc
+{
+  "compatibility_date": "<the date this app already carries>",
+  "compatibility_flags": ["no_nodejs_compat", "no_nodejs_compat_v2", "new_module_registry"],
+}
+```
+
+**A compatibility date is not a posture, which is why the flags are stated rather than inferred.** Past wrangler's
+`NODEJS_COMPAT_DEFAULT_ON_DATE`, `nodejs_compat` and `nodejs_compat_v2` are on by default — so an app that refuses Node only because its date
+predates that acquires the whole Node surface the moment somebody bumps it. Stating the two `no_*` flags is accepted and inert on the earlier side
+of that threshold, so it lands at an app's existing date and makes the later bump safe by construction rather than by memory.
+
+**`new_module_registry` is adopted for its semantics, and no claim is made about speed.** It brings URL-shaped specifiers, `import.meta` resolution,
+validated import attributes, the `require(esm)` rules, uniform module error classes and Wasm source-phase imports. It is an independent opt-in with
+no default-on date of its own. It changes the class a module error is raised as, so a test asserting the old message text is the one thing expected
+to break when it goes on.
+
+### 3a. What the Check Reads, and the Trap It Exists For
+
+`checkCompatibility` (`src/tooling/gate/checks/compatibility.ts`) judges the top level **and every `env.*` block that states a set of its own**,
+because an environment **replaces** `compatibility_flags` wholesale rather than merging into the top level's. A `wrangler.jsonc` correct at the top
+and wrong in `env.dev` deploys a Worker with the Node surface to that environment, which is why the block is judged separately rather than being
+taken as an override of something already checked.
+
+An unstated set, a value that is not a list of names, an omitted flag and a stated contradiction — `nodejs_compat` beside `no_nodejs_compat` — are
+each reported on their own, and each finding carries the literal line that fixes it. `config.require` overrides the set for a project with a
+different posture; forge itself ships the step rather than running it, having no `wrangler.jsonc` of its own.
 
 ---
 

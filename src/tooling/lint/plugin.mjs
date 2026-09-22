@@ -8,6 +8,7 @@ var RULE_CORPUS_PATH = {
   "forge-ui-spacing-scale-only": "src/ui/design/floor.md",
   "forge-ui-no-nested-card": "src/ui/design/floor.md",
   "forge-ui-interaction-focus-visible": "src/ui/design/reference/09-interaction.md",
+  "forge-ui-interaction-filter-group-required": "src/ui/design/reference/09-interaction.md",
   "forge-ui-catalog-wrong-raw-input": "src/ui/design/catalog.md",
   "forge-ui-contrast-floor": "src/ui/design/floor.md",
   "forge-ui-a11y-label-association": "src/ui/design/floor.md",
@@ -27,6 +28,7 @@ var RULE_ENFORCER = {
   "forge-ui-spacing-scale-only": "lint",
   "forge-ui-no-nested-card": "lint",
   "forge-ui-interaction-focus-visible": "lint",
+  "forge-ui-interaction-filter-group-required": "lint",
   "forge-ui-catalog-wrong-raw-input": "lint",
   "forge-ui-contrast-floor": "contrast",
   "forge-ui-a11y-label-association": "lint",
@@ -1468,6 +1470,32 @@ var focusRing = {
   }
 };
 
+// src/tooling/lint/rules/interaction-filter-group-required.ts
+function enclosingFilterTag(node) {
+  for (let current = node.parent ?? void 0; current !== void 0; current = current.parent ?? void 0) {
+    if (current.type !== "JSXElement") continue;
+    const tag = openingTag(current.openingElement);
+    if (tag === "Filter" || tag === "Filter.Group") return tag;
+  }
+  return void 0;
+}
+var interactionFilterGroupRequired = {
+  meta: {
+    type: "problem",
+    docs: { description: "A filter chip sits in a `Filter.Group`, which is the element carrying the radiogroup and its name." }
+  },
+  create(context) {
+    const report = reporter(context, "forge-ui-interaction-filter-group-required");
+    return {
+      JSXOpeningElement(node) {
+        if (openingTag(node) !== "Filter.Item") return;
+        if (enclosingFilterTag(node) !== "Filter") return;
+        report("`<Filter.Item>` outside a `<Filter.Group>` \u2014 the chips are loose radios named by nothing", node.loc);
+      }
+    };
+  }
+};
+
 // src/tooling/lint/rules/interaction-focus-visible.ts
 var BARE_FOCUS = /(?<![\w-])focus:(?=[a-z[])[a-z0-9#%[\]/.-]+/g;
 var interactionFocusVisible = {
@@ -1852,6 +1880,7 @@ var lintPlugin = {
     "data-slot-before-spread": dataSlotBeforeSpread,
     "exact-markup-assertion": exactMarkupAssertion,
     "focus-ring": focusRing,
+    "interaction-filter-group-required": interactionFilterGroupRequired,
     "interaction-focus-visible": interactionFocusVisible,
     "no-inline-style": noInlineStyle,
     "no-nested-card": noNestedCard,

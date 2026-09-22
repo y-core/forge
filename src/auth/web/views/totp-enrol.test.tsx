@@ -44,6 +44,18 @@ describe("TotpEnrolView while enrolling", () => {
     expect(textOf(await totp(), "code", 'data-ref="totp-secret"')).toBe(SECRET);
   });
 
+  // A visitor sent here after their old secret stopped opening still has the old entry in their app,
+  // and a code read from it is refused — which reads as a broken app unless the page says otherwise.
+  it("tells the visitor to replace any entry their app already holds", async () => {
+    expect(textOf(await totp(), "span", 'data-ref="totp-replaces"')).toBe(
+      "If your app already holds an entry for this account, replace it. Codes from the old entry are no longer accepted.",
+    );
+  });
+
+  it("says nothing about replacing anything once the enrolment is settled", async () => {
+    expect(elementOf(await totp({ state: ENROLLED }), "span", 'data-ref="totp-replaces"')).toBe("");
+  });
+
   it("shows the setup link beside it, escaping the query the URI carries", async () => {
     expect(textOf(await totp(), "code", 'data-ref="totp-uri"')).toBe(
       "otpauth://totp/Forge:ada@example.com?secret=JBSWY3DPEHPK3PXP&amp;issuer=Forge",
@@ -51,7 +63,7 @@ describe("TotpEnrolView while enrolling", () => {
   });
 
   it("says plainly that the secret is not shown again, because the visitor cannot recover it", async () => {
-    expect(textOf(await totp(), "div", 'data-slot="card-description"')).toBe(
+    expect(textOf(await totp(), "span", 'data-ref="totp-once"')).toBe(
       "Store this secret in your app now. It is shown on this page only, and never again.",
     );
   });

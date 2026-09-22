@@ -1,13 +1,19 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidToBytes, uuidv7 } from "../../crypto/mod";
+import { base64urlDecode, uuidToBytes, uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
-import type { AuthFactor, AuthStoreResult } from "../types";
-import { createFactorStore } from "./factors";
+import type { AuthFactorRequirement } from "../factors/types";
+import type { AuthFactor, AuthKeyRing, AuthStoreResult } from "../types";
+import { createFactorStore, purgeStaleTotpSecrets } from "./factors";
+
+const DAY = 86_400_000;
+
+/** The purge takes the ring, so the key it keeps is the one the deployment actually seals under. */
+const RING: AuthKeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
 
 const USER_ID = uuidv7();
 const OTHER_ID = uuidv7();
@@ -52,6 +58,7 @@ describe("createFactorStore", () => {
       secret,
       lastCounter: null,
       failedAttempts: 0,
+      lastVerifiedAt: null,
       confirmedAt: null,
       createdAt: 5_000,
       updatedAt: 5_000,
@@ -105,6 +112,103 @@ describe("createFactorStore", () => {
     expect(found.ok && found.data?.lastCounter).toBeNull();
   });
 
+  it("drops only the stale rows idle past the window, and answers how many went", async () => {
+    const [client, db] = writerOf(() => 4);
+    const purged = await purgeStaleTotpSecrets(client, 1_000_000_000, { keys: RING, idleForMs: DAY, requirement: "mandatory" });
+    expect(purged).toEqual({ ok: true, data: 4 });
+    expect(db.calls[0]?.sql).toContain("substr(secret, 1, ?) != ?");
+    expect(db.calls[0]?.params).toEqual([6, base64urlDecode("AAAAAAAA"), 1_000_000_000 - DAY]);
+  });
+
+  // The window is measured back from the caller's own instant, so a scheduled run names the clock.
+  it("measures the window back from the caller's own instant", async () => {
+    const [client, db] = writerOf(() => 0);
+    await purgeStaleTotpSecrets(client, 5 * DAY, { keys: RING, idleForMs: 2 * DAY, requirement: "mandatory" });
+    expect(db.calls[0]?.params.at(-1)).toBe(3 * DAY);
+  });
+
+  // `updated_at` moves on a spent guess too, so a user whose app drifted and who keeps trying wrong
+  // codes would hold their own row outside the window forever — the population the purge exists for.
+  it("reads the accepted-code clock and not the last-touched one, so a wrong code does not defer the drop", async () => {
+    const [client, db] = writerOf(() => 0);
+    await purgeStaleTotpSecrets(client, 5 * DAY, { keys: RING, idleForMs: DAY, requirement: "mandatory" });
+    expect(db.calls[0]?.sql).toContain("COALESCE(last_verified_at, created_at) <= ?");
+    expect(db.calls[0]?.sql).not.toContain("updated_at <=");
+  });
+
+  it("stamps that clock only on the statement that accepts a code, never on the one that spends a guess", async () => {
+    const [client, db] = writerOf(() => 1);
+    const factors = createFactorStore(client);
+    await factors.recordVerification(OTHER_ID, USER_ID, 57, 4);
+    await factors.countAttempt(USER_ID, "totp-app", 5, 9, 60_000);
+    expect(db.calls[0]?.sql).toContain("last_verified_at = ?");
+    expect(db.calls[1]?.sql).not.toContain("last_verified_at");
+  });
+
+  // The kid is the complement of what the DELETE keeps, so a malformed one matches no row's prefix
+  // and the statement would take every idle enrolment in the deployment.
+  it("refuses a ring whose active key id is not the shape importAuthKeyRing derives, before any statement runs", async () => {
+    const [client, db] = writerOf(() => 0);
+    for (const activeKeyId of ["", "AAAA", "AAAAAAAAA", "AAAA/AAA"]) {
+      const purge = () => purgeStaleTotpSecrets(client, DAY, { keys: { activeKeyId, keys: {} }, idleForMs: DAY, requirement: "mandatory" });
+      expect(purge).toThrow("use importAuthKeyRing to derive one");
+    }
+    expect(db.calls).toHaveLength(0);
+  });
+
+  it("refuses a window shorter than a day, or longer than a year, naming the bound it broke", async () => {
+    const [client] = writerOf(() => 0);
+    const purge = (idleForMs: number) => purgeStaleTotpSecrets(client, DAY, { keys: RING, idleForMs, requirement: "mandatory" });
+    expect(() => purge(DAY - 1)).toThrow("below the 86400000-millisecond floor");
+    expect(() => purge(366 * DAY)).toThrow("above the 31536000000-millisecond ceiling");
+  });
+
+  // Dropping the row is graceful only because the user is then routed to re-enrol, and only a
+  // demanded factor routes anyone anywhere. Under any other requirement it is a silent downgrade.
+  it("refuses a deployment that does not demand the factor it would drop", async () => {
+    const [client] = writerOf(() => 0);
+    const purge = (requirement: AuthFactorRequirement) => purgeStaleTotpSecrets(client, DAY, { keys: RING, idleForMs: DAY, requirement });
+    expect(() => purge("optional")).toThrow('offers "totp-app" as "optional"');
+    expect(() => purge({ mandatoryForRoles: ["admin"] })).toThrow("mandatory only for admin");
+  });
+
+  it("re-seals on the same statement that advances the counter, so the replay guard covers both", async () => {
+    const [client, db] = writerOf(() => 1);
+    const secret = new Uint8Array([7, 7, 7]) as Uint8Array<ArrayBuffer>;
+    await createFactorStore(client).recordVerification(OTHER_ID, USER_ID, 57, 4, secret);
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]?.sql).toContain("secret = ?");
+    expect(db.calls[0]?.sql).toContain("last_counter < ?");
+    expect(db.calls[0]?.params).toContain(secret);
+  });
+
+  it("writes no secret at all when none is handed to it, rather than writing null over one", async () => {
+    const [client, db] = writerOf(() => 1);
+    await createFactorStore(client).recordVerification(OTHER_ID, USER_ID, 57, 4);
+    expect(db.calls[0]?.sql).not.toContain("secret");
+  });
+
+  it("counts by the key id in the secret's own first bytes, so no second column can disagree", async () => {
+    const [client, db] = clientOf(() => [{ held: 3 }]);
+    expect(await createFactorStore(client).countSecretsNotUnder("totp-app", "AAAAAAAA")).toEqual({ ok: true, data: 3 });
+    expect(db.calls[0]?.sql).toContain("substr(secret, 1, ?) != ?");
+    expect(db.calls[0]?.params).toEqual(["totp-app", 6, base64urlDecode("AAAAAAAA")]);
+  });
+
+  it("clears both the confirmation and the spent guesses on the one statement that unenrols", async () => {
+    const [client, db] = writerOf(() => 1);
+    expect(await createFactorStore(client).unconfirm(OTHER_ID, USER_ID, 7_000)).toEqual({ ok: true, data: true });
+    expect(db.calls).toHaveLength(1);
+    expect(db.calls[0]?.sql).toContain("SET confirmed_at = NULL, failed_attempts = 0");
+    expect(db.calls[0]?.params).toEqual([7_000, uuidToBytes(OTHER_ID), uuidToBytes(USER_ID)]);
+  });
+
+  it("carries the owner in the unenrolling statement, so another account's factor id changes no row", async () => {
+    const [client, db] = writerOf(() => 0);
+    expect(await createFactorStore(client).unconfirm(OTHER_ID, USER_ID, 7_000)).toEqual({ ok: true, data: false });
+    expect(db.calls[0]?.sql).toContain("WHERE id = ? AND user_id = ?");
+  });
+
   it("advances the counter once, and reports no change on a replay at the same or a lower step", async () => {
     let accepted: number | null = null;
     const [client, db] = writerOf((sql, params) => {
@@ -115,10 +219,10 @@ describe("createFactorStore", () => {
       return 1;
     });
     const factors = createFactorStore(client);
-    expect(await factors.advanceCounter(OTHER_ID, USER_ID, 57, 1)).toEqual({ ok: true, data: true });
-    expect(await factors.advanceCounter(OTHER_ID, USER_ID, 57, 2)).toEqual({ ok: true, data: false });
-    expect(await factors.advanceCounter(OTHER_ID, USER_ID, 56, 3)).toEqual({ ok: true, data: false });
-    expect(await factors.advanceCounter(OTHER_ID, USER_ID, 58, 4)).toEqual({ ok: true, data: true });
+    expect(await factors.recordVerification(OTHER_ID, USER_ID, 57, 1)).toEqual({ ok: true, data: true });
+    expect(await factors.recordVerification(OTHER_ID, USER_ID, 57, 2)).toEqual({ ok: true, data: false });
+    expect(await factors.recordVerification(OTHER_ID, USER_ID, 56, 3)).toEqual({ ok: true, data: false });
+    expect(await factors.recordVerification(OTHER_ID, USER_ID, 58, 4)).toEqual({ ok: true, data: true });
     expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toContain("WHERE id = ? AND user_id = ? AND (last_counter IS NULL OR last_counter < ?)");
   });
 
@@ -131,7 +235,7 @@ describe("createFactorStore", () => {
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 1, LOCKOUT))).toBe(true);
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 2, LOCKOUT))).toBe(true);
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 3, LOCKOUT))).toBe(false);
-    await factors.advanceCounter(OTHER_ID, USER_ID, 57, 4);
+    await factors.recordVerification(OTHER_ID, USER_ID, 57, 4);
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 5, LOCKOUT))).toBe(true);
 
     expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toContain("WHERE user_id = ? AND kind = ? AND (failed_attempts < ? OR updated_at <= ?)");

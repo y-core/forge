@@ -14,20 +14,20 @@ describe("Table", () => {
   it("renders the whole scrolled table exactly, caller class merged last and forwarded values escaped", async () => {
     expect(
       await render(
-        <Table class='mb-4' id='t1' data-note="a&b's">
+        <Table label='Projects' class='mb-4' id='t1' data-note="a&b's">
           x
         </Table>,
       ),
     ).toBe(
-      '<div data-slot="table-scroll" class="overflow-auto rounded-box border-field border-border">' +
+      '<section data-slot="table-scroll" aria-label="Projects" tabindex="0" class="overflow-auto rounded-box border-field border-border focus-ring">' +
         '<table data-slot="table" data-size="md" class="w-full border-collapse text-sm [&amp;_td]:px-4 [&amp;_td]:py-2 [&amp;_th]:px-4 [&amp;_th]:py-2 mb-4"' +
-        ' id="t1" data-note="a&amp;b&#39;s">x</table></div>',
+        ' id="t1" data-note="a&amp;b&#39;s">x</table></section>',
     );
   });
 
   it("puts the table inside a scroll wrapper, so a wide table scrolls without the page doing so", async () => {
     const html = await render(
-      <Table>
+      <Table label='Projects'>
         <Table.Body>
           <Table.Row>
             <Table.Cell>a</Table.Cell>
@@ -36,7 +36,7 @@ describe("Table", () => {
       </Table>,
     );
 
-    expect(slottedTags(html)).toEqual(["div:table-scroll", "table:table", "tbody:table-body", "tr:table-row", "td:table-cell"]);
+    expect(slottedTags(html)).toEqual(["section:table-scroll", "table:table", "tbody:table-body", "tr:table-row", "td:table-cell"]);
     expect(attrsOf(html, TABLE)).toEqual({ "data-slot": "table", "data-size": "md" });
   });
 
@@ -48,20 +48,28 @@ describe("Table", () => {
   });
 
   it("tightens the cell gutters and drops a type step at the sm density", async () => {
-    const html = await render(<Table size='sm'>x</Table>);
+    const html = await render(
+      <Table label='Projects' size='sm'>
+        x
+      </Table>,
+    );
 
     expect(attrOf(html, "data-size", TABLE)).toBe("sm");
-    expect(variantClasses(html, await render(<Table>x</Table>), TABLE)).toEqual({
+    expect(variantClasses(html, await render(<Table label='Projects'>x</Table>), TABLE)).toEqual({
       added: ["text-xs", "[&amp;_td]:px-3", "[&amp;_td]:py-1.5", "[&amp;_th]:px-3", "[&amp;_th]:py-1.5"],
       dropped: ["text-sm", "[&amp;_td]:px-4", "[&amp;_td]:py-2", "[&amp;_th]:px-4", "[&amp;_th]:py-2"],
     });
   });
 
   it("opens the cell gutters and adds a type step at the lg density", async () => {
-    const html = await render(<Table size='lg'>x</Table>);
+    const html = await render(
+      <Table label='Projects' size='lg'>
+        x
+      </Table>,
+    );
 
     expect(attrOf(html, "data-size", TABLE)).toBe("lg");
-    expect(variantClasses(html, await render(<Table>x</Table>), TABLE)).toEqual({
+    expect(variantClasses(html, await render(<Table label='Projects'>x</Table>), TABLE)).toEqual({
       added: ["text-base", "[&amp;_td]:px-5", "[&amp;_td]:py-3", "[&amp;_th]:px-5", "[&amp;_th]:py-3"],
       dropped: ["text-sm", "[&amp;_td]:px-4", "[&amp;_td]:py-2", "[&amp;_th]:px-4", "[&amp;_th]:py-2"],
     });
@@ -71,11 +79,11 @@ describe("Table", () => {
     expect(
       variantClasses(
         await render(
-          <Table zebra pinRows>
+          <Table label='Projects' zebra pinRows>
             x
           </Table>,
         ),
-        await render(<Table>x</Table>),
+        await render(<Table label='Projects'>x</Table>),
         TABLE,
       ),
     ).toEqual({
@@ -90,22 +98,34 @@ describe("Table", () => {
   });
 
   it("keeps its own slot token ahead of one handed down through props", async () => {
-    expect(attrOf(await render(<Table data-slot='inherited'>x</Table>), "data-slot", 'data-size="md"')).toBe("table inherited");
+    expect(
+      attrOf(
+        await render(
+          <Table label='Projects' data-slot='inherited'>
+            x
+          </Table>,
+        ),
+        "data-slot",
+        'data-size="md"',
+      ),
+    ).toBe("table inherited");
   });
 });
 
 describe("Table.Row", () => {
-  // Tri-state: absent means the table is not selectable at all, which is not the same claim as
-  // "selectable, and this row is not selected".
-  it("announces an explicitly unselected row, and says nothing on a row that took no `selected`", async () => {
-    expect(attrsOf(await render(<Table.Row selected={false}>r</Table.Row>))).toEqual({ "data-slot": "table-row", "aria-selected": "false" });
+  // `aria-selected` is meaningful inside a `grid`, and a `<tr>` in a plain `<table>` is a `row` in a
+  // `table` — no selection model to report it to, so the attribute painted and announced nothing.
+  it("paints a selected row without claiming a selection a plain table cannot report", async () => {
+    const selected = attrsOf(await render(<Table.Row selected>r</Table.Row>));
+
+    expect(selected).toEqual({ "data-slot": "table-row", "data-selected": "" });
+    expect(attrsOf(await render(<Table.Row selected={false}>r</Table.Row>))).toEqual({ "data-slot": "table-row" });
     expect(attrsOf(await render(<Table.Row>r</Table.Row>))).toEqual({ "data-slot": "table-row" });
   });
 
-  it("marks a selected row for a reader as well as painting it, since the tint alone is colour on its own", async () => {
+  it("tints a selected row, which is the whole of what the state does", async () => {
     const html = await render(<Table.Row selected>r</Table.Row>);
 
-    expect(attrsOf(html)).toEqual({ "data-slot": "table-row", "aria-selected": "true", "data-selected": "" });
     expect(variantClasses(html, await render(<Table.Row>r</Table.Row>))).toEqual({ added: ["bg-primary-soft"], dropped: [] });
   });
 
@@ -148,7 +168,7 @@ describe("Table.Row", () => {
 describe("Table sections", () => {
   it("renders each section on the semantic element a reader without CSS still gets a table from", async () => {
     const html = await render(
-      <Table>
+      <Table label='Projects'>
         <Table.Caption>C</Table.Caption>
         <Table.Header>
           <Table.Row>
@@ -160,7 +180,7 @@ describe("Table sections", () => {
     );
 
     expect(slottedTags(html)).toEqual([
-      "div:table-scroll",
+      "section:table-scroll",
       "table:table",
       "caption:table-caption",
       "thead:table-header",

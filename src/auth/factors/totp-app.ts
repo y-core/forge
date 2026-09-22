@@ -6,7 +6,7 @@ import { authLimit } from "../limits";
 import type { AuthFactor, AuthStoreResult } from "../types";
 import { openTotpSecret, sealTotpSecret } from "./totp-secret";
 import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./types";
-import type { TotpAppEnrolment, TotpAppFactorOptions } from "./types";
+import type { TotpAppEnrolment, TotpAppFactorOptions, TotpSecretOpened } from "./types";
 
 const DEFAULT_SECRET_BYTES = 20;
 const MIN_SECRET_BYTES = 16;
@@ -86,10 +86,17 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
   }
 
   /** The sealed secret on `factor`, opened, or the reason it cannot stand in for an enrolment. */
-  async function openSecret(userId: string, factor: AuthFactor | null): Promise<Result<Uint8Array<ArrayBuffer>, AuthFactorReason>> {
+  async function openSecret(userId: string, factor: AuthFactor | null, at: number): Promise<Result<TotpSecretOpened, AuthFactorReason>> {
     if (!factor || factor.secret === null) return err("not-enrolled");
-    const secret = await openTotpSecret(options.keys, userId, factor.secret);
-    return secret ? ok(secret) : err("unavailable");
+    const opened = await openTotpSecret(options.keys, userId, factor.secret);
+    if (opened.ok) return ok(opened.data);
+    // A key merely off the ring is an operator's to put back, and un-enrolling on it would clear
+    // every standing row a premature retirement touched — with re-adding the key no longer a cure.
+    if (opened.error === "no-key") return err("unavailable");
+    // Left confirmed, a secret no key opens demands a step-up nothing can pass; unconfirmed, the
+    // registry owes an enrolment and `beginEnrolment` below clears it. The bytes stay in the row.
+    const cleared = await options.factors.unconfirm(factor.id, userId, at);
+    return cleared.ok ? err("not-enrolled") : err("unavailable");
   }
 
   async function matchingCounter(secret: Uint8Array<ArrayBuffer>, presented: string, at: number): Promise<number | null> {
@@ -102,8 +109,8 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     return null;
   }
 
-  // The advance is the replay guard: `advanceCounter` writes only above the last accepted step, so
-  // one code presented twice inside its own window changes no row and is refused the second time.
+  // The advance is the replay guard: `recordVerification` writes only above the last accepted step,
+  // so one code presented twice inside its own window changes no row and is refused the second time.
   async function acceptCode(
     userId: string,
     presented: string,
@@ -126,13 +133,16 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     // must not have its step spent, or a refused verification would consume the confirming code.
     if (!admits(factor)) return err("not-enrolled");
 
-    const secret = await openSecret(userId, factor);
-    if (!secret.ok) return err(secret.error);
-    const counter = await matchingCounter(secret.data, presented, at);
+    const opened = await openSecret(userId, factor, at);
+    if (!opened.ok) return err(opened.error);
+    const counter = await matchingCounter(opened.data.secret, presented, at);
     if (counter === null) return err("unrecognised");
-    const advanced = await options.factors.advanceCounter(factor.id, userId, counter, at);
-    if (!advanced.ok) return err("unavailable");
-    if (!advanced.data) return err("consumed");
+    // Conditional, because re-sealing on every verification would spend a `totpWrap` nonce each
+    // time against the 2^32 per-(kid, purpose) bound. It rides the write under the replay guard.
+    const resealed = opened.data.stale ? await sealTotpSecret(options.keys, userId, opened.data.secret) : undefined;
+    const recorded = await options.factors.recordVerification(factor.id, userId, counter, at, resealed);
+    if (!recorded.ok) return err("unavailable");
+    if (!recorded.data) return err("consumed");
     return ok({ factor, counter });
   }
 
@@ -168,7 +178,10 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
 
     if (existing.data?.secret) {
       const held = await openTotpSecret(options.keys, userId, existing.data.secret);
-      if (held) return enrolmentOf(userId, held, at);
+      if (held.ok) return enrolmentOf(userId, held.data.secret, at);
+      // The `remove` below destroys the sealed bytes, so it must not run on a key the operator can
+      // still put back: only a frame that will never open again is an abandonment to clear.
+      if (held.error === "no-key") return err("unavailable");
     }
 
     if (existing.data) {

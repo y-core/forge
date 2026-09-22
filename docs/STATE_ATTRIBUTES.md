@@ -64,7 +64,14 @@ second copy of a fact forge does not own.
 **A component emits both** — `aria-pressed="true"` beside `data-pressed` — and that duplication is deliberate. `aria-*` keeps its `"true"` /
 `"false"` string form because WAI-ARIA requires it, and the whole point of the `data-` hook beside it is that **CSS should not have to read ARIA**:
 a stylesheet matching `[aria-pressed="true"]` couples presentation to an accessibility contract, so the day the correct ARIA for a widget changes,
-the styling breaks with it. The two are reconciled together by one function, so a controller can never write one without the other.
+the styling breaks with it.
+
+**Writing the pair is the controller's own step, and deliberately not one function's.** `applyStateAttrs` reconciles the `data-` half; the
+controller writes the ARIA half beside it, in the same statement. A single helper would have to know which ARIA attribute a state maps to, and that
+is the widget's question rather than the table's: `selected` is `aria-selected` on a tab and `aria-current` on a carousel dot, which is a link that
+was never selectable. Pairing them by hand is what lets each controller answer it. **Every client repaint is pinned by a test that reads both
+halves** — `client/tabs.test.ts`, `client/menu.test.ts`, `client/bind.test.ts` and `client/carousel.test.ts` — so a repaint that wrote one and not
+the other fails there rather than in a consumer's page.
 
 **The pairing is a licence to emit the hook, not a licence to emit it unreconciled.** A `data-` attribute no controller ever updates and no
 stylesheet ever reads is not a hook at all — it is a claim the markup makes once and cannot keep, so it is deleted rather than kept for symmetry.

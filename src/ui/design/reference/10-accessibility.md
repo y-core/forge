@@ -153,6 +153,13 @@ Default: never put `aria-readonly` on a `<button>` or a `role="button"` element 
 steppers are where the mistake looks most plausible — a `readonly` input beside two buttons — and forge deliberately leaves them bare, letting the
 input's own `readonly` carry the state.
 
+Default: leave Home and End to a `NumberField`'s own input rather than binding them to min and max — unless the control is a spinbutton you built
+out of non-input elements. <!-- rule:forge-ui-a11y-spinbutton-home-end --> APG's Spinbutton pattern lists Home and End as jumps to the minimum and
+maximum, but forge's field **is** a native `<input type="number">`, where both keys move the caret within the text the reader is editing. APG's own
+Keyboard Interface note warns against capturing a text-editing key, and a reader who has learnt that End reaches the end of their input loses that
+everywhere the moment one widget disagrees. The stepping keyboard is the platform's arrows; the steppers are `tabindex="-1"` and pointer-operable,
+and a press on either hands focus back to the field, so the value that changed is announced on the control that owns it.
+
 ---
 
 ## 4. Heading order

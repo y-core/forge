@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS auth_factors (
   -- Guesses spent against this factor since the last accepted code. Spent by the statement that
   -- admits the guess, so parallel attempts cannot each compare against a count none has written.
   failed_attempts INTEGER NOT NULL DEFAULT 0,
+  -- When a code was last *accepted*. Written only by the accepted-verification statement, because
+  -- `updated_at` moves on a spent guess too and so cannot say when the factor last actually worked.
+  last_verified_at INTEGER,
   confirmed_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

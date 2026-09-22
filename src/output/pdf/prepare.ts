@@ -3,23 +3,28 @@ import { conformanceViolations } from "./conformance";
 import { DEFAULT_ORPHANS, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, LINK_SCHEMES } from "./limits";
 import { resolvePdfPage } from "./page";
 import { paginateWithin } from "./paginate";
+import { PDF_INK_NAMES } from "./palette";
 import { uncovered } from "./text";
 import type {
+  Ink,
   PdfChannel,
   PdfDocument,
   PdfDocumentFonts,
+  PdfInkName,
   PdfPage,
   PdfPalette,
   PdfPrepared,
-  PdfRendererOptions,
   PdfRenderError,
+  PdfRendererOptions,
   PdfResult,
 } from "./types";
 import { resolveTypesetting } from "./typesetting";
 
 function channelFor(palette: PdfPalette | undefined): PdfChannel {
   if (palette === undefined) return {};
-  return { heading: palette.ink("heading"), rule: palette.ink("rule"), letterhead: palette.ink("letterhead"), intro: palette.ink("intro") };
+  const channel: { -readonly [name in PdfInkName]?: Ink | undefined } = {};
+  for (const name of PDF_INK_NAMES) channel[name] = palette.ink(name);
+  return channel;
 }
 
 // Every run is checked before a byte is written, so a character the face setting it cannot carry is

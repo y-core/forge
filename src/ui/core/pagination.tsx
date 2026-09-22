@@ -10,11 +10,15 @@ import { cloneAsChild, slotToken } from "./utils/as-child";
 
 interface PaginationRootProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   label?: string | undefined;
+  /** Render as a landmark the reader can jump to. Turn it off where the row is not site navigation. @default true */
+  landmark?: boolean | undefined;
   children?: JSXNode | undefined;
 }
 
 interface PaginationItemProps extends Omit<JSX.IntrinsicElements["a"], "children"> {
   current?: boolean | undefined;
+  /** Which `aria-current` the current item carries — `location` for a link within the page. @default "page" */
+  currentAs?: "page" | "location" | undefined;
   size?: Size | undefined;
   asChild?: boolean | undefined;
   children?: JSXNode | undefined;
@@ -46,13 +50,23 @@ interface PaginationEllipsisProps extends Omit<JSX.IntrinsicElements["li"], "chi
 const LIST_BASE = "flex items-center gap-1";
 const ELLIPSIS_BASE = "inline-flex size-control-sm items-center justify-center";
 
-const PaginationRoot: FC<PaginationRootProps> = ({ label = LABEL_DEFAULTS.pagination, class: cls, children, "data-slot": inherited, ...rest }) => {
+// A landmark is a promise that the reader can jump here from anywhere and find site navigation; a
+// picker for one widget on the page is a group instead, so two of them add no landmarks at all.
+const PaginationRoot: FC<PaginationRootProps> = ({
+  label = LABEL_DEFAULTS.pagination,
+  landmark = true,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
+  const Tag = landmark ? "nav" : "div";
   return (
-    <nav aria-label={label} data-slot={slotToken("pagination", inherited)} class={cls} {...rest}>
+    <Tag {...(landmark ? {} : { role: "group" })} aria-label={label} data-slot={slotToken("pagination", inherited)} class={cls} {...rest}>
       <ul data-slot='pagination-list' class={LIST_BASE}>
         {children}
       </ul>
-    </nav>
+    </Tag>
   );
 };
 
@@ -62,6 +76,7 @@ function linkClass(current: boolean, size: Size, shape: "default" | "icon", cls:
 
 const PaginationItem: FC<PaginationItemProps> = ({
   current = false,
+  currentAs = "page",
   size = "sm",
   asChild = false,
   class: cls,
@@ -70,7 +85,7 @@ const PaginationItem: FC<PaginationItemProps> = ({
   ...rest
 }) => {
   const className = linkClass(current, size, "icon", cls);
-  const attrs = { ...currentAttrs(current), ...rest };
+  const attrs = { ...currentAttrs(current, currentAs), ...rest };
   const slot = slotToken("pagination-item", inherited);
 
   if (asChild) {

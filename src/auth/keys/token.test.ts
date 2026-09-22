@@ -309,7 +309,7 @@ describe("sealAtRest / openAtRest", () => {
     const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
     expect(frame.byteLength).toBe(AUTH_KID_BYTES + 12 + PLAINTEXT.byteLength + 16);
     expect(base64urlEncode(frame.subarray(0, AUTH_KID_BYTES))).toBe(ring.activeKeyId);
-    expect(await openAtRest(ring, "totpWrap", CONTEXT, frame)).toEqual(PLAINTEXT);
+    expect(await openAtRest(ring, "totpWrap", CONTEXT, frame)).toEqual({ ok: true, data: { plaintext: PLAINTEXT, kid: ring.activeKeyId } });
   });
 
   it("gives a different frame each time, so two seals of one plaintext do not match", async () => {
@@ -322,28 +322,38 @@ describe("sealAtRest / openAtRest", () => {
   it("refuses a frame opened under a different context", async () => {
     const ring = await ringOf(SECRET_A);
     const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(await openAtRest(ring, "totpWrap", OTHER_CONTEXT, frame)).toBeNull();
+    expect(await openAtRest(ring, "totpWrap", OTHER_CONTEXT, frame)).toEqual({ ok: false, error: "unopenable" });
   });
 
   it("refuses a frame opened under a different purpose, because the subkeys differ", async () => {
     const ring = await ringOf(SECRET_A);
     const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(await openAtRest(ring, "verify", CONTEXT, frame)).toBeNull();
+    // `unopenable` rather than `no-key`: the ring resolves this key id under either purpose, and it
+    // is the subkey derived from it that differs.
+    expect(await openAtRest(ring, "verify", CONTEXT, frame)).toEqual({ ok: false, error: "unopenable" });
   });
 
+  // The key id comes back with the bytes, which is how a caller tells a frame under a retired key
+  // from one under the active key without decoding the frame a second time.
   it("refuses a frame whose key the ring does not hold, and opens one under a retired key", async () => {
-    const sealed = await sealAtRest(await ringOf(SECRET_A), "totpWrap", CONTEXT, PLAINTEXT);
-    expect(await openAtRest(await ringOf(SECRET_B), "totpWrap", CONTEXT, sealed)).toBeNull();
-    expect(await openAtRest(await ringOf(SECRET_B, SECRET_A), "totpWrap", CONTEXT, sealed)).toEqual(PLAINTEXT);
+    const retiring = await ringOf(SECRET_A);
+    const sealed = await sealAtRest(retiring, "totpWrap", CONTEXT, PLAINTEXT);
+    // `no-key` and not `unopenable`: an operator who retired a key too early can put it back, and a
+    // caller that could not tell the two apart would clear rows that are perfectly good.
+    expect(await openAtRest(await ringOf(SECRET_B), "totpWrap", CONTEXT, sealed)).toEqual({ ok: false, error: "no-key" });
+    expect(await openAtRest(await ringOf(SECRET_B, SECRET_A), "totpWrap", CONTEXT, sealed)).toEqual({
+      ok: true,
+      data: { plaintext: PLAINTEXT, kid: retiring.activeKeyId },
+    });
   });
 
   it("refuses a frame no longer than its own header, and one with a flipped byte", async () => {
     const ring = await ringOf(SECRET_A);
     const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(await openAtRest(ring, "totpWrap", CONTEXT, frame.slice(0, AUTH_KID_BYTES + 12))).toBeNull();
+    expect(await openAtRest(ring, "totpWrap", CONTEXT, frame.slice(0, AUTH_KID_BYTES + 12))).toEqual({ ok: false, error: "unopenable" });
     const tampered = frame.slice();
     tampered[tampered.byteLength - 1] = (tampered[tampered.byteLength - 1] ?? 0) ^ 0xff;
-    expect(await openAtRest(ring, "totpWrap", CONTEXT, tampered)).toBeNull();
+    expect(await openAtRest(ring, "totpWrap", CONTEXT, tampered)).toEqual({ ok: false, error: "unopenable" });
   });
 
   it("refuses to seal under a ring holding no key for its active id", async () => {

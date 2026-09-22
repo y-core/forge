@@ -53,10 +53,14 @@ const RAIL_POPOVER: ToolbarItem<ChromeAction, ChromeGlyph> = {
 };
 
 const RAIL_CONFIG: ToolbarDefinition<ChromeAction, ChromeGlyph> = {
+  label: "Scene tools",
   groups: [{ items: RAIL_ACTIONS }, { items: [RAIL_POPOVER] }, { items: [RAIL_SLOT] }],
 };
 
-const TOP_CONFIG: ToolbarDefinition<ChromeAction, ChromeGlyph> = { groups: [{ items: RAIL_ACTIONS }, { items: [RAIL_SLOT] }] };
+const TOP_CONFIG: ToolbarDefinition<ChromeAction, ChromeGlyph> = {
+  label: "Scene tools (top)",
+  groups: [{ items: RAIL_ACTIONS }, { items: [RAIL_SLOT] }],
+};
 
 const ChromeToolbarSection: FC<{ icon: ShowIcon }> = ({ icon }) => (
   <CatalogSection id='chrome-toolbar' title='Chrome Toolbar'>

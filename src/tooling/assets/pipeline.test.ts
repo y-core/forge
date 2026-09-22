@@ -77,6 +77,40 @@ describe("buildAll() — emitHeaders", () => {
     }
   });
 
+  it("refuses a build whose publicDir is outside the root, writing no _headers into it", async () => {
+    const tmpDir = join(tmpdir(), `forge-pipeline-headers-escape-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const outside = join(tmpdir(), `forge-pipeline-headers-outside-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(join(outside, "assets"), { recursive: true });
+    mkdirSync(tmpDir, { recursive: true });
+
+    try {
+      await expect(
+        buildAll(
+          {
+            root: tmpDir,
+            paths: { sourceDir: tmpDir, publicDir: join(outside, "assets"), publicPrefix: "/assets" },
+            css: [],
+            js: { bundles: [] },
+            copy: [],
+            rasters: [],
+            sprites: {},
+            fonts: { downloads: [], subsets: [], emit: null },
+            marks: [],
+            icons: null,
+            cursors: null,
+            site: null,
+          },
+          { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+        ),
+      ).rejects.toThrow("[forge-assets]");
+
+      expect(existsSync(join(tmpDir, "_headers"))).toBe(false);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("gives each icon its own rule, and the manifest a revalidating one", async () => {
     const tmpDir = join(tmpdir(), `forge-pipeline-headers-icons-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const publicDir = join(tmpDir, "public", "assets");
@@ -781,15 +815,17 @@ describe("generateAssetsTypes() — derives from config alone", () => {
 });
 
 describe("buildAll() — the mark conversion stage", () => {
-  const REPO = resolve(import.meta.dir, "../../..");
+  const FIXTURE = resolve(import.meta.dir, "../../../tests/fixtures/mark/mark.svg");
 
   async function build(marks: ResolvedConfig["marks"]): Promise<string> {
     const tmpDir = join(tmpdir(), `forge-pipeline-marks-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const publicDir = join(tmpDir, "public", "assets");
     mkdirSync(publicDir, { recursive: true });
+    mkdirSync(join(tmpDir, "brand"), { recursive: true });
+    writeFileSync(join(tmpDir, "brand", "mark.svg"), readFileSync(FIXTURE, "utf-8"));
     await buildAll(
       {
-        root: REPO,
+        root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [],
         js: { bundles: [] },
@@ -807,7 +843,7 @@ describe("buildAll() — the mark conversion stage", () => {
     return publicDir;
   }
 
-  const CONFIGURED: ResolvedConfig["marks"] = [{ from: "tests/fixtures/mark/mark.svg", to: "marks/letterhead.json" }];
+  const CONFIGURED: ResolvedConfig["marks"] = [{ from: "brand/mark.svg", to: "marks/letterhead.json" }];
 
   it("writes the artifact when a mark is configured", async () => {
     const publicDir = await build(CONFIGURED);

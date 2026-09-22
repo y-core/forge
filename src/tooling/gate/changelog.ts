@@ -25,6 +25,34 @@ function isRealDate(iso: string): boolean {
   return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
 }
 
+// Link definitions sit below the last section rather than inside it, and the rule between sections
+// is punctuation — neither is prose a release wrote, so neither may move a section's digest.
+/** One section's prose, from the line after its heading to `end`, stripped of what is not prose. */
+function sectionBody(lines: readonly string[], from: number, end: number): string[] {
+  const body = lines.slice(from, end).filter((line) => !LINK_REF.test(line) && line.trim() !== "---");
+  while (body.length > 0 && (body.at(-1) ?? "").trim() === "") body.pop();
+  return body;
+}
+
+/** Where the section opened at `line` ends: the next level-2 heading, or the end of the document. */
+function sectionEnd(lines: readonly string[], line: number): number {
+  for (let i = line + 1; i < lines.length; i++) {
+    if (SECTION_END.test(lines[i] ?? "")) return i;
+  }
+  return lines.length;
+}
+
+// FNV-1a over the section's own prose, and not a cryptographic digest: this catches a hand edit,
+// which is an accident rather than an attacker, and it answers without making the check async.
+/** A released section's prose as the digest a manifest records it under. @public */
+export function changelogSectionDigest(body: readonly string[]): string {
+  let hash = 0xcbf29ce484222325n;
+  for (const code of new TextEncoder().encode(body.join("\n"))) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(code)) * 0x100000001b3n);
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
 function isBodyEmpty(body: readonly string[]): boolean {
   const meaningful = body.filter((line) => line.trim() !== "" && line.trim() !== "---");
   if (meaningful.length === 0) return true;
@@ -69,7 +97,7 @@ export function parseChangelog(source: string): ChangelogParse {
       errors.push(`line ${i + 1}: \`${date}\` is not a real calendar date`);
       continue;
     }
-    versions.push({ version, date, line: i });
+    versions.push({ version, date, line: i, body: sectionBody(lines, i + 1, sectionEnd(lines, i)) });
   }
 
   if (unreleasedLines.length === 0) {

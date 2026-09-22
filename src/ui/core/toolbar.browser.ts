@@ -1,8 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser.fixture";
+import { scopeAttrs } from "../contracts/scope-attrs";
+import { Resumable } from "../server/resumable";
 import { Toolbar } from "./toolbar";
 
 declare global {
@@ -16,6 +19,7 @@ const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeCoreClient: "
 async function pageMarkup(orientation?: "horizontal" | "vertical"): Promise<string> {
   const toolbar = await render(
     Toolbar({
+      label: "Formatting",
       ...(orientation ? { orientation } : {}),
       children: [
         Toolbar.Button({ id: "bold", children: "Bold" }),
@@ -106,6 +110,73 @@ test.describe("Toolbar — arrow navigation", () => {
     expect(await focusedId(page)).toBe("bold");
     await page.keyboard.press("ArrowDown");
     expect(await focusedId(page)).toBe("search");
+  });
+});
+
+// `state-disabled` is `pointer-events-none`, so a pointer test cannot see this: the keyboard reaches
+// an `aria-disabled` item the ring deliberately keeps focusable, and Enter synthesises a click on it.
+test.describe("Toolbar — an aria-disabled item is focusable but inert", () => {
+  test("Enter on a disabled button runs no action", async ({ page }) => {
+    const toolbar = Toolbar({
+      label: "Formatting",
+      children: [
+        Toolbar.Button({ id: "bold", children: "Bold" }),
+        Toolbar.Button({ id: "paste", "aria-disabled": "true", ...scopeAttrs({ onClick: "act" }), children: "Paste" }),
+      ],
+    });
+    await mount(page, await render(Resumable({ name: "editor", children: toolbar })), EXPOSE);
+    await page.evaluate(() => {
+      window.forgeResume.registerScope("editor", { on: { act: () => document.body.setAttribute("data-ran", "") } });
+      window.forgeResume.resume();
+    });
+
+    await page.focus("#bold");
+    await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("paste");
+    await page.keyboard.press("Enter");
+
+    expect(await page.evaluate(() => document.body.hasAttribute("data-ran"))).toBe(false);
+  });
+
+  // An inert anchor renders `tabindex="0"` so it stays arrowable, which is the one item in a toolbar
+  // whose markup carries the attribute — it must not be mistaken for the entry point the ring chose.
+  test("is never the Tab entry point, even though its markup carries tabindex=0", async ({ page }) => {
+    const toolbar = await render(
+      Toolbar({
+        label: "Formatting",
+        children: [
+          Toolbar.Button({ id: "bold", children: "Bold" }),
+          Toolbar.Link({ id: "docs", href: "/docs", "aria-disabled": "true", children: "Docs" }),
+          Toolbar.Button({ id: "wrap", "data-composite-item-active": "", children: "Wrap" }),
+        ],
+      }),
+    );
+    await mount(page, toolbar, EXPOSE);
+    await start(page);
+
+    const stops = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-toolbar-item]")].map((el) => el.tabIndex));
+
+    expect(stops).toEqual([-1, -1, 0]);
+  });
+
+  test("Enter on a disabled asChild link does not navigate", async ({ page }) => {
+    const toolbar = await render(
+      Toolbar({
+        label: "Formatting",
+        children: [
+          Toolbar.Button({ id: "bold", children: "Bold" }),
+          Toolbar.Button({ asChild: true, disabled: true, children: jsx("a", { id: "gone", href: "/deleted", children: "Delete" }) }),
+        ],
+      }),
+    );
+    await mount(page, toolbar, EXPOSE);
+    await start(page);
+    const before = page.url();
+
+    await page.focus("#gone");
+    await page.keyboard.press("Enter");
+
+    expect(page.url()).toBe(before);
   });
 });
 

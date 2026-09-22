@@ -42,32 +42,52 @@ describe("sealTotpSecret", () => {
 });
 
 describe("openTotpSecret", () => {
-  it("returns the secret it sealed", async () => {
+  it("returns the secret it sealed, under a key the ring still calls active", async () => {
     const opened = await openTotpSecret(ringA, USER_ID, await sealTotpSecret(ringA, USER_ID, SECRET));
-    expect(opened && bytesToHex(opened)).toBe(bytesToHex(SECRET));
+    expect(opened.ok && bytesToHex(opened.data.secret)).toBe(bytesToHex(SECRET));
+    expect(opened.ok && opened.data.stale).toBe(false);
   });
 
-  it("opens a secret sealed under a retired key, because the frame names the key id", async () => {
+  // What makes the re-wrap conditional: the caller re-seals on this flag rather than on every open.
+  it("opens a secret sealed under a retired key and reports it stale, because the frame names the key id", async () => {
     const sealed = await sealTotpSecret(ringA, USER_ID, SECRET);
     const opened = await openTotpSecret(rotated, USER_ID, sealed);
-    expect(opened && bytesToHex(opened)).toBe(bytesToHex(SECRET));
+    expect(opened.ok && bytesToHex(opened.data.secret)).toBe(bytesToHex(SECRET));
+    expect(opened.ok && opened.data.stale).toBe(true);
   });
 
-  it("refuses a secret whose key the ring does not hold at all", async () => {
-    expect(await openTotpSecret(ringB, USER_ID, await sealTotpSecret(ringA, USER_ID, SECRET))).toBeNull();
+  it("calls a secret sealed under the ring's own active key fresh, whatever else the ring holds", async () => {
+    const opened = await openTotpSecret(rotated, USER_ID, await sealTotpSecret(rotated, USER_ID, SECRET));
+    expect(opened.ok && opened.data.stale).toBe(false);
   });
 
-  // The owner is associated data, so moving a row between users in the database is not enough to
-  // move a working factor with it.
-  it("refuses a secret sealed for another user", async () => {
-    expect(await openTotpSecret(ringA, uuidv7(), await sealTotpSecret(ringA, USER_ID, SECRET))).toBeNull();
-  });
-
-  it("refuses a frame with a flipped byte, and one too short to hold a frame", async () => {
+  // `no-key` and `unopenable` are different people's problems, and the caller un-enrols on one and
+  // not the other — so a key merely off the ring must never be reported as a frame that will not open.
+  it("tells a key the ring does not hold from a frame that did not stand up", async () => {
     const sealed = await sealTotpSecret(ringA, USER_ID, SECRET);
     const tampered = sealed.slice();
     tampered[tampered.byteLength - 1] = (tampered[tampered.byteLength - 1] ?? 0) ^ 0xff;
-    expect(await openTotpSecret(ringA, USER_ID, tampered)).toBeNull();
-    expect(await openTotpSecret(ringA, USER_ID, sealed.slice(0, 18))).toBeNull();
+    // The owner is associated data, so moving a row between users in the database is not enough to
+    // move a working factor with it — and that is the frame failing, not the key being absent.
+    const cases = {
+      "key off the ring": openTotpSecret(ringB, USER_ID, sealed),
+      "sealed for another user": openTotpSecret(ringA, uuidv7(), sealed),
+      "a flipped byte": openTotpSecret(ringA, USER_ID, tampered),
+      "too short to hold a frame": openTotpSecret(ringA, USER_ID, sealed.slice(0, 18)),
+    };
+    const refused = Object.fromEntries(
+      await Promise.all(
+        Object.entries(cases).map(async ([what, run]) => {
+          const outcome = await run;
+          return [what, outcome.ok ? "opened" : outcome.error];
+        }),
+      ),
+    );
+    expect(refused).toEqual({
+      "key off the ring": "no-key",
+      "sealed for another user": "unopenable",
+      "a flipped byte": "unopenable",
+      "too short to hold a frame": "unopenable",
+    });
   });
 });

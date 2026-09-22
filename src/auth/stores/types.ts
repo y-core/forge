@@ -1,3 +1,6 @@
+import type { AuthFactorRequirement } from "../factors/types";
+import type { AuthKeyRing } from "../types";
+
 /** @public */
 export interface ChallengeStoreOptions {
   prefix?: string;
@@ -37,6 +40,7 @@ export interface FactorRow {
   kind: string;
   secret: unknown;
   last_counter: number | null;
+  last_verified_at: number | null;
   failed_attempts: number;
   confirmed_at: number | null;
   created_at: number;
@@ -68,4 +72,14 @@ export interface IdentityLinkRow {
   subject: string;
   created_at: number;
   updated_at: number;
+}
+
+/** What a scheduled `totp-app` secret purge acts on. @public */
+export interface TotpSecretPurgeOptions {
+  /** The ring itself, never a bare key id: the purge deletes the complement of the active key, so a wrong one deletes the live enrolments. */
+  readonly keys: AuthKeyRing;
+  /** How long a row must have gone without an accepted code, measured from `last_verified_at` — or from enrolment, for a row that never had one. */
+  readonly idleForMs: number;
+  /** What the deployment offers `totp-app` under. Anything but `mandatory` is refused — see the throw. */
+  readonly requirement: AuthFactorRequirement;
 }

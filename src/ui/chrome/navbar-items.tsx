@@ -79,7 +79,7 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
         <span>{item.label}</span>
         {chevron(ctx)}
       </Menu.SubmenuTrigger>,
-      <Menu.Popup id={id} side='inline-end' {...fattrs}>
+      <Menu.Popup triggered id={id} side='inline-end' {...fattrs}>
         {item.groups.map((group) => {
           const labelId = `navbar-group-${ctx.idBase}-${ctx.seq.n++}`;
           return (
@@ -135,7 +135,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
           <span>{item.label}</span>
           {chevron(ctx)}
         </Menu.SubmenuTrigger>,
-        <Menu.Popup id={id} side='inline-end' {...fattrs}>
+        <Menu.Popup triggered id={id} side='inline-end' {...fattrs}>
           {children}
         </Menu.Popup>,
       ];
@@ -147,7 +147,9 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
           <span>{item.label}</span>
           {chevron(ctx)}
         </Menu.Trigger>
-        <Menu.Popup id={id}>{children}</Menu.Popup>
+        <Menu.Popup triggered id={id}>
+          {children}
+        </Menu.Popup>
       </Menu>
     );
   }

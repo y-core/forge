@@ -72,7 +72,13 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
         <Card.Title>
           <Heading class='text-xl'>Add an authenticator app</Heading>
         </Card.Title>
-        <Card.Description>Store this secret in your app now. It is shown on this page only, and never again.</Card.Description>
+        <Card.Description>
+          <span data-ref='totp-once'>Store this secret in your app now. It is shown on this page only, and never again.</span>{" "}
+          {/* A stale entry still shows codes, and one read from it is refused — which reads as "my app is broken" unless the page says this first. */}
+          <span data-ref='totp-replaces'>
+            If your app already holds an entry for this account, replace it. Codes from the old entry are no longer accepted.
+          </span>
+        </Card.Description>
       </Card.Header>
       <Card.Content class='flex flex-col gap-6'>
         <div class='flex flex-col gap-2'>

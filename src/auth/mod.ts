@@ -70,6 +70,7 @@ export type { AuthSignin, AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, A
 export { createSigninFlow, redactSigninReason } from "./flows/signin";
 export type { AuthSignupFlow, AuthSignupOptions } from "./flows/types";
 export { createSignupFlow } from "./flows/signup";
+export { authKeysRetirable } from "./keys/retirement";
 export { authKeyId, importAuthKeyRing, resolveAuthServices } from "./keys/ring";
 export type { ChallengeStoreOptions } from "./stores/types";
 export { createChallengeStore } from "./stores/challenges";
@@ -77,6 +78,8 @@ export type { NonceStoreOptions } from "./stores/types";
 export { createNonceStore } from "./stores/nonces";
 export { createOtpStateStore } from "./stores/otp-state";
 export { purgeAuthEphemera } from "./stores/ephemera";
+export { purgeStaleTotpSecrets } from "./stores/factors";
+export type { TotpSecretPurgeOptions } from "./stores/types";
 export type {
   PasskeyCeremonyOptions,
   PasskeyRegistrationOptions,

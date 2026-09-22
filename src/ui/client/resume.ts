@@ -2,6 +2,7 @@
 
 import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
+import { isDisabled } from "./composite";
 import { closestAcross, eventTarget, ownerDocument } from "./dom";
 import { createSignal, withOwner } from "./signal";
 import type { Signal } from "./types";
@@ -199,6 +200,9 @@ export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> 
 
 /** Walks up from `el` through `[data-scope]` ancestors and invokes the first scope whose `on` table owns `action`, resuming it on the way. */
 function runAction(action: string, el: HTMLElement, event: Event): void {
+  // Gated here and not in the two callers, because a gate on the `data-on-*` route alone would leave
+  // a `--action` command invoking the same handler on the same inert element.
+  if (isDisabled(el)) return;
   // `closestAcross`, not `closest`: a trigger inside a shadow root would otherwise never find the
   // scope root that encloses its host.
   let scopeEl = closestAcross<HTMLElement>(el, "[data-scope]");

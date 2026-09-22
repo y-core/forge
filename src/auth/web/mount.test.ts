@@ -263,6 +263,7 @@ function memoryFactors(): FactorStore {
         secret: input.secret ?? null,
         lastCounter: null,
         failedAttempts: 0,
+        lastVerifiedAt: null,
         confirmedAt: input.confirmedAt ?? null,
         createdAt: at,
         updatedAt: at,
@@ -275,8 +276,14 @@ function memoryFactors(): FactorStore {
       if (row) rows[rows.indexOf(row)] = { ...row, confirmedAt: at, updatedAt: at };
       return ok(row !== undefined);
     },
+    unconfirm: async (id, _userId, at) => {
+      const row = rows.find((held) => held.id === id);
+      if (row) rows[rows.indexOf(row)] = { ...row, confirmedAt: null, failedAttempts: 0, updatedAt: at };
+      return ok(row !== undefined);
+    },
     countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
-    advanceCounter: async () => ok(true),
+    recordVerification: async () => ok(true),
+    countSecretsNotUnder: async () => ok(0),
     remove: async (id) => {
       const index = rows.findIndex((row) => row.id === id);
       if (index >= 0) rows.splice(index, 1);

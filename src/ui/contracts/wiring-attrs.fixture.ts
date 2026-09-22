@@ -2,6 +2,7 @@ import { BIND_ATTR_ATTR, BIND_TEXT_ATTR } from "./bind-contract";
 import { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 import { DIALOG_OPEN_MODAL_ATTR } from "./dialog-contract";
 import { INPUT_FORMAT_ATTR } from "./input-format-contract";
+import { MENU_KEEP_OPEN_ATTR } from "./menu-contract";
 import { NAVBAR_DRAWER_ATTR } from "./navbar-contract";
 import { POPOVER_COORDS_ATTR } from "./overlay-contract";
 import { TABS_MOUNTED_ATTR } from "./tabs-contract";
@@ -39,6 +40,7 @@ export const WIRING_ATTRS: Record<string, string> = {
 
   [DIALOG_OPEN_MODAL_ATTR]: "asks the client runtime to call showModal(), which has no markup spelling",
   [ACTIVE_COMPOSITE_ITEM]: "marks the one item holding a composite's roving tab stop",
+  [MENU_KEEP_OPEN_ATTR]: "marks a link row that leaves its menu open, which an `<a>` cannot say as an invoker",
   [TOOLBAR_ITEM_ATTR]: "marks a toolbar's roving-focus candidates",
   [BIND_ATTR_ATTR]: "which attribute a signal writes",
   [BIND_TEXT_ATTR]: "which signal a text node reads",

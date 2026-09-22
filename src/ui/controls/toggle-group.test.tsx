@@ -24,20 +24,20 @@ const ITEM_CLASS = buttonVariants({ tone: "neutral", appearance: "ghost", size: 
   "&amp;",
 );
 
-const GROUP_OPEN = `<fieldset data-slot="toggle-group" data-scope="toggle-group" data-orientation="horizontal" class="${GROUP_CLASS}"`;
+const GROUP_OPEN = `<fieldset aria-label="Projection" data-slot="toggle-group" data-scope="toggle-group" data-orientation="horizontal" class="${GROUP_CLASS}"`;
 
 describe("controls/ToggleGroup.Item", () => {
   it("stamps data-field and data-value on the input bindControls reads", async () => {
     expect(
       await render(
-        <ToggleGroup aria-label='Projection'>
+        <ToggleGroup label='Projection'>
           <ToggleGroup.Item bind='projection' value='perspective' pressed>
             Perspective
           </ToggleGroup.Item>
         </ToggleGroup>,
       ),
     ).toBe(
-      `${GROUP_OPEN} aria-label="Projection">` +
+      `${GROUP_OPEN}>` +
         `<label data-slot="toggle-group-item" class="${ITEM_CLASS}">` +
         '<input data-slot="toggle-group-input" type="radio" name="projection" value="perspective" class="sr-only" checked data-field="projection" data-value="perspective">Perspective</label></fieldset>',
     );
@@ -97,8 +97,8 @@ describe("controls/ToggleGroup.Item", () => {
   });
 
   it("root group passes aria-label and data-ref through", async () => {
-    expect(await render(<ToggleGroup aria-label='Projection' data-ref='projection-group' />)).toBe(
-      `${GROUP_OPEN} aria-label="Projection" data-ref="projection-group"></fieldset>`,
+    expect(await render(<ToggleGroup label='Projection' data-ref='projection-group' />)).toBe(
+      `${GROUP_OPEN} data-ref="projection-group"></fieldset>`,
     );
   });
 });

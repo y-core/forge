@@ -23,6 +23,7 @@ function groupMarkup(pressed: number): Promise<string> {
     Resumable({
       name: "demo",
       children: ToggleGroup({
+        label: "Alignment",
         children: ["alpha", "beta"].map((value, i) =>
           ToggleGroup.Item({ id: `i${i}`, bind: "choice", value, pressed: i === pressed, children: value }),
         ),

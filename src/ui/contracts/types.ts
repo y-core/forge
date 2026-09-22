@@ -44,13 +44,30 @@ export interface MenuItemAttrsOptions {
   readonly checked?: boolean;
 }
 
-/** A caller's own name for a `<dialog>` root, which suppresses the reference derived from its `.Title`. @public */
-export interface DialogNaming {
+/** How a `<dialog>` root is named. `dialog` takes no name from its contents, so one of the three is required. @public */
+export type DialogNaming =
   /** Literal accessible name, for a root that renders no `.Title`. */
-  readonly label?: string | undefined;
+  | { readonly label: string; readonly labelledby?: never; readonly titled?: never }
   /** id of an element elsewhere on the page that names this root — a titleless drawer's trigger, say. */
-  readonly labelledby?: string | undefined;
-}
+  | { readonly labelledby: string; readonly label?: never; readonly titled?: never }
+  /** This root renders a `.Title` whose `for` is the root's own id, and is named by it. */
+  | { readonly titled: true; readonly label?: never; readonly labelledby?: never };
+
+/** How a container role — `toolbar`, `region` — is named. It takes no name from its contents, so one of the two is required. @public */
+export type ContainerNaming =
+  /** Literal accessible name. */
+  | { readonly label: string; readonly labelledby?: never }
+  /** id of an element elsewhere on the page that names this container. */
+  | { readonly labelledby: string; readonly label?: never };
+
+/** How a `role="menu"` popup is named. It takes no name from its rows, so one of the three is required. @public */
+export type MenuPopupNaming =
+  /** A forge `Menu.Trigger` or `Menu.SubmenuTrigger` targets this popup, and is what names it. */
+  | { readonly triggered: true; readonly label?: never; readonly labelledby?: never }
+  /** Literal accessible name, for a popup opened from an invoker of the caller's own. */
+  | { readonly label: string; readonly triggered?: never; readonly labelledby?: never }
+  /** id of the element that names this popup — a caller's own invoker, say. */
+  | { readonly labelledby: string; readonly triggered?: never; readonly label?: never };
 
 /** The role the popup an invoker targets actually carries, which is what its `aria-haspopup` must say. @public */
 export type PopupKind = "dialog" | "menu";

@@ -1,6 +1,6 @@
 import { Box, pdfContainer } from "./components";
 import { roundedBoxCommands, transformCommands } from "./path";
-import type { ImageProps, Ink, PathProps, PanelProps, PdfCursor, PdfElement, PdfPathCommand, PdfPathPaint, PdfShading } from "./types";
+import type { ImageProps, Ink, PanelProps, PathProps, PdfCursor, PdfElement, PdfPathCommand, PdfPathPaint, PdfShading } from "./types";
 
 function isShading(fill: Ink | PdfShading): fill is PdfShading {
   return !Array.isArray(fill);

@@ -72,6 +72,8 @@ export interface AuthFactor {
   readonly secret: Uint8Array<ArrayBuffer> | null;
   readonly lastCounter: number | null;
   readonly failedAttempts: number;
+  /** When a code was last accepted — `updated_at` also moves on a spent guess, so it cannot say this. */
+  readonly lastVerifiedAt: number | null;
   readonly confirmedAt: number | null;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -192,6 +194,8 @@ export interface FactorStore {
   findEnrolled(userId: string, kinds: readonly AuthFactorKind[]): Promise<AuthStoreResult<readonly AuthFactor[]>>;
   enrol(input: AuthFactorInput, at: number): Promise<AuthStoreResult<AuthFactor>>;
   confirm(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
+  /** Takes a confirmed factor back to owing an enrolment and hands back the guesses spent against it, for a secret that can no longer be checked at all. */
+  unconfirm(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
   /** Finds the factor, spends one guess against it and returns it, reopening a budget spent more than `lockoutMs` ago — all in the one statement; `null` is no such factor, or the budget refusing. */
   countAttempt(
     userId: string,
@@ -200,8 +204,10 @@ export interface FactorStore {
     at: number,
     lockoutMs: number,
   ): Promise<AuthStoreResult<AuthFactor | null>>;
-  /** Records an accepted step above the last one, and clears the spent guesses that led to it. */
-  advanceCounter(id: string, userId: string, counter: number, at: number): Promise<AuthStoreResult<boolean>>;
+  /** Records an accepted step above the last one, clears the spent guesses that led to it, stamps `last_verified_at` — which nothing else may write — and stores `secret` in its place where one is passed. */
+  recordVerification(id: string, userId: string, counter: number, at: number, secret?: Uint8Array<ArrayBuffer>): Promise<AuthStoreResult<boolean>>;
+  /** Counts rows of `kind` whose sealed secret is under a key id other than `kid` — the population a retiring key still holds. */
+  countSecretsNotUnder(kind: AuthFactorKind, kid: string): Promise<AuthStoreResult<number>>;
   remove(id: string, userId: string): Promise<AuthStoreResult<boolean>>;
 }
 

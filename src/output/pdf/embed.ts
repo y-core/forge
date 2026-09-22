@@ -1,5 +1,6 @@
 import { num, pdfName } from "./text";
-import type { PdfEmbeddedFont, PdfFaceCoverage, PdfFaceRun, PdfObjectManager } from "./types";
+import type { PdfEmbeddedFont, PdfFaceCoverage, PdfFaceRun } from "./types";
+import type { PdfObjectManager } from "./writer/types";
 
 // An `Identity-H` CID is two bytes, which is four hex digits.
 const CID_DIGITS = 4;

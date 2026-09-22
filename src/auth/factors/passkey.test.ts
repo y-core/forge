@@ -95,6 +95,7 @@ function fakeFactors() {
         secret: input.secret ?? null,
         lastCounter: null,
         failedAttempts: 0,
+        lastVerifiedAt: null,
         confirmedAt: input.confirmedAt ?? null,
         createdAt: at,
         updatedAt: at,
@@ -109,8 +110,10 @@ function fakeFactors() {
       rows[index] = { ...row, confirmedAt: at, updatedAt: at };
       return Promise.resolve(ok(true));
     },
+    unconfirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null)),
-    advanceCounter: () => Promise.resolve(ok(true)),
+    recordVerification: () => Promise.resolve(ok(true)),
+    countSecretsNotUnder: () => Promise.resolve(ok(0)),
     remove: () => Promise.resolve(ok(true)),
   };
   return { store, rows };

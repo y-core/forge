@@ -95,7 +95,7 @@ describe("every write reports whether a row changed", () => {
       users.changeEmail(USER_ID, "c@d.test", "c@d.test", 1),
       users.revokeSessions(USER_ID, 1),
       factors.confirm(OTHER_ID, USER_ID, 1),
-      factors.advanceCounter(OTHER_ID, USER_ID, 57, 1),
+      factors.recordVerification(OTHER_ID, USER_ID, 57, 1),
       factors.remove(OTHER_ID, USER_ID),
       credentials.recordUse(OTHER_ID, 1, false, 1),
       credentials.relabel(OTHER_ID, USER_ID, "Work laptop", 1),
@@ -151,8 +151,8 @@ describe("an id that is not a canonical UUID", () => {
       ["factors.confirm — owner", factors.confirm(OTHER_ID, id, 1), unchanged],
       ["factors.countAttempt", factors.countAttempt(id, "totp-app", 5, 1, 900_000), none],
 
-      ["factors.advanceCounter", factors.advanceCounter(id, USER_ID, 57, 1), unchanged],
-      ["factors.advanceCounter — owner", factors.advanceCounter(OTHER_ID, id, 57, 1), unchanged],
+      ["factors.recordVerification", factors.recordVerification(id, USER_ID, 57, 1), unchanged],
+      ["factors.recordVerification — owner", factors.recordVerification(OTHER_ID, id, 57, 1), unchanged],
       ["factors.remove", factors.remove(id, USER_ID), unchanged],
       ["factors.remove — owner", factors.remove(OTHER_ID, id), unchanged],
       ["credentials.listByUser", credentials.listByUser(id), empty],
@@ -362,7 +362,7 @@ describe("schema drift", () => {
     await factors.enrol({ userId: USER_ID, kind: "passkey" }, 1);
     await factors.confirm(OTHER_ID, USER_ID, 1);
     await factors.countAttempt(USER_ID, "totp-app", 5, 1, 900_000);
-    await factors.advanceCounter(OTHER_ID, USER_ID, 57, 1);
+    await factors.recordVerification(OTHER_ID, USER_ID, 57, 1);
     await factors.remove(OTHER_ID, USER_ID);
     await credentials.listByUser(USER_ID);
     await credentials.findByCredentialId("Y3JlZA");

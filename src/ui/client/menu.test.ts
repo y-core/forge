@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
-import { FakeEvent, fakeTree } from "./dom.fixture";
+import { FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
 import type { FakeElement } from "./dom.fixture";
 import { checkMenuItem, mountMenu } from "./menu";
 
@@ -33,6 +33,24 @@ function menu() {
 const state = (el: FakeElement) => ({ aria: el.getAttribute("aria-checked"), data: el.hasAttribute("data-checked") });
 
 describe("checkMenuItem", () => {
+  it("refuses a row marked aria-disabled, which the ring keeps focusable", () => {
+    const { popup, check } = menu();
+    check.setAttribute("aria-disabled", "true");
+
+    checkMenuItem(check as never, popup as never);
+
+    expect(state(check)).toEqual({ aria: "false", data: false });
+  });
+
+  it("leaves a disabled radio row's checked sibling alone", () => {
+    const { popup, small, large } = menu();
+    large.setAttribute("aria-disabled", "true");
+
+    checkMenuItem(large as never, popup as never);
+
+    expect({ large: state(large), small: state(small) }).toEqual({ large: { aria: "false", data: false }, small: { aria: "true", data: true } });
+  });
+
   it("flips a checkbox row's ARIA state and its styling hook together", () => {
     const { popup, check } = menu();
 
@@ -134,6 +152,58 @@ describe("mountMenu", () => {
     dispose();
 
     expect({ id: opened?.id ?? null, role: opened?.getAttribute("role") ?? null }).toEqual({ id: "row-0", role: MENU_ITEM_ROLES[0] });
+  });
+
+  it("opens onto the first row the ring can reach, where focusing a disabled one would be a no-op", () => {
+    const { doc, popup, rows } = navigableMenu();
+    const first = rows[0];
+    if (first) first.disabled = true;
+    const dispose = mountMenu(popup as never);
+
+    popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+    const opened = doc.activeElement;
+    dispose();
+
+    expect(opened?.id ?? null).toBe("row-1");
+  });
+
+  // `commandfor` makes the panel chain a graph rather than a tree, so it can cycle: the walk out of
+  // it is capped, and these two prove the cap holds where the chain closes on itself.
+  describe("mountMenu — a cyclic panel chain", () => {
+    /** Panels wired so that following `commandfor` outward from the first never reaches a root. */
+    function cycle(panels: string[]) {
+      installCssEscape();
+      const { doc, el } = fakeTree();
+      const made = panels.map((id) => el("DIV", { "data-slot": "menu-popup", role: "menu", id }));
+      made.forEach((panel, i) => {
+        // The invoker naming the *previous* panel sits inside this one, so the chain closes.
+        panel.append(el("BUTTON", { commandfor: panels[(i + panels.length - 1) % panels.length] ?? "", id: `open-${i}` }));
+        doc.root.append(panel);
+      });
+      const outside = el("BUTTON", { id: "outside" });
+      doc.root.append(outside);
+      return { popup: made[0] as FakeElement, outside };
+    }
+
+    it("returns from a focusout where a panel's own invoker sits inside it", () => {
+      const { popup, outside } = cycle(["solo"]);
+      const dispose = mountMenu(popup as never);
+
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: outside }));
+      dispose();
+
+      expect(popup.id).toBe("solo");
+    });
+
+    it("returns from a focusout where two panels name each other", () => {
+      const { popup, outside } = cycle(["first", "second"]);
+      const dispose = mountMenu(popup as never);
+
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: outside }));
+      dispose();
+
+      expect(popup.id).toBe("first");
+    });
   });
 
   // A menu popup is swapped wholesale by HTMX, so a listener left behind accumulates one per swap.

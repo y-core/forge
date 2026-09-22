@@ -428,6 +428,14 @@ export interface JsxCheckConfig {
   pragmas?: readonly string[];
 }
 
+/** What the menu-naming check walks. @public */
+export interface MenuNamingCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Directories walked for modules rendering menus, relative to `root`. Defaults to `["src"]`. */
+  sources?: readonly string[];
+}
+
 /** How a line was classified; a `fence`, `frontmatter` or `indented-code` line is never rewritten. @public */
 export type MarkdownLineKind =
   | "blank"

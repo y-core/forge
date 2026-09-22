@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import type { JSXNode } from "../../jsx/types";
 import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Dialog } from "./dialog";
@@ -12,7 +13,7 @@ describe("Dialog", () => {
   it("renders the whole dialog exactly, caller class merged last and children escaped", async () => {
     expect(
       await render(
-        <Dialog id='confirm' class='w-96' data-note="a&b's">
+        <Dialog id='confirm' titled class='w-96' data-note="a&b's">
           {`R&D's <plan>`}
         </Dialog>,
       ),
@@ -24,18 +25,21 @@ describe("Dialog", () => {
   });
 
   it("names a heading it has not seen and opts into light dismiss, both derived from the one written id", async () => {
-    expect(attrsOf(await render(<Dialog id='confirm'>Body</Dialog>))).toEqual({
-      id: "confirm",
-      "data-slot": "dialog",
-      "aria-labelledby": "confirm-title",
-      closedby: "any",
-    });
+    expect(
+      attrsOf(
+        await render(
+          <Dialog id='confirm' titled>
+            Body
+          </Dialog>,
+        ),
+      ),
+    ).toEqual({ id: "confirm", "data-slot": "dialog", "aria-labelledby": "confirm-title", closedby: "any" });
   });
 
   // Both attributes together is the one markup `showModal()` throws `InvalidStateError` on, and the
   // reader is left with no dialog at all — so `openModal` wins and `open` never reaches the markup.
   it("drops the non-modal open attribute when the caller asks for a modal as well", async () => {
-    const attrs = attrsOf(await render(<Dialog id='confirm' open openModal />));
+    const attrs = attrsOf(await render(<Dialog id='confirm' titled open openModal />));
 
     expect(attrs["data-open-modal"]).toBe("");
     expect(attrs["data-scope"]).toBe("dialog");
@@ -43,7 +47,7 @@ describe("Dialog", () => {
   });
 
   it("still renders a plain open dialog non-modal, with neither scope nor modal marker", async () => {
-    const attrs = attrsOf(await render(<Dialog id='confirm' open />));
+    const attrs = attrsOf(await render(<Dialog id='confirm' titled open />));
 
     expect(attrs.open).toBe("");
     expect(attrs["data-scope"]).toBeUndefined();
@@ -53,7 +57,7 @@ describe("Dialog", () => {
 describe("Dialog.Title", () => {
   it("derives its id from the dialog's, so aria-labelledby resolves to the rendered heading", async () => {
     const html = await render(
-      <Dialog id='confirm'>
+      <Dialog id='confirm' titled>
         <Dialog.Title for='confirm'>Delete project?</Dialog.Title>
       </Dialog>,
     );
@@ -150,12 +154,36 @@ describe("Dialog sections", () => {
   });
 });
 
+// APG's Alert and Message Dialogs: the container is an `alertdialog` named by its title and described
+// by its message, so a reader landing on "Cancel" hears the consequence rather than the button alone.
+describe("Dialog — the alert-dialog shape", () => {
+  it("announces as an alert dialog and points at the message it renders, both on the caller's word", async () => {
+    const html = await render(
+      <Dialog id='confirm' titled alert described>
+        <Dialog.Title for='confirm'>Delete project?</Dialog.Title>
+        <Dialog.Description for='confirm'>Every environment attached to it goes too.</Dialog.Description>
+      </Dialog>,
+    );
+
+    expect(attrOf(html, "role", 'data-slot="dialog"')).toBe("alertdialog");
+    expect(attrOf(html, "aria-describedby", 'data-slot="dialog"')).toBe("confirm-description");
+    expect(attrOf(html, "id", 'data-slot="dialog-description"')).toBe("confirm-description");
+  });
+
+  it("is an ordinary dialog with no description reference unless asked for both", async () => {
+    const attrs = attrsOf(await render(<Dialog id='confirm' titled />));
+
+    expect(attrs).not.toHaveProperty("role");
+    expect(attrs).not.toHaveProperty("aria-describedby");
+  });
+});
+
 describe("Dialog composition", () => {
   it("links a trigger and a close to the dialog by the one id the caller wrote", async () => {
     const html = await render(
       <>
         <Dialog.Trigger for='confirm'>Delete…</Dialog.Trigger>
-        <Dialog id='confirm'>
+        <Dialog id='confirm' titled>
           <p>Are you sure?</p>
           <Dialog.Close for='confirm'>Cancel</Dialog.Close>
         </Dialog>
@@ -190,14 +218,31 @@ describe("Dialog — the name the root resolves to", () => {
     expect(byLabel["aria-label"]).toBe("Filters");
   });
 
-  // Single-pass SSR cannot see whether a `.Title` child exists, so the derived reference is still
-  // written and dangles. The name is absent either way; this pins the gap rather than hiding it.
-  it("is provably nameless with neither a title nor a name prop, its reference resolving to nothing", async () => {
-    const html = await render(<Dialog id='confirm'>Body</Dialog>);
+  // A widened type is how the union is escaped in practice — a spread of a wider object, an `as`, or
+  // a `.js` consumer — so the mechanism is asserted where the type is not the thing holding it.
+  it("emits no reference at all when the caller asserted nothing, reached through a widened type", async () => {
+    const widened = Dialog as unknown as (props: { id: string }) => JSXNode;
+    const attrs = attrsOf(await render(widened({ id: "confirm" })));
+
+    expect(attrs).not.toHaveProperty("aria-labelledby");
+    expect(attrs).not.toHaveProperty("aria-label");
+  });
+
+  // Single-pass SSR cannot see whether a `.Title` child exists, so the derived reference is emitted
+  // on the caller's word: `titled` is that word, and naming nothing at all no longer type-checks.
+  it("cannot be rendered without a name, and the reference it does emit resolves to its own title", async () => {
+    // @ts-expect-error — one of `label`, `labelledby` or `titled` is required.
+    const unnamed = <Dialog id='confirm'>Body</Dialog>;
+    void unnamed;
+
+    const html = await render(
+      <Dialog id='confirm' titled>
+        <Dialog.Title for='confirm'>Delete project?</Dialog.Title>
+      </Dialog>,
+    );
     const named = attrOf(html, "aria-labelledby", 'data-slot="dialog"');
 
     expect(named).toBe("confirm-title");
-    expect(tagOf(html, `id="${named}"`)).toBe("");
-    expect(attrsOf(html)["aria-label"]).toBeUndefined();
+    expect(tagOf(html, `id="${named}"`).startsWith("<h2 ")).toBe(true);
   });
 });

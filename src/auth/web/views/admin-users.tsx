@@ -49,7 +49,7 @@ export const AdminUsersView: FC<AdminUsersViewProps> = ({ users, query, nextCurs
           </EmptyState.Actions>
         </EmptyState>
       ) : (
-        <Table>
+        <Table label='Users'>
           <Table.Header>
             <Table.Row>
               <Table.Head>Email address</Table.Head>

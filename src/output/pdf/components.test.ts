@@ -7,7 +7,8 @@ import { Heading } from "./form";
 import { LINE, MARGIN, PAGE_WIDTH } from "./geometry";
 import { pdfContentBox, resolvePdfPage } from "./page";
 import { paginate } from "./paginate";
-import type { PdfBox, PdfElement, PdfNode } from "./types";
+import type { PdfBox, PdfElement, PdfEmbeddedFont, PdfEmbeddedMetrics, PdfNode } from "./types";
+import { resolveTypesetting } from "./typesetting";
 
 const PAPER = resolvePdfPage();
 const CONTENT = pdfContentBox(PAPER);
@@ -231,5 +232,48 @@ describe("breakWord", () => {
     expect(Text({ children: LONG, breakWord: true }).measure(NARROW.width).height).toBeGreaterThan(
       Text({ children: LONG }).measure(NARROW.width).height,
     );
+  });
+});
+
+// The defect this closes: an embedded face gave `\n` its own near-zero advance, so a multi-line run
+// measured as its lines laid end to end — larger than any setting of that text could ever be.
+describe("Text.measure reports a preferred width its own text could occupy", () => {
+  const ADVANCE = 500;
+  const COVERED = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const METRICS: PdfEmbeddedMetrics = {
+    unitsPerEm: 1000,
+    ascent: 800,
+    descent: -200,
+    bbox: [0, 0, 1000, 1000],
+    advances: new Map([...COVERED].map((character) => [character.codePointAt(0) ?? 0, ADVANCE])),
+  };
+  const FACE: PdfEmbeddedFont = {
+    name: "body",
+    postScriptName: "Body",
+    sfnt: new Uint8Array([0, 1, 0, 0]),
+    glyphs: new Map([...COVERED].map((character) => [character.codePointAt(0) ?? 0, 1])),
+    metrics: METRICS,
+  };
+  const SET = resolveTypesetting([FACE], { regular: "body", bold: "body" });
+
+  test("answers the widest line of a multi-line run, not the sum of its lines", () => {
+    const longest = Text({ children: "Alphabet" }).measure(MEASURE.width, SET).preferred;
+    expect(Text({ children: "Alphabet\nOne\nTwo" }).measure(MEASURE.width, SET).preferred).toBeCloseTo(longest, 9);
+  });
+
+  test("agrees with the base-14 path, which took the widest line all along", () => {
+    const run = "Alphabet\nOne\nTwo";
+    expect(Text({ children: run }).measure(MEASURE.width, SET).preferred).toBeCloseTo(
+      Text({ children: "Alphabet" }).measure(MEASURE.width, SET).preferred,
+      9,
+    );
+    expect(Text({ children: run }).measure(MEASURE.width).preferred).toBeCloseTo(
+      Text({ children: "Alphabet" }).measure(MEASURE.width).preferred,
+      9,
+    );
+  });
+
+  test("leaves a single-line run exactly where it was, so nothing that already agreed moves", () => {
+    expect(Text({ children: "Alphabet" }).measure(MEASURE.width, SET).preferred).toBeCloseTo((ADVANCE * 8 * 10) / 1000, 9);
   });
 });

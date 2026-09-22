@@ -3,9 +3,11 @@ import { mountFragmentObserver } from "./fragment-observer";
 import type { FragmentEntry } from "./types";
 import type { CarouselDotsOptions } from "./types";
 
-/** The marker `Carousel.Dots` renders on the current dot, matching `Pagination.Item current`. */
+/** The marker `Carousel.Dots` renders on the current dot, matching what its SSR half emitted. */
+// `location`, never `page`: the reader moved within a page that never navigated, which is the same
+// ruling `scroll-spy.ts` follows for a spied section.
 const CURRENT_ATTR = "aria-current";
-const CURRENT_VALUE = "page";
+const CURRENT_VALUE = "location";
 
 const STRIP_SELECTOR = "[data-slot~='carousel-strip']";
 const DEFAULT_DOT_SELECTOR = "a[href^='#']";

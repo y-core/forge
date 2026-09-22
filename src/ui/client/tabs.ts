@@ -1,6 +1,6 @@
 import { applyStateAttrs } from "../contracts/state-attrs";
 import { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR } from "../contracts/tabs-contract";
-import { mountRovingFocus } from "./composite";
+import { isDisabled, mountRovingFocus } from "./composite";
 import { closestAcross, elementById, eventTarget } from "./dom";
 import type { TabsOptions } from "./types";
 
@@ -46,11 +46,36 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
     if (tab && list.contains(tab)) event.preventDefault();
   };
 
+  // Under manual activation the keyboard has to say so, and a tab is an `<a href>`: the platform
+  // synthesises a click for Enter but never for Space, which would scroll the page instead.
+  const onKeyDown = (event: Event) => {
+    const keyEvent = event as KeyboardEvent;
+    if (keyEvent.defaultPrevented || keyEvent.key !== " ") return;
+    const tab = closestAcross(eventTarget(keyEvent) as Node | null, TAB_SELECTOR);
+    if (!tab || !list.contains(tab)) return;
+    keyEvent.preventDefault();
+    onActivate(keyEvent);
+  };
+
+  // A tab list is entered at the tab the widget is showing, not wherever the reader last arrowed to,
+  // so leaving the list hands the stop back to the selected tab.
+  const onFocusOut = (event: Event) => {
+    const next = (event as FocusEvent).relatedTarget as Node | null;
+    if (next && list.contains(next as Node)) return;
+    const tabs = tabsIn(list);
+    // Nothing requires a `Tabs` to render a selection, and under manual activation arrowing alone
+    // never makes one — so without both fallbacks the whole list leaves the tab sequence for good.
+    const entry = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") ?? tabs.find((tab) => !isDisabled(tab)) ?? tabs[0];
+    for (const tab of tabs) tab.tabIndex = tab === entry ? 0 : -1;
+  };
+
   // Automatic activation rides `focusin`, which the arrow keys already produce, so the selection
   // follows the roving focus without this controller knowing which key moved it.
   const activateOn = activation === "automatic" ? "focusin" : "click";
   list.addEventListener(activateOn, onActivate);
   list.addEventListener("click", onClick);
+  if (activation === "manual") list.addEventListener("keydown", onKeyDown);
+  list.addEventListener("focusout", onFocusOut);
 
   // Retires the `:target` fallback, which exists only for the no-script case.
   root.setAttribute(TABS_MOUNTED_ATTR, "");
@@ -59,6 +84,8 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
     root.removeAttribute(TABS_MOUNTED_ATTR);
     list.removeEventListener(activateOn, onActivate);
     list.removeEventListener("click", onClick);
+    list.removeEventListener("keydown", onKeyDown);
+    list.removeEventListener("focusout", onFocusOut);
     disposeFocus();
   };
 }

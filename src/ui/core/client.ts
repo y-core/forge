@@ -1,5 +1,6 @@
 /** Registers every resumable client scope the `ui/core` components stamp; side-effect import before `resume()`. */
 
+import { dismissAlert } from "../client/alert";
 import { mountRovingFocus } from "../client/composite";
 import { ownerWindow } from "../client/dom";
 import { mountInputFormat } from "../client/input-format";
@@ -40,7 +41,7 @@ registerScope<"dismiss">(TOAST_SCOPE, {
   on: { dismiss: ({ root }) => dismissToast(root) },
 });
 
-registerScope<"dismiss">(ALERT_SCOPE, { on: { dismiss: ({ root }) => root.remove() } });
+registerScope<"dismiss">(ALERT_SCOPE, { on: { dismiss: ({ root }) => dismissAlert(root) } });
 
 registerScope(TOOLBAR_SCOPE, {
   eager: true,

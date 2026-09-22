@@ -121,7 +121,7 @@ function fixture(count: number, current = 0, options: { slides?: number; inStrip
     dot.setAttribute("href", `#s-${index + 1}`);
     dot.setAttribute("class", index === current ? ON : OFF);
     if (index === current) {
-      dot.setAttribute("aria-current", "page");
+      dot.setAttribute("aria-current", "location");
       dot.setAttribute("data-selected", "");
     }
     return dot;
@@ -136,7 +136,7 @@ function fixture(count: number, current = 0, options: { slides?: number; inStrip
     dots,
     slides,
     observer: () => FakeObserver.latest as FakeObserver,
-    marked: () => dots.flatMap((dot, index) => (dot.getAttribute("aria-current") === "page" ? [index] : [])),
+    marked: () => dots.flatMap((dot, index) => (dot.getAttribute("aria-current") === "location" ? [index] : [])),
     classes: () => dots.map((dot) => dot.getAttribute("class")),
   };
 }

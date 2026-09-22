@@ -1,4 +1,4 @@
-import { columnsElement, fieldsElement, headingElement, noteElement, optionsElement, subheadingElement, ticksElement } from "./elements";
+import { columnsElement, fieldsElement, headingElement, noteElement, optionsElement, subheadingElement, ticksElement } from "./form-elements";
 import type { FieldProps, HeadingProps, NoteProps, OptionGroupProps, PdfElement, SignatureRowProps, TickListProps } from "./types";
 
 /** A section heading, or a sub-heading where `level` says so. @public */

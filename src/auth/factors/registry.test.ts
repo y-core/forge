@@ -47,7 +47,18 @@ const TOTP_APP = service("totp-app", { stepUp: true }, "explicit");
 const IMPLICIT_PASSKEY = service("passkey", { stepUp: true }, "implicit");
 
 function factor(kind: AuthFactorKind, confirmedAt: number | null): AuthFactor {
-  return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, failedAttempts: 0, confirmedAt, createdAt: 1, updatedAt: 1 };
+  return {
+    id: uuidv7(),
+    userId: USER_ID,
+    kind,
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt,
+    createdAt: 1,
+    updatedAt: 1,
+  };
 }
 
 function stubStore(enrolled: readonly AuthFactor[], calls: AuthFactorKind[][] = []): FactorStore {
@@ -60,8 +71,10 @@ function stubStore(enrolled: readonly AuthFactor[], calls: AuthFactorKind[][] = 
     },
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
+    unconfirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
-    advanceCounter: () => Promise.resolve(ok(true)),
+    recordVerification: () => Promise.resolve(ok(true)),
+    countSecretsNotUnder: () => Promise.resolve(ok(0)),
     remove: () => Promise.resolve(ok(true)),
   };
 }
@@ -203,6 +216,14 @@ describe("createFactorRegistry — resolving a second factor", () => {
     const store = stubStore([factor("passkey", 5_000), factor("totp-app", 5_000)]);
     const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory"), second(PASSKEY)], store).resolve(USER_ID);
     expect(resolved).toEqual({ ok: true, data: { status: "step-up-required", kinds: ["totp-app", "passkey"] } });
+  });
+
+  // The other half of the unenrolling write: a row left behind after its secret stopped opening is
+  // present but unconfirmed, and it must owe an enrolment rather than a step-up it cannot pass.
+  it("owes an enrolment on a row that exists and is unconfirmed, never a step-up", async () => {
+    const store = stubStore([factor("totp-app", null)]);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")], store).resolve(USER_ID);
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"] } });
   });
 
   it("demands `mandatoryForRoles` of a matching role alone", async () => {

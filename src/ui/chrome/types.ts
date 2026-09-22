@@ -210,6 +210,8 @@ export interface ToolbarGroup<A extends string = string, G extends string = stri
 
 /** Full toolbar configuration. @public */
 export interface ToolbarDefinition<A extends string = string, G extends string = string> {
+  /** Accessible name for the rail — `role="toolbar"` takes none from its items, and a page may hold several. */
+  label: string;
   groups: ToolbarGroup<A, G>[];
 }
 

@@ -45,7 +45,7 @@ describe("Tabs", () => {
   it("renders list, tabs and panels as one tree, with only the unselected panel hidden", async () => {
     const html = await render(
       <Tabs>
-        <Tabs.List>
+        <Tabs.List label='Views'>
           <Tabs.Tab for='panel-a' selected>
             A
           </Tabs.Tab>
@@ -60,16 +60,25 @@ describe("Tabs", () => {
 
     expect(slotsOf(html)).toEqual(["tabs", "tabs-list", "tab", "tab", "tabs-content", "tabs-content"]);
     expect([attrsOf(html, 'id="panel-a"'), attrsOf(html, 'id="panel-b"')]).toEqual([
-      { id: "panel-a", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "data-selected": "" },
-      { id: "panel-b", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", hidden: "" },
+      { id: "panel-a", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-a-tab", "data-selected": "" },
+      { id: "panel-b", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-b-tab", hidden: "" },
     ]);
   });
 });
 
 describe("Tabs.List", () => {
+  // APG asks a tablist for a name, and a page with two tab sets gives a reader nothing to tell them
+  // apart without one — so it is required rather than forwarded if the caller remembers it.
+  it("cannot be rendered unnamed", () => {
+    // @ts-expect-error — one of `label` or `labelledby` is required.
+    const unnamed = <Tabs.List />;
+    void unnamed;
+  });
+
   it("announces its axis to a screen reader as well as to the controller", async () => {
-    expect(attrsOf(await render(<Tabs.List />))).toEqual({
+    expect(attrsOf(await render(<Tabs.List label='Views' />))).toEqual({
       role: "tablist",
+      "aria-label": "Views",
       "data-slot": "tabs-list",
       "aria-orientation": "horizontal",
       "data-orientation": "horizontal",
@@ -77,22 +86,23 @@ describe("Tabs.List", () => {
   });
 
   it("turns the rule down the side for a vertical strip instead of under it", async () => {
-    const vertical = await render(<Tabs.List orientation='vertical' />);
+    const vertical = await render(<Tabs.List label='Views' orientation='vertical' />);
 
     expect(attrsOf(vertical)).toEqual({
       role: "tablist",
+      "aria-label": "Views",
       "data-slot": "tabs-list",
       "aria-orientation": "vertical",
       "data-orientation": "vertical",
     });
-    expect(variantClasses(vertical, await render(<Tabs.List />))).toEqual({
+    expect(variantClasses(vertical, await render(<Tabs.List label='Views' />))).toEqual({
       added: ["flex-col", "border-e", "pe-2"],
       dropped: ["border-b", "pb-1"],
     });
   });
 
   it("appends a caller class after its own and keeps its slot token ahead of an inherited one", async () => {
-    const html = await render(<Tabs.List class='px-2' data-slot='settings-tablist' />);
+    const html = await render(<Tabs.List label='Views' class='px-2' data-slot='settings-tablist' />);
 
     expect(classesOf(html).at(-1)).toBe("px-2");
     expect(attrOf(html, "data-slot")).toBe("tabs-list settings-tablist");
@@ -107,6 +117,7 @@ describe("Tabs.Tab", () => {
       "data-slot": "tab",
       "aria-selected": "false",
       "aria-controls": "panel-a",
+      id: "panel-a-tab",
     });
   });
 
@@ -125,6 +136,7 @@ describe("Tabs.Tab", () => {
       "data-slot": "tab",
       "aria-selected": "true",
       "aria-controls": "panel-a",
+      id: "panel-a-tab",
       "data-selected": "",
       "data-composite-item-active": "",
     });
@@ -142,10 +154,31 @@ describe("Tabs.Tab", () => {
       "data-slot": "tab",
       "aria-selected": "false",
       "aria-controls": "panel-c",
+      id: "panel-c-tab",
       "aria-disabled": "true",
       "data-disabled": "",
     });
     expect(classesOf(html).at(-1)).toBe("grow");
+  });
+
+  // A panel is a Tab stop in its own right, so an unnamed one is announced as "tab panel" and nothing
+  // else — the pairing runs both ways off the single id the caller wrote.
+  it("names the panel it controls, and keeps the derived id when a caller supplies one of their own", async () => {
+    const html = await render(
+      <Tabs>
+        <Tabs.List label='Views'>
+          <Tabs.Tab for='panel-a' id='mine' selected>
+            A
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Content id='panel-a' selected>
+          First
+        </Tabs.Content>
+      </Tabs>,
+    );
+
+    expect(attrOf(html, "id", 'role="tab"')).toBe("panel-a-tab");
+    expect(attrOf(html, "aria-labelledby", 'role="tabpanel"')).toBe("panel-a-tab");
   });
 
   it("keeps its own slot token ahead of an inherited one and escapes its children", async () => {
@@ -163,6 +196,7 @@ describe("Tabs.Content", () => {
       role: "tabpanel",
       "data-slot": "tabs-content",
       tabindex: "0",
+      "aria-labelledby": "panel-b-tab",
       hidden: "",
     });
   });
@@ -176,7 +210,14 @@ describe("Tabs.Content", () => {
           </Tabs.Content>,
         ),
       ),
-    ).toEqual({ id: "panel-a", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "data-selected": "" });
+    ).toEqual({
+      id: "panel-a",
+      role: "tabpanel",
+      "data-slot": "tabs-content",
+      tabindex: "0",
+      "aria-labelledby": "panel-a-tab",
+      "data-selected": "",
+    });
   });
 
   it("appends a caller class, keeps its slot token ahead of an inherited one, and escapes children", async () => {

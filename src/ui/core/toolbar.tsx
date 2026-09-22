@@ -1,12 +1,13 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { nameAttrs } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
-import type { Orientation } from "../contracts/types";
+import type { ContainerNaming, Orientation } from "../contracts/types";
 import { buttonVariants } from "./button";
 import type { ButtonProps } from "./types";
-import { cloneAsChild, slotToken } from "./utils/as-child";
+import { cloneAsChild, INERT_ANCHOR_PROPS, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { RULE } from "./utils/recipes";
 
@@ -19,7 +20,9 @@ interface ToolbarItemStyling {
   asChild?: boolean | undefined;
 }
 
-interface ToolbarRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+type ToolbarRootProps = ContainerNaming & ToolbarRootOwnProps;
+
+interface ToolbarRootOwnProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   orientation?: Orientation | undefined;
   children?: JSXNode | undefined;
 }
@@ -46,14 +49,32 @@ const ROOT_BASE = "flex items-center gap-1";
 
 // The roving-tab-stop marker is not derived from `pressed` and carries no default: several items may
 // be pressed, and `initialIndex` already falls back to the first enabled one when nothing is marked.
-function itemAttrs(pressed: boolean | undefined): Record<string, string> {
-  return { [TOOLBAR_ITEM_ATTR]: "", ...(pressed === undefined ? {} : { "aria-pressed": String(pressed), ...stateAttrs({ pressed }) }) };
+function itemAttrs(pressed: boolean | undefined, disabled = false): Record<string, string> {
+  return {
+    [TOOLBAR_ITEM_ATTR]: "",
+    ...(pressed === undefined ? {} : { "aria-pressed": String(pressed), ...stateAttrs({ pressed }) }),
+    ...(disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}),
+  };
+}
+
+/** Whether a caller marked an item inert through `aria-disabled`, in either the JSX or the HTML spelling. */
+function ariaDisabled(value: unknown): boolean {
+  return value === true || value === "true";
 }
 
 /** Toolbar container, stamping the resumable scope that mounts roving focus. */
-const ToolbarRoot: FC<ToolbarRootProps> = ({ orientation = "horizontal", class: cls, children, "data-slot": inherited, ...rest }) => (
+const ToolbarRoot: FC<ToolbarRootProps> = ({
+  orientation = "horizontal",
+  label,
+  labelledby,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
   <div
     role='toolbar'
+    {...nameAttrs({ label, labelledby })}
     data-slot={slotToken("toolbar", inherited)}
     data-scope={TOOLBAR_SCOPE}
     {...stateAttrs({ orientation })}
@@ -86,10 +107,11 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-disabled": inert,
   ...rest
 }) => {
   const className = itemClass({ tone, appearance, size, shape }, cls);
-  const attrs = { ...itemAttrs(pressed), ...rest };
+  const attrs = { ...itemAttrs(pressed, ariaDisabled(inert)), ...rest };
   const slot = slotToken("toolbar-button", inherited);
 
   if (asChild) {
@@ -122,10 +144,11 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-disabled": inert,
   ...rest
 }) => {
   const className = itemClass({ tone, appearance, size, shape }, cls, "underline-offset-4 hover:underline");
-  const attrs = { ...itemAttrs(pressed), ...rest };
+  const attrs = { ...itemAttrs(pressed, ariaDisabled(inert)), ...rest };
   const slot = slotToken("toolbar-link", inherited);
 
   if (asChild) {
@@ -139,7 +162,7 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({
   }
 
   return (
-    <a data-slot={slot} class={className} {...attrs}>
+    <a data-slot={slot} class={className} {...attrs} {...(ariaDisabled(inert) ? INERT_ANCHOR_PROPS : {})}>
       {children}
     </a>
   );

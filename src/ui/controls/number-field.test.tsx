@@ -9,9 +9,9 @@ const STEPPER_CLASS =
   "inline-flex size-8 items-center justify-center rounded-field border border-input bg-background " +
   "cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled";
 
-const DECREMENT = `<button type="button" data-slot="number-field-decrement" aria-label="Decrement" class="${STEPPER_CLASS}">−</button>`;
+const DECREMENT = `<button type="button" data-slot="number-field-decrement" aria-label="Decrement" tabindex="-1" class="${STEPPER_CLASS}">−</button>`;
 
-const INCREMENT = `<button type="button" data-slot="number-field-increment" aria-label="Increment" class="${STEPPER_CLASS}">+</button>`;
+const INCREMENT = `<button type="button" data-slot="number-field-increment" aria-label="Increment" tabindex="-1" class="${STEPPER_CLASS}">+</button>`;
 
 const INPUT_CLASS = "state-busy state-disabled field-chrome w-20 text-end tabular-nums focus-ring state-invalid h-control-md text-sm";
 

@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import type { JSXNode } from "../../jsx/types";
 import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Drawer } from "./drawer";
@@ -12,7 +13,7 @@ describe("Drawer", () => {
   it("renders the whole panel exactly, caller class merged last and children escaped", async () => {
     expect(
       await render(
-        <Drawer id='nav' class='w-96' data-note="a&b's">
+        <Drawer id='nav' titled class='w-96' data-note="a&b's">
           {`R&D's <menu>`}
         </Drawer>,
       ),
@@ -24,32 +25,34 @@ describe("Drawer", () => {
   });
 
   it("anchors to the left unless told otherwise, and names the edge where a controller can read it", async () => {
-    expect(attrsOf(await render(<Drawer id='nav'>Body</Drawer>))).toEqual({
-      id: "nav",
-      "data-slot": "drawer",
-      "aria-labelledby": "nav-title",
-      closedby: "any",
-      "data-side": "left",
-    });
-    expect(attrOf(await render(<Drawer id='nav' side='right' />), "data-side")).toBe("right");
+    expect(
+      attrsOf(
+        await render(
+          <Drawer id='nav' titled>
+            Body
+          </Drawer>,
+        ),
+      ),
+    ).toEqual({ id: "nav", "data-slot": "drawer", "aria-labelledby": "nav-title", closedby: "any", "data-side": "left" });
+    expect(attrOf(await render(<Drawer id='nav' titled side='right' />), "data-side")).toBe("right");
   });
 
   it("fills the panel's own axis, so a top drawer spans the inline axis instead of the block one", async () => {
-    expect(variantClasses(await render(<Drawer id='nav' side='top' />), await render(<Drawer id='nav' />))).toEqual({
+    expect(variantClasses(await render(<Drawer id='nav' titled side='top' />), await render(<Drawer id='nav' titled />))).toEqual({
       added: ["h-auto", "max-h-[85vh]", "w-full", "max-w-none"],
       dropped: ["h-dvh", "max-h-none", "w-80", "max-w-[85vw]"],
     });
   });
 
   it("lets a caller's width evict the default rather than stacking a second one", async () => {
-    expect(variantClasses(await render(<Drawer id='nav' class='w-96' />), await render(<Drawer id='nav' />))).toEqual({
+    expect(variantClasses(await render(<Drawer id='nav' titled class='w-96' />), await render(<Drawer id='nav' titled />))).toEqual({
       added: ["w-96"],
       dropped: ["w-80"],
     });
   });
 
   it("renders open and non-modal when open is set, which is the only openness markup can express", async () => {
-    expect(attrsOf(await render(<Drawer id='nav' open />))).toEqual({
+    expect(attrsOf(await render(<Drawer id='nav' titled open />))).toEqual({
       id: "nav",
       "data-slot": "drawer",
       "aria-labelledby": "nav-title",
@@ -59,8 +62,18 @@ describe("Drawer", () => {
     });
   });
 
+  // Both attributes together leaves `showModal()` skipped on resume, and the drawer renders non-modal
+  // — no top layer, no inertness, no backdrop — with nothing in the markup to say so.
+  it("drops the non-modal open attribute when the caller asks for a modal as well", async () => {
+    const attrs = attrsOf(await render(<Drawer id='nav' titled open openModal />));
+
+    expect(attrs["data-open-modal"]).toBe("");
+    expect(attrs["data-scope"]).toBe("dialog");
+    expect(attrs.open).toBeUndefined();
+  });
+
   it("stamps the dialog scope and the resume marker for openModal, and never the open attribute a modal must not carry", async () => {
-    expect(attrsOf(await render(<Drawer id='nav' openModal />))).toEqual({
+    expect(attrsOf(await render(<Drawer id='nav' titled openModal />))).toEqual({
       id: "nav",
       "data-slot": "drawer",
       "aria-labelledby": "nav-title",
@@ -75,7 +88,7 @@ describe("Drawer", () => {
 describe("Drawer.Title", () => {
   it("derives its id from the drawer's, so aria-labelledby resolves to the rendered heading", async () => {
     const html = await render(
-      <Drawer id='nav'>
+      <Drawer id='nav' titled>
         <Drawer.Title for='nav'>Navigation</Drawer.Title>
       </Drawer>,
     );
@@ -177,12 +190,31 @@ describe("Drawer — the name the root resolves to", () => {
     expect(byLabel["aria-label"]).toBe("Filters");
   });
 
-  it("is provably nameless with neither a title nor a name prop, its reference resolving to nothing", async () => {
-    const html = await render(<Drawer id='filters'>Body</Drawer>);
+  // A widened type is how the union is escaped in practice — a spread of a wider object, an `as`, or
+  // a `.js` consumer — so the mechanism is asserted where the type is not the thing holding it.
+  it("emits no reference at all when the caller asserted nothing, reached through a widened type", async () => {
+    const widened = Drawer as unknown as (props: { id: string }) => JSXNode;
+    const attrs = attrsOf(await render(widened({ id: "filters" })));
+
+    expect(attrs).not.toHaveProperty("aria-labelledby");
+    expect(attrs).not.toHaveProperty("aria-label");
+  });
+
+  // The dangling reference this replaces was reachable only by naming nothing, which the props union
+  // now refuses — so the claim is the refusal, and `@ts-expect-error` fails the build if it lapses.
+  it("cannot be rendered without a name, and the reference it does emit resolves to its own title", async () => {
+    // @ts-expect-error — one of `label`, `labelledby` or `titled` is required.
+    const unnamed = <Drawer id='filters'>Body</Drawer>;
+    void unnamed;
+
+    const html = await render(
+      <Drawer id='filters' titled>
+        <Drawer.Title for='filters'>Filters</Drawer.Title>
+      </Drawer>,
+    );
     const named = attrOf(html, "aria-labelledby", 'data-slot="drawer"');
 
     expect(named).toBe("filters-title");
-    expect(tagOf(html, `id="${named}"`)).toBe("");
-    expect(attrsOf(html)["aria-label"]).toBeUndefined();
+    expect(tagOf(html, `id="${named}"`).startsWith("<h2 ")).toBe(true);
   });
 });

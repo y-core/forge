@@ -24,6 +24,9 @@ export function mountNumberField(root: HTMLElement): () => void {
     else input.stepDown();
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    // APG's Spinbutton keeps focus on the field throughout: the value that changed is the field's, and
+    // a reader left on the button hears nothing at all of it.
+    input.focus();
   };
 
   reflect();

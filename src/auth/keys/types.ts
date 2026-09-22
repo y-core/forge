@@ -15,3 +15,14 @@ export interface AuthTokenClaims {
 export interface AuthTokenOptions {
   now?: number;
 }
+
+/** What `openAtRest` answers: the bytes, and the key id whose subkey opened them. @internal */
+export interface AuthAtRestOpened {
+  readonly plaintext: Uint8Array<ArrayBuffer>;
+  readonly kid: string;
+}
+
+// The two are told apart because they are different people's problems: `no-key` is an operator who
+// retired a key too early and can put it back, `unopenable` is a row that will never open again.
+/** Why a sealed frame did not open: its key is off the ring, or the frame itself did not stand up. @internal */
+export type AuthAtRestRefusal = "no-key" | "unopenable";

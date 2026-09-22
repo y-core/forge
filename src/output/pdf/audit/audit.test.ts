@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Box, Stack, Text } from "../components";
 import { conformanceViolations } from "../conformance";
 import { Path } from "../graphics";
-import { DEFAULT_PDF_MAX_PAGES } from "../limits";
+import { DEFAULT_PDF_LANG, DEFAULT_PDF_MAX_PAGES } from "../limits";
 import { Link } from "../link";
 import { resolvePdfPage } from "../page";
 import { paginateWithin } from "../paginate";
@@ -26,8 +26,11 @@ const FACE: PdfEmbeddedFont = {
   metrics: { unitsPerEm: 1000, ascent: 800, descent: -200, bbox: [0, 0, 1000, 1000], advances: new Map() },
 };
 
+// `lang` is spelled out rather than left to the default: a document that names no language is a
+// finding of its own, so a fixture omitting it would not be the conformant one it claims to be.
 const CONFORMANT: PdfRendererOptions = {
   tagged: true,
+  lang: "en",
   metadata: "standard",
   info: { title: "Declaration of interest" },
   fonts: [FACE],
@@ -52,10 +55,23 @@ describe("a render aiming at conformance", () => {
     expect(rules(DOC, { ...CONFORMANT, tagged: false })).toContain("tagged");
   });
 
-  test("reports a blank language, and says nothing about one left unset", () => {
+  test("reports a blank language, and says nothing about one explicitly set", () => {
     expect(rules(DOC, { ...CONFORMANT, lang: "  " })).toContain("lang");
     expect(rules(DOC, { ...CONFORMANT, lang: "en-ZA" })).toEqual([]);
-    expect(rules(DOC, CONFORMANT)).toEqual([]);
+  });
+
+  // The defect this closes: a French document that never mentions `lang` shipped declaring English,
+  // and the audit — whose whole purpose is to catch that before the file leaves — said nothing.
+  test("reports a language left unset, naming the default the file will otherwise declare", () => {
+    const { lang: _unset, ...silent } = CONFORMANT;
+    expect(rules(DOC, silent)).toEqual(["lang-default"]);
+    expect(auditPdf(DOC, silent)[0]?.message).toContain(`will declare ${DEFAULT_PDF_LANG}`);
+  });
+
+  // An untagged document writes no `/Lang` at all, so there is nothing for it to be wrong about.
+  test("says nothing about an unset language on a document that carries no structure tree", () => {
+    const { lang: _unset, ...silent } = CONFORMANT;
+    expect(rules(DOC, { ...silent, tagged: false })).not.toContain("lang-default");
   });
 });
 

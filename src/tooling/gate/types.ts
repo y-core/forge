@@ -32,6 +32,8 @@ export interface VersionHeading {
   date: string;
   /** Zero-indexed line the heading sits on. */
   line: number;
+  /** The section's prose, with the trailing rule, blank lines and link definitions dropped. */
+  body: readonly string[];
 }
 
 /** The `[Unreleased]` section: where it sits, what it holds, and whether that amounts to anything. @public */

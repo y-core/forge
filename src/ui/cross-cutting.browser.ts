@@ -74,6 +74,7 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
       children: [
         menuTrigger("inner-menu", "menu-trigger", "Options"),
         Menu.Popup({
+          triggered: true,
           id: "inner-menu",
           children: [
             Menu.Item({ id: "row-a", for: "inner-menu", children: "Alpha" }),
@@ -84,7 +85,7 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
     });
     const html = await render([
       Dialog.Trigger({ id: "open-dialog", for: "outer-dialog", children: "Open" }),
-      Dialog({ id: "outer-dialog", children: [jsx("p", { children: "Settings" }), menu] }),
+      Dialog({ id: "outer-dialog", label: "Settings", children: [jsx("p", { children: "Settings" }), menu] }),
     ]);
     await mount(page, `<div data-scope="demo">${html}</div>`, EXPOSE);
     await start(page);
@@ -136,7 +137,7 @@ test.describe("a trigger removed while its popup is open", () => {
       Menu({
         children: [
           menuTrigger("orphan-menu", "gone-trigger", "Options"),
-          Menu.Popup({ id: "orphan-menu", children: [Menu.Item({ id: "only-row", for: "orphan-menu", children: "Alpha" })] }),
+          Menu.Popup({ triggered: true, id: "orphan-menu", children: [Menu.Item({ id: "only-row", for: "orphan-menu", children: "Alpha" })] }),
         ],
       }),
     );
@@ -180,6 +181,7 @@ test.describe("a trigger removed while its popup is open", () => {
 test.describe("a composite widget inside a form", () => {
   async function mountForm(page: Page): Promise<void> {
     const group = BoundToggleGroup({
+      label: "Units",
       type: "single",
       children: ["mm", "cm", "in"].map((value, i) =>
         BoundToggleGroup.Item({ id: `u-${value}`, bind: "choice", value, pressed: i === 0, children: value }),
@@ -265,6 +267,7 @@ test.describe("widgets inside a shadow root", () => {
   // has to cross the boundary — but the scope only exists at all if `resume` scanned into the tree.
   test("a click from inside a shadow root reaches the binding", async ({ page }) => {
     const group = BoundToggleGroup({
+      label: "Units",
       type: "single",
       children: ["mm", "cm"].map((value) => BoundToggleGroup.Item({ id: `s-${value}`, bind: "choice", value, children: value })),
     });
@@ -299,6 +302,7 @@ test.describe("widgets inside a shadow root", () => {
         children: [
           menuTrigger("shadow-menu", "shadow-trigger", "Options"),
           Menu.Popup({
+            triggered: true,
             id: "shadow-menu",
             children: [
               Menu.Item({ id: "s-a", for: "shadow-menu", children: "Alpha" }),
@@ -356,6 +360,7 @@ test.describe("focus restoration when the focused item is removed", () => {
   test("a Toolbar puts focus on a sibling rather than on <body>", async ({ page }) => {
     const html = await render(
       Toolbar({
+        label: "Formatting",
         children: [
           Toolbar.Button({ id: "tb0", children: "Bold" }),
           Toolbar.Button({ id: "tb1", children: "Italic" }),
@@ -377,7 +382,11 @@ test.describe("focus restoration when the focused item is removed", () => {
       Menu({
         children: [
           menuTrigger("shrink-menu", "shrink-trigger", "Options"),
-          Menu.Popup({ id: "shrink-menu", children: ["a", "b", "c"].map((k) => Menu.Item({ id: `m-${k}`, for: "shrink-menu", children: k })) }),
+          Menu.Popup({
+            triggered: true,
+            id: "shrink-menu",
+            children: ["a", "b", "c"].map((k) => Menu.Item({ id: `m-${k}`, for: "shrink-menu", children: k })),
+          }),
         ],
       }),
     );
@@ -400,6 +409,7 @@ test.describe("RTL — every composite consumer inherits it and each can break i
   test("a Toolbar's ArrowLeft moves forward under dir=rtl", async ({ page }) => {
     const html = await render(
       Toolbar({
+        label: "Formatting",
         children: [
           Toolbar.Button({ id: "r0", children: "0" }),
           Toolbar.Button({ id: "r1", children: "1" }),
@@ -422,10 +432,8 @@ test.describe("RTL — every composite consumer inherits it and each can break i
       Tabs({
         children: [
           Tabs.List({
-            children: [
-              Tabs.Tab({ id: "tab-1", for: "panel-1", selected: true, children: "One" }),
-              Tabs.Tab({ id: "tab-2", for: "panel-2", children: "Two" }),
-            ],
+            label: "Views",
+            children: [Tabs.Tab({ for: "panel-1", selected: true, children: "One" }), Tabs.Tab({ for: "panel-2", children: "Two" })],
           }),
           Tabs.Content({ id: "panel-1", selected: true, children: "First" }),
           Tabs.Content({ id: "panel-2", children: "Second" }),
@@ -435,10 +443,10 @@ test.describe("RTL — every composite consumer inherits it and each can break i
     await mount(page, `<div dir="rtl">${html}</div>`, EXPOSE);
     await page.evaluate(() => window.forgeResume.resume());
 
-    await page.focus("#tab-1");
+    await page.focus("#panel-1-tab");
     await page.keyboard.press("ArrowLeft");
 
-    expect(await focusedId(page)).toBe("tab-2");
+    expect(await focusedId(page)).toBe("panel-2-tab");
     expect(await page.evaluate(() => document.querySelector<HTMLElement>("#panel-2")?.hidden)).toBe(false);
   });
 
@@ -447,7 +455,11 @@ test.describe("RTL — every composite consumer inherits it and each can break i
       Menu({
         children: [
           menuTrigger("rtl-menu", "rtl-trigger", "Options"),
-          Menu.Popup({ id: "rtl-menu", children: ["a", "b"].map((k) => Menu.Item({ id: `rtl-${k}`, for: "rtl-menu", children: k })) }),
+          Menu.Popup({
+            triggered: true,
+            id: "rtl-menu",
+            children: ["a", "b"].map((k) => Menu.Item({ id: `rtl-${k}`, for: "rtl-menu", children: k })),
+          }),
         ],
       }),
     );
@@ -462,7 +474,9 @@ test.describe("RTL — every composite consumer inherits it and each can break i
   });
 
   test("direction is read from the widget, so an RTL island inside an LTR page navigates as RTL", async ({ page }) => {
-    const html = await render(Toolbar({ children: [Toolbar.Button({ id: "i0", children: "0" }), Toolbar.Button({ id: "i1", children: "1" })] }));
+    const html = await render(
+      Toolbar({ label: "Formatting", children: [Toolbar.Button({ id: "i0", children: "0" }), Toolbar.Button({ id: "i1", children: "1" })] }),
+    );
     await mount(page, `<div dir="ltr"><div dir="rtl">${html}</div></div>`, EXPOSE);
     await page.evaluate(() => window.forgeResume.resume());
 

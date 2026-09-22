@@ -50,4 +50,12 @@ describe("menuItemAttrs", () => {
   it("marks a disabled row without taking it out of the navigation ring", () => {
     expect(menuItemAttrs({ disabled: true })["aria-disabled"]).toBe("true");
   });
+
+  it("withholds both invokers from a disabled row while still announcing its checked state", () => {
+    const attrs = menuItemAttrs({ role: "menuitemcheckbox", checked: true, disabled: true, closes: "m" });
+
+    expect(attrs).not.toHaveProperty("data-on-click");
+    expect(attrs).not.toHaveProperty("command");
+    expect(attrs["aria-checked"]).toBe("true");
+  });
 });

@@ -22,6 +22,7 @@ const icon = createIcon("/sprite.svg");
 const action = (name: string, label: string) => ({ kind: "action" as const, icon: "dot", label, action: name, ref: name });
 
 const CONFIG: ToolbarDefinition = {
+  label: "Scene tools",
   groups: [
     { items: [action("select", "Select"), action("line", "Line"), action("arc", "Arc")] },
     {

@@ -270,6 +270,9 @@ const renderer = createPdfRenderer({ palette: palette.data });
 **`#rrggbb` and `#rrggbbaa` are the whole accepted notation.** A named colour, `rgb()` and HSL are each refused by name. A non-opaque alpha reaches
 the page as a graphics state; an opaque one carries no alpha at all, so a document of solid inks declares none.
 
+**The names are `heading`, `rule`, `letterhead` and `intro` — `PDF_INK_NAMES`, and nothing else.** Any other name is a colour no page would ever
+consult, so it is a type error, and a refusal naming the offending key for a palette arriving as JSON.
+
 **A colour the palette never named draws no ink operator at all**, rather than falling back to black. That is what lets one document opt into a
 brand colour for its headings and leave its rules in the default.
 

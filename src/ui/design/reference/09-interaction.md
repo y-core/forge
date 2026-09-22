@@ -104,6 +104,22 @@ at all. <!-- rule:forge-ui-interaction-no-roving-radio --> The platform already 
 `name`: one tab stop, arrow keys that move _and_ check, Home/End. Mounting the controller beside it gives arrow keys two handlers, and the second
 one moves focus without checking, so the group's value and its focus stop agreeing.
 
+Default: reach for `RadioGroup` when the reader must be able to arrow between the choices — not `Filter` — unless the chosen facet standing alone is
+the point. <!-- rule:forge-ui-interaction-filter-collapses --> `Filter` collapses the unchosen chips to `display:none` once one is picked, which is
+what leaves the narrowed facet visible beside its reset and is the whole reason the component exists. The cost is that APG's arrow-key navigation
+has nothing left to move between: **the keyboard route to a second facet is the reset** — Tab to it, Enter, then arrow the restored chips. That is a
+deliberate deviation rather than a gap, and it is why the chips sit in a named `role="radiogroup"`: a reader who arrives on a lone chip is told it
+is one of N, not that it is the only choice there is. **The role is on `Filter.Group` and never on the `Filter` root**, which stays the `<form>` or
+`<fieldset>` that owns the reset: a `radiogroup` may own no child but a `radio`, so a reset inside it is an `aria-required-children` violation in a
+consumer's axe run. Give both components a name — the type requires `label` or `labelledby` on a `Filter.Group` — and keep the reset reachable,
+never hidden from the keyboard while a facet is chosen.
+
+Default: put every `Filter.Item` inside a `Filter.Group`, never directly in the `Filter` root.
+<!-- rule:forge-ui-interaction-filter-group-required --> The root carries no role, so chips it holds itself are loose radios named by nothing —
+strictly worse for a reader than a named group, and silent: the type cannot require a child, and deleting the `label` the root does not take is the
+shortest edit past the compile error a consumer upgrading meets. A lint rule is what makes the omission loud, because nothing in the rendered
+markup is missing so much as wrong.
+
 ### 2b. The initial tab stop
 
 Default: mark the item that should hold the tab stop at mount with `ACTIVE_COMPOSITE_ITEM` from `@y-core/forge/ui/contracts` — unless nothing in the

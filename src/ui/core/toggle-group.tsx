@@ -1,9 +1,10 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+import { nameAttrs } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOGGLE_GROUP_SCOPE } from "../contracts/toggle-contract";
-import type { Orientation } from "../contracts/types";
+import type { ContainerNaming, Orientation } from "../contracts/types";
 import type { Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import type { ToggleGroupType } from "./types";
@@ -11,7 +12,8 @@ import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PRESSED_PAINT } from "./utils/recipes";
 
-type ToggleGroupProps = JSX.IntrinsicElements["fieldset"] & { orientation?: Orientation | undefined; type?: ToggleGroupType | undefined };
+type ToggleGroupProps = ContainerNaming &
+  JSX.IntrinsicElements["fieldset"] & { orientation?: Orientation | undefined; type?: ToggleGroupType | undefined };
 
 // `size` is omitted from the input's own attributes before being re-declared: `<input size>` is a
 // character count, and intersecting it with the button scale would leave the prop unusable as either.
@@ -38,15 +40,20 @@ const ITEM_BASE =
   "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:rounded-t-field " +
   "[[data-slot~=toggle-group][data-orientation=vertical]_&]:last:rounded-b-field";
 
+// A `<fieldset>` with no legend is an unnamed group, and this one renders none: the name is required
+// rather than optional so a group cannot announce itself as "group" and nothing else.
 const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({
   class: cls,
   orientation = "horizontal",
   type = "single",
+  label,
+  labelledby,
   children,
   "data-slot": inherited,
   ...rest
 }) => (
   <fieldset
+    {...nameAttrs({ label, labelledby })}
     data-slot={slotToken("toggle-group", inherited)}
     data-scope={TOGGLE_GROUP_SCOPE}
     {...(type === "multiple" ? { "data-multiple": "" } : {})}

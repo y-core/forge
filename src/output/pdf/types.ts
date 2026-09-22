@@ -86,7 +86,7 @@ export interface PdfConformanceViolation {
 
 /** Why a document could not be rendered, as the one failure channel this namespace answers on. @public */
 export interface PdfRenderError {
-  kind: "max-pages" | "colour-notation" | "compress" | "image" | "link" | "metadata" | "tagged" | "encoding" | "font" | "pdfa";
+  kind: "max-pages" | "colour-name" | "colour-notation" | "compress" | "image" | "link" | "metadata" | "tagged" | "encoding" | "font" | "pdfa";
   message: string;
 }
 
@@ -201,14 +201,6 @@ export interface PdfFaceCoverage {
 export interface PdfFaceRun {
   face: string | undefined;
   run: string;
-}
-
-/** What the trailer carries beyond the catalog: the information dictionary and the file identifier. @internal */
-export interface PdfFileMetadata {
-  info?: string | undefined;
-  id?: string | undefined;
-  /** The XMP packet, which a conformance checker reads in place of the dictionary. */
-  xmp?: string | undefined;
 }
 
 /** Which page is being emitted, and how many the document has. @internal */
@@ -394,13 +386,13 @@ export interface PdfPage {
   links?: PdfLink[] | undefined;
 }
 
+/** Every ink the engine paints with. A palette naming anything else holds a colour nothing reads. @public */
+export type PdfInkName = "heading" | "rule" | "letterhead" | "intro";
+
+// Mapped over `PdfInkName` rather than spelled out, so the names a palette may carry and the names a
+// page reads are one list — two that can disagree is how a colour came to be accepted and ignored.
 /** What a channel decides about the page it draws; an unset ink emits nothing at all, not black. @internal */
-export interface PdfChannel {
-  readonly heading?: Ink | undefined;
-  readonly rule?: Ink | undefined;
-  readonly letterhead?: Ink | undefined;
-  readonly intro?: Ink | undefined;
-}
+export type PdfChannel = { readonly [name in PdfInkName]?: Ink | undefined };
 
 /** What a cursor decides beyond the letterhead it repeats; a scratch cursor names almost none of it. @internal */
 export interface PdfCursorOptions {
@@ -822,40 +814,4 @@ export interface PdfResources {
   font(name: string): string;
   /** The whole `/Resources` value, with the font entries already built. */
   dictionary(fonts: string): string;
-}
-
-/** A document's streams and the numbering they were built against, settled once per render. @internal */
-export interface PdfComposition {
-  pages: readonly PdfPage[];
-  paper: PdfResolvedPage;
-  fonts?: PdfDocumentFonts | undefined;
-  tagging?: PdfTagging | undefined;
-  streams: readonly string[];
-  resources: PdfResources;
-  /** The object number each image was given, which the writer allocates against rather than derives. */
-  images: ReadonlyMap<PdfImage, number>;
-  writesBase14: boolean;
-  firstPage: number;
-  /** The archival level this render declares, which the writer reads for its intent and groups. */
-  archival?: PdfArchival | undefined;
-  /** The nested tree, built once here because the writer and the outline both read it. */
-  structure: PdfStructureNode;
-}
-
-/** An object allocated a number in document order, which is what makes the xref offsets reproducible. @internal */
-export interface PdfObject {
-  id: number;
-  body: string | { head: string; bytes: Uint8Array; tail: string };
-}
-
-/** Where a cross-reference row sends a reader: a file offset, or the container an object is packed in. @internal */
-export type PdfXrefEntry = { offset: number } | { container: number; index: number };
-
-/** Allocates object numbers in the order the document declares them. @internal */
-export interface PdfObjectManager {
-  allocate(body: PdfObject["body"]): number;
-  /** Takes the next number without a body, for an object whose contents are not known yet. */
-  reserve(): number;
-  fill(id: number, body: PdfObject["body"]): void;
-  objects(): readonly PdfObject[];
 }

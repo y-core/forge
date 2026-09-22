@@ -106,6 +106,7 @@ describe("Tooltip.Trigger asChild — the three-way token composition", () => {
       "aria-controls": "file-menu",
       "aria-expanded": "false",
       "aria-describedby": "tip",
+      id: "file-menu-trigger",
     });
   });
 

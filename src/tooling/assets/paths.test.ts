@@ -91,7 +91,13 @@ describe("deployRoot()", () => {
     expect(deployRoot("/app", "/app")).toBe("/app");
   });
 
-  it("is the root rather than a step above it when publicDir sits outside", () => {
-    expect(deployRoot("/app", "/elsewhere/assets")).toBe("/app");
+  it("refuses a publicDir in a separate tree, naming both paths", () => {
+    expect(() => deployRoot("/app", "/elsewhere/assets")).toThrow("[forge-assets]");
+    expect(() => deployRoot("/app", "/elsewhere/assets")).toThrow("/elsewhere/assets");
+    expect(() => deployRoot("/app", "/elsewhere/assets")).toThrow('root "/app"');
+  });
+
+  it("refuses a publicDir that climbs out of the root", () => {
+    expect(() => deployRoot("/app", "/app/../assets")).toThrow("[forge-assets]");
   });
 });

@@ -222,10 +222,10 @@ describe("createSignedCookie — the signed expiry", () => {
   });
 
   it("answers null once the value is past its expiry", async () => {
-    const brief = createSignedCookie("c", { secrets: [SECRET], maxAge: 1 });
+    const brief = createSignedCookie("c", { secrets: [SECRET], maxAge: 2 });
     const wire = back(await brief.serialize("hello"));
     expect(await brief.parse(wire)).toBe("hello");
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 2500));
     expect(await brief.parse(wire)).toBeNull();
   });
 

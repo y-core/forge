@@ -121,14 +121,14 @@ test.describe("Toast auto-dismiss", () => {
 
 test.describe("Dialog modality", () => {
   test("openModal yields a real modal, matching what the trigger opens", async ({ page }) => {
-    await mount(page, await render(Dialog({ id: "d", openModal: true, children: "Body" })), EXPOSE);
+    await mount(page, await render(Dialog({ id: "d", label: "Body", openModal: true, children: "Body" })), EXPOSE);
     await start(page);
 
     expect(await page.evaluate(() => document.querySelector("#d")?.matches(":modal"))).toBe(true);
   });
 
   test("open yields a non-modal dialog, which is what the attribute means", async ({ page }) => {
-    await mount(page, await render(Dialog({ id: "d", open: true, children: "Body" })), EXPOSE);
+    await mount(page, await render(Dialog({ id: "d", label: "Body", open: true, children: "Body" })), EXPOSE);
     await start(page);
 
     expect(
@@ -140,7 +140,7 @@ test.describe("Dialog modality", () => {
   });
 
   test("the trigger path opens a modal, so both routes agree", async ({ page }) => {
-    const html = `${await render(Dialog.Trigger({ for: "d", children: "Open" }))}${await render(Dialog({ id: "d", children: "Body" }))}`;
+    const html = `${await render(Dialog.Trigger({ for: "d", children: "Open" }))}${await render(Dialog({ id: "d", label: "Body", children: "Body" }))}`;
     await mount(page, html, EXPOSE);
     await start(page);
 

@@ -24,6 +24,7 @@ interface MockDeps {
   createTag: Mock<(cwd: string, tag: string) => void>;
   readChangelog: Mock<(cwd: string, file: string) => string | null>;
   writeChangelog: Mock<(cwd: string, file: string, source: string) => void>;
+  writeChangelogSections: Mock<(cwd: string, file: string, source: string) => void>;
   readRepositoryUrl: Mock<(cwd: string) => string | null>;
   removedSurfaceSince: Mock<(cwd: string, ref: string) => string[]>;
   tagIsAncestorOfHead: Mock<(cwd: string, tag: string) => boolean>;
@@ -44,6 +45,7 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     createTag: mock((_cwd: string, _tag: string): void => {}),
     readChangelog: mock((_cwd: string, _file: string): string | null => WRITTEN),
     writeChangelog: mock((_cwd: string, _file: string, _source: string): void => {}),
+    writeChangelogSections: mock((_cwd: string, _file: string, _source: string): void => {}),
     readRepositoryUrl: mock((_cwd: string): string | null => "https://x/repo"),
     removedSurfaceSince: mock((_cwd: string, _ref: string): string[] => []),
     tagIsAncestorOfHead: mock((_cwd: string, _tag: string): boolean => true),
@@ -203,7 +205,7 @@ describe("createReleaseCommand()", () => {
     const [cwd, message, files] = deps.commit.mock.calls[0]!;
     expect(cwd).toBe("/project");
     expect(message).toBe("chore: release 1.1.0");
-    expect(files).toEqual(["package.json", "bun.lock"]);
+    expect(files).toEqual(["package.json", "bun.lock", "config/changelog-sections.json"]);
   });
 
   it("in-sync returns early without tagging", () => {
@@ -880,12 +882,22 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
     "allow-unverified": true,
   };
 
-  it("stages the changelog it promoted, so the bump and the promotion land in one commit", () => {
+  // The digest manifest rides the same commit as the promotion it records: a commit carrying the
+  // new section without its digest is one the changelog check then refuses.
+  it("stages the changelog it promoted and the digests it recorded, so all three land in one commit", () => {
     const deps = makeDeps();
 
     void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
 
-    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "CHANGELOG.md"]);
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "CHANGELOG.md", "config/changelog-sections.json"]);
+  });
+
+  it("records the digests from the promoted document, not the one it read", () => {
+    const deps = makeDeps();
+
+    void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS);
+
+    expect(deps.writeChangelogSections.mock.calls[0]?.[2]).toBe(deps.writeChangelog.mock.calls[0]?.[2]);
   });
 
   it("follows a renamed changelog rather than staging a `CHANGELOG.md` that was never written", () => {
@@ -893,7 +905,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
 
     void createReleaseCommand({ cwd: "/project", changelogFile: "docs/CHANGES.md" }, deps).run?.([], FLAGS);
 
-    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "docs/CHANGES.md"]);
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "docs/CHANGES.md", "config/changelog-sections.json"]);
   });
 
   it("stages package.json alone when there is no changelog, since `git add` fails on a missing path", () => {
@@ -909,7 +921,7 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
 
     void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps).run?.([], FLAGS);
 
-    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "bun.lock"]);
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "bun.lock", "config/changelog-sections.json"]);
   });
 
   it("lets an explicit list drop the changelog, since the field is an override and not an addition", () => {
@@ -917,7 +929,67 @@ describe("createReleaseCommand — the derived stageFiles default", () => {
 
     void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps).run?.([], FLAGS);
 
-    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json"]);
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "config/changelog-sections.json"]);
+  });
+
+  // Naming the manifest was the only way to stage it before the append existed, so a project's
+  // config still holds it and must not end up staging — or offering to undo — the path twice.
+  it("stages the digest manifest once for an explicit list that already names it", () => {
+    const deps = makeDeps();
+
+    void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "config/changelog-sections.json"] }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "config/changelog-sections.json"]);
+  });
+
+  it("names the digest manifest once in the recovery when the explicit list already held it", () => {
+    const deps = makeDeps({
+      commit: mock((): boolean => {
+        throw new Error("index.lock exists");
+      }),
+    });
+
+    const thrown = (() => {
+      try {
+        void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "config/changelog-sections.json"] }, deps).run?.([], FLAGS);
+      } catch (error) {
+        return error as Error;
+      }
+      return null;
+    })();
+
+    expect(thrown?.message).toContain("git checkout -- package.json config/changelog-sections.json");
+  });
+
+  // The manifest is forge's own write rather than a project's choice, and `checkChangelog` refuses
+  // the next gate run without it — so an override may drop the changelog but never the digests.
+  it("stages neither the changelog nor the digests for an explicit list on a run that promoted nothing", () => {
+    const deps = makeDeps({ readChangelog: mock((_cwd: string, _file: string): string | null => null) });
+
+    void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json", "bun.lock"] }, deps).run?.([], FLAGS);
+
+    expect(deps.commit.mock.calls[0]?.[2]).toEqual(["package.json", "bun.lock"]);
+  });
+
+  // An operator following the recovery verbatim must not be told to undo a set that leaves the one
+  // file still dirty out of it.
+  it("names the digest manifest in the recovery a failed commit prints", () => {
+    const deps = makeDeps({
+      commit: mock((): boolean => {
+        throw new Error("index.lock exists");
+      }),
+    });
+
+    const thrown = (() => {
+      try {
+        void createReleaseCommand({ cwd: "/project", stageFiles: ["package.json"] }, deps).run?.([], FLAGS);
+      } catch (error) {
+        return error as Error;
+      }
+      return null;
+    })();
+
+    expect(thrown?.message).toContain("git checkout -- package.json config/changelog-sections.json");
   });
 });
 

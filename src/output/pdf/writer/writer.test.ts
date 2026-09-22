@@ -1,43 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
-import { inflate, parsePdfObjects } from "./conform/parse.fixture";
-import { PAGE_HEIGHT } from "./geometry";
-import type { PdfEmbeddedFont, PdfImage, PdfLink, PdfNode, PdfPage } from "./types";
-import { composePdf, createObjectManager, deflate, operatorsFor, writePdf } from "./writer";
+import { inflate, parsePdfObjects } from "../conform/parse.fixture";
+import { PAGE_HEIGHT } from "../geometry";
+import type { PdfEmbeddedFont, PdfImage, PdfLink, PdfNode, PdfPage } from "../types";
+import { composePdf } from "./content-stream";
+import { deflate } from "./deflate";
+import { writePdf } from "./writer";
 
 const decoder = new TextDecoder("latin1");
 
 function pageOf(nodes: PdfNode[]): PdfPage {
   return { nodes, y: 0, letterheadNodes: 0 };
 }
-
-describe("the object manager", () => {
-  test("allocates numbers in the order the document declares them", () => {
-    const manager = createObjectManager();
-    expect([manager.allocate("<< /a >>"), manager.allocate("<< /b >>"), manager.allocate("<< /c >>")]).toEqual([1, 2, 3]);
-    expect(manager.objects().map((object) => object.body)).toEqual(["<< /a >>", "<< /b >>", "<< /c >>"]);
-  });
-});
-
-describe("the y-up conversion happens in the writer and nowhere else", () => {
-  test("a run's y-down baseline becomes its distance from the page's bottom edge", () => {
-    const ops = operatorsFor({ kind: "text", tag: "value", x: 56, y: 100, run: "x", face: "regular", size: 10, tracking: 0 });
-    expect(ops).toBe(`BT /F1 10 Tf 0 Tc 56 ${PAGE_HEIGHT - 100} Td (x) Tj ET`);
-  });
-
-  test("a line's endpoints flip together, so a horizontal rule stays horizontal", () => {
-    const commands = [
-      { op: "move", x: 56, y: 100 },
-      { op: "line", x: 539, y: 100 },
-    ] as const;
-    expect(operatorsFor({ kind: "path", tag: "rule", commands, paint: "stroke", weight: 0.5 })).toBe("0.5 w 56 742 m 539 742 l S");
-  });
-
-  test("a top-anchored rectangle becomes a bottom-anchored one of the same height", () => {
-    const commands = [{ op: "rect", x: 10, y: 100, width: 8, height: 30 }] as const;
-    expect(operatorsFor({ kind: "path", tag: "artwork", commands })).toBe("10 712 8 30 re f");
-  });
-});
 
 const bytes = await writePdf(
   composePdf([pageOf([{ kind: "text", tag: "value", x: 56, y: 100, run: "hello", face: "regular", size: 10, tracking: 0 }])]),

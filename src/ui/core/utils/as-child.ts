@@ -17,6 +17,11 @@ export function slotToken(own: string, inherited?: unknown): string {
   return typeof inherited === "string" && inherited ? `${own} ${inherited}` : own;
 }
 
+/** What makes an anchor inert without making it unreachable: nowhere to navigate, still a focus stop. @internal */
+// `aria-disabled` is advisory on an anchor — the platform follows `href` on Enter regardless — so the
+// href is what has to go, and `role`/`tabindex` are what keep the row announced and arrowed onto.
+export const INERT_ANCHOR_PROPS = { href: undefined, role: "link", tabindex: 0 } as const;
+
 /** Merge a compound's own attributes onto a caller-supplied element child. */
 export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXElement {
   // A Fragment passes `isValidElement` but carries no attributes: cloning onto one drops every prop
@@ -28,6 +33,10 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
   const childType = typeof children.type === "string" ? children.type : undefined;
   const isButton = childType === "button";
   const childSlot = children.props["data-slot"];
+  // Either spelling makes an anchor inert: `disabled` from the compound, or an `aria-disabled` the
+  // compound already resolved into the props it is merging.
+  const ariaDisabled = options.props["aria-disabled"];
+  const inert = options.disabled === true || ariaDisabled === true || ariaDisabled === "true";
 
   return cloneElement(children, {
     ...options.props,
@@ -37,6 +46,7 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
     // `disabled` is button-only, and `rest` carries it through on compounds that do not destructure
     // it out, so an `<a>` would come out `<a disabled aria-disabled="true">`.
     ...(!isButton ? { disabled: undefined, ...(options.disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}) } : {}),
+    ...(childType === "a" && inert ? INERT_ANCHOR_PROPS : {}),
     ...(present(options.prefix) || present(options.suffix)
       ? { children: [options.prefix ?? null, children.props.children, options.suffix ?? null] }
       : {}),

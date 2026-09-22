@@ -14,7 +14,7 @@ const dots = (html: string): { href: string; label: string; current: boolean }[]
   [...html.matchAll(/<a [^>]*>/g)].map((match) => ({
     href: attrOf(match[0], "href"),
     label: attrOf(match[0], "aria-label"),
-    current: match[0].includes('aria-current="page"'),
+    current: match[0].includes('aria-current="location"'),
   }));
 
 describe("Carousel", () => {
@@ -32,10 +32,13 @@ describe("Carousel", () => {
     expect(attrOf(await render(<Carousel snap='center' />), "data-snap")).toBe("center");
   });
 
-  it("renames its role only when it also has a name, so no reader is told `carousel` and nothing else", async () => {
+  // A roledescription and a name are both dropped by the user agent on a roleless element, so the
+  // three attributes are one decision: without the role, neither of the others reaches a reader.
+  it("becomes a named region renamed `carousel` when it has a name, and stays a plain wrapper without one", async () => {
     expect(attrsOf(await render(<Carousel label='Featured' />))).toEqual({
       "data-slot": "carousel",
       "data-snap": "start",
+      role: "region",
       "aria-roledescription": "carousel",
       "aria-label": "Featured",
     });
@@ -104,7 +107,7 @@ describe("Carousel.Dots", () => {
   it("is Pagination by anchor, one dot per id in strip order, with the slide on show marked current", async () => {
     const html = await render(<Carousel.Dots ids={["s-1", "s-2", "s-3"]} current={1} />);
 
-    expect(attrsOf(html)).toEqual({ "aria-label": "Slides", "data-slot": "pagination carousel-dots" });
+    expect(attrsOf(html)).toEqual({ role: "group", "aria-label": "Slides", "data-slot": "pagination carousel-dots" });
     expect(dots(html)).toEqual([
       { href: "#s-1", label: "Slide 1", current: false },
       { href: "#s-2", label: "Slide 2", current: true },
@@ -116,6 +119,7 @@ describe("Carousel.Dots", () => {
     const html = await render(<Carousel.Dots ids={["s-1"]} label='Photos' class='mt-6' data-note={`R&D's "n" <x>`} />);
 
     expect(attrsOf(html)).toEqual({
+      role: "group",
       "aria-label": "Photos",
       "data-slot": "pagination carousel-dots",
       "data-note": "R&amp;D&#39;s &quot;n&quot; &lt;x&gt;",

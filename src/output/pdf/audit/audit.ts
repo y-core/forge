@@ -1,5 +1,5 @@
 import { conformanceViolations } from "../conformance";
-import { DEFAULT_ORPHANS, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, pdfTaggingOn } from "../limits";
+import { DEFAULT_ORPHANS, DEFAULT_PDF_LANG, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, pdfTaggingOn } from "../limits";
 import { pdfWritableInfo } from "../metadata";
 import { resolvePdfPage } from "../page";
 import { paginateWithin } from "../paginate";
@@ -24,7 +24,14 @@ export function auditPdf(document: PdfDocument, options: PdfRendererOptions = {}
   if (!pdfTaggingOn(options)) {
     findings.push({ rule: "tagged", message: "the document carries no structure tree, so a screen reader has only the drawing order to read" });
   }
-  if (options.lang !== undefined && options.lang.trim() === "") {
+  // Its own rule and not `lang`: "you named no language" is an omission with a different remedy to
+  // "your tag is malformed", and only a tagged document writes a `/Lang` to be wrong about.
+  if (pdfTaggingOn(options) && options.lang === undefined) {
+    findings.push({
+      rule: "lang-default",
+      message: `lang is unset, so the document will declare ${DEFAULT_PDF_LANG}; name its language as a BCP 47 tag, or set lang to ${DEFAULT_PDF_LANG} to mean it`,
+    });
+  } else if (options.lang !== undefined && options.lang.trim() === "") {
     findings.push({ rule: "lang", message: "lang is blank; name the document's language as a BCP 47 tag or leave it unset for the default" });
   } else if (options.lang !== undefined && !LANGUAGE.test(options.lang)) {
     findings.push({

@@ -2,9 +2,10 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
+import { nameAttrs, tabId } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TABS_SCOPE } from "../contracts/tabs-contract";
-import type { Orientation } from "../contracts/types";
+import type { ContainerNaming, Orientation } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
@@ -15,7 +16,9 @@ interface TabsRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: JSXNode | undefined;
 }
 
-interface TabsListProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+type TabsListProps = ContainerNaming & TabsListOwnProps;
+
+interface TabsListOwnProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   orientation?: Orientation | undefined;
   children?: JSXNode | undefined;
 }
@@ -54,9 +57,12 @@ const TabsRoot: FC<TabsRootProps> = ({
   </div>
 );
 
-const TabsList: FC<TabsListProps> = ({ orientation = "horizontal", class: cls, children, "data-slot": inherited, ...rest }) => (
+// APG asks a tablist for a name, and a page with two tab sets gives a reader nothing to tell them
+// apart without one — so it is required rather than forwarded if the caller happens to pass it.
+const TabsList: FC<TabsListProps> = ({ orientation = "horizontal", label, labelledby, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     role='tablist'
+    {...nameAttrs({ label, labelledby })}
     data-slot={slotToken("tabs-list", inherited)}
     aria-orientation={orientation}
     {...stateAttrs({ orientation })}
@@ -87,7 +93,10 @@ const Tab: FC<TabProps> = ({ for: panelId, selected = false, disabled = false, c
     {...stateAttrs({ selected, disabled })}
     {...(selected ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}
     class={cn(TAB_BASE, cls)}
-    {...rest}>
+    {...rest}
+    // After `rest`, because a caller's own `id` would otherwise leave the panel's reference dangling:
+    // the pairing is derived from the one id the caller wrote, and is not theirs to break.
+    id={tabId(panelId)}>
     {children}
   </a>
 );
@@ -98,6 +107,7 @@ const TabsContent: FC<TabsContentProps> = ({ id, selected = false, class: cls, c
     role='tabpanel'
     data-slot={slotToken("tabs-content", inherited)}
     tabindex={0}
+    aria-labelledby={tabId(id)}
     {...(selected ? {} : { hidden: true })}
     {...stateAttrs({ selected })}
     class={cn("focus-ring", cls)}

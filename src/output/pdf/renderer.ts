@@ -2,8 +2,11 @@ import { err, ok } from "../../result/result";
 import { DEFAULT_PDF_LANG, pdfTaggingOn } from "./limits";
 import { fileIdentifier, infoDictionary, pdfWritableInfo } from "./metadata";
 import { preparePdfRender } from "./prepare";
-import type { PdfFileMetadata, PdfPage, PdfRenderer, PdfRendererOptions, PdfResolvedPage } from "./types";
-import { composePdf, deflate, writePdf } from "./writer";
+import type { PdfPage, PdfRenderer, PdfRendererOptions, PdfResolvedPage } from "./types";
+import { composePdf } from "./writer/content-stream";
+import { deflate } from "./writer/deflate";
+import type { PdfFileMetadata } from "./writer/types";
+import { writePdf } from "./writer/writer";
 import { xmpPacket } from "./xmp";
 
 // `/ID` hashes the *uncompressed* operators, so one document keeps one identity whether or not its

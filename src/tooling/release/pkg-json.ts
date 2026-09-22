@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import { resolve } from "node:path";
 
+import { changelogSectionDigest, parseChangelog } from "../gate/changelog";
 import { ReleaseError } from "./types";
 
 /** Reads the `version` field from `package.json` in `cwd`, throwing a {@link ReleaseError} if it is missing or unreadable. */
@@ -53,6 +54,21 @@ export function writeChangelog(cwd: string, file: string, source: string): void 
     // No trailing-newline normalisation: `promoteUnreleased` round-trips the document byte-for-byte,
     // and adding one here would put a spurious hunk in a file that never had one.
     fs.writeFileSync(resolve(cwd, file), source, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ReleaseError("pkg-update", `Failed to write ${file}: ${msg}`);
+  }
+}
+
+// Written in the same commit as the promotion it records, so the gate never sees a changelog whose
+// newest section has no digest — a check that failed every release is one that gets bypassed.
+/** Records each released section's digest, so a later hand edit no longer matches what shipped. */
+export function writeChangelogSections(cwd: string, file: string, source: string): void {
+  const parsed = parseChangelog(source);
+  if (!parsed.ok) throw new ReleaseError("changelog-malformed", `Cannot record section digests:\n  ${parsed.error.join("\n  ")}`);
+  const sections = Object.fromEntries(parsed.data.versions.map((heading) => [heading.version, changelogSectionDigest(heading.body)]));
+  try {
+    fs.writeFileSync(resolve(cwd, file), `${JSON.stringify(sections, null, 2)}\n`, "utf-8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new ReleaseError("pkg-update", `Failed to write ${file}: ${msg}`);

@@ -65,7 +65,12 @@ export const Button: FC<ButtonProps> = ({
   ...rest
 }) => {
   const className = buttonVariants({ tone, appearance, size, shape, class: cls });
-  const busy = loading ? { "aria-busy": "true", ...stateAttrs({ busy: true }) } : {};
+  // `aria-disabled` beside `aria-busy`: `state-busy` is `pointer-events-none`, which stops the mouse
+  // and not the keyboard, and a reader told only "busy" is not told the control is unavailable.
+  const busy = loading ? { "aria-busy": "true", "aria-disabled": "true", ...stateAttrs({ busy: true }) } : {};
+  // The invoker is withheld rather than gated, the rule `menuItemAttrs` states: the platform runs
+  // `command` before any listener forge owns, so there is no sink downstream of it to refuse.
+  const invoker = loading ? { command: undefined, commandfor: undefined } : {};
   const spinner = loading && loadingIcon ? <Spinner icon={loadingIcon} size={size ?? "md"} /> : null;
   const content = spinner ? (
     <>
@@ -82,7 +87,7 @@ export const Button: FC<ButtonProps> = ({
     return cloneAsChild(children, {
       slot,
       class: className,
-      props: { ...busy, ...rest },
+      props: { ...busy, ...rest, ...invoker },
       type,
       disabled,
       ...(spinner ? { prefix: spinner } : {}),
@@ -92,7 +97,7 @@ export const Button: FC<ButtonProps> = ({
   }
 
   return (
-    <button type={type ?? "button"} data-slot={slot} class={className} disabled={disabled} {...busy} {...rest}>
+    <button type={type ?? "button"} data-slot={slot} class={className} disabled={disabled} {...busy} {...rest} {...invoker}>
       {content}
     </button>
   );

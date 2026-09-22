@@ -31,7 +31,10 @@ test.describe("the four components that used to be inert without script", () => 
     const html = await render(
       Tabs({
         children: [
-          Tabs.List({ children: [Tabs.Tab({ for: "p-a", selected: true, children: "A" }), Tabs.Tab({ for: "p-b", children: "B" })] }),
+          Tabs.List({
+            label: "Views",
+            children: [Tabs.Tab({ for: "p-a", selected: true, children: "A" }), Tabs.Tab({ for: "p-b", children: "B" })],
+          }),
           Tabs.Content({ id: "p-a", selected: true, children: "First panel" }),
           Tabs.Content({ id: "p-b", children: "Second panel" }),
         ],
@@ -51,7 +54,7 @@ test.describe("the four components that used to be inert without script", () => 
   });
 
   test("Tabs: a tab is a real link naming the panel it controls", async ({ page }) => {
-    const html = await render(Tabs({ children: Tabs.List({ children: Tabs.Tab({ for: "p-a", children: "A" }) }) }));
+    const html = await render(Tabs({ children: Tabs.List({ label: "Views", children: Tabs.Tab({ for: "p-a", children: "A" }) }) }));
     await mountWithoutScript(page, html);
 
     const tab = page.locator('[role="tab"]');
@@ -82,7 +85,7 @@ test.describe("the four components that used to be inert without script", () => 
   test("ToggleGroup: single selection is exclusive and submits the chosen value", async ({ page }) => {
     const html = `${await render(
       ToggleGroup({
-        "aria-label": "Align",
+        label: "Align",
         children: [
           ToggleGroup.Item({ name: "align", value: "left", pressed: true, children: "L" }),
           ToggleGroup.Item({ name: "align", value: "right", children: "R" }),
@@ -99,7 +102,7 @@ test.describe("the four components that used to be inert without script", () => 
   test("ToggleGroup: a single group is one tab stop the arrow keys move within", async ({ page }) => {
     const html = await render(
       ToggleGroup({
-        "aria-label": "Align",
+        label: "Align",
         children: [
           ToggleGroup.Item({ name: "align", value: "left", pressed: true, children: "L" }),
           ToggleGroup.Item({ name: "align", value: "right", children: "R" }),
@@ -120,7 +123,7 @@ test.describe("the four components that used to be inert without script", () => 
     const html = `${await render(
       ToggleGroup({
         type: "multiple",
-        "aria-label": "Overlays",
+        label: "Overlays",
         children: [
           ToggleGroup.Item({ type: "multiple", name: "overlay", value: "grid", pressed: true, children: "Grid" }),
           ToggleGroup.Item({ type: "multiple", name: "overlay", value: "rulers", children: "Rulers" }),

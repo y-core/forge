@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { embedFont } from "../embed";
-import { createObjectManager } from "../writer";
+import { createObjectManager } from "../writer/objects";
 import { readPdfEmbeddedFonts } from "./embedded";
 import type { PdfFontPackData } from "./types";
 

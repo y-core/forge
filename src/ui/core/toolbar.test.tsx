@@ -10,8 +10,9 @@ const defaultItem = () => render(<Toolbar.Button>Bold</Toolbar.Button>);
 
 describe("Toolbar", () => {
   it("renders the root with the scope, the role and the orientation pair", async () => {
-    expect(attrsOf(await render(<Toolbar>x</Toolbar>))).toEqual({
+    expect(attrsOf(await render(<Toolbar label='Formatting'>x</Toolbar>))).toEqual({
       role: "toolbar",
+      "aria-label": "Formatting",
       "data-slot": "toolbar",
       "data-scope": "toolbar",
       "data-orientation": "horizontal",
@@ -20,16 +21,33 @@ describe("Toolbar", () => {
   });
 
   it("stacks a vertical toolbar and says so to both readers", async () => {
-    const vertical = await render(<Toolbar orientation='vertical'>x</Toolbar>);
+    const vertical = await render(
+      <Toolbar orientation='vertical' label='Formatting'>
+        x
+      </Toolbar>,
+    );
 
     expect(attrsOf(vertical)).toEqual({
       role: "toolbar",
+      "aria-label": "Formatting",
       "data-slot": "toolbar",
       "data-scope": "toolbar",
       "data-orientation": "vertical",
       "aria-orientation": "vertical",
     });
-    expect(variantClasses(vertical, await render(<Toolbar>x</Toolbar>))).toEqual({ added: ["flex-col"], dropped: [] });
+    expect(variantClasses(vertical, await render(<Toolbar label='Formatting'>x</Toolbar>))).toEqual({ added: ["flex-col"], dropped: [] });
+  });
+});
+
+// `role="toolbar"` takes no name from its items, and a page may hold several rails — so the name is
+// a required prop rather than an `aria-label` a caller may or may not remember to pass through.
+describe("Toolbar — the name it must be given", () => {
+  it("cannot be rendered unnamed, and takes a reference where there is a heading to point at", async () => {
+    // @ts-expect-error — one of `label` or `labelledby` is required.
+    const unnamed = <Toolbar>x</Toolbar>;
+    void unnamed;
+
+    expect(attrOf(await render(<Toolbar labelledby='editor-heading'>x</Toolbar>), "aria-labelledby")).toBe("editor-heading");
   });
 });
 
@@ -120,9 +138,7 @@ describe("Toolbar.Button", () => {
     expect(classesOf(html)).toEqual(classesOf(await defaultItem()));
   });
 
-  // `disabled` arrives through `rest` here, so it landed on the `<a>` beside `aria-disabled` — an
-  // attribute the platform ignores sitting next to the one that does the work.
-  it("strips the native disabled attribute from a non-button asChild child", async () => {
+  it("strips both the native disabled attribute and the href from a non-button asChild child", async () => {
     expect(
       attrsOf(
         await render(
@@ -131,7 +147,35 @@ describe("Toolbar.Button", () => {
           </Toolbar.Button>,
         ),
       ),
-    ).toEqual({ href: "/x", "data-toolbar-item": "", "aria-disabled": "true", "data-disabled": "", "data-slot": "toolbar-button" });
+    ).toEqual({
+      "data-toolbar-item": "",
+      "aria-disabled": "true",
+      "data-disabled": "",
+      role: "link",
+      tabindex: "0",
+      "data-slot": "toolbar-button",
+    });
+  });
+
+  it("models a caller's aria-disabled rather than passing it through unread", async () => {
+    expect(attrsOf(await render(<Toolbar.Button aria-disabled='true'>Paste</Toolbar.Button>))).toEqual({
+      type: "button",
+      "data-toolbar-item": "",
+      "aria-disabled": "true",
+      "data-disabled": "",
+      "data-slot": "toolbar-button",
+    });
+  });
+
+  it("drops the href of an aria-disabled link, which the platform would follow regardless", async () => {
+    expect(attrsOf(await render(<Toolbar.Link href='/x' aria-disabled='true' />))).toEqual({
+      "data-toolbar-item": "",
+      "aria-disabled": "true",
+      "data-disabled": "",
+      role: "link",
+      tabindex: "0",
+      "data-slot": "toolbar-link",
+    });
   });
 
   it("throws rather than degrading when asChild has no single element child", () => {
@@ -231,7 +275,7 @@ describe("Toolbar.Separator", () => {
 describe("Toolbar — exactly one tab stop, whatever is pressed", () => {
   it("marks only the item the app marked, across two pressed siblings", async () => {
     const html = await render(
-      <Toolbar>
+      <Toolbar label='Formatting'>
         <Toolbar.Button pressed>Bold</Toolbar.Button>
         <Toolbar.Button pressed>Italic</Toolbar.Button>
         <Toolbar.Button data-composite-item-active=''>Save</Toolbar.Button>

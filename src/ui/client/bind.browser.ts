@@ -32,6 +32,7 @@ function groupMarkup(type: "single" | "multiple", pressed: number[] = []): Promi
     Resumable({
       name: "demo",
       children: ToggleGroup({
+        label: "Alignment",
         type,
         children: ["alpha", "beta", "gamma"].map((value, i) =>
           ToggleGroup.Item({ id: `i${i}`, bind: "choice", type, value, pressed: pressed.includes(i), children: value }),
@@ -195,11 +196,13 @@ test.describe("bindControls, on a button group — scoping", () => {
         name: "demo",
         children: [
           ToggleGroup({
+            label: "Alignment",
             children: ["a1", "a2"].map((value, i) => ToggleGroup.Item({ id: `a${i}`, bind: "choice", value, pressed: i === 0, children: value })),
           }),
           // A distinct `name` over the same `bind`: two *views* of one field, which native radios
           // would otherwise collapse into a single group where only one item can be checked at all.
           ToggleGroup({
+            label: "Alignment",
             children: ["a1", "a2"].map((value, i) =>
               ToggleGroup.Item({ id: `b${i}`, bind: "choice", name: "choice-b", value, pressed: i === 0, children: value }),
             ),
@@ -228,9 +231,11 @@ test.describe("bindControls, on a button group — scoping", () => {
         name: "demo",
         children: [
           ToggleGroup({
+            label: "Alignment",
             children: ["a1", "a2"].map((value, i) => ToggleGroup.Item({ id: `a${i}`, bind: "choice", value, pressed: i === 0, children: value })),
           }),
           ToggleGroup({
+            label: "Alignment",
             children: ["b1", "b2"].map((value, i) => ToggleGroup.Item({ id: `b${i}`, bind: "other", value, pressed: i === 0, children: value })),
           }),
         ],
@@ -265,7 +270,10 @@ test.describe("bindControls, on a button group — scoping", () => {
 
   test("ignores a field the signal record does not declare", async ({ page }) => {
     const html = await render(
-      Resumable({ name: "demo", children: ToggleGroup({ children: ToggleGroup.Item({ id: "i0", bind: "unknown", value: "x", children: "x" }) }) }),
+      Resumable({
+        name: "demo",
+        children: ToggleGroup({ label: "Alignment", children: ToggleGroup.Item({ id: "i0", bind: "unknown", value: "x", children: "x" }) }),
+      }),
     );
     await mount(page, html, EXPOSE);
     await install(page, "alpha");

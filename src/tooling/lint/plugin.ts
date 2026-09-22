@@ -12,6 +12,7 @@ import { colorTokenOnly } from "./rules/color-token-only.ts";
 import { dataSlotBeforeSpread } from "./rules/data-slot-before-spread.ts";
 import { exactMarkupAssertion } from "./rules/exact-markup-assertion.ts";
 import { focusRing } from "./rules/focus-ring.ts";
+import { interactionFilterGroupRequired } from "./rules/interaction-filter-group-required.ts";
 import { interactionFocusVisible } from "./rules/interaction-focus-visible.ts";
 import { noInlineStyle } from "./rules/no-inline-style.ts";
 import { noNestedCard } from "./rules/no-nested-card.ts";
@@ -44,6 +45,7 @@ export const lintPlugin: LintPlugin = {
     "data-slot-before-spread": dataSlotBeforeSpread,
     "exact-markup-assertion": exactMarkupAssertion,
     "focus-ring": focusRing,
+    "interaction-filter-group-required": interactionFilterGroupRequired,
     "interaction-focus-visible": interactionFocusVisible,
     "no-inline-style": noInlineStyle,
     "no-nested-card": noNestedCard,

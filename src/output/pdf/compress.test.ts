@@ -5,7 +5,8 @@ import { Field } from "./form";
 import { paginate } from "./paginate";
 import { createPdfRenderer } from "./renderer";
 import type { PdfDocument } from "./types";
-import { composePdf, deflate } from "./writer";
+import { composePdf } from "./writer/content-stream";
+import { deflate } from "./writer/deflate";
 
 const decoder = new TextDecoder("latin1");
 

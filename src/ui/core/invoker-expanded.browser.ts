@@ -28,7 +28,12 @@ function expanded(page: Page, selector: string): Promise<string | null | undefin
 
 const MENU = () =>
   render(
-    Menu({ children: [Menu.Trigger({ for: "m", children: "File" }), Menu.Popup({ id: "m", children: Menu.Item({ for: "m", children: "New" }) })] }),
+    Menu({
+      children: [
+        Menu.Trigger({ for: "m", children: "File" }),
+        Menu.Popup({ triggered: true, id: "m", children: Menu.Item({ for: "m", children: "New" }) }),
+      ],
+    }),
   );
 
 test.describe("popover invokers expose their expanded state", () => {
@@ -92,7 +97,10 @@ test.describe("popover invokers expose their expanded state", () => {
 
   test("a toolbar flyout trigger tracks its own flyout", async ({ page }) => {
     const html = await render(
-      Toolbar({ icon, config: { groups: [{ items: [{ kind: "popover", icon: "search", label: "Tools", content: "body" }] }] } }),
+      Toolbar({
+        icon,
+        config: { label: "Tools rail", groups: [{ items: [{ kind: "popover", icon: "search", label: "Tools", content: "body" }] }] },
+      }),
     );
     await mount(page, html, EXPOSE);
     await start(page);
@@ -107,8 +115,8 @@ test.describe("popover invokers expose their expanded state", () => {
       Menu({
         children: [
           Menu.Trigger({ for: "m", children: "File" }),
-          Menu.Popup({ id: "m", children: Menu.SubmenuTrigger({ for: "sub", children: "More" }) }),
-          Menu.Popup({ id: "sub", children: Menu.Item({ for: "sub", children: "Deep" }) }),
+          Menu.Popup({ triggered: true, id: "m", children: Menu.SubmenuTrigger({ for: "sub", children: "More" }) }),
+          Menu.Popup({ triggered: true, id: "sub", children: Menu.Item({ for: "sub", children: "Deep" }) }),
         ],
       }),
     );

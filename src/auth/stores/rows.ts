@@ -107,6 +107,7 @@ export function readFactor(row: FactorRow): AuthFactor {
     secret: row.secret === null || row.secret === undefined ? null : blobBytes(row.secret),
     lastCounter: row.last_counter,
     failedAttempts: row.failed_attempts,
+    lastVerifiedAt: row.last_verified_at,
     confirmedAt: row.confirmed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

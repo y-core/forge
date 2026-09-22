@@ -85,6 +85,19 @@ test.describe("Tooltip", () => {
     await expect.poll(() => isShown(page), { timeout: 3000 }).toBe(false);
   });
 
+  // The blur path is the tooltip's own; Escape below is the `popover="hint"` platform's, and forge
+  // holds no handler for it — both are pinned so neither can be lost without a failure here.
+  test("closes when focus leaves the trigger", async ({ page }) => {
+    await mount(page, `${await markup()}<button id="after">after</button>`, EXPOSE);
+    await start(page);
+
+    await page.focus("#save");
+    await expect.poll(() => isShown(page), { timeout: 3000 }).toBe(true);
+    await page.focus("#after");
+
+    await expect.poll(() => isShown(page), { timeout: 3000 }).toBe(false);
+  });
+
   test("closes on Escape", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);

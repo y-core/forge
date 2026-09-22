@@ -4,6 +4,7 @@ import { BIND_ATTR_ATTR, BIND_TEXT_ATTR } from "./bind-contract";
 import { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 import { DIALOG_OPEN_MODAL_ATTR } from "./dialog-contract";
 import { INPUT_FORMAT_ATTR } from "./input-format-contract";
+import { MENU_KEEP_OPEN_ATTR } from "./menu-contract";
 import { NAVBAR_DRAWER_ATTR } from "./navbar-contract";
 import { POPOVER_COORDS_ATTR } from "./overlay-contract";
 import { TABS_MOUNTED_ATTR } from "./tabs-contract";
@@ -37,6 +38,7 @@ const EXPECTED = [
   "data-label-position",
   "data-language",
   "data-load",
+  "data-menu-keep-open",
   "data-multiple",
   "data-navbar-drawer",
   "data-open-modal",
@@ -66,7 +68,7 @@ const EXPECTED = [
 ];
 
 describe("WIRING_ATTRS — one declaration of the wiring vocabulary", () => {
-  it("holds exactly the union both sweeps used to restate, less the five stale names", () => {
+  it("holds exactly the vocabulary the sweeps allow, so a new wiring name is a deliberate addition", () => {
     expect(Object.keys(WIRING_ATTRS).sort()).toEqual(EXPECTED);
   });
 
@@ -81,6 +83,7 @@ describe("WIRING_ATTRS — one declaration of the wiring vocabulary", () => {
       ACTIVE_COMPOSITE_ITEM,
       DIALOG_OPEN_MODAL_ATTR,
       INPUT_FORMAT_ATTR,
+      MENU_KEEP_OPEN_ATTR,
       NAVBAR_DRAWER_ATTR,
       POPOVER_COORDS_ATTR,
       TABS_MOUNTED_ATTR,

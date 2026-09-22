@@ -23,6 +23,9 @@ export class FakeEvent {
   }
 }
 
+/** The tags whose `tabIndex` property answers 0 with no attribute written; `<a>` needs an `href` too. */
+const NATIVELY_FOCUSABLE = new Set(["BUTTON", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"]);
+
 /** A minimal element: attributes, children, listeners, and the queries the controllers run. */
 export class FakeElement {
   readonly nodeType = 1;
@@ -36,7 +39,6 @@ export class FakeElement {
   readOnly = false;
   checked = false;
   value = "";
-  tabIndex = 0;
   id = "";
   focused = false;
   /** The host of a shadow root, set when one is attached — a real `ShadowRoot` always carries it. */
@@ -77,8 +79,32 @@ export class FakeElement {
     this.parent = null;
   }
 
+  // Every parent in this tree is an element, so `parentElement` and `parentNode` agree here.
+  get parentElement(): FakeElement | null {
+    return this.parent;
+  }
+
+  get parentNode(): FakeElement | null {
+    return this.parent;
+  }
+
   get isConnected(): boolean {
     return this.parent !== null || this.ownerDocument !== null;
+  }
+
+  // Reflected over the attribute like the real property, because a controller that distinguishes a
+  // written tab stop from a native one reads the attribute and a plain field would hide the difference.
+  get tabIndex(): number {
+    const raw = this.attrs.get("tabindex");
+    if (raw !== undefined) return Number(raw);
+    // The default the real property reports is the element's own focusability, not a flat 0: a `<div>`
+    // answers -1, which is how a caller tells "cannot take focus" from "is already a stop".
+    if (NATIVELY_FOCUSABLE.has(this.tagName)) return 0;
+    return this.tagName === "A" && this.attrs.has("href") ? 0 : -1;
+  }
+
+  set tabIndex(value: number) {
+    this.attrs.set("tabindex", String(value));
   }
 
   getAttribute(name: string): string | null {
@@ -101,6 +127,11 @@ export class FakeElement {
     const next = force ?? !this.attrs.has(name);
     if (next) this.attrs.set(name, "");
     else this.attrs.delete(name);
+  }
+
+  get isContentEditable(): boolean {
+    const state = this.attrs.get("contenteditable");
+    return state === "" || state === "true";
   }
 
   get dataset(): Record<string, string | undefined> {
@@ -240,6 +271,10 @@ export class FakeDocument {
 
   querySelectorAll(selector: string): FakeElement[] {
     return this.root.querySelectorAll(selector);
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    return this.root.querySelector(selector);
   }
 }
 

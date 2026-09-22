@@ -98,6 +98,7 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
 | Take one line of text | `Input` | `@y-core/forge/ui/core` |
 | Take several lines of text | `Textarea` | `@y-core/forge/ui/core` |
 | Pick one of many options (more than five) | `Select` (needs an `icon`) | `@y-core/forge/ui/core` |
+| Show several options at once without a popup | `Select` with `rows` | `@y-core/forge/ui/core` |
 | Pick one of two to five, all worth showing | `RadioGroup` or `ToggleGroup` `type="single"` | `@y-core/forge/ui/core` |
 | Pick any number from a visible set | `CheckboxGroup` or `ToggleGroup` `type="multiple"` | `@y-core/forge/ui/core` |
 | Flip a single setting that applies immediately | `Switch` | `@y-core/forge/ui/core` |
@@ -181,6 +182,15 @@ their place — an `Accordion` lets them keep both.
 **Default:** the number of options picks the control — two, use `Switch` or `Toggle`; three to five, use `RadioGroup` or `ToggleGroup`; more than
 five, use `Select`. <!-- rule:forge-ui-catalog-choice-count --> Override when the option set is long but the user knows the answer by name, where a
 `Select` beats any expanded set regardless of count.
+
+**Default:** let `Select` collapse to a popup, and reach for its `rows` only when the options must all be visible at once.
+<!-- rule:forge-ui-catalog-select-rows --> `rows` sets how many options the control shows before it scrolls, which turns the popup into a listbox:
+the chevron goes, and the control fills its wrapper rather than taking a token height. Override when the choice is one of a short, stable set the
+user compares side by side — a filter panel, a column picker — where opening a popup to read four fixed options costs a click for nothing.
+
+**`Select` does not take the DOM's `size`.** The prop named `size` is forge's own scale token (`sm` `md` `lg`), as it is on every other control,
+and the native `size` attribute is spelled `rows`. A caller spreading a wider object onto `Select` will not silently set a row count through
+`size` — the type removes it.
 
 **Default:** wrap every validated input in `FormField` with `FormField.Label` and `FormField.Error`. <!-- rule:forge-ui-catalog-field-wrapper -->
 `FormField` derives the `id`, the `for`, the `aria-describedby`, and the `aria-invalid` from one `name`, which is how `forge-ui-accessible-name` and

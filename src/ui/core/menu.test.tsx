@@ -18,6 +18,7 @@ describe("Menu.Trigger — data-slot", () => {
       "aria-haspopup": "menu",
       "aria-controls": "m",
       "aria-expanded": "false",
+      id: "m-trigger",
     });
   });
 
@@ -41,6 +42,7 @@ describe("Menu.SubmenuTrigger — data-slot", () => {
       "aria-haspopup": "menu",
       "aria-controls": "s",
       "aria-expanded": "false",
+      id: "s-trigger",
     });
   });
 
@@ -53,11 +55,45 @@ describe("Menu.SubmenuTrigger — data-slot", () => {
   });
 });
 
+// APG requires a name on `role="menu"`, and the trigger is the only thing on the page that has one —
+// so the pair is wired off the single popup id, in both directions.
+describe("Menu.Popup — the name it takes from its trigger", () => {
+  it("points at the trigger, which carries the matching derived id", async () => {
+    const html = await render(
+      <Menu>
+        <Menu.Trigger for='m'>File</Menu.Trigger>
+        <Menu.Popup triggered id='m' />
+      </Menu>,
+    );
+
+    expect(attrOf(html, "aria-labelledby", 'role="menu"')).toBe("m-trigger");
+    expect(attrOf(html, "id", 'data-slot="menu-trigger"')).toBe("m-trigger");
+  });
+
+  it("keeps the derived id when a caller supplies their own, which would break the pairing", async () => {
+    expect(attrOf(await render(<Menu.Trigger for='m' id='mine' />), "id")).toBe("m-trigger");
+  });
+
+  // Forge's invoker contract invites a caller to open a popup from any `commandfor` element, and no
+  // forge trigger then carries the derived id — so the reference is reachable only by asserting one.
+  it("cannot be rendered unnamed, and emits its own name where no forge trigger exists to point at", async () => {
+    // @ts-expect-error — one of `triggered`, `label` or `labelledby` is required.
+    const unnamed = <Menu.Popup id='m' />;
+    void unnamed;
+
+    const attrs = attrsOf(await render(<Menu.Popup id='m' label='Actions' />));
+
+    expect(attrs["aria-label"]).toBe("Actions");
+    expect(attrs).not.toHaveProperty("aria-labelledby");
+  });
+});
+
 describe("Menu.Popup — placement attributes", () => {
   it("defaults to the bottom-start placement a top-level menu wants", async () => {
-    expect(attrsOf(await render(<Menu.Popup id='m' />))).toEqual({
+    expect(attrsOf(await render(<Menu.Popup triggered id='m' />))).toEqual({
       id: "m",
       role: "menu",
+      "aria-labelledby": "m-trigger",
       "data-slot": "menu-popup",
       "data-scope": "menu",
       popover: "auto",
@@ -67,15 +103,16 @@ describe("Menu.Popup — placement attributes", () => {
   });
 
   it("emits the side it was given, which is what places a submenu and its mirrored twin", async () => {
-    const sides = await Promise.all((["right", "left"] as const).map((side) => render(<Menu.Popup id='m' side={side} />)));
+    const sides = await Promise.all((["right", "left"] as const).map((side) => render(<Menu.Popup triggered id='m' side={side} />)));
 
     expect(sides.map((html) => attrOf(html, "data-side"))).toEqual(["right", "left"]);
   });
 
   it("still emits side and align alongside data-coords, as a styling hook that no longer places it", async () => {
-    expect(attrsOf(await render(<Menu.Popup id='m' coords side='top' align='end' />))).toEqual({
+    expect(attrsOf(await render(<Menu.Popup triggered id='m' coords side='top' align='end' />))).toEqual({
       id: "m",
       role: "menu",
+      "aria-labelledby": "m-trigger",
       "data-slot": "menu-popup",
       "data-scope": "menu",
       popover: "auto",
@@ -131,7 +168,7 @@ describe("a trigger's aria-haspopup names the role its target actually carries",
     const html = await render(
       <Menu>
         <Menu.Trigger for='menu-file'>File</Menu.Trigger>
-        <Menu.Popup id='menu-file'>
+        <Menu.Popup triggered id='menu-file'>
           <Menu.Item for='menu-file'>Open</Menu.Item>
         </Menu.Popup>
       </Menu>,

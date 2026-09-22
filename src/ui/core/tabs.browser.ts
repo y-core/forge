@@ -36,12 +36,13 @@ function tabsMarkup({ activation, orientation, selected = "a" }: Fixture = {}): 
       ...(orientation ? { orientation } : {}),
       children: [
         Tabs.List({
+          label: "Views",
           ...(orientation ? { orientation } : {}),
           children: [
-            Tabs.Tab({ id: "t-a", for: "p-a", selected: isSelected("a"), children: "Alpha" }),
-            Tabs.Tab({ id: "t-b", for: "p-b", selected: isSelected("b"), children: "Beta" }),
-            Tabs.Tab({ id: "t-c", for: "p-c", disabled: true, children: "Gamma" }),
-            Tabs.Tab({ id: "t-d", for: "p-d", children: "Delta" }),
+            Tabs.Tab({ for: "p-a", selected: isSelected("a"), children: "Alpha" }),
+            Tabs.Tab({ for: "p-b", selected: isSelected("b"), children: "Beta" }),
+            Tabs.Tab({ for: "p-c", disabled: true, children: "Gamma" }),
+            Tabs.Tab({ for: "p-d", children: "Delta" }),
           ],
         }),
         Tabs.Content({ id: "p-a", selected: isSelected("a"), children: "A" }),
@@ -66,7 +67,7 @@ test.describe("Tabs", () => {
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);
 
-    expect(await tabsState(page)).toEqual({ selected: ["t-a"], dataSelected: ["t-a"], visiblePanels: ["p-a"] });
+    expect(await tabsState(page)).toEqual({ selected: ["p-a-tab"], dataSelected: ["p-a-tab"], visiblePanels: ["p-a"] });
   });
 
   test("is one Tab stop", async ({ page }) => {
@@ -75,7 +76,7 @@ test.describe("Tabs", () => {
 
     await page.focus("#before");
     await page.keyboard.press("Tab");
-    expect(await focusedId(page)).toBe("t-a");
+    expect(await focusedId(page)).toBe("p-a-tab");
     await page.keyboard.press("Tab");
     expect(await focusedId(page)).toBe("p-a");
   });
@@ -86,53 +87,127 @@ test.describe("Tabs", () => {
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);
 
-    await page.focus("#t-a");
+    await page.focus("#p-a-tab");
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(page)).toBe("t-b");
-    expect(await tabsState(page)).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"] });
+    expect(await focusedId(page)).toBe("p-b-tab");
+    expect(await tabsState(page)).toEqual({ selected: ["p-b-tab"], dataSelected: ["p-b-tab"], visiblePanels: ["p-b"] });
 
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(page)).toBe("t-c");
-    expect(await tabsState(page)).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"] });
+    expect(await focusedId(page)).toBe("p-c-tab");
+    expect(await tabsState(page)).toEqual({ selected: ["p-b-tab"], dataSelected: ["p-b-tab"], visiblePanels: ["p-b"] });
 
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(page)).toBe("t-d");
-    expect(await tabsState(page)).toEqual({ selected: ["t-d"], dataSelected: ["t-d"], visiblePanels: ["p-d"] });
+    expect(await focusedId(page)).toBe("p-d-tab");
+    expect(await tabsState(page)).toEqual({ selected: ["p-d-tab"], dataSelected: ["p-d-tab"], visiblePanels: ["p-d"] });
   });
 
   test("Home and End reach the first and last enabled tabs", async ({ page }) => {
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);
 
-    await page.focus("#t-b");
+    await page.focus("#p-b-tab");
     await page.keyboard.press("End");
-    expect(await focusedId(page)).toBe("t-d");
+    expect(await focusedId(page)).toBe("p-d-tab");
     await page.keyboard.press("Home");
-    expect(await focusedId(page)).toBe("t-a");
+    expect(await focusedId(page)).toBe("p-a-tab");
   });
 
   test("manual activation moves focus without moving the selection until a click", async ({ page }) => {
     await mount(page, await tabsMarkup({ activation: "manual" }), EXPOSE);
     await start(page);
 
-    await page.focus("#t-a");
+    await page.focus("#p-a-tab");
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(page)).toBe("t-b");
-    expect((await tabsState(page)).selected).toEqual(["t-a"]);
+    expect(await focusedId(page)).toBe("p-b-tab");
+    expect((await tabsState(page)).selected).toEqual(["p-a-tab"]);
 
-    await page.click("#t-b");
-    expect((await tabsState(page)).selected).toEqual(["t-b"]);
+    await page.click("#p-b-tab");
+    expect((await tabsState(page)).selected).toEqual(["p-b-tab"]);
+  });
+
+  // A tab is an `<a href>`: the platform synthesises a click for Enter but not for Space, which would
+  // otherwise scroll the page and leave the selection where it was.
+  for (const key of ["Enter", " "] as const) {
+    test(`manual activation selects the focused tab on ${key === " " ? "Space" : key}, without scrolling`, async ({ page }) => {
+      await mount(page, `${await tabsMarkup({ activation: "manual" })}<div style="height:200vh"></div>`, EXPOSE);
+      await start(page);
+
+      await page.focus("#p-a-tab");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press(key);
+
+      expect((await tabsState(page)).selected).toEqual(["p-b-tab"]);
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    });
+  }
+
+  test("Tab back into the list lands on the selected tab, not on the one last arrowed to", async ({ page }) => {
+    await mount(page, `<button id="before">before</button>${await tabsMarkup({ activation: "manual" })}`, EXPOSE);
+    await start(page);
+
+    await page.focus("#p-a-tab");
+    await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("p-b-tab");
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+
+    expect(await focusedId(page)).toBe("p-a-tab");
+  });
+
+  // Nothing requires a `Tabs` to render a selection, and under manual activation arrowing alone never
+  // makes one — so the hand-back has to fall back to a tab rather than leaving the list with none.
+  test("keeps a tab stop when the list leaves focus with nothing selected", async ({ page }) => {
+    const html = await render(
+      Tabs({
+        activation: "manual",
+        children: [
+          Tabs.List({ label: "Views", children: [Tabs.Tab({ for: "p-a", children: "Alpha" }), Tabs.Tab({ for: "p-b", children: "Beta" })] }),
+          Tabs.Content({ id: "p-a", children: "A" }),
+          Tabs.Content({ id: "p-b", children: "B" }),
+        ],
+      }),
+    );
+    await mount(page, `<button id="before">before</button>${html}`, EXPOSE);
+    await start(page);
+
+    await page.focus("#p-b-tab");
+    await page.focus("#before");
+
+    const stops = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[role='tab']")].map((el) => el.tabIndex));
+    expect(stops).toEqual([0, -1]);
+  });
+
+  // Pinned at the tab set rather than only at the composite: a `Tabs` that mounted the ring with the
+  // wrong orientation would swallow the page's own scroll keys and still pass every arrow test above.
+  test("a horizontal list leaves Up and Down to the page", async ({ page }) => {
+    await mount(page, await tabsMarkup(), EXPOSE);
+    await start(page);
+
+    await page.focus("#p-a-tab");
+    const claimed = await page.evaluate(async () => {
+      const seen: boolean[] = [];
+      const record = (event: KeyboardEvent) => seen.push(event.defaultPrevented);
+      document.addEventListener("keydown", record);
+      for (const key of ["ArrowUp", "ArrowDown"]) {
+        document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      }
+      document.removeEventListener("keydown", record);
+      return seen;
+    });
+
+    expect(claimed).toEqual([false, false]);
+    expect(await focusedId(page)).toBe("p-a-tab");
   });
 
   test("a vertical tab list navigates with Up and Down", async ({ page }) => {
     await mount(page, await tabsMarkup({ orientation: "vertical" }), EXPOSE);
     await start(page);
 
-    await page.focus("#t-a");
+    await page.focus("#p-a-tab");
     await page.keyboard.press("ArrowRight");
-    expect(await focusedId(page)).toBe("t-a");
+    expect(await focusedId(page)).toBe("p-a-tab");
     await page.keyboard.press("ArrowDown");
-    expect(await focusedId(page)).toBe("t-b");
+    expect(await focusedId(page)).toBe("p-b-tab");
   });
 });
 
@@ -142,7 +217,7 @@ test.describe("Tabs — the boot tab stop follows the selection", () => {
     await start(page);
 
     const marked = await page.evaluate((attr) => [...document.querySelectorAll(`[${attr}]`)].map((el) => el.id), ACTIVE_COMPOSITE_ITEM);
-    expect(marked).toEqual(["t-b"]);
+    expect(marked).toEqual(["p-b-tab"]);
   });
 
   test("Tab reaches the selected tab, not the first one", async ({ page }) => {
@@ -151,7 +226,7 @@ test.describe("Tabs — the boot tab stop follows the selection", () => {
 
     await page.focus("#before");
     await page.keyboard.press("Tab");
-    expect(await focusedId(page)).toBe("t-b");
+    expect(await focusedId(page)).toBe("p-b-tab");
   });
 
   test("the first arrow keypress moves relative to the selected tab", async ({ page }) => {
@@ -163,8 +238,8 @@ test.describe("Tabs — the boot tab stop follows the selection", () => {
     await page.keyboard.press("ArrowRight");
 
     // One step from the selected tab lands on the disabled one, which holds focus and not selection.
-    expect(await focusedId(page)).toBe("t-c");
-    expect(await tabsState(page)).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"] });
+    expect(await focusedId(page)).toBe("p-c-tab");
+    expect(await tabsState(page)).toEqual({ selected: ["p-b-tab"], dataSelected: ["p-b-tab"], visiblePanels: ["p-b"] });
   });
 });
 
@@ -202,17 +277,17 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
 
     expect(await page.evaluate(() => document.getElementById("p-b") === null)).toBe(true);
     expect(await tabsStateIn(page, "shadow")).toEqual({
-      selected: ["t-a"],
-      dataSelected: ["t-a"],
+      selected: ["p-a-tab"],
+      dataSelected: ["p-a-tab"],
       visiblePanels: ["p-a"],
       selectedPanels: ["p-a"],
     });
 
-    await page.focus("#t-b");
+    await page.focus("#p-b-tab");
 
     expect(await tabsStateIn(page, "shadow")).toEqual({
-      selected: ["t-b"],
-      dataSelected: ["t-b"],
+      selected: ["p-b-tab"],
+      dataSelected: ["p-b-tab"],
       visiblePanels: ["p-b"],
       selectedPanels: ["p-b"],
     });
@@ -222,10 +297,20 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);
 
-    expect(await tabsStateIn(page, "light")).toEqual({ selected: ["t-a"], dataSelected: ["t-a"], visiblePanels: ["p-a"], selectedPanels: ["p-a"] });
+    expect(await tabsStateIn(page, "light")).toEqual({
+      selected: ["p-a-tab"],
+      dataSelected: ["p-a-tab"],
+      visiblePanels: ["p-a"],
+      selectedPanels: ["p-a"],
+    });
 
-    await page.focus("#t-b");
+    await page.focus("#p-b-tab");
 
-    expect(await tabsStateIn(page, "light")).toEqual({ selected: ["t-b"], dataSelected: ["t-b"], visiblePanels: ["p-b"], selectedPanels: ["p-b"] });
+    expect(await tabsStateIn(page, "light")).toEqual({
+      selected: ["p-b-tab"],
+      dataSelected: ["p-b-tab"],
+      visiblePanels: ["p-b"],
+      selectedPanels: ["p-b"],
+    });
   });
 });

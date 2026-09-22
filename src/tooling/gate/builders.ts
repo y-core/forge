@@ -20,6 +20,7 @@ import { checkExposure } from "./checks/exposure";
 import { checkIccProfile } from "./checks/icc-profile";
 import { checkJsx } from "./checks/jsx";
 import { checkMarkdown, fixMarkdown } from "./checks/markdown";
+import { checkMenuNaming } from "./checks/menu-naming";
 import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
 import { checkPackaging } from "./checks/packaging";
@@ -43,6 +44,7 @@ import type { ExportsCheckConfig } from "./checks/types";
 import type { ExposureCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
+import type { MenuNamingCheckConfig } from "./checks/types";
 import type { ModernCssCheckConfig } from "./checks/types";
 import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
@@ -251,6 +253,11 @@ export function markdownStep(config: MarkdownCheckConfig, options: StepOptions =
 /** Checks every shipped `.tsx` file carries the runtime pragmas. @public */
 export function jsxStep(config: JsxCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-jsx", () => checkJsx(config), options);
+}
+
+/** Checks every `triggered` menu popup is paired with the trigger it takes its name from. @public */
+export function menuNamingStep(config: MenuNamingCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-menu-naming", () => checkMenuNaming(config), options);
 }
 
 /** The dependency every design-system step shares — `tailwindcss` is an optional peer. */

@@ -97,6 +97,12 @@ export type AuthFactorReason =
   | "unrecognised"
   | "unavailable";
 
+/** An opened TOTP secret, with `stale` set where the key that sealed it is no longer the ring's active one. @internal */
+export interface TotpSecretOpened {
+  readonly secret: Uint8Array<ArrayBuffer>;
+  readonly stale: boolean;
+}
+
 /** A factor whose enrolment is a side effect of something else — a verified email is the enrolment. @public */
 export interface ImplicitFactorService<kind extends AuthFactorKind = AuthFactorKind> extends FactorServiceBase<kind> {
   readonly enrolment: "implicit";

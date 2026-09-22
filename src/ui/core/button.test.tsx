@@ -147,11 +147,37 @@ describe("Button", () => {
     });
   });
 
-  it("stamps aria-busy and data-busy while loading, with no spinner unless an icon is given", async () => {
+  // `state-busy` is `pointer-events-none`, which stops the mouse and not Enter — so a reader told only
+  // "busy" could press again and dispatch a second submit while the first was in flight.
+  it("marks a loading button unavailable as well as busy, keeping it focusable where it stands", async () => {
     const html = await render(<Button loading>Save</Button>);
 
-    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "button", "aria-busy": "true", "data-busy": "" });
+    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "button", "aria-busy": "true", "aria-disabled": "true", "data-busy": "" });
     expect(childrenOf(html)).toBe("Save");
+  });
+
+  // The rule `menuItemAttrs` states: the platform runs `command` before any listener forge owns, so
+  // a control that announces itself unavailable must not carry one at all.
+  it("withholds the invoker while loading, the one activation route no sink can refuse", async () => {
+    const loading = attrsOf(
+      await render(
+        <Button loading commandfor='confirm' command='show-modal'>
+          Delete…
+        </Button>,
+      ),
+    );
+
+    expect(loading).not.toHaveProperty("command");
+    expect(loading).not.toHaveProperty("commandfor");
+    const idle = attrsOf(
+      await render(
+        <Button commandfor='confirm' command='show-modal'>
+          Delete…
+        </Button>,
+      ),
+    );
+
+    expect({ command: idle.command, commandfor: idle.commandfor }).toEqual({ command: "show-modal", commandfor: "confirm" });
   });
 
   it("renders a Spinner at the button's own size before the children when loading with an icon", async () => {
@@ -177,7 +203,16 @@ describe("Button", () => {
       </Button>,
     );
 
-    expect(attrsOf(html)).toEqual({ href: "/docs", "aria-busy": "true", "data-busy": "", "data-slot": "button" });
+    // The href goes with it: an anchor follows it on Enter whatever ARIA says, so a loading link that
+    // kept one would navigate mid-request — the same rule `cloneAsChild` applies to a disabled anchor.
+    expect(attrsOf(html)).toEqual({
+      "aria-busy": "true",
+      "aria-disabled": "true",
+      "data-busy": "",
+      role: "link",
+      tabindex: "0",
+      "data-slot": "button",
+    });
     expect(classesOf(html)).toEqual(
       classesOf(
         await render(
@@ -196,7 +231,15 @@ describe("Button", () => {
       </Button>,
     );
 
-    expect(attrsOf(html)).toEqual({ href: "/docs", "aria-busy": "true", "data-busy": "", id: "x", "data-slot": "button" });
+    expect(attrsOf(html)).toEqual({
+      "aria-busy": "true",
+      "aria-disabled": "true",
+      "data-busy": "",
+      id: "x",
+      role: "link",
+      tabindex: "0",
+      "data-slot": "button",
+    });
     expect(classesOf(html, 'data-slot="icon"')).toEqual(["motion-safe:animate-spin", "size-6"]);
     expect(childrenOf(html).endsWith("</span>Docs")).toBe(true);
   });

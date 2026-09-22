@@ -10,11 +10,20 @@ export {
   URL_BOUND_ATTRS,
 } from "./bind-contract";
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
-export { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs, nameAttrs } from "./dialog-contract";
-export type { DialogNaming } from "./types";
+export { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "./dialog-contract";
+export { descriptionId, nameAttrs, tabId, titleId, triggerId } from "./naming";
+export type { ContainerNaming, DialogNaming, MenuPopupNaming } from "./types";
 export { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "./island-contract";
 export { LABEL_DEFAULTS, STEP_STATE_LABELS } from "./labels";
-export { MENU_GROUP_SELECTOR, MENU_ITEM_CLASS, MENU_ITEM_SELECTOR, MENU_RADIO_SELECTOR, MENU_SCOPE, menuItemAttrs } from "./menu-contract";
+export {
+  MENU_GROUP_SELECTOR,
+  MENU_ITEM_CLASS,
+  MENU_ITEM_SELECTOR,
+  MENU_KEEP_OPEN_ATTR,
+  MENU_RADIO_SELECTOR,
+  MENU_SCOPE,
+  menuItemAttrs,
+} from "./menu-contract";
 export type { MenuAction } from "./types";
 export type { MenuItemAttrsOptions } from "./types";
 export { applyFormat, INPUT_FORMAT_ATTR, INPUT_FORMAT_SCOPE, stripFormat } from "./input-format-contract";

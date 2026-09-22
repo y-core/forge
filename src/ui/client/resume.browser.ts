@@ -669,6 +669,51 @@ test.describe("resume — Invoker Commands bridge", () => {
   });
 });
 
+// An `aria-disabled` element is announced as unavailable and styled `pointer-events-none`, which
+// blocks the mouse and nothing else — the keyboard still synthesises a click on it.
+test.describe("resume — an inert element's action never runs", () => {
+  test("refuses the data-on-* route", async ({ page }) => {
+    const html = await render(
+      Resumable({
+        name: "demo",
+        children: jsx("button", { id: "btn", "aria-disabled": "true", ...scopeAttrs({ onClick: "act" }), children: "go" }),
+      }),
+    );
+    await mount(page, html, EXPOSE);
+    await page.evaluate(() => {
+      window.forgeResume.registerScope("demo", { on: { act: () => window.document.body.setAttribute("data-ran", "") } });
+      window.forgeResume.resume();
+    });
+
+    await page.focus("#btn");
+    await page.keyboard.press("Enter");
+
+    expect(await page.evaluate(() => document.body.hasAttribute("data-ran"))).toBe(false);
+  });
+
+  // Gated in `runAction` rather than in `dispatch`, which is what closes this second route with it.
+  test("refuses the --command route", async ({ page }) => {
+    const html = await render(
+      Resumable({
+        name: "demo",
+        id: "sink",
+        children: jsx("button", { id: "btn", "aria-disabled": "true", commandfor: "sink", command: "--act", children: "go" }),
+      }),
+    );
+    await mount(page, html, EXPOSE);
+
+    const calls = await page.evaluate(() => {
+      const seen: string[] = [];
+      window.forgeResume.registerScope("demo", { on: { act: () => seen.push("act") } });
+      window.forgeResume.resume();
+      document.querySelector<HTMLElement>("#btn")?.click();
+      return seen;
+    });
+
+    expect(calls).toEqual([]);
+  });
+});
+
 test.describe("resume — a throwing setup is contained", () => {
   async function twoScopes(page: Page): Promise<void> {
     const html = await render([

@@ -12,9 +12,14 @@ const markup = () =>
       id: "facets",
       children: [
         Filter.Reset({ id: "facets-reset" }),
-        Filter.Item({ name: "facet", value: "a", id: "facet-a", children: "A" }),
-        Filter.Item({ name: "facet", value: "b", id: "facet-b", checked: true, children: "B" }),
-        Filter.Item({ name: "facet", value: "c", id: "facet-c", children: "C" }),
+        Filter.Group({
+          label: "Category",
+          children: [
+            Filter.Item({ name: "facet", value: "a", id: "facet-a", children: "A" }),
+            Filter.Item({ name: "facet", value: "b", id: "facet-b", checked: true, children: "B" }),
+            Filter.Item({ name: "facet", value: "c", id: "facet-c", children: "C" }),
+          ],
+        }),
       ],
     }),
   );
@@ -37,7 +42,13 @@ function visible(page: Page): Promise<Visible> {
 async function mountFilter(page: Page): Promise<void> {
   const html = await markup();
   await mount(page, html);
-  const candidates = [...classesOf(html, "filter"), ...classesOf(html, "filter-reset"), ...classesOf(html, "filter-item"), "sr-only"];
+  const candidates = [
+    ...classesOf(html, "filter"),
+    ...classesOf(html, "filter-group"),
+    ...classesOf(html, "filter-reset"),
+    ...classesOf(html, "filter-item"),
+    "sr-only",
+  ];
   await page.addStyleTag({ content: await compiledCss(candidates) });
 }
 
@@ -64,14 +75,25 @@ test.describe("Filter", () => {
       Filter({
         children: [
           Filter.Reset({ id: "facets-reset" }),
-          Filter.Item({ name: "facet", value: "a", id: "facet-a", children: "A" }),
-          Filter.Item({ name: "facet", value: "b", id: "facet-b", children: "B" }),
+          Filter.Group({
+            label: "Category",
+            children: [
+              Filter.Item({ name: "facet", value: "a", id: "facet-a", children: "A" }),
+              Filter.Item({ name: "facet", value: "b", id: "facet-b", children: "B" }),
+            ],
+          }),
         ],
       }),
     );
     await mount(page, html);
     await page.addStyleTag({
-      content: await compiledCss([...classesOf(html, "filter"), ...classesOf(html, "filter-reset"), ...classesOf(html, "filter-item"), "sr-only"]),
+      content: await compiledCss([
+        ...classesOf(html, "filter"),
+        ...classesOf(html, "filter-group"),
+        ...classesOf(html, "filter-reset"),
+        ...classesOf(html, "filter-item"),
+        "sr-only",
+      ]),
     });
     expect(await visible(page)).toEqual({ reset: false, chips: [true, true], checked: null });
 

@@ -225,6 +225,11 @@ declared in [`ui/contracts`](#y-coreforgeuicontracts).
 Some props deliberately sit outside it: `Switch`'s label side is `labelPlacement`, and `FormField`'s width-driven collapse is `responsive` — neither
 is an axis, so neither rides `orientation`. `Turnstile`'s `size` is Cloudflare's, passed through verbatim.
 
+**`loading` marks a button unavailable as well as busy** — `aria-busy` and `aria-disabled` together, which keeps the reader's focus where it is
+where a native `disabled` would drop it, and refuses the button's own scope action. **On a `type="submit"` button, pair it with `disabled`**:
+`aria-disabled` is advisory, and the platform submits the form on Enter regardless, so a second press during the request dispatches a second submit.
+The `challenge="submit"` controller already does both to the submitter it holds.
+
 ### Attach your own `data-*` and `aria-*` attributes
 
 Every component forwards **unrecognized props** onto its root (or designated inner) element, so a client-side binding convention attaches without
@@ -240,9 +245,13 @@ layer and the backdrop are the platform's, and forge neither mirrors nor republi
 a forge attribute.
 
 **The pairing you write is `for` on the trigger and `id` on the surface.** `Dialog`, `Drawer`, `Popover`, `Menu` and `Tabs` all take it that way,
-and a `Menu.Item`'s own `for` names the popup its selection closes — `false` leaves the popup open. A `Dialog` or `Drawer` root carries
-`aria-labelledby` pointed at its own `.Title`, so the overlay is named by its visible heading and you do not add an `aria-label`. An unselected
-`Tabs.Content` renders `hidden`, so the first paint is already correct.
+and a `Menu.Item`'s own `for` names the popup its selection closes — `false` leaves the popup open. An unselected `Tabs.Content` renders `hidden`,
+so the first paint is already correct.
+
+**A `Dialog` or `Drawer` must be named, and the type says so**: pass `titled` when you compose a `.Title`, and the root points `aria-labelledby` at
+that heading, so the overlay is named by what the reader sees; pass `label` or `labelledby` instead when there is no heading to point at. Naming
+none of the three does not compile — single-pass SSR cannot see whether you wrote a `.Title`, so an unconditional reference would dangle and the
+overlay would open unnamed.
 
 `openModal` on a `Dialog` asks for the centred modal mode; `open` is the platform's non-modal mode and flows inline. The rulings behind the choices
 are [`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
@@ -800,8 +809,10 @@ Each option type's fields and defaults are declared beside its controller, in [`
 [`client/composite.ts`](./client/composite.ts) and [`client/drawer.ts`](./client/drawer.ts).
 
 `mountScrollSpy` stamps `aria-current="location"` — never `"page"`, since the page did not change — on exactly one link, and emits no `data-*`
-state, so the visible cue is the stylesheet's alone. **Entries are ordered by the targets' document position, not by link order**, because a nav may
-list its links in any order while "which section am I reading" is a question about the page.
+state, so the visible cue is the stylesheet's alone. `mountCarouselDots` marks the current dot the same way, for the same reason: a dot is a
+fragment link within the page it sits on. `Pagination` proper keeps `"page"`, which is what its links actually change.
+**Entries are ordered by the targets' document position, not by link order**, because a nav may list its links in any order while "which section am
+I reading" is a question about the page.
 
 `mountCarouselDots` observes the slides **against the strip**, not the viewport, and moves the dot row's server-rendered selected class onto the dot
 for the most-visible slide — the highlight follows a swipe as well as a press. It **keeps the last marking** while no slide clears a threshold,

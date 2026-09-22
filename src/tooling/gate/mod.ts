@@ -1,5 +1,5 @@
 export type { ChangelogDocument, ChangelogParse, PromoteOptions, UnreleasedSection, VersionHeading } from "./types";
-export { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
+export { changelogSectionDigest, formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
 export { bumpSemVer, compareSemVer, formatSemVer, isGreaterThan, parseSemVer } from "./semver";
 export type { BumpKind, SemVer } from "./types";
 export type { SourceStepOptions, StepOptions } from "./types";
@@ -24,6 +24,7 @@ export {
   exposureStep,
   formatStep,
   jsxStep,
+  menuNamingStep,
   iccProfileStep,
   lintPluginStep,
   lintStep,
@@ -119,6 +120,9 @@ export type { CompatibilityCheckConfig } from "./checks/types";
 export { checkCompatibility } from "./checks/compatibility";
 export type { JsxCheckConfig } from "./checks/types";
 export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
+
+export type { MenuNamingCheckConfig } from "./checks/types";
+export { checkMenuNaming, triggeredPopupIds, triggerTargets, validateMenuNaming } from "./checks/menu-naming";
 export type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
 export { bundleSource, checkBundle, hasEsbuild, writeBundle } from "./checks/bundle";
 export { checkIccProfile, renderIccModule } from "./checks/icc-profile";

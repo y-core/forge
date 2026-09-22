@@ -108,6 +108,7 @@ export type RuleId =
   | "forge-ui-spacing-scale-only"
   | "forge-ui-no-nested-card"
   | "forge-ui-interaction-focus-visible"
+  | "forge-ui-interaction-filter-group-required"
   | "forge-ui-catalog-wrong-raw-input"
   | "forge-ui-contrast-floor"
   | "forge-ui-a11y-label-association"

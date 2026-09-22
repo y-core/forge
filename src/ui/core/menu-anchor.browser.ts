@@ -67,6 +67,7 @@ const GAP = 6;
 test.describe("Menu — anchored to its trigger", () => {
   async function simpleMenu(page: Page, options = CSS): Promise<void> {
     const popup = Menu.Popup({
+      triggered: true,
       id: "file-menu",
       children: [Menu.Item({ id: "new", for: "file-menu", children: "New" }), Menu.Item({ id: "open", for: "file-menu", children: "Open" })],
     });
@@ -85,7 +86,13 @@ test.describe("Menu — anchored to its trigger", () => {
   });
 
   test("side and align move the panel to the named corner", async ({ page }) => {
-    const popup = Menu.Popup({ id: "file-menu", side: "top", align: "end", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
+    const popup = Menu.Popup({
+      triggered: true,
+      id: "file-menu",
+      side: "top",
+      align: "end",
+      children: [Menu.Item({ id: "new", for: false, children: "New" })],
+    });
     const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
     await mount(page, `${FIXTURE_STYLE}${html}`, CSS);
     await page.click('[data-slot~="menu-trigger"]');
@@ -97,7 +104,9 @@ test.describe("Menu — anchored to its trigger", () => {
   });
 
   test("a coordinate-placed menu ignores the anchored rules entirely", async ({ page }) => {
-    const html = await render(Menu.Popup({ id: "ctx", coords: true, children: [Menu.Item({ id: "cut", for: false, children: "Cut" })] }));
+    const html = await render(
+      Menu.Popup({ label: "Context actions", id: "ctx", coords: true, children: [Menu.Item({ id: "cut", for: false, children: "Cut" })] }),
+    );
     await mount(page, `${FIXTURE_STYLE}${html}`, { ...CSS, expose: { forgeAnchor: "./ui/client/popover-anchor" } });
 
     await page.evaluate(() => {
@@ -115,7 +124,9 @@ test.describe("Menu — anchored to its trigger", () => {
 
 test.describe("a context menu against the platform's light-dismiss pass", () => {
   async function contextFixture(page: Page, guard: boolean): Promise<void> {
-    const html = await render(Menu.Popup({ id: "ctx", coords: true, children: [Menu.Item({ id: "cut", for: false, children: "Cut" })] }));
+    const html = await render(
+      Menu.Popup({ label: "Context actions", id: "ctx", coords: true, children: [Menu.Item({ id: "cut", for: false, children: "Cut" })] }),
+    );
     const surface = '<div id="surface" style="position:fixed;top:0;left:0;width:400px;height:300px">surface</div>';
     const radius = '<style>[data-slot~="menu-popup"] { border-radius: 0.75rem }</style>';
     await mount(page, `${FIXTURE_STYLE}${radius}${surface}${html}`, { ...CSS, expose: { forgeAnchor: "./ui/client/popover-anchor" } });
@@ -161,8 +172,9 @@ test.describe("a context menu against the platform's light-dismiss pass", () => 
 
 async function twoSubmenus(page: Page, options: Record<string, unknown> = CSS, extraStyle = ""): Promise<void> {
   const sub = (id: string, label: string) =>
-    Menu.Popup({ id, side: "right", children: [Menu.Item({ id: `${id}-row`, for: false, children: label })] });
+    Menu.Popup({ triggered: true, id, side: "right", children: [Menu.Item({ id: `${id}-row`, for: false, children: label })] });
   const popup = Menu.Popup({
+    triggered: true,
     id: "file-menu",
     children: [
       Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
@@ -295,7 +307,7 @@ test.describe("Menu — a submenu mid-exit", () => {
 test.describe("Menu — a composed trigger serves both of its compounds", () => {
   test("a tooltip wrapping a menu trigger anchors each popup to the shared button", async ({ page }) => {
     const trigger = Tooltip.Trigger({ id: "file", for: "file-tip", asChild: true, children: Menu.Trigger({ for: "file-menu", children: "File" }) });
-    const popup = Menu.Popup({ id: "file-menu", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
+    const popup = Menu.Popup({ triggered: true, id: "file-menu", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
     const html = await render(
       Menu({ children: [Tooltip({ children: [trigger, Tooltip.Content({ id: "file-tip", children: "Open the File menu" })] }), popup] }),
     );

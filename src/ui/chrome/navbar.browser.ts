@@ -434,6 +434,24 @@ test.describe("Navbar — the drawer at phone width", () => {
 
     await expect.poll(() => isDrawerOpen(page)).toBe(false);
   });
+
+  // The Tab trap is keyboard-only, and a screen reader's swipe is not a Tab keydown: without `inert`
+  // a reader swipes past the last link into the content under the backdrop and can activate it.
+  test("makes the page behind it inert while open, and gives it back on close and on dispose", async ({ page }) => {
+    await mountDrawer(page, FLAT);
+    const outsideIsInert = () => page.evaluate(() => document.getElementById("page")?.inert ?? null);
+    expect(await outsideIsInert()).toBe(false);
+
+    await page.click(TOGGLE);
+    await expect.poll(() => focusedText(page)).toBe("Home");
+    expect(await outsideIsInert()).toBe(true);
+    // Not merely marked: an inert subtree refuses focus outright, which is the whole claim.
+    await page.evaluate(() => document.querySelector<HTMLAnchorElement>("#before")?.focus());
+    expect(await page.evaluate(() => document.activeElement?.id)).not.toBe("before");
+
+    await page.click(TOGGLE);
+    await expect.poll(() => outsideIsInert()).toBe(false);
+  });
 });
 
 test.describe("Navbar — the rail keeps its disclosure at desktop width", () => {

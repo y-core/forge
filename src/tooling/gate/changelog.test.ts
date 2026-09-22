@@ -41,9 +41,11 @@ describe("parseChangelog() — structure", () => {
     if (!parsed.ok) throw new Error(`expected ok, got: ${parsed.error.join("; ")}`);
     expect(parsed.data.unreleased.line).toBe(6);
     expect(parsed.data.unreleased.body).toEqual(["", "### Added", "", "- a thing", "", "---", ""]);
+    // The body is what the section digest is taken over, so the rule between sections and the link
+    // definitions below the last one are stripped: neither is prose a release wrote.
     expect(parsed.data.versions).toEqual([
-      { version: "0.0.2", date: "2026-01-02", line: 14 },
-      { version: "0.0.1", date: "2026-01-01", line: 20 },
+      { version: "0.0.2", date: "2026-01-02", line: 14, body: ["", "second body"] },
+      { version: "0.0.1", date: "2026-01-01", line: 20, body: ["", "first body"] },
     ]);
     expect(parsed.data.linkRefs).toEqual(["0.0.2", "0.0.1"]);
   });
@@ -276,7 +278,7 @@ describe("promoteUnreleased()", () => {
     const parsed = parseChangelog(result.data);
     if (!parsed.ok) throw new Error(`promoted document does not parse: ${parsed.error.join("; ")}`);
     expect(parsed.data.unreleased.empty).toBe(true);
-    expect(parsed.data.versions[0]).toEqual({ version: "0.0.3", date: "2026-02-03", line: 12 });
+    expect(parsed.data.versions[0]).toEqual({ version: "0.0.3", date: "2026-02-03", line: 12, body: ["", "### Added", "", "- a thing"] });
   });
 });
 

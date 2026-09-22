@@ -397,7 +397,17 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
       factors: {
         ...enrolments,
         enrol: async (input, at) =>
-          ok({ ...input, id: "f1", secret: null, lastCounter: null, failedAttempts: 0, confirmedAt: at, createdAt: at, updatedAt: at }),
+          ok({
+            ...input,
+            id: "f1",
+            secret: null,
+            lastCounter: null,
+            failedAttempts: 0,
+            lastVerifiedAt: null,
+            confirmedAt: at,
+            createdAt: at,
+            updatedAt: at,
+          }),
       },
       credentials: credentials.store,
       challenges: {

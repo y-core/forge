@@ -103,13 +103,41 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     releaseScrollLock(doc);
   };
 
+  // The Tab trap below is keyboard-only, and a screen reader's swipe navigation is not a Tab keydown:
+  // without `inert` a reader swipes straight past the last link into the page under the backdrop.
+  let inerted: HTMLElement[] = [];
+
+  /** Makes everything outside the disclosure inert, remembering only what this drawer itself marked. */
+  const isolate = () => {
+    if (inerted.length > 0) return;
+    let node: HTMLElement = el;
+    while (node !== doc.body) {
+      const parent = node.parentElement;
+      if (!parent) break;
+      for (const sibling of parent.children) {
+        const candidate = sibling as HTMLElement;
+        if (candidate === node || candidate.inert) continue;
+        candidate.inert = true;
+        inerted.push(candidate);
+      }
+      node = parent;
+    }
+  };
+
+  const release = () => {
+    for (const node of inerted) node.inert = false;
+    inerted = [];
+  };
+
   const applyState = () => {
     if (isActive()) {
       lock();
+      isolate();
       focusables()[0]?.focus();
       return;
     }
     unlock();
+    release();
     // Only when focus is still inside the panel: a close the reader triggered from somewhere else on
     // the page must not yank their focus back to the bar.
     if (contains(panel, activeElement(el))) summary?.focus();
@@ -143,13 +171,17 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   el.addEventListener("toggle", applyState);
   query.addEventListener("change", applyState);
   doc.addEventListener("keydown", onKeydown);
-  if (isActive()) lock();
+  if (isActive()) {
+    lock();
+    isolate();
+  }
 
   const dispose = () => {
     query.removeEventListener("change", applyState);
     el.removeEventListener("toggle", applyState);
     doc.removeEventListener("keydown", onKeydown);
     unlock();
+    release();
     mountedDrawers.delete(el);
   };
 

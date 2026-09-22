@@ -65,6 +65,23 @@ describe("Slider", () => {
     });
   });
 
+  // A touch-AT user told the control is horizontal swipes across the axis it actually moves on, so
+  // the axis is published for a reader as well as painted — and only where it is not the default.
+  it("announces the vertical axis beside the class that turns it, and says nothing on a horizontal one", async () => {
+    const vertical = attrsOf(await render(<Slider orientation='vertical' />));
+    const horizontal = attrsOf(await render(<Slider />));
+
+    expect({ aria: vertical["aria-orientation"], data: vertical["data-orientation"] }).toEqual({ aria: "vertical", data: "vertical" });
+    expect(horizontal).not.toHaveProperty("aria-orientation");
+    expect(horizontal).not.toHaveProperty("data-orientation");
+  });
+
+  it("carries the axis on the control itself when a readout wraps it, not on the wrapper", async () => {
+    const html = await render(<Slider orientation='vertical' output />);
+
+    expect(attrOf(html, "aria-orientation", 'data-slot="slider"')).toBe("vertical");
+  });
+
   it("pairs the control with a scoped wrapper and a readout seeded to the value the browser settles on", async () => {
     const html = await render(<Slider min={0} max={10} value={4} output />);
 

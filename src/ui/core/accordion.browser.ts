@@ -66,6 +66,19 @@ test.describe("Accordion", () => {
     await expect.poll(() => state(page)).toEqual({ one: { nativeOpen: true }, two: { nativeOpen: false } });
   });
 
+  // The keys a `<summary>` takes from the platform, pinned because every other test here clicks.
+  for (const key of ["Enter", " "] as const) {
+    test(`${key === " " ? "Space" : key} on a trigger opens its own item and no other`, async ({ page }) => {
+      await mount(page, await markup(), EXPOSE);
+      await start(page);
+
+      await page.focus("#two-trigger");
+      await page.keyboard.press(key);
+
+      await expect.poll(() => state(page)).toEqual({ one: { nativeOpen: false }, two: { nativeOpen: true } });
+    });
+  }
+
   test("an exclusive group closes the other item, so exactly one stays open", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);

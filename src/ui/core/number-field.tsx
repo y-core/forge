@@ -63,7 +63,13 @@ const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({
   "data-slot": inherited,
   ...rest
 }) => (
-  <button type='button' data-slot={slotToken("number-field-decrement", inherited)} aria-label={label} class={cn(BUTTON_BASE, cls)} {...rest}>
+  <button
+    type='button'
+    data-slot={slotToken("number-field-decrement", inherited)}
+    aria-label={label}
+    tabindex={-1}
+    class={cn(BUTTON_BASE, cls)}
+    {...rest}>
     {children ?? "−"}
   </button>
 );
@@ -75,7 +81,13 @@ const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({
   "data-slot": inherited,
   ...rest
 }) => (
-  <button type='button' data-slot={slotToken("number-field-increment", inherited)} aria-label={label} class={cn(BUTTON_BASE, cls)} {...rest}>
+  <button
+    type='button'
+    data-slot={slotToken("number-field-increment", inherited)}
+    aria-label={label}
+    tabindex={-1}
+    class={cn(BUTTON_BASE, cls)}
+    {...rest}>
     {children ?? "+"}
   </button>
 );

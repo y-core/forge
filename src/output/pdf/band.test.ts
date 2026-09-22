@@ -10,7 +10,7 @@ import { createPdfRenderer } from "./renderer";
 import { markedRuns, structureElements } from "./structure";
 import { textWidth } from "./text";
 import type { PdfContent, PdfDocument, PdfElement, PdfNode } from "./types";
-import { operatorsFor } from "./writer";
+import { operatorsFor } from "./writer/content-stream";
 
 const PAPER = resolvePdfPage();
 const CONTENT = pdfContentBox(PAPER);

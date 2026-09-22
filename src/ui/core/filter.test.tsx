@@ -30,11 +30,24 @@ describe("Filter", () => {
     );
   });
 
-  it("is its own form by default, so the reset button has a form owner without nesting one", async () => {
-    const html = await render(<Filter aria-label='Category' />);
+  // The element is a `<form>` so the reset has an owner, and it carries no role of its own: the chips
+  // belong to the group inside it, which is the only element a `radiogroup` may own children for.
+  it("is its own form by default, with no role competing with the group it holds", async () => {
+    const html = await render(<Filter />);
 
     expect(tagOf(html).startsWith("<form ")).toBe(true);
-    expect(attrsOf(html)).toEqual({ "data-slot": "filter", "aria-label": "Category" });
+    expect(attrsOf(html)).toEqual({ "data-slot": "filter" });
+  });
+
+  it("names the group the chips are one-of-N within, which is what a lone chip is announced against", async () => {
+    // @ts-expect-error — one of `label` or `labelledby` is required.
+    const unnamed = <Filter.Group />;
+    void unnamed;
+    const html = await render(<Filter.Group label='Category' />);
+
+    expect(tagOf(html).startsWith("<div ")).toBe(true);
+    expect(attrsOf(html)).toEqual({ role: "radiogroup", "aria-label": "Category", "data-slot": "filter-group" });
+    expect(classesOf(html)).toEqual(["flex", "min-w-0", "flex-wrap", "items-center", "gap-2"]);
   });
 
   it("an item is a label wrapping a visually hidden radio, so the chip itself is the hit target", async () => {
@@ -131,20 +144,25 @@ describe("Filter", () => {
     expect(attrsOf(html, 'aria-hidden="true"')).toEqual({});
   });
 
-  it("composes the reset and its items as siblings inside the one form", async () => {
+  it("composes the reset beside the group rather than inside it, so the radiogroup owns radios and nothing else", async () => {
     const html = await render(
       <Filter>
         <Filter.Reset />
-        <Filter.Item name='f' value='a' checked>
-          A
-        </Filter.Item>
-        <Filter.Item name='f' value='b'>
-          B
-        </Filter.Item>
+        <Filter.Group label='Category'>
+          <Filter.Item name='f' value='a' checked>
+            A
+          </Filter.Item>
+          <Filter.Item name='f' value='b'>
+            B
+          </Filter.Item>
+        </Filter.Group>
       </Filter>,
     );
+    const group = html.slice(html.indexOf('<div role="radiogroup"'), html.lastIndexOf("</div>"));
 
-    expect(slotsOf(html)).toEqual(["filter", "filter-reset", "filter-item", "filter-input", "filter-item", "filter-input"]);
+    expect(slotsOf(html)).toEqual(["filter", "filter-reset", "filter-group", "filter-item", "filter-input", "filter-item", "filter-input"]);
     expect(textNodes(html)).toEqual(["Clear", "×", "A", "B"]);
+    expect(group).not.toContain('data-slot="filter-reset"');
+    expect(slotsOf(group).filter((slot) => slot !== "filter-group")).toEqual(["filter-item", "filter-input", "filter-item", "filter-input"]);
   });
 });

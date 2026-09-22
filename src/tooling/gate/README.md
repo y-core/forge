@@ -82,6 +82,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `coLocationStep` → `validate-co-location` | Every source module has a test beside it, so deleting one is loud |
 | `commentBudgetStep` → `validate-comment-budget` | Every comment is one [`CODE_RULES.md`][cr-5a] §5a permits; `licences` waives the cap for one leading attribution header |
 | `jsxStep` → `validate-jsx` | Every shipped `.tsx` carries its runtime pragmas |
+| `menuNamingStep` → `validate-menu-naming` | Every **shipped** `triggered` `Menu.Popup` has the trigger it takes its accessible name from; a file naming a popup or a trigger through a value goes unjudged |
 | `ssrBoundaryStep` → `validate-ssr-boundary` | No Worker-executed module reaches the browser-only tier |
 | `buildTimeBoundaryStep` → `validate-build-time-boundary` | No module outside a build-time directory imports one at value |
 | `devBoundaryStep` → `validate-dev-boundary` | The Worker's `main` is not a `*.dev.ts` entry, nothing imports one, and only such an entry imports a dev-only module at value |

@@ -94,8 +94,10 @@ function fakeFactorStore(enrolled: readonly AuthFactor[] = []): FactorStore {
     findEnrolled: (_userId, kinds) => Promise.resolve(ok(enrolled.filter((row) => kinds.includes(row.kind)))),
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
+    unconfirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
-    advanceCounter: () => Promise.resolve(ok(true)),
+    recordVerification: () => Promise.resolve(ok(true)),
+    countSecretsNotUnder: () => Promise.resolve(ok(0)),
     remove: () => Promise.resolve(ok(true)),
   };
 }
@@ -206,7 +208,18 @@ function scene(users: readonly AuthUser[] = [userRow()]): Scene {
 }
 
 function factorRow(kind: AuthFactor["kind"], confirmedAt: number | null): AuthFactor {
-  return { id: uuidv7(), userId: USER_ID, kind, secret: null, lastCounter: null, failedAttempts: 0, confirmedAt, createdAt: 1, updatedAt: 1 };
+  return {
+    id: uuidv7(),
+    userId: USER_ID,
+    kind,
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt,
+    createdAt: 1,
+    updatedAt: 1,
+  };
 }
 
 describe("createSigninFlow — anti-enumeration on complete", () => {

@@ -5,7 +5,7 @@ import { formatReleaseDate, parseChangelog, promoteUnreleased } from "../gate/ch
 import { definitionList } from "../term/grid";
 import { DEFAULT_GATE_COMMAND, runGate } from "./gate";
 import { commit, createTag, currentBranch, defaultBranch, isWorkingTreeClean, remoteTags, tagExists, tagIsAncestorOfHead } from "./git";
-import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog } from "./pkg-json";
+import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog, writeChangelogSections } from "./pkg-json";
 import { removedSurfaceSince } from "./surface";
 import type { BumpEvidence, ReleaseCommandConfig, ReleaseDeps } from "./types";
 import { ReleaseError } from "./types";
@@ -38,6 +38,7 @@ export function createReleaseCommand(
     createTag,
     readChangelog,
     writeChangelog,
+    writeChangelogSections,
     readRepositoryUrl,
     removedSurfaceSince,
     tagIsAncestorOfHead,
@@ -48,7 +49,14 @@ export function createReleaseCommand(
     now: () => new Date(),
   },
 ): Command<typeof releaseFlags> {
-  const { cwd, tagPrefix = "v", stageFiles, changelogFile = "CHANGELOG.md", gateCommand = [...DEFAULT_GATE_COMMAND] } = config;
+  const {
+    cwd,
+    tagPrefix = "v",
+    stageFiles,
+    changelogFile = "CHANGELOG.md",
+    sectionsFile = "config/changelog-sections.json",
+    gateCommand = [...DEFAULT_GATE_COMMAND],
+  } = config;
 
   return createCommand({
     name: "release",
@@ -215,13 +223,17 @@ export function createReleaseCommand(
       }
 
       // Default to exactly what this command wrote: `commit` runs `git add`, so naming a changelog
-      // that was never promoted would fail on a project that has none.
-      const staged = stageFiles ?? (promoted !== null ? ["package.json", changelogFile] : ["package.json"]);
+      // that was never promoted would fail on a project that has none. The manifest is forge's own.
+      const derived = promoted !== null ? ["package.json", changelogFile] : ["package.json"];
+      const staged = [...new Set([...(stageFiles ?? derived), ...(promoted !== null ? [sectionsFile] : [])])];
       const message = `chore: release ${result.version}`;
       let committed: boolean;
       try {
         deps.updatePackageVersion(result.version, cwd);
-        if (promoted !== null) deps.writeChangelog(cwd, changelogFile, promoted);
+        if (promoted !== null) {
+          deps.writeChangelog(cwd, changelogFile, promoted);
+          deps.writeChangelogSections(cwd, sectionsFile, promoted);
+        }
         committed = deps.commit(cwd, message, staged);
       } catch (err) {
         // Without the recovery named here, the next run refuses as dirty, and forcing it past that

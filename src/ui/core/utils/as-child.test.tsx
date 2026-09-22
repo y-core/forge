@@ -82,9 +82,17 @@ describe("cloneAsChild — button options the compound did set", () => {
 });
 
 describe("cloneAsChild — non-button children", () => {
-  it("an anchor gets the ARIA form of disabled and keeps its href", async () => {
+  it("a disabled anchor loses the href it would otherwise navigate on Enter, and stays a focus stop", async () => {
     expect(await render(cloneAsChild(<a href='/docs'>Docs</a>, { ...base, disabled: true }))).toBe(
-      '<a href="/docs" aria-disabled="true" data-disabled="" class="probe-class" data-slot="probe">Docs</a>',
+      '<a aria-disabled="true" data-disabled="" role="link" tabindex="0" class="probe-class" data-slot="probe">Docs</a>',
+    );
+  });
+
+  it("reads disabled from an aria-disabled the compound resolved, not only from the option", async () => {
+    const options = { ...base, props: { "aria-disabled": "true" } };
+
+    expect(await render(cloneAsChild(<a href='/docs'>Docs</a>, options))).toBe(
+      '<a aria-disabled="true" role="link" tabindex="0" class="probe-class" data-slot="probe">Docs</a>',
     );
   });
 
@@ -175,7 +183,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip" id="file-menu-trigger">File</button>`,
     );
   });
 
@@ -231,7 +239,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" role="menuitem" data-slot="menu-submenu-trigger tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="more" aria-controls="more" aria-expanded="false" aria-haspopup="menu" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip">More</button>`,
+        `commandfor="more" aria-controls="more" aria-expanded="false" aria-haspopup="menu" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip" id="more-trigger">More</button>`,
     );
   });
 
@@ -247,7 +255,7 @@ describe("data-slot composition through an unrendered component child", () => {
     ).toBe(
       '<button type="button" data-slot="menu-trigger toolbar-button tooltip-trigger" command="toggle-popover" ' +
         `commandfor="file-menu" aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS}" ` +
-        'data-toolbar-item="" aria-describedby="tip">File</button>',
+        'data-toolbar-item="" aria-describedby="tip" id="file-menu-trigger">File</button>',
     );
   });
 
@@ -260,7 +268,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" data-slot="menu-trigger tooltip-trigger" command="toggle-popover" commandfor="file-menu" ' +
-        `aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip">File</button>`,
+        `aria-controls="file-menu" aria-expanded="false" aria-haspopup="menu" class="${MENU_WITH_TOOLTIP_CLASS}" aria-describedby="tip" id="file-menu-trigger">File</button>`,
     );
   });
 });

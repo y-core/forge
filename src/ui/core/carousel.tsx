@@ -10,7 +10,7 @@ import { cn } from "./utils/cn";
 
 interface CarouselRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   snap?: CarouselSnap | undefined;
-  /** Accessible name; with it the root announces itself as a carousel, without it as a plain region of slides. */
+  /** Accessible name; with it the root is a region announced as a carousel, without it a plain wrapper the strip sits in. */
   label?: string | undefined;
   /** Accessible name for the scrolling strip itself, which is a keyboard tab stop. @default the root's `label`, else `LABEL_DEFAULTS.carouselStrip` */
   stripLabel?: string | undefined;
@@ -33,6 +33,8 @@ interface CarouselDotsProps extends Omit<JSX.IntrinsicElements["nav"], "children
   current?: number | undefined;
   size?: Size | undefined;
   label?: string | undefined;
+  /** Render the row as a landmark. Off by default: a dots row belongs to one carousel, not to the page. @default false */
+  landmark?: boolean | undefined;
 }
 
 // `scroll-smooth` sits under `motion-safe:` so a reader who asked for no motion gets an instant jump
@@ -45,7 +47,9 @@ const CarouselRoot: FC<CarouselRootProps> = ({ snap = "start", label, stripLabel
   <div
     data-slot={slotToken("carousel", inherited)}
     data-snap={snap}
-    {...(label !== undefined ? { "aria-roledescription": "carousel", "aria-label": label } : {})}
+    // The role is what exposes the other two: a user agent drops `aria-roledescription` on an element
+    // with no role, and `aria-label` is prohibited on `generic`.
+    {...(label !== undefined ? { role: "region", "aria-roledescription": "carousel", "aria-label": label } : {})}
     class={cn("relative", cls)}
     {...rest}>
     {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow. */}
@@ -82,13 +86,24 @@ const CarouselDots: FC<CarouselDotsProps> = ({
   size = "sm",
   label = LABEL_DEFAULTS.carouselDots,
   slideLabel = defaultSlideLabel,
+  landmark = false,
   class: cls,
   "data-slot": inherited,
   ...rest
 }) => (
-  <Pagination label={label} data-slot={slotToken("carousel-dots", inherited)} class={cn("mt-3 flex justify-center", cls)} {...rest}>
+  <Pagination
+    label={label}
+    landmark={landmark}
+    data-slot={slotToken("carousel-dots", inherited)}
+    class={cn("mt-3 flex justify-center", cls)}
+    {...rest}>
     {ids.map((id, index) => (
-      <Pagination.Item href={`#${id}`} current={index === currentIndex(current, ids.length)} size={size} aria-label={slideLabel(index + 1)}>
+      <Pagination.Item
+        href={`#${id}`}
+        current={index === currentIndex(current, ids.length)}
+        currentAs='location'
+        size={size}
+        aria-label={slideLabel(index + 1)}>
         {index + 1}
       </Pagination.Item>
     ))}

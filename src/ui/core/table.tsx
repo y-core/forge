@@ -9,7 +9,15 @@ import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 import { toneVariants } from "./utils/tone";
 
-type TableProps = JSX.IntrinsicElements["table"] & { size?: Size | undefined; zebra?: boolean | undefined; pinRows?: boolean | undefined };
+type TableProps = JSX.IntrinsicElements["table"] & {
+  size?: Size | undefined;
+  zebra?: boolean | undefined;
+  pinRows?: boolean | undefined;
+  // Required: the scroll wrapper is an unconditional tab stop, and the name is what gives it a role
+  // to announce — the same contract `ScrollArea.Viewport` carries.
+  /** Accessible name for the scrollable region the table sits in. */
+  label: string;
+};
 
 type TableRowProps = JSX.IntrinsicElements["tr"] & { tone?: Tone | undefined; selected?: boolean | undefined };
 
@@ -27,8 +35,24 @@ const tableBox = cva({
   defaultVariants: { size: "md" },
 });
 
-const TableRoot: FC<TableProps> = ({ size = "md", zebra = false, pinRows = false, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot='table-scroll' class='overflow-auto rounded-box border-field border-border'>
+const TableRoot: FC<TableProps> = ({
+  size = "md",
+  zebra = false,
+  pinRows = false,
+  label,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => (
+  // The same shape `ScrollArea.Viewport` has, for the same reason: a browser makes an overflowing
+  // scroller focusable only when it holds nothing focusable, and Safari not at all.
+  <section
+    data-slot='table-scroll'
+    aria-label={label}
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow.
+    tabindex={0}
+    class='overflow-auto rounded-box border-field border-border focus-ring'>
     <table
       data-slot={slotToken("table", inherited)}
       {...presentationAttrs({ size })}
@@ -41,7 +65,7 @@ const TableRoot: FC<TableProps> = ({ size = "md", zebra = false, pinRows = false
       {...rest}>
       {children}
     </table>
-  </div>
+  </section>
 );
 
 const TableHeader: FC<JSX.IntrinsicElements["thead"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
@@ -62,13 +86,12 @@ const TableFooter: FC<JSX.IntrinsicElements["tfoot"]> = ({ class: cls, children,
   </tfoot>
 );
 
-// `aria-selected` is tri-state: absent means the table is not selectable at all, so it is emitted —
-// `"false"` included — exactly when the caller passed `selected`.
+// `selected` paints and does not announce: `aria-selected` is meaningful only inside a `grid`, and a
+// `<tr>` in a plain `<table>` is a `row` in a `table`, which has no selection model to report it to.
 const TableRow: FC<TableRowProps> = ({ tone, selected, class: cls, children, "data-slot": inherited, ...rest }) => (
   <tr
     data-slot={slotToken("table-row", inherited)}
     {...presentationAttrs({ tone })}
-    {...(selected === undefined ? {} : { "aria-selected": selected })}
     {...stateAttrs({ selected: selected ?? false })}
     class={cn("border-b border-border last:border-b-0", tone ? toneVariants({ tone, appearance: "soft" }) : "", selected && "bg-primary-soft", cls)}
     {...rest}>

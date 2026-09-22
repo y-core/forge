@@ -26,6 +26,7 @@ interface Row {
 
 async function menuMarkup(rows: Row[]): Promise<string> {
   const popup = Menu.Popup({
+    triggered: true,
     id: "file-menu",
     children: rows.map((row) =>
       Menu.Item({
@@ -117,6 +118,7 @@ test.describe("Menu — anatomy", () => {
   test("renders checkbox and radio items with their own roles and checked state", async ({ page }) => {
     const html = await render(
       Menu.Popup({
+        label: "View options",
         id: "m",
         children: [
           Menu.CheckboxItem({ id: "wrap", checked: true, for: false, children: "Wrap" }),
@@ -190,6 +192,39 @@ test.describe("Menu — keyboard", () => {
     expect(await focusedId(page)).toBe("quit");
     await page.keyboard.press("ArrowDown");
     expect(await focusedId(page)).toBe("new");
+  });
+
+  // Pinned at the menu rather than only at the composite: a menu that mounted the ring with the wrong
+  // orientation would still pass every composite-level test.
+  test("ArrowUp walks back up the rows and wraps to the last", async ({ page }) => {
+    await mountMenu(page, ROWS);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedId(page)).toBe("quit");
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedId(page)).toBe("open");
+  });
+
+  test("leaves exactly one row a tab stop while the menu is open", async ({ page }) => {
+    await mountMenu(page, ROWS);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    const stops = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#file-menu [role='menuitem']")].map((el) => el.tabIndex));
+
+    expect(stops).toEqual([0, -1, -1, -1]);
+  });
+
+  test("Space on the trigger opens the menu, as Enter does", async ({ page }) => {
+    await mountMenu(page, ROWS);
+
+    await page.focus("[data-slot~='menu-trigger']");
+    await page.keyboard.press(" ");
+
+    await expect.poll(() => isOpen(page)).toBe(true);
+    await expect.poll(() => focusedId(page)).toBe("new");
   });
 
   test("Home and End jump to the ends", async ({ page }) => {
@@ -293,10 +328,47 @@ test.describe("Menu — focus restoration", () => {
   });
 });
 
+// APG's Menu pattern makes Tab an exit that closes the menu; `popover="auto"` light-dismisses on
+// pointer-down outside and on Escape only, so nothing in the platform closes a menu focus has left.
+test.describe("Menu — Tab leaves and closes", () => {
+  async function mountWithTrailingStop(page: Page): Promise<void> {
+    const inner = await menuMarkup(ROWS);
+    await mount(page, `<div data-scope="demo">${inner}<button id="after">after</button></div>`, EXPOSE);
+    await start(page);
+  }
+
+  test("Tab out of an open menu closes it and leaves the trigger collapsed", async ({ page }) => {
+    await mountWithTrailingStop(page);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.keyboard.press("Tab");
+
+    await expect.poll(() => focusedId(page)).toBe("after");
+    expect(await isOpen(page)).toBe(false);
+    expect(await page.evaluate(() => document.querySelector("[data-slot~='menu-trigger']")?.getAttribute("aria-expanded"))).toBe("false");
+  });
+});
+
+test.describe("Menu — opening focuses a row the ring can reach", () => {
+  test("skips a natively disabled first row and still leaves exactly one tab stop", async ({ page }) => {
+    await mountMenu(page, [{ id: "undo", label: "Undo", disabled: true }, ...ROWS]);
+
+    await page.click("[data-slot~='menu-trigger']");
+
+    await expect.poll(() => focusedId(page)).toBe("new");
+    const stops = await page.evaluate(
+      () => [...document.querySelectorAll<HTMLElement>("#file-menu [role='menuitem']")].filter((el) => el.getAttribute("tabindex") === "0").length,
+    );
+    expect(stops).toBe(1);
+  });
+});
+
 test.describe("Menu — link items", () => {
   test("a link row is a menu item and stays a real anchor", async ({ page }) => {
     const html = await render(
       Menu.Popup({
+        label: "File actions",
         id: "m",
         children: [Menu.Item({ id: "save", for: "m", children: "Save" }), Menu.LinkItem({ id: "docs", href: "/docs", children: "Docs" })],
       }),
@@ -311,8 +383,35 @@ test.describe("Menu — link items", () => {
     expect(link).toEqual({ tag: "A", role: "menuitem", href: "/docs", command: false });
   });
 
+  // A cross-document href unloads the page, so the menu goes with it; a hash link does not, and the
+  // panel would be left standing open with focus gone to the document.
+  test("activating a same-document link row closes the menu, and `for={false}` leaves it open", async ({ page }) => {
+    const popup = Menu.Popup({
+      triggered: true,
+      id: "file-menu",
+      children: [
+        Menu.LinkItem({ id: "docs", href: "#docs", children: "Docs" }),
+        Menu.LinkItem({ id: "stay", href: "#stay", for: false, children: "Stay" }),
+      ],
+    });
+    const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
+    await mount(page, html, EXPOSE);
+    await start(page);
+
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("docs");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => isOpen(page)).toBe(false);
+
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => isOpen(page)).toBe(true);
+    await page.click("#stay");
+    expect(await isOpen(page)).toBe(true);
+  });
+
   test("arrow navigation reaches a link row, because the ring is role-based", async ({ page }) => {
     const popup = Menu.Popup({
+      triggered: true,
       id: "file-menu",
       children: [Menu.Item({ id: "save", for: "file-menu", children: "Save" }), Menu.LinkItem({ id: "docs", href: "#docs", children: "Docs" })],
     });
@@ -331,10 +430,12 @@ test.describe("Menu — link items", () => {
 test.describe("Menu — submenus", () => {
   async function nestedMarkup(): Promise<string> {
     const submenu = Menu.Popup({
+      triggered: true,
       id: "recent-menu",
       children: [Menu.Item({ id: "r0", for: "recent-menu", children: "alpha" }), Menu.Item({ id: "r1", for: "recent-menu", children: "beta" })],
     });
     const popup = Menu.Popup({
+      triggered: true,
       id: "file-menu",
       children: [
         Menu.Item({ id: "new", for: "file-menu", children: "New" }),
@@ -352,6 +453,31 @@ test.describe("Menu — submenus", () => {
     await start(page);
     await page.click("[data-slot~='menu-trigger']");
     await expect.poll(() => focusedId(page)).toBe("new");
+  }
+
+  // An open submenu's rows are visible, so they are in the parent's ring too — an unmatched key that
+  // bubbles finds a parent row and moves focus out of the panel the reader is in.
+  test("a typeahead key the submenu cannot place is consumed there, not answered by the parent", async ({ page }) => {
+    await openParent(page);
+    await page.click("[data-slot~='menu-submenu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("r0");
+
+    await page.keyboard.press("q");
+
+    expect(await focusedId(page)).toBe("r0");
+    expect(await page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open") ?? false)).toBe(true);
+  });
+
+  for (const key of ["Enter", " "] as const) {
+    test(`${key === " " ? "Space" : key} on a submenu trigger opens it and lands on its first row`, async ({ page }) => {
+      await openParent(page);
+
+      await page.focus("[data-slot~='menu-submenu-trigger']");
+      await page.keyboard.press(key);
+
+      await expect.poll(() => focusedId(page)).toBe("r0");
+      expect(await page.evaluate(() => document.querySelector("#recent-menu")?.matches(":popover-open") ?? false)).toBe(true);
+    });
   }
 
   test("the submenu trigger is itself a menu item in the parent's ring", async ({ page }) => {
@@ -491,12 +617,13 @@ function submenuRows(): JSXNode[] {
 
 async function submenuMarkup(dir: "ltr" | "rtl", dirOn: "wrapper" | "popup"): Promise<string> {
   const popup = Menu.Popup({
+    triggered: true,
     id: "file-menu",
     ...(dirOn === "popup" ? { dir } : {}),
     children: [
       Menu.Item({ id: "new", for: "file-menu", children: "New" }),
       Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
-      Menu.Popup({ id: "recent-menu", children: submenuRows() }),
+      Menu.Popup({ triggered: true, id: "recent-menu", children: submenuRows() }),
       Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
     ],
   });
@@ -607,11 +734,12 @@ test.describe("Menu — submenu keys mirror with the writing direction", () => {
 
 async function shadowMenuMarkup(): Promise<string> {
   const popup = Menu.Popup({
+    triggered: true,
     id: "file-menu",
     children: [
       Menu.Item({ id: "new", for: "file-menu", children: "New" }),
       Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
-      Menu.Popup({ id: "recent-menu", children: submenuRows() }),
+      Menu.Popup({ triggered: true, id: "recent-menu", children: submenuRows() }),
       Menu.Item({ id: "quit", for: "file-menu", children: "Quit" }),
     ],
   });
@@ -621,12 +749,13 @@ async function shadowMenuMarkup(): Promise<string> {
 
 async function lightParentShadowSubmenuMarkup(): Promise<string> {
   const popup = Menu.Popup({
+    triggered: true,
     id: "file-menu",
     children: [Menu.Item({ id: "new", for: "file-menu", children: "New" }), Menu.Item({ id: "quit", for: "file-menu", children: "Quit" })],
   });
   const outer = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
   const inner = await render(Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }));
-  const panel = await render(Menu.Popup({ id: "recent-menu", children: submenuRows() }));
+  const panel = await render(Menu.Popup({ triggered: true, id: "recent-menu", children: submenuRows() }));
   return `${outer}<template id="source">${inner}${panel}</template>`;
 }
 

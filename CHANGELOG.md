@@ -5,8 +5,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 > **`[Unreleased]` is the only section humans edit.** `bun run release` promotes it into a dated
 > version section, with the version and the date computed — never typed. Editing a released
-> heading by hand puts it out of step with the tag and `package.json`, which
-> `bun run verify --only validate-changelog` refuses.
+> heading *or its body* by hand is refused by the changelog check: the release records each
+> section's digest in `config/changelog-sections.json`, so a later edit no longer matches what
+> shipped. Write the change under `[Unreleased]` instead.
 
 > **Pre-1.0 versioning.** Per the project's architectural policy, breaking changes ship
 > **without deprecation shims** and consuming apps are updated in the same window. A `0.0.x`
@@ -17,7 +18,141 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **Backfill `last_verified_at` in the migration that adds it, if you call `purgeStaleTotpSecrets`.**
+   The column is new in this version and only `recordVerification` writes it, so every row that
+   predates it reads NULL and the idle window falls back to `created_at`. The first purge after a key
+   rotation then deletes every confirmed factor not re-sealed since — everyone who has not signed in
+   between the rotation and the run, not only the idle. Their second factor is gone, and re-adding
+   the key does not bring it back. Run this once, in the same migration:
+
+   ```sql
+   UPDATE auth_factors SET last_verified_at = <migration time>
+     WHERE last_verified_at IS NULL AND confirmed_at IS NOT NULL;
+   ```
+
+   Leave the unconfirmed rows NULL: they stay purgeable on `created_at`, which is what lets
+   `authKeysRetirable` ever turn true.
+
+2. **Name every container role that takes no name from its contents.** See the first Breaking entry
+   — the compiler points at each site, and the fix is one prop per root.
+
+### Breaking Changes
+
+- **An accessible name is now required on `Dialog`, `Drawer`, `Menu.Popup`, `Toolbar` and `Table`.**
+  None of these roles takes a name from its contents, so a nameless one announces as bare `dialog`
+  or `menu`. `DialogNaming` changes from an interface of optional fields to a union requiring
+  exactly one of `label`, `labelledby` or `titled`; `Menu.Popup` takes the same three with
+  `triggered` in place of `titled`; `Toolbar` and `Table` take a plain required `label`. `titled`
+  and `triggered` are the opt-in for a root named by its own `.Title` or by the forge trigger
+  targeting it — the derived `aria-labelledby` was previously emitted unconditionally, which left a
+  dangling IDREF on any root that rendered neither.
+
+- **`Filter`'s `role="radiogroup"` and its name move to a new `Filter.Group`.** The root stays the
+  `<form>` or `<fieldset>` that owns `Filter.Reset`, and the chips go inside `Filter.Group`, which
+  takes the `label` or `labelledby` the root used to. A `radiogroup` may own no child but a `radio`,
+  so the reset sitting inside it was an `aria-required-children` violation. The shortest edit past
+  the compile error — deleting `label` — would leave loose unnamed radios, so a new lint rule,
+  `forge-ui-interaction-filter-group-required`, reports a chip the root holds directly.
+
+- **An asset build whose `paths.publicDir` sits outside `root` is now refused by name.** It used to
+  answer the app root as the directory a deploy uploads, so `_headers` was written into the source
+  tree — a cache-rule file Cloudflare never reads, beside assets it does not sit with, reported as a
+  successful build. Move `publicDir` under the root, or set `root` to the directory you actually
+  deploy. A `publicDir` equal to `root` is unchanged: that one does deploy from the root.
+
+- **`createPdfPalette` refuses an ink name the engine does not paint with.** A palette arriving as
+  JSON could carry a misspelled key, which was stored, never consulted and never reported. The
+  refusal is the new `colour-name` error kind and lists the names it expected; `PDF_INK_NAMES` is
+  that list.
+
+- **`Select`'s `size` is forge's scale token, not the DOM's row count — recorded late, shipped in
+  0.2.5.** `SelectProps` omits the native `size` and re-spells it as the `Size` token (`sm` `md`
+  `lg`) that every other control takes, so a caller who passed `size={8}` for eight visible rows is
+  now a type error rather than a silently resized control. The row count is the new `rows` prop.
+
+### Added
+
+- **`purgeStaleTotpSecrets` and `authKeysRetirable`.** The first drops confirmed TOTP factors idle
+  longer than `idleForMs` and still sealed under a retiring key; the second answers whether every
+  stored secret of a kind is sealed under the ring's active key, which is when the other keys may be
+  dropped. `TotpSecretPurgeOptions` carries the window, and `auth_factors` gains `last_verified_at`
+  — see **Upgrading**.
+- **`Dialog.Description`, and `Dialog`'s `alert` and `described` props.** `alert` announces the root
+  as `alertdialog`; `described` points `aria-describedby` at the `.Description` whose `for` names the
+  root.
+- **`Pagination` takes `landmark` and `currentAs`.** `landmark={false}` renders a `<div role="group">`
+  rather than a `<nav>`, for a row that is not site navigation; `currentAs="location"` is the
+  `aria-current` for a link that moves within a page rather than between them.
+- **`Menu.LinkItem` takes `for`, and `MENU_KEEP_OPEN_ATTR` opts a row out.** An `<a>` cannot be an
+  invoker, so the controller closes the panel on its behalf; the attribute marks a link row that
+  should leave the menu open.
+- **Derived-id helpers on `ui/contracts`** — `titleId`, `descriptionId`, `tabId` and `triggerId`,
+  with `nameAttrs` re-homed beside them, plus the `ContainerNaming` and `MenuPopupNaming` unions.
+- **`PDF_INK_NAMES` and `PdfInkName`**, and a `lang-default` rule in `auditPdf`.
+- **A `validate-menu-naming` gate step**, pairing each literal `triggered` `Menu.Popup` id against a
+  trigger rendering the matching id. It judges shipped modules only, and leaves a file unjudged when
+  a trigger aims through a value.
+- **`withDbRun`**, which releases every local D1 handle a `forge db` verb opened before it returns.
+- **`changelogSectionDigest` and `ReleaseCommandConfig.sectionsFile`.** The release records each
+  section's prose digest in `config/changelog-sections.json`, so a later hand edit of a released
+  section no longer matches what shipped.
+- **`Select` takes `rows` for a listbox that shows several options at once.** With `rows` set the
+  control drops the chevron and fills its wrapper rather than taking a token height — `rows` is a
+  floor on what is visible, not a fixed height. Shipped in 0.2.5 unrecorded.
+
+### Changed
+
+- **`forge db` opens local D1 in process** through wrangler's `getPlatformProxy` instead of spawning
+  the CLI. Handles are shared between homes naming the same state and released when the verb
+  returns, so nothing keeps a workerd process alive past it. Wrangler is an optional peer and must
+  be installed for the local verbs.
+- **A composite's roving tab stop re-normalises on mutation and on intersection.** An item inserted,
+  revealed from above the root, or removed under the focus it held no longer leaves the ring with
+  two stops or none.
+- **`Drawer` marks everything outside the open disclosure `inert`.** The Tab trap was keyboard-only,
+  so a screen reader's swipe navigation walked straight past the last link into the page behind the
+  backdrop.
+- **`Carousel` with a `label` is a `role="region"`**, and its dots row is no longer a landmark —
+  a dots row belongs to one carousel rather than to the page. Its current dot carries
+  `aria-current="location"`.
+- **A `Button` with `loading` is inert**: it gains `aria-disabled` and drops `command`/`commandfor`,
+  so a second press during the load invokes nothing.
+- **A disabled menu row carries neither invoker.** The platform runs `command` before any listener
+  forge owns, so there was no sink downstream of it to refuse the activation. The row still
+  announces its checked state.
+- **`NumberField`'s steppers leave the tab sequence** (`tabindex="-1"`), and a vertical `Slider`
+  reports `aria-orientation`.
+- **A `Text` element's preferred width is measured per line**, not over the whole run — an embedded
+  face gave `\n` a near-zero advance and answered the lines laid end to end.
+- **The release stages `config/changelog-sections.json`** on every run that promotes a changelog,
+  whether or not `stageFiles` names it. It is forge's own write rather than a project's choice, and
+  it is the one file `stageFiles` does not replace.
+
+### Fixed
+
+- **A TOTP factor is no longer un-enrolled when its sealing key is merely off the ring.** `openAtRest`
+  answered `null` alike for a key the ring cannot resolve and a frame that will never open, so a
+  deploy that dropped a retiring key early cleared `confirmed_at` on every affected user's next
+  step-up — and re-adding the key restored nothing. The two are now `no-key` and `unopenable`, and
+  only the second un-enrols.
+- **A composite's typeahead no longer swallows printable keys on a `<select>` or a `contenteditable`
+  region.** The escape hatch recognised `<input>` and `<textarea>` alone, so focusing either inside a
+  typeahead ring meant you could not type into it.
+- **A menu whose panel chain closes on itself no longer hangs on Tab-out.** The walk out of a panel
+  follows `commandfor`, which may name a panel from an invoker inside that same panel; it is now
+  bounded by the same cap the containment check already used.
+- **A tablist whose tabs are all disabled and none selected keeps its tab stop** rather than leaving
+  the tab sequence for good.
+- **Dismissing a page-level alert no longer writes `tabindex` onto `<body>`.** Focus falls there
+  anyway once the alert is removed; the attribute stayed behind.
+- **`forge db` names the wrangler export it could not find.** Only `getPlatformProxy` was checked, so
+  a wrangler missing `unstable_splitSqlQuery` failed at the first query as "query `SELECT…` failed"
+  and the version diagnostic was lost.
+- **A `Drawer` given both `open` and `openModal` no longer renders `open`.**
+- **A menu row keeps a focus indicator under forced colors.** Its cue was `focus-visible:bg-accent`,
+  a colour change forced colors overrides outright, beside the `outline-none` every row carries.
 
 ---
 

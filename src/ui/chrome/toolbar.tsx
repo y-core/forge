@@ -160,6 +160,7 @@ export const Toolbar = <A extends string = string, G extends string = string>({
     <div
       id={id}
       role='toolbar'
+      aria-label={config.label}
       data-slot={slotToken("toolbar", inherited)}
       data-scope={TOOLBAR_SCOPE}
       {...stateAttrs({ orientation })}

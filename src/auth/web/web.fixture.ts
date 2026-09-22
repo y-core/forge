@@ -160,6 +160,7 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     secret: null,
     lastCounter: null,
     failedAttempts: 0,
+    lastVerifiedAt: null,
     confirmedAt: 1,
     createdAt: 1,
     updatedAt: 1,
@@ -170,8 +171,10 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     findEnrolled: async (_userId, kinds) => ok(rows.filter((row) => kinds.includes(row.kind))),
     enrol: async () => err(new Error("fakeFactorStore: enrol is not part of the view fixture") as never),
     confirm: async () => ok(true),
+    unconfirm: async () => ok(true),
     countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
-    advanceCounter: async () => ok(true),
+    recordVerification: async () => ok(true),
+    countSecretsNotUnder: async () => ok(0),
     remove: async () => ok(true),
   };
 }

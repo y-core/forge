@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { parseChangelog } from "../../../src/tooling/gate/changelog";
+import { changelogSectionDigest, parseChangelog } from "../../../src/tooling/gate/changelog";
 import { checkResult, fail, warn } from "../../../src/tooling/gate/finding";
 import { compareSemVer, parseSemVer } from "../../../src/tooling/gate/semver";
 import type { ChangelogDocument } from "../../../src/tooling/gate/types";
@@ -16,11 +16,51 @@ export interface ChangelogCheckConfig {
   file?: string;
   /** Required first line. Defaults to `# Changelog`. */
   title?: string;
+  /** Section-digest manifest path relative to `root`. Defaults to `config/changelog-sections.json`; absent, the section check does not run. */
+  sectionsFile?: string;
 }
 
-/** Judges a parsed changelog against `packageVersion`. @public */
-export function validateChangelog(parsed: ChangelogDocument, packageVersion: string, file: string): Finding[] {
+// The manifest is what makes "a released section is not edited by hand" checkable offline: the
+// release command records each section's digest as it promotes, so a later edit no longer matches.
+/** Reports every released section whose prose no longer matches the digest the release recorded. */
+function sectionFindings(parsed: ChangelogDocument, sections: Readonly<Record<string, string>> | undefined, file: string): Finding[] {
+  if (sections === undefined) return [];
   const findings: Finding[] = [];
+  for (const heading of parsed.versions) {
+    const recorded = sections[heading.version];
+    const digest = changelogSectionDigest(heading.body);
+    if (recorded === undefined) {
+      findings.push(
+        fail(
+          `\`${heading.version}\` has no recorded section digest — \`bun run release\` records one as it promotes, so a heading written by hand has none. Move the body under \`## [Unreleased]\` and release it.`,
+          { file, line: heading.line + 1 },
+        ),
+      );
+    } else if (recorded !== digest) {
+      findings.push(
+        fail(
+          `\`${heading.version}\`'s section has been edited since it was released — \`[Unreleased]\` is the only section to write in. Move the change there.`,
+          { file, line: heading.line + 1 },
+        ),
+      );
+    }
+  }
+  const headings = new Set(parsed.versions.map((heading) => heading.version));
+  for (const version of Object.keys(sections)) {
+    if (!headings.has(version))
+      findings.push(fail(`a section digest is recorded for \`${version}\`, which the changelog no longer carries`, { file }));
+  }
+  return findings;
+}
+
+/** Judges a parsed changelog against `packageVersion`, and its released sections against `sections`. @public */
+export function validateChangelog(
+  parsed: ChangelogDocument,
+  packageVersion: string,
+  file: string,
+  sections?: Readonly<Record<string, string>>,
+): Finding[] {
+  const findings: Finding[] = [...sectionFindings(parsed, sections, file)];
 
   const seen = new Map<string, number>();
   for (const heading of parsed.versions) {
@@ -81,6 +121,15 @@ export function validateChangelog(parsed: ChangelogDocument, packageVersion: str
   return findings;
 }
 
+// Absent rather than empty when the file is missing: a project that has not adopted the manifest
+// gets the checks it had, where an empty record would report every released section as unrecorded.
+/** The recorded section digests, or `undefined` where this project keeps no manifest. */
+function readSections(config: ChangelogCheckConfig): Record<string, string> | undefined {
+  const path = resolve(config.root, config.sectionsFile ?? "config/changelog-sections.json");
+  if (!existsSync(path)) return undefined;
+  return JSON.parse(readFileSync(path, "utf-8")) as Record<string, string>;
+}
+
 /** Reads the changelog and judges it. @public */
 export function checkChangelog(config: ChangelogCheckConfig): CheckResult {
   const file = config.file ?? "CHANGELOG.md";
@@ -101,7 +150,7 @@ export function checkChangelog(config: ChangelogCheckConfig): CheckResult {
   }
 
   // A changelog holding only `[Unreleased]` is a project before its first release, so it passes.
-  findings.push(...validateChangelog(parsed.data, config.packageVersion, file));
+  findings.push(...validateChangelog(parsed.data, config.packageVersion, file, readSections(config)));
 
   return checkResult(findings, `${file} verified — ${parsed.data.versions.length} released versions, newest first, matching package.json.`);
 }

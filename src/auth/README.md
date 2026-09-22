@@ -433,8 +433,12 @@ rather than taking one you type:
 const keys = await importAuthKeyRing([c.env.AUTH_SECRET_NEW, c.env.AUTH_SECRET_OLD]);
 ```
 
+**Rotate on a schedule, not only on suspicion.** Every seal spends part of a bounded per-key budget, and crossing it costs the integrity of
+everything already sealed under that key — the bound, the failure mode and the cadence to hold to are [`AUTH_MOUNTING.md`][am-7] §7.
+
 Tokens minted under the old key keep opening for as long as it stays in the list, so leave the old secret in place for at least the longest TTL a
-token of yours carries. A token consumed before a rotation stays consumed after one, because its nonce key is derived from the **token's own**
+token of yours carries — and never drop one that ever wrapped a TOTP secret, which carries no TTL, or those authenticator-app factors are gone and
+their users enrol again. A token consumed before a rotation stays consumed after one, because its nonce key is derived from the **token's own**
 key id.
 
 **Each secret must be at least 32 bytes, and a degenerate one is refused rather than merely a short one.** `importAuthKeyRing` throws on a secret
@@ -461,6 +465,43 @@ export default {
 `createChallengeStore(db, { prefix })` and `createNonceStore(db, { prefix })` namespace their key text inside those shared tables. Omit `prefix`
 for the default; an empty string is **refused**.
 
+### Bounding how long a key rotation waits
+
+A `totpWrap` secret is droppable once no factor is sealed under it, and a verification re-seals a stale one on its own — but only for users who sign
+in. `purgeStaleTotpSecrets` closes the window on the ones who do not:
+
+```ts
+const dropped = await purgeStaleTotpSecrets(createD1Client(env.DB), Date.now(), {
+  keys: ring,
+  idleForMs: 90 * 86_400_000,
+  requirement: "mandatory",
+});
+```
+
+It answers how many rows it dropped. **It takes the ring, not a key id** — the statement deletes the complement of the active key, so a key id
+naming the _retiring_ one would delete the live enrolments instead; a ring whose `activeKeyId` is not the shape `importAuthKeyRing` derives is
+refused before any statement runs.
+
+The window is measured from `last_verified_at` — the moment a code was last _accepted_ — or from enrolment for a row that never had one. Not from
+`updated_at`: a spent guess moves that too, so a user whose app drifted and who keeps trying wrong codes would hold their own row outside the window
+indefinitely, and they are exactly who this is for. `idleForMs` is held between a day and a year. **`requirement` is refused unless it is
+`mandatory`**: a dropped row routes the user to re-enrol only where the factor is demanded of them, and under any other requirement they lose a
+second factor with nothing asking them to replace it.
+
+**Backfill `last_verified_at` when you add the column, or the first purge drops standing enrolments.** A row that predates the column reads NULL,
+the window falls back to `created_at`, and every confirmed factor not re-sealed since the rotation is old enough to delete. Run this once, in the
+migration that adds the column:
+
+```sql
+UPDATE auth_factors SET last_verified_at = <migration time>
+  WHERE last_verified_at IS NULL AND confirmed_at IS NOT NULL;
+```
+
+The `confirmed_at IS NOT NULL` half is what keeps the fallback doing its other job: an abandoned, never-confirmed ceremony stays purgeable on
+`created_at`, and without that nothing would ever let the retiring key go.
+
+Whether the key is droppable at all is `authKeysRetirable(factors, "totp-app", ring)` — see [`AUTH_MOUNTING.md`][am-7] §7.
+
 ---
 
 ## Backing a store contract yourself
@@ -472,6 +513,10 @@ contract — and know that **the methods below carry rules the caller does none 
 | --- | --- |
 | `UserStore.revokeSessions(id, at)` | Raise a monotonic barrier: never lower one already stamped later |
 | `FactorStore.countAttempt(userId, kind, maxAttempts, at, lockoutMs)` | Find the factor **and** spend one guess in the one statement, reopening a budget spent longer ago than `lockoutMs`. `null` is "no such factor, or the budget refusing" |
+| `FactorStore.recordVerification(id, userId, counter, at, secret?)` | Write the counter, the cleared budget, `last_verified_at` **and** any re-sealed `secret` in the one statement, under the `last_counter <` guard. Split across two, a replayed code re-seals a row it did not advance |
+| `FactorStore.recordVerification` — and nothing else | **This is the only method that may stamp `last_verified_at`.** `purgeStaleTotpSecrets` deletes by it; leave it NULL and the window is measured from enrolment instead, so the first run drops the factor of every long-standing user, including the ones signing in daily. Stamp it anywhere a guess is merely spent and the purge never reaches anyone |
+| `FactorStore.countSecretsNotUnder(kind, kid)` | Read the key id out of the secret's own first six bytes. A column holding it separately can disagree with the bytes that actually decide whether the secret opens |
+| `FactorStore.unconfirm(id, userId, at)` | Clear `confirmed_at` **and** `failed_attempts` together. The budget guarded a secret nothing can check, so carrying the spend forward locks the re-enrolment behind it |
 | `IdentityLinkStore.unlink(id, userId)` | Carry the owner in the `WHERE`, so a link id belonging to somebody else unlinks nothing |
 | `OtpStateStore.discard(userId, token)` | Delete **that named code** and no other, so an undelivered issue returns its cooldown without wiping a racing issue that did send |
 | `OtpStateStore.issue` / `countAttempt` | Decide in one conditional statement. A read then a write hands every parallel request a free extra guess |
@@ -597,6 +642,7 @@ go beyond `isAdmin`.
 [am-2]: ../../docs/AUTH_MOUNTING.md#2-the-three-route-groups-and-their-guards
 [am-3]: ../../docs/AUTH_MOUNTING.md#3-what-forge-does-not-ship
 [am-6]: ../../docs/AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
+[am-7]: ../../docs/AUTH_MOUNTING.md#7-rotating-the-key-ring
 [boundaries-2c]: ../../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
 [crypto-readme]: ../crypto/README.md
 [dm]: ../../docs/DATABASE_MANAGEMENT.md

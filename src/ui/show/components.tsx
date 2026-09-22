@@ -745,7 +745,7 @@ const DrawerSection: FC = () => (
     {(["left", "right", "top", "bottom"] as const).map((side) => (
       <div key={side}>
         <Drawer.Trigger for={`show-drawer-${side}`}>Open {side}</Drawer.Trigger>
-        <Drawer id={`show-drawer-${side}`} side={side}>
+        <Drawer id={`show-drawer-${side}`} side={side} titled>
           <Drawer.Header>
             <Drawer.Title for={`show-drawer-${side}`}>From the {side}</Drawer.Title>
           </Drawer.Header>
@@ -802,27 +802,31 @@ const FileInputSection: FC<{ icon: ShowIcon }> = ({ icon: Icon }) => (
 
 const FilterSection: FC = () => (
   <CatalogSection id='filter' title='Filter'>
-    <Filter aria-label='Category'>
+    <Filter>
       <Filter.Reset />
-      <Filter.Item name='show-filter' value='all' checked>
-        All
-      </Filter.Item>
-      <Filter.Item name='show-filter' value='open'>
-        Open
-      </Filter.Item>
-      <Filter.Item name='show-filter' value='closed'>
-        Closed
-      </Filter.Item>
+      <Filter.Group label='Category'>
+        <Filter.Item name='show-filter' value='all' checked>
+          All
+        </Filter.Item>
+        <Filter.Item name='show-filter' value='open'>
+          Open
+        </Filter.Item>
+        <Filter.Item name='show-filter' value='closed'>
+          Closed
+        </Filter.Item>
+      </Filter.Group>
     </Filter>
     <form method='get' action='#filter' class='flex flex-wrap items-center gap-4'>
-      <Filter nested aria-label='Priority'>
+      <Filter nested>
         <Filter.Reset size='md' />
-        <Filter.Item name='show-filter-priority' value='high' size='md' appearance='soft'>
-          High
-        </Filter.Item>
-        <Filter.Item name='show-filter-priority' value='low' size='md' appearance='soft'>
-          Low
-        </Filter.Item>
+        <Filter.Group label='Priority'>
+          <Filter.Item name='show-filter-priority' value='high' size='md' appearance='soft'>
+            High
+          </Filter.Item>
+          <Filter.Item name='show-filter-priority' value='low' size='md' appearance='soft'>
+            Low
+          </Filter.Item>
+        </Filter.Group>
       </Filter>
       <Button type='submit' tone='neutral' appearance='outline' size='md'>
         Apply
@@ -1078,7 +1082,7 @@ const TABLE_ROWS = [
 
 const TableSection: FC = () => (
   <CatalogSection id='table' title='Table'>
-    <Table size='sm' zebra pinRows class='max-w-md'>
+    <Table label='Projects' size='sm' zebra pinRows class='max-w-md'>
       <Table.Caption>Three components and their default appearance</Table.Caption>
       <Table.Header>
         <Table.Row>
@@ -1097,7 +1101,7 @@ const TableSection: FC = () => (
         ))}
       </Table.Body>
     </Table>
-    <Table size='lg' class='max-w-xs'>
+    <Table label='Projects' size='lg' class='max-w-xs'>
       <Table.Body>
         <Table.Row tone='warning'>
           <Table.Cell>Pending</Table.Cell>
@@ -1377,7 +1381,7 @@ const DialogSection: FC<{ page: string }> = ({ page }) => (
     <Dialog.Trigger for='show-dialog' class='rounded-md border border-border px-3 py-1.5 text-sm'>
       Open dialog
     </Dialog.Trigger>
-    <Dialog id='show-dialog' class='max-w-sm'>
+    <Dialog id='show-dialog' titled class='max-w-sm'>
       <Dialog.Header>
         <Dialog.Title for='show-dialog' class='text-foreground'>
           A native modal
@@ -1398,7 +1402,7 @@ const DialogSection: FC<{ page: string }> = ({ page }) => (
       </Dialog.Footer>
     </Dialog>
     {/* `open` is the platform's non-modal spelling: no backdrop, no top layer, the page behind stays live. */}
-    <Dialog id='show-dialog-inline' open class='max-w-sm'>
+    <Dialog id='show-dialog-inline' open titled class='max-w-sm'>
       <Dialog.Header>
         <Dialog.Title for='show-dialog-inline' class='text-foreground'>
           Open and non-modal
@@ -1557,7 +1561,7 @@ const FieldStackSection: FC = () => (
 
 const ToolbarSection: FC = () => (
   <CatalogSection id='toolbar' title='Toolbar'>
-    <Toolbar aria-label='Formatting'>
+    <Toolbar label='Formatting'>
       <Toolbar.Button pressed>Bold</Toolbar.Button>
       <Toolbar.Button pressed={false}>Italic</Toolbar.Button>
       <Toolbar.Button tone='neutral' appearance='outline' shape='icon' aria-label='Underline'>
@@ -1573,7 +1577,7 @@ const ToolbarSection: FC = () => (
         <a href='#toolbar'>Docs</a>
       </Toolbar.Button>
     </Toolbar>
-    <Toolbar orientation='vertical' aria-label='Formatting (vertical)'>
+    <Toolbar orientation='vertical' label='Formatting (vertical)'>
       <Toolbar.Button pressed>Bold</Toolbar.Button>
       <Toolbar.Button pressed={false}>Italic</Toolbar.Button>
       <Toolbar.Separator orientation='horizontal' />
@@ -1598,7 +1602,7 @@ const MenuSection: FC<{ page: string }> = ({ page }) => (
       <Menu.Trigger for='show-file-menu' class='rounded-md border border-input px-3 py-1.5 text-sm'>
         File
       </Menu.Trigger>
-      <Menu.Popup id='show-file-menu'>
+      <Menu.Popup triggered id='show-file-menu'>
         <Menu.Group aria-labelledby='show-menu-group-label'>
           <Menu.GroupLabel id='show-menu-group-label'>Document</Menu.GroupLabel>
           <Menu.Item for='show-file-menu'>New</Menu.Item>
@@ -1615,7 +1619,7 @@ const MenuSection: FC<{ page: string }> = ({ page }) => (
         <Menu.Separator />
         <Menu.LinkItem href='#menu'>Open recent…</Menu.LinkItem>
         <Menu.SubmenuTrigger for='show-file-export'>Export as</Menu.SubmenuTrigger>
-        <Menu.Popup id='show-file-export' side='inline-end'>
+        <Menu.Popup triggered id='show-file-export' side='inline-end'>
           <Menu.Item for='show-file-export'>PNG</Menu.Item>
           <Menu.Item for='show-file-export'>SVG</Menu.Item>
           <Menu.Item for='show-file-export'>PDF</Menu.Item>
@@ -1627,7 +1631,7 @@ const MenuSection: FC<{ page: string }> = ({ page }) => (
       <Menu.Trigger for='show-view-menu' class='rounded-md border border-input px-3 py-1.5 text-sm'>
         View
       </Menu.Trigger>
-      <Menu.Popup id='show-view-menu' side='top' align='end'>
+      <Menu.Popup triggered id='show-view-menu' side='top' align='end'>
         <Menu.Item for='show-view-menu'>Zoom in</Menu.Item>
         <Menu.Item for='show-view-menu'>Zoom out</Menu.Item>
         <Menu.Item for='show-view-menu'>Actual size</Menu.Item>
@@ -1645,7 +1649,7 @@ const MenuSection: FC<{ page: string }> = ({ page }) => (
       class='mt-2 flex h-24 w-full max-w-md items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground'>
       Right-click anywhere in this box
     </Resumable>
-    <Menu.Popup id='show-context-menu-popup' coords>
+    <Menu.Popup label='Context actions' id='show-context-menu-popup' coords>
       <Menu.Item for='show-context-menu-popup'>Cut</Menu.Item>
       <Menu.Item for='show-context-menu-popup'>Copy</Menu.Item>
       <Menu.Item for='show-context-menu-popup'>Paste</Menu.Item>
@@ -1662,7 +1666,7 @@ const TabsSection: FC<{ page: string }> = ({ page }) => (
       instead={[{ when: "letting several independent sections expand", id: "accordion" }]}
     />
     <Tabs class='w-full max-w-md'>
-      <Tabs.List aria-label='Panels'>
+      <Tabs.List label='Panels'>
         <Tabs.Tab for='show-tab-a' selected>
           Overview
         </Tabs.Tab>
@@ -1680,7 +1684,7 @@ const TabsSection: FC<{ page: string }> = ({ page }) => (
       </Tabs.Content>
     </Tabs>
     <Tabs orientation='vertical' class='w-full max-w-md'>
-      <Tabs.List orientation='vertical' aria-label='Vertical panels'>
+      <Tabs.List orientation='vertical' label='Vertical panels'>
         <Tabs.Tab for='show-vtab-a' selected>
           General
         </Tabs.Tab>
@@ -1782,7 +1786,7 @@ const TooltipSection: FC<{ page: string }> = ({ page }) => (
 
 const ToggleGroupSection: FC = () => (
   <CatalogSection id='toggle-group' title='ToggleGroup'>
-    <ToggleGroup aria-label='Camera projection'>
+    <ToggleGroup label='Camera projection'>
       <ToggleGroup.Item name='projection' value='perspective' pressed title='Perspective'>
         Perspective
       </ToggleGroup.Item>
@@ -1790,7 +1794,7 @@ const ToggleGroupSection: FC = () => (
         Parallel
       </ToggleGroup.Item>
     </ToggleGroup>
-    <ToggleGroup aria-label='Alignment'>
+    <ToggleGroup label='Alignment'>
       <ToggleGroup.Item name='align' value='left' title='Left'>
         L
       </ToggleGroup.Item>
@@ -1801,7 +1805,7 @@ const ToggleGroupSection: FC = () => (
         R
       </ToggleGroup.Item>
     </ToggleGroup>
-    <ToggleGroup type='multiple' aria-label='Overlays'>
+    <ToggleGroup type='multiple' label='Overlays'>
       <ToggleGroup.Item type='multiple' name='overlay' value='grid' pressed title='Grid'>
         Grid
       </ToggleGroup.Item>
@@ -1812,7 +1816,7 @@ const ToggleGroupSection: FC = () => (
         Safe area
       </ToggleGroup.Item>
     </ToggleGroup>
-    <ToggleGroup orientation='vertical' aria-label='Snap mode'>
+    <ToggleGroup orientation='vertical' label='Snap mode'>
       <ToggleGroup.Item name='snap' value='grid' pressed title='Grid'>
         Grid
       </ToggleGroup.Item>
@@ -1823,7 +1827,7 @@ const ToggleGroupSection: FC = () => (
         Pixels
       </ToggleGroup.Item>
     </ToggleGroup>
-    <ToggleGroup aria-label='Disabled sample'>
+    <ToggleGroup label='Disabled sample'>
       <ToggleGroup.Item name='disabled-sample' value='on' pressed disabled title='On'>
         On
       </ToggleGroup.Item>

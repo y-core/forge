@@ -45,9 +45,11 @@ export function stateAttrs(state: StateAttrsProps): Record<string, string> {
   };
 }
 
-/** The current-page pair: `aria-current="page"` beside `data-selected`. @public */
-export function currentAttrs(current: boolean): Record<string, string> {
-  return { ...(current ? { "aria-current": "page" } : {}), ...stateAttrs({ selected: current }) };
+// `location` is the in-page marker: the reader moved *within* a page that never navigated, which is
+// what a fragment link does — `client/scroll-spy.ts` marks a spied section the same way.
+/** The current pair: `aria-current` in `kind`'s spelling beside `data-selected`. @public */
+export function currentAttrs(current: boolean, kind: "page" | "location" = "page"): Record<string, string> {
+  return { ...(current ? { "aria-current": kind } : {}), ...stateAttrs({ selected: current }) };
 }
 
 /** Reconciles the attributes owned by each present state key on a live element. @public */

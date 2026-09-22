@@ -2,17 +2,22 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
+import { titleId } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { DialogNaming, PhysicalSide } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
 
-interface DrawerProps extends DialogNaming, Omit<JSX.IntrinsicElements["dialog"], "children"> {
+type DrawerProps = DialogNaming & DrawerOwnProps;
+
+interface DrawerOwnProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
   /** Element id — the `commandfor` target named by `Drawer.Trigger` / `Drawer.Close`. */
   id: string;
   /** Viewport edge the panel is anchored to; physical because a drawer must not mirror with direction. */
   side?: PhysicalSide | undefined;
+  // The `open` attribute always yields a non-modal dialog — no backdrop, no inertness, no top layer
+  // — and `showModal()` throws on one already open, so `openModal` suppresses `open` below.
   /** Render open and *non-modal* — no backdrop, the rest of the page stays interactive. */
   open?: boolean | undefined;
   /** Open as a modal on resume. Requires the client runtime; `showModal()` has no markup spelling. */
@@ -58,6 +63,7 @@ const DrawerRoot: FC<DrawerProps> = ({
   side = "left",
   label,
   labelledby,
+  titled,
   open,
   openModal,
   class: cls,
@@ -68,8 +74,8 @@ const DrawerRoot: FC<DrawerProps> = ({
   <dialog
     id={id}
     data-slot={slotToken("drawer", inherited)}
-    {...dialogNameAttrs(id, { label, labelledby })}
-    {...(open ? { open: true } : {})}
+    {...dialogNameAttrs(id, { label, labelledby, titled })}
+    {...(open && !openModal ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
     closedby='any'
     class={cn(DRAWER_BASE, DRAWER_AXIS[side], cls)}
@@ -104,7 +110,7 @@ const DrawerClose: FC<DrawerCloseProps> = ({ for: target, request = false, class
 const DrawerTitle: FC<DrawerTitleProps> = ({ for: target, level, class: cls, children, "data-slot": inherited, ...rest }) => {
   const Heading = `h${level ?? 2}` as "h2";
   return (
-    <Heading data-slot={slotToken("drawer-title", inherited)} id={`${target}-title`} class={cn("text-base font-semibold", cls)} {...rest}>
+    <Heading data-slot={slotToken("drawer-title", inherited)} id={titleId(target)} class={cn("text-base font-semibold", cls)} {...rest}>
       {children}
     </Heading>
   );

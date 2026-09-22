@@ -462,6 +462,36 @@ test.describe("native inputs are never stolen from", () => {
     expect(await page.evaluate(() => document.querySelector<HTMLInputElement>("#field")?.selectionStart)).toBe(1);
   });
 
+  // `email`, `number` and every date type edit text but report `selectionStart` as null, so the
+  // selection API cannot be the test — the ring would claim their arrows at every caret position.
+  for (const type of ["email", "number"]) {
+    test(`both arrows stay inside a type=${type} field, which has no selection API to consult`, async ({ page }) => {
+      const html = `<div id="root"><button id="b0" data-item>a</button><input id="field" type="${type}" data-item><button id="b2" data-item>c</button></div>`;
+      await mount(page, html, EXPOSE);
+      await install(page);
+
+      await page.focus("#field");
+      await page.keyboard.press("ArrowLeft");
+      expect(await focusedId(page)).toBe("field");
+      await page.keyboard.press("ArrowRight");
+      expect(await focusedId(page)).toBe("field");
+    });
+  }
+
+  // `color` edits no text either, but unlike a date or a `number` it does nothing with the arrows —
+  // so releasing them to the platform left the user stranded on the swatch with only Tab out.
+  test("a type=color swatch leaves the arrows to the ring, having no use for them", async ({ page }) => {
+    const html =
+      '<div id="root"><button id="b0" data-item>a</button><input id="field" type="color" data-item><button id="b2" data-item>c</button></div>';
+    await mount(page, html, EXPOSE);
+    await install(page);
+
+    await page.focus("#field");
+    await page.keyboard.press("ArrowRight");
+
+    expect(await focusedId(page)).toBe("b2");
+  });
+
   test("ArrowRight at the end of the text leaves the field", async ({ page }) => {
     await mount(page, WITH_INPUT, EXPOSE);
     await install(page);
@@ -547,6 +577,43 @@ test.describe("focus restoration", () => {
     expect(await focusedId(page)).toBe("b0");
   });
 
+  test("leaves focus where the user put it when the composite mutates after they left it", async ({ page }) => {
+    await mount(page, `${toolbar({ count: 3 })}<input id="editor">`, EXPOSE);
+    await install(page);
+
+    await page.focus("#b1");
+    await page.focus("#editor");
+    await page.evaluate(async () => {
+      const added = document.createElement("button");
+      added.id = "b3";
+      added.setAttribute("data-item", "");
+      document.querySelector("#root")?.append(added);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(await focusedId(page)).toBe("editor");
+  });
+
+  // A click on blank background blurs to `<body>` with a null `relatedTarget`, exactly as removing the
+  // focused item does — so only the item having gone away can mean the user was stranded.
+  test("leaves focus on <body> when the user clicked blank background before the mutation", async ({ page }) => {
+    await mount(page, `${toolbar({ count: 3 })}<div id="blank" style="height:200px"></div>`, EXPOSE);
+    await install(page);
+
+    await page.focus("#b1");
+    await page.click("#blank");
+    expect(await focusedId(page)).toBe("");
+    await page.evaluate(async () => {
+      const added = document.createElement("button");
+      added.id = "b3";
+      added.setAttribute("data-item", "");
+      document.querySelector("#root")?.append(added);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  });
+
   test("adopts items added after mount, because items are resolved live", async ({ page }) => {
     await mount(page, toolbar({ count: 2 }), EXPOSE);
     await install(page);
@@ -603,6 +670,78 @@ test.describe("items that are in the DOM but not rendered", () => {
     await page.keyboard.press("ArrowRight");
 
     expect(await focusedId(page)).toBe("b1");
+  });
+});
+
+// A native button carries `tabIndex === 0` without this controller having written it, so an item that
+// joins the ring after mount arrives already looking like the stop. Nothing here focuses: that repairs it.
+test.describe("exactly one tab stop survives a change of membership", () => {
+  test("re-normalises the ring when an item is appended with focus outside", async ({ page }) => {
+    await mount(page, toolbar({ count: 2 }), EXPOSE);
+    await install(page);
+
+    await page.evaluate(async () => {
+      const added = document.createElement("button");
+      added.id = "b2";
+      added.setAttribute("data-item", "");
+      document.querySelector("#root")?.append(added);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(await tabIndexes(page)).toEqual([0, -1, -1]);
+  });
+
+  test("writes the designated stop when the reveal happens above the root, where no mutation reaches", async ({ page }) => {
+    const items =
+      '<button id="b0" data-item>0</button><button id="b1" data-item>1</button><button id="b2" data-item data-composite-item-active>2</button>';
+    await mount(page, `<details id="panel"><summary>more</summary><div id="root">${items}</div></details>`, EXPOSE);
+    await install(page);
+
+    await page.evaluate(async () => {
+      document.querySelector<HTMLDetailsElement>("#panel")?.setAttribute("open", "");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(await tabIndexes(page)).toEqual([-1, -1, 0]);
+  });
+
+  // The reveal observer outlives a mount whose root was visible but empty, so an ordinary scroll can
+  // fire it long after the ring was normalised — where it must leave the stop the user moved.
+  test("an intersection change never takes the stop back off the item the user arrowed to", async ({ page }) => {
+    await mount(page, '<div id="root"></div><div style="height:200vh"></div>', EXPOSE);
+    await install(page);
+
+    await page.evaluate(async () => {
+      const root = document.querySelector("#root");
+      for (let i = 0; i < 3; i += 1) {
+        const item = document.createElement("button");
+        item.id = `b${i}`;
+        item.setAttribute("data-item", "");
+        root?.append(item);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await page.focus("#b2");
+    await page.evaluate(async () => {
+      window.scrollTo(0, document.body.scrollHeight);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      window.scrollTo(0, 0);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(await tabIndexes(page)).toEqual([-1, -1, 0]);
+  });
+
+  test("writes the ring's first stop when a composite hidden at mount is revealed", async ({ page }) => {
+    await mount(page, '<div id="root" hidden><button id="b0" data-item>0</button><button id="b1" data-item>1</button></div>', EXPOSE);
+    await install(page);
+
+    await page.evaluate(async () => {
+      document.querySelector("#root")?.removeAttribute("hidden");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(await tabIndexes(page)).toEqual([0, -1]);
   });
 });
 
@@ -708,7 +847,7 @@ test.describe("idempotence per root", () => {
 
 // `listItems()` costs a `checkVisibility()` per item, each forcing style resolution, while a
 // `{childList, subtree}` observer gets a batch for every unrelated write under the root.
-test.describe("the observer defers the visibility scan behind the cheap facts", () => {
+test.describe("the observer defers the visibility scan behind a membership test", () => {
   async function instrumentVisibility(page: Page): Promise<void> {
     await page.evaluate(() => {
       window.visibilityChecks = 0;
@@ -720,7 +859,7 @@ test.describe("the observer defers the visibility scan behind the cheap facts", 
     });
   }
 
-  test("costs nothing per unrelated mutation while focus is inside and a tab stop stands", async ({ page }) => {
+  test("costs nothing per mutation that cannot have changed the ring's membership", async ({ page }) => {
     await mount(page, toolbar({ count: 20 }), EXPOSE);
     await install(page);
     await page.focus("#b0");
@@ -734,9 +873,8 @@ test.describe("the observer defers the visibility scan behind the cheap facts", 
       }
     });
 
-    // One read of the standing tab stop per batch, not one per item: 10 batches over a 20-item
-    // composite cost 10 rather than the 200 the unconditional scan in front of them cost.
-    expect(await page.evaluate(() => window.visibilityChecks)).toBe(10);
+    // A `<span>` is neither an item nor holds one, so none of the 10 batches reaches the scan at all.
+    expect(await page.evaluate(() => window.visibilityChecks)).toBe(0);
   });
 
   test("still runs the full scan for the removal it exists for", async ({ page }) => {

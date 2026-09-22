@@ -2,12 +2,15 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
+import { descriptionId, titleId } from "../contracts/naming";
 import type { DialogNaming } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
 
-interface DialogProps extends DialogNaming, Omit<JSX.IntrinsicElements["dialog"], "children"> {
+type DialogProps = DialogNaming & DialogOwnProps;
+
+interface DialogOwnProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
   /** Element id — the `commandfor` target named by `Dialog.Trigger` / `Dialog.Close`. */
   id: string;
   // The `open` attribute always yields a non-modal dialog — no backdrop, no inertness, no top layer
@@ -16,6 +19,16 @@ interface DialogProps extends DialogNaming, Omit<JSX.IntrinsicElements["dialog"]
   open?: boolean | undefined;
   /** Open as a modal on resume. Requires the client runtime; `showModal()` has no markup spelling. */
   openModal?: boolean | undefined;
+  /** Announce as an alert dialog — a message interrupting the reader's work, which APG asks be described. */
+  alert?: boolean | undefined;
+  /** This root renders a `.Description` whose `for` is its own id, and points `aria-describedby` at it. */
+  described?: boolean | undefined;
+  children?: JSXNode | undefined;
+}
+
+interface DialogDescriptionProps extends Omit<JSX.IntrinsicElements["p"], "children" | "id"> {
+  /** id of the `Dialog` this message describes — the root's `aria-describedby` target is derived from it. */
+  for: string;
   children?: JSXNode | undefined;
 }
 
@@ -43,11 +56,28 @@ interface DialogTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" 
   children?: JSXNode | undefined;
 }
 
-const DialogRoot: FC<DialogProps> = ({ id, label, labelledby, open, openModal, class: cls, children, "data-slot": inherited, ...props }) => (
+const DialogRoot: FC<DialogProps> = ({
+  id,
+  label,
+  labelledby,
+  titled,
+  alert = false,
+  described = false,
+  open,
+  openModal,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...props
+}) => (
   <dialog
     id={id}
     data-slot={slotToken("dialog", inherited)}
-    {...dialogNameAttrs(id, { label, labelledby })}
+    {...(alert ? { role: "alertdialog" } : {})}
+    {...dialogNameAttrs(id, { label, labelledby, titled })}
+    // Emitted on the caller's word, exactly as the title reference is: a description that resolves to
+    // nothing suppresses `aria-description` and `title` rather than merely being ignored.
+    {...(described ? { "aria-describedby": descriptionId(id) } : {})}
     {...(open && !openModal ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
     closedby='any'
@@ -82,11 +112,17 @@ const DialogClose: FC<DialogCloseProps> = ({ for: target, request = false, class
 const DialogTitle: FC<DialogTitleProps> = ({ for: target, level, class: cls, children, "data-slot": inherited, ...rest }) => {
   const Heading = `h${level ?? 2}` as "h2";
   return (
-    <Heading data-slot={slotToken("dialog-title", inherited)} id={`${target}-title`} class={cn("text-base font-semibold", cls)} {...rest}>
+    <Heading data-slot={slotToken("dialog-title", inherited)} id={titleId(target)} class={cn("text-base font-semibold", cls)} {...rest}>
       {children}
     </Heading>
   );
 };
+
+const DialogDescription: FC<DialogDescriptionProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <p data-slot={slotToken("dialog-description", inherited)} id={descriptionId(target)} class={cn("text-sm text-muted-foreground", cls)} {...rest}>
+    {children}
+  </p>
+);
 
 const DialogHeader: FC<DialogSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div data-slot={slotToken("dialog-header", inherited)} class={cn(PANEL_HEADER, cls)} {...rest}>
@@ -111,6 +147,7 @@ export const Dialog = Object.assign(DialogRoot, {
   Trigger: DialogTrigger,
   Close: DialogClose,
   Title: DialogTitle,
+  Description: DialogDescription,
   Header: DialogHeader,
   Content: DialogContent,
   Footer: DialogFooter,

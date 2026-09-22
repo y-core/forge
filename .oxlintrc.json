@@ -28,6 +28,7 @@
     "forge/color-theme-no-raw-utility": "error",
     "forge/color-token-only": "error",
     "forge/focus-ring": "error",
+    "forge/interaction-filter-group-required": "error",
     "forge/interaction-focus-visible": "error",
     "forge/no-inline-style": "error",
     "forge/no-nested-card": "error",

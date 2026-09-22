@@ -11,18 +11,18 @@ describe("isNativeInput", () => {
     expect(isNativeInput(target({ tagName: "TEXTAREA" }))).toBe(true);
   });
 
-  it("claims a text field whose caret sits at the very start", () => {
-    // `0` is falsy, so a truthiness test here hands a caret-at-start field's arrow keys to the
-    // composite and the user cannot move within their own input.
-    expect(isNativeInput(target({ tagName: "INPUT", selectionStart: 0 }))).toBe(true);
+  it("claims a text field whatever its type, including one with no selection API at all", () => {
+    for (const type of ["text", "search", "email", "number", "date", "time", "range", undefined]) {
+      expect([type, isNativeInput(target({ tagName: "INPUT", type }))]).toEqual([type, true]);
+    }
   });
 
-  it("claims a text field with the caret anywhere else", () => {
-    expect(isNativeInput(target({ tagName: "INPUT", selectionStart: 5 }))).toBe(true);
-  });
-
-  it("leaves an input with no caret to the composite", () => {
-    expect(isNativeInput(target({ tagName: "INPUT", selectionStart: null }))).toBe(false);
+  // `color` edits no text and wants no arrows, so the ring keeps them; `range` edits no text either
+  // and does want them, which is why the list decides arrow ownership rather than text-ness.
+  it("leaves the arrows to the ring for the types that have no use for them", () => {
+    for (const type of ["checkbox", "radio", "button", "submit", "reset", "image", "file", "hidden", "color"]) {
+      expect([type, isNativeInput(target({ tagName: "INPUT", type }))]).toEqual([type, false]);
+    }
   });
 
   it("rejects a non-input element, a text node and null", () => {
@@ -78,6 +78,69 @@ describe("isDisabled", () => {
     const item = el("DIV");
     (item as unknown as { disabled: unknown }).disabled = "";
     expect(isDisabled(item as unknown as HTMLElement)).toBe(false);
+  });
+});
+
+// A key the innermost ring could not place still belongs to it, so the typeahead consumes every
+// printable key — except on a descendant that spends printable keys itself.
+describe("mountRovingFocus — what the typeahead refuses to swallow", () => {
+  /** A typeahead ring holding two ordinary rows, plus `extra` wherever the case wants it. */
+  function ring(extra: (el: (tag: string, attrs?: Record<string, string>) => FakeElement, root: FakeElement) => FakeElement) {
+    const { doc, el } = fakeTree();
+    const root = el("DIV", { role: "menu" });
+    for (const name of ["alpha", "beta"]) {
+      const row = el("BUTTON", { role: "menuitem", id: name });
+      row.textContent = name;
+      root.append(row);
+    }
+    const focused = extra(el, root);
+    doc.root.append(root);
+    mountRovingFocus(root as never, { items: "[role='menuitem']", typeahead: true });
+    return { root, focused };
+  }
+
+  const press = (root: FakeElement, on: FakeElement, key: string) => {
+    const event = new FakeEvent("keydown", { key, target: on });
+    root.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+
+  const cases: Array<[string, Record<string, string>]> = [
+    ["a <select>, which runs a typeahead of its own", { role: "menuitem" }],
+    ["a contenteditable region", { role: "menuitem", contenteditable: "true" }],
+  ];
+
+  for (const [what, attrs] of cases) {
+    const tag = attrs.contenteditable ? "DIV" : "SELECT";
+
+    it(`leaves a printable key to ${what} rendered as an item`, () => {
+      const { root, focused } = ring((el, parent) => {
+        const item = el(tag, attrs);
+        parent.append(item);
+        return item;
+      });
+
+      expect(press(root, focused, "a")).toBe(false);
+    });
+
+    it(`leaves a printable key to ${what} nested inside an item`, () => {
+      const { root, focused } = ring((el, parent) => {
+        const row = el("BUTTON", { role: "menuitem", id: "host" });
+        const inner = el(tag, attrs.contenteditable ? { contenteditable: "true" } : {});
+        row.append(inner);
+        parent.append(row);
+        return inner;
+      });
+
+      expect(press(root, focused, "a")).toBe(false);
+    });
+  }
+
+  it("consumes the key on an ordinary row whether or not a label matched", () => {
+    const { root } = ring((_el, parent) => parent);
+    const row = root.querySelector("#alpha") as FakeElement;
+
+    expect([press(root, row, "b"), press(root, row, "z")]).toEqual([true, true]);
   });
 });
 

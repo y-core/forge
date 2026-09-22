@@ -305,6 +305,14 @@ An in-page navigation has no request to read either: the URL does not change as 
 for the one being read. A bar-level link styles that state itself, shifting weight as well as colour, so the paired cue is already there and the app
 adds nothing to get it.
 
+Default: mark a fragment link `aria-current="location"` and a link that changes the page `aria-current="page"` — the question is whether a request
+was made, not whether the control looks like navigation. <!-- rule:forge-ui-nav-current-in-page --> `Carousel.Dots` is the case that looks like the
+exception and is not: the dots are `Pagination` by markup, but each is an anchor to a slide in the document already on screen, so they mark
+`location` as scroll-spy does while `Pagination` proper keeps `page`. **A dots row is also not a landmark by default** — a landmark promises the
+reader that jumping there reaches the site's navigation, and a picker belonging to one widget does not; it renders `role="group"` with its label,
+so two carousels on a page add two groups and no navigation regions. `Carousel.Dots` takes `landmark` for a consumer whose row genuinely is the
+page's navigation.
+
 ---
 
 ## 2. `Dock`

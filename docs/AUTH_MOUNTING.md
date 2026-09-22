@@ -1,14 +1,14 @@
 ---
 title: Auth Mounting
-description: "What a consumer mounts to get forge's identity capability: the route groups and their guards, the order the middleware goes up in, the seams forge does not ship, and the bill."
+description: "What a consumer mounts to get forge's identity capability: the route groups and their guards, the middleware order, the seams forge does not ship, the bill, and when the key ring must be rotated."
 audience: consumer
 ---
 
 # Auth Mounting
 
 > Owns what a consumer does to stand forge's identity capability up: the route builders and the order they go up in, the guard table every
-> group is cut from, the seams forge deliberately ships no implementation for, what mounting costs, and how to place a single auth view inside a
-> page you own.
+> group is cut from, the seams forge deliberately ships no implementation for, what mounting costs, how to place a single auth view inside a
+> page you own, and the standing obligation to rotate the key ring.
 >
 > Owns the mount, not the flows. What each flow does once mounted is [`AUTH_FLOWS.md`][af], which also owns the limits this release carries.
 >
@@ -26,6 +26,7 @@ audience: consumer
 - §4 Why Guards Are Wired Separately from Routes: one table, two readers
 - §5 What Mounting Costs You: the bindings, the fixtures they break, and the pre-release caveat
 - §6 Embedding an Auth View in Your Own Page: `resolveAuthView`, the `guarded` claim, and the chrome props
+- §7 Rotating the Key Ring: the per-key seal bound, what crossing it costs, the cadence, and why a retired secret may never be dropped
 
 ---
 
@@ -204,7 +205,7 @@ Every item here is a seam with a contract and no implementation, and each is req
 | A D1 binding and the applied auth schema | Every auth store — the durable ones and the ephemeral ceremony pair, challenges and one-shot nonces. The package publishes `src/auth/schema.sql` and no SQL that runs: the app names that file by path in its own `forge db` host config, composes it into a migration of its own with `forge db migrate compose`, then applies it with `forge db migrate`. How that database is migrated, backed up and seeded is [`DATABASE_MANAGEMENT.md`][dm]. |
 | A scheduled call to `purgeAuthEphemera(db, Date.now())` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
 | A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
-| A key ring | Hex root secrets, newest first, each at least 32 bytes, held as a Worker secret. |
+| A key ring | Hex root secrets, newest first, each at least 32 bytes, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
 | `AuthWebOptions.bootstrapSecret` — `(c) => string \| undefined`, if this deployment claims its first admin through the page | The claim grants the administrator role to whoever posts first, so it fails closed: with no secret configured, `GET` and `POST /admin/elevate` both answer **404** rather than offering an open endpoint. Read it off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` — `(userId) => string \| Promise<string>` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` — `(userId) => { name, displayName }` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
@@ -315,6 +316,47 @@ renders on its own routes, so an embed that passes neither is byte-identical to 
 There is no way to suppress the heading: the views use it as the accessible name of the surface they render. A page with its own heading passes
 `level={2}`. To replace a page's markup outright, use the `views` option on `AuthWebOptions` — `resolveAuthView` builds `node` off your entry when
 there is one.
+
+---
+
+## 7. Rotating the Key Ring
+
+**Every seal draws a fresh random 96-bit nonce, and that bounds how much one key may do.** NIST SP 800-38D, section 8.3, holds a key used with
+random nonces to under 2^32 invocations, past which the chance of drawing a nonce twice stops being negligible. The budget is spent per
+`(kid, purpose)` subkey rather than per secret: `identity`, `verify` and `totpWrap` each have their own, so a busy purpose consumes nobody else's.
+
+**Crossing it is not a degradation, it is a collapse.** A nonce drawn twice under one key discloses the XOR of the two plaintexts, and — the worse
+half — leaks the GCM authentication subkey. That subkey is what makes a tag unforgeable, so losing it forfeits forgery resistance for **every**
+message ever sealed under that key, retroactively rather than from the collision onwards. This is what makes the cadence below a requirement and
+not hygiene.
+
+**Rotate at 2^32 seals under any one purpose, or annually, whichever comes first.** One emailed sign-in link is one seal, so roughly 4.3×10⁹ is
+years of moderate volume away — distant, but reachable by a deployment that runs long enough. The calendar leg is the one that carries the
+obligation in practice, because nothing counts the other one.
+
+**A retired secret stays in the ring until nothing is sealed under it.** For a token purpose that means the longest TTL a token of yours carries:
+drop the secret sooner and tokens still in flight stop opening. A wrapped TOTP secret carries **no TTL at all**, so a calendar is no answer for it —
+it is sealed at enrolment and opened by the kid in its own frame, however old that kid is.
+
+**A `totpWrap` secret is droppable once no factor is sealed under it, and that is a condition you can test.** A successful verification re-seals the
+secret under the active kid when its frame names an older one, riding the write that already records the verification — so the population under a
+retiring key shrinks as its holders sign in. `authKeysRetirable(factors, "totp-app", ring)` is true exactly when that population is empty;
+`FactorStore.countSecretsNotUnder` is the same figure for a dashboard. Drop the secret before it answers true and every affected user loses their
+authenticator app permanently.
+
+**Bounding the wait is `purgeStaleTotpSecrets`, and it is yours to call.** A user who never signs in is never re-sealed, so the count can sit above
+zero on somebody who may never return. The purge drops `totp-app` rows still under an older kid whose last _accepted_ code is older than a window
+you name, from your own scheduled handler. Those users then owe an enrolment and are routed to the enrolment page, which is why it is **refused
+unless your deployment offers `totp-app` as `mandatory`**: under any other requirement nothing asks them to replace what was dropped. It takes the
+ring rather than a key id, because it deletes the complement of the active key and a wrong id would take the live enrolments.
+
+The mechanism of a rotation, and what `importAuthKeyRing` demands of each secret, is [`src/auth/README.md`][auth-readme] section “Rotating the
+signing secret”.
+
+**This is documented and not enforced, and that is a decision rather than an omission.** Forge holds no durable counter to enforce it with: a
+Worker isolate is stateless and the ring is resolved per request, so any count forge kept would reset silently — and a counter that lies about how
+much budget is left is worse than none at all. A deployment that wants the bound enforced counts seals in a store of its own, where the count
+survives.
 
 [af]: ./AUTH_FLOWS.md
 [af-5]: ./AUTH_FLOWS.md#5-email-change

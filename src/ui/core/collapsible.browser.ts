@@ -52,6 +52,20 @@ test.describe("Collapsible", () => {
     await expect.poll(() => state(page)).toEqual({ nativeOpen: true });
   });
 
+  // Every other test clicks: a `<summary>` takes Enter and Space from the platform, and a change that
+  // moved the trigger off one would pass a pointer-only suite.
+  for (const key of ["Enter", " "] as const) {
+    test(`${key === " " ? "Space" : key} on the summary opens it, as the platform gives it`, async ({ page }) => {
+      await mount(page, await markup(), EXPOSE);
+      await start(page);
+
+      await page.focus("#adv-trigger");
+      await page.keyboard.press(key);
+
+      await expect.poll(() => state(page)).toEqual({ nativeOpen: true });
+    });
+  }
+
   test("closing again flips the pair back", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);

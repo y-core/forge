@@ -63,6 +63,12 @@ correct platform default with a guess — and gives two Navbars on one page the 
 navigation landmark on every page a label, and no two the same". `aria-label` / `aria-labelledby` stay the consumer's, passed through. A key with no
 default would translate into a string forge never emits.
 
+**`Navbar`'s name is also deliberately not required at the type level, unlike every other container forge names.** `Tabs.List`, `ToggleGroup`,
+`Toolbar`, `Filter.Group` and `Popover.Content` all refuse to compile unnamed, because each renders a role that takes no name from its contents
+and is anonymous without one. A `<nav>` is the opposite case: one on a page is correctly named by its role alone, so requiring a name would make
+every single-nav page invent one — the same guess the paragraph above rejects, moved from forge to the consumer. The obligation is therefore a
+documented one, owed only by a page rendering more than one bar, and forge's own pages are held to it by that test rather than by the compiler.
+
 **Import `../contracts/labels` at each call site, never `../contracts/mod`** — that is what keeps the barrel from pulling every contract table into
 the Worker graph. Reference the table as `LABEL_DEFAULTS.x` rather than re-spelling the literal. `state-attrs.ts` and `vocabulary.ts` spell
 attribute names literally because `client/*.ts` imports them and a runtime reference would drag the table into a browser bundle, but `labels.ts` is
@@ -168,6 +174,15 @@ neither** — style the native `[open]`. `Menu` opens, closes and dismisses with
 it. `hint` has a light-dismiss stack of its own, which is the behaviour a tooltip wants and the reason it is not `manual`. `Accordion` is not a
 composite — each item is its own disclosure and tab stop, as a native `<details>` list is.
 
+**Accept that an `Accordion` header is not a heading, and do not simulate one.** APG's Accordion wraps each header button in an element with role
+`heading` and an `aria-level`, so a reader walking headings with `H` reaches every section. A native `<summary>` cannot be given that wrapper: a
+heading around the `<details>` encloses the panel as well, making the whole section's prose part of the heading, and a heading nested _inside_ the
+`<summary>` is flattened, because the summary's role takes presentational children. The cost is real and is the one being accepted — `H` navigation
+skips the accordion, and a reader finds its sections by Tab instead, where each `<summary>` is a stop that announces its own expanded state. What
+buys it is everything §1h opens with: exclusive-open, the toggle, and correct first paint with no script. **A caller who needs `H` navigation
+renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
+did would be asserting a structure the platform contradicts.
+
 **Stamp no scope on an overlay whose behaviour is wholly the platform's.** `Dialog`, `Popover`, `Accordion` and `Collapsible` ship neither scope nor
 controller. The one exception is `Dialog`'s `openModal`: a modal has no markup spelling at all, so `showModal()` has to run on resume, and that prop
 alone stamps the dialog scope and an eager controller. It also suppresses `open`, which would otherwise render the dialog non-modal and make that
@@ -198,18 +213,46 @@ re-roled panel would leave the pair disagreeing. Reach for `Menu.Popup` for a me
 breaking and land before v1.0.0 deliberately ([`FORGE_STRUCTURE.md`][la-7] §7): an optional name would have left every consumer's panel nameless by
 default, which is the defect rather than a lesser form of it.
 
-**Give a `<dialog>` root the caller's name where there is one, and the derived reference only otherwise** (`contracts/dialog-contract.ts`). `Dialog`
-and `Drawer` both take `label` and `labelledby`; either one suppresses the `${id}-title` reference, because `dialog` is `nameFrom: author` and a
-derived reference emitted beside a caller's own would name a heading they never wrote. Single-pass SSR cannot see whether a `.Title` child exists,
-so a root that renders neither a title nor a name prop still writes a reference resolving to nothing — inert under AccName, but an
-`aria-valid-attr-value` violation in a consumer's axe run, and a panel with no name for a reader who enters it. **Point a deliberately titleless
-drawer's `labelledby` at its own trigger's id**: that is React Aria's fallback, and `Drawer.Trigger`'s `commandfor` already proves the relationship
-exists, in the direction SSR cannot invert. **Emit `aria-describedby` from neither root unless it is conditional from birth** — the description
-computation _is_ a precedence table a UA must not look past, so a dangling one suppresses `aria-description` and `title`.
+**Never emit a derived reference a rendered page might not resolve — make the caller assert the element it points at.** `Dialog` and `Drawer` take
+`titled`, and `Menu.Popup` takes `triggered`; each is the caller saying the `.Title` or the forge trigger exists, and each is the only route to the
+`${id}-title` or `${id}-trigger` reference. Every one of these roots is `nameFrom: author`, so a name has to come from somewhere, and the type makes
+that a choice rather than a default: naming nothing does not compile. **The assertion is needed because single-pass SSR cannot check it** — a
+caller's own component may render the `.Title`, and forge's invoker contract invites any `commandfor` element to open a `Menu.Popup`, so neither a
+children walk nor a document query can tell a missing element from one forge cannot see. An unconditional reference was the alternative in both
+places, and it leaves an IDREF resolving to nothing: inert under AccName, an `aria-valid-attr-value` violation in a consumer's axe run, and a panel
+with no name for a reader who enters it. **The assertion also has to be what the emission reads** — a prop the root destructures and never passes on
+leaves the derived reference unconditional, so the rule holds only on the type and evaporates under a spread of a wider object, an `as` cast or a
+`.js` consumer.
+
+**`Tabs.Content` is the one derived reference emitted unconditionally, because its target is not optional.** A tabpanel names itself from its tab
+and from nothing else, and a panel no `Tab` controls is not a panel missing a name — it is one no reader can reach at all, since a tab is the only
+thing that reveals it and it renders `hidden` until one selects it. There is no second way to name it and so nothing for an assertion to choose
+between; the defect the assertion would catch is already a broken tab set, which a reader meets as an unreachable panel rather than as a dangling
+IDREF.
+
+**Give a `<dialog>` root the caller's name where there is one, and the derived reference only on their word** (`contracts/dialog-contract.ts`).
+`Dialog` and `Drawer` take `label`, `labelledby` or `titled`, and `label` and `labelledby` suppress the `${id}-title` reference: a derived reference
+emitted beside a caller's own would name a heading they never wrote. The requirement is breaking and lands before v1.0.0 deliberately
+([`FORGE_STRUCTURE.md`][la-7] §7). **Point a deliberately titleless drawer's `labelledby` at its own trigger's id**: that is React Aria's fallback,
+and `Drawer.Trigger`'s `commandfor` already proves the relationship exists, in the direction SSR cannot invert. **Emit `aria-describedby` only on
+the same assertion the name takes** — the description computation _is_ a precedence table a UA must not look past, so a dangling one suppresses
+`aria-description` and `title`. `Dialog`'s `described` is that assertion, and `Dialog.Description` is the element it points at, derived
+`${id}-description` from the one id the caller wrote. `alert` renders the root `role="alertdialog"`, which is APG's Alert and Message Dialog: a
+message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel" hears the
+consequence and not the button alone.
 
 **Project only the subset the stylesheet can render**, so an unrenderable value is unrepresentable rather than silently unstyled: `Popover.Content`
 and `Tooltip.Content` take `PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the projection tracks the value
 space it is cut from.
+
+**A `Table.Row`'s `selected` paints and does not announce, and a wide table is a named tab stop.** `aria-selected` is a supported state of role
+`row`, but it is only _meaningful_ inside a `grid` or `treegrid`; a `<tr>` in a plain `<table>` is a `row` in a `table`, which has no selection
+model to report it to, so the attribute was inert while `data-selected` painted. APG's Table pattern is non-interactive by design and selectable
+rows are the Grid pattern, which brings a whole keyboard contract forge does not implement — so the state is a visual one and says so. **A caller
+who needs the selection announced puts a control in the row**: a checkbox in the first cell is announced natively, is operable, and is what a reader
+can act on, where an `aria-selected` on the row is neither. The scroll wrapper takes the shape `ScrollArea.Viewport` has — a named `<section>` that
+is an unconditional tab stop — because a browser makes an overflowing scroller focusable only when it holds nothing focusable, and Safari not at
+all, so a wide table of plain text was unscrollable from the keyboard (WCAG 2.1.1). That is why `Table` requires `label`.
 
 ### 1i. Native-Input Primitive Decisions
 
@@ -309,6 +352,13 @@ side is `labelPlacement` (§1i), and `FormField`'s width-driven collapse a separ
 (default `3`) and `Dialog`/`Drawer.Title` (default `2`), and nothing else — `data-slot`, the class and the derived `id` are identical at every
 level, so `aria-labelledby` still resolves. It is the tool `forge-ui-heading-order` needed. Not `as`, which already names a type scale on
 `FormField.Legend`.
+
+**Where a native attribute collides with the vocabulary, the vocabulary wins and the native one is renamed.** `Select` omits the DOM's `size` and
+takes `rows` for the visible option count, because `size` on every other control is the `Size` token and one name meaning a height token here and a
+row count there is the `variant` mistake in a second costume. What was weighed and is settled: `rows` over `visibleRows` because it is the
+name `<textarea>` already uses for the same idea; one prop over a separate `Listbox`, because the two render the same element and differ only in
+whether the popup collapses — a second component would double the surface to express a boolean; and the shadowing is safe rather than a trap,
+because `Omit` makes a spread carrying a numeric `size` a type error at the call site rather than a silent resize.
 
 **`conformance.test.tsx` enforces these rules** by scanning `ui/core`, `ui/chrome` and `ui/controls`, carrying each exemption with its reason — so
 adding one is visible, not a quiet edit.

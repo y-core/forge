@@ -37,6 +37,21 @@ const fire = (el: FakeElement, type: string) => {
 const selection = (list: FakeElement[]) => list.map((el) => el.getAttribute("aria-selected"));
 
 describe("mountTabs", () => {
+  // `aria-selected` and `data-selected` are written in one statement rather than by one function,
+  // because which ARIA attribute a state maps to is the widget's own question, not the table's.
+  it("moves the styling hook with the ARIA state on every tab it repaints", () => {
+    const { root, tabs: list } = tabs();
+    mountTabs(root as never);
+
+    fire(list[2] as FakeElement, "focusin");
+
+    expect(list.map((el) => [el.getAttribute("aria-selected"), el.hasAttribute("data-selected")])).toEqual([
+      ["false", false],
+      ["false", false],
+      ["true", true],
+    ]);
+  });
+
   it("marks the tab set mounted, which is what retires the :target fallback", () => {
     const { root } = tabs();
 
@@ -132,6 +147,37 @@ describe("mountTabs", () => {
     fire(list[1] as FakeElement, "focusin");
 
     expect(selection(list)).toEqual(["true", "false", "false"]);
+  });
+});
+
+describe("mountTabs — handing the tab stop back", () => {
+  it("keeps a tablist in the tab sequence when every tab is disabled and none is selected", () => {
+    const { root, list, tabs: rows } = tabs();
+    for (const tab of rows) {
+      tab.setAttribute("aria-selected", "false");
+      tab.setAttribute("aria-disabled", "true");
+    }
+    mountTabs(root as never);
+
+    list.dispatchEvent(new FakeEvent("focusout"));
+
+    expect(rows.filter((tab) => tab.tabIndex === 0).length).toBe(1);
+  });
+
+  it("writes no tab stop outside the list when the tablist itself holds no tabs", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV", { "data-slot": "tabs" });
+    const list = el("DIV", { role: "tablist" });
+    const stray = el("A", { role: TAB_ROLE, href: "#p-a" });
+    stray.tabIndex = -1;
+    root.append(list);
+    root.append(stray);
+    doc.root.append(root);
+    mountTabs(root as never);
+
+    list.dispatchEvent(new FakeEvent("focusout"));
+
+    expect(stray.tabIndex).toBe(-1);
   });
 });
 

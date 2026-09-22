@@ -1,5 +1,4 @@
-import type { DialogNaming } from "./types";
-
+import { nameAttrs, titleId } from "./naming";
 /** Resumable-scope name a `Dialog` asked to open modally stamps. Eager. @public */
 export const DIALOG_SCOPE = "dialog";
 
@@ -8,19 +7,14 @@ export const DIALOG_SCOPE = "dialog";
 /** Marks a dialog the client scope opens with `showModal()` on resume. @public */
 export const DIALOG_OPEN_MODAL_ATTR = "data-open-modal";
 
-// A reference beats a literal: only the reference tracks text the page already shows, so the name a
-// reader hears cannot drift from the heading they see.
-/** The name a caller asked for, or nothing at all where they asked for none. @public */
-export function nameAttrs(naming: DialogNaming): Record<string, string> {
-  if (naming.labelledby !== undefined) return { "aria-labelledby": naming.labelledby };
-  if (naming.label !== undefined) return { "aria-label": naming.label };
-  return {};
-}
-
-// `dialog` is `nameFrom: author`, so a caller who names the root must win outright: emitting the
-// derived reference beside their own would leave the panel named by a heading they did not write.
+// The derived reference is reachable only through `titled`, which is the caller asserting the `.Title`
+// it points at: emitted unconditionally it is a dangling IDREF, which names nothing at all.
 /** How a `<dialog>` root is named — the caller's own name, else the reference derived from its `.Title`. @public */
-export function dialogNameAttrs(id: string, naming: DialogNaming): Record<string, string> {
+export function dialogNameAttrs(
+  id: string,
+  naming: { label?: string | undefined; labelledby?: string | undefined; titled?: true | undefined },
+): Record<string, string> {
   const named = nameAttrs(naming);
-  return Object.keys(named).length > 0 ? named : { "aria-labelledby": `${id}-title` };
+  if (Object.keys(named).length > 0) return named;
+  return naming.titled === true ? { "aria-labelledby": titleId(id) } : {};
 }

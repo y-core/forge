@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { realDbIo, wranglerUnreachable } from "./io";
+import { missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
 import type { Home, Spawned } from "./types";
 
 const roots: string[] = [];
@@ -188,7 +188,7 @@ describe("wranglerUnreachable()", () => {
   // A broken install reported as an absent one sends the user to reinstall a package that is there.
   it("keeps the module's own error text for a wrangler that would not load", () => {
     const cause = new Error("Cannot find module '@cloudflare/workerd-linux-64'");
-    const error = wranglerUnreachable(localHome("/app"), cause);
+    const error = wranglerUnreachable(localHome("/app"), { error: cause });
     expect(error.kind).toBe("external");
     expect(error.message).toContain("wrangler would not load");
     expect(error.message).toContain("Cannot find module '@cloudflare/workerd-linux-64'");
@@ -196,11 +196,29 @@ describe("wranglerUnreachable()", () => {
   });
 
   it("reserves the not-installed wording for a module that loaded without the export", () => {
-    const error = wranglerUnreachable(localHome("/app"), null);
+    const error = wranglerUnreachable(localHome("/app"), { missing: "getPlatformProxy" });
     expect(error.message).toBe(
       "wrangler is not installed, or is too old to export getPlatformProxy — `forge db` reaches local (app-db) through it",
     );
     expect(error.cause).toBeUndefined();
+  });
+});
+
+// `unstable_splitSqlQuery` used to be read at query time, where its absence surfaced as "query
+// `SELECT …` failed" and the version diagnostic was lost. Both exports are now read at the open.
+describe("missingWranglerExport()", () => {
+  it("names the half a wrangler exporting only getPlatformProxy is missing", () => {
+    const missing = missingWranglerExport({ getPlatformProxy: () => undefined });
+    expect(wranglerUnreachable(localHome("/app"), { missing: missing ?? "" }).message).toBe(
+      "wrangler is not installed, or is too old to export unstable_splitSqlQuery — `forge db` reaches local (app-db) through it",
+    );
+  });
+
+  it("names getPlatformProxy first, and answers null for a wrangler exporting both", () => {
+    expect([
+      missingWranglerExport({ unstable_splitSqlQuery: () => [] }),
+      missingWranglerExport({ getPlatformProxy: () => undefined, unstable_splitSqlQuery: () => [] }),
+    ]).toEqual(["getPlatformProxy", null]);
   });
 });
 

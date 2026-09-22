@@ -163,7 +163,7 @@ const ControlsTextareaSection: FC = () => (
 const ControlsToggleGroupSection: FC = () => (
   <CatalogSection id='controls-toggle-group' title='Bound ToggleGroup'>
     <BoundRow field='align' value={CONTROLS_DEMO_STATE.align}>
-      <ToggleGroup aria-label='Text alignment'>
+      <ToggleGroup label='Text alignment'>
         <ToggleGroup.Item bind='align' value='left' pressed={CONTROLS_DEMO_STATE.align === "left"}>
           Left
         </ToggleGroup.Item>
@@ -176,7 +176,7 @@ const ControlsToggleGroupSection: FC = () => (
       </ToggleGroup>
     </BoundRow>
     <BoundRow field='weight' value={CONTROLS_DEMO_STATE.weight}>
-      <ToggleGroup orientation='vertical' aria-label='Font weight'>
+      <ToggleGroup orientation='vertical' label='Font weight'>
         {["regular", "medium", "bold"].map((weight) => (
           <ToggleGroup.Item key={weight} bind='weight' value={weight} pressed={CONTROLS_DEMO_STATE.weight === weight}>
             {weight}

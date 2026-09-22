@@ -56,6 +56,8 @@ export interface ReleaseCommandConfig {
   stageFiles?: string[];
   /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. */
   changelogFile?: string;
+  /** Where the released sections' digests are recorded. Defaults to `config/changelog-sections.json`. */
+  sectionsFile?: string;
   /** The gate run before the tag is cut, as argv. Defaults to `["bun", "run", "verify"]`. */
   gateCommand?: string[];
 }
@@ -72,6 +74,7 @@ export interface ReleaseDeps {
   /** Reads the changelog, or `null` when the file does not exist. */
   readChangelog: (cwd: string, file: string) => string | null;
   writeChangelog: (cwd: string, file: string, source: string) => void;
+  writeChangelogSections: (cwd: string, file: string, source: string) => void;
   /** The repository's normalised base URL for compare links, or `null` when unknown. */
   readRepositoryUrl: (cwd: string) => string | null;
   /** Public-surface entries present at `ref` and gone from the working tree. */

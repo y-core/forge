@@ -1,7 +1,7 @@
 import { splitByFace } from "./embed";
 import { LINE, RULE_WEIGHT, VALUE_SIZE } from "./geometry";
 import { DEFAULT_PDF_MAX_PAGES } from "./limits";
-import { embeddedWidth, preferredWidth, widestOf, wordsOf } from "./measure";
+import { embeddedWidth, linesOf, preferredWidth, widestOf, wordsOf } from "./measure";
 import { wrapBy } from "./text";
 import { resolveTracks, trackOffsets } from "./tracks";
 import type {
@@ -96,7 +96,10 @@ export function Text(props: TextProps): PdfElement {
   return {
     measure(width, set) {
       const { widthOf, wrap } = setting(set);
-      return { preferred: widthOf(props.children), minimum: widestOf(wordsOf(props.children), widthOf), height: wrap(width).length * leading };
+      // Per line, because `widthOf` sums its segments: given a whole run, an embedded face gives
+      // `\n` its own near-zero advance and answers the lines laid end to end, which nothing occupies.
+      const preferred = widestOf(linesOf(props.children), widthOf);
+      return { preferred, minimum: widestOf(wordsOf(props.children), widthOf), height: wrap(width).length * leading };
     },
     fragments(box, set) {
       const { segments, widthOf, resort, wrap } = setting(set);

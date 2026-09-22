@@ -56,9 +56,27 @@ describe("NumberField", () => {
       readonly: "",
     });
     expect([attrsOf(html, 'data-slot="number-field-decrement"'), attrsOf(html, 'data-slot="number-field-increment"')]).toEqual([
-      { type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement" },
-      { type: "button", "data-slot": "number-field-increment", "aria-label": "Increment" },
+      { type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement", tabindex: "-1" },
+      { type: "button", "data-slot": "number-field-increment", "aria-label": "Increment", tabindex: "-1" },
     ]);
+  });
+});
+
+// APG's Spinbutton makes the field the only focusable component, and its own example gives the
+// buttons `tabindex="-1"`: the field's arrow keys are the keyboard path, and the buttons the pointer's.
+describe("NumberField — the steppers are out of the tab order", () => {
+  it("leaves the field as the widget's one tab stop, with the buttons still pointer-operable", async () => {
+    const html = await render(
+      <NumberField>
+        <NumberField.Decrement />
+        <NumberField.Input name='count' />
+        <NumberField.Increment />
+      </NumberField>,
+    );
+
+    const stops = [...html.matchAll(/<button[^>]*tabindex="(-?\d+)"/g)].map(([, value]) => value);
+    expect(stops).toEqual(["-1", "-1"]);
+    expect(attrsOf(html, 'data-slot="number-field-input"')).not.toHaveProperty("tabindex");
   });
 });
 
@@ -132,7 +150,7 @@ describe("NumberField.Decrement", () => {
   it("defaults to a minus-sign glyph behind an explicit label, since the glyph names nothing", async () => {
     const html = await render(<NumberField.Decrement />);
 
-    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement" });
+    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement", tabindex: "-1" });
     expect(textOf(html)).toBe("−");
   });
 
@@ -140,7 +158,13 @@ describe("NumberField.Decrement", () => {
     const html = await render(<NumberField.Decrement disabled>Less</NumberField.Decrement>);
 
     expect(textOf(html)).toBe("Less");
-    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-decrement", "aria-label": "Decrement", disabled: "" });
+    expect(attrsOf(html)).toEqual({
+      type: "button",
+      "data-slot": "number-field-decrement",
+      "aria-label": "Decrement",
+      tabindex: "-1",
+      disabled: "",
+    });
   });
 
   it("lets a caller replace the label in place and override the size utility it conflicts with", async () => {
@@ -156,7 +180,7 @@ describe("NumberField.Increment", () => {
   it("defaults to a plus glyph behind an explicit label, since the glyph names nothing", async () => {
     const html = await render(<NumberField.Increment />);
 
-    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-increment", "aria-label": "Increment" });
+    expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "number-field-increment", "aria-label": "Increment", tabindex: "-1" });
     expect(textOf(html)).toBe("+");
   });
 

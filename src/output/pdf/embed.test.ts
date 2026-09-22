@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { embedFont, glyphString, kernedArray, splitByFace } from "./embed";
 import type { PdfEmbeddedFont } from "./types";
-import { createObjectManager } from "./writer";
+import { createObjectManager } from "./writer/objects";
 
 function fontOf(run: string): PdfEmbeddedFont {
   const codes = [...new Set([...run].map((character) => character.codePointAt(0) ?? 0))];

@@ -1060,6 +1060,22 @@
       outline-offset: 2px;
     }
 
+    /* A menu row's focus cue is `focus-visible:bg-accent` — a colour change, which forced colors
+     overrides outright — beside the `outline-none` every row carries. The measured result is a
+     focused row with no indicator at all: no shadow, no outline, and Canvas behind it either way.
+     Unlike `focus-ring`, whose `outline-none` Chromium overrules with its own ring here, this one
+     stands, so the outline is restated. */
+    :is(
+      [data-slot~="menu-item"],
+      [data-slot~="menu-checkbox-item"],
+      [data-slot~="menu-radio-item"],
+      [data-slot~="menu-link-item"],
+      [data-slot~="menu-submenu-trigger"]
+    ):focus-visible {
+      outline: 2px solid CanvasText;
+      outline-offset: -2px;
+    }
+
     [data-slot~="slider"] {
       forced-color-adjust: none;
     }

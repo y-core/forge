@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { deflate } from "../writer";
+import { deflate } from "../writer/deflate";
 import { parsePdfObjects, unpackObjectStream } from "./parse.fixture";
 
 const encoder = new TextEncoder();

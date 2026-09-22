@@ -20,8 +20,10 @@ const NO_FACTOR_ROWS: FactorStore = {
   findEnrolled: () => Promise.resolve(ok([])),
   enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
   confirm: () => Promise.resolve(ok(true)),
+  unconfirm: () => Promise.resolve(ok(true)),
   countAttempt: () => Promise.resolve(ok(null)),
-  advanceCounter: () => Promise.resolve(ok(true)),
+  recordVerification: () => Promise.resolve(ok(true)),
+  countSecretsNotUnder: () => Promise.resolve(ok(0)),
   remove: () => Promise.resolve(ok(true)),
 };
 

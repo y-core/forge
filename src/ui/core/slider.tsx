@@ -3,6 +3,7 @@
 import type { FC, JSX } from "../../jsx/types";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { SLIDER_SCOPE } from "../contracts/slider-contract";
+import { stateAttrs } from "../contracts/state-attrs";
 import type { SliderAction } from "../contracts/types";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
@@ -83,10 +84,21 @@ export const Slider: FC<SliderProps> = ({
   const resolved = field ? fieldControlProps(props, field) : props;
   const isVertical = orientation === "vertical";
   const sliderCls = cn(SLIDER_BASE, "cursor-pointer", FIELD_SIZE[size], isVertical && SLIDER_VERTICAL, cls);
+  // Published beside the class rather than left to it: whether an engine derives orientation for its
+  // accessibility tree from `writing-mode` is unverified, and the attribute costs nothing.
+  const axis = isVertical ? { "aria-orientation": "vertical", ...stateAttrs({ orientation }) } : {};
   const state = fieldStateProps(invalid, busy);
   if (!output) {
     return (
-      <input data-slot={slotToken("slider", inherited)} type='range' {...presentationAttrs({ size })} class={sliderCls} {...resolved} {...state} />
+      <input
+        data-slot={slotToken("slider", inherited)}
+        type='range'
+        {...presentationAttrs({ size })}
+        {...axis}
+        class={sliderCls}
+        {...resolved}
+        {...state}
+      />
     );
   }
 
@@ -95,6 +107,7 @@ export const Slider: FC<SliderProps> = ({
       data-slot={slotToken("slider", inherited)}
       type='range'
       {...presentationAttrs({ size })}
+      {...axis}
       class={sliderCls}
       {...scopeAttrs<SliderAction>({ onInput: "sync" })}
       {...resolved}

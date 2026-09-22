@@ -129,7 +129,8 @@ import type { ReleaseCommandConfig } from "@y-core/forge/tooling/release";
 export default { stageFiles: ["package.json", "CHANGELOG.md", "bun.lock"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
 ```
 
-**`stageFiles` replaces the derived list rather than adding to it**, so name the changelog yourself if you still want it staged.
+**`stageFiles` replaces the derived list rather than adding to it**, so name the changelog yourself if you still want it staged. The one file it
+does not replace is `sectionsFile`: the section manifest is forge's own write, and it is staged on every run that promotes a changelog.
 
 `cwd` is the one field the module may not set: it comes from `--root` or the working directory. A `--config` naming a missing file is an error; only
 the unnamed default may be absent.

@@ -8,7 +8,7 @@ export { createPdfPen } from "./path";
 export { Table } from "./table";
 export { DEFAULT_ORPHANS, DEFAULT_PDF_LANG, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, LINK_SCHEMES, MAX_PDF_IMAGE_PIXELS } from "./limits";
 export { PDF_PAGE_SIZES, pdfContentBox, resolvePdfPage } from "./page";
-export { createPdfPalette } from "./palette";
+export { PDF_INK_NAMES, createPdfPalette } from "./palette";
 export { describePdfLayout, formatPdfLayout } from "./layout";
 export { createPdfRenderer } from "./renderer";
 export { toPdfElements } from "./tree";
@@ -30,21 +30,22 @@ export type {
   PdfArtworkPath,
   PdfBaseFace,
   PdfCell,
-  PdfCorners,
   PdfConformanceRule,
   PdfConformanceViolation,
   PdfContent,
+  PdfCorners,
   PdfDefaultFaces,
   PdfDestination,
-  PdfDocumentFonts,
-  PdfEmbeddedFont,
-  PdfEmbeddedMetrics,
   PdfDocument,
+  PdfDocumentFonts,
   PdfElement,
   PdfElementAudit,
+  PdfEmbeddedFont,
+  PdfEmbeddedMetrics,
   PdfField,
   PdfImage,
   PdfInfo,
+  PdfInkName,
   PdfLabels,
   PdfLayout,
   PdfLayoutDrawing,
@@ -61,9 +62,9 @@ export type {
   PdfPalette,
   PdfPathCommand,
   PdfPen,
+  PdfRenderError,
   PdfRenderer,
   PdfRendererOptions,
-  PdfRenderError,
   PdfResolvedPage,
   PdfResult,
   PdfShading,

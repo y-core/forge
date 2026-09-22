@@ -15,8 +15,15 @@ const ITEM_SIZES: { size: Size; added: string[]; dropped: string[] }[] = [
 const item = (props: Parameters<typeof ToggleGroup.Item>[0]) => render(<ToggleGroup.Item {...props} />);
 
 describe("ToggleGroup", () => {
+  // The root renders a `<fieldset>` with no legend, so without a name it announces as "group".
+  it("cannot be rendered unnamed", () => {
+    // @ts-expect-error — one of `label` or `labelledby` is required.
+    const unnamed = <ToggleGroup />;
+    void unnamed;
+  });
+
   it("root is a fieldset carrying the scope its roving focus resumes from", async () => {
-    expect(attrsOf(await render(<ToggleGroup aria-label='Projection' data-ref='projection-group' />))).toEqual({
+    expect(attrsOf(await render(<ToggleGroup label='Projection' data-ref='projection-group' />))).toEqual({
       "data-slot": "toggle-group",
       "data-scope": "toggle-group",
       "data-orientation": "horizontal",
@@ -26,19 +33,18 @@ describe("ToggleGroup", () => {
   });
 
   it("appends a caller class after its own, so the caller's wins a conflict", async () => {
-    expect(classesOf(await render(<ToggleGroup class='extra-root' />)).at(-1)).toBe("extra-root");
+    expect(classesOf(await render(<ToggleGroup label='Alignment' class='extra-root' />)).at(-1)).toBe("extra-root");
   });
 
   it("stacks a vertical group rather than laying a second axis over the horizontal one", async () => {
-    expect(variantClasses(await render(<ToggleGroup orientation='vertical' />), await render(<ToggleGroup />))).toEqual({
-      added: ["flex-col"],
-      dropped: [],
-    });
+    expect(
+      variantClasses(await render(<ToggleGroup label='Alignment' orientation='vertical' />), await render(<ToggleGroup label='Alignment' />)),
+    ).toEqual({ added: ["flex-col"], dropped: [] });
   });
 
   it("gives the group neither a role nor an aria-orientation, on either axis", async () => {
     for (const orientation of ["horizontal", "vertical"] as const) {
-      expect(attrsOf(await render(<ToggleGroup orientation={orientation} aria-label='Projection' />))).toEqual({
+      expect(attrsOf(await render(<ToggleGroup orientation={orientation} label='Projection' />))).toEqual({
         "data-slot": "toggle-group",
         "data-scope": "toggle-group",
         "data-orientation": orientation,
@@ -48,7 +54,8 @@ describe("ToggleGroup", () => {
   });
 
   it("type=multiple marks the group, which is what makes its items checkboxes and mounts roving focus", async () => {
-    expect(attrsOf(await render(<ToggleGroup type='multiple' />))).toEqual({
+    expect(attrsOf(await render(<ToggleGroup label='Alignment' type='multiple' />))).toEqual({
+      "aria-label": "Alignment",
       "data-slot": "toggle-group",
       "data-scope": "toggle-group",
       "data-multiple": "",
@@ -138,7 +145,7 @@ describe("ToggleGroup.Item", () => {
 
   it("renders a whole group in one tree, the shared name binding its items into one choice", async () => {
     const html = await render(
-      <ToggleGroup aria-label='Views'>
+      <ToggleGroup label='Views'>
         <ToggleGroup.Item name='view' value='perspective' pressed>
           Perspective
         </ToggleGroup.Item>

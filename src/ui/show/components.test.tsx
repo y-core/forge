@@ -204,6 +204,17 @@ describe("ShowcaseContent", () => {
     ).toEqual([["menuitem", "#menu"]]);
   });
 
+  // Opened by right-click on a surface rather than by a forge trigger, so `triggered` would point
+  // `aria-labelledby` at an id nothing renders and leave the `role="menu"` with no name at all.
+  it("names the context menu popup literally, having no trigger to take a name from", async () => {
+    const body = await bodyOf("menu");
+    const popup = tagWith(body, "id", "show-context-menu-popup") ?? "";
+    expect({ label: attrOf(popup, "aria-label"), labelledby: attrOf(popup, "aria-labelledby") }).toEqual({
+      label: "Context actions",
+      labelledby: null,
+    });
+  });
+
   it("wires the one submenu trigger to a popup nested inside the file menu", async () => {
     const body = await bodyOf("menu");
     expect(openTags(body, "menu-submenu-trigger").map((tag) => attrOf(tag, "commandfor"))).toEqual(["show-file-export"]);

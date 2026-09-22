@@ -22,7 +22,12 @@ async function open(page: Page, side: PhysicalSide = "left", motion = false): Pr
   if (!motion) await page.emulateMedia({ reducedMotion: "reduce" });
   const html = await render([
     Drawer.Trigger({ for: "nav", id: "open-it", children: "Menu" }),
-    Drawer({ id: "nav", side, children: Drawer.Close({ for: "nav", id: "close-it", children: "Done" }) }),
+    Drawer({
+      id: "nav",
+      side,
+      titled: true,
+      children: [Drawer.Title({ for: "nav", children: "Navigation" }), Drawer.Close({ for: "nav", id: "close-it", children: "Done" })],
+    }),
   ]);
   await mount(page, `${PREFLIGHT}${html}`, CSS);
 }

@@ -20,7 +20,15 @@ async function start(page: Page): Promise<void> {
 function markup(open = false): Promise<string> {
   return render([
     Dialog.Trigger({ for: "confirm", id: "open-it", children: "Delete…" }),
-    Dialog({ id: "confirm", ...(open ? { open } : {}), children: Dialog.Close({ for: "confirm", id: "close-it", children: "Cancel" }) }),
+    Dialog({
+      id: "confirm",
+      titled: true,
+      ...(open ? { open } : {}),
+      children: [
+        Dialog.Title({ for: "confirm", children: "Delete project?" }),
+        Dialog.Close({ for: "confirm", id: "close-it", children: "Cancel" }),
+      ],
+    }),
   ]);
 }
 
@@ -70,6 +78,33 @@ test.describe("Dialog", () => {
     await expect.poll(() => state(page)).toEqual({ nativeOpen: false });
   });
 
+  // `Drawer` pins the same three; a modal `<dialog>` gets them from `showModal()`, and nothing here
+  // asserted that forge still reaches that path rather than `show()`.
+  test("opening puts focus inside the panel, and closing hands it back to the invoker", async ({ page }) => {
+    await mount(page, await markup(), EXPOSE);
+    await start(page);
+
+    await page.click("#open-it");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("close-it");
+
+    await page.click("#close-it");
+
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("open-it");
+  });
+
+  test("Tab is contained by the modal, which is what the top layer buys", async ({ page }) => {
+    await mount(page, `<button id="outside">outside</button>${await markup()}`, EXPOSE);
+    await start(page);
+
+    await page.click("#open-it");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("close-it");
+
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+
+    expect(await page.evaluate(() => document.activeElement?.id)).not.toBe("outside");
+  });
+
   test("a server-rendered open dialog is non-modal, which is the only thing the attribute can mean", async ({ page }) => {
     await mount(page, await markup(true), EXPOSE);
     await start(page);
@@ -87,7 +122,13 @@ test.describe("Dialog", () => {
     page.on("pageerror", (error) => thrown.push(error.message));
     const html = await render([
       Dialog.Trigger({ for: "confirm", id: "open-it", children: "Delete…" }),
-      Dialog({ id: "confirm", open: true, openModal: true, children: Dialog.Close({ for: "confirm", id: "close-it", children: "Cancel" }) }),
+      Dialog({
+        id: "confirm",
+        label: "Delete project?",
+        open: true,
+        openModal: true,
+        children: Dialog.Close({ for: "confirm", id: "close-it", children: "Cancel" }),
+      }),
     ]);
     await mount(page, html, EXPOSE);
     await start(page);
@@ -119,7 +160,7 @@ function near(actual: number, expected: number, tolerance = 1): boolean {
 
 async function openDialog(page: Page, style: string, body: string, copies = 1): Promise<void> {
   const children = Array.from({ length: copies }, () => Dialog.Content({ children: body }));
-  const html = await render(Dialog({ id: "confirm", children }));
+  const html = await render(Dialog({ id: "confirm", label: "Delete project?", children }));
   await page.setViewportSize(VIEWPORT);
   // Reduced motion keeps this a geometry assertion: a settled rect, whatever transition the sheet gains later.
   await page.emulateMedia({ reducedMotion: "reduce" });

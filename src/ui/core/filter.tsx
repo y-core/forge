@@ -2,16 +2,23 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
-import type { Size } from "../contracts/types";
+import { nameAttrs } from "../contracts/naming";
+import type { ContainerNaming, Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import type { FilterAppearance } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PRESSED_PAINT } from "./utils/recipes";
 
-interface FilterProps extends Omit<JSX.IntrinsicElements["form"], "children"> {
+interface FilterOwnProps extends Omit<JSX.IntrinsicElements["form"], "children"> {
   /** Renders a `<fieldset>` for a filter inside the consumer's own form; the reset then clears that whole form. */
   nested?: boolean | undefined;
+  children?: JSXNode | undefined;
+}
+
+type FilterGroupProps = ContainerNaming & FilterGroupOwnProps;
+
+interface FilterGroupOwnProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: JSXNode | undefined;
 }
 
@@ -41,7 +48,11 @@ const ITEM_STATE = "cursor-pointer has-[:checked]:border-primary group-has-[:che
 
 const RESET_STATE = "hidden group-has-[:checked]/filter:inline-flex";
 
-const FilterRoot: FC<FilterProps> = ({ nested = false, class: cls, children, "data-slot": inherited, ...rest }) => {
+const GROUP = "flex min-w-0 flex-wrap items-center gap-2";
+
+// The form owns the reset and the radiogroup owns only the chips: `radiogroup` allows no owned child
+// but a `radio`, so a reset inside it is an `aria-required-children` violation in a consumer's axe run.
+const FilterRoot: FC<FilterOwnProps> = ({ nested = false, class: cls, children, "data-slot": inherited, ...rest }) => {
   const Tag = nested ? "fieldset" : "form";
   return (
     <Tag data-slot={slotToken("filter", inherited)} class={cn(ROOT, cls)} {...rest}>
@@ -49,6 +60,14 @@ const FilterRoot: FC<FilterProps> = ({ nested = false, class: cls, children, "da
     </Tag>
   );
 };
+
+// The chips are one-of-N radios, and a `form` or `fieldset` role leaves them announced as loose
+// radios belonging to nothing named — so the group is named, as APG asks a `radiogroup` to be.
+const FilterGroup: FC<FilterGroupProps> = ({ label, labelledby, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <div role='radiogroup' {...nameAttrs({ label, labelledby })} data-slot={slotToken("filter-group", inherited)} class={cn(GROUP, cls)} {...rest}>
+    {children}
+  </div>
+);
 
 const FilterItem: FC<FilterItemProps> = ({
   name,
@@ -87,4 +106,4 @@ const FilterReset: FC<FilterResetProps> = ({ size = "sm", class: cls, children, 
 );
 
 /** A one-of-N facet chooser: native radios painted as chips, the chosen one left standing beside a reset that clears it. @public */
-export const Filter = Object.assign(FilterRoot, { Item: FilterItem, Reset: FilterReset });
+export const Filter = Object.assign(FilterRoot, { Group: FilterGroup, Item: FilterItem, Reset: FilterReset });

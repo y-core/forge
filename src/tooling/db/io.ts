@@ -31,12 +31,21 @@ function handleKey(home: Home): string {
   return `${home.configPath}\0${home.env ?? ""}\0${persistRoot(home)}`;
 }
 
-/** Why wrangler could not answer: `null` for a module that loaded without the export, its own error for one that would not load. @internal */
-export function wranglerUnreachable(home: Home, error: unknown): CliError {
+/** Why wrangler could not answer: the export a loaded module lacks, or the error thrown by one that would not load. @internal */
+export function wranglerUnreachable(home: Home, refusal: { readonly missing: string } | { readonly error: unknown }): CliError {
   const reach = `\`forge db\` reaches ${home.label} (${home.database}) through it`;
-  if (error === null) return new CliError("external", `wrangler is not installed, or is too old to export getPlatformProxy — ${reach}`);
-  const detail = (error instanceof Error ? error.message : String(error)).trim().slice(0, 4000);
-  return new CliError("external", `wrangler would not load — ${reach}${detail ? `:\n${detail}` : ""}`, { cause: error });
+  if ("missing" in refusal) return new CliError("external", `wrangler is not installed, or is too old to export ${refusal.missing} — ${reach}`);
+  const detail = (refusal.error instanceof Error ? refusal.error.message : String(refusal.error)).trim().slice(0, 4000);
+  return new CliError("external", `wrangler would not load — ${reach}${detail ? `:\n${detail}` : ""}`, { cause: refusal.error });
+}
+
+// Read together and before anything opens: the query-time read `split` used to get reported a
+// version problem as "query `SELECT …` failed", with the diagnostic gone.
+/** The first export `forge db` needs that a loaded wrangler does not have, or `null` when it has both. @internal */
+export function missingWranglerExport(module: { getPlatformProxy?: unknown; unstable_splitSqlQuery?: unknown }): string | null {
+  if (module.getPlatformProxy === undefined) return "getPlatformProxy";
+  if (module.unstable_splitSqlQuery === undefined) return "unstable_splitSqlQuery";
+  return null;
 }
 
 // Imported rather than named at the top: wrangler is an optional peer, and a static import would
@@ -46,9 +55,10 @@ async function openLocalD1(home: Home): Promise<LocalD1> {
   // pipe nothing read. `error` keeps that parity: its chatter never was part of forge's output.
   process.env.WRANGLER_LOG ??= "error";
   const wrangler = await import("wrangler").catch((error: unknown) => {
-    throw wranglerUnreachable(home, error);
+    throw wranglerUnreachable(home, { error });
   });
-  if (wrangler.getPlatformProxy === undefined) throw wranglerUnreachable(home, null);
+  const missing = missingWranglerExport(wrangler);
+  if (missing !== null) throw wranglerUnreachable(home, { missing });
   const proxy = await wrangler.getPlatformProxy<Record<string, D1DatabaseLike>>({
     configPath: home.configPath,
     ...(home.env === null ? {} : { environment: home.env }),
