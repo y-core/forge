@@ -86,6 +86,44 @@ describe("FeatureManifestSchema", () => {
   it("refuses an empty feature name", () => {
     expect(issues(only({ seams: ["src/worker.ts"] }, ""))).toEqual([`: ${NAME_RULE}`]);
   });
+
+  it("accepts a feature that requires others and regenerates after the copy", () => {
+    const manifest = {
+      db: {
+        directories: ["src/db"],
+        seams: [],
+        regenerate: { remove: ["config/migrations/", "config/snapshot.json"], run: ["forge", "db", "migrate", "compose"] },
+      },
+      auth: { directories: ["src/auth"], seams: [], requires: ["db"] },
+    };
+    expect(issues(manifest)).toEqual([]);
+  });
+
+  it("accepts a regeneration that removes nothing first", () => {
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge", "db", "migrate", "compose"] } }))).toEqual([]);
+  });
+
+  it("refuses a requirement spelled as no feature name can be", () => {
+    expect(issues(only({ seams: ["src/worker.ts"], requires: ["Mail"] }))).toEqual([`showcase.requires.0: ${NAME_RULE}`]);
+  });
+
+  it("refuses a regeneration that runs no command", () => {
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: [] } }))).toEqual(["showcase.regenerate.run: must name a command"]);
+  });
+
+  it("refuses a regeneration whose command holds an empty argument", () => {
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge", ""] } }))[0]).toStartWith("showcase.regenerate.run.1: ");
+  });
+
+  it("refuses a removal path climbing out of the root", () => {
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { remove: ["../migrations"], run: ["forge"] } }))).toEqual([
+      `showcase.regenerate.remove.0: ${PATH_RULE}`,
+    ]);
+  });
+
+  it("refuses a key a regeneration does not define", () => {
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge"], cwd: "config" } }))[0]).toStartWith("showcase.regenerate.cwd: ");
+  });
 });
 
 describe("FEATURE_NAME", () => {

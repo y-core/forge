@@ -189,6 +189,13 @@ never answered inside its 180s readiness budget, because every spec file at once
 processes than the machine has cores. A file here carries its own concurrency, so the file-level number is the multiplier, not the total. The flag
 shipped in Bun 1.3.13, which is what `package.json`'s `engines.bun` floor records for a consumer building a gate out of `workerdStep`.
 
+**`startDevServer` serialises startup across processes through a lock file in the system temp directory, and never serialises serving.** Beside
+the `--port` the helper reserves, wrangler binds a port of its own choosing while it starts, so two servers starting together can collide on it,
+and the loser's workerd exits with `Address already in use` — reserving the inspector port as well does not prevent it. The lock is held from
+before the port is reserved until the server answers, so two spec files under `--parallel=2` start one after the other and then run side by side.
+A holder whose process is gone, or that has held the lock past the readiness budget, is taken over. The lock is `src/testing/dev-server-lock.ts`,
+which the helper alone imports.
+
 **`stop()` kills the process group, not the CLI.** wrangler spawns workerd and esbuild as its own children, so a signal to the CLI alone leaves a
 `workerd` pair reparented to PID 1, ignoring `SIGTERM` and holding a core each. The helper spawns `detached`, kills `-pid` with `SIGKILL`, and binds
 that same kill to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP` — the interrupted run never reaches `afterAll`, and that is the path an

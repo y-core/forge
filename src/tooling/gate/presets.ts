@@ -1,7 +1,10 @@
+import { CliError } from "../cli/errors";
+import { loadFeatures } from "../curate/config";
 import {
   assetManifestStep,
   assetRootStep,
   browserStep,
+  checkStep,
   classOrderStep,
   classTokensStep,
   compatibilityStep,
@@ -24,6 +27,8 @@ import {
   typecheckStep,
   workerdStep,
 } from "./builders";
+import { checkImportBoundary } from "./checks/import-boundary";
+import { checkResult, fail } from "./finding";
 import type { Step } from "./types";
 import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
 
@@ -119,8 +124,24 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   // Opt-in for the same reason: which trees are one-way, and which files may cross into them, is a
   // repository's own rule.
-  if (options.importBoundary !== undefined) {
-    steps.push(importBoundaryStep({ root, ...options.importBoundary }));
+  const importBoundary = options.importBoundary;
+  if (importBoundary !== undefined && options.features !== undefined) {
+    steps.push(
+      checkStep(
+        "validate-import-boundary",
+        async () => {
+          try {
+            return checkImportBoundary({ root, ...importBoundary, features: await loadFeatures({ root }) });
+          } catch (error) {
+            if (!(error instanceof CliError)) throw error;
+            return checkResult([fail(error.message)], "");
+          }
+        },
+        {},
+      ),
+    );
+  } else if (importBoundary !== undefined) {
+    steps.push(importBoundaryStep({ root, ...importBoundary }));
   }
 
   // Opt-in: the audit refuses to report a green gate that measured nothing, so it needs the pairs a
@@ -149,9 +170,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
   if (options.db) steps.push(...dbSchemaStep({ root }));
   if (options.browser) steps.push(browserStep({ tier: "full" }));
-  if (options.workerd !== undefined && options.workerd !== false) {
-    steps.push(workerdStep({ tier: "full", ...(options.workerd === true ? {} : { parallel: options.workerd.parallel }) }));
-  }
+  if (options.workerd) steps.push(workerdStep({ tier: "full" }));
   if (options.features !== undefined) {
     const assets = options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut };
     steps.push(featuresStep({ root, ...options.features, ...assets }));

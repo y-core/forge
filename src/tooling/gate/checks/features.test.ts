@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { capture } from "../../cli/proc";
 import type { CaptureResult } from "../../cli/types";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "../../curate/curate.fixture";
+import type { CurateRunner } from "../../curate/types";
 import { checkFeatures, defaultFeatureProfiles } from "./features";
-import type { CurateRunner } from "./types";
 
 const roots: string[] = [];
 
@@ -61,10 +61,6 @@ afterAll(() => {
 });
 
 describe("defaultFeatureProfiles()", () => {
-  it("drops a lone feature once, and adds no second profile repeating it", () => {
-    expect(defaultFeatureProfiles(["showcase"])).toEqual([["showcase"]]);
-  });
-
   it("drops each of several features alone, in manifest order, then all of them together", () => {
     expect(defaultFeatureProfiles(["showcase", "contact", "blog"])).toEqual([["showcase"], ["contact"], ["blog"], ["showcase", "contact", "blog"]]);
   });
@@ -234,9 +230,9 @@ describe("checkFeatures()", () => {
     expect(result.findings[0]!.message).toStartWith("--drop showcase: the skeleton's manifest does not load: ");
   });
 
-  it("fails, naming the profile, when a profile drops a feature the manifest does not name", async () => {
+  it("fails, naming the profile, when a profile drops a feature the manifest does not name, and proves no profile before it", async () => {
     const { run, calls } = recorder();
-    const result = await checkFeatures({ root: demonstrator(), profiles: [["blog"]] }, run);
+    const result = await checkFeatures({ root: demonstrator(), profiles: [["showcase"], ["blog"]] }, run);
 
     expect(calls).toHaveLength(0);
     expect(result.findings).toEqual([
@@ -297,5 +293,93 @@ describe("checkFeatures()", () => {
     const [tree, url] = resolved;
 
     expect(fileURLToPath(url!)).toBe(join(tree!, "node_modules/pkg/index.js"));
+  });
+});
+
+describe("checkFeatures() — the feature graph", () => {
+  const CONTACT_REQUIRES_SHOWCASE = CURATE_FIXTURE_MANIFEST.replace(
+    'seams: ["src/app.ts", "config/app.toml"] }',
+    'seams: ["src/app.ts", "config/app.toml"], requires: ["showcase"] }',
+  );
+
+  it("resolves each default profile through the graph, proves each resolved set once, and labels what the graph added", async () => {
+    const { run, calls } = recorder();
+    const result = await checkFeatures({ root: demonstrator(CONTACT_REQUIRES_SHOWCASE) }, run);
+
+    expect(calls.map((call) => [call.showcaseGone, call.contactGone])).toEqual([
+      [true, true],
+      [false, true],
+    ]);
+    expect(result.summary).toBe("features: --drop showcase (+ contact); --drop contact each passed its standard gate");
+  });
+
+  it("proves a one-feature manifest's default profiles as one skeleton", async () => {
+    const root = demonstrator(
+      [
+        "export default {",
+        '  showcase: { directories: ["src/showcase/"], seams: ["src/app.ts", "README.md"] }, // feature:showcase',
+        "};",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(root, "src/app.ts"), "export const app = 1;\nregister(demo); /* feature:showcase */\n", "utf-8");
+    writeFileSync(join(root, "config/app.toml"), 'name = "app"\n', "utf-8");
+    const { run, calls } = recorder();
+    const result = await checkFeatures({ root }, run);
+
+    expect(calls.map((call) => call.argv)).toEqual([VERIFY]);
+    expect(result.summary).toBe("features: --drop showcase each passed its standard gate");
+  });
+
+  it("fails, naming the profile, on a manifest whose graph does not resolve, and runs nothing", async () => {
+    const { run, calls } = recorder();
+    const cyclic = CONTACT_REQUIRES_SHOWCASE.replace(
+      'seams: ["src/app.ts", "README.md"] }',
+      'seams: ["src/app.ts", "README.md"], requires: ["contact"] }',
+    );
+    const result = await checkFeatures({ root: demonstrator(cyclic), profiles: [["showcase"]] }, run);
+
+    expect(calls).toHaveLength(0);
+    expect(result.findings).toEqual([
+      {
+        level: "fail",
+        message:
+          "--drop showcase: features `showcase` → `contact` → `showcase` require one another — a feature graph has no cycles; merge them, or move what they share into a feature both require",
+      },
+    ]);
+  });
+
+  it("runs a kept feature's regeneration inside the skeleton before its asset build", async () => {
+    const manifest = CURATE_FIXTURE_MANIFEST.replace(
+      'seams: ["src/app.ts", "README.md"] }',
+      'seams: ["src/app.ts", "README.md"], regenerate: { run: ["regen", "--fresh"] } }',
+    );
+    const { run, calls } = recorder();
+    const result = await checkFeatures({ root: demonstrator(manifest), assetConfig: "config/assets.ts", profiles: [["contact"]] }, run);
+    const tree = calls[0]!.cwd;
+
+    expect(result.ok).toBe(true);
+    expect(calls.map((call) => call.argv[0])).toEqual(["regen", "forge", "forge"]);
+    expect(calls[0]).toMatchObject({ argv: ["regen", "--fresh"], appRoot: tree, contactGone: true, linked: true });
+    expect(calls.map((call) => call.cwd)).toEqual([tree, tree, tree]);
+  });
+
+  it("holds a kept manifest to the features the graph resolved the skeleton to keep", async () => {
+    const manifest = [
+      ...CONTACT_REQUIRES_SHOWCASE.split("\n").slice(0, -2),
+      '  notes: { directories: [], seams: ["notes.txt"] }, // feature:notes',
+      "};",
+      "",
+    ].join("\n");
+    const root = demonstrator(manifest);
+    writeFileSync(join(root, "notes.txt"), "untracked, not ignored # feature:notes\n", "utf-8");
+    const { run, calls } = recorder();
+    const result = await checkFeatures({ root, profiles: [["showcase"]] }, run);
+
+    expect(result.findings).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.manifest).toBe(
+      ["export default {", '  notes: { directories: [], seams: ["notes.txt"] }, // feature:notes', "};", ""].join("\n"),
+    );
   });
 });

@@ -216,7 +216,7 @@ export {
 export { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./checks/ssr-boundary";
 export type { SsrBoundaryCheckConfig } from "./checks/types";
 export { checkFeatures } from "./checks/features";
-export type { CurateRunner, FeaturesCheckConfig } from "./checks/types";
+export type { FeaturesCheckConfig } from "./checks/types";
 export type { GateCommandConfig } from "./types";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 export type { CheckResult, Finding, FindingLevel } from "./types";

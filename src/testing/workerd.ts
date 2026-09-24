@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { acquireDevServerLock, DEV_SERVER_LOCK } from "./dev-server-lock";
+
 /** What `startDevServer` needs to know about the fixture it serves. @public */
 export interface DevServerOptions {
   /** Worker entry, positional to `wrangler dev` — overrides the config's `main`. */
@@ -70,6 +72,22 @@ function dotenv(vars: Record<string, string>): string {
 
 /** Starts `wrangler dev` over a fixture and resolves once it answers. @public */
 export async function startDevServer(options: DevServerOptions = {}): Promise<DevServer> {
+  sweepOnExit();
+  // Wrangler binds a port of its own choosing while it starts, so two starting at once can collide on it.
+  const release = await acquireDevServerLock({ path: join(tmpdir(), DEV_SERVER_LOCK), staleAfterMs: READY_TIMEOUT_MS });
+  const unlock = (): void => {
+    live.delete(unlock);
+    release();
+  };
+  live.add(unlock);
+  try {
+    return await spawnDevServer(options);
+  } finally {
+    unlock();
+  }
+}
+
+async function spawnDevServer(options: DevServerOptions): Promise<DevServer> {
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   // The dev server stamps `https` onto every origin-bearing header before the Worker sees it, so an
@@ -106,7 +124,6 @@ export async function startDevServer(options: DevServerOptions = {}): Promise<De
   child.stdout?.on("data", record);
   child.stderr?.on("data", record);
 
-  sweepOnExit();
   const stop = killer(child.pid, varsDir);
   live.add(stop);
 

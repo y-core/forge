@@ -1,4 +1,4 @@
-import type { CaptureResult } from "../../cli/types";
+import type { FeatureManifest } from "../../curate/types";
 import type { ModernCssRuleId } from "../../lint/types";
 import type { ModernCssReportedId } from "../../lint/types";
 /** What the asset-manifest check needs to find the emitted module and the tree it describes. @public */
@@ -58,6 +58,8 @@ export interface ImportBoundaryCheckConfig {
   packageName?: string;
   /** The `exports` map, verbatim from `package.json` — which subpaths are guarded is *derived* from it. */
   exports?: ExportsMap;
+  /** The feature manifest; its directories under `sources` are guarded, and each may import only what it requires. */
+  features?: FeatureManifest;
 }
 
 /** What the dev-boundary check needs to know about the project. @public */
@@ -758,6 +760,3 @@ export interface FeaturesCheckConfig {
   /** The `--drop` lists to prove, each a skeleton of its own. Defaults to each feature alone, then every feature together. */
   profiles?: readonly (readonly string[])[];
 }
-
-/** Runs one command inside the curated tree and answers how it exited. @public */
-export type CurateRunner = (argv: readonly [string, ...string[]], cwd: string, env: typeof process.env) => CaptureResult;

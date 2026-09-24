@@ -40,6 +40,7 @@ audience: internal
 - §4 tooling/curate — Reducing a Demonstrator to Its Skeleton: features chosen at copy time, every refusal before a write
 - §4a The Manifest Names Features, and a Marker Names Its Feature: line, shared-line and region markers, and why each is matched on a comment
 - §4b The Gate Row Verifies the Skeleton It Produced: what `validate-features` runs, and why at `standard`
+- §4c Features Form a Graph: the two closure directions, why a cycle is refused, when a regeneration runs, and what the import boundary reads
 
 ---
 
@@ -546,11 +547,11 @@ different posture; forge itself ships the step rather than running it, having no
 
 ## 4. tooling/curate — Reducing a Demonstrator to Its Skeleton
 
-**`forge curate <dir> --drop <features>` copies the working tree into a fresh directory, minus the directories and marked lines of the features
-it drops.** The manifest is the module an application default-exports `defineFeatures({...})` from — `features.ts` in its
+**`forge curate <dir> --keep <features>` or `--drop <features>` copies the working tree into a fresh directory, minus the directories and marked
+lines of the features it drops.** The manifest is the module an application default-exports `defineFeatures({...})` from — `features.ts` in its
 `config/` unless `--config` names another — and `@y-core/forge/tooling/curate` publishes both the verb and that helper. Its use is a demonstrator
-application whose remainder, with some or all of its demonstrations removed, is the application a new project starts from. The manifest is the
-whole of forge's understanding of that split: forge knows nothing about what a feature means, only which directories and seam files it names.
+application whose remainder, with some or all of its demonstrations removed, is the application a new project starts from. The manifest is the whole
+of forge's understanding of that split: forge knows nothing about what a feature means, only which directories and seam files it names.
 
 The working tree is what `git ls-files --cached --others --exclude-standard` lists — tracked and untracked files alike, minus what `.gitignore`
 excludes and what has been deleted from disk — so a skeleton carries no `node_modules`, no build output and no local secret the demonstrator
@@ -561,13 +562,11 @@ when every feature is dropped, since nothing in that skeleton reads it; a partia
 can be curated in turn. A feature's entry in the manifest is therefore wrapped in that feature's region, and the gate row checks the kept
 manifest names exactly the features the copy kept.
 
-**Every refusal happens before anything is written, and none depends on which features are dropped.** A directory the working tree holds nothing
-under, a seam file the tree does not hold, that lies inside any feature's directory or that is a symbolic link — whose edit would write through
-to the file it points at — a path beneath a symbolic link, which a stale index lists and whose copy would land wherever the link points, a listed
-seam holding no marker for its feature, a nested repository or submodule, and a target that is a file or already holds something are each
-refused. A curation that quietly removes nothing is the worst outcome: the skeleton imports a directory that is gone, and fails far from the cause.
-Holding every drop set to the same refusals means the combination nobody ran is as sound as the one somebody did. A failed copy removes what it
-wrote and every parent it created.
+**Every refusal happens before anything is written, and the manifest's own are the same whichever features a copy drops.** The namespace's README
+lists them. A curation that quietly removes nothing is the worst outcome: the skeleton imports a directory that is gone, and fails far from the
+cause. A symbolic link is refused wherever an edit or a copy would follow it, since the write would land outside the target. Holding every drop
+set to the same refusals means the combination nobody ran is as sound as the one somebody did. A failed copy, or a failed regeneration (§4c),
+removes what it wrote and every parent it created.
 
 ### 4a. The Manifest Names Features, and a Marker Names Its Feature
 
@@ -594,11 +593,12 @@ removed directories.
 ### 4b. The Gate Row Verifies the Skeleton It Produced
 
 **`cloudflareWorkerSteps({ features: {} })` appends `validate-features`, a `full`-tier row that curates into a temporary directory once per profile
-and runs each skeleton's own gate there.** A profile is one `--drop` list. The default is each feature dropped alone and then every feature
-together, since a line two features share is exercised both ways only by that set; `profiles` names another. An empty `profiles`, or a
-profile that drops nothing, fails the row: either would pass having proved no skeleton. The row stops at the first profile
-that fails, and names it. A manifest can be satisfied and still produce a skeleton that does not build — a seam left unmarked beside a removed
-directory it imports — and only running the skeleton's gate finds that. The verb itself still stops at the tree; the row is what verifies it.
+and runs each skeleton's own gate there.** A profile is one `--drop` list, resolved through the graph (§4c) before anything runs; a profile
+resolving to a set an earlier one proved runs once, and its label names what the graph added. The default is each feature dropped alone and then
+every feature together, since a line two features share is exercised both ways only by that set; `profiles` names another. An empty `profiles`, or a
+profile that drops nothing, fails the row: either would pass having proved no skeleton. The row stops at the first profile that fails, and names it.
+A manifest can be satisfied and still produce a skeleton that does not build — a seam left unmarked beside a removed directory it imports — and only
+running the skeleton's gate finds that. The verb itself still stops at the tree; the row is what verifies it.
 
 **The row runs the skeleton's `standard` tier, never `full`.** The skeleton's step table still carries `validate-features` when the demonstrator's
 does, so a `full` run inside the skeleton would curate it again. `standard` holds every row that judges and runs the code, without the recursion.
@@ -610,6 +610,33 @@ reads the generated manifest.
 
 **Every command runs with `FORGE_APP_ROOT` set to the temporary tree and `NODE_PRESERVE_SYMLINKS=1`**, so a verb that defaults its root from
 that variable resolves the skeleton, and a module resolved through the linked `node_modules` keeps its in-tree path rather than its real one.
+
+### 4c. Features Form a Graph
+
+**A feature names the features it cannot work without in `requires`, and a selection is closed over that graph before anything is copied.**
+Keeping a feature keeps what it requires, transitively; dropping one drops what requires it, transitively. Each is the only direction that leaves
+a skeleton whose imports resolve: a kept feature whose requirement is gone imports a directory that is not there, and a dropped requirement under
+a kept dependent is the same failure seen from the other side. Every addition is reported with the features that brought it in, because a copy
+larger or smaller than the one asked for has to say why.
+
+**A cycle is refused.** Two features that require one another can be neither kept nor dropped apart, so they are one feature under two names;
+the refusal says to merge them, or to move what they share into a feature both require. An unknown requirement and a feature requiring itself are
+refused with it, before any selection is read.
+
+**A regeneration runs only for a kept feature, and only when the copy drops something.** A feature may name paths the copy leaves out and a command
+that writes them afresh inside it — a migration history composed from the schemas the demonstrator holds is the case it exists for. A dropped
+feature's regeneration would rebuild what the copy does not hold, and a plain copy changed nothing its history describes, so in both the
+demonstrator's own files are still true. The command runs with the root's `node_modules` linked in for its duration, and a failure removes the copy
+as a failed copy does.
+
+**The import boundary reads the same graph.** With `features` in the preset, each feature's directory under the scanned sources is guarded
+against the core, and a feature's source may import another feature only when it requires it, directly or through another. The manifest is then
+the one statement of which slice may reach which: an undeclared import is exactly the edge a curation would cut without knowing, so the boundary
+refuses it at the import rather than at the skeleton's gate.
+
+**A marker naming several features usually marks a capability nobody named.** A shared line survives while either feature is kept (§4a), which is
+correct and opaque. Once shared lines accumulate — a CSP source, a middleware, a binding — make the capability a feature of its own that each
+requires: the graph then keeps it exactly while one of them is kept, and the manifest says so.
 
 ---
 

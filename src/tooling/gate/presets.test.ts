@@ -174,13 +174,10 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
     expect(workerd?.requires?.tool).toBe("workerd");
   });
 
-  it("runs two spec files at once by default, and the number `parallel` names when given", () => {
-    const command = (workerd: boolean | { parallel: number }) => {
-      const row = cloudflareWorkerSteps({ workerd }).at(-1);
-      return row !== undefined && "cmd" in row ? row.cmd : undefined;
-    };
-    expect(command(true)).toEqual(["bun", "test", "--parallel=2", "tests/workerd/"]);
-    expect(command({ parallel: 1 })).toEqual(["bun", "test", "--parallel=1", "tests/workerd/"]);
+  it("runs two spec files at once", () => {
+    const row = cloudflareWorkerSteps({ workerd: true }).at(-1);
+
+    expect(row !== undefined && "cmd" in row ? row.cmd : undefined).toEqual(["bun", "test", "--parallel=2", "tests/workerd/"]);
   });
 
   it("orders the workerd row after the browser row when both opt-ins are taken", () => {
@@ -377,6 +374,43 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
 
     expect((await crossed.run("quality")).ok).toBe(true);
     expect((await uncrossed.run("quality")).ok).toBe(false);
+  });
+
+  it("reads the feature manifest when features are opted into too, so a root with none fails the row naming it", async () => {
+    const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n" });
+    const row = cloudflareWorkerSteps({ root, importBoundary: IMPORT, features: {} }).find((step) => step.label === "validate-import-boundary");
+    if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
+    const result = await row.run("quality");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "No feature manifest at `config/features.ts` — forge curate needs one, default-exporting defineFeatures({...})",
+    ]);
+  });
+
+  it("guards the feature manifest's directories when features are opted into too", async () => {
+    const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
+    const row = cloudflareWorkerSteps({ root, importBoundary: { guarded: [] }, features: {} }).find(
+      (step) => step.label === "validate-import-boundary",
+    );
+    if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
+    const result = await row.run("quality");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
+      ["src/app.ts", "import boundary crossed — `./showcase/demo` resolves to `src/showcase/demo.ts`"],
+      ["src/app.ts", "import boundary crossed — `./contact/form` resolves to `src/contact/form.ts`"],
+    ]);
+  });
+
+  it("reads no feature manifest when features are not opted into", async () => {
+    const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n", "src/app.ts": "export const app = 1;\n" });
+    const row = cloudflareWorkerSteps({ root, importBoundary: IMPORT }).find((step) => step.label === "validate-import-boundary");
+    if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
+    const result = await row.run("quality");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.ok).toBe(true);
   });
 
   it("omits every such row for an app that configures none of them", () => {

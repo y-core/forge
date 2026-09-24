@@ -143,14 +143,14 @@ export interface CloudflareWorkerStepOptions {
   db?: boolean;
   /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
   browser?: boolean;
-  /** Whether to emit the `full`-tier `test:workerd` step, or its spec-file concurrency when the default of 2 is too many. Defaults to `false`. */
-  workerd?: boolean | { parallel: number };
+  /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
+  workerd?: boolean;
   /** Omit to emit no JSX-pragma row. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. */
   ssrBoundary?: Omit<SsrBoundaryCheckConfig, "root">;
-  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. */
-  importBoundary?: Omit<ImportBoundaryCheckConfig, "root">;
+  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. With `features` set, the row also reads the feature manifest. */
+  importBoundary?: Omit<ImportBoundaryCheckConfig, "root" | "features">;
   /** Omit to emit no contrast row. */
   contrast?: Omit<ContrastCheckConfig, "root">;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */

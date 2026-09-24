@@ -132,7 +132,7 @@ excludes the one legitimate class — a published-surface assertion importing a 
 ```bash
 rg -n '\bBun\.|from "node:' src/ \
   --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/workerd.ts' \
-  --glob '!src/testing/snapshot.ts' \
+  --glob '!src/testing/dev-server-lock.ts' --glob '!src/testing/snapshot.ts' \
   --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
   --glob '!**/*.fixture.ts'
 ```
@@ -265,7 +265,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
 | `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |
-| `node:child_process` / `node:fs` / `node:net` in `src/testing/workerd.ts` | A node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
+| `node:child_process` / `node:fs` / `node:net` in `src/testing/workerd.ts`, or `node:fs` in `src/testing/dev-server-lock.ts` | A node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel; the lock is imported by `workerd.ts` alone and published under no subpath — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `node:fs` / `node:path` in `src/testing/snapshot.ts` | The same shape for the same reason: a fixture comparison reads the disk, and the module is off the `./testing` barrel so no Worker-typed program can reach it — [`TEST_RUNNERS.md`][testing-7h] §7h |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |

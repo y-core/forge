@@ -8,8 +8,9 @@ declare interface Buffer extends Uint8Array {
 
 declare const process: {
   env: Record<string, string | undefined>;
+  readonly pid: number;
   exit(code?: number): never;
-  kill(pid: number, signal: string): void;
+  kill(pid: number, signal: string | number): void;
   once(event: string, listener: () => void): void;
 };
 
@@ -33,12 +34,17 @@ declare module "node:child_process" {
 }
 
 declare module "node:fs" {
+  export function closeSync(fd: number): void;
   export function existsSync(path: string): boolean;
+  export function lstatSync(path: string, options: { throwIfNoEntry: false }): { mtimeMs: number } | undefined;
   export function mkdirSync(path: string, options: { recursive: true }): string | undefined;
   export function mkdtempSync(prefix: string): string;
+  export function openSync(path: string, flags: string): number;
   export function readFileSync(path: string, encoding: "utf-8"): string;
+  export function renameSync(oldPath: string, newPath: string): void;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function writeFileSync(path: string, data: string, encoding: "utf-8"): void;
+  export function writeSync(fd: number, data: string): number;
 }
 
 declare module "node:net" {

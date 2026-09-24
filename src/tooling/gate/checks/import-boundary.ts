@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, posix, resolve } from "node:path";
 
+import { CliError } from "../../cli/errors";
+import { featureGraph } from "../../curate/graph";
+import type { FeatureGraph, FeatureManifest } from "../../curate/types";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
@@ -55,15 +58,62 @@ function checkGuardedDir(root: string, dir: string): Finding | null {
 }
 
 /** What a guarded module a source names resolves to, or `null` when the specifier stays outside every guarded tree. */
-function crossingTarget(config: ImportBoundaryCheckConfig, file: string, specifier: string, published: Map<string, string>): string | null {
+function crossingTarget(root: string, guarded: readonly string[], file: string, specifier: string, published: Map<string, string>): string | null {
   const module = resolveSpecifier(file, specifier);
-  if (module !== null) return isGuarded(module, config.guarded) ? (resolveModuleFile(config.root, module) ?? module) : null;
+  if (module !== null) return isGuarded(module, guarded) ? (resolveModuleFile(root, module) ?? module) : null;
   // A self-import by package name resolves to nothing relative, so it would otherwise walk straight
   // past both the graph check and this one.
   return published.get(specifier) ?? null;
 }
 
-/** Fails when a source outside the guarded directories, save a named crossing, imports one of their modules at value. @public */
+interface FeatureDir {
+  feature: string;
+  dir: string;
+}
+
+function featureDirs(features: FeatureManifest, sources: readonly string[]): FeatureDir[] {
+  const walked = sources.map((source) => source.replace(/\/+$/, ""));
+  return Object.entries(features).flatMap(([feature, { directories }]) =>
+    directories.map((directory) => ({ feature, dir: directory.replace(/\/+$/, "") })).filter(({ dir }) => isGuarded(dir, walked)),
+  );
+}
+
+function owningFeature(dirs: readonly FeatureDir[], path: string): string | undefined {
+  return dirs.find(({ dir }) => isGuarded(path, [dir]))?.feature;
+}
+
+function judgeSliceSource(
+  root: string,
+  file: string,
+  feature: string,
+  graph: FeatureGraph,
+  dirs: readonly FeatureDir[],
+  guarded: readonly string[],
+  published: Map<string, string>,
+): Finding[] {
+  const required = graph.closure.get(feature) ?? new Set<string>();
+  return parseImports(readFileSync(resolve(root, file), "utf-8")).flatMap((ref) => {
+    if (ref.kind === "type") return [];
+    const target = crossingTarget(root, guarded, file, ref.specifier, published);
+    const reached = target === null ? undefined : owningFeature(dirs, target);
+    if (target === null || reached === undefined || reached === feature || required.has(reached)) return [];
+    return [
+      fail(
+        `slice boundary crossed — \`${ref.specifier}\` resolves to \`${target}\`, inside feature \`${reached}\`, which \`${feature}\` does not require`,
+        {
+          file,
+          line: ref.line,
+          detail: [
+            "a feature's directory may import only the features it requires, directly or through another",
+            `add \`${reached}\` to \`${feature}\`'s \`requires\` in the feature manifest, or drop the import`,
+          ],
+        },
+      ),
+    ];
+  });
+}
+
+/** Fails when a source outside the guarded directories, save a named crossing, imports one of their modules at value, or a feature's source imports a feature it does not require. @public */
 export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const crossings = config.crossings ?? [];
@@ -72,25 +122,40 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
   const unresolved = unresolvedSourceEntries(config.root, sources);
   if (unresolved.length > 0) return checkResult(unresolved, "");
 
+  let graph: FeatureGraph | undefined;
+  try {
+    graph = config.features === undefined ? undefined : featureGraph(config.features);
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error;
+    return checkResult([fail(error.message)], "");
+  }
+  const slices = config.features === undefined ? [] : featureDirs(config.features, sources);
+  const guarded = [...new Set([...config.guarded, ...slices.map(({ dir }) => dir)])];
+
   const misconfigured =
-    config.guarded.length === 0
+    guarded.length === 0
       ? [
           fail("`guarded` names no directory", {
             detail: ["an import boundary that guards nothing holds nothing, so an empty list fails rather than passing"],
           }),
         ]
-      : config.guarded.flatMap((dir) => checkGuardedDir(config.root, dir) ?? []);
+      : guarded.flatMap((dir) => checkGuardedDir(config.root, dir) ?? []);
   if (misconfigured.length > 0) return checkResult(misconfigured, "");
 
-  const published = guardedSubpaths(config);
-  const dirs = config.guarded.map((dir) => `\`${dir}\``).join(", ");
+  const published = guardedSubpaths({ ...config, guarded });
+  const dirs = guarded.map((dir) => `\`${dir}\``).join(", ");
   const named = crossings.map((crossing) => `\`${crossing}\``).join(", ");
   const findings: Finding[] = [];
   const judgedFiles = new Set<string>();
   let judged = 0;
 
   for (const file of files) {
-    if (isGuarded(file, config.guarded)) continue;
+    const feature = owningFeature(slices, file);
+    if (graph !== undefined && feature !== undefined) {
+      findings.push(...judgeSliceSource(config.root, file, feature, graph, slices, guarded, published));
+      continue;
+    }
+    if (isGuarded(file, guarded)) continue;
     judgedFiles.add(file);
     if (crossings.includes(file)) continue;
     judged++;
@@ -98,7 +163,7 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
       // A type import is erased at emit, so it puts nothing in a Worker's bundle. The layering it
       // still represents is `validate-namespace-graph`'s to judge, against a declared edge.
       if (ref.kind === "type") continue;
-      const target = crossingTarget(config, file, ref.specifier, published);
+      const target = crossingTarget(config.root, guarded, file, ref.specifier, published);
       if (target === null) continue;
       findings.push(
         fail(`import boundary crossed — \`${ref.specifier}\` resolves to \`${target}\``, {
@@ -125,5 +190,6 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
   }
 
   const save = crossings.length === 0 ? "" : `, save ${named}`;
-  return checkResult(findings, `${judged} sources outside ${dirs} import nothing inside them${save}`);
+  const sliced = graph === undefined ? "" : "; feature sources import only what they require";
+  return checkResult(findings, `${judged} sources outside ${dirs} import nothing inside them${save}${sliced}`);
 }

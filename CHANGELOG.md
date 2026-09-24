@@ -18,7 +18,52 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **Pass `selection` in place of `drop` to `curateTree`** — `{ drop: [...] }` for the old
+   behaviour, or `{ keep: [...] }`.
+2. **Import `CurateRunner` from `@y-core/forge/tooling/curate`**, not `tooling/gate`.
+3. **Change `workerd: { parallel: 1 }` to `workerd: true`** in `cloudflareWorkerSteps`; two
+   `startDevServer` calls now start one after the other on their own.
+4. **Add `requires` to each feature that imports another**, or `--drop` of the required feature
+   leaves the dependent's imports dangling — and, with `features` and `importBoundary` both
+   taken, `validate-import-boundary` fails the import.
+
+### Breaking Changes
+
+- **`CurateRequest.drop` is replaced by `selection`**, a `FeatureSelection`: `{ keep }` or `{ drop }`.
+- **`CurateReport.dropped` is the resolved set**, in manifest order, and the report gains `kept`,
+  `added` and `regenerated`.
+- **`forge curate --drop a` also drops every feature that requires `a`**, directly or through
+  another, and reports each one it added and why.
+- **`CurateRunner` moved from `tooling/gate` to `tooling/curate`.**
+- **`forge curate` needs a target unless `--list` is given**, and takes at most one argument.
+- **`cloudflareWorkerSteps`' `workerd` option is a boolean.** `{ parallel }` is gone; the row
+  always runs two spec files at once.
+- **`validate-features`' default profiles are resolved through the feature graph and
+  deduplicated**: each feature dropped alone, then all of them, each proved once per distinct
+  resolved set. A one-feature manifest proves one skeleton, as before.
+- **With `features` taken beside `importBoundary`, `validate-import-boundary` reads the feature
+  manifest**: every feature's directory under the scanned sources is guarded against the core,
+  and a feature's source may import another feature only when it requires it.
+
+### Added
+
+- **`requires` on a feature** names the features it cannot work without. A requirement naming no
+  feature, a feature requiring itself, and a cycle are refused before anything is written.
+- **`forge curate <dir> --keep a,b`** keeps the named features and what they require, dropping the
+  rest; `--keep ""` drops every feature. `--keep` and `--drop` cannot be combined.
+- **`forge curate --list`** prints the feature graph: each feature after its requirements, with
+  its direct requirements, direct dependents and any regeneration.
+- **`regenerate` on a feature — `{ remove?, run }`** — leaves `remove` out of the copy and runs
+  `run` inside it with the root's `node_modules` linked in, for a kept feature whenever the copy
+  drops something. A failure removes the copy and reports the command's exit code and output tail.
+
+### Fixed
+
+- **Two `startDevServer` calls can start at once.** Startup is serialised across processes through
+  a lock file in the system temp directory, held until the server answers, so wrangler's
+  self-chosen startup port no longer collides and a workerd set runs under `--parallel=2`.
 
 ---
 

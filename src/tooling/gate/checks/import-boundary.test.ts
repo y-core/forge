@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import type { FeatureManifest } from "../../curate/types";
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkImportBoundary, guardedSubpaths, isGuarded } from "./import-boundary";
 import type { ImportBoundaryCheckConfig } from "./types";
@@ -528,5 +529,103 @@ describe("checkImportBoundary — a guarded entry that would guard nothing", () 
     const result = checkImportBoundary(guarding(["src/showcase/mod.ts"]));
 
     expect(result.findings.map((finding) => finding.message)).toEqual(["guarded `src/showcase/mod.ts` names no directory under the root"]);
+  });
+});
+
+describe("checkImportBoundary — feature slices under the feature graph", () => {
+  const EMAIL = { "src/email/send.ts": "export const send = 1;\n" };
+  const FORM = { "src/form/field.ts": "export const field = 1;\n" };
+
+  function slice(dir: string, requires?: string[]): FeatureManifest[string] {
+    return { directories: [`${dir}/`], seams: [], ...(requires === undefined ? {} : { requires }) };
+  }
+
+  function sliced(files: Record<string, string>, features: FeatureManifest, guarded: readonly string[] = []): ImportBoundaryCheckConfig {
+    return { root: gateFixtureRoot(files, "forge-ib-slice-"), guarded, features };
+  }
+
+  const CONTACT_IMPORTS_EMAIL = { ...EMAIL, "src/contact/form.ts": 'import { send } from "../email/send";\nexport const form = send;\n' };
+
+  it("passes a slice importing a feature it requires, and says so in the summary", () => {
+    const result = checkImportBoundary(sliced(CONTACT_IMPORTS_EMAIL, { contact: slice("src/contact", ["email"]), email: slice("src/email") }));
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toBe(
+      "0 sources outside `src/contact`, `src/email` import nothing inside them; feature sources import only what they require",
+    );
+  });
+
+  it("passes a slice importing a feature it requires only through another", () => {
+    const files = { ...EMAIL, ...FORM, "src/contact/form.ts": 'import { field } from "../form/field";\nexport const form = field;\n' };
+    const features = { contact: slice("src/contact", ["email"]), email: slice("src/email", ["form"]), form: slice("src/form") };
+
+    expect(checkImportBoundary(sliced(files, features)).findings).toEqual([]);
+  });
+
+  it("reports a slice importing a feature it does not require, naming both and how to clear it", () => {
+    const result = checkImportBoundary(sliced(CONTACT_IMPORTS_EMAIL, { contact: slice("src/contact"), email: slice("src/email") }));
+
+    expect(result.findings).toEqual([
+      {
+        level: "fail",
+        message:
+          "slice boundary crossed — `../email/send` resolves to `src/email/send.ts`, inside feature `email`, which `contact` does not require",
+        file: "src/contact/form.ts",
+        line: 1,
+        detail: [
+          "a feature's directory may import only the features it requires, directly or through another",
+          "add `email` to `contact`'s `requires` in the feature manifest, or drop the import",
+        ],
+      },
+    ]);
+  });
+
+  it("reports a required feature importing the feature that requires it", () => {
+    const files = {
+      "src/contact/form.ts": "export const form = 1;\n",
+      "src/email/send.ts": 'import { form } from "../contact/form";\nexport const send = form;\n',
+    };
+    const result = checkImportBoundary(sliced(files, { contact: slice("src/contact", ["email"]), email: slice("src/email") }));
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "slice boundary crossed — `../contact/form` resolves to `src/contact/form.ts`, inside feature `contact`, which `email` does not require",
+    ]);
+  });
+
+  it("passes a slice importing only a type from a feature it does not require", () => {
+    const files = { ...EMAIL, "src/contact/form.ts": 'import type { send } from "../email/send";\nexport type Form = typeof send;\n' };
+
+    expect(checkImportBoundary(sliced(files, { contact: slice("src/contact"), email: slice("src/email") })).findings).toEqual([]);
+  });
+
+  it("guards a feature's directory against the core even when `guarded` names none", () => {
+    const files = { ...EMAIL, "src/app.ts": 'import { send } from "./email/send";\nexport const app = send;\n' };
+    const result = checkImportBoundary(sliced(files, { email: slice("src/email") }));
+
+    expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
+      ["src/app.ts", "import boundary crossed — `./email/send` resolves to `src/email/send.ts`"],
+    ]);
+  });
+
+  it("leaves a feature directory outside `sources` unguarded, even one naming nothing on disk", () => {
+    const features = { email: { directories: ["src/email/", "tests/email/"], seams: [] } };
+    const result = checkImportBoundary(sliced({ ...EMAIL, "src/app.ts": "export const app = 1;\n" }, features));
+
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toBe("1 sources outside `src/email` import nothing inside them; feature sources import only what they require");
+  });
+
+  it("fails once, with the graph's refusal, on features that require one another", () => {
+    const result = checkImportBoundary(
+      sliced(CONTACT_IMPORTS_EMAIL, { contact: slice("src/contact", ["email"]), email: slice("src/email", ["contact"]) }),
+    );
+
+    expect(result.findings).toEqual([
+      {
+        level: "fail",
+        message:
+          "features `contact` → `email` → `contact` require one another — a feature graph has no cycles; merge them, or move what they share into a feature both require",
+      },
+    ]);
   });
 });

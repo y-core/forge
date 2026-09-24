@@ -1,38 +1,48 @@
-import { existsSync, lstatSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
-import { capture } from "../../cli/proc";
-import { curateTree } from "../../curate/commands";
+import { curateTree, listWorkingTree, runCommand, skeletonEnv, withLinkedModules } from "../../curate/commands";
 import { DEFAULT_FEATURE_MANIFEST, loadFeatures } from "../../curate/config";
-import type { FeatureManifest } from "../../curate/types";
+import { resolveFeatures } from "../../curate/graph";
+import type { CurateRunner, FeatureManifest } from "../../curate/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import type { CurateRunner, FeaturesCheckConfig } from "./types";
+import type { FeaturesCheckConfig } from "./types";
 
 const TAIL = 120;
-
-const runInTree: CurateRunner = (argv, cwd, env) => capture(argv[0], argv.slice(1), { cwd, env });
 
 function tail(output: string): string[] {
   return output.trimEnd().split("\n").slice(-TAIL);
 }
 
-/** Each feature dropped alone, then every feature together when the manifest names more than one. @internal */
+/** Each feature dropped alone, then every feature together; the graph resolves each and the check proves each resolved set once. @internal */
 export function defaultFeatureProfiles(features: readonly string[]): string[][] {
-  const each = features.map((feature) => [feature]);
-  return features.length > 1 ? [...each, [...features]] : each;
+  return [...features.map((feature) => [feature]), [...features]];
 }
 
-function describeProfile(drop: readonly string[]): string {
-  return `--drop ${drop.join(",")}`;
+interface ResolvedProfile {
+  drop: readonly string[];
+  label: string;
+  dropped: readonly string[];
+}
+
+function resolveProfile(config: FeatureManifest, drop: readonly string[]): ResolvedProfile | Finding {
+  const named = `--drop ${drop.join(",")}`;
+  try {
+    const { dropped, added } = resolveFeatures(config, { drop });
+    const label = added.length === 0 ? named : `${named} (+ ${added.map(({ feature }) => feature).join(", ")})`;
+    return { drop, label, dropped };
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error;
+    return fail(`${named}: ${error.message}`);
+  }
 }
 
 /** A manifest the curation kept must name exactly the features it kept, or the skeleton's own curation would reach for what is gone. */
-async function checkKeptManifest(tree: string, config: FeatureManifest, drop: readonly string[]): Promise<string | undefined> {
+async function checkKeptManifest(tree: string, expected: readonly string[]): Promise<string | undefined> {
   if (!existsSync(join(tree, DEFAULT_FEATURE_MANIFEST))) return undefined;
-  const expected = Object.keys(config).filter((feature) => !drop.includes(feature));
   let named: string[];
   try {
     named = Object.keys(await loadFeatures({ root: tree }));
@@ -46,26 +56,37 @@ async function checkKeptManifest(tree: string, config: FeatureManifest, drop: re
 async function gateSkeleton(
   check: FeaturesCheckConfig,
   config: FeatureManifest,
-  drop: readonly string[],
+  profile: ResolvedProfile,
   tree: string,
   run: CurateRunner,
 ): Promise<Finding | undefined> {
   const { root } = check;
-  const label = describeProfile(drop);
+  const { label } = profile;
+  let kept: readonly string[];
   try {
-    curateTree({ root, target: tree, config, drop, manifest: DEFAULT_FEATURE_MANIFEST });
+    kept = curateTree(
+      { root, target: tree, config, selection: { drop: profile.drop }, manifest: DEFAULT_FEATURE_MANIFEST },
+      listWorkingTree,
+      run,
+    ).kept;
   } catch (error) {
     if (!(error instanceof CliError)) throw error;
     return fail(`${label}: ${error.message}`);
   }
-  symlinkSync(join(root, "node_modules"), join(tree, "node_modules"), "dir");
+  return withLinkedModules(root, tree, () => proveSkeleton(check, label, kept, tree, run));
+}
 
-  const stale = await checkKeptManifest(tree, config, drop);
+async function proveSkeleton(
+  check: FeaturesCheckConfig,
+  label: string,
+  kept: readonly string[],
+  tree: string,
+  run: CurateRunner,
+): Promise<Finding | undefined> {
+  const stale = await checkKeptManifest(tree, kept);
   if (stale !== undefined) return fail(`${label}: ${stale}`);
 
-  // Bun resolves a module through the linked node_modules to its real path, which lies outside the tree; a config deriving a
-  // repository-relative path from `import.meta.resolve` would then name the demonstrator's copy and not the skeleton's.
-  const env = { ...process.env, FORGE_APP_ROOT: tree, NODE_PRESERVE_SYMLINKS: "1" };
+  const env = skeletonEnv(check.root, tree);
 
   if (check.assetConfig !== undefined) {
     const out = check.assetOut ?? ".forge/assets.ts";
@@ -88,12 +109,12 @@ function refuseProfiles(profiles: readonly (readonly string[])[]): Finding | und
 async function gateProfile(
   check: FeaturesCheckConfig,
   config: FeatureManifest,
-  drop: readonly string[],
+  profile: ResolvedProfile,
   run: CurateRunner,
 ): Promise<Finding | undefined> {
   const tree = mkdtempSync(join(tmpdir(), "forge-curate-"));
   try {
-    return await gateSkeleton(check, config, drop, tree, run);
+    return await gateSkeleton(check, config, profile, tree, run);
   } finally {
     const link = join(tree, "node_modules");
     if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink() === true) unlinkSync(link);
@@ -101,8 +122,12 @@ async function gateProfile(
   }
 }
 
-/** Curates the working tree once per profile, each into its own temporary directory, and runs that skeleton's `standard` gate there. @public */
-export async function checkFeatures(check: FeaturesCheckConfig, run: CurateRunner = runInTree): Promise<CheckResult> {
+function sameDropped(a: ResolvedProfile, b: ResolvedProfile): boolean {
+  return a.dropped.length === b.dropped.length && a.dropped.every((feature) => b.dropped.includes(feature));
+}
+
+/** Curates the working tree once per distinct resolved profile, each into its own temporary directory, and runs that skeleton's `standard` gate there. @public */
+export async function checkFeatures(check: FeaturesCheckConfig, run: CurateRunner = runCommand): Promise<CheckResult> {
   let config: FeatureManifest;
   try {
     config = await loadFeatures({ root: check.root });
@@ -115,9 +140,15 @@ export async function checkFeatures(check: FeaturesCheckConfig, run: CurateRunne
   const profiles = check.profiles ?? defaultFeatureProfiles(Object.keys(config));
   const refusal = refuseProfiles(profiles);
   if (refusal !== undefined) return checkResult([refusal], "features: no skeleton produced");
+  const distinct: ResolvedProfile[] = [];
   for (const drop of profiles) {
-    const finding = await gateProfile(check, config, drop, run);
+    const profile = resolveProfile(config, drop);
+    if ("level" in profile) return checkResult([profile], "features: no skeleton produced");
+    if (!distinct.some((other) => sameDropped(other, profile))) distinct.push(profile);
+  }
+  for (const profile of distinct) {
+    const finding = await gateProfile(check, config, profile, run);
     if (finding !== undefined) return checkResult([finding], "");
   }
-  return checkResult([], `features: ${profiles.map(describeProfile).join("; ")} each passed its standard gate`);
+  return checkResult([], `features: ${distinct.map((profile) => profile.label).join("; ")} each passed its standard gate`);
 }

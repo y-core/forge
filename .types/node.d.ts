@@ -51,7 +51,7 @@ declare const process: {
   readonly stdin: NodeStdioStream;
   readonly stdout: NodeStdioStream;
   readonly stderr: NodeStdioStream;
-  kill(pid: number, signal: string): void;
+  kill(pid: number, signal: string | number): void;
   once(event: string, listener: () => void): void;
 };
 
