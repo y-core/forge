@@ -1,0 +1,252 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"],
+  // forge's own rules, loaded as raw TypeScript. A consuming app names the published subpath
+  // "@y-core/forge/tooling/lint" here instead of this relative path.
+  "jsPlugins": ["./src/tooling/lint/mod.ts"],
+  // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
+  // holds it against the source; linting or formatting it would be judging esbuild's output.
+  "ignorePatterns": ["src/tooling/gate/chromium.mjs", "src/tooling/lint/plugin.mjs"],
+  // `suspicious` stays off — see docs/FORGE_REVIEW.md
+  "categories": { "correctness": "error" },
+  "rules": {
+    // AST-anchored, and it covers every rule rather than only `design-allow`. `lint:types` already
+    // passes --report-unused-disable-directives-severity error, so a stale suppression is a failure
+    // there; this states the other half — a live suppression says why it is one.
+    "forge/suppression-needs-reason": "error",
+    // The JSX contract's ordering half, read off the AST; `docs/STATE_ATTRIBUTES.md` states the rule.
+    "forge/data-slot-before-spread": "error",
+    // The design corpus's class-string rules, read off the AST rather than line by line. Their ids
+    // are `forge-ui-` + the key here; `docs/UI_DESIGN_GUIDANCE.md` states them
+    // and `validate-design` fails when this list and `design-rules.ts`'s register disagree.
+    "forge/a11y-heading-size-by-class": "error",
+    "forge/a11y-aria-beside-data": "error",
+    "forge/a11y-label-association": "error",
+    "forge/a11y-live-politeness": "error",
+    "forge/a11y-no-aria-readonly-on-button": "error",
+    "forge/a11y-one-live-region": "error",
+    "forge/color-theme-no-raw-utility": "error",
+    "forge/color-token-only": "error",
+    "forge/focus-ring": "error",
+    "forge/interaction-filter-group-required": "error",
+    "forge/interaction-focus-visible": "error",
+    "forge/no-inline-style": "error",
+    "forge/no-nested-card": "error",
+    "forge/platform-entry-motion": "error",
+    "forge/platform-logical-spacing": "error",
+    "forge/platform-text-balance": "error",
+    "forge/platform-text-pretty": "error",
+    "forge/reduced-motion": "error",
+    "forge/spacing-scale-only": "error",
+    // `prefer-tag-over-role` off — its substitutions are wrong for forge's markup; see docs/FORGE_REVIEW.md §7c
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-invalid-void-type": "error",
+    "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    "eslint/no-irregular-whitespace": ["error", { "skipComments": true }],
+    "unicorn/no-useless-spread": "off",
+    "eslint/prefer-arrow-callback": "error",
+    "eslint/preserve-caught-error": "error",
+    "eslint/no-shadow": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-base-to-string": "off",
+    "typescript/unbound-method": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/require-array-sort-compare": "off",
+    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-redundant-type-constituents": "off",
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+            "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+          },
+          {
+            "group": ["valibot"],
+            "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      // The type-placement rule (`docs/FORGE_STRUCTURE.md` §8), scoped to the published namespaces under `src/`.
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      "rules": { "forge/type-import-external": "error", "forge/type-import-separation": "error" }
+    },
+    {
+      // A runtime `sql` fragment never opens or closes a transaction (`docs/STORAGE_BINDINGS.md` §1g).
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      "rules": { "forge/sql-explicit-transaction": "error" }
+    },
+    { "files": ["src/tooling/**", "src/**/*.test.ts", "src/**/*.test.tsx"], "rules": { "forge/sql-explicit-transaction": "off" } },
+    {
+      // A `types.ts` is where the rule sends a declaration, so it cannot itself be a violation. A
+      // spec's fixture types are its own business — nothing shipped can name them, and `files`
+      // excludes every `*.fixture.ts`, which is where `validate-packaging` sends a test-only module.
+      "files": [
+        "src/**/types.ts",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/**/*.browser.ts",
+        "src/**/*.browser.tsx",
+        "src/**/*.fixture.ts",
+        "src/**/*.fixture.tsx"
+      ],
+      "rules": { "forge/type-import-external": "off" }
+    },
+    {
+      // A file that is itself a published subpath is its own `types.ts`: `./testing/workerd` and
+      // `./testing/snapshot` are off the `./testing` barrel on purpose, and moving their shapes into
+      // the namespace's `types.ts` would put them on that barrel — the one place `TEST_RUNNERS.md`
+      // §7f and §7h say they do not belong.
+      "files": ["src/testing/snapshot.ts", "src/testing/workerd.ts"],
+      "rules": { "forge/type-import-external": "off" }
+    },
+    {
+      // These three specs pin the line-scanning detectors themselves, so their fixtures are the
+      // exact patterns the rules forbid — the same reason `classOrderStep` excludes four specs.
+      // `src/ui/design` is markdown the linter never reads; it is excluded where it is scanned.
+      "files": [
+        "src/tooling/gate/checks/design-parse.test.ts",
+        "src/tooling/gate/checks/modern-css-parse.test.ts",
+        "src/tooling/gate/checks/modern-css-source-parse.test.ts"
+      ],
+      "rules": { "forge/a11y-heading-size-by-class": "off", "forge/platform-entry-motion": "off", "forge/platform-logical-spacing": "off" }
+    },
+    {
+      // `cn`'s spec pins which of two conflicting utilities survives, so its fixtures are pairs the
+      // design rules forbid on purpose, and a class list bound to a module-scope const and passed
+      // by name is judged.
+      "files": ["src/ui/core/utils/cn.test.ts"],
+      "rules": { "forge/platform-logical-spacing": "off", "forge/platform-text-balance": "off" }
+    },
+    {
+      // The rule holds page-level markup composed from `ui/core` to the component rather than the
+      // raw control it wraps; inside `ui/core` a raw control is how a component is built.
+      "files": ["src/auth/web/views/**", "src/logging/viewer/**"],
+      "rules": { "forge/catalog-wrong-raw-input": "error" }
+    },
+    {
+      // `toast.tsx` is where the page's one live region lives, so it cannot be a second one.
+      "files": ["src/ui/core/toast.tsx"],
+      "rules": { "forge/a11y-one-live-region": "off" }
+    },
+    {
+      // A spec or a browser file carries the adversarial markup a test exists to feed, so the
+      // corpus rules are off for them.
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts", "**/*.browser.tsx"],
+      "rules": {
+        "forge/a11y-aria-beside-data": "off",
+        "forge/a11y-label-association": "off",
+        "forge/a11y-live-politeness": "off",
+        "forge/a11y-no-aria-readonly-on-button": "off",
+        "forge/a11y-one-live-region": "off",
+        "forge/catalog-wrong-raw-input": "off",
+        "forge/color-theme-no-raw-utility": "off",
+        "forge/focus-ring": "off",
+        "forge/interaction-focus-visible": "off",
+        "forge/no-inline-style": "off",
+        "forge/no-nested-card": "off"
+      }
+    },
+    {
+      // The rule's subject is a rendered-markup assertion, which only a test file makes; scoped to
+      // the tree `validate-exact-assertions` walks, so no corpus is widened.
+      // `auth/web` is the second tree that renders markup, and its view specs are the bulk of the
+      // layer's assertion surface — unscanned, most of it would go unchecked.
+      "files": [
+        "src/ui/**/*.test.ts",
+        "src/ui/**/*.test.tsx",
+        "src/ui/**/*.browser.ts",
+        "src/ui/**/*.browser.tsx",
+        "src/auth/web/**/*.test.ts",
+        "src/auth/web/**/*.test.tsx",
+        "src/auth/client/**/*.browser.ts"
+      ],
+      "rules": { "forge/exact-markup-assertion": "error" }
+    },
+    {
+      // The convention is about types a consumer constructs a value of (UI_SSR_COMPONENTS.md §1n);
+      // internal option objects keep the bare `?:`, so the rule is on for the component tiers only.
+      // The prop shapes themselves now live in the tier's `types.ts` (§8), which is where the rule
+      // has to read them; the `.tsx` files stay listed for a shape still declared beside its markup.
+      "files": [
+        "src/ui/core/*.tsx",
+        "src/ui/controls/*.tsx",
+        "src/ui/chrome/*.tsx",
+        "src/ui/core/types.ts",
+        "src/ui/controls/types.ts",
+        "src/ui/chrome/types.ts"
+      ],
+      "rules": { "forge/optional-prop-undefined": "error" }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      // a test's job is to feed adversarial markup — see warden/canon/libs/TESTING.md
+      "rules": {
+        // A test imports a barrel on purpose: nothing imports a test, so no cycle is reachable, and
+        // travelling the consumer's path is what proves the barrel exports what the docs promise.
+        // `FORGE_REVIEW.md`'s own detection for this rule already excludes test files.
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              }
+            ]
+          }
+        ],
+        "typescript/no-non-null-assertion": "off",
+        "forge/optional-prop-undefined": "off",
+        // A probe that hands a component a caller `data-slot` and then a per-case override is
+        // asserting the spread wins; `validate-jsx` never read a test file either.
+        "forge/data-slot-before-spread": "off",
+        "jsx-a11y/control-has-associated-label": "off",
+        "jsx-a11y/tabindex-no-positive": "off",
+        "jsx-a11y/aria-proptypes": "off"
+      }
+    },
+    {
+      "files": ["config/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (../src/validation/mod) — never valibot directly." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/validation/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

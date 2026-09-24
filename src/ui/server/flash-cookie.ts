@@ -1,0 +1,47 @@
+import type { RequestContext } from "@remix-run/fetch-router";
+
+import { setPendingHeader } from "../../context/pending-headers";
+import { createSignedCookie } from "../../session/cookie";
+import type { FlashMessage, FlashType } from "./types";
+import type { FlashCookieOptions, Flasher } from "./types";
+
+/** Creates a `Flasher` backed by a signed cookie cleared on read. @public */
+export function createFlash(options: FlashCookieOptions): Flasher {
+  const name = options.name ?? "flash";
+  const path = options.path ?? "/";
+  const maxAge = options.maxAge ?? 60;
+  const sameSite = options.sameSite ?? "Lax";
+
+  const cookie = createSignedCookie(name, { secrets: options.secrets, path, maxAge, sameSite });
+
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
+  async function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {
+    const serialized = await cookie.serialize(JSON.stringify(messages));
+    setPendingHeader(c, "set-cookie", serialized, { append: true });
+  }
+
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
+  async function get(c: RequestContext<any, any>): Promise<FlashMessage[]> {
+    const reading = await cookie.read(c.request.headers.get("cookie") ?? null);
+    // The clear is keyed on the cookie being present, not on its value verifying: one past its expiry
+    // reads as `null`, and leaving it uncleared means the browser re-sends and re-fails it forever.
+    if (reading === null) return [];
+    const clearCookie = await cookie.serialize("", { maxAge: 0, path });
+    setPendingHeader(c, "set-cookie", clearCookie, { append: true });
+    const raw = reading.value;
+    if (raw === null) return [];
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? (v as FlashMessage[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function convenience(type: FlashType) {
+    // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
+    return (c: RequestContext<any, any>, text: string) => set(c, [{ type, text }]);
+  }
+
+  return { set, get, success: convenience("success"), info: convenience("info"), warning: convenience("warning"), error: convenience("error") };
+}

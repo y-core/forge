@@ -1,0 +1,597 @@
+---
+title: Namespace Design
+description: "Barrel export rules, the authoritative subpath catalog, leaf-versus-integration classification, and the criteria for adding a namespace."
+audience: internal
+---
+
+# Namespace Design
+
+> Owns the export-subpath catalog, barrel discipline, the leaf/integration classification, and the growth rules for new namespaces. Other documents
+> link here rather than restating the classification.
+>
+> Defers to: [`FORGE_STRUCTURE.md`][la] for the facade and runtime-only principles these rules serve; [`CODE_RULES.md`][cr] for the coding
+> rules inside a namespace; `package.json` `exports` for the subpath names themselves, and `src/{ns}/mod.ts` for each namespace's export list.
+
+---
+
+## 0. Quick Reference
+
+- §1 Barrel Rules and Export Discipline: one barrel per namespace, named exports only
+- §2 No-Sibling-Barrel Import Rule: the guard against circular dependencies
+- §3 Authoritative Namespace Catalog: every subpath and its classification
+- §3a Public Export Paths: the catalog table
+- §3b Internal Namespaces: sealed-internal `crypto`
+- §3c `tooling/lint` — a Namespace Whose Barrel Is Also a Plugin: the published surface, the rule catalogs, and the prebuilt copies a consumer's
+  node processes load
+- §4 Namespace Classification: the leaf/integration split
+- §4a Leaf Namespace Rules: no cross-namespace forge imports beyond the §4c primitives
+- §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
+- §4c Foundational Primitive Namespaces: `result`, `crypto`, `context` and `validation` sit below the split
+- §5 Growth Rules: where a new concern belongs
+- §5a security — Transport-Layer Hardening Only: what goes to `auth` instead
+- §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, and the deliberate `ui/controls` shadowing
+- §5c app — Bootstrap and Pipeline Builders: the third-builder trigger and what counts toward it
+- §5d http — All HTTP Output Concerns: the canonical output home
+- §5e Exported Factory and Type Naming Convention: `create*`, `resolve*`, and type suffixes
+- §5f ui/client — Where a Browser Controller Belongs: controllers, signals, and lazy-loaded resources
+- §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is
+  Worker-reachable
+- §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
+- §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
+- §5j `output` — One Namespace per Output Format: the container and its children, the bare-component carve-out, the call shape, and the JSX edge
+- §6 When to Add a New Namespace: criteria and checklist
+- §7 Binding a Subpath to Its Governance: a row lists a subpath, a prose rule binds it
+
+---
+
+## 1. Barrel Rules and Export Discipline
+
+See [`NAMESPACE_DESIGN.md`][nd-1] §1 for barrel discipline, the `export *` ban and every spelling of it, and what the export gate proves. The
+files that enforce it are named in [`SOURCE_OF_TRUTH.md`][sot-2b] §2b.
+
+---
+
+## 2. No-Sibling-Barrel Import Rule
+
+See [`NAMESPACE_DESIGN.md`][nd-2] §2 for the no-sibling-barrel rule, the cycle it prevents, and the test an exemption must pass. forge's
+exemptions — `validation/mod` and `crypto/mod` — are §4c below, which owns the closure argument that makes them safe.
+
+---
+
+## 3. Authoritative Namespace Catalog
+
+### 3a. Public Export Paths
+
+Rows follow `package.json` `exports` order, which owns the subpath names. The Key Exports column is an orientation aid — **`src/{ns}/mod.ts` is
+authoritative for what a namespace exports.** Leaf/integration classification is declared in `config/namespaces.ts` (see §4a) and side-effect status
+in `package.json` `sideEffects`; this table enumerates neither. A row here _lists_ a subpath; what _binds_ it is a prose rule (§7).
+
+**The `./warden*` subpaths are catalogued in [`warden/README.md`][warden-readme], not here.** Warden sits outside `src/`, is a developer tool rather
+than a runtime namespace, and its module subpaths — `./warden`, `./warden/checks`, `./warden/knowledge`, `./warden/mcp`, `./warden/steps` — are
+published all the same, alongside the `./warden/canon/*.md` asset pattern the canon is read through. Their absence from this table is deliberate, so
+that a reader can tell it from a namespace that lost its row.
+
+**A non-module file a consumer must name by path is published too, or the facade has a hole in it.** `@y-core/forge/auth/schema.sql` is the standing
+case: a consumer composing its database names forge's identity tables in its own load order, ahead of its own DDL, and the only alternative to a
+subpath is a literal reach into `node_modules/@y-core/forge/src/` — which is the one thing a facade exists to make unnecessary, and which no rename
+inside forge would then survive.
+
+**Their `exports` value is a plain string, not a `{types, import}` object.** Tailwind's CSS resolver runs `conditionNames: ["style"]`, so neither
+`types` nor `import` matches and an object entry is unreachable from `@import` however correct it looks.
+
+**A family of assets is one subpath pattern, not one key per file.** `./ui/assets/css/*.css` is a Node subpath pattern — the supported replacement
+for the directory exports removed in Node 17 — and `files[]` already ships the whole of `src/ui/`, so a new stylesheet is addressable the moment it
+is written.
+
+**What the gate asserts changed with it, and got stronger.** A literal key could only be checked for _declaration_; a pattern is checked by
+**expansion and resolution**. `validate-exports` expands each pattern against disk, requires every member to publish and to actually
+`import.meta.resolve`, and fails a pattern matching nothing as dead config; its reverse pass then requires every stylesheet on disk to resolve under
+some key or pattern. _Reachability is the property that ever went wrong here_ — forge shipped release after release with stylesheets that existed,
+were inside `files[]`, and could not be imported. `validate-docs` matches a documented subpath against patterns too, additionally requiring the file
+to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send a reader to a resolution error.
+
+| Export Path | Source | Key Exports |
+| --- | --- | --- |
+| `@y-core/forge/app` | `src/app/mod.ts` | `createApp`, `Forge`, `applyAssets`, `healthCheck`, `definePage`, `defineAction`, `applyMiddlewareChain`, `buildGuardChain`; re-exports `validateBindings`, `validateEnv`, `ConfigKey` from `context` |
+| `@y-core/forge/assets` | `src/assets/mod.ts` | `createManifest`, `createSpriteRegistry` — runtime lookups only; the build-time surface is `./tooling/assets` |
+| `@y-core/forge/auth` | `src/auth/mod.ts` | `resolveAuthServices`, `AUTH_SUPPORTED_ALGORITHMS`, `normalizeEmail`, `AuthStoreError`; types `AuthAlgorithm`, `AuthKeyRing`, `AuthOptions`, `AuthSecretResolver`, `AuthServices`, `AuthUser` — the identity domain, which produces no `Response` and touches no `Session` (§5h) |
+| `@y-core/forge/auth/schema.sql` | `src/auth/schema.sql` | No runtime: the identity tables' desired state, named in a consumer's `schemas` load order ahead of its own — see §3a |
+| `@y-core/forge/auth/client` | `src/auth/client/mod.ts` | No value exports — a side-effect barrel registering the passkey ceremony scope; the controller lives beside it in `src/auth/client/`, and the contract it reads is `auth`'s `PASSKEY_*` data (§5h) |
+| `@y-core/forge/auth/web` | `src/auth/web/mod.ts` | `authRoutes`, `accountRoutes`, `adminRoutes`, `authPaths` and `AUTH_ROUTE_GROUPS`; the guards `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` and `createAuthGuards`, with `authCtx`, `resolveAuthIdentity` — which reads, and clears the session's auth keys when the store refuses the id — and the session writers `establishAuthSession` / `markAuthStepUp` / `clearAuthSession`; the form schemas and `renderAuthPage` — the mountable web layer over the `auth` domain, one-way (§5h) |
+| `@y-core/forge/tooling/assets` | `src/tooling/assets/mod.ts` | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`; `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`; and `createAssetsCommands`, the `forge assets` subtree. The pipeline and the CLI face that drives it are one namespace |
+| `@y-core/forge/tooling/cli` | `src/tooling/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError`; plus the shared foundation the tool namespaces read config through — `resolveAppRoot`, `loadConfigModule`, the JSONC parser and editor, and the barrel parser |
+| `@y-core/forge/tooling/gate` | `src/tooling/gate/mod.ts` | the verification gate — the gate command factory, the step builders and presets, and every check. It also owns the changelog and semver parsers, which is what lets `tooling/release` depend on it and never the reverse. The gate's formatters stay out of the barrel ([`BUILD_TOOLING.md`][bt-2f] §2f) |
+| `@y-core/forge/tooling/release` | `src/tooling/release/mod.ts` | `createReleaseCommand`, `resolveVersion`, `ReleaseError` — the release workflow, built on the gate's changelog and semver parsers and its barrel parser. The git and `package.json` helpers stay out of the barrel ([`BUILD_TOOLING.md`][bt-2c] §2c) |
+| `@y-core/forge/tooling/curate` | `src/tooling/curate/mod.ts` | `createCurateCommand`, `curateTree`, `defineFeatures`, `loadFeatures` — `forge curate`, which copies a working tree minus the directories and marked lines of the features `--drop` names. The gate's `validate-features` row builds on it, never the reverse |
+| `@y-core/forge/tooling/gate/chromium` | `src/tooling/gate/chromium.mjs` | `resolveChromiumPath`, prebuilt — the spelling a consumer's `playwright.config.ts` imports. It exists for the same reason `./tooling/lint/plugin` does: playwright loads its config under node, which refuses to strip types from a file under `node_modules`; `validate-chromium-bundle` rebuilds it and fails on any drift from the source |
+| `@y-core/forge/tooling/lint` | `src/tooling/lint/mod.ts` | forge's oxlint JS plugin, default-exported for `.oxlintrc.json`'s `jsPlugins`, plus the rule catalogs the gate's design and modern-CSS checks read. Loaded as raw TypeScript: oxlint resolves the source directly, so the plugin ships with no build step. Its types are structural restatements of oxlint's own, because `oxlint` is a devDependency and a published module must not depend on it |
+| `@y-core/forge/tooling/lint/plugin` | `src/tooling/lint/plugin.mjs` | The same plugin, prebuilt — the spelling a consumer's `.oxlintrc.json` names in `jsPlugins`. It exists because node refuses to strip types from a file under `node_modules`, so a consumer's oxlint cannot load `mod.ts` at all; `validate-lint-plugin` rebuilds it and fails on any drift from the source |
+| `@y-core/forge/tooling/cf` | `src/tooling/cf/mod.ts` | `createCfCommands` — the whole `forge cf` subtree. `createSyncAccountCommand`, `syncBindings` and the resource handlers (`account/`); `createSyncZoneCommand` (`zone/`); `createGenEnvCommand` (`gen/`); and the pieces both scopes share — `createCfClient`, `loadWranglerConfig`, `renderSections`, `detectTarget`. Imports `tooling/cli`, `tooling/term`, `site` |
+| `@y-core/forge/tooling/db` | `src/tooling/db/mod.ts` | `createDbCommands` — the whole `forge db` subtree: forward-only wrangler migrations with lint, plan, checksums and a schema fingerprint (`migrate/`); verified backup, restore and reset (`backup/`); name-keyed idempotent seeds (`seed/`); library migration sync (`sync/`); and D1 Time Travel bookmarks. Imports `tooling/cli`, `tooling/term`, `tooling/cf` ([`DATABASE_MANAGEMENT.md`][dm]) |
+| `@y-core/forge/tooling/term` | `src/tooling/term/mod.ts` | `stringWidth`, `truncate`, `wrapLines`, `padAlign`, `terminalWidth`, `renderGrid`, `definitionList`, `BORDERS`, `resolveColorLevel`, `createColorize`, `PLAIN` — terminal rendering, and a sink: it imports `node:process` and nothing else in this repository, so every other `tooling/*` namespace may import it and it may import none of them |
+| `@y-core/forge/config` | `src/config/mod.ts` | `Config`, `createConfig`, `env`, `resolveConfig` |
+| `@y-core/forge/context` | `src/context/mod.ts` | `contextVar`, `createContextKey`, `getAppContext`, `validateBindings`, `validateEnv`, `bindingSchema`; types `AppContext`, `Middleware`, `RequestHandler` — canonical home of binding validation |
+| `@y-core/forge/dev` | `src/dev/mod.ts` | `devAllowance`; types `DevAllowance`, `DevAllowanceOptions` — a branded token a development entry mints and production cannot, and the one key every dev-only relaxation in forge takes (§5i). Declared `forge.devOnly` in `package.json`, so `validate-dev-boundary` fails a deployable module that imports it at value |
+| `@y-core/forge/form` | `src/form/mod.ts` | `parseFormData`, `csrfProtection`, `importCsrfKey`, `mintCsrf`, `verifyTurnstile`, `formToObject` — `formToObject` reads a body into a plain object; applying a schema to it is `defineAction`'s |
+| `@y-core/forge/jsx` | `src/jsx/mod.ts` | `createElement`, `cloneElement`, `Fragment`, `isValidElement`, `renderToString`, `renderPage` — imports `http` |
+| `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | automatic-runtime transform target |
+| `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | automatic-runtime dev transform target |
+| `@y-core/forge/jsx/register` | `src/jsx/register.ts` | global JSX runtime registration |
+| `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
+| `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `scriptJson`, `styleText`, `htmlResponse`, `fragmentResponse`, `pdfResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
+| `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withLevels`, `withRedaction`, `requestLogger`, `requestLog`, `serializeError`, and the redaction policy set `defineLogRedaction` / `DEFAULT_LOG_REDACTION` / `LOG_REDACTED` |
+| `@y-core/forge/logging/viewer` | `src/logging/viewer/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
+| `@y-core/forge/output/pdf` | `src/output/pdf/mod.ts` | The PDF engine: a document composed from components and rendered to bytes, with no browser and no runtime dependency. It sets type in the base-14 faces or in embedded ones, paginates under a page ceiling, writes a structure tree a screen reader can follow, and answers a layout projection a test can assert on instead of opaque bytes. First child of the `output/` container (§5j); the response builder that returns its bytes is `http`'s `pdfResponse` (§5d) |
+| `@y-core/forge/output/pdf/audit` | `src/output/pdf/audit/mod.ts` | `auditPdf`; types `PdfAuditFinding`, `PdfAuditRule` — the accessibility and conformance checks a caller runs over a render before making it, kept out of the render path. Its edge back to `output/pdf` is one-way `type`, which keeps the `output/` container acyclic (§5j) |
+| `@y-core/forge/output/pdf/fonts` | `src/output/pdf/fonts/mod.ts` | `createPdfFontSet`, `readPdfFontPack`; types `PdfFace`, `PdfFontPack`, `PdfFontPackData`, `PdfFontSet`, `PdfFontRequest`, `PdfFontMetrics`, `PdfFontError` and the axis types — font packs and the CSS font-matching ladder a request is resolved through. Reads the pack the asset pipeline writes as plain JSON, which is what keeps the two halves from naming each other's types. The second child of the `output/` container (§5j) |
+| `@y-core/forge/output/pdf/jsx-runtime` | `src/output/pdf/jsx-runtime.ts` | `jsx`, `jsxs`, `Fragment` re-exported, plus this namespace's own `JSX` declaration — the `jsxImportSource` a `.tsx` file names to write a document as markup, and separate from `./jsx/jsx-runtime` for the reason §5j gives |
+| `@y-core/forge/result` | `src/result/mod.ts` | `ok`, `err`, `result`, `toError`, `Result`, `GuardResult`, `ValidationResult` |
+| `@y-core/forge/router` | `src/router/mod.ts` | fetch-router re-exports: `route`, `createController`, `createAction`, the method helpers, `createHref`; plus `routePaths` / `RouteFilter` / `forMethod` |
+| `@y-core/forge/security` | `src/security/mod.ts` | `createSecurityHeaders`, `getNonce`, `NONCE`, `requestId`, `requireFormContentType`, `cors`, `originProtection`, `crossOriginProtection`, `originGuard`, `verifyOrigin`, `rateLimit` |
+| `@y-core/forge/session` | `src/session/mod.ts` | `sessionMiddleware`, `createCookieSessionStorage`, `createMemorySessionStorage`, `createSignedCookie`, `createUnsignedCookie` |
+| `@y-core/forge/site` | `src/site/mod.ts` | `defineSiteConfig`, `resolveSiteConfig`, `SiteConfigSchema`, `renderRobotsTxt`, `renderSitemapXml`, `resolveSitemapEntries`, and the zone builders `buildAllowExpression` / `buildAllowRule` / `buildRedirectRule` with `RESERVED_PREFIXES` |
+| `@y-core/forge/storage/db` | `src/storage/db/mod.ts` | the D1 client, its resolver and binding check, the `sql` tag and its guard, the UUIDv7 set — which is implemented in `crypto` and surfaced here (§3b) — and the read-only schema health report (`checkSchemaHealth`, `schemaHealthMonitor`, `schemaHealthCheck`) whose fingerprint rules `tooling/db` imports |
+| `@y-core/forge/storage/kv` | `src/storage/kv/mod.ts` | `createKVStore`, `resolveKVStore`, `validateKVBinding`, `jsonCodec`, `textCodec`, `bytesCodec` |
+| `@y-core/forge/storage/r2` | `src/storage/r2/mod.ts` | `createObjectStore`, `resolveObjectStore`, `validateR2Binding`, `serveObject`, `createSignedObjectUrl`, `verifySignedObjectUrl`, `r2Backend`, `UnsatisfiableRangeError` |
+| `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TEST_RUNNERS.md`][testing-7] §7 |
+| `@y-core/forge/testing/workerd` | `src/testing/workerd.ts` | `startDevServer`, `DevServer`, `DevServerOptions` — a `wrangler dev` fixture server for a suite the node process runs. A file target, not a barrel, and deliberately off `./testing`: it reads `node:child_process`/`node:fs`/`node:net` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
+| `@y-core/forge/testing/snapshot` | `src/testing/snapshot.ts` | `matchTextSnapshot` — text against a committed fixture, answering a `Result` carrying the differing lines. A file target off `./testing` for the same reason, and format-agnostic: it knows nothing of what produced the text ([`TEST_RUNNERS.md`][testing-7h] §7h) |
+| `@y-core/forge/testing/coverage` | `src/testing/coverage/mod.ts` | `COVERAGE_COMPONENTS`, `CoverageComponent`, `CoverageBarrel` — every component the `ui/core`, `ui/controls`, `ui/chrome` and `ui/server` barrels publish, the set a consumer's coverage manifest must declare. Off `./testing` because it loads all four UI barrels ([`TEST_RUNNERS.md`][testing-7i] §7i) |
+| `@y-core/forge/testing/node` | `src/testing/node.d.ts` | No runtime: ambient declarations for the node surface `testing/workerd` and `testing/snapshot` reach, referenced per file by the suite that imports it so a `"types": []` program needs no `exclude` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
+| `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
+| `@y-core/forge/ui/assets/build` | `src/ui/assets/build/mod.ts` | `forgeUiSpriteSources`, `svgToSymbol`, `sanitizeSVG`, `extractViewBoxes`, `parseColor`, `toHex`, `readThemeTokens`, `resolveToken`, `buildCursors` — build-time only; it computes the artifacts `ui/assets` owns and drives no external builder ([`ASSET_PIPELINE.md`][ap-2c] §2c) |
+| `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
+| `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. Underneath: `theme-colors.css` (the status hues and alpha ramps), `theme-base.css` (the semantic-token mapping, the `color-scheme` declarations, and the `@theme inline` bridge), `forge-ui.css` (the layered component and state rules), and the ready-made schemes — `theme-neutral.css` is the default, and `theme-slate.css` is the structural model for an app's own |
+| `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | the DOM contract as pure data — the state-attribute and scope-event declarations, and the scope-name and selector constants each keyboard primitive shares between its SSR and client halves |
+| `@y-core/forge/ui/contracts/theme` | `src/ui/contracts/theme/mod.ts` | the colour model a forge scheme is generated from and the contrast audit the gate and a customiser share — `buildScale`, `buildTheme`, `schemeCss`, `liveRatios`, the OKLCh conversions, `DIALS` / `Dial` / `DialValues`, `CONTRAST_PAIRS`, `ACCEPTED_CONTRAST`, `CRITERION`. Runtime-neutral: pure data and pure functions ([`THEME_GENERATION.md`][tg]) |
+| `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | bound control variants that shadow the `ui/core` names — see §5b |
+| `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | the SSR component set — see [`UI_SSR_COMPONENTS.md`][usc] — plus `cn`, `cva`, which [`UI_CLASS_COMPOSITION.md`][ucc] owns |
+| `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | ui/core browser controller registration |
+| `@y-core/forge/ui/chrome` | `src/ui/chrome/mod.ts` | `Navbar`, `Toolbar`, `ThemeToggle`, `FOUC_SCRIPT`, `THEME_ATTR` |
+| `@y-core/forge/ui/chrome/client` | `src/ui/chrome/client.ts` | theme/nav chrome controller registration |
+| `@y-core/forge/ui/client` | `src/ui/client/mod.ts` | `lazy`, `createSignal`, `computed`, `effect`, `bindControls`, `resume`, `registerScope` |
+| `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | htmx bundle |
+| `@y-core/forge/ui/design/…` | `src/ui/design/*.md` | The design corpus by filename — its root files and, since `*` matches across `/`, the routed `reference/` ones. An asset row: the target is prose an agent reads, not a module — see [`UI_DESIGN_GUIDANCE.md`][udg] |
+| `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `fieldAttr`, `commandAttrs` |
+| `@y-core/forge/validation` | `src/validation/mod.ts` | `v` (valibot facade), `ValidationResult` |
+
+### 3b. Internal Namespaces
+
+| Directory | Purpose | Consumers |
+| --- | --- | --- |
+| `src/crypto/` | HMAC / timing-safe / base64url and base32 utilities, HKDF, AES-GCM, HOTP/TOTP, CBOR / COSE / DER decoding, UUIDv7 generation | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+
+**`crypto` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.ts`. The allowlist is what lets
+a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
+
+**Never import `crypto` from outside forge.** There is no `@y-core/forge/crypto` subpath.
+
+**Sealed means the path, not the symbol.** Almost everything here is `@internal` plumbing, but a capability may be implemented in `crypto` and
+surfaced publicly through the barrel of the namespace that owns its concern. `uuidv7` / `createUuidv7` are the standing case: implemented here so
+`storage/kv` and `auth` consume them without a layering violation, exported to consumers only via `@y-core/forge/storage/db` (see
+[`STORAGE_BINDINGS.md`][sb-1e] §1e).
+
+**The catalog's enumeration guard reaches this subsection.** `namespace-graph.ts` opens its window on the `### 3a.` heading and closes it at the
+next `## `, so §3a and §3b are one window: a catalog table gaining a leaf/integration or side-effect column fails the gate here just as it would in
+§3a. Covering the whole of §3 is deliberate — the guard's subject is the document's catalog, and a table moved one subsection down is the same
+enumeration in a new place.
+
+**That placement costs one piece of enforcement, knowingly.** `validate-exports`'s source → barrel pass walks the source files each _exported_
+namespace owns, so a `@public` symbol living in `src/crypto/` is outside every namespace it scans. Nothing mechanical will catch a public crypto
+symbol that was never added to a surfacing barrel — that entry is manual discipline, unlike everywhere else in forge where the gate proves it.
+
+### 3c. `tooling/lint` — a Namespace Whose Barrel Is Also a Plugin
+
+**`src/tooling/lint/mod.ts` is the whole public surface behind `./tooling/lint`.** It re-exports the plugin object from `plugin.ts` under both
+`lintPlugin` and `default`, so `.oxlintrc.json` can name the subpath in `jsPlugins`, and it publishes the rule catalogs — `RULE_CORPUS_PATH` /
+`RULE_ENFORCER` and `MODERN_CSS_RULES` — that the gate's design and modern-CSS checks read.
+
+**The catalogs live here, not in the gate, because that is the direction that has no cycle.** The gate reads them; `report.ts` beside them reads
+them too, to print the corpus path a finding sends a reader to. Held in `tooling/gate`, those same facts made `gate` and `lint` name each other at
+value, which `validateNoMutualValuePairs` rejects.
+
+**Every specifier the plugin reaches must carry its `.ts` extension.** oxlint loads a plugin through Node's ESM resolver, which does not resolve an
+extensionless specifier — so `mod.ts`, `plugin.ts`, `report.ts`, the rule modules and both catalogs spell the file. `tsconfig.json` sets
+`allowImportingTsExtensions` for exactly this.
+
+**A consumer loads `plugin.mjs`, not the source, and the gate holds both copies together.** Node refuses to strip types from a file under
+`node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so `"jsPlugins": ["@y-core/forge/tooling/lint"]` cannot work in any consumer however
+forge is installed — the restriction is deliberate and has no opt-out flag. `./tooling/lint/plugin` therefore publishes a committed esbuild bundle
+of `mod.ts`, which resolves nothing at load time and so cannot care how a consumer's `node_modules` is laid out. Forge is consumed as a git tarball,
+so there is no publish step that could build it and no `prepare` hook a consumer runs: committing the artifact is the only form that reaches a
+consumer without the consumer building it. The cost is that a generated file can drift from its source, which is why `validate-lint-plugin`
+re-bundles and diffs on every gate run, exactly as `validate-design-scale` does for the generated scale. Forge's own `.oxlintrc.json` keeps naming
+`./src/tooling/lint/mod.ts`, so a rule edit takes effect here without a regeneration step — regenerate with `bun run gen:bundles` before committing
+it.
+
+**Pre-bundling is the remedy wherever a consumer's node process imports forge, and playwright is the second such host.** A `playwright.config.ts`
+importing a forge subpath dies at config load with the same `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, and running playwright under bun instead
+is not a free choice: a dev server playwright spawns itself binds, under bun, where the browser cannot reach it — measured as specs that pass under
+`bunx playwright test` and fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So forge cannot pick the runtime on a consumer's behalf;
+`browserStep` spawns `playwright test` — the installed binary resolved off the runner's `binDir`, whose shebang is node, rather than `bunx`, which
+would fall back to installing from the registry when it resolved nothing — and `./tooling/gate/chromium` publishes a committed bundle of
+`checks/chromium.ts` — the one symbol a config needs — held against its source by `validate-chromium-bundle`.
+`resolveChromiumPath` lives in `checks/chromium.ts` rather than beside `hasChromium` in `checks/browser.ts`, which imports `@playwright/test` — a
+devDependency a published module may not reach, and so not bundlable.
+
+Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
+broken bundle fails here rather than there.
+
+**A published module may not import a build-time package, so oxlint's types are restated in `types.ts` rather than imported from it.** oxlint is a
+devDependency, and an import of its types would make every consumer of forge depend on it. The same constraint reaches anything the plugin loads at
+runtime.
+
+---
+
+## 4. Namespace Classification
+
+### 4a. Leaf Namespace Rules
+
+A namespace is **leaf** when it imports only from its own `src/{name}/` directory, external npm packages, Web APIs, and the foundational primitives
+of §4c — **zero other cross-namespace forge imports.**
+
+**Which namespaces are leaf is declared in `config/namespaces.ts` (`LEAF`), not here.** That file is authoritative for the graph, and this document
+enumerates none of it — the reasoning for that inversion is stated at the head of the file. What stays here is why a classification holds, which is
+the part prose is better at.
+
+**A directory is a namespace only when it owns an export subpath.** `src/tooling/root/` has none — it is the `forge` binary's assembly and nothing
+imports it — so it belongs to no namespace and contributes no edges. Classifying by directory instead of by subpath reports namespaces the package
+does not have, and edges nobody can import.
+
+**`tooling` is a container, not a namespace.** No `mod.ts` sits at the container root: each child — `tooling/cli`, `tooling/term`, `tooling/lint`,
+`tooling/gate`, `tooling/release`, `tooling/curate`, `tooling/cf`, `tooling/db`, `tooling/assets` — owns its own subpath and is its own namespace.
+`resolveNamespaces` matches by longest directory prefix, so a `tooling` namespace rooted at `src/tooling/` would swallow every one of them. The
+container earns its name a second way: **every module under it qualifies for the build-time exemption** ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e), so
+a Worker-reachable module under `src/tooling/` is a visible contradiction rather than an argument to re-litigate.
+
+**The exemption is reachability, and a path is only evidence of it.** That section says so in those words: membership in `src/tooling/` does not
+_confer_ the exemption, it makes the reachability answer obvious enough to check per file. Where the two come apart the cases are named:
+`src/ui/assets/build/`, a `guarded` entry for that reason, and `src/testing/workerd.ts` and `src/testing/snapshot.ts`, the mixed-namespace
+case the same section settles — **the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So each
+is published under its own subpath and left off `src/testing/mod.ts` ([`TEST_RUNNERS.md`][testing-7f] §7f), out of a `"types": []` program's reach.
+
+**`validate-import-boundary` is what makes that a fact rather than a convention.** It fails any source outside `src/tooling/` or
+`src/ui/assets/build/` that imports one of their modules at value — by relative path or by package subpath, barrelled or not. The rule it enforces
+is _stronger_ than the reachability that section states, and deliberately so: reachability alone is blind to a module no barrel exports yet, and
+reachability computed over forge's own tree turns out to be exactly the set a per-file scan already sees. A type-only import is allowed, because it
+is erased before anything is bundled; the layering it still represents is `validate-namespace-graph`'s to judge against a declared edge. Without
+this step the boundary was re-litigable one declared edge at a time.
+
+**A type-only import still counts as an edge.** It is erased at emit and so cannot create a runtime cycle (§2), but it is a coupling that a rename
+breaks, so it is declared with its kind rather than left out. A namespace whose every edge is type-only is integration all the same.
+
+**Duplicated markup across a leaf boundary is the accepted cost, not an oversight.** `src/http/fragment.ts` restates the banner classes
+`src/ui/core/alert.tsx` renders because sharing them would add an `http → ui/core` edge that `validate-namespace-graph` rejects — and it would put
+every consumer of a response builder behind the SSR component tier for a class string. Both copies drift only in appearance, and both resolve
+through the same `--status-*` tokens, which is where the coupling that matters actually lives.
+
+### 4b. Integration Namespace Rules
+
+See [`NAMESPACE_DESIGN.md`][nd-3b] §3b for what makes a namespace integration, the declare-every-edge rule, and the properties of the graph
+walk that are load-bearing and not self-evident. What is local: edges are declared in `config/namespaces.ts` as `EDGES`,
+`src/tooling/gate/checks/namespace-graph.ts` walks `src/**` and diffs against them, the excluded test files are `*.test.ts(x)` and
+`*.browser.ts(x)`, and the primitives the walk exempts are §4c's rather than the canon's §3c.
+
+**The `| Namespace | Composes |` table may not come back here either.** The guard windows from the `### 4a.` heading to the next `## `, so §4a, §4b
+and §4c are one window and a table written in this subsection fails the gate at its own line. The reach is the ruling, not an oversight: §4b is the
+subsection an integration table most invites, so a guard scoped to §4a alone would leave the likeliest spot for the enumeration to return unguarded.
+
+**A type-only edge is what lets two namespaces name each other.** Erased at emit, it cannot close a runtime cycle, so a mutually-naming pair is
+legal exactly while one direction stays `import type` — flipping it to a value import would close a real cycle. Kind is therefore a rule, not an
+annotation, which is why the gate checks it in both directions.
+
+### 4c. Foundational Primitive Namespaces — `result`, `crypto`, `context`, `validation`
+
+`result`, `crypto`, `context` and `validation` sit **below** the leaf/integration split: **any namespace may import them without that import
+counting as a layering violation.**
+
+| Namespace | Public? | Imported as | Consumers |
+| --- | --- | --- | --- |
+| `result` | public | concrete file `../result/result` | anyone |
+| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, lint-exempt) | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+| `context` | public | concrete file `../context/{accessor,app-context,env-validation}` | `app`, `form`, `logging`, `logging/viewer`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server` |
+| `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/viewer`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
+
+`result` is the single result primitive ([`FORGE_ERRORS.md`][eh-1] §1). Because explicit error handling is cross-cutting, `security` / `form` /
+`storage` importing `result` is **expected** — treat it like importing a Web API.
+
+**The test is arithmetic, not taste: how many namespaces reach for it independently.** The Consumers column above is the count — `context` and
+`validation` are reached for across near-supersets of the consumers listed against `crypto`, which §4c already accepts on exactly this argument. A
+namespace that most others need is a primitive; declaring an edge per consumer instead would describe the same graph while implying a choice each
+consumer made, and none of them did.
+
+**The set is closed, so no primitive can reach back into a consumer.** `context` imports `validation`, `validation` imports `result`, and `crypto`
+and `result` import nothing — every edge out of a primitive lands inside the set. That is what makes the carve-out safe, and it is the property to
+re-check before admitting another member: a primitive that imported a leaf would put every consumer of the primitive behind that leaf.
+
+`result` and `context` stay leaf (§4a); their concrete-file import paths keep them clear of the §2 guard without an exemption, while `crypto`
+carries the linter exemption instead ([`NAMESPACE_DESIGN.md`][nd-2c] §2c). `validation` is leaf and is imported through its barrel, which the same
+exemption already covers.
+
+---
+
+## 5. Growth Rules
+
+### 5a. security — Transport-Layer Hardening Only
+
+`security` is strictly transport-layer: CSP, CORS, origin verification, rate limiting, request identity. **It does not handle authentication,
+sessions, or permissions.**
+
+Identity is application-layer, so authentication and permissions belong in `auth` (§5h).
+
+This is forge's map of the concerns [`BOUNDARIES.md`][boundaries-2b] §2b routes _out_ of a transport-security namespace:
+
+| Concern | Correct home |
+| --- | --- |
+| CSRF token minting and verification | `form` — it reads the body |
+| Session management and cookie storage | `session` |
+| Authentication — JWT, OAuth, magic links, login | `auth` (§5h) |
+| Permissions and RBAC | `auth` (§5h) |
+| API-key lifecycle — issue, rotate, revoke, verify | `auth` (§5h) |
+| Timing-safe comparison and other primitives | sealed-internal `crypto` (§3b) |
+| Input sanitization and schema validation | `form` and `validation` |
+
+### 5b. ui/core — SSR Components Only
+
+`ui/core` contains SSR JSX components; client behaviour lives in `ui/client`. If the component count exceeds ~25, introduce sub-barrels
+(`ui/core/form/mod.ts`) but keep the export path stable.
+
+**`ui/controls` intentionally shadows the `ui/core` control names** — `Input`, `Textarea`, `Select`, `Slider`, `Switch`, `ToggleGroup` are exported
+from both, unbound from `ui/core` and bound from `ui/controls`. **The collision is by design; do not rename either side.**
+
+**Rule: a module must import a given control name from exactly one of those barrels, never both.** The mechanism is in
+[`UI_SSR_COMPONENTS.md`][usc].
+
+**Growth rulings on the second-tier primitives** (the daisyUI set):
+
+| Candidate | Ruling | Why |
+| --- | --- | --- |
+| `Timeline` | **shipped** | Markup-only: an `<ol>` of steps with a rule between them is `Steps` on the vertical axis plus a time column, and no controller. Shipped as `ui/core` `Timeline`. |
+| `Carousel` | **shipped** | Markup-only on `scroll-snap`; the platform scrolls, forge supplies the strip, the snap points and the `Pagination`-shaped dot row. Shipped as `ui/core` `Carousel`. |
+| `List` | **rejected** | A `<ul>` with `divide-y` and `Stat`/`Card` rows is already expressible; a component would be a class string with a name, which is what the `@utility` layer is for, not `ui/core`. |
+| `Rating` | **rejected** | It is a `RadioGroup` whose items paint a glyph — a skin, not a primitive. A consumer composes `RadioGroup.Item` with an `Icon`; the corpus shows the composition instead of shipping it. |
+| `Swap` | **rejected** | A `Toggle` whose two children swap on `:has(:checked)`; the `Toggle` already carries the state hook, so the swap is two `group-has-[:checked]:` utilities on the consumer's children. |
+| `RadialProgress` | **rejected** | A conic-gradient over `<progress>` semantics has no accessible value beyond what `Progress`/`Meter` already announce, and a SVG ring would be the first canvas-style drawing in `ui/core`. |
+| `Calendar` | **rejected** | Needs a client controller, locale and calendar-system handling, and keyboard grid navigation — an application-layer widget, out of scope for the primitive set before v1.0.0. |
+| `Stack` | **shipped** | Not a `List`-style class string: the fanned offset is a transform recipe per `placement` kept in one home, and `data-placement` is already a structural attribute. Markup-only `ui/core` `Stack`. |
+| `Dock` | **shipped** | `ui/chrome`, beside `Navbar`: a fixed bottom bar of three to five destinations on the same `resolveHref` and `icon` contract; markup-only, the current item is `aria-current="page"` plus `data-selected`. |
+| `Filter` | **shipped** | Not a `RadioGroup` skin: the hide-siblings-on-check plus reset composition is `:has()` CSS a consumer would get wrong. A `ToggleGroup type="single"` sibling in `ui/core`, markup-only. |
+| `OtpInput` | **shipped** | One native `<input autocomplete="one-time-code">` painted as cells by an `@utility` — one field, one value, native paste and autofill, no controller. A per-cell input array is rejected: it assembles its value client-side. Bound variant in `ui/controls`. |
+| `SpeedDial` | **rejected** | A floating action button earns its place only on a screen with no toolbar and no header primary, which the primitive set does not target, and its `asChild` action could not close the panel because invoker commands are button-only. A consumer composes `Popover` with `Button` rows instead. |
+| `Megamenu` | **shipped as `Navbar` growth** | Not a new export: a `NavMegaMenu` item renders as a wide `Popover` of `NavGroup` columns beside a list twin for the collapsed panel. `role="menu"` is wrong for a block of links, so it is `Popover` plus `<nav>`, not `core/Menu`. |
+
+The marketing and effect set (hero, footer, mockups, mask, hover-3D, hover gallery, aura, text rotate, countdown, diff, chat bubble) is app-level
+composition, not a primitive, and is ruled out as a class.
+
+### 5c. app — Bootstrap and Pipeline Builders
+
+`app` owns bootstrap and the `definePage` / `defineAction` pipeline builders. **If a third pipeline-builder variant is needed, extract all builders
+into a new `handler` namespace.**
+
+**The trigger counts exported `define*` entry points, not modules.** Both builders share one internal submission-pipeline module inside `app`;
+factoring a sequence out of them is an implementation seam and keeps the count at two, so it does not fire the rule
+([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
+
+### 5d. http — All HTTP Output Concerns
+
+`http` is the canonical home for response builders, header value classes, and HTML escaping — never `@remix-run/headers` directly. A new HTTP output
+concern — a JSON response builder, a streaming helper, content negotiation — is added here rather than in the namespace that first needs it.
+
+### 5e. Exported Factory and Type Naming Convention
+
+**Factories use the `create*` prefix — never `make*`** (`createApp`, `createSecurityHeaders`, `createD1Client`). **Request-time binding accessors
+use `resolve*`** (`resolveKVStore`, `resolveObjectStore`). **Declarative handler configs use `define*`** (`definePage`, `defineAction`).
+
+`ok` / `err` are the one documented exception ([`FORGE_ERRORS.md`][eh-1a] §1a).
+
+**`startDevServer` is the second, and it is a verb exception** — [`NAMESPACE_DESIGN.md`][nd-4a] §4a puts one in the owning `docs/` doc, and this is
+that entry. What `@y-core/forge/testing/workerd` returns is a live `wrangler dev` process the caller **must** `stop()`, and `create*` names a value
+that needs nothing further — a reader who believed it would leak a process group. [`TEST_RUNNERS.md`][testing-7f] §7f owns the rest.
+
+Exported option and shape types take a suffix chosen by what the type _is_:
+
+| Suffix | Meaning | Examples |
+| --- | --- | --- |
+| `*Config` | Validated/resolved **data shape**, typically schema-backed | `CsrfConfig`, `AssetsConfig`, `BaseUrlConfig` |
+| `*Options` | **Behaviour configuration** passed to a factory or middleware | `SecurityHeadersOptions`, `KVStoreOptions`, `RateLimitOptions` |
+| `*Definition` | **Declarative handler/component shape** consumed by a builder | `PageDefinition`, `ActionDefinition`, `NavDefinition` |
+| `*Descriptor` / `*Def` | Fine-grained declarative **member shapes** within a definition | `ConfigDescriptor`, `FieldDescriptor`, `FlagDef`, `BindingDef` |
+
+**A declarative shape must not be named `*Config`** (that suffix implies validated env/data), and **behaviour knobs must not be named `*Config` or
+`*Definition`.**
+
+### 5f. ui/client — Where a Browser Controller Belongs
+
+**A new browser controller, signal, or lazy-loaded resource goes to `ui/client`.** These are the things that only exist once a document is live: a
+mount controller that binds behaviour to an element, a signal other code subscribes to, a module fetched on demand. None of them has a home in
+`ui/core`, which renders markup on the server and stops there (§5b).
+
+The line is what executes the code, not what it is about. A module under `ui/client` is never imported from a Worker-executed file — the import
+alone pulls browser globals into the server bundle ([`BOUNDARIES.md`][boundaries-1] §1). A component that needs behaviour is therefore built as two
+pieces: the markup in `ui/core`, and the controller in `ui/client` that finds it by its `data-*` hooks. The mechanism — the mount contract, the
+signal API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`][ucr-2] §2.
+
+### 5g. tooling — Where a Developer-Facing Tool Belongs
+
+**A new command, gate check, lint rule or release step goes to one of the `tooling` namespaces** — `tooling/cli`, `tooling/term`, `tooling/gate`,
+`tooling/lint`, `tooling/release`, `tooling/curate`, `tooling/cf`, `tooling/db`, `tooling/assets`. Pick by the artifact the tool acts on: the
+command surface and its flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate` (and a check
+is a function, not a script — [`BUILD_TOOLING.md`][bt-2i] §2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, reducing a
+working tree to its skeleton is `tooling/curate`, a Cloudflare API call is `tooling/cf`, a D1 migration, compose, backup or seed verb is
+`tooling/db` ([`DATABASE_MANAGEMENT.md`][dm]), and driving an external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
+
+**None of it is ever Worker-reachable.** That is what earns every module here the build-time exemption from the Web-APIs-only rule — the exemption
+is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed here may use Node
+APIs, and a module a Worker path imports may not. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a request handler
+runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/workerd` reads
+`node:child_process` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
+
+### 5h. auth — Identity, and Only the Domain of It
+
+**`auth` owns identity: who a user is, which credentials prove it, and what a session may then do.** Authentication (passwordless email
+verification, magic links, WebAuthn passkeys, TOTP), permissions and RBAC, and the API-key lifecycle all belong here — §5a routes each of them out
+of `security`, which is transport-layer and stops at the request.
+
+**The namespace produces no `Response`, renders no markup and touches no `Session`.** What it exports is the domain: token codecs, store contracts
+and their adapters, factor services, and the WebAuthn ceremony parsers. A route that mounts a sign-in page, a view that renders one, and a
+middleware that guards one are the web layer's, published under its own subpath. That split is the same one `logging` and `logging/viewer` already
+carry, and it is what keeps `auth` testable with no authenticated world to build first ([`BOUNDARIES.md`][boundaries-2c] §2c).
+
+**`@y-core/forge/auth/web` is that web layer, and it owns everything a request touches.** The route groups `authRoutes` / `accountRoutes` /
+`adminRoutes` and the paths `authPaths` derives from them; the guards that admit or refuse a visitor; the loaders that read the domain for one page
+and the actions that write it; the SSR views; the session reads and writes that carry an identity between requests; and `renderAuthPage`, the seam a
+consumer replaces markup through. **Anything that builds a `Response`, reads or writes a `Session`, parses a form body or emits markup belongs
+here** — and nowhere else in the capability.
+
+**The edge is one-way: `auth/web` imports `auth`, and `auth` never names `auth/web`.** A domain rule that wants to redirect, or a store that wants
+to 404, is reaching across the split: the rule returns a reason, and the web layer alone decides what `Response` that reason becomes. The mechanism
+is `validateNoMutualValuePairs` in `src/tooling/gate/checks/namespace-graph.ts`, which fails any two namespaces that name each other at value — so
+the first domain module to import the web layer fails the graph rather than waiting for a reviewer to notice. That is also why `authReturnPath`, the
+helper that reduces a `?next=` value with `safeRedirectPath`, sits in `auth/web`: in `auth` it would have created an `auth → http` edge the domain
+does not have.
+
+**`auth-federation`'s `auth/oidc` and `auth/provider` inherit the rule unchanged.** Each is a domain namespace publishing its own subpath: it may
+name `auth`, `auth` may name none of them, and the routes and callback pages that mount either are `auth/web`'s.
+
+**The auth schema ships as files, not a subpath.** `files[]` publishes `src/auth/`, and a consumer names `src/auth/schema.sql` by path in its own
+`forge db` host config, then composes it into a migration of its own — nothing is discovered from `package.json`. There is no `exports` key for it,
+and so no catalog row and no prose-binding cost — the same way `src/ui/assets/core/*.svg` already ship. It is documented by path in
+[`src/auth/README.md`][auth-readme].
+
+**A credential a runtime cannot verify is never advertised.** `AUTH_SUPPORTED_ALGORITHMS` is `[-7, -257]`, and COSE `-8` is opt-in behind a
+capability probe that throws when the runtime cannot import an Ed25519 key. Offering an algorithm and then failing to verify it locks a user out of
+the account they just enrolled, so the default is the set every supported runtime can check.
+
+**An adapter is named by the contract it fulfils; the backing is the argument's type.** The shipped store adapters are
+`createUserStore(db: D1Client)`, `createChallengeStore(db: D1Client)` and their siblings — never `createD1UserStore` or `createD1ChallengeStore` —
+and they live under `src/auth/stores/` by contract name. `createD1Client` in `storage/db` is product-named because it wraps D1's own API; an auth
+store wraps a forge contract, and the product beneath it is a detail of the argument that a later adapter may change. A second adapter for the same
+contract takes the name of what distinguishes it (`createDurableChallengeStore`), never the product.
+
+**The browser half lives with the namespace whose server half stamps its contract.** The passkey controller is `src/auth/client/passkey.ts`,
+published through `./auth/client`, and reads the `PASSKEY_*` contract from `auth` — pure data with no imports, so the domain namespace stays
+Worker-safe and the browser bundle takes only the constants. `ui/client` keeps the runtime it lends (`registerScope`, `ownerWindow`), and
+`ssrBoundaryStep` names both client directories. Nothing auth-specific goes in `ui/contracts` or `ui/client`.
+
+### 5i. dev — A Dev-Only Allowance, Never a Boolean on a Production Option
+
+**A relaxation that must not reach production goes in `dev` as an allowance, never on the production option as a boolean.** `rateLimit`'s absent
+binding, the Fetch-Metadata guard's missing header, the error page's thrown message and `verifyTurnstile`'s testing secrets each take
+`dev?: DevAllowance` — a token `@y-core/forge/dev` mints and nothing else can construct ([`src/dev/README.md`][dev-readme]).
+
+**The reason is where the boolean could be set from.** `rateLimit({ required: false })` sat on a production option, so a shared middleware module
+both entries import could set it, and a missing `RATE_LIMITER` binding in production then disabled rate limiting in silence. Minting an allowance is
+an _import_, and `validate-dev-boundary` fails that import from anything a `wrangler deploy` bundles — so the seam is a fact about the module graph
+rather than a promise about a call site.
+
+**The type and the check each hold it.** The type makes the relaxation unrepresentable without the token; rule C of the check makes the import that
+mints one a gate failure outside a `*.dev.ts` entry. The _type_ crosses freely, because it is erased at emit — which is what lets a production
+option name `DevAllowance` and still be unable to build one.
+
+**`dev` is a leaf, and stays one.** It owns the token and the option shape; every relaxation stays in the namespace that owns its concern
+(`security`, `app`, `form`), each of which names `dev` at type only. A development _behaviour_ — a fake binding, a dev route, a reload channel — is
+not this namespace's: fakes are `testing`'s, and a dev route is the app's own `*.dev.ts` entry.
+
+**Where a relaxation is legitimate in production, it stays an explicit literal.** `csrfProtection({ subject: false })` is the idiom — a grep finds
+every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). The token is for the ones that are not legitimate, and the difference must stay
+visible at the call site.
+
+### 5j. `output` — One Namespace per Output Format
+
+**`output/` is a container, not a namespace.** It holds one child per format a Worker renders a document in — `output/pdf` today, `output/email`
+the intended second — and owns no code of its own. The shape is precedented by `tooling/`: the parent directory names a concern, and every namespace
+under it is classified, catalogued and gated separately. A format's own children are namespaces too, matched by the same longest-prefix rule — so a
+parent reaching into `@y-core/forge/output/pdf/fonts` is a declared edge, never an internal import, and the pair never points both ways at value.
+
+**A format's renderer goes in its own child, never in `http`.** `http` owns the _response_ — `pdfResponse` is its, because handing bytes to a client
+is an HTTP output concern (§5d) — and takes bytes without knowing how they were made. That is what keeps the dependency one-way and lets a format
+namespace carry a large engine without any of it reaching the response path.
+
+**Inside `output/*`, components carry bare names.** `Text`, `Row`, `Stack` and `Box` are the spelling, and this is a deliberate carve-out from
+[`CODE_RULES.md`][cr-7] §7's domain-word requirement: the namespace qualifier is the domain word at every call site, and `pdf.Text` reads as a
+domain-scoped name that `PdfText` would only repeat. `warden-review` cites this section rather than re-arguing the point per review. The carve-out
+covers component names only — a factory, a type or a constant leaving the barrel takes its domain word as usual (§5e). **A bare name may mean
+something else in another namespace**: `ui/core`'s `Stack` layers its children where `output/pdf`'s sequences them, and a file importing both
+aliases one.
+
+**A component takes one props object, with `children` inside it.** Never `Component(options, children)` — the single-argument shape is what forge's
+JSX runtime calls (`src/jsx/jsx-runtime.ts`, `FC<P>` in `src/jsx/types.ts`), so the same component is callable by hand and as JSX, and a second call
+convention never has to be kept in step with the first.
+
+**A format that takes markup depends on `jsx` at value and publishes its own `jsx-runtime`.** `jsx()` builds a descriptor rather than calling the
+component, so the format lowers the tree itself, and recognising a fragment means holding `jsx`'s `Fragment` marker — a value import, which is why
+`output/pdf` is not a leaf. The runtime is its own because TypeScript resolves the `JSX` namespace through `jsxImportSource`:
+`@y-core/forge/output/pdf/jsx-runtime` admits a component answering with a `PdfElement` and declares no intrinsic elements, so `<div>` is a mistake
+rather than a fallback. Widening
+`./jsx/jsx-runtime` instead would let a PDF component stand where `renderToString` is called, which is the guarantee that runtime exists to keep.
+
+---
+
+## 6. When to Add a New Namespace
+
+See [`NAMESPACE_DESIGN.md`][nd-5] §5 for the criteria a new namespace must meet and the checklist it must clear before merge.
+
+---
+
+## 7. Binding a Subpath to Its Governance
+
+**A catalog row lists a subpath; a prose rule binds it.** §3a tells a reader that `./router` exists and what it exports. It does not tell them which
+rule decides what may go in there, what may not, and what the namespace is answerable to — and a subpath named nowhere but in a table row is
+governed by nothing, however complete the table looks.
+
+**Every published subpath is bound by at least one prose rule, or is declared exempt with its reason.** A rule binds a subpath by naming it in
+prose: `./ui/client` is bound by §5f, `./http` by §5d, `./tooling/*` by §5g. An exemption is as good as a rule when the reason is stated — the
+`./jsx/jsx-runtime` family is written by the compiler and reached by no author, so no rule about what belongs there could be acted on.
+
+**Existence only.** The reconciliation runs both ways — every subpath has a rule, and every rule names a live subpath — and it asks nothing about
+whether the rule is any good. Adequacy is a judgement a check cannot make, and a check that pretended to make it would be trusted for a guarantee it
+never gave ([`AGENT_GUIDE.md`][ag-5c] §5c).
+
+**Never a hand-maintained register.** There is no subpath → rule table anywhere, here or elsewhere. The binding is derived from the citations
+already in the prose and the `exports` map, which is why it cannot fall out of date with either — the same reason `AGENT_GUIDE.md` §5c refuses to
+register the documents it governs at all: a list disagrees with the directory it describes, and then a reader has two answers and no way to pick.
+
+`validate-docs` **fails** on an unbound subpath. It warned while that backlog was being worked down — a check that fails a build over a backlog gets
+exempted wholesale instead — and was promoted the moment the list reached empty. A new subpath is bound before it ships, or it does not ship.
+
+**This rule lives here rather than in the canon, and that placement is deliberate.** It is about a repository with an `exports` map, so
+`canon/libs/` is where it would be portable to — but it has been measured against exactly one corpus, forge's. It is promoted to the canon when a
+second repository needs it.
+
+[ag-5c]: ../warden/canon/shared/AGENT_GUIDE.md#5c-the-agent-roster-is-reconciled-both-ways
+[ap-2c]: ./ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
+[auth-readme]: ../src/auth/README.md
+[boundaries-1]: ../warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
+[boundaries-2b]: ../warden/canon/libs/BOUNDARIES.md#2b-what-does-not
+[boundaries-2c]: ../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
+[bt-2c]: ./BUILD_TOOLING.md#2c-git-and-manifest-internals
+[bt-2f]: ./BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
+[bt-2i]: ./BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
+[cr]: ../warden/canon/shared/CODE_RULES.md
+[cr-7]: ../warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
+[dev-readme]: ../src/dev/README.md
+[dm]: ./DATABASE_MANAGEMENT.md
+[eh-1]: ./FORGE_ERRORS.md#1-result-monad
+[eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
+[iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
+[la]: ./FORGE_STRUCTURE.md
+[la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
+[nd-1]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1-barrel-rules-and-export-discipline
+[nd-2]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2-no-sibling-barrel-import-rule
+[nd-2c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2c-granting-an-exemption
+[nd-3b]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3b-integration-namespace-rules
+[nd-4a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#4a-factory-and-accessor-verbs
+[nd-5]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5-when-to-add-a-new-namespace
+[ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
+[sb-1e]: ./STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
+[sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
+[testing-7]: ./TEST_RUNNERS.md#7-testing-namespace-utilities-y-coreforgetesting
+[testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7h]: ./TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath
+[testing-7i]: ./TEST_RUNNERS.md#7i-the-expected-coverage-set--y-coreforgetestingcoverage
+[tg]: ./THEME_GENERATION.md
+[ucc]: ./UI_CLASS_COMPOSITION.md
+[ucr-2]: ./UI_CLIENT_RUNTIME.md#2-mount-controllers
+[udg]: ./UI_DESIGN_GUIDANCE.md
+[usc]: ./UI_SSR_COMPONENTS.md
+[warden-readme]: ../warden/README.md

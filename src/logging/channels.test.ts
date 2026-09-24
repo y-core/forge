@@ -1,0 +1,397 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
+import { consoleChannel, withLevels, withMinLevel, withRedaction } from "./channels";
+import type { LogChannel, LogRecord } from "./types";
+import { LOG_LEVELS, levelAtLeast, parseLogLevel, parseLogLevels } from "./types";
+
+let captured: string[] = [];
+let originalLog: typeof console.log;
+
+beforeEach(() => {
+  captured = [];
+  originalLog = console.log;
+  console.log = (...args: unknown[]) => captured.push(args.map(String).join(" "));
+});
+
+afterEach(() => {
+  console.log = originalLog;
+});
+
+function makeRecord(overrides?: Partial<LogRecord>): LogRecord {
+  return { level: "info", prefix: "test", message: "hello", timestamp: "2026-01-01T00:00:00.000Z", ...overrides };
+}
+
+describe("consoleChannel", () => {
+  it("emits a single JSON line", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord());
+    expect(captured).toHaveLength(1);
+    expect(() => JSON.parse(captured[0]!)).not.toThrow();
+  });
+
+  it("includes level, prefix, message, and timestamp", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ level: "warn", prefix: "svc", message: "oops", timestamp: "2026-01-01T00:00:00.000Z" }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.level).toBe("warn");
+    expect(obj.prefix).toBe("svc");
+    expect(obj.message).toBe("oops");
+    expect(obj.timestamp).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("spreads data fields at the top level", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ data: { userId: "u1", count: 3 } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.userId).toBe("u1");
+    expect(obj.count).toBe(3);
+    expect("data" in obj).toBe(false);
+  });
+
+  it("omits data key when no data provided", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord());
+    const obj = JSON.parse(captured[0]!);
+    expect("data" in obj).toBe(false);
+  });
+
+  it("returns void (sync channel)", () => {
+    const ch = consoleChannel();
+    const result = ch.write(makeRecord());
+    expect(result).toBeUndefined();
+  });
+
+  it("has no read method", () => {
+    const ch = consoleChannel();
+    expect(ch.read).toBeUndefined();
+  });
+
+  it("reserved fields win — caller-supplied level in data cannot forge the real level", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ level: "error", message: "real message", data: { level: "debug", message: "forged" } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.level).toBe("error");
+    expect(obj.message).toBe("real message");
+  });
+
+  it("narrows a URL to origin and path, so its query and fragment are never printed", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ data: { target: new URL("https://app.example.com/reset?token=SECRET#frag") } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.target).toBe("https://app.example.com/reset");
+    expect(captured[0]).not.toContain("SECRET");
+  });
+
+  it("narrows a URL nested below the top level too", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ data: { hops: [{ to: new URL("https://api.example.com/v1?key=SECRET") }] } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.hops[0].to).toBe("https://api.example.com/v1");
+    expect(captured[0]).not.toContain("SECRET");
+  });
+
+  it("reserved fields win — caller-supplied timestamp in data is overridden by the record timestamp", () => {
+    const ch = consoleChannel();
+    void ch.write(makeRecord({ timestamp: "2026-01-01T00:00:00.000Z", data: { timestamp: "fake" } }));
+    const obj = JSON.parse(captured[0]!);
+    expect(obj.timestamp).toBe("2026-01-01T00:00:00.000Z");
+    expect(obj.timestamp).not.toBe("fake");
+  });
+});
+
+describe("withMinLevel", () => {
+  function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return {
+      records,
+      channel: {
+        write: (r) => {
+          records.push(r);
+        },
+      },
+    };
+  }
+
+  it("drops records below the minimum level", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withMinLevel(channel, "warn");
+
+    void filtered.write(makeRecord({ level: "debug" }));
+    void filtered.write(makeRecord({ level: "info" }));
+
+    expect(records).toHaveLength(0);
+  });
+
+  it("passes records at and above the minimum level", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withMinLevel(channel, "warn");
+
+    void filtered.write(makeRecord({ level: "warn" }));
+    void filtered.write(makeRecord({ level: "error" }));
+
+    expect(records.map((r) => r.level)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("returns the inner channel's write promise for passing records", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const filtered = withMinLevel(asyncChannel, "info");
+    expect(filtered.write(makeRecord({ level: "error" }))).toBeInstanceOf(Promise);
+  });
+
+  it("filtered writes return undefined (nothing pending to flush)", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const filtered = withMinLevel(asyncChannel, "warn");
+    expect(filtered.write(makeRecord({ level: "debug" }))).toBeUndefined();
+  });
+
+  it("passes read through to the inner channel", async () => {
+    const inner: LogChannel = {
+      write: () => {},
+      read: () => Promise.resolve({ rows: [{ key: "k", level: "info", prefix: "p", message: "m", timestamp: "t" }], complete: true }),
+    };
+    const filtered = withMinLevel(inner, "error");
+
+    const result = await filtered.read!();
+
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it("passes readEntry through to the inner channel", async () => {
+    const inner: LogChannel = { write: () => {}, readEntry: (key) => Promise.resolve(makeRecord({ message: `entry:${key}` })) };
+    const filtered = withMinLevel(inner, "error");
+
+    const record = await filtered.readEntry!("abc");
+
+    expect(record?.message).toBe("entry:abc");
+  });
+
+  it("has no read/readEntry when the inner channel is write-only", () => {
+    const filtered = withMinLevel({ write: () => {} }, "warn");
+    expect(filtered.read).toBeUndefined();
+    expect(filtered.readEntry).toBeUndefined();
+  });
+});
+
+describe("withLevels", () => {
+  function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return {
+      records,
+      channel: {
+        write: (r) => {
+          records.push(r);
+        },
+      },
+    };
+  }
+
+  it("passes a listed level and drops an unlisted one", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withLevels(channel, ["warn", "error"]);
+
+    void filtered.write(makeRecord({ level: "info" }));
+    void filtered.write(makeRecord({ level: "warn" }));
+
+    expect(records.map((r) => r.level)).toStrictEqual(["warn"]);
+  });
+
+  it("an empty allowlist drops every level — silence by configuration", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withLevels(channel, []);
+
+    for (const level of LOG_LEVELS) void filtered.write(makeRecord({ level }));
+
+    expect(records).toHaveLength(0);
+  });
+
+  it("expresses a non-contiguous set that withMinLevel cannot", () => {
+    const { records, channel } = makeCapture();
+    const filtered = withLevels(channel, ["debug", "error"]);
+
+    for (const level of LOG_LEVELS) void filtered.write(makeRecord({ level }));
+
+    expect(records.map((r) => r.level)).toStrictEqual(["debug", "error"]);
+  });
+
+  it("returns the inner channel's write promise for passing records", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const filtered = withLevels(asyncChannel, ["error"]);
+    expect(filtered.write(makeRecord({ level: "error" }))).toBeInstanceOf(Promise);
+  });
+
+  it("filtered writes return undefined (nothing pending to flush)", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const filtered = withLevels(asyncChannel, ["error"]);
+    expect(filtered.write(makeRecord({ level: "debug" }))).toBeUndefined();
+  });
+
+  it("passes read through even when the allowlist is empty — writes off, history readable", async () => {
+    const inner: LogChannel = {
+      write: () => {},
+      read: () => Promise.resolve({ rows: [{ key: "k", level: "info", prefix: "p", message: "m", timestamp: "t" }], complete: true }),
+    };
+    const filtered = withLevels(inner, []);
+
+    const result = await filtered.read!();
+
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it("passes readEntry through even when the allowlist is empty", async () => {
+    const inner: LogChannel = { write: () => {}, readEntry: (key) => Promise.resolve(makeRecord({ message: `entry:${key}` })) };
+    const filtered = withLevels(inner, []);
+
+    const record = await filtered.readEntry!("abc");
+
+    expect(record?.message).toBe("entry:abc");
+  });
+
+  it("has no read/readEntry when the inner channel is write-only", () => {
+    const filtered = withLevels({ write: () => {} }, ["error"]);
+    expect(filtered.read).toBeUndefined();
+    expect(filtered.readEntry).toBeUndefined();
+  });
+});
+
+describe("withRedaction", () => {
+  function makeCapture(): { records: LogRecord[]; channel: LogChannel } {
+    const records: LogRecord[] = [];
+    return {
+      records,
+      channel: {
+        write: (r) => {
+          records.push(r);
+        },
+      },
+    };
+  }
+
+  it("applies the redact transform to the written record", () => {
+    const { records, channel } = makeCapture();
+    const redacted = withRedaction(channel, (r) => ({ ...r, message: "[redacted]" }));
+
+    void redacted.write(makeRecord({ message: "secret payload" }));
+
+    expect(records).toHaveLength(1);
+    expect(records[0]!.message).toBe("[redacted]");
+  });
+
+  it("passes the transformed record's data through", () => {
+    const { records, channel } = makeCapture();
+    const redacted = withRedaction(channel, (r) => ({ ...r, data: { safe: true } }));
+
+    void redacted.write(makeRecord({ data: { token: "abc" } }));
+
+    expect(records[0]!.data).toStrictEqual({ safe: true });
+  });
+
+  it("returns the inner channel's write promise", () => {
+    const asyncChannel: LogChannel = { write: () => Promise.resolve() };
+    const redacted = withRedaction(asyncChannel, (r) => r);
+    expect(redacted.write(makeRecord())).toBeInstanceOf(Promise);
+  });
+
+  it("passes read through to the inner channel", async () => {
+    const inner: LogChannel = {
+      write: () => {},
+      read: () => Promise.resolve({ rows: [{ key: "k", level: "info", prefix: "p", message: "m", timestamp: "t" }], complete: true }),
+    };
+    const redacted = withRedaction(inner, (r) => r);
+
+    const result = await redacted.read!();
+
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it("passes readEntry through to the inner channel", async () => {
+    const inner: LogChannel = { write: () => {}, readEntry: (key) => Promise.resolve(makeRecord({ message: `entry:${key}` })) };
+    const redacted = withRedaction(inner, (r) => r);
+
+    const record = await redacted.readEntry!("abc");
+
+    expect(record?.message).toBe("entry:abc");
+  });
+
+  it("has no read/readEntry when the inner channel is write-only", () => {
+    const redacted = withRedaction({ write: () => {} }, (r) => r);
+    expect(redacted.read).toBeUndefined();
+    expect(redacted.readEntry).toBeUndefined();
+  });
+});
+
+describe("levelAtLeast", () => {
+  it("orders debug < info < warn < error", () => {
+    expect(levelAtLeast("debug", "info")).toBe(false);
+    expect(levelAtLeast("info", "info")).toBe(true);
+    expect(levelAtLeast("warn", "info")).toBe(true);
+    expect(levelAtLeast("error", "warn")).toBe(true);
+    expect(levelAtLeast("warn", "error")).toBe(false);
+  });
+});
+
+describe("parseLogLevel", () => {
+  it("parses a known level", () => {
+    expect(parseLogLevel("warn", "info")).toBe("warn");
+  });
+
+  it("is case-insensitive and trims whitespace", () => {
+    expect(parseLogLevel(" ERROR ", "info")).toBe("error");
+  });
+
+  it("falls back for undefined", () => {
+    expect(parseLogLevel(undefined, "info")).toBe("info");
+  });
+
+  it("falls back for unknown values", () => {
+    expect(parseLogLevel("verbose", "debug")).toBe("debug");
+  });
+});
+
+describe("parseLogLevels", () => {
+  it("parses a comma-separated list in the order given", () => {
+    expect(parseLogLevels("warn,error", LOG_LEVELS)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("tolerates whitespace and mixed case around entries", () => {
+    expect(parseLogLevels(" WARN , Error ", LOG_LEVELS)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("drops unknown entries while keeping the known ones", () => {
+    expect(parseLogLevels("warn,verbose,error", LOG_LEVELS)).toStrictEqual(["warn", "error"]);
+  });
+
+  it("parses the literal 'none' to an empty array — the spelling for silence", () => {
+    expect(parseLogLevels("none", LOG_LEVELS)).toStrictEqual([]);
+  });
+
+  it("falls back when unset", () => {
+    expect(parseLogLevels(undefined, ["info"])).toStrictEqual(["info"]);
+  });
+
+  it("falls back for an empty or whitespace-only value", () => {
+    expect(parseLogLevels("", ["info"])).toStrictEqual(["info"]);
+    expect(parseLogLevels("   ", ["info"])).toStrictEqual(["info"]);
+  });
+
+  it("falls back when no entry is a known level — a typo degrades to the default, not to silence", () => {
+    expect(parseLogLevels("verbose,trace", LOG_LEVELS)).toStrictEqual(LOG_LEVELS);
+  });
+});
+
+describe("consoleChannel — a record built by hand rather than by dispatch", () => {
+  it("throws on a cyclic data payload, the sync failure the logger absorbs per channel", () => {
+    const node: Record<string, unknown> = { id: 1 };
+    node.self = node;
+    const ch = consoleChannel();
+
+    expect(() => ch.write(makeRecord({ data: { node } }))).toThrow(TypeError);
+  });
+
+  it("narrows a URL that never passed through the logger's clone", () => {
+    const ch = consoleChannel();
+
+    void ch.write(makeRecord({ data: { to: new URL("https://app.example.com/reset?token=SECRET") } }));
+
+    expect(JSON.parse(captured[0]!).to).toBe("https://app.example.com/reset");
+  });
+});

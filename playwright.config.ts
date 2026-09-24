@@ -1,0 +1,56 @@
+import { defineConfig, devices } from "@playwright/test";
+
+import { resolveChromiumPath } from "./src/tooling/gate/chromium.mjs";
+
+/**
+ * The browser set — real Chromium, one verb of its own (`bun run test:browser`).
+ *
+ * The gate runs it as the full-only `test:browser` row, because a browser binary is a
+ * *prerequisite* — the only legitimate reason to hold a step back. Cost is never one. The workspace
+ * image supplies the browser and `CHROME_PATH` names it, so nothing downloads one here; CI has no
+ * such image and installs its own, which is why the channel below is the fallback rather than a
+ * second `executablePath`.
+ *
+ * `bun test` is deliberately untouched by this set: the two never share a process, so no global is
+ * ever redefined and forge's Cloudflare `Request`/`Response`/`fetch` semantics stay exactly as the
+ * runtime ships them. File discovery cannot collide either — `bun test` matches `*.test.*` /
+ * `*_test.*` / `*.spec.*` / `*_spec.*`, none of which is `*.browser.ts`.
+ *
+ * There is **no `webServer`**: specs bundle the module under test with esbuild and inject it into
+ * `page.setContent()` markup (`src/ui/client/browser-test-helper.ts`). forge has no dev server and
+ * needs none.
+ *
+ * `workers` is stated, never defaulted: playwright's own default is half the cores, and this set's
+ * cost is almost entirely per-test fixed overhead, so half the machine sits idle. One worker per
+ * core is the floor — past it the run regresses on context-switch, a page being all a spec holds.
+ *
+ * `executablePath` is not a preference: playwright reads no environment variable for the browser
+ * path, so a container that bakes Chromium in is invisible to it without this line and every spec
+ * fails inside `browserType.launch()` rather than in the code under test.
+ * `src/tooling/gate/checks/chromium.ts` owns that resolution, because the gate's prerequisite probe must answer
+ * from the same rule. The import is the committed `chromium.mjs` bundle of it, not the source: this
+ * config loads under node, which refuses to strip types under `node_modules`, and forge loading the
+ * exact module a consumer loads is what makes a broken bundle fail here rather than there.
+ */
+const executablePath = resolveChromiumPath();
+
+export default defineConfig({
+  testDir: ".",
+  testMatch: "src/**/*.browser.ts",
+  fullyParallel: true,
+  workers: "100%",
+  reporter: "list",
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        // The image's browser where there is one; otherwise `chromium`, which is the new headless
+        // mode over the real browser binary. Never the default, which is the headless shell: it is a
+        // separate build that resolves no CSS anchor positioning and answers a pointer leave
+        // differently, so a suite run against it tests a browser no reader has.
+        ...(executablePath === undefined ? { channel: "chromium" as const } : { launchOptions: { executablePath } }),
+      },
+    },
+  ],
+});

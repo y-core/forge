@@ -1,0 +1,17 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
+/* A denser shape: tighter corners and shorter controls. Import it after `forge.css`.
+
+   A shape file re-declares exactly the eight shape tokens `theme-base.css` owns and nothing else —
+   no colour step, so it composes with any colour scheme and the contrast audit never reads it.
+   ────────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --radius: 0.375rem;
+  --radius-field: var(--radius);
+  --radius-box: calc(var(--radius) + 4px);
+  --radius-selector: 9999px;
+  --control-h-sm: 1.75rem;
+  --control-h-md: 2.25rem;
+  --control-h-lg: 2.75rem;
+  --border-width: 1px;
+}

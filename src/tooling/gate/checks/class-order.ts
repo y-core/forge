@@ -1,0 +1,73 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { cn } from "../../../ui/core/utils/cn";
+import { checkResult, fail, scannedNothing } from "../finding";
+import type { CheckResult, Finding } from "../types";
+import { findClassLiterals, findSkippedClassPositions } from "./design-parse";
+import { resolveSources, unresolvedSourceEntries } from "./source-scan";
+import type { ClassOrderCheckConfig } from "./types";
+
+const SCANNED = (name: string): boolean => /\.tsx?$/.test(name);
+
+/** The token `cn` drops from `literal`, or `null` when the literal is already a fixed point. */
+export function droppedToken(literal: string): string | null {
+  const resolved = cn(literal);
+  if (resolved === literal) return null;
+  const kept = resolved.split(/\s+/).filter(Boolean);
+  const tokens = literal.split(/\s+/).filter(Boolean);
+  let cursor = 0;
+  for (const token of tokens) {
+    if (token === kept[cursor]) cursor += 1;
+    else return token;
+  }
+  return null;
+}
+
+/** Judges every class literal in one file against the fixed-point invariant. @public */
+export function validateClassOrder(file: string, source: string): Finding[] {
+  const findings: Finding[] = [];
+  const seen = new Set<string>();
+
+  for (const skipped of findSkippedClassPositions(source)) {
+    findings.push(
+      fail("class position could not be read — refusing to report a green class-order gate that skipped it", {
+        file,
+        line: skipped.line,
+        detail: [`\`${skipped.text}\``, "the span never closes, so every class literal in it went unjudged"],
+      }),
+    );
+  }
+
+  for (const literal of findClassLiterals(source)) {
+    const dropped = droppedToken(literal.text);
+    if (dropped === null) continue;
+    const key = `${literal.line}:${literal.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    findings.push(
+      fail("class literal is not a fixed point of `cn`", {
+        file,
+        line: literal.line,
+        detail: [
+          `\`${literal.text}\``,
+          `\`${dropped}\` is dropped — two tokens claim one conflict group, so sorting the literal would change what it renders`,
+        ],
+      }),
+    );
+  }
+  return findings;
+}
+
+/** Walks the configured sources and reports every self-conflicting class literal. @public */
+export function checkClassOrder(config: ClassOrderCheckConfig): CheckResult {
+  const { root, sources } = config;
+  const files = resolveSources(root, sources, SCANNED);
+
+  if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no source`, "class-order");
+  const unresolved = unresolvedSourceEntries(root, sources, "file or directory");
+  if (unresolved.length > 0) return checkResult(unresolved, "");
+
+  const findings = files.flatMap((file) => validateClassOrder(file, readFileSync(resolve(root, file), "utf-8")));
+  return checkResult(findings, `${files.length} files: every class literal is a fixed point of \`cn\``);
+}

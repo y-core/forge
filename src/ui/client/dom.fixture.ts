@@ -1,0 +1,469 @@
+import type { FakeRequest } from "./types";
+
+type Listener = (event: FakeEvent) => void;
+
+/** The event shape the controllers read: a type, a target, and the bits `preventDefault` needs. */
+export class FakeEvent {
+  defaultPrevented = false;
+  target: FakeElement | FakeDocument | null = null;
+
+  readonly type: string;
+
+  constructor(type: string, init: Record<string, unknown> = {}) {
+    this.type = type;
+    Object.assign(this, init);
+  }
+
+  preventDefault(): void {
+    this.defaultPrevented = true;
+  }
+
+  composedPath(): FakeElement[] {
+    return this.target instanceof FakeElement ? [this.target] : [];
+  }
+}
+
+/** The tags whose `tabIndex` property answers 0 with no attribute written; `<a>` needs an `href` too. */
+const NATIVELY_FOCUSABLE = new Set(["BUTTON", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"]);
+
+/** A minimal element: attributes, children, listeners, and the queries the controllers run. */
+export class FakeElement {
+  readonly nodeType = 1;
+  readonly attrs = new Map<string, string>();
+  readonly children: FakeElement[] = [];
+  readonly listeners = new Map<string, Listener[]>();
+  parent: FakeElement | null = null;
+  textContent = "";
+  hidden = false;
+  disabled = false;
+  readOnly = false;
+  checked = false;
+  value = "";
+  id = "";
+  focused = false;
+  /** The host of a shadow root, set when one is attached — a real `ShadowRoot` always carries it. */
+  host: FakeElement | null = null;
+  private shadow: FakeElement | null = null;
+  ownerDocument: FakeDocument | null = null;
+  /** A shadow root reports its own focused node; a plain element's stays null. */
+  activeElement: FakeElement | null = null;
+
+  readonly tagName: string;
+
+  constructor(tagName = "DIV", attrs: Record<string, string> = {}) {
+    this.tagName = tagName;
+    for (const [name, value] of Object.entries(attrs)) this.attrs.set(name, value);
+    this.id = attrs.id ?? "";
+  }
+
+  append(...kids: FakeElement[]): this {
+    for (const kid of kids) {
+      kid.parent = this;
+      kid.ownerDocument = this.ownerDocument;
+      this.children.push(kid);
+    }
+    return this;
+  }
+
+  remove(): void {
+    if (!this.parent) return;
+    const at = this.parent.children.indexOf(this);
+    if (at >= 0) this.parent.children.splice(at, 1);
+    this.parent = null;
+  }
+
+  // Every parent in this tree is an element, so `parentElement` and `parentNode` agree here.
+  get parentElement(): FakeElement | null {
+    return this.parent;
+  }
+
+  get parentNode(): FakeElement | null {
+    return this.parent;
+  }
+
+  get isConnected(): boolean {
+    return this.parent !== null || this.ownerDocument !== null;
+  }
+
+  // Reflected over the attribute like the real property, because a controller that distinguishes a
+  // written tab stop from a native one reads the attribute and a plain field would hide the difference.
+  get tabIndex(): number {
+    const raw = this.attrs.get("tabindex");
+    if (raw !== undefined) return Number(raw);
+    // The default the real property reports is the element's own focusability, not a flat 0: a `<div>`
+    // answers -1, which is how a caller tells "cannot take focus" from "is already a stop".
+    if (NATIVELY_FOCUSABLE.has(this.tagName)) return 0;
+    return this.tagName === "A" && this.attrs.has("href") ? 0 : -1;
+  }
+
+  set tabIndex(value: number) {
+    this.attrs.set("tabindex", String(value));
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null;
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attrs.set(name, value);
+  }
+
+  removeAttribute(name: string): void {
+    this.attrs.delete(name);
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.attrs.has(name);
+  }
+
+  toggleAttribute(name: string, force?: boolean): void {
+    const next = force ?? !this.attrs.has(name);
+    if (next) this.attrs.set(name, "");
+    else this.attrs.delete(name);
+  }
+
+  get isContentEditable(): boolean {
+    const state = this.attrs.get("contenteditable");
+    return state === "" || state === "true";
+  }
+
+  get dataset(): Record<string, string | undefined> {
+    const out: Record<string, string | undefined> = {};
+    for (const [name, value] of this.attrs) {
+      if (!name.startsWith("data-")) continue;
+      out[name.slice(5).replace(/-([a-z])/g, (_, ch: string) => ch.toUpperCase())] = value;
+    }
+    return out;
+  }
+
+  /** Supports the shapes the controllers actually use: `[attr]`, `[attr='v']`, `tag`, and lists. */
+  matches(selector: string): boolean {
+    return selector.split(",").some((part) => {
+      const one = part.trim();
+      if (one === "*") return true;
+      if (one.startsWith("#")) return this.id === one.slice(1);
+      const attr = /^\[([a-z-]+)(?:~?=['"]?([^'"\]]*)['"]?)?\]$/.exec(one);
+      if (attr === null) return one.toUpperCase() === this.tagName;
+      const [, name = "", expected] = attr;
+      const actual = this.attrs.get(name);
+      if (actual === undefined) return false;
+      if (expected === undefined) return true;
+      return one.includes("~=") ? actual.split(/\s+/).includes(expected) : actual === expected;
+    });
+  }
+
+  closest(selector: string): FakeElement | null {
+    // oxlint-disable-next-line typescript/no-this-alias -- the loop variable walks up from this node; it is a cursor, not an alias
+    for (let node: FakeElement | null = this; node; node = node.parent) {
+      if (node.matches(selector)) return node;
+    }
+    return null;
+  }
+
+  contains(node: FakeElement | null): boolean {
+    for (let cur = node; cur; cur = cur.parent) if (cur === this) return true;
+    return false;
+  }
+
+  descendants(): FakeElement[] {
+    return this.children.flatMap((kid) => [kid, ...kid.descendants()]);
+  }
+
+  querySelectorAll(selector: string): FakeElement[] {
+    return selector === "*" ? this.descendants() : this.descendants().filter((el) => el.matches(selector));
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  addEventListener(type: string, listener: Listener): void {
+    const list = this.listeners.get(type) ?? [];
+    list.push(listener);
+    this.listeners.set(type, list);
+  }
+
+  removeEventListener(type: string, listener: Listener): void {
+    const list = this.listeners.get(type) ?? [];
+    const at = list.indexOf(listener);
+    if (at >= 0) list.splice(at, 1);
+  }
+
+  /** Bubbles `event` from here to every ancestor; only a `FakeEvent` is retargeted, a real `Event`'s `target` being readonly. */
+  dispatchEvent(event: FakeEvent | Event): void {
+    if (event instanceof FakeEvent) event.target ??= this;
+    // oxlint-disable-next-line typescript/no-this-alias -- the loop variable walks up from this node; it is a cursor, not an alias
+    for (let node: FakeElement | null = this; node; node = node.parent) {
+      for (const listener of [...(node.listeners.get(event.type) ?? [])]) listener(event as FakeEvent);
+    }
+    // Then the document, which is where the delegated scope runtime listens.
+    if (event instanceof FakeEvent) this.ownerDocument?.dispatchEvent(event);
+  }
+
+  focus(): void {
+    this.focused = true;
+    if (this.ownerDocument) this.ownerDocument.activeElement = this;
+  }
+
+  get shadowRoot(): FakeElement | null {
+    return this.shadow;
+  }
+
+  set shadowRoot(root: FakeElement | null) {
+    this.shadow = root;
+    if (root) root.host = this;
+  }
+
+  getRootNode(): FakeElement | FakeDocument {
+    return this.ownerDocument ?? this;
+  }
+}
+
+/** Just enough document for `ownerDocument`, `ownerWindow` and `elementById`. */
+export class FakeDocument {
+  readonly nodeType = 9;
+  activeElement: FakeElement | null = null;
+  readonly body = new FakeElement("BODY");
+  readonly root = new FakeElement("HTML");
+  readonly defaultView: FakeWindow;
+
+  constructor() {
+    this.defaultView = new FakeWindow(this);
+    this.body.ownerDocument = this;
+    this.root.ownerDocument = this;
+  }
+
+  readonly listeners = new Map<string, Array<(event: FakeEvent) => void>>();
+
+  /** Document-level listeners, which is where `resume()` installs its whole delegation. */
+  addEventListener(type: string, listener: (event: FakeEvent) => void): void {
+    const list = this.listeners.get(type) ?? [];
+    list.push(listener);
+    this.listeners.set(type, list);
+  }
+
+  removeEventListener(type: string, listener: (event: FakeEvent) => void): void {
+    const list = this.listeners.get(type) ?? [];
+    const at = list.indexOf(listener);
+    if (at >= 0) list.splice(at, 1);
+  }
+
+  dispatchEvent(event: FakeEvent): void {
+    event.target ??= this;
+    for (const listener of [...(this.listeners.get(event.type) ?? [])]) listener(event);
+  }
+
+  createElement(tagName: string): FakeElement {
+    const element = new FakeElement(tagName.toUpperCase());
+    element.ownerDocument = this;
+    return element;
+  }
+
+  getElementById(id: string): FakeElement | null {
+    return this.root.descendants().find((el) => el.id === id) ?? null;
+  }
+
+  querySelectorAll(selector: string): FakeElement[] {
+    return this.root.querySelectorAll(selector);
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    return this.root.querySelector(selector);
+  }
+}
+
+/** A stand-in for `navigator.credentials`: records each call, and answers from `answer`. */
+export class FakeCredentials {
+  readonly calls: Array<{ method: "create" | "get"; options: unknown }> = [];
+  /** The credential each call resolves with; a string is thrown as a `DOMException` of that name. */
+  answer: unknown = null;
+
+  create(options: unknown): Promise<unknown> {
+    return this.respond("create", options);
+  }
+
+  get(options: unknown): Promise<unknown> {
+    return this.respond("get", options);
+  }
+
+  private respond(method: "create" | "get", options: unknown): Promise<unknown> {
+    this.calls.push({ method, options });
+    if (typeof this.answer === "string") {
+      const error = new Error(this.answer);
+      error.name = this.answer;
+      return Promise.reject(error);
+    }
+    return Promise.resolve(this.answer);
+  }
+}
+
+/** A window whose timers a test drives by hand, so no test ever waits on a real clock. */
+export class FakeWindow {
+  private seq = 0;
+  readonly timers = new Map<number, () => void>();
+
+  readonly document: FakeDocument;
+
+  constructor(document: FakeDocument) {
+    this.document = document;
+  }
+
+  /** Whether the realm exposes WebAuthn; a browser without it has no `PublicKeyCredential` at all. */
+  PublicKeyCredential: unknown = function PublicKeyCredential() {};
+
+  readonly credentials = new FakeCredentials();
+
+  readonly navigator = { credentials: this.credentials };
+
+  /** Every request `fetch` was given, in order. */
+  readonly requests: FakeRequest[] = [];
+
+  /** What `fetch` answers, by URL — `null` rejects, as a network failure does; an absent URL is 404. */
+  readonly replies = new Map<string, { status?: number; body?: unknown } | null>();
+
+  /** Where `location.assign` was sent, in order. */
+  readonly navigations: string[] = [];
+
+  readonly location = {
+    assign: (path: string): void => {
+      this.navigations.push(path);
+    },
+  };
+
+  fetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+    const raw = init.body;
+    let body: unknown = raw;
+    try {
+      if (typeof raw === "string") body = JSON.parse(raw);
+    } catch {
+      body = raw;
+    }
+    this.requests.push({ url, method: init.method ?? "GET", headers: init.headers ?? {}, body });
+
+    const reply = this.replies.get(url);
+    if (reply === null) return Promise.reject(new Error("network error"));
+    if (reply === undefined) return Promise.resolve(new Response("", { status: 404 }));
+    return Promise.resolve(new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 }));
+  }
+
+  setTimeout(fn: () => void, _ms?: number): number {
+    this.seq += 1;
+    this.timers.set(this.seq, fn);
+    return this.seq;
+  }
+
+  clearTimeout(id: number): void {
+    this.timers.delete(id);
+  }
+
+  /** The real one: a microtask is not a clock, so `await Promise.resolve()` drains it in order. */
+  queueMicrotask(fn: () => void): void {
+    queueMicrotask(fn);
+  }
+
+  /** Runs every pending timer, in the order they were armed. */
+  flush(): void {
+    const pending = [...this.timers.entries()].sort(([a], [b]) => a - b);
+    this.timers.clear();
+    for (const [, fn] of pending) fn();
+  }
+
+  /** Per-element writing direction, defaulting to `ltr` so an unregistered element reads as it always did. */
+  readonly directions = new WeakMap<object, string>();
+
+  /** How `localStorage` behaves: available, present but throwing on read, or throwing on the property access itself. */
+  storageMode: "ok" | "throws-on-get" | "throws-on-access" = "ok";
+
+  private readonly store = new Map<string, string>();
+
+  setDirection(el: object, direction: string): void {
+    this.directions.set(el, direction);
+  }
+
+  getComputedStyle(el?: object): { direction: string } {
+    return { direction: (el && this.directions.get(el)) || "ltr" };
+  }
+
+  /** A getter, because `throws-on-access` must fail before any method is reached, as on an opaque origin. */
+  get localStorage(): Storage {
+    if (this.storageMode === "throws-on-access") throw new Error("SecurityError");
+    const store = this.store;
+    const throwsOnGet = this.storageMode === "throws-on-get";
+    return {
+      get length() {
+        return store.size;
+      },
+      clear: () => store.clear(),
+      getItem: (key: string) => {
+        if (throwsOnGet) throw new Error("SecurityError");
+        return store.get(key) ?? null;
+      },
+      key: (index: number) => [...store.keys()][index] ?? null,
+      removeItem: (key: string) => store.delete(key),
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    } as Storage;
+  }
+}
+
+/** A document with `root` attached, plus a helper to build elements inside it. */
+export function fakeTree(): { doc: FakeDocument; el: (tag?: string, attrs?: Record<string, string>) => FakeElement } {
+  const doc = new FakeDocument();
+  return {
+    doc,
+    el: (tag = "DIV", attrs = {}) => {
+      const element = new FakeElement(tag, attrs);
+      element.ownerDocument = doc;
+      return element;
+    },
+  };
+}
+
+/** Installs the CSSOM spec's `CSS.escape` for the Bun test runtime, which ships no `CSS`. @internal */
+export function installCssEscape(): void {
+  const cssGlobal = globalThis as unknown as { CSS?: { escape: (value: string) => string } };
+  if (typeof cssGlobal.CSS === "undefined") {
+    cssGlobal.CSS = {
+      escape(value: string): string {
+        const string = String(value);
+        const length = string.length;
+        const firstCodeUnit = string.charCodeAt(0);
+        let result = "";
+        for (let index = 0; index < length; index++) {
+          const codeUnit = string.charCodeAt(index);
+          if (codeUnit === 0x0000) {
+            result += "�";
+            continue;
+          }
+          if (
+            (codeUnit >= 0x0001 && codeUnit <= 0x001f) ||
+            codeUnit === 0x007f ||
+            (index === 0 && codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
+            (index === 1 && codeUnit >= 0x0030 && codeUnit <= 0x0039 && firstCodeUnit === 0x002d)
+          ) {
+            result += `\\${codeUnit.toString(16)} `;
+            continue;
+          }
+          if (index === 0 && length === 1 && codeUnit === 0x002d) {
+            result += `\\${string.charAt(index)}`;
+            continue;
+          }
+          if (
+            codeUnit >= 0x0080 ||
+            codeUnit === 0x002d ||
+            codeUnit === 0x005f ||
+            (codeUnit >= 0x0030 && codeUnit <= 0x0039) ||
+            (codeUnit >= 0x0041 && codeUnit <= 0x005a) ||
+            (codeUnit >= 0x0061 && codeUnit <= 0x007a)
+          ) {
+            result += string.charAt(index);
+            continue;
+          }
+          result += `\\${string.charAt(index)}`;
+        }
+        return result;
+      },
+    };
+  }
+}

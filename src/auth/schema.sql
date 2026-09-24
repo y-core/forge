@@ -1,0 +1,150 @@
+-- @y-core/forge/auth — the desired state of the `lib-auth` namespace's D1 schema.
+--
+-- This file is what the schema *is*, and this library ships no SQL that runs. Change a table here,
+-- and `bun run verify --mode full` loads it into a real database to prove it executes.
+--
+-- A consumer reaches this file by naming it in its own `config/db.ts`, by path — nothing here is
+-- discovered, so an app that does not ask for this schema does not get it:
+--   export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] }
+-- `forge db migrate compose` then diffs every file it names against that app's own migrations and
+-- writes the difference into that app's own directory. A database that will never be migrated can
+-- take this file in one shot:
+--   wrangler d1 execute <DB> --file node_modules/@y-core/forge/src/auth/schema.sql
+--
+-- A change here that needs a backfill is documented in CHANGELOG.md; the consumer writes it as
+-- `forge db migrate compose --custom <name>`.
+--
+-- The `auth_` prefix is fixed. Making it configurable would need raw identifier concatenation,
+-- which is the one thing `src/storage/db/sql.ts` exists to forbid and offers no escape hatch for.
+--
+-- Primary keys are 16-byte UUIDv7 BLOBs. Bytewise sort is time order, so no table needs an index
+-- on `created_at` to page newest-first.
+--
+-- Timestamps are epoch milliseconds as INTEGER.
+--
+-- Every FOREIGN KEY here is documentation. D1 does not guarantee `PRAGMA foreign_keys` is on, so
+-- the adapters delete children explicitly in a `batch()` and correctness never rests on the pragma.
+--
+-- `tests/workerd/auth-schema.test.ts` applies this file to a real D1 and holds the facts it depends
+-- on: STRICT is accepted and enforced, `batch()` rolls back whole on a mid-batch failure, a BLOB
+-- column reads back with its bytes intact, and the shipped adapters' guards decide as they claim to
+-- when their SQL is the thing being executed.
+
+CREATE TABLE IF NOT EXISTS auth_users (
+  id BLOB PRIMARY KEY NOT NULL,
+  email TEXT NOT NULL,
+  -- Fed by `normalizeEmail`, never `COLLATE NOCASE`: that collation folds ASCII only, and it is
+  -- invisible at the query site, where a reader cannot tell which comparisons are case-folded.
+  email_key TEXT NOT NULL,
+  email_verified_at INTEGER,
+  -- The WebAuthn user handle a discoverable login resolves the account from, minted lazily on the
+  -- first registration. A unique index admits many NULLs, so every user without a passkey shares it.
+  webauthn_id BLOB,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  deactivated_at INTEGER,
+  -- Every session established at or before this instant is refused on its next request. Removing a
+  -- passkey or moving an address writes it, so the change reaches sessions this request cannot see.
+  sessions_invalid_before INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  -- The web schema caps a typed address at 254 characters *before* `normalizeEmail` NFKC-expands it,
+  -- so an expanding input reaches the unique index over-length. This is the backstop that refuses it.
+  CHECK (length(email) <= 254 AND length(email_key) <= 254)
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_users_email_key ON auth_users (email_key);
+CREATE UNIQUE INDEX IF NOT EXISTS auth_users_webauthn_id ON auth_users (webauthn_id);
+CREATE INDEX IF NOT EXISTS auth_users_is_admin ON auth_users (is_admin);
+
+CREATE TABLE IF NOT EXISTS auth_factors (
+  id BLOB PRIMARY KEY NOT NULL,
+  user_id BLOB NOT NULL REFERENCES auth_users (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  -- The TOTP shared secret, sealed under the `totpWrap` subkey. NULL for a factor that keeps none.
+  secret BLOB,
+  -- The last TOTP step a code was accepted at; the conditional advance refuses anything at or below it.
+  last_counter INTEGER,
+  -- Guesses spent against this factor since the last accepted code. Spent by the statement that
+  -- admits the guess, so parallel attempts cannot each compare against a count none has written.
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  -- When a code was last *accepted*. Written only by the accepted-verification statement, because
+  -- `updated_at` moves on a spent guess too and so cannot say when the factor last actually worked.
+  last_verified_at INTEGER,
+  confirmed_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_factors_user_kind ON auth_factors (user_id, kind);
+
+CREATE TABLE IF NOT EXISTS auth_credentials (
+  id BLOB PRIMARY KEY NOT NULL,
+  user_id BLOB NOT NULL REFERENCES auth_users (id) ON DELETE CASCADE,
+  -- base64url, as the browser reports it, so no decode step stands between a ceremony and a lookup.
+  credential_id TEXT NOT NULL,
+  public_key BLOB NOT NULL,
+  algorithm INTEGER NOT NULL,
+  sign_count INTEGER NOT NULL DEFAULT 0,
+  transports TEXT,
+  backup_eligible INTEGER NOT NULL DEFAULT 0,
+  backed_up INTEGER NOT NULL DEFAULT 0,
+  label TEXT,
+  last_used_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_credentials_credential_id ON auth_credentials (credential_id);
+CREATE INDEX IF NOT EXISTS auth_credentials_user_id ON auth_credentials (user_id);
+
+CREATE TABLE IF NOT EXISTS auth_identity_links (
+  id BLOB PRIMARY KEY NOT NULL,
+  user_id BLOB NOT NULL REFERENCES auth_users (id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_identity_links_provider_subject ON auth_identity_links (provider, subject);
+CREATE INDEX IF NOT EXISTS auth_identity_links_user_id ON auth_identity_links (user_id);
+
+-- The live emailed code for one identity, and the guesses spent against it. Durable and not KV:
+-- both counters are conditional writes on the primary factor, and KV can only read then write, so
+-- parallel guesses would each be compared against the same count.
+--
+-- There is no TTL here. A row is dead once `expires_at` passes — every read holds it against the
+-- clock — and the next issue for that identity overwrites it. A user who never returns leaves one
+-- row of no consequence behind.
+CREATE TABLE IF NOT EXISTS auth_otp_state (
+  user_id BLOB PRIMARY KEY NOT NULL REFERENCES auth_users (id) ON DELETE CASCADE,
+  -- The sealed code, as `encodeAuthToken` framed it. The code itself is never stored.
+  token TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+) STRICT;
+
+-- A live ceremony challenge, and a consumed one-shot token's key. Both are ephemeral, and both were
+-- KV until KV's read-then-write made them wrong: two requests could take one challenge, and two
+-- verifications could each be told a nonce was theirs to spend. Here each is one statement.
+--
+-- KV expired a key for free; SQLite does not. Correctness rests on the `expires_at` predicate every
+-- read carries, never on a row being gone. `purgeAuthEphemera` reclaims the dead rows, and a
+-- deployment that never calls it is slower, not wrong.
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS auth_challenges_expires_at ON auth_challenges (expires_at);
+
+-- No value column: the key's presence is the whole record, and the primary key is what makes the
+-- first insert the only one that can win.
+CREATE TABLE IF NOT EXISTS auth_nonces (
+  key TEXT PRIMARY KEY NOT NULL,
+  expires_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS auth_nonces_expires_at ON auth_nonces (expires_at);

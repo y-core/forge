@@ -1,0 +1,22 @@
+/** The scheme rule as a table, asserted against `safeUrl` and against the `ui/contracts` copy of it. */
+export const URL_SCHEME_CASES: ReadonlyArray<{ input: string; expected: string }> = [
+  { input: "https://example.com/a?b=1", expected: "https://example.com/a?b=1" },
+  { input: "http://example.com", expected: "http://example.com" },
+  { input: "mailto:a@b.com", expected: "mailto:a@b.com" },
+  { input: "tel:+15551234", expected: "tel:+15551234" },
+  { input: "/path/to/page", expected: "/path/to/page" },
+  { input: "../up", expected: "../up" },
+  { input: "#section", expected: "#section" },
+  { input: "?q=1", expected: "?q=1" },
+  { input: "foo/bar", expected: "foo/bar" },
+  { input: "javascript:alert(1)", expected: "#" },
+  { input: "JaVaScRiPt:alert(1)", expected: "#" },
+  { input: "  javascript:alert(1)", expected: "#" },
+  { input: "java\tscript:alert(1)", expected: "#" },
+  { input: "\njavascript:alert(1)", expected: "#" },
+  { input: "data:text/html,<script>alert(1)</script>", expected: "#" },
+  { input: "vbscript:msgbox(1)", expected: "#" },
+  { input: "//evil.com", expected: "#" },
+  { input: "\\\\evil.com", expected: "#" },
+  { input: "/\\evil.com", expected: "#" },
+];

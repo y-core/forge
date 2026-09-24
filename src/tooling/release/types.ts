@@ -1,0 +1,118 @@
+/** What asking the gate answered: it passed, it ran and failed, or it never ran at all. */
+export type GateOutcome = "passed" | "failed" | "unrunnable";
+
+/** The category of failure a release operation raised. */
+export type ReleaseErrorKind =
+  | "invalid-version"
+  | "version-not-greater"
+  | "version-mismatch"
+  | "git-error"
+  | "pkg-update"
+  | "working-tree-dirty"
+  | "changelog-empty"
+  | "changelog-malformed"
+  | "manifest-malformed"
+  | "surface-shrink"
+  | "history-rewritten"
+  | "tag-unpushed"
+  | "wrong-branch"
+  | "gate-failed"
+  | "gate-unrunnable"
+  | "release-part-written";
+
+/** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
+export class ReleaseError extends Error {
+  readonly kind: ReleaseErrorKind;
+
+  constructor(kind: ReleaseErrorKind, message: string) {
+    super(message);
+    this.name = "ReleaseError";
+    this.kind = kind;
+  }
+}
+
+/** Why an automatic bump came out the way it did. */
+export interface BumpEvidence {
+  /** The commit whose subject prefix won the bump; absent for a patch, which no commit asks for. */
+  commit?: { sha: string; subject: string };
+  /** How many commits `<latest-tag>..HEAD` held. */
+  commitCount: number;
+}
+
+/** The version {@link resolveVersion} resolved to, and why. */
+export interface VersionResult {
+  version: string;
+  reason: "explicit" | "auto-patch" | "auto-minor" | "auto-major" | "first-release" | "in-sync";
+  previous: string | null;
+  /** Set only on an `auto-*` reason — no other path derives a bump from commits. */
+  evidence?: BumpEvidence;
+}
+
+/** Configuration for {@link createReleaseCommand}. */
+export interface ReleaseCommandConfig {
+  cwd: string;
+  tagPrefix?: string;
+  /** Files staged into the release commit. Defaults to what the release itself wrote. */
+  stageFiles?: string[];
+  /** Changelog to promote, relative to `cwd`. Defaults to `"CHANGELOG.md"`. */
+  changelogFile?: string;
+  /** Where the released sections' digests are recorded. Defaults to `config/changelog-sections.json`. */
+  sectionsFile?: string;
+  /** The gate run before the tag is cut, as argv. Defaults to `["bun", "run", "verify"]`. */
+  gateCommand?: string[];
+}
+
+/** Injectable dependencies of {@link createReleaseCommand}, faked in tests. */
+export interface ReleaseDeps {
+  isWorkingTreeClean: (cwd: string) => boolean;
+  resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
+  updatePackageVersion: (version: string, cwd: string) => void;
+  /** Stages `files` and commits. Returns `false` (no error) when nothing was staged. */
+  commit: (cwd: string, message: string, files: string[]) => boolean;
+  tagExists: (cwd: string, tag: string) => boolean;
+  createTag: (cwd: string, tag: string) => void;
+  /** Reads the changelog, or `null` when the file does not exist. */
+  readChangelog: (cwd: string, file: string) => string | null;
+  writeChangelog: (cwd: string, file: string, source: string) => void;
+  writeChangelogSections: (cwd: string, file: string, source: string) => void;
+  /** The repository's normalised base URL for compare links, or `null` when unknown. */
+  readRepositoryUrl: (cwd: string) => string | null;
+  /** Public-surface entries present at `ref` and gone from the working tree. */
+  removedSurfaceSince: (cwd: string, ref: string) => string[];
+  /** False when `tag` is no longer an ancestor of HEAD, i.e. published history was rewritten. */
+  tagIsAncestorOfHead: (cwd: string, tag: string) => boolean;
+  /** Tag names the remote carries, or `null` when it could not be reached. */
+  remoteTags: (cwd: string) => string[] | null;
+  /** The branch HEAD is on, or `null` in a detached HEAD. */
+  currentBranch: (cwd: string) => string | null;
+  /** The branch the remote publishes from, or `null` when the remote names none. */
+  defaultBranch: (cwd: string) => string | null;
+  /** Runs the verification gate and answers what it did. */
+  runGate: (cwd: string, command: readonly string[]) => GateOutcome;
+  /** The release moment. Injected so a test needs no clock. */
+  now: () => Date;
+}
+
+/** Options for {@link resolveVersion}. */
+export interface ResolveVersionOptions {
+  explicit?: string;
+  cwd: string;
+  tagPrefix: string;
+}
+
+/** Injectable dependencies of {@link resolveVersion}, faked in tests. */
+export interface VersionDeps {
+  getLatestTag: (cwd: string, prefix: string) => string | null;
+  getCommitsSinceTag: (cwd: string, tag: string) => string[];
+  readPackageVersion: (cwd: string) => string;
+}
+
+/** Reads a barrel's source at a repo-relative path, or `null` when it is absent. */
+export type BarrelReader = (relPath: string) => string | null;
+
+/** Runs a command and returns its stdout — the seam the git helpers take, so a test substitutes it rather than the module. */
+export type ExecFile = (
+  command: string,
+  args: string[],
+  options: { cwd: string; encoding: "utf-8"; stdio: ["ignore", "pipe", "pipe"] },
+) => string | Buffer;

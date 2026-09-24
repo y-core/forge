@@ -1,0 +1,53 @@
+import type { AppContext } from "../context/types";
+import { ConfigKey, EnvKey, ExecutionContextKey, RequestContext } from "../context/types";
+import { requestLog } from "../logging/request-logger";
+import type { Logger } from "../logging/types";
+import type { CollectedExecutionContext, TestContextOptions } from "./types";
+
+/** Returns an `ExecutionContext` whose `waitUntil`/`passThroughOnException` are no-ops. @public */
+export function mockExecutionContext(): ExecutionContext {
+  // oxlint-disable-next-line typescript/no-explicit-any -- mock context for testing only
+  return { waitUntil: () => {}, passThroughOnException: () => {} } as any;
+}
+
+/** Returns an `ExecutionContext` that retains every `waitUntil` promise, plus the `drain()` that awaits them. @public */
+export function collectExecutionContext(): CollectedExecutionContext {
+  const pending: Promise<unknown>[] = [];
+  const executionCtx = {
+    waitUntil: (p: Promise<unknown>) => {
+      pending.push(p);
+    },
+    passThroughOnException: () => {},
+    // oxlint-disable-next-line typescript/no-explicit-any -- collecting context for testing only
+  } as any;
+  return {
+    executionCtx,
+    pending,
+    drain: async () => {
+      await Promise.all(pending.splice(0));
+    },
+  };
+}
+
+/** A `Logger` that drops every record; `child()` returns itself and `flush()` resolves immediately. @public */
+export const nullLogger: Logger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  flush: async () => {},
+  child: () => nullLogger,
+};
+
+/** Builds a `RequestContext` pre-loaded with `env`, `executionCtx`, `config`, and a request logger exactly as the Forge router injects them. @public */
+export function createTestContext<Bindings = Record<string, unknown>, ConfigData = unknown>(
+  request: Request,
+  options: TestContextOptions<Bindings, ConfigData> = {},
+): AppContext<Bindings, Record<string, string>, ConfigData> {
+  const context = new RequestContext(request);
+  context.set(EnvKey, options.env ?? ({} as Bindings), { property: "env" });
+  context.set(ExecutionContextKey, options.executionCtx ?? mockExecutionContext(), { property: "executionCtx" });
+  context.set(ConfigKey, options.config, { property: "config" });
+  requestLog.set(context, options.logger ?? nullLogger);
+  return context as unknown as AppContext<Bindings, Record<string, string>, ConfigData>;
+}

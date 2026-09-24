@@ -1,0 +1,5 @@
+{
+  // Deliberately wrong: `main` names the development entry, which is rule A's failure.
+  "name": "dev-boundary-consumer",
+  "main": "src/worker.dev.ts",
+}

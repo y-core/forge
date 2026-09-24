@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // oxlint loads `src/tooling/lint/mod.ts` through Node's ESM resolver, which does not resolve an
+    // extensionless specifier — so the plugin's own imports must name the `.ts` file.
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowUnreachableCode": false,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    "types": [],
+    "jsx": "react-jsx",
+    "jsxImportSource": "@y-core/forge/jsx"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", "warden/**/*.ts", ".types/**/*.d.ts"],
+  // `src/testing/node.d.ts` is the shim a consumer references for its workerd suite: it declares the
+  // same globals as `.types/node.d.ts` but narrowed to what `workerd.ts` alone reaches, so including
+  // both would shadow `process` here. `tests/fixtures/workers-consumer` is the program that holds it.
+  "exclude": ["src/testing/node.d.ts"]
+}

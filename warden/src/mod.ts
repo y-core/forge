@@ -1,0 +1,52 @@
+export { type CatalogueScope, renderCanon, renderCatalogue } from "./catalogue/render";
+export { createWardenCommands } from "./cli/commands";
+export { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./cli/knowledge";
+export { bindings, DEFAULT_ARCH, declaredVersion, executables, installedVersion, placeNatives } from "./cli/natives";
+export type { Subject } from "./cli/show";
+export { show, SUBJECTS } from "./cli/show";
+export { chunkDocument, frontmatter, glossary, headings, proseOf, ruleClauses } from "./corpus/chunk";
+export { fnv1a } from "./corpus/hash";
+export { chunkId, headingSlug, parseCorpus, parseId, sourceId } from "./corpus/ident";
+export type { Resolution } from "./corpus/relate";
+export { citationTarget, headerOf, relationsOf, resolveCitation, resolveDoc } from "./corpus/relate";
+export type { Audience, DependencyOptions } from "./corpus/dependency";
+export {
+  audienceOf,
+  DEPENDENCY_README_WEIGHT,
+  DEPENDENCY_WEIGHT,
+  dependencyRootOf,
+  dependencyWeightOf,
+  libraryDocsDir,
+  libraryRoot,
+  librarySources,
+} from "./corpus/dependency";
+export { canonSources, discover, localSources, repoRelative, weightOf } from "./corpus/source";
+export type { DuplicateCheckConfig, DuplicatePair } from "./gate/duplicates";
+export { checkDuplicates, duplicatePairs } from "./gate/duplicates";
+export type { ProbeOptions } from "./cli/probe";
+export { createProbeCommand, probe, probeSetsOf } from "./cli/probe";
+export type { ChangedFile } from "./impact/git";
+export { changed, parseDiff } from "./impact/git";
+export type { Impact, Touched } from "./impact/impact";
+export { impact } from "./impact/impact";
+export { renderImpact } from "./impact/render";
+export type { GoldenCheckConfig } from "./gate/queries";
+export { checkGoldenQueries } from "./gate/queries";
+export type { Dimension, GoldenQuery } from "./gate/golden";
+export { GOLDEN, NEGATIVE } from "./gate/golden";
+export type { GoldenStep } from "./gate/step-sets";
+export { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf } from "./gate/step-sets";
+export type { WardenCheckConfig } from "./gate/warden";
+export { checkWarden } from "./gate/warden";
+export { readMeta, stampVersions, versionsMatch, writeMeta } from "./index/db";
+export { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE } from "./index/schema";
+export type { AliasTable, BuildReport, Freshness, Knowledge, OpenOptions } from "./search/mod";
+export { advisory, aliasesFor, build, freshness, gateIndexPath, indexPath, load, openDatabase, openIndex, rebuild } from "./search/mod";
+export { CANON_ROOT, CLAUDE_ROOT, libraryPrefix, packageNameOf, resolveRepoRoot, walkUpToRepo, WARDEN_ROOT } from "./paths";
+export { check, checkAgents, checkBoundary, checkTree } from "./sync/check";
+export { type KindSource, readKind, resolveKind, resolveKindSource } from "./sync/kind";
+export { seed, seedFiles } from "./sync/seed";
+export { copyTree, identical, sync, syncTrees, walk } from "./sync/sync";
+export type { Chunk, Corpus, Divergence, Kind, Relation, SeedFile, SourceDoc, SyncOutcome, SyncTree, Tree } from "./types";
+export { CORPORA } from "./types";
+export { canonVersion } from "./version";

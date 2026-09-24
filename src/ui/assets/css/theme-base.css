@@ -1,0 +1,218 @@
+/* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
+/* To use a web font, uncomment the Tailwind v4 defaults and prepend your own:
+     --font-sans: "Inter", var(--theme-font-sans);
+:root {
+  --theme-font-sans:  ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --theme-font-mono:  ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --theme-font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+*/
+
+:root {
+  color-scheme: light;
+
+  /* ── Shape tokens — the one non-colour set, and not a scheme ──────────────
+     `shape-compact.css` re-declares exactly these; a colour scheme never does. */
+  --radius: 0.625rem;
+  --radius-field: var(--radius);
+  --radius-box: calc(var(--radius) + 6px);
+  --radius-selector: 9999px;
+  --control-h-sm: 2rem;
+  --control-h-md: 2.5rem;
+  --control-h-lg: 3rem;
+  --border-width: 1px;
+
+  /* ── Semantic tokens — declared once, for both modes ───────────────────── */
+  --background: var(--gray-1);
+  --foreground: var(--gray-12);
+
+  --card: var(--gray-2);
+  --card-foreground: var(--gray-12);
+
+  --popover: var(--gray-2);
+  --popover-foreground: var(--gray-12);
+
+  --primary: var(--accent-9);
+  --primary-foreground: var(--accent-contrast);
+  --primary-text: var(--accent-11);
+  --primary-soft: var(--accent-3);
+  --primary-soft-foreground: var(--accent-12);
+  --primary-soft-border: var(--accent-6);
+
+  --secondary: var(--gray-3);
+  --secondary-foreground: var(--gray-12);
+
+  --muted: var(--gray-3);
+  --muted-foreground: var(--gray-11);
+
+  --accent: var(--gray-3);
+  --accent-foreground: var(--gray-12);
+
+  --destructive: var(--red-9);
+  --destructive-foreground: var(--red-contrast);
+  --destructive-text: var(--red-11);
+  --info: var(--blue-9);
+  --info-foreground: var(--blue-contrast);
+  --info-text: var(--blue-11);
+
+  --success: var(--emerald-9);
+  --success-foreground: var(--emerald-contrast);
+  --success-text: var(--emerald-11);
+  --warning: var(--yellow-9);
+  --warning-foreground: var(--yellow-contrast);
+  --warning-text: var(--yellow-11);
+
+  --border: var(--gray-6);
+  --input: var(--gray-10);
+
+  --track: var(--gray-10);
+  --ring: var(--gray-11);
+
+  --overlay: var(--black-a6);
+
+  --status-danger-subtle: var(--red-2);
+  --status-danger-subtle-foreground: var(--red-12);
+  --status-danger-strong: var(--red-3);
+  --status-danger-strong-foreground: var(--red-11);
+  --status-danger-border: var(--red-6);
+
+  --status-warning-subtle: var(--yellow-2);
+  --status-warning-subtle-foreground: var(--yellow-12);
+  --status-warning-strong: var(--yellow-3);
+  --status-warning-strong-foreground: var(--yellow-11);
+  --status-warning-border: var(--yellow-6);
+
+  --status-success-subtle: var(--emerald-2);
+  --status-success-subtle-foreground: var(--emerald-12);
+  --status-success-strong: var(--emerald-3);
+  --status-success-strong-foreground: var(--emerald-11);
+  --status-success-border: var(--emerald-6);
+
+  --status-info-subtle: var(--blue-2);
+  --status-info-subtle-foreground: var(--blue-12);
+  --status-info-strong: var(--blue-3);
+  --status-info-strong-foreground: var(--blue-11);
+  --status-info-border: var(--blue-6);
+}
+
+/* `color-scheme` is what selects a scheme's `light-dark()` branch, and it lives here rather than in a
+   scheme file: a scheme is the file a consumer replaces, and this is the file they do not. Without it
+   the branch would follow the operating system, which forge refuses to do — see the
+   `@custom-variant` note in `forge.css`. It also hands the mode to the user agent, so scrollbars and
+   the controls forge cannot paint follow the theme rather than contradicting it.
+
+   It must stay *after* `:root`, which weighs the same 0-1-0 and would otherwise win. That this rule
+   carries no custom property is what keeps it clear of the one-declaration-site contract: there is
+   no value here a consumer's own scheme could half-supply. */
+.dark {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-primary-soft-border: var(--primary-soft-border);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-text: var(--info-text);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-track: var(--track);
+  --color-ring: var(--ring);
+
+  --color-status-danger-subtle: var(--status-danger-subtle);
+  --color-status-danger-subtle-foreground: var(--status-danger-subtle-foreground);
+  --color-status-danger-strong: var(--status-danger-strong);
+  --color-status-danger-strong-foreground: var(--status-danger-strong-foreground);
+  --color-status-danger-border: var(--status-danger-border);
+
+  --color-status-warning-subtle: var(--status-warning-subtle);
+  --color-status-warning-subtle-foreground: var(--status-warning-subtle-foreground);
+  --color-status-warning-strong: var(--status-warning-strong);
+  --color-status-warning-strong-foreground: var(--status-warning-strong-foreground);
+  --color-status-warning-border: var(--status-warning-border);
+
+  --color-status-success-subtle: var(--status-success-subtle);
+  --color-status-success-subtle-foreground: var(--status-success-subtle-foreground);
+  --color-status-success-strong: var(--status-success-strong);
+  --color-status-success-strong-foreground: var(--status-success-strong-foreground);
+  --color-status-success-border: var(--status-success-border);
+
+  --color-status-info-subtle: var(--status-info-subtle);
+  --color-status-info-subtle-foreground: var(--status-info-subtle-foreground);
+  --color-status-info-strong: var(--status-info-strong);
+  --color-status-info-strong-foreground: var(--status-info-strong-foreground);
+  --color-status-info-border: var(--status-info-border);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* `rounded-field` / `rounded-box` / `rounded-selector` and `h-control-*` / `size-control-*` /
+     `w-control-*`: the shape utilities every recipe reaches for. `border-field` is an `@utility` in
+     `forge-ui.css`, because a `--border-width-*` token lands in the overloaded `border-*` namespace. */
+  --radius-field: var(--radius-field);
+  --radius-box: var(--radius-box);
+  --radius-selector: var(--radius-selector);
+  --spacing-control-sm: var(--control-h-sm);
+  --spacing-control-md: var(--control-h-md);
+  --spacing-control-lg: var(--control-h-lg);
+
+  /* Tailwind's own shadow geometry, unchanged, with every colour slot re-pointed at the elevation
+     families in `theme-colors.css` — so light renders exactly as it did, and dark, where the cast
+     layers resolve to `transparent`, is carried instead by a 1px inset rim and a soft outer falloff
+     whose radius is the level. Both are white at 10% and 5%: a clean edge, not a glow.
+
+     All seven sizes are defined, not the five forge renders, because a consumer's `shadow-2xl` on a
+     forge page would otherwise be the one elevation that still vanishes in dark. `--shadow-2xl`'s
+     alpha moves from Tailwind's off-grid 0.25 to the ramp's 0.2 — the one light-mode change here,
+     and lighter rather than absent.
+
+     Mode-free by construction: every `light-dark()` sits one hop away, in the step. */
+  --shadow-2xs: 0 1px var(--cast-a1);
+  --shadow-xs: 0 1px 2px 0 var(--cast-a1);
+
+  --shadow-sm: 0 1px 3px 0 var(--cast-a2), 0 1px 2px -1px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 8px var(--rim-a1);
+
+  --shadow-md: 0 4px 6px -1px var(--cast-a2), 0 2px 4px -2px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 12px var(--rim-a1);
+
+  --shadow-lg: 0 10px 15px -3px var(--cast-a2), 0 4px 6px -4px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 20px var(--rim-a1);
+
+  --shadow-xl: 0 20px 25px -5px var(--cast-a2), 0 8px 10px -6px var(--cast-a2), inset 0 0 0 1px var(--rim-a2), 0 0 28px var(--rim-a1);
+
+  --shadow-2xl: 0 25px 50px -12px var(--cast-a4), inset 0 0 0 1px var(--rim-a2), 0 0 40px var(--rim-a1);
+}
