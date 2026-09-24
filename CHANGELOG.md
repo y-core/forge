@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.3.2] — 2026-09-24
+
 ### Upgrading
 
 1. **Pass `selection` in place of `drop` to `curateTree`** — `{ drop: [...] }` for the old
@@ -4856,6 +4862,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.3.2]: https://github.com/y-core/forge/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/y-core/forge/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/y-core/forge/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/y-core/forge/compare/v0.2.4...v0.2.5
