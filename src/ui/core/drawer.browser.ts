@@ -2,21 +2,12 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import type { PhysicalSide } from "../contracts/types";
 import { Drawer } from "./drawer";
 
-const CSS = { css: ["./ui/assets/css/forge-ui.css"] };
+const W_80 = 320;
 
-// Stands in for Tailwind's preflight, which no build supplies here — and for the `fixed` utility the
-// drawer carries, which a raw sheet cannot resolve either.
-const PREFLIGHT = `<style>
-  *, ::before, ::after { box-sizing: border-box; }
-  body { margin: 0; }
-  dialog[data-slot~="drawer"] { position: fixed; width: 16rem; height: 100%; border: 0; padding: 0; }
-</style>`;
-
-// Placement is `inset`; the slide that carries the panel to it is separate (forge-ui.css:790).
 // Reduced motion is what lets a placement assertion read a settled rect on the frame it opens.
 async function open(page: Page, side: PhysicalSide = "left", motion = false): Promise<void> {
   if (!motion) await page.emulateMedia({ reducedMotion: "reduce" });
@@ -29,7 +20,8 @@ async function open(page: Page, side: PhysicalSide = "left", motion = false): Pr
       children: [Drawer.Title({ for: "nav", children: "Navigation" }), Drawer.Close({ for: "nav", id: "close-it", children: "Done" })],
     }),
   ]);
-  await mount(page, `${PREFLIGHT}${html}`, CSS);
+  const pageEdge = `<button id="page-edge" style="position: fixed; inset: 100px auto 0 0; width: 50vw" onclick="this.dataset.hit = ''">page</button>`;
+  await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${pageEdge}${html}`);
 }
 
 function modal(page: Page): Promise<boolean | undefined> {
@@ -40,7 +32,11 @@ function activeId(page: Page): Promise<string | undefined> {
   return page.evaluate(() => document.activeElement?.id);
 }
 
-function box(page: Page): Promise<{ left: number; right: number; top: number; bottom: number; viewport: number }> {
+function display(page: Page): Promise<string> {
+  return page.evaluate(() => getComputedStyle(document.querySelector("#nav") as HTMLElement).display);
+}
+
+function box(page: Page): Promise<{ left: number; right: number; top: number; bottom: number; width: number; viewport: number }> {
   return page.evaluate(() => {
     const rect = (document.querySelector("#nav") as HTMLElement).getBoundingClientRect();
     return {
@@ -48,6 +44,7 @@ function box(page: Page): Promise<{ left: number; right: number; top: number; bo
       right: Math.round(rect.right),
       top: Math.round(rect.top),
       bottom: Math.round(rect.bottom),
+      width: Math.round(rect.width),
       viewport: window.innerWidth,
     };
   });
@@ -96,13 +93,43 @@ test.describe("Drawer", () => {
     expect(rect.left).toBeGreaterThan(0);
   });
 
-  test("the entry slide settles against the edge it starts off", async ({ page }) => {
-    await open(page, "left", true);
+  test("the open panel is as wide as its w-80 default", async ({ page }) => {
+    await open(page);
     await page.click("#open-it");
     await expect.poll(() => modal(page)).toBe(true);
+
+    expect((await box(page)).width).toBe(W_80);
+  });
+
+  test("the entry slide settles against the edge it starts off", async ({ page }) => {
+    await open(page, "left", true);
+    const sliding = await page.evaluate(() => {
+      (document.querySelector("#open-it") as HTMLButtonElement).click();
+      const panel = document.querySelector("#nav") as HTMLElement;
+      return panel.getAnimations().some((animation) => (animation as CSSTransition).transitionProperty === "translate");
+    });
+    expect(sliding, "no translate transition ran on open").toBe(true);
 
     // The one case that must not opt out of motion: `@starting-style` puts the panel a full width
     // off-screen, and this is what proves it arrives — polled, because it arrives over 200ms.
     await expect.poll(() => box(page).then((rect) => rect.left)).toBe(0);
   });
+
+  for (const motion of [false, true]) {
+    const label = motion ? "with motion" : "under reduced motion";
+
+    test(`a closed drawer is display:none ${label}`, async ({ page }) => {
+      await open(page, "left", motion);
+
+      expect(await display(page)).toBe("none");
+    });
+
+    test(`a click on the page's left edge reaches the page while the drawer is closed, ${label}`, async ({ page }) => {
+      await open(page, "left", motion);
+
+      await page.mouse.click(4, 300);
+
+      expect(await page.evaluate(() => document.querySelector<HTMLElement>("#page-edge")?.dataset.hit)).toBe("");
+    });
+  }
 });

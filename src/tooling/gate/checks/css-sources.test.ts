@@ -114,24 +114,24 @@ describe("checkCssSources() — pass B, whether a directory is registered", () =
     const tree = {
       "src/css/tailwind.css": '@source "../ui/core";\n',
       "src/ui/core/button.ts": CLASSES,
-      "src/ui/show/demo.ts": CLASSES,
+      "src/ui/gallery/demo.ts": CLASSES,
       "README.md": "# forge\n",
     };
-    const consumerScanned = new Map([["show", '@source "../node_modules/@y-core/forge/src/ui/show";']]);
+    const consumerScanned = new Map([["gallery", '@source "../node_modules/@y-core/forge/src/ui/gallery";']]);
 
     expect(messages(tree, { consumerScanned })).toEqual(["is opt-in, but README.md does not publish the line an app must add", AGGREGATE]);
   });
 
   it("accepts the same directory once the README carries that line verbatim", () => {
-    const line = '@source "../node_modules/@y-core/forge/src/ui/show";';
+    const line = '@source "../node_modules/@y-core/forge/src/ui/gallery";';
     const tree = {
       "src/css/tailwind.css": '@source "../ui/core";\n',
       "src/ui/core/button.ts": CLASSES,
-      "src/ui/show/demo.ts": CLASSES,
+      "src/ui/gallery/demo.ts": CLASSES,
       "README.md": `Add ${line} to your stylesheet.\n`,
     };
 
-    expect(messages(tree, { consumerScanned: new Map([["show", line]]) })).toEqual([]);
+    expect(messages(tree, { consumerScanned: new Map([["gallery", line]]) })).toEqual([]);
   });
 
   it("rejects a class-free registration for a directory that is not on disk", () => {
@@ -187,14 +187,14 @@ describe("checkCssSources() — pass B, whether a directory is registered", () =
 
 describe("checkCssSources() — pass C, a sibling namespace that renders classes", () => {
   it("rejects a namespace outside the component root whose README never mentions @source", () => {
-    const tree = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "src/logging/show.ts": CLASSES };
+    const tree = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "src/logging/viewer.ts": CLASSES };
 
     expect(checkCssSources(config(tree)).findings[0]).toEqual({
       level: "fail",
       message: "renders utility classes, but its README.md never mentions @source",
       file: "src/logging",
       detail: [
-        "src/logging/show.ts",
+        "src/logging/viewer.ts",
         "The stylesheet scans src/ui/ only, so these classes are the consuming app's to scan.",
         "Say so in src/logging/README.md, where someone adopting this surface reads it.",
       ],
@@ -205,7 +205,7 @@ describe("checkCssSources() — pass C, a sibling namespace that renders classes
     const tree = {
       "src/css/tailwind.css": SCAN_ALL,
       "src/ui/core/button.ts": CLASSES,
-      "src/logging/show.ts": CLASSES,
+      "src/logging/viewer.ts": CLASSES,
       "src/logging/README.md": "Add an @source line for this directory.\n",
     };
 
@@ -213,7 +213,7 @@ describe("checkCssSources() — pass C, a sibling namespace that renders classes
   });
 
   it("leaves a sibling that declares no utility class alone, README or not", () => {
-    const tree = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "src/logging/show.ts": "export const level = 'info';\n" };
+    const tree = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "src/logging/viewer.ts": "export const level = 'info';\n" };
 
     expect(messages(tree)).toEqual([]);
   });

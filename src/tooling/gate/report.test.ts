@@ -206,8 +206,8 @@ describe("formatFindingBlock()", () => {
   });
 
   it("indents a finding's evidence lines too, rather than letting them escape the block", () => {
-    expect(formatFindingBlock([fail("two subpaths unresolved", { detail: ["./ui/show", "./ui/chrome"] })])).toBe(
-      ["    FAIL: two subpaths unresolved", "        ./ui/show", "        ./ui/chrome"].join("\n"),
+    expect(formatFindingBlock([fail("two subpaths unresolved", { detail: ["./ui/gallery", "./ui/chrome"] })])).toBe(
+      ["    FAIL: two subpaths unresolved", "        ./ui/gallery", "        ./ui/chrome"].join("\n"),
     );
   });
 

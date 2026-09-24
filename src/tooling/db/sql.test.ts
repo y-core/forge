@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { quoteSqlIdentifier, quoteSqlLiteral, rowCountSelect, tableInfoSelect, toColumnInfo } from "./sql";
+import { isReadOnlyBatch, quoteSqlIdentifier, quoteSqlLiteral, rowCountSelect, tableInfoSelect, toColumnInfo } from "./sql";
 
 describe("quoteSqlLiteral()", () => {
   it("wraps a string in single quotes and doubles the ones inside it", () => {
@@ -63,5 +63,64 @@ describe("toColumnInfo()", () => {
 describe("rowCountSelect()", () => {
   it("quotes the table as an identifier", () => {
     expect(rowCountSelect("users")).toBe('SELECT COUNT(*) AS rows FROM "users"');
+  });
+});
+
+describe("isReadOnlyBatch()", () => {
+  it("accepts each read form, after leading comments and whitespace", () => {
+    const reads = [
+      "SELECT name FROM sqlite_master",
+      "  \n select 1",
+      "-- why\n/* and how */ SELECT 1",
+      "EXPLAIN QUERY PLAN SELECT * FROM t",
+      "WITH r AS (SELECT 1) SELECT * FROM r",
+      'WITH r AS (SELECT "delete" FROM t) SELECT * FROM r',
+      "WITH r AS (SELECT 'update me') SELECT * FROM r",
+      "PRAGMA table_info('users')",
+      'PRAGMA main.table_xinfo("users")',
+      "PRAGMA foreign_key_check",
+      "PRAGMA quick_check",
+    ];
+    expect(reads.filter((sql) => !isReadOnlyBatch([sql]))).toEqual([]);
+  });
+
+  it("refuses each write form, including DDL that is a no-op when the object exists", () => {
+    const writes = [
+      "INSERT INTO t VALUES (1)",
+      "UPDATE t SET a = 1",
+      "DELETE FROM t",
+      "REPLACE INTO t VALUES (1)",
+      "CREATE TABLE IF NOT EXISTS _forge_migrations (id INTEGER PRIMARY KEY)",
+      "DROP TABLE t",
+      "ALTER TABLE t ADD COLUMN b",
+      "BEGIN",
+      "VACUUM",
+      "PRAGMA foreign_keys = ON",
+      "PRAGMA user_version = 3",
+      "PRAGMA optimize",
+      "PRAGMA journal_mode",
+      "",
+    ];
+    expect(writes.filter((sql) => isReadOnlyBatch([sql]))).toEqual([]);
+  });
+
+  it("refuses a write behind a leading comment that names a read", () => {
+    expect(isReadOnlyBatch(["-- SELECT 1\nDELETE FROM t"])).toBe(false);
+    expect(isReadOnlyBatch(["/* SELECT */ INSERT INTO t VALUES (1)"])).toBe(false);
+  });
+
+  it("refuses a CTE that writes, whichever write it is", () => {
+    const ctes = ["INSERT INTO t SELECT * FROM r", "UPDATE t SET a = 1", "DELETE FROM t", "REPLACE INTO t SELECT * FROM r"].map(
+      (write) => `WITH r AS (SELECT 1) ${write}`,
+    );
+    expect(ctes.filter((sql) => isReadOnlyBatch([sql]))).toEqual([]);
+  });
+
+  it("refuses a batch mixing a read with a write, and an empty batch", () => {
+    expect([isReadOnlyBatch(["SELECT 1", "DELETE FROM t"]), isReadOnlyBatch([]), isReadOnlyBatch(["SELECT 1", "SELECT 2"])]).toEqual([
+      false,
+      false,
+      true,
+    ]);
   });
 });

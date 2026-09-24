@@ -1,3 +1,4 @@
+import { maskSqlProse } from "./schema/normalize";
 import type { ColumnInfo } from "./types";
 
 export { INVENTORY_SELECT, toSchemaObjects } from "../../storage/db/schema";
@@ -54,4 +55,32 @@ export function toColumnInfo(rows: readonly Record<string, unknown>[]): ColumnIn
 /** The statement that counts one table's rows, under the column name `rows`. @internal */
 export function rowCountSelect(table: string): string {
   return `SELECT COUNT(*) AS rows FROM ${quoteSqlIdentifier(table)}`;
+}
+
+const READ_PRAGMAS = new Set([
+  "foreign_key_check",
+  "foreign_key_list",
+  "index_info",
+  "index_list",
+  "index_xinfo",
+  "integrity_check",
+  "quick_check",
+  "table_info",
+  "table_list",
+  "table_xinfo",
+]);
+
+function isReadOnlyStatement(statement: string): boolean {
+  const words = maskSqlProse(statement, { identifiers: true }).trim().toUpperCase();
+  const lead = /^\w+/.exec(words)?.[0];
+  if (lead === "SELECT" || lead === "EXPLAIN") return true;
+  if (lead === "WITH") return !/\b(INSERT|UPDATE|DELETE|REPLACE)\b/.test(words);
+  if (lead !== "PRAGMA" || words.includes("=")) return false;
+  const name = /^PRAGMA\s+(?:\w+\s*\.\s*)?(\w+)/.exec(words)?.[1]?.toLowerCase();
+  return name !== undefined && READ_PRAGMAS.has(name);
+}
+
+/** True when every statement is a SELECT, an EXPLAIN, a WITH naming no INSERT, UPDATE, DELETE or REPLACE, or an introspection PRAGMA with no `=`. @internal */
+export function isReadOnlyBatch(statements: readonly string[]): boolean {
+  return statements.length > 0 && statements.every(isReadOnlyStatement);
 }

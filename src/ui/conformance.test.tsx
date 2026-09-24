@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { FC } from "../jsx/types";
+import { barrelComponents } from "../testing/coverage/components";
 import { render } from "../testing/render";
 import { ISLAND_STATE_ATTR } from "./contracts/island-contract";
 import { STATE_ATTRS } from "./contracts/state-attrs";
@@ -175,16 +176,14 @@ const TIERS: Record<string, Tier> = {
 
 const TIER_NAMES = Object.keys(TIERS).sort();
 
-/** Every uppercase-initial function a barrel publishes — the components, and nothing else. */
-function barrelComponentNames(barrel: Record<string, unknown>): string[] {
-  return Object.keys(barrel)
-    .filter((key) => /^[A-Z]/.test(key))
-    .filter((key) => typeof barrel[key] === "function")
-    .sort();
-}
+const COMPONENTS = barrelComponents({ controls, core });
 
 /** A tier-qualified component key, because `Input` names a component in both barrels. */
-const KEYS = TIER_NAMES.flatMap((tier) => barrelComponentNames((TIERS[tier] as Tier).barrel).map((name) => `${tier}/${name}`));
+const KEYS: string[] = COMPONENTS.map((entry) => entry.key);
+
+function componentNames(tier: string): string[] {
+  return COMPONENTS.filter((entry) => entry.barrel === tier).map((entry) => entry.component);
+}
 
 function tierOf(key: string): Tier {
   return TIERS[key.slice(0, key.indexOf("/"))] as Tier;
@@ -280,13 +279,13 @@ const RENDER_SWEEP_ONLY = new Set(["data-probe"]);
 
 describe("ui conformance — the sweep is derived from the barrels", () => {
   it("declares a participation entry for every component each barrel exports", () => {
-    expect(Object.fromEntries(TIER_NAMES.map((tier) => [tier, barrelComponentNames((TIERS[tier] as Tier).barrel)]))).toEqual(
+    expect(Object.fromEntries(TIER_NAMES.map((tier) => [tier, componentNames(tier)]))).toEqual(
       Object.fromEntries(TIER_NAMES.map((tier) => [tier, Object.keys((TIERS[tier] as Tier).participants).sort()])),
     );
   });
 
   it("sweeps a meaningful number of components in every tier", () => {
-    expect(TIER_NAMES.filter((tier) => barrelComponentNames((TIERS[tier] as Tier).barrel).length <= (TIERS[tier] as Tier).floor)).toEqual([]);
+    expect(TIER_NAMES.filter((tier) => componentNames(tier).length <= (TIERS[tier] as Tier).floor)).toEqual([]);
   });
 
   it("declares every component that stamps a state attribute onto its forwarding element", () => {

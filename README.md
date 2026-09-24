@@ -199,6 +199,7 @@ forge db backup                 # a verified artifact you can restore from
 forge cf sync                   # report account-binding drift; --commit to create and write back
 forge cf gen env                # emit env.schema.ts from wrangler.jsonc + .dev.vars
 forge release                   # resolve the version from git, promote the changelog, commit, tag
+forge strip ../skeleton          # copy the working tree minus config/strip.ts's directories and marked lines
 ```
 
 Every verb that could change something reports by default and writes only when told to. `warden sync`, `warden search` and `warden serve` are the
@@ -258,7 +259,7 @@ through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and ow
 | `@y-core/forge/security` | Transport hardening — CSP nonces, origin, CORS, rate limits, ids | [src/security/README.md][security-readme] |
 | `@y-core/forge/session` | Hardened cookies and the session lifecycle middleware | [src/session/README.md][session-readme] |
 | `@y-core/forge/logging` | Structured logging over pluggable channels | [src/logging/README.md][logging-readme] |
-| `@y-core/forge/logging/show` | The mountable log viewer — one loader, access-gated | [src/logging/README.md][logging-readme] |
+| `@y-core/forge/logging/viewer` | The mountable log viewer — one loader, access-gated | [src/logging/README.md][logging-readme] |
 | `@y-core/forge/site` | `robots.txt`, sitemap and edge allow-rules, derived from the routes | [src/site/README.md][site-readme] |
 | `@y-core/forge/dev` | The development allowance every dev-only relaxation takes | [src/dev/README.md][dev-readme] |
 
@@ -294,8 +295,6 @@ through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and ow
 | `@y-core/forge/ui/assets/glyphs` | Browser-safe sprite glyph parser | [src/ui/README.md][ui-readme] |
 | `@y-core/forge/ui/assets/css/*.css` | The stylesheets by filename — `tailwind.css` is the entry point | [src/ui/README.md][ui-readme] |
 | `@y-core/forge/ui/design/*.md` | The design corpus as markdown, by filename | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/show` | The component showcase and the theme customiser | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/show/client` | The showcase's scopes island (side-effect) | [src/ui/README.md][ui-readme] |
 | `@y-core/forge/assets` | Request-time lookup from a logical name to its hashed URL | [src/assets/README.md][assets-readme] |
 
 ### Storage and testing
@@ -308,11 +307,12 @@ through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and ow
 | `@y-core/forge/testing` | Fixtures and fakes — context, storage, CSRF, SSR render | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/workerd` | `wrangler dev` fixture server (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/snapshot` | Text against a committed fixture, as a line diff (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
+| `@y-core/forge/testing/coverage` | Every published UI component, for a coverage manifest to declare (off the barrel) | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/node` | Types only: the node surface those two reach | [src/testing/README.md][testing-readme] |
 
 ### The command layer
 
-Everything here is **Node/Bun only** and unreachable from a Worker — `validate-build-time-boundary` proves it.
+Everything here is **Node/Bun only** and unreachable from a Worker — `validate-import-boundary` proves it.
 
 | Import path | Concern | Docs |
 | --- | --- | --- |
@@ -323,6 +323,7 @@ Everything here is **Node/Bun only** and unreachable from a Worker — `validate
 | `@y-core/forge/tooling/db` | D1 — migrations, backup, seeds, sync & Time Travel (`forge db`) | [src/tooling/db/README.md][db-readme] |
 | `@y-core/forge/tooling/cf` | Cloudflare — account bindings, zone rules, env schema (`forge cf`) | [src/tooling/cf/README.md][cf-readme] |
 | `@y-core/forge/tooling/release` | Release workflow — version, changelog & surface guard | [src/tooling/release/README.md][release-readme] |
+| `@y-core/forge/tooling/strip` | Reducing a demonstrator to its skeleton from a manifest | [src/tooling/strip/README.md][strip-readme] |
 | `@y-core/forge/tooling/lint` | Forge's oxlint rules, and the rule catalogs the gate reads | [src/tooling/lint/README.md][lint-readme] |
 | `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names | [src/tooling/lint/README.md][lint-readme] |
 | `@y-core/forge/tooling/term` | Terminal rendering — width, wrapping, grids & colour | [src/tooling/term/README.md][term-readme] |
@@ -376,6 +377,7 @@ MIT — see [LICENSE](LICENSE). This covers everything the package ships, includ
 [session-readme]: src/session/README.md
 [site-readme]: src/site/README.md
 [storage-readme]: src/storage/README.md
+[strip-readme]: src/tooling/strip/README.md
 [term-readme]: src/tooling/term/README.md
 [testing-readme]: src/testing/README.md
 [tooling-assets-readme]: src/tooling/assets/README.md

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
 import type { NavDefinition } from "./types";
@@ -216,36 +216,6 @@ test.describe("Navbar — hidden items stay out of the keyboard ring", () => {
   });
 });
 
-// The harness runs no Tailwind build, so the `max-md:` utilities the drawer names style nothing
-// unless the spec supplies them; without these rules a case would measure the browser's defaults.
-const DRAWER_STYLE = `<style>
-  body { margin: 0 }
-  .hidden { display: none }
-  #page { height: 3000px; background: #eee }
-  @media (max-width: 47.99rem) {
-    .max-md\\:fixed { position: fixed }
-    .max-md\\:relative { position: relative }
-    .max-md\\:inset-y-0 { top: 0; bottom: 0 }
-    .max-md\\:inset-0 { top: 0; right: 0; bottom: 0; left: 0 }
-    .max-md\\:start-0 { inset-inline-start: 0 }
-    .max-md\\:z-50 { z-index: 50 }
-    .max-md\\:z-40 { z-index: 40 }
-    .max-md\\:z-30 { z-index: 30 }
-    .max-md\\:flex { display: flex }
-    .max-md\\:block { display: block }
-    .max-md\\:w-72 { width: 18rem }
-    .max-md\\:flex-col { flex-direction: column }
-    .max-md\\:bg-background { background: #fff }
-    .max-md\\:bg-foreground\\/40 { background: rgba(0, 0, 0, 0.4) }
-    .max-md\\:invisible { visibility: hidden }
-    .max-md\\:opacity-0 { opacity: 0 }
-    .max-md\\:-translate-x-full { transform: translateX(-100%) }
-    [open] .max-md\\:group-open\\:visible { visibility: visible }
-    [open] .max-md\\:group-open\\:opacity-100 { opacity: 1 }
-    [open] .max-md\\:group-open\\:translate-x-0 { transform: translateX(0) }
-  }
-</style>`;
-
 const PANEL = "[data-slot~='navbar-backdrop'] + div";
 const BACKDROP = "[data-slot~='navbar-backdrop']";
 const TOGGLE = "[data-slot~='navbar-toggle']";
@@ -266,13 +236,13 @@ const FLAT: NavDefinition = {
 
 async function mountDrawer(page: Page, config: NavDefinition = CONFIG): Promise<void> {
   const html = await render(Navbar({ config, resolveHref: (key: string) => `#${key}`, icon, collapsedAs: "drawer" }));
-  // Reduced motion keeps this a geometry assertion: a settled rect, whatever transition the panel gains later.
+  // Reduced motion keeps this a geometry assertion: a settled rect rather than one mid-slide.
   await page.emulateMedia({ reducedMotion: "reduce" });
   // A focusable ahead of the drawer, so an untrapped Shift+Tab out of the summary has somewhere to
   // land other than the document's own wrap-around.
   await mount(
     page,
-    `${DETAILS_CONTENT_RULE}${DRAWER_STYLE}<a id="before" href="#before">before</a>${html}<div id="page">page content</div>`,
+    `${DETAILS_CONTENT_RULE}<style>${await compiledCss(renderedClasses(html))}</style><a id="before" href="#before">before</a>${html}<div id="page" style="height: 3000px">page content</div>`,
     EXPOSE,
   );
   await page.evaluate(() => window.forgeResume.resume());
@@ -451,6 +421,139 @@ test.describe("Navbar — the drawer at phone width", () => {
 
     await page.click(TOGGLE);
     await expect.poll(() => outsideIsInert()).toBe(false);
+  });
+});
+
+const LEADING = "#pages";
+const TRAILING = "#toc";
+const LEADING_TOGGLE = `${LEADING} > ${TOGGLE}`;
+const LEADING_PANEL = `${LEADING} > ${PANEL}`;
+
+/** Two server-open drawer rails under a sticky header, styled by Tailwind itself rather than a hand-written stand-in. */
+async function mountStyledRails(page: Page): Promise<void> {
+  const rail = (id: string, placement: "left" | "right") =>
+    render(
+      Navbar({
+        config: FLAT,
+        resolveHref: (key: string) => `#${key}`,
+        icon,
+        collapsible: "always",
+        collapsedAs: "drawer",
+        defaultOpen: true,
+        id,
+        placement,
+      }),
+    );
+  const rails = `${await rail("pages", "left")}${await rail("toc", "right")}`;
+  const css = await compiledCss(renderedClasses(rails));
+  await mount(
+    page,
+    `${DETAILS_CONTENT_RULE}<style>html { scroll-behavior: smooth }</style><style>${css}</style><header style="position: sticky; top: 0; height: 79px"></header>${rails}<div id="page" style="height: 3000px"></div>`,
+    EXPOSE,
+  );
+}
+
+/** Whether focus sits on the first item the panel offers, resolved against the live panel. */
+const focusIsOnFirstPanelItem = (page: Page): Promise<boolean> =>
+  page.evaluate(
+    ([selector, focusable]) => {
+      const first = document.querySelector(selector)?.querySelector(focusable);
+      return first !== null && first !== undefined && document.activeElement === first;
+    },
+    [LEADING_PANEL, PANEL_FOCUSABLE] as [string, string],
+  );
+
+const runningTransitions = (page: Page): Promise<number> =>
+  page.evaluate(() => document.getAnimations().filter((animation) => animation instanceof CSSTransition).length);
+
+const scrollY = (page: Page): Promise<number> => page.evaluate(() => Math.round(window.scrollY));
+
+test.describe("Navbar — the drawer under its real stylesheet", () => {
+  test.use({ viewport: { width: 375, height: 700 }, reducedMotion: "no-preference" });
+
+  test("opening a drawer moves focus to its first link without scrolling the page", async ({ page }) => {
+    await mountStyledRails(page);
+    await page.evaluate(() => window.forgeResume.resume());
+    await expect.poll(() => runningTransitions(page)).toBe(0);
+
+    await page.click(LEADING_TOGGLE);
+
+    await expect.poll(() => focusIsOnFirstPanelItem(page)).toBe(true);
+    await page.evaluate(async (selector) => {
+      await Promise.all((document.querySelector(selector)?.getAnimations() ?? []).map((animation) => animation.finished));
+    }, LEADING_PANEL);
+    expect(await scrollY(page)).toBe(0);
+  });
+
+  test("shuts the server-open rails at load without playing a transition over the toggles", async ({ page }) => {
+    await mountStyledRails(page);
+
+    const loaded = await page.evaluate(
+      ([leading, trailing, toggle]) => {
+        window.forgeResume.resume();
+        const bars = [leading, trailing].map((sel) => document.querySelector<HTMLDetailsElement>(sel));
+        const transitions = bars.flatMap((bar) =>
+          (bar?.getAnimations({ subtree: true }) ?? []).filter((animation) => "transitionProperty" in animation),
+        );
+        const summary = document.querySelector(toggle);
+        if (summary === null) throw new Error("the leading toggle is not on the page");
+        const box = summary.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return { open: bars.map((bar) => bar?.open), transitions: transitions.length, hitsToggle: hit !== null && summary.contains(hit) };
+      },
+      [LEADING, TRAILING, LEADING_TOGGLE] as [string, string, string],
+    );
+
+    expect(loaded).toEqual({ open: [false, false], transitions: 0, hitsToggle: true });
+  });
+
+  test("a tap on a toggle straight after load opens its drawer and leaves the page where it was", async ({ page }) => {
+    await mountStyledRails(page);
+    await page.evaluate(() => window.forgeResume.resume());
+
+    await page.click(LEADING_TOGGLE);
+
+    await expect.poll(() => focusIsOnFirstPanelItem(page)).toBe(true);
+    await page.evaluate(
+      () =>
+        new Promise<void>((settle) => {
+          window.addEventListener("scrollend", () => settle(), { once: true });
+          setTimeout(settle, 1000);
+        }),
+    );
+    expect(await scrollY(page)).toBe(0);
+  });
+
+  test("opens without a transition when the reader asks for reduced motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await mountStyledRails(page);
+    await page.evaluate(() => window.forgeResume.resume());
+
+    await page.click(LEADING_TOGGLE);
+    await expect.poll(() => focusIsOnFirstPanelItem(page)).toBe(true);
+
+    const running = await page.evaluate((selector) => document.querySelector(selector)?.getAnimations().length, LEADING_PANEL);
+    expect(running).toBe(0);
+  });
+
+  test("slides the panel in on `translate`, the property Tailwind's offset utilities set", async ({ page }) => {
+    await mountStyledRails(page);
+    await page.evaluate(() => window.forgeResume.resume());
+    await expect.poll(() => runningTransitions(page)).toBe(0);
+
+    const properties = await page.evaluate(
+      ([bar, panel]) => {
+        const details = document.querySelector<HTMLDetailsElement>(bar);
+        if (details === null) throw new Error("the leading rail is not on the page");
+        details.open = true;
+        return (document.querySelector(panel)?.getAnimations() ?? []).flatMap((animation) =>
+          animation instanceof CSSTransition ? [animation.transitionProperty] : [],
+        );
+      },
+      [LEADING, LEADING_PANEL] as [string, string],
+    );
+
+    expect(properties).toContain("translate");
   });
 });
 

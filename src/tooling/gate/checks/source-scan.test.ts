@@ -14,6 +14,7 @@ import {
   listDirectories,
   listFiles,
   resolveSources,
+  unresolvedSourceEntries,
 } from "./source-scan";
 
 describe("balancedSpan() — the bracket it closes", () => {
@@ -200,6 +201,37 @@ describe("resolveSources() — the walk a `!` entry narrows", () => {
 
   it("returns nothing when every source is excluded", () => {
     expect(resolveSources(root, ["src", "!src"], () => true)).toEqual([]);
+  });
+});
+
+describe("unresolvedSourceEntries() — the entry a walk would skip silently", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-unresolved-"));
+  const named = (sources: readonly string[], admits?: "directory" | "file or directory"): string[] =>
+    unresolvedSourceEntries(root, sources, admits).map((finding) => finding.message);
+
+  beforeAll(() => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "README.md"), "", "utf-8");
+  });
+
+  it("accepts a directory however it resolves — bare, with a trailing `/`, or with a leading `./`", () => {
+    expect(named(["src", "src/", "./src"])).toEqual([]);
+  });
+
+  it("names every entry that resolves to nothing, beside one that does", () => {
+    expect(named(["src", "srcc", "lib/"])).toEqual([
+      "`sources` entry `srcc` names no directory under the root",
+      "`sources` entry `lib/` names no directory under the root",
+    ]);
+  });
+
+  it("refuses a file where only a directory is walked, and accepts one where a file is", () => {
+    expect(named(["README.md"])).toEqual(["`sources` entry `README.md` names no directory under the root"]);
+    expect(named(["README.md", "docs"], "file or directory")).toEqual(["`sources` entry `docs` names no file or directory under the root"]);
+  });
+
+  it("judges no `!` exclusion, which narrows a walk rather than declaring one", () => {
+    expect(named(["src", "!src/gone"])).toEqual([]);
   });
 });
 

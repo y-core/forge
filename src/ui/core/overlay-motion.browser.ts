@@ -2,42 +2,39 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { Collapsible } from "./collapsible";
 import { createIcon } from "./icon";
 import { Popover } from "./popover";
 
 const ICON = createIcon("/sprite.svg");
 
-const CSS = { css: ["./ui/assets/css/forge-ui.css"] };
-
-// Specs get no Tailwind build, so what a consumer's `starting:` and `transition-discrete` classes
-// compile to is written out here.
-const MOTION = `<style>
+const FIXTURE = `<style>
   body { margin: 0; }
   [data-slot~="popover-trigger"] { position: fixed; top: 200px; left: 120px; }
-  [data-slot~="popover-content"] {
-    opacity: 1;
-    translate: 0 0;
-    transition: opacity 300ms linear, translate 300ms linear, display 300ms allow-discrete, overlay 300ms allow-discrete;
-  }
-  @starting-style { [data-slot~="popover-content"]:popover-open { opacity: 0; translate: 0 8px; } }
-  [data-slot~="popover-content"]:not(:popover-open) { opacity: 0; translate: 0 8px; }
 </style>`;
+
+const DISCLOSURE = `<style>
+  [data-slot~="collapsible-content"] { display: block; block-size: 60px; }
+</style>`;
+
+const CONSUMER_MOTION =
+  "translate-y-0 opacity-100 not-open:translate-y-2 not-open:opacity-0 motion-safe:transition-[opacity,translate,display,overlay] motion-safe:transition-discrete motion-safe:duration-300 motion-safe:ease-linear motion-safe:starting:open:translate-y-2 motion-safe:starting:open:opacity-0";
 
 function markup(): Promise<string> {
   return render(
     Popover({
       children: [
         Popover.Trigger({ for: "tips", children: "Tips" }),
-        Popover.Content({ id: "tips", label: "Tips", side: "bottom", children: "Body" }),
+        Popover.Content({ id: "tips", label: "Tips", side: "bottom", class: CONSUMER_MOTION, children: "Body" }),
       ],
     }),
   );
 }
 
 async function open(page: Page): Promise<void> {
-  await mount(page, `${MOTION}${await markup()}`, CSS);
+  const html = await markup();
+  await mount(page, `${FIXTURE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
   await page.click('[data-slot~="popover-trigger"]');
 }
 
@@ -120,10 +117,6 @@ test.describe("overlay motion is the platform's", () => {
   });
 });
 
-const DISCLOSURE = `<style>
-  [data-slot~="collapsible-content"] { display: block; block-size: 60px; }
-</style>`;
-
 test.describe("the disclosure height animation", () => {
   // The one place `forge-ui-interaction-no-motion-on-layout` permits animating a layout property,
   // and it is only expressible because `interpolate-size` makes `auto` an interpolable keyword.
@@ -136,7 +129,7 @@ test.describe("the disclosure height animation", () => {
         ],
       }),
     );
-    await mount(page, `${DISCLOSURE}${html}`, CSS);
+    await mount(page, `${DISCLOSURE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
 
     // The shipped rules, read off the pseudo-element rather than assumed from the source file.
     const declared = await page.evaluate(() => {

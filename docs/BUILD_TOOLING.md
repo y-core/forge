@@ -6,9 +6,9 @@ audience: internal
 
 # Build Tooling
 
-> Owns forge's developer-facing command surface: the CLI framework (`tooling/cli`), the verification gate (`tooling/gate`) and the release workflow
-> (`tooling/release`). Everything under `src/tooling/` runs on a developer's machine, never in a Worker; membership in that container _is_ the
-> exemption from the Web-APIs-only rule ([`NAMESPACES.md`][namespaces-4a] §4a).
+> Owns forge's developer-facing command surface: the CLI framework (`tooling/cli`), the verification gate (`tooling/gate`), the release workflow
+> (`tooling/release`) and the working-tree strip (`tooling/strip`). Everything under `src/tooling/` runs on a developer's machine, never in a
+> Worker; membership in that container _is_ the exemption from the Web-APIs-only rule ([`NAMESPACES.md`][namespaces-4a] §4a).
 >
 > Defers to: [`ASSET_PIPELINE.md`][ap] for the asset build these commands drive and the generated module it writes;
 > [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d for that exemption; [`TESTING.md`][canon-testing-6] §6 for the gate's tiers and flags.
@@ -34,8 +34,12 @@ audience: internal
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
+- §2l Forge's Own Release Proves the Demonstrator Still Demonstrates Every Component: the consumer spec `release:gate` runs, and its side effect
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
 - §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
+- §4 tooling/strip — Reducing a Demonstrator to Its Skeleton: one manifest, one output, every refusal before a write
+- §4a The Manifest Names Markers, Never Content: why a seam is matched on a comment its line carries
+- §4b The Gate Row Verifies the Skeleton It Produced: what `validate-strip` runs, and why at `standard`
 
 ---
 
@@ -296,9 +300,8 @@ assembled at run time, or a gate embedded in a larger CLI.
 **One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a task closes on; `verify --mode quality` is the
 writing loop — every row that judges the source without running it — and `verify --full` (sugar for `--mode full`) adds everything, including the
 steps needing a machine prerequisite. Verbs sharing every flag and differing only in a membership filter are a mode by definition, and modelling
-them as separate verbs costs a duplicated binding file per repo, a
-`gate` config field, and a superset invariant that must be _tested_ rather than being true by construction. **A bare `verify` means `standard`**
-because `verify` is "the gate": the cheap run is the one that has to be asked for.
+them as separate verbs costs a duplicated binding file per repo, a `gate` config field, and a superset invariant that must be _tested_ rather than
+being true by construction. **A bare `verify` means `standard`** because `verify` is "the gate": the cheap run is the one that has to be asked for.
 
 **A dependency's absence is answered by the mode, not the table.** A step carries one `requires` — tool, probe, install hint — and the runner asks
 the probe once: a `quality` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the design-system steps
@@ -340,19 +343,15 @@ half — because `Step.cmd` is one executable, not a shell line, and splitting t
 invocation broke. `--config` goes on the bindings invocation only, since runtime types do not depend on the wrangler config.
 
 **The options are the fleet's actual disagreements, and nothing else.** `assetOut` exists because the emitter writes nothing useful without `--out`;
-`wranglerTypes: false` exists because one app declares its binding types by hand. The two `.types/` paths are baked in — an option nobody varies is
-surface for nothing, the same argument that keeps the runner's temp-dir prefix hardcoded (§2f).
+`wranglerTypes: false` because one app declares its binding types by hand. Omitting `assetConfig` drops the asset rows — a shorter table, not a
+step that succeeds vacuously. The two `.types/` paths are baked in: an option nobody varies is surface for nothing, like the temp-dir prefix (§2f).
 
-**`presets.test.ts` pins every emitted command verbatim.** The preset's contract is "these are the commands the fleet runs", which is only
-assertable literally — a table that type-checks but names a command no app can run is a preset nobody can adopt, and no structural assertion catches
-it.
+**`presets.test.ts` pins every emitted command verbatim**, because the contract is "these are the commands the fleet runs": only a literal
+assertion catches a table that type-checks but names a command no app can run.
 
-**Every preset step is prerequisite-free and on the `quality` tier**, so the whole preset is legal in a quality run
-([`TESTING.md`][testing-6c] §6c). A `requires` added to any of them would break that for every app at once, which is why `presets.test.ts` asserts
-the absence as a property.
-
-`assetConfig` is optional and omitting it drops the `types:assets` step entirely — an app with no asset pipeline gets a shorter table, not a step
-that succeeds vacuously.
+**A row's tier follows [`TESTING.md`][testing-6c] §6c, and `forge verify --list` prints it** — `quality` if it judges the source, `standard` if it
+runs it, `full` if it needs a prerequisite never worth waiting for or runs a second gate. The default table declares no `requires`, so it runs whole
+on any machine with the dependencies installed; `presets.test.ts` asserts that absence, since one added there would bind every app at once.
 
 ### 2h. Roots Are Stated or Derived, Never Discovered
 
@@ -493,6 +492,19 @@ swapped a published dependency for a working copy, and the failure mode — a bu
 the worst kind to diagnose. Because it is a command, a plain `bun i` restores the pinned tag and the override has to be asked for again, which is
 the behaviour a consumer can reason about.
 
+### 2l. Forge's Own Release Proves the Demonstrator Still Demonstrates Every Component
+
+**`release:gate`, the command `config/release.ts` hands `forge release`, runs `verify:full` and then the demonstrator's coverage spec against this
+checkout's packed tarball.** `src/tooling/dev/coverage.ts` syncs the sibling `../starter` through `syncForge` (§2k) and runs
+`tests/unit/showcase/coverage.fixture.test.tsx` there. The spec's output passes through, and the closing error names the owing repository: add the
+missing demo there, or excuse the component in its coverage-missing list with the task that owes it. A missing sibling or a moved spec fails before
+anything is synced, naming the path it looked for.
+
+**The sibling, not a pinned ref:** a pin goes stale, this workspace cannot reach `github.com`, and the sibling is what `bun run dev:forge` pairs
+with. The trade-off is that its working tree runs as it stands, so a red spec there blocks a forge release — narrowed to the one named spec. It is
+not a `full` row because CI has no sibling. **It leaves the starter's `node_modules/@y-core/forge` holding this checkout's pack**, the state
+`bun run dev:forge` leaves; `bun i` there restores the pinned tag. The gate says so on every outcome after the sync, pass or fail.
+
 ---
 
 ## 3. The Compatibility-Flag Posture Every Forge App States
@@ -529,6 +541,60 @@ taken as an override of something already checked.
 An unstated set, a value that is not a list of names, an omitted flag and a stated contradiction — `nodejs_compat` beside `no_nodejs_compat` — are
 each reported on their own, and each finding carries the literal line that fixes it. `config.require` overrides the set for a project with a
 different posture; forge itself ships the step rather than running it, having no `wrangler.jsonc` of its own.
+
+---
+
+## 4. tooling/strip — Reducing a Demonstrator to Its Skeleton
+
+**`forge strip <dir>` copies the working tree into a fresh directory, minus the directories and marked lines a strip manifest names.** The manifest
+is the module an application default-exports `defineStripConfig({...})` from — `strip.ts` in its `config/` unless `--config` names another — and
+`@y-core/forge/tooling/strip` publishes both the verb and that helper. Its use is a demonstrator application whose remainder, with the demonstration
+removed, is the skeleton a new application starts from. The manifest is the whole of forge's understanding of that split: forge knows nothing about
+what a directory means, only that the manifest named it.
+
+The working tree is what `git ls-files --cached --others --exclude-standard` lists — tracked and untracked files alike, minus what `.gitignore`
+excludes and what has been deleted from disk — so a skeleton carries no `node_modules`, no build output and no local secret the demonstrator
+ignores. The manifest the strip loaded is left out too, since nothing in the skeleton reads it; a seam naming it is refused.
+
+**One manifest, one output.** There is no tier, no profile argument and no un-strip. A second level of stripping is built when a consumer has a
+second level, not in anticipation of one.
+
+**Every refusal happens before anything is read or written.** A directory the working tree holds nothing under, a seam file the tree does not
+hold, that lies inside a removed directory or that is a symbolic link — whose edit would write through to the file it points at — a path beneath a
+symbolic link, which a stale index lists and whose copy would land wherever the link points, a marker that matches no line, a nested repository or
+submodule, and a target that is a file or already holds something are each refused. A strip that quietly removes nothing is the worst outcome:
+the skeleton imports a directory that is gone, and fails far from the cause. A failed copy removes what it wrote and every parent it created.
+
+### 4a. The Manifest Names Markers, Never Content
+
+**A seam deletes every line of its file that ends with its marker — a comment such as `/* strip:showcase */` — and nothing else.** A match on a
+line's content stops matching the moment the line is reformatted, and then removes nothing. A marker survives any reformatting that keeps the
+comment on its line, and a marker that stops matching is an error rather than a no-op, so the drift is loud at the next strip. The manifest
+refuses a marker that is not a comment, and a line carrying the marker anywhere but at its end — inside a string, say — is kept.
+
+**A marked line in a file the manifest does not list is an error.** The strip reads every kept text file for a line ending with any manifest
+marker, and refuses one that is not a seam: otherwise that line survives into the skeleton, and nothing reports it unless it happens to import
+something the strip removed.
+
+Every other byte of the file is kept, its final newline included, so a skeleton differs from its demonstrator by exactly the marked lines and the
+removed directories.
+
+### 4b. The Gate Row Verifies the Skeleton It Produced
+
+**`cloudflareWorkerSteps({ strip: true })` appends `validate-strip`, a `full`-tier row that strips into a temporary directory and runs the
+skeleton's own gate there.** A manifest can be satisfied and still produce a skeleton that does not build — a seam left unmarked beside a removed
+directory it imports — and only running the skeleton's gate finds that. The verb itself still stops at the tree; the row is what verifies it.
+
+**The row runs the skeleton's `standard` tier, never `full`.** The skeleton's step table still carries `validate-strip` when the demonstrator's
+does, so a `full` run inside the skeleton would strip it again. `standard` holds every row that judges and runs the code, without the recursion.
+
+**The skeleton borrows the demonstrator's `node_modules` through a symlink, and the row unlinks it before removing the temporary tree.** Installing
+afresh would make the row a network operation; removing the tree with the link still in place would let the recursive removal follow it into the
+demonstrator's installed dependencies. Where the preset names an asset config, the row builds the skeleton's assets first, since its typecheck
+reads the generated manifest.
+
+**Every command runs with `FORGE_APP_ROOT` set to the temporary tree and `NODE_PRESERVE_SYMLINKS=1`**, so a verb that defaults its root from
+that variable resolves the skeleton, and a module resolved through the linked `node_modules` keeps its in-tree path rather than its real one.
 
 ---
 

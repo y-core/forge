@@ -11,12 +11,14 @@ import {
   devBoundaryStep,
   exportsStep,
   exposureStep,
+  importBoundaryStep,
   formatStep,
   jsxStep,
   lintStep,
   markdownStep,
   modernCssStep,
   ssrBoundaryStep,
+  stripStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -115,6 +117,12 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push(ssrBoundaryStep({ root, ...options.ssrBoundary }));
   }
 
+  // Opt-in for the same reason: which trees are one-way, and which files may cross into them, is a
+  // repository's own rule.
+  if (options.importBoundary !== undefined) {
+    steps.push(importBoundaryStep({ root, ...options.importBoundary }));
+  }
+
   // Opt-in: the audit refuses to report a green gate that measured nothing, so it needs the pairs a
   // repository actually draws.
   if (options.contrast !== undefined) {
@@ -142,6 +150,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   if (options.db) steps.push(...dbSchemaStep({ root }));
   if (options.browser) steps.push(browserStep({ tier: "full" }));
   if (options.workerd) steps.push(workerdStep({ tier: "full" }));
+  if (options.strip) steps.push(stripStep({ root, ...(options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut }) }));
 
   return steps;
 }

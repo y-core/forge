@@ -1,7 +1,7 @@
 // The chrome components' markup names the `menu` and `toolbar` scopes, which `ui/core/client`
 // registers — an app importing only this entry would otherwise resume neither.
 import "../core/client";
-import { ownerDocument, ownerWindow, safeStorage } from "../client/dom";
+import { eventTarget, ownerDocument, ownerWindow, safeStorage } from "../client/dom";
 import { mountNavDrawer } from "../client/drawer";
 import { registerScope } from "../client/resume";
 import { computed, createSignal, effect, withOwner } from "../client/signal";
@@ -132,12 +132,18 @@ registerScope<"closeNav">(NAVBAR_SCOPE, {
       }
     });
 
-    const onFiltersEvent = (event: Event) => {
+    const applyFilters = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (filters && Array.isArray(detail)) filters.value = detail as string[];
     };
+    // Per bar on the root, since a document listener misses a shadow-hosted bar's uncomposed dispatch
+    // and sees a composed one retargeted to the host; the document keeps only its own dispatches.
     const doc = ownerDocument(root);
-    doc.addEventListener(NAVBAR_FILTERS_EVENT, onFiltersEvent);
+    const onDocumentFilters = (event: Event) => {
+      if (eventTarget(event) === doc) applyFilters(event);
+    };
+    root.addEventListener(NAVBAR_FILTERS_EVENT, applyFilters, { capture: true });
+    doc.addEventListener(NAVBAR_FILTERS_EVENT, onDocumentFilters);
 
     // `~=` because `data-slot` is a token list: `slotToken` appends an inherited token when a
     // `Navbar` is composed under another compound, and an exact match would skip those bars.
@@ -148,7 +154,8 @@ registerScope<"closeNav">(NAVBAR_SCOPE, {
     return () => {
       disposeDrawer?.();
       disposeCollapse?.();
-      doc.removeEventListener(NAVBAR_FILTERS_EVENT, onFiltersEvent);
+      root.removeEventListener(NAVBAR_FILTERS_EVENT, applyFilters, { capture: true });
+      doc.removeEventListener(NAVBAR_FILTERS_EVENT, onDocumentFilters);
     };
   },
   on: {

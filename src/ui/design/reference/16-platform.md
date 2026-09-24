@@ -208,7 +208,8 @@ Default: declare `scroll-behavior` and clear a sticky header with `scroll-margin
 `behavior: 'smooth'` option or `offsetTop` arithmetic — unless one call site must animate while the rest of the document stays instant, which the
 declarative property cannot express because it also governs the reader's own scrolling. <!-- rule:forge-ui-platform-smooth-scroll -->
 `mountScrollSpy` from `@y-core/forge/ui/client` marks which section the reader is in; the scrolling itself is the browser's, and the header offset
-is `scroll-margin` rather than a number subtracted from a measured `offsetTop`.
+is `scroll-margin` rather than a number subtracted from a measured `offsetTop`, and `mountScrollSpy` reads that same declaration, so the offset is
+stated once.
 
 Default: page a slide track with scroll snap and `::scroll-button()` rather than stepping `scrollLeft`, calling `.scrollBy()`, or translating the
 track by an index — unless every slide must advance by exactly one index whatever its width, since snapping steps by snap position and a track of

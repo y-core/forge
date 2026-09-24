@@ -59,12 +59,9 @@ export function classesOf(html: string, slot: string): string[] {
   return match[1].replaceAll("&amp;", "&").split(" ");
 }
 
-/** The token sheets a themed spec mounts, so the two showcase specs cannot name a different pair. */
-export const THEME_TOKEN_CSS = ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css"];
-
-/** A colour token as the `#rrggbb` the browser paints it. */
-export function paintedToken(page: Page, property: string): Promise<string> {
-  return paintedHex(page, `var(${property})`);
+/** Every class any element in `html` names, un-escaped back from HTML — the candidates its stylesheet compiles from. */
+export function renderedClasses(html: string): string[] {
+  return [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").replaceAll("&amp;", "&").split(" ").filter(Boolean));
 }
 
 // Painted through a canvas because `light-dark()` resolves at used-value time and a non-legacy

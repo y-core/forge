@@ -66,7 +66,7 @@ function channelDistance(a: string, b: string): number {
   return worst;
 }
 
-/** A grid over the whole space the customiser can reach, plus the degenerate ends. */
+/** A grid over the whole space the dials can reach, plus the degenerate ends. */
 function sample(): { l: number; c: number; h: number }[] {
   const points: { l: number; c: number; h: number }[] = [];
   for (let l = 0; l <= 1.0001; l += 0.1) {

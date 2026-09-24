@@ -3,30 +3,24 @@ import type { Page } from "@playwright/test";
 
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { ScrollArea } from "./scroll-area";
-
-// The test page loads no Tailwind, so without these stubs nothing overflows and every case below
-// passes vacuously.
-const VIEWPORT_STYLE = "[data-slot~='scroll-area-viewport'] { height: 100%; max-height: inherit; overflow: auto; }";
 
 // A root sized by `h-*`: the height is definite, so `h-full` alone already binds the viewport.
 const DEFINITE_STYLES = `<style>
   [data-slot~='scroll-area'] { height: 96px; width: 192px; }
-  ${VIEWPORT_STYLE}
 </style>`;
 
 // A root sized by `max-h-*` — how the log viewer uses it. The height is indefinite, so `h-full` collapses to
 // `auto` and only the inherited max-height stops the viewport growing to its content and spilling out.
 const BOUNDED_STYLES = `<style>
   [data-slot~='scroll-area'] { max-height: 96px; width: 192px; }
-  ${VIEWPORT_STYLE}
 </style>`;
 
 async function markup(styles: string = DEFINITE_STYLES): Promise<string> {
   const rows = Array.from({ length: 40 }, (_, i) => jsx("p", { children: `row ${i}` }));
   const html = await render(ScrollArea({ id: "area", children: ScrollArea.Viewport({ id: "viewport", label: "Rows", children: rows }) }));
-  return `${styles}${html}`;
+  return `${styles}<style>${await compiledCss(renderedClasses(html))}</style>${html}`;
 }
 
 function scrollTop(page: Page): Promise<number | undefined> {

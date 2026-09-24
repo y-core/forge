@@ -73,6 +73,7 @@ A fact that is stable and short — a naming convention, a posture, a boundary �
 | CSRF and Turnstile field names | `src/form/constants.ts` |
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
 | The database host config's fields and their defaults | `DbHostConfig` in `src/tooling/db/types.ts` |
+| The strip manifest's shape | `StripConfigSchema` in `src/tooling/strip/types.ts` |
 | Bash allowlist patterns, including the exit-check literal | `.claude/settings.local.json` `permissions.allow` |
 
 ### 2b. Enforced Rules
@@ -87,7 +88,7 @@ table, the committed module is the row — `class-groups.ts` and `design-scale.t
 | Owns | File |
 | --- | --- |
 | Barrel rules as _enforced_ | `src/tooling/gate/checks/exports.ts` + `src/tooling/gate/checks/barrel-parse.ts` |
-| The build-time boundary as _enforced_ | `src/tooling/gate/checks/build-time-boundary.ts` |
+| The build-time boundary as _enforced_ | `src/tooling/gate/checks/import-boundary.ts` |
 | The namespace graph as _enforced_ | `src/tooling/gate/checks/namespace-graph.ts` + `src/tooling/gate/checks/namespace-graph-parse.ts` |
 | Governing-doc format as _enforced_ | `warden/src/checks/docs.ts` |
 | `@source` coverage as _enforced_ | `src/tooling/gate/checks/css-sources.ts` |
@@ -135,7 +136,6 @@ restates a naming rule or a handler's plan.
 | Accepted contrast exemptions, their pinned values and reasons | `src/ui/contracts/theme/contrast-accepted.ts` |
 | Theme dial fields, parameters, ranges, units and fallbacks | `src/ui/contracts/theme/theme-contract.ts` |
 | The dialled shape properties and the values they take | `SHAPE_PROPERTIES` and `shapeVars` in `src/ui/contracts/theme/theme-contract.ts` |
-| The showcase's demo coverage manifest, and the gaps it excuses | `src/ui/show/coverage.fixture.ts` + `src/ui/show/coverage-missing.fixture.ts` |
 | The glyph names the auth views draw, which a consumer's sprite must cover | `AuthIconName` in `src/auth/web/types.ts` |
 | Every English accessible name forge falls back to, and the word read for each step state | `src/ui/contracts/labels.ts` |
 

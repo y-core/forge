@@ -160,7 +160,7 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 | Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `docs/` | [`UI_DESIGN_GUIDANCE.md`][udg-5a] §5a |
 | Build-time module — ask "does this drive an external builder, or is it one?" | drives one → `src/tooling/assets`; **is** one → the namespace owning the artifact | [`ASSET_PIPELINE.md`][ap-2c] §2c |
 | A relaxation production must not hold (a skipped guard, an error detail, a test credential) | `dev` as a `DevAllowance` grant — never a boolean on the production option | [`NAMESPACES.md`][namespaces-5i] §5i |
-| Developer-facing tool — a command, a gate check, a lint rule, a release step, a D1 verb | `src/tooling/{cli,term,gate,lint,release,cf,assets,db}` — never Worker-reachable | [`NAMESPACES.md`][namespaces-5g] §5g |
+| Developer-facing tool — a command, a gate check, a lint rule, a release step, a D1 verb | `src/tooling/{cli,term,gate,lint,release,strip,cf,assets,db}` — never Worker-reachable | [`NAMESPACES.md`][namespaces-5g] §5g |
 
 [ag-5c]: warden/canon/shared/AGENT_GUIDE.md#5c-the-agent-roster-is-reconciled-both-ways
 [ag-6c]: warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary

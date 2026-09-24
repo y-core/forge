@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, posix, relative, resolve, sep } from "node:path";
 
+import { fail } from "../finding";
+import type { Finding } from "../types";
 import type { CommentSpan } from "./types";
 
 /** The suffixes that mark a file test-only. The one list — every check that must not judge a test reads it. */
@@ -27,6 +29,27 @@ export function collectFiles(root: string, dir: string, accept: (name: string) =
   };
   walk(base);
   return out.sort();
+}
+
+/** A finding for each `sources` entry naming no `admits` under `root`; a `!` exclusion is not judged. */
+export function unresolvedSourceEntries(
+  root: string,
+  sources: readonly string[],
+  admits: "directory" | "file or directory" = "directory",
+): Finding[] {
+  return sources
+    .filter((entry) => !entry.startsWith("!"))
+    .filter((entry) => {
+      const full = resolve(root, entry);
+      if (!existsSync(full)) return true;
+      const stat = statSync(full);
+      return !(stat.isDirectory() || (admits === "file or directory" && stat.isFile()));
+    })
+    .map((entry) =>
+      fail(`\`sources\` entry \`${entry}\` names no ${admits} under the root`, {
+        detail: ["every `sources` entry must exist, or the tree it declares is never scanned while the rest pass green"],
+      }),
+    );
 }
 
 /** The immediate file names under `base` matching `accept`, sorted. `base` is absolute. @public */

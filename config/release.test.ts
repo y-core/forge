@@ -19,15 +19,18 @@ const RELEASE_ONLY = ["validate-changelog", "test:browser", "test:workerd", "db:
 
 describe("the gate a release runs", () => {
   it("names the script rather than the binary, which is what tells an unrunnable gate from a failing one", () => {
-    expect(release.gateCommand).toEqual(["bun", "run", "verify:full"]);
+    expect(release.gateCommand).toEqual(["bun", "run", "release:gate"]);
   });
 
-  it("names a script package.json declares, and one that selects the full tier", () => {
+  it("names a script that runs the full tier first, then the demonstrator's coverage spec against this checkout", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
     const script = release.gateCommand?.[2] ?? "";
+    const gate = scripts[script] ?? "";
 
     expect(Object.hasOwn(scripts, script)).toBe(true);
-    expect(scripts[script]).toContain("--full");
+    expect(gate.split("&&")[0]?.trim()).toBe("bun run verify:full");
+    expect(scripts["verify:full"]).toContain("--full");
+    expect(gate).toContain("src/tooling/dev/coverage.ts ../starter tests/unit/showcase/coverage.fixture.test.tsx");
   });
 
   // A step whose `requires` probe fails is skipped below `full` and failed at `full`, so re-tiering

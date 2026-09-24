@@ -135,7 +135,7 @@ export interface ScrollSpyOptions {
   root: Element;
   /** Narrows which links under `root` are spied on. @default "a[href^='#']" */
   linkSelector?: string;
-  /** `rootMargin` for the observer; the default biases toward the section at the top of the viewport. */
+  /** `rootMargin` for the observer; by default the band opens just below the offset the page declares with `scroll-padding-top` and its targets' `scroll-margin-top`. */
   rootMargin?: string;
 }
 

@@ -7,7 +7,6 @@ export {
   assetManifestStep,
   assetRootStep,
   browserStep,
-  buildTimeBoundaryStep,
   chromiumBundleStep,
   classGroupsStep,
   classOrderStep,
@@ -26,6 +25,7 @@ export {
   jsxStep,
   menuNamingStep,
   iccProfileStep,
+  importBoundaryStep,
   lintPluginStep,
   lintStep,
   markdownStep,
@@ -33,6 +33,7 @@ export {
   namespaceGraphStep,
   packagingStep,
   ssrBoundaryStep,
+  stripStep,
   testStep,
   typeAwareLintStep,
   checkStep,
@@ -56,8 +57,8 @@ export { checkAssetRoot } from "./checks/asset-root";
 export { hasChromium } from "./checks/browser";
 export { egressProxy, resolveChromiumPath } from "./checks/chromium";
 export { hasWorkerd } from "./checks/workerd";
-export type { BuildTimeBoundaryCheckConfig } from "./checks/types";
-export { buildTimeSubpaths, checkBuildTimeBoundary, isBuildTime } from "./checks/build-time-boundary";
+export type { ImportBoundaryCheckConfig } from "./checks/types";
+export { checkImportBoundary, guardedSubpaths, isGuarded } from "./checks/import-boundary";
 export type { ClassGroupsCheckConfig } from "./checks/types";
 export { checkClassGroups, deriveTable, FORGE_STATE_RECIPES, writeClassGroups } from "./checks/class-groups";
 export type { ClassGroupTable, RootRow } from "./checks/types";
@@ -214,6 +215,8 @@ export {
 } from "./checks/source-scan";
 export { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./checks/ssr-boundary";
 export type { SsrBoundaryCheckConfig } from "./checks/types";
+export { checkStrip } from "./checks/strip";
+export type { StripCheckConfig, StripRunner } from "./checks/types";
 export type { GateCommandConfig } from "./types";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 export type { CheckResult, Finding, FindingLevel } from "./types";

@@ -98,7 +98,7 @@ export function queryAcross<E extends Element>(root: Element | Document | Docume
   return queryTrees<E>(shadowTrees(root), selector);
 }
 
-/** An element by id, resolved in the tree `node` lives in rather than in the document. */
+/** An element by id, resolved in the tree `node` lives in rather than in the document. @public */
 export function elementById(node: Node, id: string): HTMLElement | null {
   if (!id) return null;
   const root = node.getRootNode() as Partial<Document>;

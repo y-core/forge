@@ -313,6 +313,106 @@ test.describe("navbar scope — auth filters", () => {
     expect(await visible(page)).toEqual(["Account"]);
   });
 
+  async function mountTwoNavbars(page: Page): Promise<void> {
+    const bar = (id: string) => render(Navbar({ config: CONFIG, resolveHref: (k: string) => `/${k}`, icon: navIcon, activeFilters: ["user"], id }));
+    await mount(page, `${await bar("first")}${await bar("second")}`, EXPOSE);
+    await page.evaluate(() => window.forgeResume.resume());
+  }
+
+  function visibleByBar(page: Page): Promise<{ first: string[]; second: string[] }> {
+    return page.evaluate(() => {
+      const labels = (id: string) =>
+        [...document.querySelectorAll<HTMLElement>(`#${id} [data-filter]`)].filter((el) => !el.hidden).map((el) => el.textContent ?? "");
+      return { first: labels("first"), second: labels("second") };
+    });
+  }
+
+  test("a non-bubbling dispatch on one bar re-syncs that bar only", async ({ page }) => {
+    await mountTwoNavbars(page);
+
+    await page.evaluate(() => document.getElementById("first")?.dispatchEvent(new CustomEvent("navbar:filters", { detail: ["admin"] })));
+
+    expect(await visibleByBar(page)).toEqual({ first: ["Admin"], second: ["Account"] });
+  });
+
+  test("a non-bubbling dispatch on the other bar re-syncs it and leaves the first alone", async ({ page }) => {
+    await mountTwoNavbars(page);
+
+    await page.evaluate(() => document.getElementById("second")?.dispatchEvent(new CustomEvent("navbar:filters", { detail: ["admin"] })));
+
+    expect(await visibleByBar(page)).toEqual({ first: ["Account"], second: ["Admin"] });
+  });
+
+  test("a dispatch on the document re-syncs every bar", async ({ page }) => {
+    await mountTwoNavbars(page);
+
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent("navbar:filters", { detail: ["admin"] })));
+
+    expect(await visibleByBar(page)).toEqual({ first: ["Admin"], second: ["Admin"] });
+  });
+
+  test("a dispatch on an element outside every bar is ignored even when it bubbles to the document", async ({ page }) => {
+    await mountTwoNavbars(page);
+
+    await page.evaluate(() => document.body.dispatchEvent(new CustomEvent("navbar:filters", { detail: ["admin"], bubbles: true })));
+
+    expect(await visibleByBar(page)).toEqual({ first: ["Account"], second: ["Account"] });
+  });
+
+  async function mountShadowAndLightNavbars(page: Page): Promise<void> {
+    const bar = (id: string) => render(Navbar({ config: CONFIG, resolveHref: (k: string) => `/${k}`, icon: navIcon, activeFilters: ["user"], id }));
+    await mount(page, `<div id="host"></div>${await bar("light")}`, EXPOSE);
+    await page.evaluate(
+      (html) => {
+        const host = document.getElementById("host");
+        if (host) host.attachShadow({ mode: "open" }).innerHTML = html;
+        window.forgeResume.resume();
+      },
+      await bar("shadowed"),
+    );
+  }
+
+  function visibleByTree(page: Page): Promise<{ shadowed: string[]; light: string[] }> {
+    return page.evaluate(() => {
+      const labels = (tree: ParentNode | null | undefined) =>
+        [...(tree?.querySelectorAll<HTMLElement>("[data-filter]") ?? [])].filter((el) => !el.hidden).map((el) => el.textContent ?? "");
+      return { shadowed: labels(document.getElementById("host")?.shadowRoot), light: labels(document.getElementById("light")) };
+    });
+  }
+
+  for (const composed of [false, true]) {
+    test(`a ${composed ? "composed" : "non-composed"} dispatch on a bar inside a shadow root re-syncs that bar only`, async ({ page }) => {
+      await mountShadowAndLightNavbars(page);
+
+      await page.evaluate(
+        (init) => document.getElementById("host")?.shadowRoot?.getElementById("shadowed")?.dispatchEvent(new CustomEvent("navbar:filters", init)),
+        { detail: ["admin"], bubbles: composed, composed },
+      );
+
+      expect(await visibleByTree(page)).toEqual({ shadowed: ["Admin"], light: ["Account"] });
+    });
+
+    test(`a ${composed ? "composed" : "non-composed"} dispatch on a light-DOM sibling leaves the shadow-hosted bar alone`, async ({ page }) => {
+      await mountShadowAndLightNavbars(page);
+
+      await page.evaluate((init) => document.getElementById("light")?.dispatchEvent(new CustomEvent("navbar:filters", init)), {
+        detail: ["admin"],
+        bubbles: composed,
+        composed,
+      });
+
+      expect(await visibleByTree(page)).toEqual({ shadowed: ["Account"], light: ["Admin"] });
+    });
+  }
+
+  test("a dispatch on the document re-syncs a shadow-hosted bar along with the light-DOM one", async ({ page }) => {
+    await mountShadowAndLightNavbars(page);
+
+    await page.evaluate(() => document.dispatchEvent(new CustomEvent("navbar:filters", { detail: ["admin"] })));
+
+    expect(await visibleByTree(page)).toEqual({ shadowed: ["Admin"], light: ["Admin"] });
+  });
+
   test("teardown stops the filter effect writing hidden on a later state write", async ({ page }) => {
     const html = await render(Navbar({ config: CONFIG, resolveHref: (k: string) => `/${k}`, icon: navIcon, activeFilters: ["user"] }));
     await mount(page, html, EXPOSE);

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseCallableExports } from "./barrel-parse";
-import { collectFiles, isTestSource } from "./source-scan";
+import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { CoLocationCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -54,6 +54,8 @@ export function checkCoLocation(config: CoLocationCheckConfig): CheckResult {
   const exempt = config.exempt ?? new Map<string, string>();
   const walked = config.sources.flatMap((dir) => collectFiles(config.root, dir, () => true));
   if (walked.length === 0) return scannedNothing(`\`${config.sources.join("`, `")}\` matched no file`, "co-location");
+  const unresolved = unresolvedSourceEntries(config.root, config.sources);
+  if (unresolved.length > 0) return checkResult(unresolved, "");
   const present = new Set(walked);
   const modules: Module[] = walked.filter((file) => needsTest(basename(file))).map((file) => ({ file, candidates: testCandidates(file) }));
 

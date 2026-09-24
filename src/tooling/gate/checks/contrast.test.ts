@@ -52,7 +52,7 @@ function fixture(light: string, options: FixtureOptions = {}): ContrastCheckConf
 }
 
 describe("checkContrast() — the floor", () => {
-  it("fails a pair below the floor that rounds up to it, which the customiser also fails", () => {
+  it("fails a pair below the floor that rounds up to it, which `liveRatios` also fails", () => {
     // 4.4994:1 — `toFixed(2)` prints it as 4.50, so the message reads as a near-miss and the
     // verdict must still be red. Rounding before the comparison is what made the two disagree.
     const result = checkContrast(fixture("#158a00"));

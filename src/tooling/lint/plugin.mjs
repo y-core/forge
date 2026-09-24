@@ -651,14 +651,15 @@ var a11yOneLiveRegion = {
 // src/tooling/lint/rules/catalog-wrong-raw-input.ts
 var RAW_CONTROLS = /* @__PURE__ */ new Set(["select", "input", "textarea", "button"]);
 var catalogWrongRawInput = {
-  meta: { type: "problem", docs: { description: "The showcase renders the component the corpus points at, never the raw control it wraps." } },
+  meta: { type: "problem", docs: { description: "Composed markup renders the component the corpus points at, never the raw control it wraps." } },
   create(context) {
     const report = reporter(context, "forge-ui-catalog-wrong-raw-input");
     return {
       JSXOpeningElement(node) {
         const tag = openingTag(node);
         if (!RAW_CONTROLS.has(tag)) return;
-        report(`raw \`<${tag}>\` in the showcase \u2014 render the \`ui/core\` component the corpus points at`, node.loc);
+        if (tag === "input" && statedString(attributeNamed(node, "type")?.value) === "hidden") return;
+        report(`raw \`<${tag}>\` in composed markup \u2014 render the \`ui/core\` component the corpus points at`, node.loc);
       }
     };
   }

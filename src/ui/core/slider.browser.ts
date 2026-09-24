@@ -2,44 +2,13 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount, paintedHex } from "../client/browser.fixture";
+import { compiledCss, mount, paintedHex, renderedClasses } from "../client/browser.fixture";
 import { Slider } from "./slider";
 
 const SLIDER = "[data-slot~='slider']";
 
-const CSS = { css: ["./ui/assets/css/theme-neutral.css", "./ui/assets/css/theme-base.css", "./ui/assets/css/forge-ui.css"] };
-
-const UTILITY_CSS: Record<string, string> = {
-  "h-control-md": "height: var(--control-h-md)",
-  "text-sm": "font-size: 0.875rem",
-  "h-22": "height: 5.5rem",
-  "w-8": "width: 2rem",
-  "w-full": "width: 100%",
-  "cursor-pointer": "cursor: pointer",
-  "appearance-none": "appearance: none",
-  "rounded-full": "border-radius: 3.40282e38px",
-  "bg-transparent": "background-color: transparent",
-  "[writing-mode:vertical-lr]": "writing-mode: vertical-lr",
-  "[direction:rtl]": "direction: rtl",
-  "state-busy": "",
-  "state-disabled": "",
-  "state-invalid": "",
-  "focus-ring": "",
-};
-
-function compileRenderedClasses(html: string): string {
-  const match = /class="([^"]*)"/.exec(html);
-  if (!match?.[1]) throw new Error("no class attribute on the rendered slider");
-  const declarations = match[1].split(" ").map((utility) => {
-    const css = UTILITY_CSS[utility];
-    if (css === undefined) throw new Error(`no compiled CSS for "${utility}" — add it to UTILITY_CSS`);
-    return css;
-  });
-  return `<style>${SLIDER} { ${declarations.filter((d) => d.length > 0).join("; ")} }</style>`;
-}
-
-function markup(html: string): string {
-  return `<style>body { margin: 0; background: rgb(255, 255, 255) }</style>${compileRenderedClasses(html)}
+async function markup(html: string): Promise<string> {
+  return `<style>body { background: rgb(255, 255, 255) }</style><style>${await compiledCss(renderedClasses(html))}</style>
     <div style="padding: 20px; width: 320px">${html}</div>`;
 }
 
@@ -93,10 +62,10 @@ async function measureTrack(page: Page, thickness: Thickness): Promise<number> {
 }
 
 test("the track is the same thickness horizontal and vertical", async ({ page }) => {
-  await mount(page, markup(await render(Slider({ min: 0, max: 10, value: 0 }))), CSS);
+  await mount(page, await markup(await render(Slider({ min: 0, max: 10, value: 0 }))));
   const horizontal = await measureTrack(page, "vertical");
 
-  await mount(page, markup(await render(Slider({ min: 0, max: 10, value: 0, orientation: "vertical" }))), CSS);
+  await mount(page, await markup(await render(Slider({ min: 0, max: 10, value: 0, orientation: "vertical" }))));
   const vertical = await measureTrack(page, "horizontal");
 
   expect(horizontal).toBe(8);

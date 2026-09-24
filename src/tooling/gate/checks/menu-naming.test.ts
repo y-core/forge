@@ -44,7 +44,7 @@ describe("triggerTargets", () => {
 
 describe("validateMenuNaming", () => {
   it("fails a triggered popup no trigger in the file targets, naming the id it promised", () => {
-    expect(messages("src/ui/show/components.tsx", `<Menu.Popup triggered id='show-context-menu-popup' coords>x</Menu.Popup>`)).toEqual([
+    expect(messages("src/ui/gallery/menus.tsx", `<Menu.Popup triggered id='show-context-menu-popup' coords>x</Menu.Popup>`)).toEqual([
       '`triggered` on id "show-context-menu-popup" — nothing in this file renders "show-context-menu-popup-trigger"; use `label` instead',
     ]);
   });
@@ -72,6 +72,14 @@ describe("checkMenuNaming", () => {
     expect({ ok: outcome.ok, message: outcome.findings[0]?.message }).toEqual({
       ok: false,
       message: "`no-such-directory` matched no module — refusing to report a green menu-naming gate that scanned nothing",
+    });
+  });
+
+  it("fails on a `sources` entry naming no directory, even beside one that finds files", () => {
+    const outcome = checkMenuNaming({ root: process.cwd(), sources: ["src", "no-such-directory"] });
+    expect({ ok: outcome.ok, messages: outcome.findings.map((finding) => finding.message) }).toEqual({
+      ok: false,
+      messages: ["`sources` entry `no-such-directory` names no directory under the root"],
     });
   });
 

@@ -15,6 +15,7 @@ import {
   lintStep,
   markdownStep,
   namespaceGraphStep,
+  stripStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -237,6 +238,20 @@ describe("workerdStep()", () => {
 
   it("probes for the runtime itself rather than spawning a command that could pass vacuously", () => {
     expect(workerdStep().requires?.probe).toBe(hasWorkerd);
+  });
+});
+
+describe("stripStep()", () => {
+  it("is the validate-strip row, on the full tier because it runs a whole second gate", () => {
+    const step = stripStep({ root: "/nowhere" });
+
+    expect(step.label).toBe("validate-strip");
+    expect(step.tier).toBe("full");
+  });
+
+  it("takes no tier override, since a lower tier would recurse into the gate it runs", () => {
+    // @ts-expect-error -- `tier` is not part of the options stripStep takes
+    expect(stripStep({ root: "/nowhere" }, { tier: "quality" }).tier).toBe("full");
   });
 });
 

@@ -314,7 +314,7 @@ function navbarTree(options: { drawer?: boolean; filters?: string[] } = {}) {
   doc.root.append(root);
 
   const hiddenByFilter = () => ({ member: member.hidden, admin: admin.hidden, anyone: anyone.hidden, nobody: nobody.hidden });
-  return { doc, bar, anyone, hiddenByFilter };
+  return { doc, root, bar, anyone, hiddenByFilter };
 }
 
 describe("navbar scope — auth filters", () => {
@@ -329,20 +329,24 @@ describe("navbar scope — auth filters", () => {
 
   // The listener count, not "nothing moved after release": disposing the effect owner already makes
   // a leaked listener invisible, so the outcome would hold with the removal deleted (TESTING.md §3d).
-  it("re-syncs on the filters event while resumed and takes its document listener off on release", () => {
+  it("re-syncs on the filters event while resumed and takes its root and document listeners off on release", () => {
     const tree = navbarTree({ filters: ["member"] });
+    const listening = () => ({
+      root: tree.root.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0,
+      document: tree.doc.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0,
+    });
     const release = resume(tree.doc as never);
-    const armed = tree.doc.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0;
+    const armed = listening();
 
     tree.doc.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: ["admin"] }));
     const live = tree.hiddenByFilter();
 
     release();
 
-    expect({ armed, live, released: tree.doc.listeners.get(NAVBAR_FILTERS_EVENT)?.length ?? 0 }).toEqual({
-      armed: 1,
+    expect({ armed, live, released: listening() }).toEqual({
+      armed: { root: 1, document: 1 },
       live: { member: true, admin: false, anyone: false, nobody: true },
-      released: 0,
+      released: { root: 0, document: 0 },
     });
   });
 
@@ -353,6 +357,73 @@ describe("navbar scope — auth filters", () => {
     tree.doc.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: "admin" }));
 
     expect(tree.hiddenByFilter()).toEqual({ member: false, admin: true, anyone: false, nobody: true });
+    release();
+  });
+});
+
+function twoNavbarTree() {
+  const { doc, el } = fakeTree();
+  (doc.defaultView as unknown as { matchMedia: () => FakeMql }).matchMedia = () => new FakeMql();
+
+  const navbar = () => {
+    const root = el("DIV", { "data-scope": NAVBAR_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify({ filters: ["member"] }) });
+    const member = el("A", { "data-filter": "member" });
+    const admin = el("A", { "data-filter": "admin" });
+    root.append(member, admin);
+    doc.root.append(root);
+    return { root, member, hidden: () => ({ member: member.hidden, admin: admin.hidden }) };
+  };
+  const first = navbar();
+  const second = navbar();
+  const outside = el("P");
+  doc.body.append(outside);
+  doc.root.append(doc.body);
+
+  const hidden = () => ({ first: first.hidden(), second: second.hidden() });
+  return { doc, first, second, outside, hidden };
+}
+
+describe("navbar scope — targeted filters", () => {
+  const seeded = { member: false, admin: true };
+  const repainted = { member: true, admin: false };
+
+  it("re-syncs only the bar the event is dispatched on", () => {
+    const tree = twoNavbarTree();
+    const release = resume(tree.doc as never);
+
+    tree.first.root.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: ["admin"] }));
+
+    expect(tree.hidden()).toEqual({ first: repainted, second: seeded });
+    release();
+  });
+
+  it("re-syncs only the bar that holds the element the event is dispatched on", () => {
+    const tree = twoNavbarTree();
+    const release = resume(tree.doc as never);
+
+    tree.second.member.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: ["admin"] }));
+
+    expect(tree.hidden()).toEqual({ first: seeded, second: repainted });
+    release();
+  });
+
+  it("re-syncs every bar when the event is dispatched on the document", () => {
+    const tree = twoNavbarTree();
+    const release = resume(tree.doc as never);
+
+    tree.doc.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: ["admin"] }));
+
+    expect(tree.hidden()).toEqual({ first: repainted, second: repainted });
+    release();
+  });
+
+  it("ignores an event dispatched on an element outside every bar", () => {
+    const tree = twoNavbarTree();
+    const release = resume(tree.doc as never);
+
+    tree.outside.dispatchEvent(new FakeEvent(NAVBAR_FILTERS_EVENT, { detail: ["admin"] }));
+
+    expect(tree.hidden()).toEqual({ first: seeded, second: seeded });
     release();
   });
 });

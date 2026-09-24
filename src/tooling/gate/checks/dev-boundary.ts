@@ -6,7 +6,7 @@ import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles, isTestSource } from "./source-scan";
+import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { DevBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -160,6 +160,8 @@ export function checkDevBoundary(config: DevBoundaryCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const files = sources.flatMap((dir) => collectFiles(config.root, dir, SCANNED));
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no source`, "dev-boundary");
+  const unresolved = unresolvedSourceEntries(config.root, sources);
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const findings: Finding[] = [...judgeMain(config)];
 

@@ -8,7 +8,7 @@ description: "The fleet canon, the sync that keeps a repository in step with it,
 The fleet's governing corpus, and the machinery that keeps a repository in step with it.
 
 `warden/` sits outside `src/` because it is not a runtime namespace and is never Worker-reachable. The import rule runs one way: warden may import
-up into `src/tooling/`, and nothing in `src/` may import warden. `buildTimeBoundaryStep` enforces it.
+up into `src/tooling/`, and nothing in `src/` may import warden. `importBoundaryStep` enforces it.
 
 ## Who Warden Is For
 

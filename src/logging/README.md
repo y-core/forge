@@ -282,7 +282,7 @@ A single call to `loadLogViewer` in a `definePage` loader is the entire mount â€
 ```ts
 import { definePage } from "@y-core/forge/app";
 import { kvLogChannel } from "@y-core/forge/logging";
-import { loadLogViewer } from "@y-core/forge/logging/show";
+import { loadLogViewer } from "@y-core/forge/logging/viewer";
 import { sessionCtx } from "@y-core/forge/session";
 import { chevronDownIcon } from "./ui/icons";
 

@@ -46,6 +46,7 @@ audience: consumer
 - §7f A Subpath That Is Not on the Barrel: why `@y-core/forge/testing/workerd` is imported by name
 - §7g elementOf() and the Markup Readers: the exact assertion on one element of a whole page
 - §7h matchTextSnapshot() — The Second Off-Barrel Subpath: what it writes, what it refuses, and what it never reads
+- §7i The Expected Coverage Set: the components a consumer's coverage manifest must declare, read off the barrels
 
 ---
 
@@ -146,7 +147,7 @@ leaves a window in which the new markup is fully readable and completely inert. 
 window, and the next interaction fires no request at all.
 
 Whether the poll's tick lands before or after the settle is a coin flip that CPU contention biases, which is what makes the resulting failure
-load-dependent rather than reproducible. `showcase.browser.ts` counts `htmx:afterSettle` on `document.body` and gates on the count. Raising
+load-dependent rather than reproducible. `resume.browser.ts` awaits `htmx:afterSettle` on `document.body` before it interacts. Raising
 `defaultSettleDelay` is how such a race is made deterministic while it is being diagnosed; production settle timing is never changed to suit a spec.
 
 ### 1e. Media Options and the Harness `test`
@@ -354,7 +355,7 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 | Input validation ok / issues | `src/app/action.test.ts`, `src/validation/format-issues.test.ts` |
 | Body size under / over, both `Content-Length` and streaming | `src/form/parse-form-data.test.ts`, `src/app/action.test.ts` |
 | Content-Type valid / invalid → 415 | `src/security/content-type.test.ts` |
-| Log-viewer access allow / deny → 403 | `src/logging/show/route.test.tsx` |
+| Log-viewer access allow / deny → 403 | `src/logging/viewer/route.test.tsx` |
 | Auth middleware valid / expired session | `src/auth/web/guards.test.ts` (anonymous redirect, deactivated user, store unavailable, admin and step-up refusals), `src/auth/web/identity.test.ts` (absolute lifetime, revocation barrier, missing established-at stamp) |
 
 **`isHxRequest` has no row.** It is a routing hint, not a security boundary, so there is no guard middleware to test — see [`HTMX.md`][htmx-7] §7.
@@ -384,7 +385,7 @@ and `browserStep` sitting above `dbSchemaStep` in the file does not put Chromium
 ## 7. Testing Namespace Utilities (`@y-core/forge/testing`)
 
 The `testing` namespace ships the fixtures every consumer suite would otherwise hand-roll. **Import them from the barrel** — consumer test code sits
-outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f and §7h are the stated exceptions, and
+outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f, §7h and §7i are the stated exceptions, and
 each is a published subpath of its own rather than a file reached past a barrel. `src/testing/README.md` teaches the fixtures by the task each
 one serves.
 
@@ -477,7 +478,7 @@ the same reason it declares the modules.
 **What makes the file legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that checks for a
 non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the Workers lib set,
 where `node:child_process` does not resolve. `src/testing` stays out of a Worker by reachability instead: it is one of `devBoundaryStep`'s
-`devOnlyDirs`, so no deployed file may import it, and `buildTimeBoundaryStep`'s `buildTimeDirs` pointedly leaves it out. A new file that wants Node
+`devOnlyDirs`, so no deployed file may import it, and `importBoundaryStep`'s `guarded` pointedly leaves it out. A new file that wants Node
 earns it the same way or not at all — the question to answer is whether anything shipped can reach it, and "it is only used in tests" is not that
 answer unless a boundary step says so.
 
@@ -525,6 +526,19 @@ rewrite — is disclosed by the report's header carrying both files' line counts
 spaces and a stray `\r` are what "files differ" is most useless about; the comparison itself is byte-exact and happens before any of that.
 
 `diff` carries every differing line and `report` is capped at `limit`, so a caller inspecting the data programmatically never fights the renderer.
+
+### 7i. The Expected Coverage Set — `@y-core/forge/testing/coverage`
+
+`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`, every component the `ui/core`, `ui/controls`, `ui/chrome` and `ui/server`
+barrels export, each as a `CoverageComponent` of `barrel`, `component` and `key`. A consumer's catalog test compares its own coverage manifest
+against it, so a component forge adds fails that test until it is demonstrated, rather than passing because nobody listed it.
+
+**It is off the `./testing` barrel because of what it loads.** Reading the set means importing all four UI barrels, and a suite that wants only
+a fake store should not pay for the whole component library. It needs no node module, so a Worker-typed suite imports it directly.
+
+**The set is read off the barrels, never listed.** A component is a capitalised function a barrel exports; constants and helpers beside it are
+not. `key` is `barrel/component`, the spelling a coverage manifest's own keys use, because `Input` names a component in both `core` and
+`controls`. The array and each entry are frozen and ordered by `key`, so a failure names the same component first on every run.
 
 [errors-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied

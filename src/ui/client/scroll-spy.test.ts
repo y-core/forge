@@ -47,9 +47,11 @@ class FakeObserver {
   disconnected = false;
 
   readonly callback: (records: Records[]) => void;
+  readonly init: IntersectionObserverInit | undefined;
 
-  constructor(callback: (records: Records[]) => void) {
+  constructor(callback: (records: Records[]) => void, init?: IntersectionObserverInit) {
     this.callback = callback;
+    this.init = init;
     FakeObserver.latest = this;
   }
 
@@ -69,7 +71,9 @@ class FakeObserver {
 class FakeDocument {
   readonly nodeType = 9;
   readonly ids = new Map<string, FakeElement>();
-  readonly defaultView = { IntersectionObserver: FakeObserver };
+  readonly documentElement = Object.assign(new FakeElement(this, 0), { clientHeight: 0 });
+  readonly scrollingElement = this.documentElement;
+  readonly defaultView = { IntersectionObserver: FakeObserver, getComputedStyle: () => ({ scrollPaddingTop: "auto", scrollMarginTop: "0px" }) };
 
   getElementById(id: string): FakeElement | null {
     return this.ids.get(id) ?? null;
@@ -149,6 +153,14 @@ describe("mountScrollSpy", () => {
     ]);
 
     expect(f.marked()).toEqual(["#two"]);
+  });
+
+  it("hands an explicit rootMargin to the observer unchanged", () => {
+    const f = fixture(["#one"]);
+
+    mountScrollSpy({ root: f.root, rootMargin: "10px 0px 0px 0px" });
+
+    expect(f.observer().init?.rootMargin).toBe("10px 0px 0px 0px");
   });
 
   it("marks nothing while no section intersects", () => {

@@ -21,12 +21,19 @@ const fixture = (open: boolean) => `
 </details>
 `;
 
+// A transition long enough that no case outlives it, on a property the platform animates discretely.
+const TRANSITION_STYLE = `<style>
+  #rail::details-content { content-visibility: visible }
+  #rail a { transition: visibility 1s }
+  #rail:not([open]) a { visibility: hidden }
+</style>`;
+
 const NARROW = { width: 500, height: 700 };
 const WIDE = { width: 900, height: 700 };
 
-async function mountRail(page: Page, size: { width: number; height: number }, open = true): Promise<void> {
+async function mountRail(page: Page, size: { width: number; height: number }, open = true, style = ""): Promise<void> {
   await page.setViewportSize(size);
-  await mount(page, fixture(open), { expose: { forgeViewportCollapse: "./ui/client/viewport-collapse" } });
+  await mount(page, `${style}${fixture(open)}`, { expose: { forgeViewportCollapse: "./ui/client/viewport-collapse" } });
   await page.evaluate((query) => {
     window.forgeToggles = 0;
     // Registered before the controller's own listener, so a dispatched `toggle` is counted whether or
@@ -40,6 +47,15 @@ async function mountRail(page: Page, size: { width: number; height: number }, op
 
 function isOpen(page: Page): Promise<boolean> {
   return page.evaluate(() => document.querySelector<HTMLDetailsElement>("#rail")?.open ?? false);
+}
+
+/** Every CSS transition running under the rail, by the property it animates. */
+function railTransitions(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    (document.querySelector("#rail")?.getAnimations({ subtree: true }) ?? []).flatMap((animation) =>
+      animation instanceof CSSTransition ? [animation.transitionProperty] : [],
+    ),
+  );
 }
 
 /** How many `toggle` events the rail dispatched; the spec coalesces a pending toggle task, so cases wait on this, not `open`. */
@@ -101,5 +117,29 @@ test.describe("mountViewportCollapse", () => {
     await page.setViewportSize(WIDE);
     await page.setViewportSize(NARROW);
     expect(await isOpen(page)).toBe(true);
+  });
+
+  test("lands the collapse it makes at mount rather than playing it", async ({ page }) => {
+    await page.setViewportSize(NARROW);
+    await mount(page, `${TRANSITION_STYLE}${fixture(true)}`, { expose: { forgeViewportCollapse: "./ui/client/viewport-collapse" } });
+
+    const settled = await page.evaluate((query) => {
+      window.forgeViewportCollapse.mountViewportCollapse({ selector: "#rail", query });
+      const rail = document.querySelector<HTMLDetailsElement>("#rail");
+      const link = document.querySelector("#rail a");
+      if (rail === null || link === null) throw new Error("the rail fixture is not on the page");
+      return { open: rail.open, transitions: rail.getAnimations({ subtree: true }).length, visibility: getComputedStyle(link).visibility };
+    }, QUERY);
+
+    expect(settled).toEqual({ open: false, transitions: 0, visibility: "hidden" });
+  });
+
+  test("still animates a collapse across the breakpoint after mount", async ({ page }) => {
+    await mountRail(page, WIDE, true, TRANSITION_STYLE);
+
+    await page.setViewportSize(NARROW);
+    await expect.poll(() => isOpen(page)).toBe(false);
+
+    expect(await railTransitions(page)).toContain("visibility");
   });
 });

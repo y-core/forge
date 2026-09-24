@@ -106,6 +106,16 @@ describe("capture()", () => {
     expect((mockSpawnSync.mock.calls[1]![2] as SpawnOpts).cwd).toBeUndefined();
   });
 
+  it("spawns with the env it is given, and with the process env when given none", () => {
+    fakeChild([]);
+    const env = { PATH: "/bin", FORGE_APP_ROOT: "/tmp/skeleton" };
+
+    capture("ls", [], { env }, mockSpawnSync);
+    capture("ls", [], undefined, mockSpawnSync);
+    expect((mockSpawnSync.mock.calls[0]![2] as SpawnOptions).env).toBe(env);
+    expect((mockSpawnSync.mock.calls[1]![2] as SpawnOptions).env).toBe(process.env);
+  });
+
   it("reports elapsed milliseconds", () => {
     fakeChild([]);
 

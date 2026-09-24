@@ -94,6 +94,12 @@ describe("checkPackaging()", () => {
     expect(result.findings[0]?.message).toContain("refusing to report a green packaging gate");
   });
 
+  it("fails on a `sources` entry naming no directory, even beside one that finds files", () => {
+    const result = run({ "src/ui/mod.ts": "export const nothing = 1;" }, { sources: ["src", "lib"] });
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `lib` names no directory under the root"]);
+  });
+
   it("names the exclusion to add in its remedy", () => {
     const result = run({
       "src/ui/mod.ts": "export const nothing = 1;",
@@ -121,7 +127,7 @@ describe("moduleImports()", () => {
 
 describe("fixtureName()", () => {
   it("names the convention's spelling for a module, keeping a .tsx extension", () => {
-    expect(fixtureName("src/ui/show/coverage.ts")).toBe("coverage.fixture.ts");
-    expect(fixtureName("src/ui/show/demos.tsx")).toBe("demos.fixture.tsx");
+    expect(fixtureName("src/ui/gallery/coverage.ts")).toBe("coverage.fixture.ts");
+    expect(fixtureName("src/ui/gallery/demos.tsx")).toBe("demos.fixture.tsx");
   });
 });

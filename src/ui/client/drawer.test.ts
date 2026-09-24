@@ -43,11 +43,38 @@ class FakeStyle {
   }
 }
 
+/** A frame clock the test advances by hand, in place of `requestAnimationFrame`. */
+class FakeFrames {
+  private nextId = 1;
+  readonly pending = new Map<number, (time: number) => void>();
+
+  readonly request = (callback: (time: number) => void): number => {
+    const id = this.nextId;
+    this.nextId += 1;
+    this.pending.set(id, callback);
+    return id;
+  };
+
+  readonly cancel = (id: number): void => {
+    this.pending.delete(id);
+  };
+
+  /** Paints one frame at `time`, running every callback queued before it. */
+  run(time: number): void {
+    const due = [...this.pending.values()];
+    this.pending.clear();
+    for (const callback of due) callback(time);
+  }
+}
+
 class FakeNode {
   readonly nodeType = 1;
   ownerDocument: FakeDocument | null = null;
+  /** Set while the node is still `visibility: hidden`, which the browser refuses focus to. */
+  refusesFocus = false;
 
   focus(): void {
+    if (this.refusesFocus) return;
     if (this.ownerDocument) this.ownerDocument.activeElement = this;
   }
 
@@ -81,7 +108,15 @@ class FakeDocument {
   readonly listeners = new Map<string, Set<(event: unknown) => void>>();
   activeElement: FakeNode | null = null;
 
-  readonly defaultView: { matchMedia?: ((query: string) => FakeMediaQueryList) | undefined };
+  readonly frames = new FakeFrames();
+  panelTransition = { transitionDuration: "0s", transitionDelay: "0s" };
+
+  readonly defaultView: {
+    matchMedia?: ((query: string) => FakeMediaQueryList) | undefined;
+    requestAnimationFrame: (callback: (time: number) => void) => number;
+    cancelAnimationFrame: (id: number) => void;
+    getComputedStyle: () => { transitionDuration: string; transitionDelay: string };
+  };
 
   constructor(media: FakeMediaQueryList, queries: string[]) {
     this.defaultView = {
@@ -89,6 +124,9 @@ class FakeDocument {
         queries.push(query);
         return media;
       },
+      requestAnimationFrame: this.frames.request,
+      cancelAnimationFrame: this.frames.cancel,
+      getComputedStyle: () => this.panelTransition,
     };
   }
 
@@ -487,5 +525,73 @@ describe("mountNavDrawer", () => {
     dispose();
 
     expect(f.overflow()).toBeUndefined();
+  });
+});
+
+describe("mountNavDrawer — a panel still hidden when it opens", () => {
+  it("retries a refused focus on the next frame, once the panel has become visible", () => {
+    const f = fixture(true);
+    const first = f.el.panel.items[0] as FakeNode;
+    first.refusesFocus = true;
+    mountNavDrawer({ element: f.element });
+
+    f.el.userToggle();
+    expect(f.doc.activeElement).toBeNull();
+
+    first.refusesFocus = false;
+    f.doc.frames.run(16);
+
+    expect(f.doc.activeElement).toBe(first);
+    expect(f.doc.frames.pending.size).toBe(0);
+  });
+
+  it("asks for no frame when the first focus lands", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+
+    f.el.userToggle();
+
+    expect(f.doc.frames.pending.size).toBe(0);
+  });
+
+  it("gives up once the panel's transition duration and delay have both run out", () => {
+    const f = fixture(true);
+    f.doc.panelTransition = { transitionDuration: "0s, 150ms", transitionDelay: "0.05s" };
+    (f.el.panel.items[0] as FakeNode).refusesFocus = true;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.doc.frames.run(1000);
+    f.doc.frames.run(1199);
+    expect(f.doc.frames.pending.size).toBe(1);
+
+    f.doc.frames.run(1200);
+
+    expect(f.doc.frames.pending.size).toBe(0);
+    expect(f.doc.activeElement).toBeNull();
+  });
+
+  it("drops a pending retry when the drawer closes before it lands", () => {
+    const f = fixture(true);
+    f.doc.panelTransition = { transitionDuration: "200ms", transitionDelay: "0s" };
+    (f.el.panel.items[0] as FakeNode).refusesFocus = true;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.el.userToggle();
+
+    expect(f.doc.frames.pending.size).toBe(0);
+  });
+
+  it("drops a pending retry on dispose", () => {
+    const f = fixture(true);
+    f.doc.panelTransition = { transitionDuration: "200ms", transitionDelay: "0s" };
+    (f.el.panel.items[0] as FakeNode).refusesFocus = true;
+    const dispose = mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    dispose();
+
+    expect(f.doc.frames.pending.size).toBe(0);
   });
 });

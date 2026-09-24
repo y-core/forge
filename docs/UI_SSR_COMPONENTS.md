@@ -59,9 +59,9 @@ is indexed by a _runtime value_; nesting it would force every consumer of the fl
 concept. `as const` needs no import and loses nothing: a new `StepState` member fails to compile at both read sites.
 
 **The `Navbar` landmark is carved out and holds no key.** An unnamed `<nav>` already announces as "navigation", so a constant default replaces a
-correct platform default with a guess — and gives two Navbars on one page the same name, which `show/components.test.tsx` catches under "gives every
-navigation landmark on every page a label, and no two the same". `aria-label` / `aria-labelledby` stay the consumer's, passed through. A key with no
-default would translate into a string forge never emits.
+correct platform default with a guess — and gives two Navbars on one page the same name, which the demonstrator's catalog spec (forge-starter
+`tests/unit/showcase/components.test.tsx`) catches under "gives every navigation landmark on every page a label, and no two the same".
+`aria-label` / `aria-labelledby` stay the consumer's, passed through. A key with no default would translate into a string forge never emits.
 
 **`Navbar`'s name is also deliberately not required at the type level, unlike every other container forge names.** `Tabs.List`, `ToggleGroup`,
 `Toolbar`, `Filter.Group` and `Popover.Content` all refuse to compile unnamed, because each renders a role that takes no name from its contents

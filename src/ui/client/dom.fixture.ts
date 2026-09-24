@@ -5,7 +5,7 @@ type Listener = (event: FakeEvent) => void;
 /** The event shape the controllers read: a type, a target, and the bits `preventDefault` needs. */
 export class FakeEvent {
   defaultPrevented = false;
-  target: FakeElement | null = null;
+  target: FakeElement | FakeDocument | null = null;
 
   readonly type: string;
 
@@ -19,7 +19,7 @@ export class FakeEvent {
   }
 
   composedPath(): FakeElement[] {
-    return this.target ? [this.target] : [];
+    return this.target instanceof FakeElement ? [this.target] : [];
   }
 }
 
@@ -63,13 +63,6 @@ export class FakeElement {
       this.children.push(kid);
     }
     return this;
-  }
-
-  // Modelled because `show/lazy-panel.ts` calls it rather than `append`, which a Worker type program
-  // resolves to HTMLRewriter's string-only signature.
-  appendChild(kid: FakeElement): FakeElement {
-    this.append(kid);
-    return kid;
   }
 
   remove(): void {
@@ -256,6 +249,7 @@ export class FakeDocument {
   }
 
   dispatchEvent(event: FakeEvent): void {
+    event.target ??= this;
     for (const listener of [...(this.listeners.get(event.type) ?? [])]) listener(event);
   }
 

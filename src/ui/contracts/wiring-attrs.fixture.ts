@@ -58,7 +58,7 @@ export const WIRING_ATTRS: Record<string, string> = {
   "data-swatch": "one painted step in a generated ramp",
   "data-scale-row": "one family's row of steps in the scale readout",
   "data-hex": "the resolved hex a swatch publishes for its readout",
-  "data-readout": "a live value the customiser writes as the dials move",
+  "data-readout": "a live value a customiser writes as the dials move",
   "data-pair": "one audited foreground/background pair in the contrast table",
   "data-ratio": "the measured ratio a pair publishes",
   "data-scheme-output": "the generated scheme file the page prints",

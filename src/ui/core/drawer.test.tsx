@@ -19,7 +19,7 @@ describe("Drawer", () => {
       ),
     ).toBe(
       '<dialog id="nav" data-slot="drawer" aria-labelledby="nav-title" closedby="any"' +
-        ' class="fixed m-0 flex flex-col border-field border-border bg-popover p-0 text-popover-foreground shadow-lg h-dvh max-h-none max-w-[85vw] w-96"' +
+        ' class="fixed m-0 flex-col border-field border-border bg-popover p-0 text-popover-foreground shadow-lg open:flex h-dvh max-h-none max-w-[85vw] w-96"' +
         ' data-side="left" data-note="a&amp;b&#39;s">R&amp;D&#39;s &lt;menu&gt;</dialog>',
     );
   });

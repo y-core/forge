@@ -465,3 +465,9 @@ export interface FakeDbIo extends DbIo {
   /** Persist paths in close order, which is what pins the obligations to close before a delete and before a spawn. */
   closed: string[];
 }
+
+/** How often a failure that clears on its own is attempted, and the wait before the first retry, which doubles after each. @internal */
+export interface BackoffPolicy {
+  readonly attempts: number;
+  readonly firstDelayMs: number;
+}

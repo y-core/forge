@@ -193,7 +193,7 @@ the corpus by the `lint` step — **all of it that renders markup, not `src/ui/`
 consumers can fail forge's own build: forge is held to the guidance it ships, and its worked examples most tightly of all, because an example that
 contradicts the rule beside it teaches the contradiction rather than the rule.
 
-The scope is the whole source tree because the corpus states rules about _markup_, and forge renders markup outside `ui/` — `logging/show/` is an
+The scope is the whole source tree because the corpus states rules about _markup_, and forge renders markup outside `ui/` — `logging/viewer/` is an
 entire surface. Narrowed to `ui/`, the second direction would be a claim wider than the check behind it. Where a rule
 is genuinely local to one directory, an `overrides` entry in `.oxlintrc.json` scopes it, because that scoping is part of what the rule means rather
 than a property of where a walk happens to start.

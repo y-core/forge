@@ -47,7 +47,7 @@ const DRAWER_BAR_CLASS = "max-md:bg-transparent max-md:backdrop-blur-none";
 const DRAWER_RAIL_CLASS = cn(`${DRAWER_BAR_CLASS} max-md:max-h-none max-md:overflow-visible`);
 
 const DRAWER_PANEL_BASE = cn(
-  "max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[transform,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-reduce:max-md:transition-none",
+  "max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[translate,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-safe:max-md:group-open:transition-[translate] motion-reduce:max-md:transition-none",
 );
 
 /** Which edge the panel slides from — derived from `placement`, never configured separately. */

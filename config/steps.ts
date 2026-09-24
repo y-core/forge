@@ -7,7 +7,6 @@ import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
   browserStep,
-  buildTimeBoundaryStep,
   chromiumBundleStep,
   classGroupsStep,
   classOrderStep,
@@ -23,6 +22,7 @@ import {
   exportsStep,
   formatStep,
   iccProfileStep,
+  importBoundaryStep,
   jsxStep,
   menuNamingStep,
   lintPluginStep,
@@ -95,11 +95,11 @@ export const STEPS: readonly Step[] = [
     packageName: pkg.name,
     exports: EXPORTS,
   }),
-  buildTimeBoundaryStep({
+  importBoundaryStep({
     root: ROOT,
     packageName: pkg.name,
     exports: EXPORTS,
-    buildTimeDirs: ["src/tooling", "src/ui/assets/build", "warden"],
+    guarded: ["src/tooling", "src/ui/assets/build", "warden"],
     sources: ["src"],
   }),
   devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/dev", "src/testing"] }),
@@ -178,7 +178,6 @@ export const STEPS: readonly Step[] = [
       ["design", "design corpus — markdown only, and its samples deliberately quote forbidden classes"],
       ["server", "SSR helpers that delegate to core/ components for all markup"],
     ]),
-    consumerScanned: new Map([["show", '@source "../../node_modules/@y-core/forge/src/ui/show";']]),
   }),
   cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }),
   wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }),

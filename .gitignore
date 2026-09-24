@@ -8,7 +8,7 @@
 .wrangler/
 
 bin/
-coverage/
+/coverage/
 node_modules/
 tmp/
 

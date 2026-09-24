@@ -5,6 +5,7 @@ import type { DeferredFinding } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
 import type { CompatibilityCheckConfig, ExposureCheckConfig } from "./checks/types";
 import type { ExportsMap } from "./checks/types";
+import type { ImportBoundaryCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
@@ -147,12 +148,16 @@ export interface CloudflareWorkerStepOptions {
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. */
   ssrBoundary?: Omit<SsrBoundaryCheckConfig, "root">;
+  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. */
+  importBoundary?: Omit<ImportBoundaryCheckConfig, "root">;
   /** Omit to emit no contrast row. */
   contrast?: Omit<ContrastCheckConfig, "root">;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
   design?: CloudflareWorkerDesignOptions;
   /** The markdown conventions to hold prose to; omit to emit no row. */
   markdown?: Omit<MarkdownCheckConfig, "root">;
+  /** Omit to emit no strip row; reads `config/strip.ts`. */
+  strip?: boolean;
 }
 
 /** The fields `forgeChecks` reads from the consuming package's `package.json`. @public */

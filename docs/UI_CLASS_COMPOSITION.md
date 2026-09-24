@@ -270,7 +270,7 @@ file a consumer replaces, and the mode wiring is the file they do not. Declaring
 controls forge cannot paint follow the theme rather than contradicting it.
 
 The generator that produces such a file — its dials, its pipeline, and the contrast audit it reports against — is [`THEME_GENERATION.md`][tg]'s. **A
-generated scheme is standalone-complete**: the customiser emits every property a scheme owns, because a file that is correct only when layered over
+generated scheme is standalone-complete**: `schemeCss` emits every property a scheme owns, because a file that is correct only when layered over
 forge's default is the same silent half-supply in a different shape.
 
 **The degradation is accepted rather than mitigated.** A browser without `light-dark()` holds the declaration as an uninterpretable token stream, so

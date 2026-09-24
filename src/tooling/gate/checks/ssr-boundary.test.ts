@@ -146,6 +146,14 @@ describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
     expect(result.summary).toBe("");
   });
 
+  it("fails on a `sources` entry naming no directory, even beside one that finds files", () => {
+    const root = fixtureRoot({ "src/ui/core/button.ts": "export const b = 1;\n" });
+    const result = checkSsrBoundary({ ...config(root), sources: ["src/ui", "src/auth"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `src/auth` names no directory under the root"]);
+  });
+
   it("reports a server file that imports the browser runtime, from a subdirectory the walk must descend into", () => {
     const root = fixtureRoot({
       "src/ui/client/signal.ts": "export const signal = 1;\n",

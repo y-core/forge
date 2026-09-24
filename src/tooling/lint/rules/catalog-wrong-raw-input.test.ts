@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { element, runRule } from "../lint.fixture.ts";
+import { attribute, container, element, literal, runRule } from "../lint.fixture.ts";
 import { catalogWrongRawInput } from "./catalog-wrong-raw-input.ts";
 
 describe("catalog-wrong-raw-input", () => {
@@ -9,7 +9,21 @@ describe("catalog-wrong-raw-input", () => {
       const found = runRule(catalogWrongRawInput, element(tag));
 
       expect(found).toHaveLength(1);
-      expect(found[0]).toContain(`raw \`<${tag}>\` in the showcase`);
+      expect(found[0]).toContain(`raw \`<${tag}>\` in composed markup`);
+    }
+  });
+
+  it("leaves a hidden input alone, quoted or in an expression container", () => {
+    expect(runRule(catalogWrongRawInput, element("input", attribute("type", literal("hidden"))))).toEqual([]);
+    expect(runRule(catalogWrongRawInput, element("input", attribute("type", container(literal("hidden")))))).toEqual([]);
+  });
+
+  it("reports an input of any visible type", () => {
+    for (const type of ["text", "checkbox"]) {
+      const found = runRule(catalogWrongRawInput, element("input", attribute("type", literal(type))));
+
+      expect(found).toHaveLength(1);
+      expect(found[0]).toContain("raw `<input>` in composed markup");
     }
   });
 

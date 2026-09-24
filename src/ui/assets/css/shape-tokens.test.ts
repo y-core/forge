@@ -25,7 +25,7 @@ describe("the shape tokens `theme-base.css` owns", () => {
     expect(SHAPE_TOKENS.length).toBeGreaterThan(0);
   });
 
-  it("is exactly the eight the docs and the showcase both count", () => {
+  it("is exactly the eight the docs count", () => {
     expect(SHAPE_TOKENS).toEqual([
       "--radius",
       "--radius-field",

@@ -112,16 +112,24 @@ declare module "node:fs" {
     mtimeMs: number;
     isDirectory(): boolean;
     isFile(): boolean;
+    isSymbolicLink(): boolean;
   }
   export function statSync(path: string): Stats;
+  export function lstatSync(path: string, options: { throwIfNoEntry: false }): Stats | undefined;
   export function realpathSync(path: string): string;
+  export function readlinkSync(path: string): string;
   export function mkdirSync(path: string, options?: { recursive?: boolean; mode?: number }): void;
   export function mkdtempSync(prefix: string): string;
   export function copyFileSync(src: string, dest: string): void;
-  export function cpSync(src: string, dest: string, options?: { recursive?: boolean }): void;
+  export function cpSync(
+    src: string,
+    dest: string,
+    options?: { recursive?: boolean; verbatimSymlinks?: boolean; errorOnExist?: boolean; force?: boolean },
+  ): void;
   export function renameSync(oldPath: string, newPath: string): void;
-  export function symlinkSync(target: string, path: string): void;
+  export function symlinkSync(target: string, path: string, type?: "dir" | "file" | "junction"): void;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
+  export function rmdirSync(path: string): void;
   export function unlinkSync(path: string): void;
   export function openSync(path: string, flags: string): number;
   export function closeSync(fd: number): void;

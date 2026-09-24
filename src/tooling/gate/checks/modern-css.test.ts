@@ -37,6 +37,13 @@ describe("checkModernCss() — the tree it walks", () => {
     ]);
   });
 
+  it("fails on a `sources` entry naming nothing, even beside one that finds files", () => {
+    const root = fixtureRoot({ "src/ui/a.css": LAYERED(".a {\n  color: red;\n}\n") });
+
+    expect(run(root, { sources: ["src/ui", "src/uii"] }).ok).toBe(false);
+    expect(messages(root, { sources: ["src/ui", "src/uii"] })).toEqual(["`sources` entry `src/uii` names no file or directory under the root"]);
+  });
+
   it("skips a subtree a `!` entry excludes", () => {
     const root = fixtureRoot({
       "src/ui/design/sample.css": LAYERED(".a {\n  margin-left: 1rem;\n}\n"),

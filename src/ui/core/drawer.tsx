@@ -49,7 +49,7 @@ interface DrawerTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" 
   children?: JSXNode | undefined;
 }
 
-const DRAWER_BASE = "fixed m-0 flex flex-col border-field border-border bg-popover p-0 text-popover-foreground shadow-lg";
+const DRAWER_BASE = "fixed m-0 flex-col border-field border-border bg-popover p-0 text-popover-foreground shadow-lg open:flex";
 
 const DRAWER_AXIS: Record<PhysicalSide, string> = {
   left: "h-dvh max-h-none w-80 max-w-[85vw]",

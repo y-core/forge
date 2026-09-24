@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { checkResult, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseMarkdown, renderMarkdown, validateMarkdown } from "./markdown-parse";
-import { excludedBy, resolveSources } from "./source-scan";
+import { excludedBy, resolveSources, unresolvedSourceEntries } from "./source-scan";
 import type { MarkdownCheckConfig } from "./types";
 
 const MARKDOWN = (name: string): boolean => name.endsWith(".md");
@@ -19,6 +19,8 @@ export function resolveMarkdownFiles(config: MarkdownCheckConfig): string[] {
 export function checkMarkdown(config: MarkdownCheckConfig): CheckResult {
   const files = resolveMarkdownFiles(config);
   if (files.length === 0) return scannedNothing(`\`${(config.sources ?? ["src"]).join("`, `")}\` matched no markdown file`, "markdown");
+  const unresolved = unresolvedSourceEntries(config.root, config.sources ?? ["src"], "file or directory");
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const findings: Finding[] = [];
   for (const file of files) {

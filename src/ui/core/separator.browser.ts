@@ -2,38 +2,13 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { Separator } from "./separator";
 
 const SEPARATOR = "[data-slot~='separator']";
 
-const UTILITY_CSS: Record<string, string> = {
-  "h-auto": "height: auto",
-  "h-full": "height: 100%",
-  "min-h-full": "min-height: 100%",
-  "self-stretch": "align-self: stretch",
-  "w-px": "width: 1px",
-  "border-0": "border-width: 0",
-  "bg-border": "background-color: rgb(0, 0, 255)",
-  "h-5": "height: 1.25rem",
-};
-
-function compileRenderedClasses(html: string): string {
-  const match = /class="([^"]*)"/.exec(html);
-  if (!match?.[1]) throw new Error("no class attribute on the rendered separator");
-  const declarations = match[1].split(" ").map((utility) => {
-    const css = UTILITY_CSS[utility];
-    if (css === undefined) throw new Error(`no compiled CSS for "${utility}" — add it to UTILITY_CSS`);
-    return css;
-  });
-  return `<style>${SEPARATOR} { ${declarations.join("; ")} }</style>`;
-}
-
-// Tailwind's preflight zeroes the UA's `hr` block margin; production pages never paint the inset box without it.
-const PREFLIGHT = "<style>hr { margin: 0 }</style>";
-
-function markup(html: string, rowStyle: string): string {
-  return `${PREFLIGHT}${compileRenderedClasses(html)}
+async function markup(html: string, rowStyle: string): Promise<string> {
+  return `<style>${await compiledCss(renderedClasses(html))}</style>
     <div id="row" style="display: flex; align-items: center; gap: 8px; ${rowStyle}">
       <button id="control" type="button" style="height: 34px; border: 0">Rename</button>
       ${html}
@@ -59,7 +34,7 @@ async function measure(page: Page): Promise<Boxes> {
 
 test("a vertical separator in an auto-height flex row has a visible height", async ({ page }) => {
   const html = await render(Separator({ orientation: "vertical" }));
-  await mount(page, markup(html, ""));
+  await mount(page, await markup(html, ""));
 
   const boxes = await measure(page);
 
@@ -69,7 +44,7 @@ test("a vertical separator in an auto-height flex row has a visible height", asy
 
 test("a vertical separator in a definite-height flex row still fills the line", async ({ page }) => {
   const html = await render(Separator({ orientation: "vertical" }));
-  await mount(page, markup(html, "height: 72px"));
+  await mount(page, await markup(html, "height: 72px"));
 
   const boxes = await measure(page);
 
@@ -79,7 +54,7 @@ test("a vertical separator in a definite-height flex row still fills the line", 
 
 test("a caller's explicit height wins over the base, which emits both", async ({ page }) => {
   const html = await render(Separator({ orientation: "vertical", class: "h-5" }));
-  await mount(page, markup(html, "height: 72px"));
+  await mount(page, await markup(html, "height: 72px"));
 
   const boxes = await measure(page);
 

@@ -55,6 +55,14 @@ describe("checkMarkdown()", () => {
     expect(result.findings[0]?.message).toBe("`docs` matched no markdown file — refusing to report a green markdown gate that scanned nothing");
   });
 
+  it("fails on a `sources` entry naming nothing, even beside one that finds files", () => {
+    const root = fixture({ "docs/a.md": CLEAN });
+    const result = checkMarkdown({ root, sources: ["docs", "README.md"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `README.md` names no file or directory under the root"]);
+  });
+
   it("writes nothing", () => {
     const root = fixture({ "docs/a.md": PADDED });
     checkMarkdown({ root, sources: ["docs"] });

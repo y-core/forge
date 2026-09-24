@@ -2,19 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { barrelComponents } from "../../testing/coverage/components";
 import { rootIdentifiers } from "../../tooling/gate/checks/design-parse";
 import * as chrome from "../chrome/mod";
 import * as controls from "../controls/mod";
 import * as core from "../core/mod";
 import { CATALOG_MISSING } from "./catalog-missing.fixture";
 
-function componentExports(barrel: Record<string, unknown>): string[] {
-  return Object.entries(barrel)
-    .filter(([name, value]) => /^[A-Z]/.test(name) && typeof value === "function")
-    .map(([name]) => name);
-}
-
-const PUBLISHED = [...new Set([core, controls, chrome].flatMap((barrel) => componentExports(barrel as Record<string, unknown>)))].sort();
+const PUBLISHED = [...new Set(barrelComponents({ chrome, controls, core }).map((entry) => entry.component))].sort();
 
 const catalog = readFileSync(resolve(import.meta.dir, "catalog.md"), "utf-8");
 

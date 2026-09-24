@@ -132,9 +132,9 @@
       "rules": { "forge/platform-logical-spacing": "off", "forge/platform-text-balance": "off" }
     },
     {
-      // The corpus rule is about the showcase, whose job is to demonstrate the component rather
-      // than the control it wraps; elsewhere a raw control is how a component is built.
-      "files": ["src/ui/show/**"],
+      // The rule holds page-level markup composed from `ui/core` to the component rather than the
+      // raw control it wraps; inside `ui/core` a raw control is how a component is built.
+      "files": ["src/auth/web/views/**", "src/logging/viewer/**"],
       "rules": { "forge/catalog-wrong-raw-input": "error" }
     },
     {

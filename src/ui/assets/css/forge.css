@@ -80,13 +80,6 @@
    Note the override point for a *per-mode* value is the **scale**, never the semantic token. Each
    semantic token is declared once and means the same thing in both modes; only a scale step carries
    a `light-dark()`. An app that sets `:root { --primary: … }` gets that value in both modes.
-
-   ── Rendering forge's own showcase ───────────────────────────────────────────
-
-   `@y-core/forge/ui/show` is demo markup, so the utilities it uses are not scanned by default. An app
-   that mounts it adds the source path itself, the same way it does for the log viewer:
-
-     @source "../../node_modules/@y-core/forge/src/ui/show";
   ────────────────────────────────────────────────────────────────────────────── */
 
 @import "./theme-neutral.css";
@@ -131,8 +124,8 @@
    `contracts` sounds type-only, but `menu-contract.ts` publishes a class *string*: a row built in
    the browser cannot invoke an SSR component, so the utilities it needs are written there.
 
-   `show` and `logging` are deliberately absent — both are opt-in surfaces an app mounts explicitly,
-   and an app that does not should not pay for their utilities. Each documents its own `@source` line.
+   `logging` is deliberately absent — an opt-in surface an app mounts explicitly, and an app that
+   does not should not pay for its utilities. It documents its own `@source` line.
 */
 @source "../../core";
 @source "../../chrome";

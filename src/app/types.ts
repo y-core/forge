@@ -288,7 +288,7 @@ export type SubmissionPipeline<S extends v.GenericSchema, Bindings = Record<stri
 // breaking change for every shell a consumer has already written.
 /** Which mount and page a shell is wrapping, so one shell can vary its chrome. @public */
 export interface ShellSlot {
-  /** The mountable rendering this page — `auth`, `showcase`, `logs`, or a consumer's own. */
+  /** The mountable rendering this page — `auth`, `logs`, or a consumer's own. */
   readonly mount: string;
   /** Which page of that mount, in the mount's own vocabulary. */
   readonly page: string;

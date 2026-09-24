@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, compiledCss, escapeClass, mount } from "../client/browser.fixture";
+import { classesOf, compiledCss, mount, paintedHex, renderedClasses } from "../client/browser.fixture";
 import { Switch } from "./switch";
 
 const TRACK = "[data-slot~='switch-track']";
@@ -11,36 +11,31 @@ const INPUT = "[data-slot~='switch-input']";
 
 const markup = (): Promise<string> => render(Switch({ children: "Snap to grid" }));
 
-function compileArbitraryVariant(cls: string): string {
-  const variant = cls.slice(1, cls.lastIndexOf("]:"));
-  return variant.replaceAll("_", " ").replace("&", `.${escapeClass(cls)}`);
+async function mountCompiled(page: Page): Promise<void> {
+  const html = await markup();
+  // Reduced motion reads the settled value: `motion-safe:transition-*` would otherwise leave it mid-interpolation.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mount(page, html);
+  await page.addStyleTag({ content: await compiledCss(renderedClasses(html)) });
 }
 
-async function acrossToggle(page: Page, css: string, selector: string, property: string): Promise<{ before: string; after: string }> {
+async function acrossToggle(page: Page, selector: string, property: string): Promise<{ before: string; after: string }> {
   return page.evaluate(
-    ([rule, target, prop, input]) => {
-      const style = document.createElement("style");
-      style.textContent = rule;
-      document.head.append(style);
-
+    ([target, prop, input]) => {
       const el = document.querySelector(target) as HTMLElement;
       const before = getComputedStyle(el).getPropertyValue(prop);
       document.querySelector<HTMLInputElement>(input)?.click();
       return { before, after: getComputedStyle(el).getPropertyValue(prop) };
     },
-    [css, selector, property, INPUT] as const,
+    [selector, property, INPUT] as const,
   );
 }
 
 test.describe("Switch — the checked paint reaches both halves of the control", () => {
   test("the thumb slides once the checkbox is checked", async ({ page }) => {
-    const html = await markup();
-    await mount(page, html);
+    await mountCompiled(page);
 
-    const cls = classesOf(html, "switch-thumb").find((name) => name.endsWith(":translate-x-4")) as string;
-    const css = `${compileArbitraryVariant(cls)} { transform: translateX(1rem) }`;
-
-    expect(await acrossToggle(page, css, THUMB, "transform")).toEqual({ before: "none", after: "matrix(1, 0, 0, 1, 16, 0)" });
+    expect(await acrossToggle(page, THUMB, "translate")).toEqual({ before: "none", after: "16px" });
   });
 
   test("the thumb is a descendant of the track, which is why a sibling-only selector misses it", async ({ page }) => {
@@ -61,15 +56,12 @@ test.describe("Switch — the checked paint reaches both halves of the control",
   });
 
   test("the track's peer-checked paint was never broken — it really is a sibling", async ({ page }) => {
-    const html = await markup();
-    await mount(page, html);
+    await mountCompiled(page);
+    const primary = await paintedHex(page, "var(--primary)");
 
-    const cls = classesOf(html, "switch-track").find((name) => name === "peer-checked:bg-primary") as string;
-    const css = `.${escapeClass(cls)}:is(:where(.peer):checked ~ *) { background-color: rgb(0, 0, 255) }`;
-
-    const colours = await acrossToggle(page, css, TRACK, "background-color");
-    expect(colours.before).not.toBe("rgb(0, 0, 255)");
-    expect(colours.after).toBe("rgb(0, 0, 255)");
+    const colours = await acrossToggle(page, TRACK, "background-color");
+    expect(await paintedHex(page, colours.before)).not.toBe(primary);
+    expect(await paintedHex(page, colours.after)).toBe(primary);
   });
 });
 

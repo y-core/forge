@@ -7,7 +7,7 @@ import type { CheckResult, Finding } from "../types";
 import { MODERN_CSS_DEFERRED } from "./modern-css-deferred";
 import { findModernCssViolations } from "./modern-css-parse";
 import { findModernCssSourceViolations } from "./modern-css-source-parse";
-import { resolveSources } from "./source-scan";
+import { resolveSources, unresolvedSourceEntries } from "./source-scan";
 import type { DeferredFinding } from "./types";
 import type { ModernCssFinding } from "./types";
 import type { ModernCssCheckConfig } from "./types";
@@ -30,6 +30,8 @@ export function checkModernCss(config: ModernCssCheckConfig): CheckResult {
   const files = resolveSources(root, sources, SCANNED);
 
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no stylesheet or source`, "modern-CSS");
+  const unresolved = unresolvedSourceEntries(root, sources, "file or directory");
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   // One read per file, not two: both passes below want the same text.
   const sourced = files.map((file) => [file, readFileSync(resolve(root, file), "utf-8")] as const);

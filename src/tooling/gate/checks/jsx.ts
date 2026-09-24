@@ -3,7 +3,7 @@ import { relative, resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { collectFiles, isTestSource } from "./source-scan";
+import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { JsxCheckConfig } from "./types";
 
 const DEFAULT_PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/jsx"] as const;
@@ -28,6 +28,8 @@ export function checkJsx(config: JsxCheckConfig): CheckResult {
   const pragmas = config.pragmas ?? DEFAULT_PRAGMAS;
   const files = resolveJsxSources(config);
   if (files.length === 0) return scannedNothing(`\`${(config.sources ?? ["src"]).join("`, `")}\` matched no \`.tsx\` file`, "jsx");
+  const unresolved = unresolvedSourceEntries(config.root, config.sources ?? ["src"]);
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const findings = files.flatMap((file) => validateJsxSource(relative(config.root, file), readFileSync(file, "utf-8"), pragmas));
 

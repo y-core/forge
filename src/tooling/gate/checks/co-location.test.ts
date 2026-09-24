@@ -87,6 +87,13 @@ describe("checkCoLocation() — the vacuity refusal", () => {
     expect(result.summary).toBe("");
   });
 
+  it("fails on a `sources` entry naming no directory, even beside one that finds files", () => {
+    const result = checkCoLocation({ root: fixtureRoot("src/ui/a.ts", "src/ui/a.test.ts"), sources: ["src/ui", "src/uii"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `src/uii` names no directory under the root"]);
+  });
+
   it("still judges a walk whose every module is exempt, because the raw walk is what it guards", () => {
     const result = checkCoLocation({
       root: fixtureRoot("src/ui/a.ts", "src/ui/a.test.ts"),

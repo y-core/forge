@@ -72,6 +72,24 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `lg`) that every other control takes, so a caller who passed `size={8}` for eight visible rows is
   now a type error rather than a silently resized control. The row count is the new `rows` prop.
 
+- **The build-time boundary check is now the import-boundary check.** `buildTimeBoundaryStep`,
+  `checkBuildTimeBoundary`, `isBuildTime`, `buildTimeSubpaths` and `BuildTimeBoundaryCheckConfig`
+  are `importBoundaryStep`, `checkImportBoundary`, `isGuarded`, `guardedSubpaths` and
+  `ImportBoundaryCheckConfig`; the config's `buildTimeDirs` is `guarded`, and `packageName` and
+  `exports` are now optional. The row's label is `validate-import-boundary`, so a script or a CI
+  job running `--only validate-build-time-boundary` must be respelled.
+
+- **`./logging/show` is now `./logging/viewer`.** It is the mountable log viewer, not a demo, and
+  `show` now means only removed demo code. Change the import specifier; `loadLogViewer`,
+  `LogViewerOptions` and `LogViewerAccess` are unchanged.
+
+- **`./ui/show` and `./ui/show/client` are removed, with no replacement.** forge no longer
+  publishes a component showcase or theme customiser — demo markup that shipped to every consumer;
+  the demonstrator now carries its own. An app that mounted it deletes the `registerShowcase` call,
+  the `@y-core/forge/ui/show/client` import and the `@source "…/src/ui/show"` line in its
+  stylesheet. The set of components a catalog must demonstrate stays published as
+  `COVERAGE_COMPONENTS` from `@y-core/forge/testing/coverage`.
+
 ### Added
 
 - **`purgeStaleTotpSecrets` and `authKeysRetirable`.** The first drops confirmed TOTP factors idle
@@ -98,9 +116,32 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`changelogSectionDigest` and `ReleaseCommandConfig.sectionsFile`.** The release records each
   section's prose digest in `config/changelog-sections.json`, so a later hand edit of a released
   section no longer matches what shipped.
+- **`elementById` on `ui/client`**, which resolves an id in the tree a node lives in, so an id
+  inside a shadow root is found where `document.getElementById` returns `null`.
 - **`Select` takes `rows` for a listbox that shows several options at once.** With `rows` set the
   control drops the chevron and fills its wrapper rather than taking a token height — `rows` is a
   floor on what is visible, not a fixed height. Shipped in 0.2.5 unrecorded.
+- **`@y-core/forge/testing/coverage`**, publishing `COVERAGE_COMPONENTS`: every component the
+  `ui/core`, `ui/controls`, `ui/chrome` and `ui/server` barrels export, keyed `barrel/component`.
+  A consumer's catalog test compares its coverage manifest against it, so a component a forge
+  upgrade adds fails that test until it is demonstrated.
+- **`cloudflareWorkerSteps` takes `importBoundary`**, a one-way boundary for a tree that is not
+  browser-only: nothing outside `guarded` may import it at value, save the exact root-relative
+  paths named as `crossings`. A crossing that names no file the walk judges fails the row, so a
+  renamed composition root cannot leave a dead exemption behind, and a `guarded` entry that is
+  mis-spelled or names no directory fails it too, rather than switching the rule off. It is
+  independent of `ssrBoundary`, and either may be set without the other.
+- **`forge strip <dir>` and `@y-core/forge/tooling/strip`.** The verb copies the working tree into
+  a fresh directory, minus the directories and marker-ended lines a `defineStripConfig` manifest
+  in `config/strip.ts` names. A marker must be a comment. A directory that names nothing, a marker
+  that matches no line, a seam file that is a symbolic link, a path beneath a symbolic link, a
+  marked line in a file that is not a seam and a nested repository are each refused before anything
+  is read or written, and a copy that fails partway removes what it wrote, the parent directories it
+  created included. The manifest the strip loaded is left out of the copy.
+- **`cloudflareWorkerSteps` takes `strip: true`**, adding `validate-strip` last in the `full` tier:
+  it strips into a temporary directory and runs the skeleton's own `standard` gate there. The row is
+  also `stripStep`, and the check behind it `checkStrip`.
+- **`capture` takes `env`**, the environment the child runs with, defaulting to `process.env`.
 
 ### Changed
 
@@ -129,6 +170,14 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **The release stages `config/changelog-sections.json`** on every run that promotes a changelog,
   whether or not `stageFiles` names it. It is forge's own write rather than a project's choice, and
   it is the one file `stageFiles` does not replace.
+- **`navbar:filters` can target one bar.** Dispatched on a navbar, or on anything inside one, the
+  event re-syncs that bar only, a bar inside an open shadow root included; dispatched on `document`,
+  it re-syncs every bar as before. An event dispatched on any other element and left to bubble to
+  `document` is now ignored, so a demo that targets its own bars no longer repaints the page's
+  navigation.
+- **`forge/catalog-wrong-raw-input` exempts `<input type="hidden">`.** A hidden field carries no
+  control, so there is no `ui/core` component to render in its place. Forge now holds its own auth
+  views to the rule as well as the log viewer.
 
 ### Fixed
 
@@ -150,9 +199,50 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`forge db` names the wrangler export it could not find.** Only `getPlatformProxy` was checked, so
   a wrangler missing `unstable_splitSqlQuery` failed at the first query as "query `SELECT…` failed"
   and the version diagnostic was lost.
+- **A `forge db` command reading a local database no longer fails because another one holds it.**
+  A batch refused for the SQLite lock answers with D1's `internal error; reference = …`, so
+  `db:status` run beside `db:migrate` failed most of the time. A refused batch is now retried on a
+  newly opened handle, up to five tries, 100 ms before the second and doubling. Only two kinds of
+  batch are retried: a handle's first batch, and a read-only batch at any point. A read-only batch
+  is one where every statement is a `SELECT`, an `EXPLAIN`, a `WITH` naming no write, or an
+  introspection `PRAGMA`. A write batch on a handle that has already answered is never replayed,
+  since it may have committed. **Known limit:** two commands that both write can still fail each
+  other there.
 - **A `Drawer` given both `open` and `openModal` no longer renders `open`.**
+- **A closed `Drawer` is `display: none` again.** Its `flex` utility beat the browser's own
+  `dialog:not([open])` rule, so the closed panel stayed laid out and only its slide kept it off
+  screen. Under reduced motion there is no slide, and the closed panel sat over the page's edge
+  and took its clicks. The panel is now `flex` only while open.
 - **A menu row keeps a focus indicator under forced colors.** Its cue was `focus-visible:bg-accent`,
   a colour change forced colors overrides outright, beside the `outline-none` every row carries.
+- **`mountScrollSpy` no longer marks the section above the one you jumped to when a sticky header
+  covers the top of the viewport.** The spy watched the top 30% of the viewport from its very top,
+  so the tail of the previous section, hidden behind the header, still counted as in view and won.
+  The band now opens just below the offset the page already declares — the root element's
+  `scroll-padding-top` plus the targets' largest `scroll-margin-top` — so the section a fragment
+  jump lands is the one marked, with nothing to configure. The band's top edge is also exclusive
+  now, so two adjacent sections no longer both count as in view at their shared boundary. An
+  explicit `rootMargin` still overrides the derived default.
+- **Opening a phone drawer moves focus to its first link.** The panel transitioned `visibility` in
+  both directions, so when the open handler moved focus the panel was still `hidden` and the browser
+  refused it — focus stayed on the toggle. The panel is now visible the moment it opens and hidden
+  only once it has slid shut. The slide itself never ran either: the panel transitioned `transform`,
+  which Tailwind v4's `translate-x-*` does not set. It now slides.
+- **`mountNavDrawer` moves focus into a panel of your own that transitions `visibility` on open.**
+  Such a panel is still `hidden` when the drawer opens, so the browser refused the focus and it
+  stayed on the toggle. A refused focus is now retried each frame until the panel shows, for no
+  longer than the panel's own transition duration plus delay.
+- **A disclosure `mountViewportCollapse` shuts at page load no longer animates shut.** On a phone,
+  both a drawer's panel and its backdrop played their close transition over the first frames of the
+  page: the scrim flashed, and a tap on a toggle in that window landed on the fading backdrop
+  instead. The collapse the controller makes at mount now finishes its CSS transitions at once; a
+  later collapse across the breakpoint still animates.
+- **A gate check no longer passes while one of its `sources` entries names nothing.** A missing
+  entry contributed no files, and the empty-scan refusal fires only when every entry is empty, so
+  `sources: ["src", "srcc"]` passed green with one declared tree never scanned. Every check that
+  takes `sources` now fails naming the entry — "`sources` entry `srcc` names no directory under the
+  root", or "no file or directory" for the checks that accept a file. A trailing `/` or leading `./`
+  still resolves, and a `!` exclusion is not judged.
 
 ---
 

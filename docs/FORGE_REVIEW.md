@@ -146,7 +146,7 @@ from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f and [`TEST_RUN
 does. **Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a genuine
 runtime-portability break.
 
-_The direction that matters most is already a gate step._ `validate-build-time-boundary` fails any runtime module that imports a build-time one, so
+_The direction that matters most is already a gate step._ `validate-import-boundary` fails any runtime module that imports a build-time one, so
 a review does not have to find that by hand; run this command for the case the step cannot see — a Node API used **inside** a runtime namespace
 without an import crossing any boundary.
 
@@ -227,10 +227,10 @@ re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-accessibi
 | Rule id | Why no command decides it |
 | --- | --- |
 | `forge-ui-accessible-name` | The name depends on the rendered subtree and on component internals a source scan cannot follow |
-| `forge-ui-heading-order` | Order is a property of the rendered document, not of one file — `compositions.tsx` correctly writes three `<h3>`s before its `<h2>` |
+| `forge-ui-heading-order` | Order is a property of the rendered document, not of one file — a composed section can correctly write several `<h3>`s before the `<h2>` its page places above them |
 | `forge-ui-hit-target` | Needs to know which element is interactive and what the unspecified axis resolves to at render |
 | `forge-ui-not-color-alone` | Turns on whether an icon and words _also_ convey the state |
-| `forge-ui-a11y-icon-plus-text` | Preferred form and permitted alternative are the same shape in source — the `aria-label` sites in `show/components.tsx` alone would fire |
+| `forge-ui-a11y-icon-plus-text` | Preferred form and permitted alternative are the same shape in source — a component catalog's `aria-label` sites alone would fire |
 | `forge-ui-a11y-label-element` | The trigger is "the design has no room for a visible label", a fact about the design and not about the markup |
 | `forge-ui-a11y-required-marker` | `Label`'s `required` prop already emits the marker, so no residual shape is left to match |
 | `forge-ui-a11y-reduced-motion-pair` | Depends on whether the settled state is already the untransitioned default |

@@ -10,8 +10,9 @@ Every suite for a forge app needs the same handful of fixtures: a request contex
 way the real ones do, a CSRF token that actually verifies, and a way to turn a component into the string you assert against. This namespace ships
 them.
 
-Import it from test files only. Everything is reached from the barrel except the two node-only helpers — the `wrangler dev` server and the fixture
-comparison — each of which has its own subpath and is deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
+Import it from test files only. Everything is reached from the barrel except three helpers — the `wrangler dev` server and the fixture comparison,
+which are node-only, and the expected coverage set, which loads every UI barrel. Each has its own subpath and is deliberately not re-exported
+([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 ---
 
@@ -296,6 +297,24 @@ or unwritable path is a `reason` with the original `Error` as `cause` — a brok
 **Assert on the report, not on `ok`.** `expect(outcome.ok).toBe(true)` tells a reviewer that something differed; the shape above puts the differing
 lines in the failure message.
 
+## Checking that every component is demonstrated
+
+`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`: every component the `ui/core`, `ui/controls`, `ui/chrome` and `ui/server`
+barrels export, each with a `key` of the form `core/Button`. Compare your catalog's own list against it, and a component a forge upgrade adds fails
+the test until you demonstrate it ([`TEST_RUNNERS.md`][testing-7i] §7i).
+
+```ts
+import { expect, test } from "bun:test";
+import { COVERAGE_COMPONENTS } from "@y-core/forge/testing/coverage";
+
+test("the catalog demonstrates every forge component", () => {
+  const demonstrated = new Set(CATALOG_DEMOS.map((demo) => `${demo.barrel}/${demo.name}`));
+  expect(COVERAGE_COMPONENTS.filter((entry) => !demonstrated.has(entry.key)).map((entry) => entry.key)).toEqual([]);
+});
+```
+
+**Qualify every name by its barrel.** `Input` is a component in both `core` and `controls`, so a list of bare names would count one demo for both.
+
 ---
 
 ## Gotchas
@@ -338,3 +357,4 @@ to survive a round trip through an unmodelled table hands the code its own store
 [testing-7e]: ../../docs/TEST_RUNNERS.md#7e-maphandler-and-testaction--single-route-registrar
 [testing-7f]: ../../docs/TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
 [testing-7h]: ../../docs/TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath
+[testing-7i]: ../../docs/TEST_RUNNERS.md#7i-the-expected-coverage-set--y-coreforgetestingcoverage

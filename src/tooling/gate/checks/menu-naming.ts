@@ -3,7 +3,7 @@ import { relative, resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { collectFiles, isTestSource } from "./source-scan";
+import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { MenuNamingCheckConfig } from "./types";
 
 const SCANNED = (name: string): boolean => (name.endsWith(".ts") || name.endsWith(".tsx")) && !isTestSource(name);
@@ -67,6 +67,8 @@ export function checkMenuNaming(config: MenuNamingCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const files = sources.flatMap((dir) => collectFiles(config.root, dir, SCANNED)).map((file) => resolve(config.root, file));
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no module`, "menu-naming");
+  const unresolved = unresolvedSourceEntries(config.root, sources);
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const findings = files.flatMap((file) => validateMenuNaming(relative(config.root, file), readFileSync(file, "utf-8")));
 

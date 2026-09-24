@@ -10,6 +10,7 @@ export {
   asElement,
   closestAcross,
   contains,
+  elementById,
   eventTarget,
   isRtl,
   ownerDocument,

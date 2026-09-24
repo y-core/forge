@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import type { D1DatabaseLike } from "../../storage/db/types";
 import { CliError } from "../cli/errors";
 import { persistRoot } from "./home";
-import type { DbIo, Home, Spawned } from "./types";
+import { retryWithBackoff } from "./retry";
+import { isReadOnlyBatch } from "./sql";
+import type { BackoffPolicy, DbIo, Home, Spawned } from "./types";
 
 /** Every `node_modules/.bin` on the way up from `from`, nearest first, so the app's wrangler wins over forge's own. */
 function binDirs(from: string): string[] {
@@ -48,6 +50,16 @@ export function missingWranglerExport(module: { getPlatformProxy?: unknown; unst
   return null;
 }
 
+/** Five tries of a refused batch, 100 ms before the second and doubling to 800 ms before the fifth. @internal */
+export const D1_BUSY_BACKOFF: BackoffPolicy = { attempts: 5, firstDelayMs: 100 };
+
+// workerd logs the SQLITE_BUSY behind this to its own stderr alone; what reaches this process is
+// D1's opaque internal error, with no cause naming the lock.
+/** True for the error a local D1 answers a batch with when another process held the database's lock. @internal */
+export function isD1BusyRefusal(error: unknown): boolean {
+  return error instanceof Error && /^D1_ERROR: .*\binternal error; reference = \w+/s.test(error.message);
+}
+
 // Imported rather than named at the top: wrangler is an optional peer, and a static import would
 // fail a consumer that installed forge without it before any verb could say so.
 async function openLocalD1(home: Home): Promise<LocalD1> {
@@ -79,6 +91,30 @@ async function openLocalD1(home: Home): Promise<LocalD1> {
 /** The real side effects: node's filesystem, a spawned wrangler, and the process environment. @internal */
 export function realDbIo(root: string, log: (line: string) => void = (line) => console.error(line)): DbIo {
   const handles = new Map<string, Promise<LocalD1>>();
+  const answered = new Set<string>();
+
+  function reach(home: Home, key: string): Promise<LocalD1> {
+    const held = handles.get(key);
+    if (held !== undefined) return held;
+    const opening = openLocalD1(home);
+    handles.set(key, opening);
+    // An open that failed holds nothing, so it is not kept: a later call opens again rather than
+    // meeting the first failure a second time, from wherever it next reaches this database.
+    void opening.catch(() => handles.delete(key));
+    return opening;
+  }
+
+  async function release(key: string): Promise<void> {
+    const opening = handles.get(key);
+    if (opening === undefined) return;
+    handles.delete(key);
+    answered.delete(key);
+    await opening.then(
+      (handle) => handle.dispose().catch((error: unknown) => log(`could not release the handle over ${key.split("\0")[2] ?? key}: ${error}`)),
+      () => {},
+    );
+  }
+
   const path = [...binDirs(root), ...binDirs(dirname(fileURLToPath(import.meta.url))), process.env.PATH ?? ""].join(delimiter);
   // `FORCE_COLOR: "0"`: bun 1.4 colourises a pipe, and `parseJsonOutput` reads a line starting with
   // an escape byte as "printed no JSON".
@@ -100,32 +136,34 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
         throw new CliError("invalid-args", `${home.label} (${home.database}) is deployed, and nothing reaches a deployed database in process`);
       }
       const key = handleKey(home);
-      let opening = handles.get(key);
-      if (opening === undefined) {
-        opening = openLocalD1(home);
-        handles.set(key, opening);
-        // An open that failed holds nothing, so it is not kept: a later call opens again rather than
-        // meeting the first failure a second time, from wherever it next reaches this database.
-        void opening.catch(() => handles.delete(key));
-      }
-      const handle = await opening;
-      const statements = sql.flatMap((text) => handle.split(text)).filter((statement) => statement.trim() !== "");
-      if (statements.length === 0) return [];
-      const answers = await handle.db.batch<Record<string, unknown>>(statements.map((statement) => handle.db.prepare(statement)));
+      const fresh = !answered.has(key);
+      let readOnly = false;
+      const answers = await retryWithBackoff(
+        async (tried) => {
+          // Nothing says workerd's D1 object reopens a database it failed to open, so a retry starts a new one.
+          if (tried > 1) await release(key);
+          const handle = await reach(home, key);
+          const statements = sql.flatMap((text) => handle.split(text)).filter((statement) => statement.trim() !== "");
+          if (statements.length === 0) return [];
+          readOnly = isReadOnlyBatch(statements);
+          const batch = handle.db.batch<Record<string, unknown>>(statements.map((statement) => handle.db.prepare(statement)));
+          const settled = await batch.catch((error: unknown) => {
+            if (!isD1BusyRefusal(error)) answered.add(key);
+            throw error;
+          });
+          answered.add(key);
+          return settled;
+        },
+        // A write batch on a handle that has answered may have committed before the refusal.
+        (error) => isD1BusyRefusal(error) && (fresh || readOnly),
+        D1_BUSY_BACKOFF,
+      );
       return answers.map((answer) => answer.results);
     },
     // Total, because every caller releases from a `finally`: one key's failure must not abandon the
     // handles after it, and an error raised here would replace the one the run is already failing on.
     async closeD1(home): Promise<void> {
-      for (const key of home === null ? [...handles.keys()] : [handleKey(home)]) {
-        const opening = handles.get(key);
-        if (opening === undefined) continue;
-        handles.delete(key);
-        await opening.then(
-          (handle) => handle.dispose().catch((error: unknown) => log(`could not release the handle over ${key.split("\0")[2] ?? key}: ${error}`)),
-          () => {},
-        );
-      }
+      for (const key of home === null ? [...handles.keys()] : [handleKey(home)]) await release(key);
     },
     exists: (p) => existsSync(p),
     readText: (p) => readFileSync(p, "utf-8"),

@@ -55,7 +55,7 @@ can load; both spellings export the plugin as `lintPlugin` and as the default ex
 | `a11y-live-politeness` | `forge-ui-a11y-live-politeness` | An `aria-live` that is not `polite`, or an `assertive` that states no reason |
 | `a11y-no-aria-readonly-on-button` | `forge-ui-a11y-no-aria-readonly-on-button` | `aria-readonly` on a role that carries no such state |
 | `a11y-one-live-region` | `forge-ui-a11y-one-live-region` | A second live region beside the page's one announcer |
-| `catalog-wrong-raw-input` | `forge-ui-catalog-wrong-raw-input` | A raw control where the showcase should render the component wrapping it |
+| `catalog-wrong-raw-input` | `forge-ui-catalog-wrong-raw-input` | A raw control in composed markup where the component wrapping it belongs |
 | `color-theme-no-raw-utility` | `forge-ui-color-theme-no-raw-utility` | A raw palette utility with no `dark:` counterpart in the same class list |
 | `color-token-only` | `forge-ui-color-token-only` | A colour utility naming a raw palette value instead of a theme token |
 | `data-slot-before-spread` | — | A literal `data-slot` written before a bare-identifier spread that clobbers it |
@@ -96,8 +96,9 @@ Some rules are local to a slice of the tree rather than universal, and an `overr
 ```
 
 Forge scopes these that way rather than turning them on everywhere: `optional-prop-undefined` to the components a consumer constructs prop values
-for, `catalog-wrong-raw-input` to the showcase, `exact-markup-assertion` to `src/ui`'s test files, and `sql-explicit-transaction` everywhere except
-`src/tooling` and the specs. Read `.oxlintrc.json` for the current scoping — it is the file the gate holds the register against.
+for, `catalog-wrong-raw-input` to the log viewer and the auth views, `exact-markup-assertion` to `src/ui`'s test files, and
+`sql-explicit-transaction` everywhere except `src/tooling` and the specs. Read `.oxlintrc.json` for the current scoping — it is the file the gate
+holds the register against.
 
 ---
 

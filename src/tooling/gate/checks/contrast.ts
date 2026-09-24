@@ -155,7 +155,7 @@ export function checkContrast(config: ContrastCheckConfig): CheckResult {
       findings.push(fail(`${measurement.token} (${measurement.mode}): ${side} \`${resolved.token}\` ${resolved.reason}`, { file: cssDir }));
     }
     if (measurement.ratio === undefined) continue;
-    // Unrounded, so the gate and the customiser — which compares the raw value — cannot disagree
+    // Unrounded, so the gate and a customiser — which compares the raw value — cannot disagree
     // about a pair within 0.005 of its floor. `toFixed(2)` below is for the message only.
     if (measurement.ratio >= measurement.floor) continue;
     const fg = typeof measurement.foreground === "string" ? measurement.foreground : "?";

@@ -7,6 +7,13 @@ const DEFAULT_QUERY =
 
 const mountedCollapses = new WeakMap<Element, () => void>();
 
+function finishTransitions(el: HTMLDetailsElement): void {
+  if (typeof el.getAnimations !== "function") return;
+  for (const animation of el.getAnimations({ subtree: true })) {
+    if ("transitionProperty" in animation) animation.finish();
+  }
+}
+
 /** Collapses a disclosure while `query` matches, reopens it only if this controller is what closed it, and returns a disposer. @public */
 export function mountViewportCollapse(options: ViewportCollapseOptions = {}): () => void {
   const noop = () => {};
@@ -76,6 +83,7 @@ export function mountViewportCollapse(options: ViewportCollapseOptions = {}): ()
   el.addEventListener("toggle", onToggle);
   query.addEventListener("change", applyViewport);
   applyViewport();
+  if (closedByController) finishTransitions(el);
 
   const dispose = () => {
     query.removeEventListener("change", applyViewport);

@@ -113,11 +113,13 @@ computed whose sources are dead.
 **Runtime auth filtering of the bar arrives as a document event, not through an exported setter.** The `navbar` scope applies the token list the
 event carries to every filterable descendant; the server seeds the same set at render, so the first paint is already correct. A channel rather than
 a forge-held signal, because the emitter — a login, an htmx swap, an app's own router — need not hold a reference to any forge module, and because
-every bar on a page resumes its own scope while all of them must follow one push. The listener is removed by the disposer `setup` returns (§2d).
-`src/ui/README.md` owns the event's name and payload shape.
+where the event is dispatched is its address: on `document` every bar follows one push, on or inside one bar only that bar does. Each scope holds
+a capture-phase listener on its own root, so a dispatch on a bar reaches it whether or not the event bubbles or is composed, inside an open shadow
+root too, and a document listener that applies only an event dispatched on the document itself. Both are removed by the disposer `setup` returns
+(§2d). `src/ui/README.md` owns the event's name and payload shape.
 
-**Any script on the page may dispatch it, and that is a ratified fail-open, not a hole** ([`BOUNDARIES.md`][boundaries-5c] §5c). The listener is on
-the document and the payload is unauthenticated, so a forged `navbar:filters` can repaint the bar with any token set. What it cannot do is widen
+**Any script on the page may dispatch it, and that is a ratified fail-open, not a hole** ([`BOUNDARIES.md`][boundaries-5c] §5c). The listeners take
+any dispatcher and the payload is unauthenticated, so a forged `navbar:filters` can repaint the bar with any token set. What it cannot do is widen
 what the viewer may reach: `filters` decides which of the **already-delivered** items are painted, and the server put every one of those hrefs in
 the HTML before the event existed. Reaching a destination is the route guard's decision — `requireSignedIn`, `requireAdmin` — which runs on the
 server and never consults the bar. **The degradation is presentational:** the worst outcome is a navigation bar showing links the viewer's own
@@ -333,6 +335,12 @@ destinations are all one document.
 **Entries are ordered by the _targets'_ document position, never by link order.** "Which section is being read" is a question about the page, and a
 nav may list its links in whatever order reads best.
 
+**The offset line is read off the page, never configured.** The band opens one pixel below the root element's `scroll-padding-top` plus the largest
+`scroll-margin-top` among the spied targets — the offset a fragment jump already lands at, so the section the jump lands is the one marked. The
+largest margin is taken because the band is one rectangle for every target, and one past it clears the tallest header any target declares; the
+edge is exclusive by one pixel because an edge-adjacent box counts as intersecting, which would otherwise mark the section ending at the line. The
+offset is read once, at mount, and one past 30% of the viewport leaves the band empty, so nothing is marked.
+
 **It emits `aria-current` and nothing else, with the value `location` rather than `page`.** The visible cue is selected from the attribute directly
 by the stylesheet, so there is no parallel `data-*` state to keep in step, and `page` would announce a navigation that never happened. **The marker
 is rewritten from the whole visible set on every callback**, rather than moved from the previous holder — so at most one link carries it, and none
@@ -348,6 +356,10 @@ since a marker outliving its observer would show two current sections until the 
 server renders and which side JavaScript corrects. **The server renders open**: with scripting unavailable the navigation is visible, which is the
 accessible answer, so the controller only ever removes something. §2b states why that does not earn a pre-paint script the way the theme does. The
 controller drives the property both ways while in control.
+
+**The collapse it makes at mount lands rather than plays.** Every CSS transition that write starts under the disclosure is finished at once.
+Correcting the server's state is not a change the reader caused (`rule:forge-ui-density-motion-budget`), and a drawer's backdrop fading out over
+the first frames of the page takes the reader's first tap. A later collapse across the breakpoint animates as usual.
 
 **It stops driving the disclosure the moment the user does, for the lifetime of the mount.** A rail that slams shut every time a phone rotates is
 worse than no controller at all. The decision is per mount and **deliberately not persisted** — a persisted override would outlive the situation

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
 import type { Step } from "./types";
@@ -182,6 +183,31 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the strip row", () => {
+  it("puts validate-strip last, after test:workerd, on the full tier", () => {
+    const steps = cloudflareWorkerSteps({ strip: true, browser: true, workerd: true, db: true });
+
+    expect(labelsOf(steps).slice(-2)).toEqual(["test:workerd", "validate-strip"]);
+    expect(steps.at(-1)?.tier).toBe("full");
+  });
+
+  it("omits the row for an app with no strip manifest to verify", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-strip");
+    expect(labelsOf(cloudflareWorkerSteps({ strip: false }))).not.toContain("validate-strip");
+  });
+
+  it("hands the row the preset's root, so a root with no manifest fails naming `config/strip.ts`", async () => {
+    const root = gateFixtureRoot({ "README.md": "# app\n" }, "forge-gate-strip-");
+    const row = cloudflareWorkerSteps({ root, strip: true }).at(-1);
+    if (row === undefined || !isCheckStep(row)) throw new Error("no strip row");
+    const result = await row.run("full");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings[0]?.message).toContain("`config/strip.ts`");
+  });
+});
+
 describe("cloudflareWorkerSteps() — the db rows", () => {
   it("emits the digests row on quality and the replay row in full, behind the installed runtime", () => {
     const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:schema"));
@@ -260,6 +286,7 @@ describe("cloudflareWorkerSteps() — the test rows", () => {
 describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
   const SSR = { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"] };
   const CONTRAST = { cssDir: "src/assets", tokenFiles: ["src/assets/tokens.css"], mappingFile: "src/assets/theme.css", pairs: [], criteria: {} };
+  const IMPORT = { guarded: ["src/showcase"] };
 
   it("puts validate-jsx after format, where a file-granular row runs before the slow lint", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ jsx: {} }));
@@ -268,8 +295,8 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     expect(labels.indexOf("validate-jsx")).toBeLessThan(labels.indexOf("lint:types"));
   });
 
-  it("puts validate-ssr-boundary and validate-contrast after the test rows, in that order", () => {
-    const labels = labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR, contrast: CONTRAST }));
+  it("puts validate-ssr-boundary, validate-import-boundary and validate-contrast after the test rows, in that order", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR, importBoundary: IMPORT, contrast: CONTRAST }));
 
     expect(labels).toEqual([
       "types:cf-runtime",
@@ -280,16 +307,48 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
       "lint:types",
       "test",
       "validate-ssr-boundary",
+      "validate-import-boundary",
       "validate-contrast",
       "validate-dev-boundary",
     ]);
   });
 
-  it("omits all three rows for an app that configures none of them", () => {
+  it("emits validate-import-boundary without validate-ssr-boundary, since neither implies the other", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ importBoundary: IMPORT }));
+
+    expect(labels).toContain("validate-import-boundary");
+    expect(labels).not.toContain("validate-ssr-boundary");
+  });
+
+  it("emits validate-ssr-boundary without validate-import-boundary, the other direction of the same independence", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR }));
+
+    expect(labels).toContain("validate-ssr-boundary");
+    expect(labels).not.toContain("validate-import-boundary");
+  });
+
+  it("hands the row the preset's root and the app's crossings", async () => {
+    const root = gateFixtureRoot({
+      "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n",
+      "src/router.tsx": 'import { registerShowcase } from "./showcase/mod";\nexport const r = registerShowcase;\n',
+    });
+    const rowOf = (crossings: readonly string[]) =>
+      cloudflareWorkerSteps({ root, importBoundary: { ...IMPORT, crossings } }).find((step) => step.label === "validate-import-boundary");
+    const crossed = rowOf(["src/router.tsx"]);
+    const uncrossed = rowOf([]);
+    if (crossed === undefined || !isCheckStep(crossed) || uncrossed === undefined || !isCheckStep(uncrossed))
+      throw new Error("no import-boundary row");
+
+    expect((await crossed.run("quality")).ok).toBe(true);
+    expect((await uncrossed.run("quality")).ok).toBe(false);
+  });
+
+  it("omits every such row for an app that configures none of them", () => {
     const labels = labelsOf(cloudflareWorkerSteps());
 
     expect(labels).not.toContain("validate-jsx");
     expect(labels).not.toContain("validate-ssr-boundary");
+    expect(labels).not.toContain("validate-import-boundary");
     expect(labels).not.toContain("validate-contrast");
   });
 });

@@ -32,8 +32,6 @@ are rulings owned by [`UI_SSR_COMPONENTS.md`][usc], [`UI_CLASS_COMPOSITION.md`][
 | [`ui/server`](#y-coreforgeuiserver) | SSR-only Flash and Resumable |
 | [`ui/chrome`](#y-coreforgeuichrome) | SSR Navbar, Dock, Toolbar, ThemeToggle + theme constants |
 | [`ui/chrome/client`](#y-coreforgeuichromeclient) | The chrome scopes island (side-effect import) |
-| [`ui/show`](#y-coreforgeuishow) | Component showcase and theme customiser route helpers |
-| [`ui/show/client`](#y-coreforgeuishowclient) | The showcase's scopes island (side-effect import) |
 | [`ui/design/*.md`](#y-coreforgeuidesignmd) | The design corpus as markdown (a subpath **pattern**) |
 
 ---
@@ -80,12 +78,6 @@ emits preflight twice.
 Tailwind v4's content scan ignores `node_modules`, so `forge.css` carries an `@source` path for every directory under `src/ui/` whose files declare
 a utility class — resolved relative to itself, the only form that survives pnpm, a workspace, a git dependency and a monorepo alike. Read
 `forge.css` for the current list; the gate's `validate-css-sources` step enforces that scope in both directions.
-
-An app that mounts [`ui/show`](#y-coreforgeuishow) adds one line of its own — the showcase is demo markup, so its utilities are opt-in:
-
-```css
-@source "../../node_modules/@y-core/forge/src/ui/show";
-```
 
 **`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup whose classes are the app's to scan; each says so in its
 own README where it applies.
@@ -570,8 +562,9 @@ composite controller owns keyboard at its own widget root.
 
 **Runtime-neutral.** Pure data and pure functions — safe in a Worker, a browser bundle, or a build script.
 
-The colour model a forge scheme is generated from, and the contrast audit the gate, the customiser page and the scheme files share. The generation
-pipeline is [`THEME_GENERATION.md`][tg]'s.
+The colour model a forge scheme is generated from, and the contrast audit the gate, a customiser page and the scheme files share. Forge ships the
+generator and no customiser page; the demonstrator, forge-starter, carries the customiser that consumes it. The generation pipeline is
+[`THEME_GENERATION.md`][tg]'s.
 
 ### Generate a scheme file from a set of dials
 
@@ -582,7 +575,7 @@ const ratios = liveRatios(theme); // every audited pair, measured
 ```
 
 `schemeCss` output is standalone-complete: paste it beside `forge.css` and import it after, exactly as a shipped scheme is imported. `dialQuery`
-turns the same dials into a query string, which is how the customiser makes a scheme shareable as a link with no storage of its own.
+turns the same dials into a query string, which is how a customiser makes a scheme shareable as a link with no storage of its own.
 
 **Chroma travels in thousandths** through the dial declarations, and `buildTheme` converts. Each dial carries its own range on its declaration, so a
 UI driving them clamps against the declaration rather than a number you copied.
@@ -767,9 +760,9 @@ invisible in the common case and total in the uncommon one:
 | `document.getElementById` | searches the document only, and an id inside a shadow root is not in it — a `commandfor` or `aria-controls` naming a sibling in the same shadow tree resolves to `null` |
 | bare `getComputedStyle` | the top-level window's again, and a _global_ direction read cannot see that one subtree of an LTR page is RTL |
 
-The node-resolved replacements are `ownerDocument` / `ownerWindow`, `eventTarget`, `activeElement`, `asElement`, `queryAcross` / `closestAcross` /
-`contains`, and `isRtl`. `safeStorage(win)` is the same idea for `localStorage`, which a private-mode `getItem` throws from even though the property
-is present — only a real access answers, so the helper returns the store or `null`.
+The node-resolved replacements are `ownerDocument` / `ownerWindow`, `eventTarget`, `activeElement`, `asElement`, `elementById`, `queryAcross` /
+`closestAcross` / `contains`, and `isRtl`. `safeStorage(win)` is the same idea for `localStorage`, which a private-mode `getItem` throws from even
+though the property is present — only a real access answers, so the helper returns the store or `null`.
 
 **Every controller returns a disposer, and that is a contract** ([`UI_CLIENT_RUNTIME.md`][ucr-2d] §2d). Return it from a scope's `setup` and
 `resume()`'s teardown runs it. The runtime owns effects, not listeners, so a `setup`'s own disposer covers the controllers and listeners it
@@ -947,9 +940,10 @@ columns, beside a `md:hidden` list twin of the same groups for the collapsed pan
 block of links is navigation, Tab walks it, and light-dismiss and Escape are the platform's. A rail renders only the list; inside a menu it degrades
 to a submenu of groups. Its `align` is `Popover`'s physical alignment — pass `"end"` on the last bar item so a wide panel stays inside the viewport.
 
-**`filters` shows an item only when one of its tokens is in the active set.** `activeFilters` seeds the set server-side for a flash-free paint,
-and at runtime the app dispatches the navbar filters event on `document` with the new tokens as `detail` — the `navbar` scope re-syncs from it.
-`Dock` takes the same prop but is server-hidden only: there is no runtime re-sync for it.
+**`filters` shows an item only when one of its tokens is in the active set.** `activeFilters` seeds the set server-side for a flash-free paint, and
+at runtime the app dispatches the navbar filters event with the new tokens as `detail`. Dispatched on `document`, it re-syncs every bar. Dispatched
+on a bar, or on anything inside one, it re-syncs that bar only, so a demo or a preview never repaints the site's own navigation. `Dock` takes the
+same prop but is server-hidden only: there is no runtime re-sync for it.
 
 **`filters` is presentation, not access control.** A filtered item's markup — its label and its `href` — is rendered and sent to every viewer;
 `hidden` only stops it being painted, and the filters event is one any script on the page can dispatch. Gate the route itself. An empty list
@@ -1044,84 +1038,6 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 
 ---
 
-## `@y-core/forge/ui/show`
-
-A drop-in, living reference for every `@y-core/forge` UI component, plus a **theme customiser** that generates a complete forge colour scheme from
-the dials, previews it on four scale/surface rows and on a real composed UI, reports live WCAG ratios for every audited pair, and emits a
-paste-ready scheme file. Its markup is opt-in for Tailwind — see
-[Tell Tailwind which directories to scan](#tell-tailwind-which-directories-to-scan).
-
-### Mount the showcase, and wire up what each page needs
-
-`showcaseRoutes(base)` builds the route subtree (default base `"/showcase/ui"`) and `registerShowcase` mounts every one, each page rendered into the
-shell your app registered with `createApp({ shell })` ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) under the slot `{ mount: "showcase", page, meta }`,
-whose meta titles the page from its own label and states `robots: "noindex"` — the showcase is a reference, not a landing page.
-
-**The catalog is cut by consumer prerequisite**: the page a demo lands on is what you must wire up for it to work.
-
-| Route | Path (default base) | What it is | Prerequisite |
-| --- | --- | --- | --- |
-| `ui.index` | `/showcase/ui` | Server-rendered primitives. | none — works with JavaScript disabled |
-| `ui.interactive` | `/showcase/ui/interactive` | The `ui/core` components that register a scope. | `import "@y-core/forge/ui/core/client"` + `resume()` |
-| `ui.runtime` | `/showcase/ui/runtime` | Signals, `bindControls`, `lazy()`. | `import "@y-core/forge/ui/show/client"` + `resume()` |
-| `ui.htmx` | `/showcase/ui/htmx` | The fragment demos and the Flash channel. | `import "@y-core/forge/ui/client/htmx"` + the `ui.api.*` endpoints |
-| `ui.turnstile` | `/showcase/ui/turnstile` | The Turnstile playground: every prop the SSR component takes, driven from the query string, plus the sizes-and-modes band, the two refusal messages, and the round trip through `defineAction`. | `import "@y-core/forge/ui/core/client"` + `resume()` + `import "@y-core/forge/ui/client/htmx"`; `turnstileSecret` for the verification panel |
-| `ui.chrome` | `/showcase/ui/chrome` | The configuration-driven navbar, toolbar and theme toggle. | `import "@y-core/forge/ui/chrome/client"` + a `NavDefinition` you supply |
-| `ui.theme` | `/showcase/ui/theme` | The theme customiser. Its whole state is the query string, each dial clamped to its own range, so a scheme is shareable as a link with no `localStorage` and no FOUC script. | none |
-| `ui.api.*` | `/showcase/ui/api/…` | The fragment endpoints each HTMX demo swaps from, plus the Turnstile verify action. | — |
-
-**The bundle does not split.** `ui/show/client` registers every scope and side-effect-imports `ui/chrome/client` and `ui/core/client`, so each page
-ships everything; the pages _document_ the prerequisite rather than enforcing it. The customiser paints through CSSOM rather than server-rendering
-colour, because forge ships `style-src 'self'` and the JSX renderer drops `style` attributes — every hex is server-rendered **as text**, so the page
-reads correctly with no JavaScript ([`THEME_GENERATION.md`][tg-2d] §2d).
-
-### Render one page inside your own layout
-
-`ShowcaseContent` is layout-less — wrap it in your app's `Layout`. It needs the showcase data from `loadShowcase`, an `icon` prop (a
-`ShowcaseIcon`, whose every glyph `forgeUiSpriteSources()` supplies), and the `page` to render, defaulting to `"index"`:
-
-```tsx
-const data = loadShowcase(c, { basePath: "/showcase" });
-return renderPage(
-  <Layout>
-    <ShowcaseContent data={data} icon={icon} page='interactive' />
-  </Layout>,
-);
-```
-
-`CustomiseContent` and `loadCustomise` are the same pair for the theme customiser. `showcasePaths(basePath, apiPath?)` derives every showcase URL
-from a base path and is the single source of truth the page and its endpoints share — build a link from it rather than from a literal.
-
-### Compose one demo instead of the whole catalog
-
-Each HTMX demo ships as three pieces you can mount separately: a `load*` loader, a `render*` response helper for its endpoint, and a pair of
-components — the section, and the swappable fragment inside it. The target id each fragment swaps into is exported beside them, so your own route
-table can point at the same ids. `renderAvatar` is the one renderer with no loader pair: it reads nothing from the request and serves the showcase's
-own portrait SVG, so the catalog never reaches for a remote image.
-
-The composition band is separately importable too — `CompositionsSection`, and the individual `CollectionSurface`, `SettingsSurface` and
-`FeedbackSurface` — which is the part worth lifting into a design review, since each shows a near-neighbour choice made side by side.
-
-**The Turnstile playground offers forge's own surface and nothing else.** Every control maps to a prop `TurnstileProps` declares. The Cloudflare
-options forge never puts in a caller's hands have no control either: `theme` follows the document's own `dark` class, and `retry`,
-`refresh-expired` and `refresh-timeout` are left at Cloudflare's `auto`. Only Cloudflare's published dummy sitekeys are selectable, and the sitekey
-is a preset id in the query string rather than a free string, so no visitor can have a key of their own rendered under this origin.
-
----
-
-## `@y-core/forge/ui/show/client`
-
-**Browser-only, side-effect import.** Import it in the client entry before `resume()`, as `ui/core/client` is imported.
-
-It registers every scope the showcase's own demo markup names — the catalog filter, the bound-controls band, the theme customiser and its copy
-buttons, and the carousel, table-of-contents, context-menu and chrome demos — and side-effect-imports `ui/chrome/client` and `ui/core/client`
-behind them. `src/ui/show/client.ts` is the list.
-
-Nearly all of them are `eager`, for the reason that runs through this whole runtime: a demo whose markup stamps no `data-on-*` action has nothing a
-lazy resume could ever trigger on.
-
----
-
 ## See also
 
 - [`UI_SSR_COMPONENTS.md`][usc] — the component contract, the signal-binding seam, the state-attribute contract.
@@ -1129,17 +1045,14 @@ lazy resume could ever trigger on.
 - [`UI_CLIENT_RUNTIME.md`][ucr] — mount controllers, the disposer contract, signals, lazy loading, resumable scopes.
 - [`THEME_GENERATION.md`][tg] — the dial model, the emission contract, the contrast audit.
 - [`UI_DESIGN_GUIDANCE.md`][udg] — the design corpus's rule tiers and identifiers.
-- [`UI_SHOWCASE.md`][us] — mounting `ui/show`, and its coverage contract.
 
 [ap-2c]: ../../docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
 [cr-1]: ../../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
 [htmx-7a]: ../../docs/HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [navigation]: ./design/reference/08-navigation.md
-[ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value
 [tg]: ../../docs/THEME_GENERATION.md
 [tg-1d]: ../../docs/THEME_GENERATION.md#1d-shape-tokens-are-not-a-scheme
-[tg-2d]: ../../docs/THEME_GENERATION.md#2d-no-generated-colour-reaches-markup
 [tg-4]: ../../docs/THEME_GENERATION.md#4-a-status-hue-holds-its-fill
 [ucc]: ../../docs/UI_CLASS_COMPOSITION.md
 [ucc-1a]: ../../docs/UI_CLASS_COMPOSITION.md#1a-conflict-resolution-the-fail-open-boundary-and-the-memo
@@ -1162,7 +1075,6 @@ lazy resume could ever trigger on.
 [ucr-4]: ../../docs/UI_CLIENT_RUNTIME.md#4-htmx-bundle-import
 [udg]: ../../docs/UI_DESIGN_GUIDANCE.md
 [udg-2]: ../../docs/UI_DESIGN_GUIDANCE.md#2-two-rule-tiers--floor-and-defaults
-[us]: ../../docs/UI_SHOWCASE.md
 [usc]: ../../docs/UI_SSR_COMPONENTS.md
 [usc-1a]: ../../docs/UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes
 [usc-1c]: ../../docs/UI_SSR_COMPONENTS.md#1c-button-and-the-aschild-invariant

@@ -293,4 +293,11 @@ describe("checkDevBoundary — the derivation", () => {
     expect(result.ok).toBe(false);
     expect(result.findings[0]?.message).toBe("`src` matched no source — refusing to report a green dev-boundary gate that scanned nothing");
   });
+
+  it("fails on a `sources` entry naming no directory, even beside one that finds files", () => {
+    const result = checkDevBoundary(project({ "src/a.ts": "export const a = 1;\n" }, { workerConfig: null, sources: ["src", "srcc"] }));
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `srcc` names no directory under the root"]);
+  });
 });

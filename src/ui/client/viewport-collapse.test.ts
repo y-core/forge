@@ -26,12 +26,35 @@ class FakeMediaQueryList {
   }
 }
 
+class FakeAnimation {
+  finished = 0;
+
+  finish(): void {
+    this.finished += 1;
+  }
+}
+
+class FakeTransition extends FakeAnimation {
+  readonly transitionProperty: string;
+
+  constructor(property: string) {
+    super();
+    this.transitionProperty = property;
+  }
+}
+
 class FakeDetails {
   readonly nodeType = 1;
   readonly ownerDocument: { nodeType: number; defaultView: { matchMedia: (q: string) => FakeMediaQueryList } };
   private readonly listeners = new Map<string, Set<() => void>>();
   private isOpen: boolean;
   queries: string[] = [];
+  animations: FakeAnimation[] = [];
+  animationQueries: unknown[] = [];
+  getAnimations: ((options?: unknown) => FakeAnimation[]) | undefined = (options) => {
+    this.animationQueries.push(options);
+    return this.animations;
+  };
 
   readonly media: FakeMediaQueryList;
 
@@ -259,6 +282,62 @@ describe("mountViewportCollapse", () => {
 
   it("throws when the element is not a disclosure", () => {
     expect(() => mountViewportCollapse({ element: { nodeType: 1 } as unknown as Element })).toThrow("did not resolve to a disclosure");
+  });
+
+  it("finishes every transition under an open disclosure it collapses at mount", () => {
+    const f = fixture(true);
+    const panel = new FakeTransition("translate");
+    const backdrop = new FakeTransition("opacity");
+    f.el.animations = [panel, backdrop];
+
+    mountViewportCollapse({ element: f.element });
+
+    expect(f.el.open).toBe(false);
+    expect(panel.finished).toBe(1);
+    expect(backdrop.finished).toBe(1);
+    expect(f.el.animationQueries).toEqual([{ subtree: true }]);
+  });
+
+  it("leaves a running animation that is not a transition alone at mount", () => {
+    const f = fixture(true);
+    const spinner = new FakeAnimation();
+    f.el.animations = [new FakeTransition("visibility"), spinner];
+
+    mountViewportCollapse({ element: f.element });
+
+    expect(spinner.finished).toBe(0);
+  });
+
+  it("finishes nothing when the query does not match at mount", () => {
+    const f = fixture(false);
+    const panel = new FakeTransition("translate");
+    f.el.animations = [panel];
+
+    mountViewportCollapse({ element: f.element });
+
+    expect(panel.finished).toBe(0);
+    expect(f.el.animationQueries).toEqual([]);
+  });
+
+  it("lets a collapse across the breakpoint after mount animate", () => {
+    const f = fixture(false);
+    const panel = new FakeTransition("translate");
+    f.el.animations = [panel];
+    mountViewportCollapse({ element: f.element });
+
+    f.media.set(true);
+
+    expect(f.el.open).toBe(false);
+    expect(panel.finished).toBe(0);
+    expect(f.el.animationQueries).toEqual([]);
+  });
+
+  it("still collapses at mount in a realm without getAnimations", () => {
+    const f = fixture(true);
+    f.el.getAnimations = undefined;
+
+    expect(() => mountViewportCollapse({ element: f.element })).not.toThrow();
+    expect(f.el.open).toBe(false);
   });
 
   it("no-ops when the realm has no matchMedia", () => {

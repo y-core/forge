@@ -3,29 +3,6 @@ import type { STATE_ATTRS } from "./state-attrs";
 import type { APPEARANCES } from "./vocabulary";
 import type { PRESENTATION_ATTRS } from "./vocabulary";
 import type { TONES } from "./vocabulary";
-/** The signal fields the bound-control band renders and resumes. @internal */
-export interface ControlsDemoState {
-  text: string;
-  email: string;
-  unit: string;
-  precision: string;
-  level: number;
-  zoom: number;
-  enabled: boolean;
-  notifications: boolean;
-  notes: string;
-  summary: string;
-  align: string;
-  weight: string;
-  mirror: string;
-  count: number;
-  bold: boolean;
-  plan: string;
-  toppings: string[];
-  avatar: string;
-  code: string;
-  pin: string;
-}
 
 /** The actions a checkable menu row names in `data-on-click` and the client scope handles. @public */
 export type MenuAction = "check" | "select";

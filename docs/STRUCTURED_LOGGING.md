@@ -6,8 +6,9 @@ audience: consumer
 
 # Structured Logging
 
-> Owns the logging namespace: the channel contract, the request logger, KV log storage, the `logging/show` viewer, and the no-PII rule. Owns the
-> canonical channel-selection pattern (§2d). The export list and every signature are owned by `src/logging/mod.ts` and `src/logging/README.md`.
+> Owns the logging namespace: the channel contract, the request logger, KV log storage, the log viewer (`logging/viewer`), and the no-PII rule.
+> Owns the canonical channel-selection pattern (§2d). The export list and every signature are owned by `src/logging/mod.ts` and
+> `src/logging/README.md`.
 >
 > Defers to: [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e for middleware ordering; [`SECURITY_HARDENING.md`][sh-5b] §5b for request-id correlation;
 > [`STORAGE_BINDINGS.md`][sb-5] §5 for absent-binding policy.
@@ -32,7 +33,7 @@ audience: consumer
 - §4a Level Mapping Convention: status range to level
 - §4b Debug Is Not Emitted by requestLogger: why the level exists but never appears
 - §4c Silencing and Level Allowlists: `withLevels`, and why "off" is a value not a shape
-- §5 Log Viewer (logging/show): the auth-gated mount
+- §5 Log Viewer (logging/viewer): the auth-gated mount
 - §5a loadLogViewer — Auth-Gated Response for Every Path: the ordered contract
 - §5b Why access and icon Are Required Options: the obligations the type enforces
 - §6 No-PII Rule and Structured Fields: pointer to the governance rule that owns it
@@ -288,7 +289,7 @@ channel list turns on a **binding** (§2d), which no env var can carry. What eac
 
 ---
 
-## 5. Log Viewer (logging/show)
+## 5. Log Viewer (logging/viewer)
 
 ### 5a. loadLogViewer — Auth-Gated Response for Every Path
 
@@ -316,15 +317,15 @@ the page's `view` never executes — there is no HX-branch and no fragment call 
 
 ### 5b. Why access and icon Are Required Options
 
-`LogViewerOptions` and `LogViewerAccess` are declared in `src/logging/show/route.tsx`, which owns their fields and defaults.
+`LogViewerOptions` and `LogViewerAccess` are declared in `src/logging/viewer/route.tsx`, which owns their fields and defaults.
 
 The `channel` factory is called once per request, and §2a's prefix rule is what makes the viewer read the key space the logger writes to.
 
 **`access` is required because logs expose request paths, ids, and error messages** — forgetting a guard is a compile error, and public mounts must
 opt out explicitly.
 
-**`icon` is required**: the app injects its own bound `ForgeIcon<"chevron-down">` (from `@y-core/forge/ui/core`) so `logging/show` renders the
-filter-bar chevron without owning an icon set. This is what makes `logging/show` a declared cross-namespace edge onto `ui/core` — see
+**`icon` is required**: the app injects its own bound `ForgeIcon<"chevron-down">` (from `@y-core/forge/ui/core`) so `logging/viewer` renders the
+filter-bar chevron without owning an icon set. This is what makes `logging/viewer` a declared cross-namespace edge onto `ui/core` — see
 [`NAMESPACES.md`][namespaces-4b] §4b.
 
 ---

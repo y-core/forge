@@ -102,6 +102,7 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/tooling/cli` | `src/tooling/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError`; plus the shared foundation the tool namespaces read config through — `resolveAppRoot`, `loadConfigModule`, the JSONC parser and editor, and the barrel parser |
 | `@y-core/forge/tooling/gate` | `src/tooling/gate/mod.ts` | the verification gate — the gate command factory, the step builders and presets, and every check. It also owns the changelog and semver parsers, which is what lets `tooling/release` depend on it and never the reverse. The gate's formatters stay out of the barrel ([`BUILD_TOOLING.md`][bt-2f] §2f) |
 | `@y-core/forge/tooling/release` | `src/tooling/release/mod.ts` | `createReleaseCommand`, `resolveVersion`, `ReleaseError` — the release workflow, built on the gate's changelog and semver parsers and its barrel parser. The git and `package.json` helpers stay out of the barrel ([`BUILD_TOOLING.md`][bt-2c] §2c) |
+| `@y-core/forge/tooling/strip` | `src/tooling/strip/mod.ts` | `createStripCommand`, `stripTree`, `defineStripConfig`, `loadStripConfig` — `forge strip`, which copies a working tree minus the directories and marked lines a strip manifest names. The gate's `validate-strip` row builds on it, never the reverse |
 | `@y-core/forge/tooling/gate/chromium` | `src/tooling/gate/chromium.mjs` | `resolveChromiumPath`, prebuilt — the spelling a consumer's `playwright.config.ts` imports. It exists for the same reason `./tooling/lint/plugin` does: playwright loads its config under node, which refuses to strip types from a file under `node_modules`; `validate-chromium-bundle` rebuilds it and fails on any drift from the source |
 | `@y-core/forge/tooling/lint` | `src/tooling/lint/mod.ts` | forge's oxlint JS plugin, default-exported for `.oxlintrc.json`'s `jsPlugins`, plus the rule catalogs the gate's design and modern-CSS checks read. Loaded as raw TypeScript: oxlint resolves the source directly, so the plugin ships with no build step. Its types are structural restatements of oxlint's own, because `oxlint` is a devDependency and a published module must not depend on it |
 | `@y-core/forge/tooling/lint/plugin` | `src/tooling/lint/plugin.mjs` | The same plugin, prebuilt — the spelling a consumer's `.oxlintrc.json` names in `jsPlugins`. It exists because node refuses to strip types from a file under `node_modules`, so a consumer's oxlint cannot load `mod.ts` at all; `validate-lint-plugin` rebuilds it and fails on any drift from the source |
@@ -119,7 +120,7 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
 | `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `scriptJson`, `styleText`, `htmlResponse`, `fragmentResponse`, `pdfResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
 | `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withLevels`, `withRedaction`, `requestLogger`, `requestLog`, `serializeError`, and the redaction policy set `defineLogRedaction` / `DEFAULT_LOG_REDACTION` / `LOG_REDACTED` |
-| `@y-core/forge/logging/show` | `src/logging/show/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
+| `@y-core/forge/logging/viewer` | `src/logging/viewer/mod.ts` | `loadLogViewer` — the render components and fragment renderers are `@internal` (auth-by-construction) |
 | `@y-core/forge/output/pdf` | `src/output/pdf/mod.ts` | The PDF engine: a document composed from components and rendered to bytes, with no browser and no runtime dependency. It sets type in the base-14 faces or in embedded ones, paginates under a page ceiling, writes a structure tree a screen reader can follow, and answers a layout projection a test can assert on instead of opaque bytes. First child of the `output/` container (§5j); the response builder that returns its bytes is `http`'s `pdfResponse` (§5d) |
 | `@y-core/forge/output/pdf/audit` | `src/output/pdf/audit/mod.ts` | `auditPdf`; types `PdfAuditFinding`, `PdfAuditRule` — the accessibility and conformance checks a caller runs over a render before making it, kept out of the render path. Its edge back to `output/pdf` is one-way `type`, which keeps the `output/` container acyclic (§5j) |
 | `@y-core/forge/output/pdf/fonts` | `src/output/pdf/fonts/mod.ts` | `createPdfFontSet`, `readPdfFontPack`; types `PdfFace`, `PdfFontPack`, `PdfFontPackData`, `PdfFontSet`, `PdfFontRequest`, `PdfFontMetrics`, `PdfFontError` and the axis types — font packs and the CSS font-matching ladder a request is resolved through. Reads the pack the asset pipeline writes as plain JSON, which is what keeps the two halves from naming each other's types. The second child of the `output/` container (§5j) |
@@ -135,13 +136,14 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/testing` | `src/testing/mod.ts` | test-only fixtures — see [`TEST_RUNNERS.md`][testing-7] §7 |
 | `@y-core/forge/testing/workerd` | `src/testing/workerd.ts` | `startDevServer`, `DevServer`, `DevServerOptions` — a `wrangler dev` fixture server for a suite the node process runs. A file target, not a barrel, and deliberately off `./testing`: it reads `node:child_process`/`node:fs`/`node:net` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
 | `@y-core/forge/testing/snapshot` | `src/testing/snapshot.ts` | `matchTextSnapshot` — text against a committed fixture, answering a `Result` carrying the differing lines. A file target off `./testing` for the same reason, and format-agnostic: it knows nothing of what produced the text ([`TEST_RUNNERS.md`][testing-7h] §7h) |
+| `@y-core/forge/testing/coverage` | `src/testing/coverage/mod.ts` | `COVERAGE_COMPONENTS`, `CoverageComponent`, `CoverageBarrel` — every component the `ui/core`, `ui/controls`, `ui/chrome` and `ui/server` barrels publish, the set a consumer's coverage manifest must declare. Off `./testing` because it loads all four UI barrels ([`TEST_RUNNERS.md`][testing-7i] §7i) |
 | `@y-core/forge/testing/node` | `src/testing/node.d.ts` | No runtime: ambient declarations for the node surface `testing/workerd` and `testing/snapshot` reach, referenced per file by the suite that imports it so a `"types": []` program needs no `exclude` ([`TEST_RUNNERS.md`][testing-7f] §7f) |
 | `@y-core/forge/ui/assets` | `src/ui/assets/mod.ts` | `loadSpriteGlyphs`, `parseSpriteGlyphs`, `FORGE_UI_ICON_NAMES`, `forgeUiSpriteSources` |
 | `@y-core/forge/ui/assets/build` | `src/ui/assets/build/mod.ts` | `forgeUiSpriteSources`, `svgToSymbol`, `sanitizeSVG`, `extractViewBoxes`, `parseColor`, `toHex`, `readThemeTokens`, `resolveToken`, `buildCursors` — build-time only; it computes the artifacts `ui/assets` owns and drives no external builder ([`ASSET_PIPELINE.md`][ap-2c] §2c) |
 | `@y-core/forge/ui/assets/glyphs` | `src/ui/assets/glyphs.ts` | `parseSpriteGlyphs`, `loadSpriteGlyphs` |
 | `@y-core/forge/ui/assets/css/…` | `src/ui/assets/css/*.css` | Every forge stylesheet, by filename. `@y-core/forge/ui/assets/css/forge.css` is **the consumer entry point** — it imports the theme plus the component CSS and carries the `@source` paths that make forge's utility classes generate in a consumer build. Underneath: `theme-colors.css` (the status hues and alpha ramps), `theme-base.css` (the semantic-token mapping, the `color-scheme` declarations, and the `@theme inline` bridge), `forge-ui.css` (the layered component and state rules), and the ready-made schemes — `theme-neutral.css` is the default, and `theme-slate.css` is the structural model for an app's own |
 | `@y-core/forge/ui/contracts` | `src/ui/contracts/mod.ts` | the DOM contract as pure data — the state-attribute and scope-event declarations, and the scope-name and selector constants each keyboard primitive shares between its SSR and client halves |
-| `@y-core/forge/ui/contracts/theme` | `src/ui/contracts/theme/mod.ts` | the colour model a forge scheme is generated from and the contrast audit the gate and the customiser share — `buildScale`, `buildTheme`, `schemeCss`, `liveRatios`, the OKLCh conversions, `DIALS` / `Dial` / `DialValues`, `CONTRAST_PAIRS`, `ACCEPTED_CONTRAST`, `CRITERION`. Runtime-neutral: pure data and pure functions ([`THEME_GENERATION.md`][tg]) |
+| `@y-core/forge/ui/contracts/theme` | `src/ui/contracts/theme/mod.ts` | the colour model a forge scheme is generated from and the contrast audit the gate and a customiser share — `buildScale`, `buildTheme`, `schemeCss`, `liveRatios`, the OKLCh conversions, `DIALS` / `Dial` / `DialValues`, `CONTRAST_PAIRS`, `ACCEPTED_CONTRAST`, `CRITERION`. Runtime-neutral: pure data and pure functions ([`THEME_GENERATION.md`][tg]) |
 | `@y-core/forge/ui/controls` | `src/ui/controls/mod.ts` | bound control variants that shadow the `ui/core` names — see §5b |
 | `@y-core/forge/ui/core` | `src/ui/core/mod.ts` | the SSR component set — see [`UI_SSR_COMPONENTS.md`][usc] — plus `cn`, `cva`, which [`UI_CLASS_COMPOSITION.md`][ucc] owns |
 | `@y-core/forge/ui/core/client` | `src/ui/core/client.ts` | ui/core browser controller registration |
@@ -151,8 +153,6 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/ui/client/htmx` | `src/ui/client/htmx.ts` | htmx bundle |
 | `@y-core/forge/ui/design/…` | `src/ui/design/*.md` | The design corpus by filename — its root files and, since `*` matches across `/`, the routed `reference/` ones. An asset row: the target is prose an agent reads, not a module — see [`UI_DESIGN_GUIDANCE.md`][udg] |
 | `@y-core/forge/ui/server` | `src/ui/server/mod.ts` | `Flash`, `FlashContainer`, `FlashOob`, `Resumable`, `fieldAttr`, `commandAttrs` |
-| `@y-core/forge/ui/show` | `src/ui/show/mod.ts` | `ShowcaseContent`, `registerShowcase`, `showcaseRoutes` |
-| `@y-core/forge/ui/show/client` | `src/ui/show/client.ts` | showcase browser controller registration |
 | `@y-core/forge/validation` | `src/validation/mod.ts` | `v` (valibot facade), `ValidationResult` |
 
 ### 3b. Internal Namespaces
@@ -239,18 +239,18 @@ imports it — so it belongs to no namespace and contributes no edges. Classifyi
 does not have, and edges nobody can import.
 
 **`tooling` is a container, not a namespace.** No `mod.ts` sits at the container root: each child — `tooling/cli`, `tooling/term`, `tooling/lint`,
-`tooling/gate`, `tooling/release`, `tooling/cf`, `tooling/db`, `tooling/assets` — owns its own subpath and is its own namespace. `resolveNamespaces`
-matches by longest directory prefix, so a `tooling` namespace rooted at `src/tooling/` would swallow every one of them. The container earns its name
-a second way: **every module under it qualifies for the build-time exemption** ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e), so a Worker-reachable
-module under `src/tooling/` is a visible contradiction rather than an argument to re-litigate.
+`tooling/gate`, `tooling/release`, `tooling/strip`, `tooling/cf`, `tooling/db`, `tooling/assets` — owns its own subpath and is its own namespace.
+`resolveNamespaces` matches by longest directory prefix, so a `tooling` namespace rooted at `src/tooling/` would swallow every one of them. The
+container earns its name a second way: **every module under it qualifies for the build-time exemption** ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e), so
+a Worker-reachable module under `src/tooling/` is a visible contradiction rather than an argument to re-litigate.
 
 **The exemption is reachability, and a path is only evidence of it.** That section says so in those words: membership in `src/tooling/` does not
 _confer_ the exemption, it makes the reachability answer obvious enough to check per file. Where the two come apart the cases are named:
-`src/ui/assets/build/`, a `buildTimeDirs` entry for that reason, and `src/testing/workerd.ts` and `src/testing/snapshot.ts`, the mixed-namespace
+`src/ui/assets/build/`, a `guarded` entry for that reason, and `src/testing/workerd.ts` and `src/testing/snapshot.ts`, the mixed-namespace
 case the same section settles — **the exemption reaches a mixed namespace's build-time modules alone, and the burden sits on the caller.** So each
 is published under its own subpath and left off `src/testing/mod.ts` ([`TEST_RUNNERS.md`][testing-7f] §7f), out of a `"types": []` program's reach.
 
-**`validate-build-time-boundary` is what makes that a fact rather than a convention.** It fails any source outside `src/tooling/` or
+**`validate-import-boundary` is what makes that a fact rather than a convention.** It fails any source outside `src/tooling/` or
 `src/ui/assets/build/` that imports one of their modules at value — by relative path or by package subpath, barrelled or not. The rule it enforces
 is _stronger_ than the reachability that section states, and deliberately so: reachability alone is blind to a module no barrel exports yet, and
 reachability computed over forge's own tree turns out to be exactly the set a per-file scan already sees. A type-only import is allowed, because it
@@ -289,8 +289,8 @@ counting as a layering violation.**
 | --- | --- | --- | --- |
 | `result` | public | concrete file `../result/result` | anyone |
 | `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, lint-exempt) | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
-| `context` | public | concrete file `../context/{accessor,app-context,env-validation}` | `app`, `form`, `logging`, `logging/show`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server`, `ui/show` |
-| `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/show`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
+| `context` | public | concrete file `../context/{accessor,app-context,env-validation}` | `app`, `form`, `logging`, `logging/viewer`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server` |
+| `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/viewer`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
 
 `result` is the single result primitive ([`FORGE_ERRORS.md`][eh-1] §1). Because explicit error handling is cross-cutting, `security` / `form` /
 `storage` importing `result` is **expected** — treat it like importing a Web API.
@@ -414,14 +414,14 @@ signal API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`][ucr-2] §2.
 ### 5g. tooling — Where a Developer-Facing Tool Belongs
 
 **A new command, gate check, lint rule or release step goes to one of the `tooling` namespaces** — `tooling/cli`, `tooling/term`, `tooling/gate`,
-`tooling/lint`, `tooling/release`, `tooling/cf`, `tooling/db`, `tooling/assets`. Pick by the artifact the tool acts on: the command surface and its
-flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate` (and a check is a function, not a
-script — [`BUILD_TOOLING.md`][bt-2i] §2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, a Cloudflare API call is
-`tooling/cf`, a D1 migration, compose, backup or seed verb is `tooling/db` ([`DATABASE_MANAGEMENT.md`][dm]), and driving an external builder is
-`tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
+`tooling/lint`, `tooling/release`, `tooling/strip`, `tooling/cf`, `tooling/db`, `tooling/assets`. Pick by the artifact the tool acts on: the command
+surface and its flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate` (and a check is a
+function, not a script — [`BUILD_TOOLING.md`][bt-2i] §2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, reducing a working
+tree to its skeleton is `tooling/strip`, a Cloudflare API call is `tooling/cf`, a D1 migration, compose, backup or seed verb is `tooling/db`
+([`DATABASE_MANAGEMENT.md`][dm]), and driving an external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
 
 **None of it is ever Worker-reachable.** That is what earns every module here the build-time exemption from the Web-APIs-only rule — the exemption
-is the unreachability and the path is the evidence (§4a), which `validate-build-time-boundary` checks per file. So a tool placed here may use Node
+is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed here may use Node
 APIs, and a module a Worker path imports may not. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a request handler
 runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/workerd` reads
 `node:child_process` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
@@ -434,7 +434,7 @@ of `security`, which is transport-layer and stops at the request.
 
 **The namespace produces no `Response`, renders no markup and touches no `Session`.** What it exports is the domain: token codecs, store contracts
 and their adapters, factor services, and the WebAuthn ceremony parsers. A route that mounts a sign-in page, a view that renders one, and a
-middleware that guards one are the web layer's, published under its own subpath. That split is the same one `logging` and `logging/show` already
+middleware that guards one are the web layer's, published under its own subpath. That split is the same one `logging` and `logging/viewer` already
 carry, and it is what keeps `auth` testable with no authenticated world to build first ([`BOUNDARIES.md`][boundaries-2c] §2c).
 
 **`@y-core/forge/auth/web` is that web layer, and it owns everything a request touches.** The route groups `authRoutes` / `accountRoutes` /
@@ -588,6 +588,7 @@ second repository needs it.
 [testing-7]: ./TEST_RUNNERS.md#7-testing-namespace-utilities-y-coreforgetesting
 [testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
 [testing-7h]: ./TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath
+[testing-7i]: ./TEST_RUNNERS.md#7i-the-expected-coverage-set--y-coreforgetestingcoverage
 [tg]: ./THEME_GENERATION.md
 [ucc]: ./UI_CLASS_COMPOSITION.md
 [ucr-2]: ./UI_CLIENT_RUNTIME.md#2-mount-controllers

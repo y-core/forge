@@ -1,7 +1,6 @@
 import { checkAssetManifest } from "./checks/asset-manifest";
 import { checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
-import { checkBuildTimeBoundary } from "./checks/build-time-boundary";
 import { checkBundle, hasEsbuild } from "./checks/bundle";
 import { checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder } from "./checks/class-order";
@@ -18,6 +17,7 @@ import { checkDevBoundary } from "./checks/dev-boundary";
 import { checkExports } from "./checks/exports";
 import { checkExposure } from "./checks/exposure";
 import { checkIccProfile } from "./checks/icc-profile";
+import { checkImportBoundary } from "./checks/import-boundary";
 import { checkJsx } from "./checks/jsx";
 import { checkMarkdown, fixMarkdown } from "./checks/markdown";
 import { checkMenuNaming } from "./checks/menu-naming";
@@ -25,9 +25,9 @@ import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
 import { checkPackaging } from "./checks/packaging";
 import { checkSsrBoundary } from "./checks/ssr-boundary";
+import { checkStrip } from "./checks/strip";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
-import type { BuildTimeBoundaryCheckConfig } from "./checks/types";
 import type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
 import type { ClassGroupsCheckConfig } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
@@ -42,6 +42,7 @@ import type { DesignScaleCheckConfig } from "./checks/types";
 import type { DevBoundaryCheckConfig } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
 import type { ExposureCheckConfig } from "./checks/types";
+import type { ImportBoundaryCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { MenuNamingCheckConfig } from "./checks/types";
@@ -49,6 +50,7 @@ import type { ModernCssCheckConfig } from "./checks/types";
 import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
+import type { StripCheckConfig } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
 import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./types";
 import type { SourceStepOptions, StepOptions } from "./types";
@@ -169,6 +171,11 @@ export function workerdStep(options: { hint?: string; parallel?: number } & Sour
   };
 }
 
+/** Strips the demonstrator into a temporary tree and runs the skeleton's `standard` gate there, always in the `full` tier. @public */
+export function stripStep(config: StripCheckConfig, options: Omit<StepOptions, "tier"> = {}): CheckStep {
+  return checkStep("validate-strip", () => checkStrip(config), { ...options, tier: "full" });
+}
+
 /** The two `forge db schema check` rows: digests in `quality`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
 export function dbSchemaStep(options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string } = {}): [CommandStep, CommandStep] {
   const forge = options.forge ?? ["forge"];
@@ -235,9 +242,9 @@ export function ssrBoundaryStep(config: SsrBoundaryCheckConfig, options: StepOpt
   return checkStep("validate-ssr-boundary", () => checkSsrBoundary(config), options);
 }
 
-/** Checks that nothing a consumer can import at runtime reaches a build-time directory. @public */
-export function buildTimeBoundaryStep(config: BuildTimeBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-build-time-boundary", () => checkBuildTimeBoundary(config), options);
+/** Checks that nothing outside a guarded tree, save a named crossing, imports it at value. @public */
+export function importBoundaryStep(config: ImportBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-import-boundary", () => checkImportBoundary(config), options);
 }
 
 /** Checks that no deployable module names a development entry or a dev-only module. @public */

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { Dialog } from "./dialog";
 
 declare global {
@@ -138,14 +138,8 @@ test.describe("Dialog", () => {
   });
 });
 
-const CSS = { css: ["./ui/assets/css/forge-ui.css"] };
-
 const VIEWPORT = { width: 1280, height: 720 };
 const GUTTER = 16; // 1rem, the inset the sheet gives every modal dialog
-
-// Stands in for Tailwind's preflight, which no build supplies here. Deliberately no `margin` reset:
-// unlayered, it would beat the sheet's layered `margin: auto` and remove the centring under test.
-const PREFLIGHT = `<style>*, ::before, ::after { box-sizing: border-box; padding: 0; border-width: 0; }</style>`;
 
 const CALLER_WIDTH = `<style>
   @layer components, utilities;
@@ -164,7 +158,7 @@ async function openDialog(page: Page, style: string, body: string, copies = 1): 
   await page.setViewportSize(VIEWPORT);
   // Reduced motion keeps this a geometry assertion: a settled rect, whatever transition the sheet gains later.
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await mount(page, `${PREFLIGHT}${style}${html}`, CSS);
+  await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${style}${html}`);
   await page.evaluate(() => (document.querySelector("#confirm") as HTMLDialogElement).showModal());
 }
 

@@ -5,7 +5,7 @@ import { cn } from "../../../ui/core/utils/cn";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { findClassLiterals, findSkippedClassPositions } from "./design-parse";
-import { resolveSources } from "./source-scan";
+import { resolveSources, unresolvedSourceEntries } from "./source-scan";
 import type { ClassOrderCheckConfig } from "./types";
 
 const SCANNED = (name: string): boolean => /\.tsx?$/.test(name);
@@ -65,6 +65,8 @@ export function checkClassOrder(config: ClassOrderCheckConfig): CheckResult {
   const files = resolveSources(root, sources, SCANNED);
 
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no source`, "class-order");
+  const unresolved = unresolvedSourceEntries(root, sources, "file or directory");
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const findings = files.flatMap((file) => validateClassOrder(file, readFileSync(resolve(root, file), "utf-8")));
   return checkResult(findings, `${files.length} files: every class literal is a fixed point of \`cn\``);

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles, isTestSource } from "./source-scan";
+import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { SsrBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -70,6 +70,8 @@ export function validateSsrBoundary(file: string, source: string, config: SsrBou
 export function checkSsrBoundary(config: SsrBoundaryCheckConfig): CheckResult {
   const files = config.sources.flatMap((dir) => collectFiles(config.root, dir, SCANNED));
   if (files.length === 0) return scannedNothing(`\`${config.sources.join("`, `")}\` matched no source`, "ssr-boundary");
+  const unresolved = unresolvedSourceEntries(config.root, config.sources);
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const findings = files.flatMap((file) => validateSsrBoundary(file, readFileSync(resolve(config.root, file), "utf-8"), config));
 

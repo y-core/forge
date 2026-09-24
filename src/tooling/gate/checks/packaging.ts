@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { collectFiles, isTestSource } from "./source-scan";
+import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { PackagingCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
@@ -83,6 +83,8 @@ export function checkPackaging(config: PackagingCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const walked = sources.flatMap((dir) => collectFiles(config.root, dir, (name) => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext))));
   if (walked.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no module`, "packaging");
+  const unresolved = unresolvedSourceEntries(config.root, sources);
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const present = new Set(walked);
   const imports = new Map(walked.map((file) => [file, moduleImports(config.root, file, present)]));

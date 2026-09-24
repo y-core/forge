@@ -1,3 +1,4 @@
+import type { CaptureResult } from "../../cli/types";
 import type { ModernCssRuleId } from "../../lint/types";
 import type { ModernCssReportedId } from "../../lint/types";
 /** What the asset-manifest check needs to find the emitted module and the tree it describes. @public */
@@ -43,18 +44,20 @@ export interface CompatibilityCheckConfig {
   require?: readonly string[];
 }
 
-/** What the build-time-boundary check needs to know about the project. @public */
-export interface BuildTimeBoundaryCheckConfig {
+/** What the import-boundary check needs to know about the project. @public */
+export interface ImportBoundaryCheckConfig {
   /** Repository root; every reported path is relative to it. */
   root: string;
-  /** The package name consumers import under, e.g. `@y-core/forge`. */
-  packageName: string;
-  /** The `exports` map, verbatim from `package.json` — which subpaths are build-time is *derived* from it. */
-  exports: ExportsMap;
-  /** Directories whose modules run on a developer's machine, relative to `root`. */
-  buildTimeDirs: readonly string[];
+  /** Directories nothing outside them may import at value, relative to `root`. */
+  guarded: readonly string[];
   /** Directories walked for source files, relative to `root`. Defaults to `["src"]`. */
   sources?: readonly string[];
+  /** Sources exempt from the rule, as exact root-relative paths the walk reports — `src/router.tsx`, never a directory. */
+  crossings?: readonly string[];
+  /** This package's own name, so a self-import by published subpath is recognised as one. */
+  packageName?: string;
+  /** The `exports` map, verbatim from `package.json` — which subpaths are guarded is *derived* from it. */
+  exports?: ExportsMap;
 }
 
 /** What the dev-boundary check needs to know about the project. @public */
@@ -743,3 +746,16 @@ export interface IccProfileCheckConfig {
   profile: string;
   module: string;
 }
+
+/** What the strip check needs to reproduce the skeleton and build it before gating it. @public */
+export interface StripCheckConfig {
+  /** The demonstrator's working tree, holding `config/strip.ts`. */
+  root: string;
+  /** Assets config path, relative to `root`; omit when the skeleton has no asset build to run first. */
+  assetConfig?: string;
+  /** Where the asset build writes its manifest. Defaults to `.forge/assets.ts`. */
+  assetOut?: string;
+}
+
+/** Runs one command inside the stripped tree and answers how it exited. @public */
+export type StripRunner = (argv: readonly [string, ...string[]], cwd: string, env: typeof process.env) => CaptureResult;

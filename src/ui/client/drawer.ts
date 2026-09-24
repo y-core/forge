@@ -14,6 +14,13 @@ const FOCUSABLE =
 
 const mountedDrawers = new WeakMap<Element, () => void>();
 
+/** The longest `duration + delay` a computed style's transition lists name, in milliseconds. */
+function transitionSpan(style: CSSStyleDeclaration): number {
+  const longest = (list: string) =>
+    Math.max(0, ...list.split(",").map((time) => (Number.parseFloat(time) || 0) * (time.trim().endsWith("ms") ? 1 : 1000)));
+  return longest(style.transitionDuration) + longest(style.transitionDelay);
+}
+
 /** The page's own `overflow`, saved once for a document and restored when the last drawer lets go. */
 interface ScrollLock {
   saved: string;
@@ -129,11 +136,40 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     inerted = [];
   };
 
+  let pendingFocus = 0;
+
+  const cancelPendingFocus = () => {
+    if (pendingFocus === 0) return;
+    win.cancelAnimationFrame(pendingFocus);
+    pendingFocus = 0;
+  };
+
+  // A panel that transitions `visibility` on open is still hidden when `toggle` fires, and the
+  // browser refuses focus to a hidden element; the retry is bounded by the panel's own transition.
+  const focusFirstItem = () => {
+    const first = focusables()[0];
+    if (first === undefined || panel === null) return;
+    first.focus();
+    if (activeElement(el) === first) return;
+    const budget = transitionSpan(win.getComputedStyle(panel));
+    let start: number | undefined;
+    const retry = (time: number) => {
+      pendingFocus = 0;
+      start ??= time;
+      if (!isActive()) return;
+      first.focus();
+      if (activeElement(el) === first || time - start >= budget) return;
+      pendingFocus = win.requestAnimationFrame(retry);
+    };
+    pendingFocus = win.requestAnimationFrame(retry);
+  };
+
   const applyState = () => {
+    cancelPendingFocus();
     if (isActive()) {
       lock();
       isolate();
-      focusables()[0]?.focus();
+      focusFirstItem();
       return;
     }
     unlock();
@@ -180,6 +216,7 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     query.removeEventListener("change", applyState);
     el.removeEventListener("toggle", applyState);
     doc.removeEventListener("keydown", onKeydown);
+    cancelPendingFocus();
     unlock();
     release();
     mountedDrawers.delete(el);

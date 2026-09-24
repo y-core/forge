@@ -430,8 +430,8 @@ and no stylesheet.
 ### 6b. A Mountable Takes No Chrome Options
 
 **A mountable that renders a full document takes no chrome options — no `layout`, no `context`, no `document`.** It calls
-`renderShell(c, content, slot)` and names itself in the slot. `registerShowcase`, `loadLogViewer` and `auth/web` all go through that one seam, and
-the next mountable is held to it rather than inventing a shape of its own.
+`renderShell(c, content, slot)` and names itself in the slot. `loadLogViewer` and `auth/web` both go through that one seam, and the next mountable
+is held to it rather than inventing a shape of its own.
 
 **That is also why none of them carries a `Ctx` type parameter.** A `context`/`layout` option pair has to thread the consumer's config and context
 types through every signature that might reach a render. A closure holds both, so the generics are the consumer's problem where they belong and
@@ -443,8 +443,8 @@ consumer has already written — so a shell that branches on `mount` needs a def
 ### 6c. Fragments Never Reach the Shell
 
 **A fragment response is swapped into a document that already exists, so it is never wrapped.** `renderShell` is the only path that writes `<html>`,
-which makes the rule structural rather than a set of independent implementations of it: an htmx partial (`isPartial`, `isHxRequest`), a showcase API
-endpoint, and a refusal like the log viewer's `403` all answer without calling it.
+which makes the rule structural rather than a set of independent implementations of it: an htmx partial (`isPartial`, `isHxRequest`) and a refusal
+like the log viewer's `403` all answer without calling it.
 
 ### 6d. The Meta Descriptor
 
@@ -460,8 +460,8 @@ so a field does the same job and answers what a key-identity merge leaves open: 
 emit `{ name: "robots", content: "noindex" }` and forge would own a dedupe function so its tag could not collide with a consumer's base — logic to
 write, test and document, for a fact a field states.
 
-**Every page forge mounts is `noindex`.** A sign-in page, an account page, an admin page and a log viewer each say who a deployment's users are; the
-showcase is a reference. None is a page a search result should land on, and the descriptor is what let forge say so.
+**Every page forge mounts is `noindex`.** A sign-in page, an account page, an admin page and a log viewer each say who a deployment's users are.
+None is a page a search result should land on, and the descriptor is what let forge say so.
 
 **`metaTags(meta, { nonce })` is what turns a descriptor into markup**, and `pageShell` calls it — so the bare floor and a consumer's shell render
 the same tags in the same order from the same input. Without a single renderer the type is a data bag and every shell re-implements the escaping.

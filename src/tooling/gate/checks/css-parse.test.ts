@@ -44,6 +44,6 @@ describe("findClassDeclarations() — the literals it reads", () => {
 
 describe("findSourceDirectives()", () => {
   it("returns each included path and drops the `not` exclusions", () => {
-    expect(findSourceDirectives('@source "../../ui";\n@source not "../../ui/show";\n')).toEqual(["../../ui"]);
+    expect(findSourceDirectives('@source "../../ui";\n@source not "../../ui/gallery";\n')).toEqual(["../../ui"]);
   });
 });

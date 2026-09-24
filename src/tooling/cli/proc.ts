@@ -39,14 +39,19 @@ export function run(cmd: string, args: string[], opts?: { cwd?: string }, spawn:
 }
 
 /** Spawns `cmd args`, buffering its combined output and returning the exit code without throwing. */
-export function capture(cmd: string, args: string[], opts?: { cwd?: string }, spawn: SpawnSync = spawnSync): CaptureResult {
+export function capture(
+  cmd: string,
+  args: string[],
+  opts?: { cwd?: string; env?: typeof process.env },
+  spawn: SpawnSync = spawnSync,
+): CaptureResult {
   // One temp-file fd for both streams keeps them interleaved; `stdio: "pipe"` yields two independent buffers and loses the order.
   const dir = mkdtempSync(join(tmpdir(), "forge-capture-"));
   const file = join(dir, "output");
   const fd = openSync(file, "w");
   const started = Date.now();
   try {
-    const r = spawn(cmd, args, { stdio: ["ignore", fd, fd], env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
+    const r = spawn(cmd, args, { stdio: ["ignore", fd, fd], env: opts?.env ?? process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
     closeSync(fd);
     const reason = r.error ? `${r.error.message}\n` : "";
     return { code: r.status ?? 1, output: readFileSync(file, "utf-8") + reason, ms: Date.now() - started };

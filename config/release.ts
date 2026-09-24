@@ -2,4 +2,4 @@
 
 import type { ReleaseCommandConfig } from "../src/tooling/release/mod";
 
-export default { gateCommand: ["bun", "run", "verify:full"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
+export default { gateCommand: ["bun", "run", "release:gate"] } satisfies Omit<ReleaseCommandConfig, "cwd">;

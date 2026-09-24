@@ -5,12 +5,12 @@ import type { Mode, Ramp, Scale, ScaleFamily } from "./types";
 export type { ScaleFamily } from "./types";
 import type { CopyTarget, Dial, DialValues, GeneratedTheme, LiveRatio, SchemePreset } from "./types";
 
-/** Resumable-scope name the customiser's lever panel stamps. @public */
+/** Resumable-scope name a customiser's lever panel stamps. @public */
 export const CUSTOMISE_SCOPE = "customise";
 
 // A second scope rather than a wider one: `runAction` walks to the nearest `[data-scope]`, so a
 // copy button outside `CUSTOMISE_SCOPE` would fire nothing.
-/** Resumable-scope name the customiser's output block stamps, so a copy button has a scope to act in. @public */
+/** Resumable-scope name a customiser's output block stamps, so a copy button has a scope to act in. @public */
 export const COPY_SCOPE = "customise-copy";
 
 /** The `data-on-click` action every copy button fires. @public */
@@ -28,7 +28,7 @@ export const COPY_STATUS_ATTR = "data-copy-status";
 /** How long a copy button reads "Copied" before its own label returns. @public */
 export const COPY_CONFIRM_MS = 2000;
 
-/** What the customiser hands you, and the control beside each. @public */
+/** What a customiser hands you, and the control beside each. @public */
 export const COPY_TARGETS: readonly CopyTarget[] = [
   {
     id: "url",
@@ -118,10 +118,10 @@ export function matchPreset(dials: DialValues): SchemePreset | undefined {
 /** The gray dials a preset sets, and the only fields the picker drives. @public */
 export const PRESET_FIELDS = ["grayHue", "grayChroma"] as const;
 
-/** The `--radius` token, which the customiser drives directly rather than through a scale. @public */
+/** The `--radius` token, which a customiser drives directly rather than through a scale. @public */
 export const RADIUS_PROPERTY = "--radius";
 
-/** The other shape tokens the customiser writes, in the order both writers emit them. @public */
+/** The other shape tokens a customiser writes, in the order both writers emit them. @public */
 export const SHAPE_PROPERTIES = ["--radius-field", "--radius-box", "--control-h-sm", "--control-h-md", "--control-h-lg"] as const;
 
 // One spelling of the ±8px step, so the painter and the emitted file cannot disagree about what

@@ -200,4 +200,11 @@ describe("checkClassTokens", () => {
       "`src/ui` matched no source — refusing to report a green class-token gate that scanned nothing",
     ]);
   });
+
+  it("fails on a `sources` entry naming nothing, even beside one that finds files", async () => {
+    const root = fixtureRoot({ "src/ui/a.tsx": 'const a = "p-2";' });
+    const result = await checkClassTokens({ root, sources: ["src/ui", "src/uii"], stylesheet: resolve(ROOT, STYLESHEET) });
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `src/uii` names no file or directory under the root"]);
+  });
 });

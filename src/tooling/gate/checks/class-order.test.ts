@@ -147,6 +147,14 @@ describe("checkClassOrder", () => {
     expect(result.ok).toBe(false);
     expect(result.findings[0]?.message).toBe("`src` matched no source — refusing to report a green class-order gate that scanned nothing");
   });
+
+  it("fails on a `sources` entry naming nothing, even beside one that finds files", () => {
+    const root = fixtureRoot({ "src/a.tsx": 'const a = "p-2";\n' });
+    const result = checkClassOrder({ root, sources: ["src", "srcc"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `srcc` names no file or directory under the root"]);
+  });
 });
 
 describe("validateClassOrder — the shapes the formatter sorts beyond a quoted attribute", () => {

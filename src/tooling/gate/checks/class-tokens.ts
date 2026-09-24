@@ -5,7 +5,7 @@ import { utilityOf } from "../../../ui/core/utils/cn";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { loadDesignSystem } from "./design-system";
-import { balancedSpan, blankSourceComments, lineAt, resolveSources } from "./source-scan";
+import { balancedSpan, blankSourceComments, lineAt, resolveSources, unresolvedSourceEntries } from "./source-scan";
 import type { ClassTokensCheckConfig, SourceLiteral } from "./types";
 
 // Specs are excluded: they assert on *rendered* markup, so a class string in one is a fragment of an
@@ -116,6 +116,8 @@ export async function checkClassTokens(config: ClassTokensCheckConfig): Promise<
   const files = resolveSources(root, sources, SCANNED);
 
   if (files.length === 0) return scannedNothing(`\`${sources.join("`, `")}\` matched no source`, "class-token");
+  const unresolved = unresolvedSourceEntries(root, sources, "file or directory");
+  if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const contents = new Map(files.map((file) => [file, readFileSync(resolve(root, file), "utf-8")]));
   const ds = await loadDesignSystem(resolve(root, config.stylesheet));

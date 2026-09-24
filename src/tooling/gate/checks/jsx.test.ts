@@ -88,6 +88,13 @@ describe("checkJsx()", () => {
     expect(result.summary).toBe("");
   });
 
+  it("fails on a `sources` entry naming no directory, even beside one that finds files", () => {
+    const result = checkJsx({ root: fixtureRoot({ "src/a.tsx": "export const A = 1;" }), sources: ["src", "app"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `app` names no directory under the root"]);
+  });
+
   it("fails a tree with a violation, and closes with the rule it violated", () => {
     const result = checkJsx({ root: fixtureRoot({ "src/a.tsx": HEADER, "src/bad.tsx": "export const B = () => <div />;" }) });
 

@@ -60,4 +60,11 @@ describe("checkCommentBudget() — the vacuity refusal", () => {
     expect(result.findings).toEqual([fail("`src` matched no source — refusing to report a green comment-budget gate that scanned nothing")]);
     expect(result.summary).toBe("");
   });
+
+  it("fails on a `sources` entry naming nothing, even beside one that finds files", () => {
+    const result = checkCommentBudget({ root: fixtureRoot({ "src/a.ts": "export const a = 1;\n" }), sources: ["src", "srcc"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `srcc` names no file or directory under the root"]);
+  });
 });

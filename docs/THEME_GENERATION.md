@@ -1,20 +1,19 @@
 ---
 title: Theme Generation Contracts
-description: "The dial model a generated colour scheme is produced from, the emission contract, and the contrast-audit data the gate and the customiser both consume."
+description: "The dial model a generated colour scheme is produced from, the emission contract, and the contrast-audit data the gate and a customiser both consume."
 audience: consumer
 ---
 
 # Theme Generation Contracts
 
 > Owns the shared data a colour scheme is _generated_ and _audited_ against: the dials a scheme is produced from, the pipeline that turns them into
-> a scheme file, and the audited pair list the verification gate and the browser customiser read from one declaration.
+> a scheme file, and the audited pair list the verification gate and a customiser read from one declaration. Forge ships the generator and no
+> customiser page; the demonstrator, forge-starter, carries the customiser that consumes it.
 >
-> It does not own how a scheme file is _declared_ — that is [`UI_CLASS_COMPOSITION.md`][ucc-2] §2 — nor how the customiser page is reached, which is
-> [`UI_SHOWCASE.md`][us-1b] §1b.
+> It does not own how a scheme file is _declared_ — that is [`UI_CLASS_COMPOSITION.md`][ucc-2] §2.
 >
 > Defers to: `src/ui/contracts/theme/theme-contract.ts`, `src/ui/contracts/theme/color.ts`, `src/ui/contracts/theme/contrast-pairs.ts` and
-> `src/ui/contracts/theme/contrast-accepted.ts` for every value; `config/steps.ts` for the gate's configuration; `src/ui/README.md` for the
-> customiser's routes, props and worked usage.
+> `src/ui/contracts/theme/contrast-accepted.ts` for every value; `config/steps.ts` for the gate's configuration.
 
 ---
 
@@ -33,7 +32,7 @@ audience: consumer
 - §3 Contrast Audit Contract: the pair list forge measures itself against
 - §3a Audited Pairs and Criteria: the declaration the gate consumes, and what a pair records
 - §3b Accepted Exemptions: a mandatory reason, a pinned value, and no third state
-- §3c The Live Readout Reuses the Audit: why the customiser measures the same pairs, and what it cannot measure
+- §3c The Live Readout Reuses the Audit: why `liveRatios` measures the same pairs, and what it cannot measure
 - §3d A Focus Ring Is Read Against the Surface It Is Drawn On: the audited row, the fill the gray step fails, and why the choice is per-appearance
 - §4 A Status Hue Holds Its Fill: the accent ramp's shape applied to the status intents
 - §4a One Value Cannot Be Both a Fill and Text: the defect the hold fixes, and what flips instead
@@ -44,9 +43,9 @@ audience: consumer
 
 ## 1. One Declaration, Three Consumers
 
-The theme data has three readers that cannot see each other: the Worker-side customiser page, the browser scope that repaints it, and the
-verification gate that runs in neither. A value duplicated across them drifts silently — the page keeps rendering, the browser keeps
-painting, and only the number a reader is shown becomes wrong.
+The theme data has three readers that cannot see each other: a customiser's Worker-side page, the browser scope that repaints it, and the
+verification gate that runs in neither. Forge ships the gate's reader and neither half of the customiser, which forge-starter carries. A value
+duplicated across them drifts silently — the page keeps rendering, the browser keeps painting, and only the number a reader is shown becomes wrong.
 
 That is the argument [`STATE_ATTRIBUTES.md`][sa-1] §1 makes for state attributes, applied to a third reader. The data therefore lives in
 `ui/contracts`, which is a leaf namespace ([`NAMESPACES.md`][namespaces-4a] §4a), and the gate reaches it by importing it into `config/steps.ts`
@@ -58,36 +57,38 @@ prose here, and they are registered as such in [`AGENT_GUIDE.md`][ag-8] §8.
 ### 1a. The Dial Declaration and Its Units
 
 **A dial is declared once and carries everything about itself** — the state field, the query parameter, the accessible name, the range, the step,
-and the value an absent parameter means. The loader, the sliders, the browser scope and the share link all read that one row, so adding a dial is a
-data edit rather than a change in each of them.
+and the value an absent parameter means. `dialQuery` and `leverRows` read that one row, and so do a customiser's loader, sliders and browser scope,
+so adding a dial is a data edit rather than a change in each of them.
 
-**One unit convention is not derivable and is therefore stated: a chroma dial carries thousandths.** The control is an integer slider, and
-`buildTheme` divides on the way in. A reader who assumes the dial value is the OKLCh chroma is out by three orders of magnitude, and the page still
-renders.
+**One unit convention is not derivable and is therefore stated: a chroma dial carries thousandths.** A dial steps in whole numbers, and
+`buildTheme` divides on the way in. A reader who assumes the dial value is the OKLCh chroma is out by three orders of magnitude, and the scheme
+still renders.
 
 ### 1b. The Query String Is the Whole State
 
-**The customiser's loader reads the dials from the query string and from nothing else.** There is no storage, no cookie, and no server-side session,
-so a scheme is a link: sharing one is sharing the URL, and reloading is reproducing it exactly.
+**Every dial travels in the query string, so a loader needs nothing else.** Each dial declares its own parameter and `dialQuery` writes all of
+them, an absent or non-finite value as the dial's fallback. A loader that reads the dials from the query string alone needs no storage, no cookie
+and no server-side session, so a scheme is a link: sharing one is sharing the URL, and reloading is reproducing it exactly.
 
-**This is why the customiser mints no pre-paint script.** The precedent in [`UI_CLIENT_RUNTIME.md`][ucr-2b] §2b is that an inline script is for
-state the server cannot know; every dial arrives in the request, so the server can render the correct scheme and there is no intermediate state to
-correct.
+**This is why a customiser built on it needs no pre-paint script.** The precedent in [`UI_CLIENT_RUNTIME.md`][ucr-2b] §2b is that an inline script
+is for state the server cannot know; every dial arrives in the request, so the server can render the correct scheme and there is no intermediate
+state to correct.
 
-**The browser half never navigates.** It repaints in place and _publishes_ the equivalent link rather than writing one into the address bar, so a
-drag costs no history entry and no request.
+**Nothing in the contract navigates.** `dialQuery` returns the equivalent link as a string, so a browser half can repaint in place and _publish_
+that link rather than write it into the address bar — a drag then costs no history entry and no request.
 
 ### 1c. Presets Are Fitted Aliases, Not a Second Source
 
 A shipped scheme is reproducible from two gray dials, and a preset is that pair under a name. These properties keep the alias from becoming a second
 source of truth:
 
-- **The preset parameter is input-only, and an explicit dial beside it wins.** It expands to dial values during the load and is never emitted, so no
-  state can be expressed two ways at once.
-- **Picking a preset is a command, not a binding.** The pick fires a scope action that writes both dials; the painter then reacts exactly as it
-  does to a drag. A binding would make the picker a second holder of the scheme's state.
-- **Which preset the dials name is derived, never stored.** A lever dragged off a preset moves the picker to the custom option, because a control
-  naming `slate` beside a scheme whose dials have drifted off `slate` is the disagreement the live readouts exist to prevent.
+- **The preset parameter is input-only, and an explicit dial beside it wins.** A loader expands `PRESET_PARAM` to dial values and `dialQuery` never
+  emits it, so no state can be expressed two ways at once.
+- **Picking a preset is a command, not a binding.** `PRESET_ACTION` names the scope action a pick fires, which writes both dials; the painter then
+  reacts exactly as it does to a drag. A binding would make the picker a second holder of the scheme's state.
+- **Which preset the dials name is derived, never stored.** `matchPreset` answers `undefined` for dials between presets, and `PRESET_CUSTOM` is the
+  option that stands for them, because a control naming `slate` beside a scheme whose dials have drifted off `slate` is the disagreement the live
+  readouts exist to prevent.
 
 **The preset values are fitted to the shipped scheme files, not transcribed from them**, and the fit is re-derived against those files by
 `src/ui/contracts/theme/color.test.ts` rather than asserted here.
@@ -112,7 +113,7 @@ application's own shape file follows the same shape: one `:root` block, those to
 [`UI_CLASS_COMPOSITION.md`][ucc-2f] §2f names as overloaded between colour and width, so the width recipe is declared as a static utility in
 `forge-ui.css` where `cn` reads its compiled signature unambiguously.
 
-**The customiser's shape dials drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is one custom property, with no
+**The shape dials in `DIALS` drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is one custom property, with no
 scale behind it. `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH` writes
 `--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it. Every dialled property but `--radius` is named by
 `SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector` and `--border-width` are not dialled: a pill is a pill at every
@@ -164,15 +165,15 @@ output is one custom property.
 
 **Shape is emitted as a second block, under its own comment, rather than folded into the scheme.** The scheme block stays exactly what §1d says a
 scheme is — colour steps and nothing else — so the shape declarations `SHAPE_PROPERTIES` names follow it as a file a reader saves separately, the
-way `shape-compact.css` ships. `--radius` is painted rather than emitted.
+way `shape-compact.css` ships. `--radius` is not among them: a customiser paints it, and the file does not emit it.
 
 ### 2d. No Generated Colour Reaches Markup
 
-**The customiser paints through CSSOM, never through a rendered `style` attribute** — the same pair `openPopoverAt` runs into
-([`UI_CLIENT_RUNTIME.md`][ucr-2i] §2i), owned by [`UI_SSR_COMPONENTS.md`][usc-1a] §1a.
+**A page showing a generated scheme paints it through CSSOM, never through a rendered `style` attribute** — the same pair `openPopoverAt` runs
+into ([`UI_CLIENT_RUNTIME.md`][ucr-2i] §2i), owned by [`UI_SSR_COMPONENTS.md`][usc-1a] §1a.
 
-**The consequence is a real constraint on the page, not an implementation detail.** Server-rendered markup carries the _structure_ of the preview
-and the _keys_ the painter writes into; the colour arrives only once the scope resumes.
+**The consequence is a real constraint on that page, not an implementation detail.** Server-rendered markup carries the _structure_ of the preview
+and the _keys_ the painter writes into — `SCALE_ROW_ATTR`, `HEX_ATTR` and `ratioKey` name them — and the colour arrives only once the scope resumes.
 
 ---
 
@@ -206,7 +207,7 @@ These properties make the list a contract rather than a suppression list:
 
 ### 3c. The Live Readout Reuses the Audit
 
-**The customiser measures the same pairs the gate does**, from the same declaration, so a scheme a reader generates is judged by the criteria forge
+**`liveRatios` measures the same pairs the gate does**, from the same declaration, so a scheme a reader generates is judged by the criteria forge
 enforces on its own — not by a second, friendlier list that happens to agree today. **Both compare the ratio unrounded**, and only the displayed
 number is rounded: a pair that fails by less than the rounding a reader is shown must fail on both sides, or the agreement above holds
 everywhere except at the boundary that matters.
@@ -218,12 +219,12 @@ given step 9. `ACCENT_RAMP.dark.lightness[8]` is 0.5075 rather than the light ra
 scheme declares per mode.
 
 **Only the pairs whose two sides are both steps of a generated scale can be measured live**, and that boundary is in the data rather than in a
-comment: a pair resolving through a fixed token has no generated value to measure, because the customiser generates scales and not the semantic
-layer above them.
+comment: a pair resolving through a fixed token has no generated value to measure, because `buildTheme` generates scales and not the semantic layer
+above them.
 
 **The readout's key carries the background as well as the token**, because one token is audited against two different backgrounds and a token-only
-key silently collapses those rows onto each other. The Worker and the browser print the same text from the same computation, so the value on first
-paint and the value after a drag can never disagree in format.
+key silently collapses those rows onto each other. A `LiveRatio` carries the one text both a Worker render and a browser repaint print, so the
+value on first paint and the value after a drag can never disagree in format.
 
 ### 3d. A Focus Ring Is Read Against the Surface It Is Drawn On
 
@@ -289,5 +290,4 @@ Success is one hue: the emerald ramp carries the subtle, strong and border steps
 [ucc-2f]: ./UI_CLASS_COMPOSITION.md#2f-a-reserved-root-where-a-utility-root-carries-two-concerns
 [ucr-2b]: ./UI_CLIENT_RUNTIME.md#2b-theme-controller-and-fouc-prevention
 [ucr-2i]: ./UI_CLIENT_RUNTIME.md#2i-openpopoverat--coordinate-placement
-[us-1b]: ./UI_SHOWCASE.md#1b-routes-are-derived-from-one-base-path
 [usc-1a]: ./UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes

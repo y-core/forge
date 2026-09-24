@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, escapeClass, mount } from "../client/browser.fixture";
+import { compiledCss, mount, paintedHex, renderedClasses } from "../client/browser.fixture";
 import { ToggleGroup } from "../controls/toggle-group";
 import { Resumable } from "../server/resumable";
 
@@ -15,8 +15,6 @@ declare global {
 }
 
 const EXPOSE = { expose: { forgeBind: "./ui/client/bind", forgeResume: "./ui/client/resume", forgeSignals: "./ui/client/signal-record" } };
-
-const PRESSED_PAINT = "rgb(0, 0, 255)";
 
 function groupMarkup(pressed: number): Promise<string> {
   return render(
@@ -32,12 +30,6 @@ function groupMarkup(pressed: number): Promise<string> {
   );
 }
 
-// The paint hangs off the input's own `:checked`, so the compiled rule has to be a `:has()` one —
-// which is the whole point: no controller writes the state the stylesheet reads.
-function compileHasVariant(cls: string, declaration: string): string {
-  return `.${escapeClass(cls)}:has(:checked) { ${declaration} }`;
-}
-
 async function install(page: Page, css: string): Promise<void> {
   await page.evaluate((rule) => {
     const style = document.createElement("style");
@@ -50,41 +42,44 @@ async function install(page: Page, css: string): Promise<void> {
   }, css);
 }
 
-function paintState(page: Page) {
-  return page.evaluate(() =>
+async function paintState(page: Page): Promise<Array<{ background: string; checked: boolean }>> {
+  const items = await page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].map((el) => ({
       background: getComputedStyle(el).backgroundColor,
       checked: el.querySelector<HTMLInputElement>("[data-slot~='toggle-group-input']")?.checked === true,
     })),
   );
+  return Promise.all(items.map(async (item) => ({ ...item, background: await paintedHex(page, item.background) })));
 }
 
 test.describe("ToggleGroup — the pressed paint follows the click", () => {
   test("clicking an item moves the painted state onto it", async ({ page }) => {
     const html = await groupMarkup(0);
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await mount(page, html, EXPOSE);
-    const cls = classesOf(html, "toggle-group-item").find((name) => name.endsWith(":bg-primary")) as string;
-    await install(page, compileHasVariant(cls, `background-color: ${PRESSED_PAINT}`));
+    await install(page, await compiledCss(renderedClasses(html)));
+    const pressed = await paintedHex(page, "var(--primary)");
 
     const before = await paintState(page);
-    expect(before[0]).toEqual({ background: PRESSED_PAINT, checked: true });
-    expect(before[1]?.background).not.toBe(PRESSED_PAINT);
+    expect(before[0]).toEqual({ background: pressed, checked: true });
+    expect(before[1]?.background).not.toBe(pressed);
 
     await page.click("label:has(#i1)");
 
     const after = await paintState(page);
-    expect(after[1]).toEqual({ background: PRESSED_PAINT, checked: true });
-    expect(after[0]?.background).not.toBe(PRESSED_PAINT);
+    expect(after[1]).toEqual({ background: pressed, checked: true });
+    expect(after[0]?.background).not.toBe(pressed);
   });
 
   test("the paint needs no script at all: a server-checked item is already painted", async ({ page }) => {
     const html = await groupMarkup(1);
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await mount(page, html);
-    const cls = classesOf(html, "toggle-group-item").find((name) => name.endsWith(":bg-primary")) as string;
-    await page.addStyleTag({ content: compileHasVariant(cls, `background-color: ${PRESSED_PAINT}`) });
+    await page.addStyleTag({ content: await compiledCss(renderedClasses(html)) });
+    const pressed = await paintedHex(page, "var(--primary)");
 
     const state = await paintState(page);
-    expect(state[1]).toEqual({ background: PRESSED_PAINT, checked: true });
-    expect(state[0]?.background).not.toBe(PRESSED_PAINT);
+    expect(state[1]).toEqual({ background: pressed, checked: true });
+    expect(state[0]?.background).not.toBe(pressed);
   });
 });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
+import { isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
 import type { Home, Spawned } from "./types";
 
 const roots: string[] = [];
@@ -142,8 +142,22 @@ describe("realDbIo() — ambient", () => {
   });
 });
 
-/** A binding that answers every statement with no rows, so the port's own behaviour is what is read. */
-const stubDb = () => ({ prepare: (sql: string) => sql, batch: (statements: string[]) => Promise.resolve(statements.map(() => ({ results: [] }))) });
+// The text a local D1 answers with when another process held the database's lock.
+const BUSY_REFUSAL = "D1_ERROR: Failed to parse body as JSON, got: Error: internal error; reference = kd8n226n3710119qmodjhvl0";
+
+let refusals: string[] = [];
+const batches: string[][] = [];
+
+/** A binding that answers every statement with no rows, or with the next of `refusals` while any remain. */
+const stubDb = () => ({
+  prepare: (sql: string) => sql,
+  batch: (statements: string[]) => {
+    batches.push(statements);
+    const refusal = refusals.shift();
+    if (refusal !== undefined) return Promise.reject(new Error(refusal));
+    return Promise.resolve(statements.map(() => ({ results: [] })));
+  },
+});
 
 const opened: Record<string, unknown>[] = [];
 let opens = 0;
@@ -280,5 +294,64 @@ describe("realDbIo() — the local D1 port", () => {
     await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
     );
+  });
+});
+
+describe("isD1BusyRefusal()", () => {
+  it("matches D1's internal error, and neither a SQL error nor the same text outside a D1 error", () => {
+    expect([
+      isD1BusyRefusal(new Error(BUSY_REFUSAL)),
+      isD1BusyRefusal(new Error("D1_ERROR: no such table: users: SQLITE_ERROR")),
+      isD1BusyRefusal(new Error("internal error; reference = abc")),
+      isD1BusyRefusal(BUSY_REFUSAL),
+    ]).toEqual([true, false, false, false]);
+  });
+});
+
+describe("realDbIo() — a batch refused for the lock", () => {
+  it("disposes the refused handle and replays the batch on a new one", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
+    refusals = [BUSY_REFUSAL];
+    expect(await io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).toEqual([[]]);
+    expect([opens - opened0, disposals - disposed0, batches.slice(batched0)]).toEqual([
+      2,
+      1,
+      [["INSERT INTO t VALUES (1)"], ["INSERT INTO t VALUES (1)"]],
+    ]);
+    await io.closeD1(null);
+  });
+
+  it("replays a read batch on a new handle even after the handle has answered", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    await io.d1(localHome(root), ["SELECT 1"]);
+    const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
+    refusals = [BUSY_REFUSAL];
+    expect(await io.d1(localHome(root), ["SELECT name FROM sqlite_master"])).toEqual([[]]);
+    expect([opens - opened0, disposals - disposed0, batches.length - batched0]).toEqual([1, 1, 2]);
+    await io.closeD1(null);
+  });
+
+  it("never replays a write batch on a handle that has already answered", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    await io.d1(localHome(root), ["SELECT 1"]);
+    const [opened0, batched0] = [opens, batches.length];
+    refusals = [BUSY_REFUSAL];
+    await expect(io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).rejects.toThrow(BUSY_REFUSAL);
+    expect([opens - opened0, batches.length - batched0]).toEqual([0, 1]);
+    await io.closeD1(null);
+  });
+
+  it("does not retry a first batch that failed on its SQL", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    const [opened0, batched0] = [opens, batches.length];
+    refusals = ["D1_ERROR: no such table: t: SQLITE_ERROR"];
+    await expect(io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).rejects.toThrow("no such table: t");
+    expect([opens - opened0, batches.length - batched0]).toEqual([1, 1]);
+    await io.closeD1(null);
   });
 });
