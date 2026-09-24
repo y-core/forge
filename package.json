@@ -248,6 +248,10 @@
       "types": "./src/tooling/cli/mod.ts",
       "import": "./src/tooling/cli/mod.ts"
     },
+    "./tooling/curate": {
+      "types": "./src/tooling/curate/mod.ts",
+      "import": "./src/tooling/curate/mod.ts"
+    },
     "./tooling/db": {
       "types": "./src/tooling/db/mod.ts",
       "import": "./src/tooling/db/mod.ts"
@@ -265,10 +269,6 @@
     "./tooling/release": {
       "types": "./src/tooling/release/mod.ts",
       "import": "./src/tooling/release/mod.ts"
-    },
-    "./tooling/strip": {
-      "types": "./src/tooling/strip/mod.ts",
-      "import": "./src/tooling/strip/mod.ts"
     },
     "./tooling/term": {
       "types": "./src/tooling/term/mod.ts",

@@ -127,6 +127,25 @@ describe("createSigninActions", () => {
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
   });
 
+  for (const [kind, name] of [
+    ["another form's field", "role"],
+    ["an inherited name", "__proto__"],
+    ["an inherited method", "constructor"],
+  ] as const) {
+    it(`refuses ${kind} sent as an undeclared field at 422 with the generic copy, not a message looked up by its name`, async () => {
+      const options = fakeAuthWebOptions();
+      const app = mounted(actionApp(), "POST", "/auth/signin", createSigninActions(options).signinSubmit);
+
+      const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", [name]: "x" }));
+      expect(res.status).toBe(422);
+      const html = await res.text();
+      expect(html).toContain("We could not read that. Please check the form and try again.");
+      expect(html).not.toContain("Pick a role from the list.");
+      expect(html).not.toContain("[object Object]");
+      expect(html).not.toContain("[native code]");
+    });
+  }
+
   it("accepts the body a browser posts, CSRF field and all", async () => {
     const options = fakeAuthWebOptions();
     const app = mounted(actionApp(), "POST", "/auth/signin", createSigninActions(options).signinSubmit);

@@ -18,7 +18,62 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **Rename `config/strip.ts` to `config/features.ts` and write it as a flat feature map.** Import
+   `defineFeatures` from `@y-core/forge/tooling/curate` in place of `defineStripConfig`, and pass it
+   one entry per feature — `defineFeatures({ showcase: { directories, seams } })` — with each seam
+   its bare file path.
+2. **Rewrite every marker as `feature:<feature>`.** A line is removed when it ends with a comment
+   naming its feature, so `/* strip:showcase */` becomes `/* feature:showcase */`.
+3. **Run `forge curate <dir> --drop <features>` in place of `forge strip`.** With no `--drop` it
+   makes a plain copy.
+4. **Change `strip: true` to `features: {}`** in `cloudflareWorkerSteps`; its row is now
+   `validate-features`.
+
+### Breaking Changes
+
+- **`forge strip` is renamed `forge curate`, with no alias.** Renamed with it, none with a shim:
+  `@y-core/forge/tooling/strip` to `tooling/curate`, `defineStripConfig` to `defineFeatures`
+  (taking the feature record directly), `config/strip.ts` to `config/features.ts`, `strip:`
+  markers to `feature:`, `validate-strip` to `validate-features`, and `cloudflareWorkerSteps`'
+  `strip` option to `features`. The exports follow: `createCurateCommand`, `curateTree`,
+  `loadFeatures`, `DEFAULT_FEATURE_MANIFEST`, `FeatureManifest`, `FeatureManifestSchema`,
+  `CurateRequest`, `CurateReport`, `checkFeatures`, `featuresStep`, `FeaturesCheckConfig` and
+  `CurateRunner`.
+- **The feature manifest is keyed by feature.** `defineFeatures({ <name>: { directories, seams } })`
+  replaces the single `{ directories, seams }` set, and a seam is a file path rather than a
+  `{ file, marker }` pair. `StripSeam` is gone; `Feature` names one entry.
+- **`forge curate` drops only the features `--drop a,b` names**, and `CurateRequest` has a required
+  `drop` list. Dropping nothing is a plain copy, still held to every refusal.
+- **The manifest is left out of the copy only when every feature is dropped.** Otherwise it is kept
+  and edited like a seam, so a partial copy can curate its remaining features in turn. A feature's
+  entry in the manifest is wrapped in its own region to make that work.
+- **`cloudflareWorkerSteps`' `features` option is an object, `{ profiles? }`, where `strip` was a
+  boolean.** `validate-features` proves one skeleton per profile, defaulting to each feature dropped
+  alone and then all of them together, and fails naming the profile that broke. An empty
+  `profiles`, or a profile dropping nothing, fails the row rather than passing unproved.
+
+### Added
+
+- **A marker may name several features — `/* feature:showcase,contact */` — and its line is
+  removed only when every one of them is dropped**, for a line two features share.
+- **Region markers, `feature:<feature>:begin` and `feature:<feature>:end`, remove a block of
+  lines**, in any of the `/* */`, `//`, `#` and `<!-- -->` comment forms, so prose in Markdown can
+  be tailored as well as code. A nested or unclosed region, an end that does not match its begin, a
+  malformed marker, a marker naming an unknown feature and a marker in a file that is not one of
+  that feature's seams are each refused before anything is written.
+
+- **`cloudflareWorkerSteps({ workerd: { parallel } })` sets how many workerd spec files run at
+  once.** Two `startDevServer` calls starting together can collide on a port wrangler picks for
+  itself, so an app with more than one workerd spec sets `{ parallel: 1 }` until that is fixed.
+
+### Fixed
+
+- **An auth form refused for an undeclared field now shows the generic copy.** The message was looked
+  up by the field's name, which the visitor chooses: `__proto__` rendered `[object Object]`,
+  `constructor` rendered a function's source, and `role` on the sign-in page showed the admin form's
+  "Pick a role from the list." Only a field the form's schema declares now earns its own message.
 
 ---
 

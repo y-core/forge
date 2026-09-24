@@ -102,7 +102,7 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/tooling/cli` | `src/tooling/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError`; plus the shared foundation the tool namespaces read config through — `resolveAppRoot`, `loadConfigModule`, the JSONC parser and editor, and the barrel parser |
 | `@y-core/forge/tooling/gate` | `src/tooling/gate/mod.ts` | the verification gate — the gate command factory, the step builders and presets, and every check. It also owns the changelog and semver parsers, which is what lets `tooling/release` depend on it and never the reverse. The gate's formatters stay out of the barrel ([`BUILD_TOOLING.md`][bt-2f] §2f) |
 | `@y-core/forge/tooling/release` | `src/tooling/release/mod.ts` | `createReleaseCommand`, `resolveVersion`, `ReleaseError` — the release workflow, built on the gate's changelog and semver parsers and its barrel parser. The git and `package.json` helpers stay out of the barrel ([`BUILD_TOOLING.md`][bt-2c] §2c) |
-| `@y-core/forge/tooling/strip` | `src/tooling/strip/mod.ts` | `createStripCommand`, `stripTree`, `defineStripConfig`, `loadStripConfig` — `forge strip`, which copies a working tree minus the directories and marked lines a strip manifest names. The gate's `validate-strip` row builds on it, never the reverse |
+| `@y-core/forge/tooling/curate` | `src/tooling/curate/mod.ts` | `createCurateCommand`, `curateTree`, `defineFeatures`, `loadFeatures` — `forge curate`, which copies a working tree minus the directories and marked lines of the features `--drop` names. The gate's `validate-features` row builds on it, never the reverse |
 | `@y-core/forge/tooling/gate/chromium` | `src/tooling/gate/chromium.mjs` | `resolveChromiumPath`, prebuilt — the spelling a consumer's `playwright.config.ts` imports. It exists for the same reason `./tooling/lint/plugin` does: playwright loads its config under node, which refuses to strip types from a file under `node_modules`; `validate-chromium-bundle` rebuilds it and fails on any drift from the source |
 | `@y-core/forge/tooling/lint` | `src/tooling/lint/mod.ts` | forge's oxlint JS plugin, default-exported for `.oxlintrc.json`'s `jsPlugins`, plus the rule catalogs the gate's design and modern-CSS checks read. Loaded as raw TypeScript: oxlint resolves the source directly, so the plugin ships with no build step. Its types are structural restatements of oxlint's own, because `oxlint` is a devDependency and a published module must not depend on it |
 | `@y-core/forge/tooling/lint/plugin` | `src/tooling/lint/plugin.mjs` | The same plugin, prebuilt — the spelling a consumer's `.oxlintrc.json` names in `jsPlugins`. It exists because node refuses to strip types from a file under `node_modules`, so a consumer's oxlint cannot load `mod.ts` at all; `validate-lint-plugin` rebuilds it and fails on any drift from the source |
@@ -239,7 +239,7 @@ imports it — so it belongs to no namespace and contributes no edges. Classifyi
 does not have, and edges nobody can import.
 
 **`tooling` is a container, not a namespace.** No `mod.ts` sits at the container root: each child — `tooling/cli`, `tooling/term`, `tooling/lint`,
-`tooling/gate`, `tooling/release`, `tooling/strip`, `tooling/cf`, `tooling/db`, `tooling/assets` — owns its own subpath and is its own namespace.
+`tooling/gate`, `tooling/release`, `tooling/curate`, `tooling/cf`, `tooling/db`, `tooling/assets` — owns its own subpath and is its own namespace.
 `resolveNamespaces` matches by longest directory prefix, so a `tooling` namespace rooted at `src/tooling/` would swallow every one of them. The
 container earns its name a second way: **every module under it qualifies for the build-time exemption** ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e), so
 a Worker-reachable module under `src/tooling/` is a visible contradiction rather than an argument to re-litigate.
@@ -414,11 +414,11 @@ signal API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`][ucr-2] §2.
 ### 5g. tooling — Where a Developer-Facing Tool Belongs
 
 **A new command, gate check, lint rule or release step goes to one of the `tooling` namespaces** — `tooling/cli`, `tooling/term`, `tooling/gate`,
-`tooling/lint`, `tooling/release`, `tooling/strip`, `tooling/cf`, `tooling/db`, `tooling/assets`. Pick by the artifact the tool acts on: the command
-surface and its flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate` (and a check is a
-function, not a script — [`BUILD_TOOLING.md`][bt-2i] §2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, reducing a working
-tree to its skeleton is `tooling/strip`, a Cloudflare API call is `tooling/cf`, a D1 migration, compose, backup or seed verb is `tooling/db`
-([`DATABASE_MANAGEMENT.md`][dm]), and driving an external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
+`tooling/lint`, `tooling/release`, `tooling/curate`, `tooling/cf`, `tooling/db`, `tooling/assets`. Pick by the artifact the tool acts on: the
+command surface and its flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate` (and a check
+is a function, not a script — [`BUILD_TOOLING.md`][bt-2i] §2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, reducing a
+working tree to its skeleton is `tooling/curate`, a Cloudflare API call is `tooling/cf`, a D1 migration, compose, backup or seed verb is
+`tooling/db` ([`DATABASE_MANAGEMENT.md`][dm]), and driving an external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
 
 **None of it is ever Worker-reachable.** That is what earns every module here the build-time exemption from the Web-APIs-only rule — the exemption
 is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed here may use Node

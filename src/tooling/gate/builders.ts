@@ -16,6 +16,7 @@ import { hasTailwind } from "./checks/design-system";
 import { checkDevBoundary } from "./checks/dev-boundary";
 import { checkExports } from "./checks/exports";
 import { checkExposure } from "./checks/exposure";
+import { checkFeatures } from "./checks/features";
 import { checkIccProfile } from "./checks/icc-profile";
 import { checkImportBoundary } from "./checks/import-boundary";
 import { checkJsx } from "./checks/jsx";
@@ -25,7 +26,6 @@ import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
 import { checkPackaging } from "./checks/packaging";
 import { checkSsrBoundary } from "./checks/ssr-boundary";
-import { checkStrip } from "./checks/strip";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
 import type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
@@ -50,7 +50,7 @@ import type { ModernCssCheckConfig } from "./checks/types";
 import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
-import type { StripCheckConfig } from "./checks/types";
+import type { FeaturesCheckConfig } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
 import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./types";
 import type { SourceStepOptions, StepOptions } from "./types";
@@ -171,9 +171,9 @@ export function workerdStep(options: { hint?: string; parallel?: number } & Sour
   };
 }
 
-/** Strips the demonstrator into a temporary tree and runs the skeleton's `standard` gate there, always in the `full` tier. @public */
-export function stripStep(config: StripCheckConfig, options: Omit<StepOptions, "tier"> = {}): CheckStep {
-  return checkStep("validate-strip", () => checkStrip(config), { ...options, tier: "full" });
+/** Curates the demonstrator into a temporary tree and runs the skeleton's `standard` gate there, always in the `full` tier. @public */
+export function featuresStep(config: FeaturesCheckConfig, options: Omit<StepOptions, "tier"> = {}): CheckStep {
+  return checkStep("validate-features", () => checkFeatures(config), { ...options, tier: "full" });
 }
 
 /** The two `forge db schema check` rows: digests in `quality`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */

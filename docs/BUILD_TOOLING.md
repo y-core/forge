@@ -7,7 +7,7 @@ audience: internal
 # Build Tooling
 
 > Owns forge's developer-facing command surface: the CLI framework (`tooling/cli`), the verification gate (`tooling/gate`), the release workflow
-> (`tooling/release`) and the working-tree strip (`tooling/strip`). Everything under `src/tooling/` runs on a developer's machine, never in a
+> (`tooling/release`) and the working-tree curation (`tooling/curate`). Everything under `src/tooling/` runs on a developer's machine, never in a
 > Worker; membership in that container _is_ the exemption from the Web-APIs-only rule ([`NAMESPACES.md`][namespaces-4a] §4a).
 >
 > Defers to: [`ASSET_PIPELINE.md`][ap] for the asset build these commands drive and the generated module it writes;
@@ -37,9 +37,9 @@ audience: internal
 - §2l Forge's Own Release Proves the Demonstrator Still Demonstrates Every Component: the consumer spec `release:gate` runs, and its side effect
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
 - §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
-- §4 tooling/strip — Reducing a Demonstrator to Its Skeleton: one manifest, one output, every refusal before a write
-- §4a The Manifest Names Markers, Never Content: why a seam is matched on a comment its line carries
-- §4b The Gate Row Verifies the Skeleton It Produced: what `validate-strip` runs, and why at `standard`
+- §4 tooling/curate — Reducing a Demonstrator to Its Skeleton: features chosen at copy time, every refusal before a write
+- §4a The Manifest Names Features, and a Marker Names Its Feature: line, shared-line and region markers, and why each is matched on a comment
+- §4b The Gate Row Verifies the Skeleton It Produced: what `validate-features` runs, and why at `standard`
 
 ---
 
@@ -544,49 +544,64 @@ different posture; forge itself ships the step rather than running it, having no
 
 ---
 
-## 4. tooling/strip — Reducing a Demonstrator to Its Skeleton
+## 4. tooling/curate — Reducing a Demonstrator to Its Skeleton
 
-**`forge strip <dir>` copies the working tree into a fresh directory, minus the directories and marked lines a strip manifest names.** The manifest
-is the module an application default-exports `defineStripConfig({...})` from — `strip.ts` in its `config/` unless `--config` names another — and
-`@y-core/forge/tooling/strip` publishes both the verb and that helper. Its use is a demonstrator application whose remainder, with the demonstration
-removed, is the skeleton a new application starts from. The manifest is the whole of forge's understanding of that split: forge knows nothing about
-what a directory means, only that the manifest named it.
+**`forge curate <dir> --drop <features>` copies the working tree into a fresh directory, minus the directories and marked lines of the features
+it drops.** The manifest is the module an application default-exports `defineFeatures({...})` from — `features.ts` in its
+`config/` unless `--config` names another — and `@y-core/forge/tooling/curate` publishes both the verb and that helper. Its use is a demonstrator
+application whose remainder, with some or all of its demonstrations removed, is the application a new project starts from. The manifest is the
+whole of forge's understanding of that split: forge knows nothing about what a feature means, only which directories and seam files it names.
 
 The working tree is what `git ls-files --cached --others --exclude-standard` lists — tracked and untracked files alike, minus what `.gitignore`
 excludes and what has been deleted from disk — so a skeleton carries no `node_modules`, no build output and no local secret the demonstrator
-ignores. The manifest the strip loaded is left out too, since nothing in the skeleton reads it; a seam naming it is refused.
+ignores.
 
-**One manifest, one output.** There is no tier, no profile argument and no un-strip. A second level of stripping is built when a consumer has a
-second level, not in anticipation of one.
+**Features are chosen when a copy is made, and never added to one afterwards.** Dropping nothing is a plain copy. The manifest is left out only
+when every feature is dropped, since nothing in that skeleton reads it; a partial copy keeps it, edited like any seam, so the features it kept
+can be curated in turn. A feature's entry in the manifest is therefore wrapped in that feature's region, and the gate row checks the kept
+manifest names exactly the features the copy kept.
 
-**Every refusal happens before anything is read or written.** A directory the working tree holds nothing under, a seam file the tree does not
-hold, that lies inside a removed directory or that is a symbolic link — whose edit would write through to the file it points at — a path beneath a
-symbolic link, which a stale index lists and whose copy would land wherever the link points, a marker that matches no line, a nested repository or
-submodule, and a target that is a file or already holds something are each refused. A strip that quietly removes nothing is the worst outcome:
-the skeleton imports a directory that is gone, and fails far from the cause. A failed copy removes what it wrote and every parent it created.
+**Every refusal happens before anything is written, and none depends on which features are dropped.** A directory the working tree holds nothing
+under, a seam file the tree does not hold, that lies inside any feature's directory or that is a symbolic link — whose edit would write through
+to the file it points at — a path beneath a symbolic link, which a stale index lists and whose copy would land wherever the link points, a listed
+seam holding no marker for its feature, a nested repository or submodule, and a target that is a file or already holds something are each
+refused. A curation that quietly removes nothing is the worst outcome: the skeleton imports a directory that is gone, and fails far from the cause.
+Holding every drop set to the same refusals means the combination nobody ran is as sound as the one somebody did. A failed copy removes what it
+wrote and every parent it created.
 
-### 4a. The Manifest Names Markers, Never Content
+### 4a. The Manifest Names Features, and a Marker Names Its Feature
 
-**A seam deletes every line of its file that ends with its marker — a comment such as `/* strip:showcase */` — and nothing else.** A match on a
-line's content stops matching the moment the line is reformatted, and then removes nothing. A marker survives any reformatting that keeps the
-comment on its line, and a marker that stops matching is an error rather than a no-op, so the drift is loud at the next strip. The manifest
-refuses a marker that is not a comment, and a line carrying the marker anywhere but at its end — inside a string, say — is kept.
+**A line is removed when it ends with a comment naming its feature — `/* feature:showcase */` — and nothing else.** The comment may be `/* */`,
+`//`, `#` or `<!-- -->`, so the same marker works in TypeScript, JSONC, TOML, a dotenv file and Markdown. A match on a line's content stops
+matching the moment the line is reformatted, and then removes nothing. A marker survives any reformatting that keeps the comment on its line,
+and a listed seam holding no marker for its feature is an error rather than a no-op, so the drift is loud at the next curation. A line carrying the
+marker anywhere but at its end — inside a string, say — is kept.
 
-**A marked line in a file the manifest does not list is an error.** The strip reads every kept text file for a line ending with any manifest
-marker, and refuses one that is not a seam: otherwise that line survives into the skeleton, and nothing reports it unless it happens to import
-something the strip removed.
+**A marker naming several features — `/* feature:showcase,contact */` — removes its line only when every one of them is dropped.** A line two
+features share survives as long as either is kept, which is the only reading under which dropping one feature cannot break the other.
+
+**A region, `feature:<features>:begin` to `feature:<features>:end`, removes every line between them, its own two included, under the same rule.**
+It is how a block that cannot be written one line per marker — a paragraph of prose, an object literal — is tailored. Regions do not nest, an end
+must name the features its begin named, and a region left open is refused; each would otherwise leave the extent of a removal to be guessed.
+
+**A marker in a file that is not one of its feature's seams is an error, and so is a marker naming a feature the manifest does not.** The curation
+reads every text file in the tree, and refuses either one: otherwise the line survives into the skeleton, and nothing reports it unless it happens
+to import something the curation removed. The manifest itself is the one file every feature may mark without listing it.
 
 Every other byte of the file is kept, its final newline included, so a skeleton differs from its demonstrator by exactly the marked lines and the
 removed directories.
 
 ### 4b. The Gate Row Verifies the Skeleton It Produced
 
-**`cloudflareWorkerSteps({ strip: true })` appends `validate-strip`, a `full`-tier row that strips into a temporary directory and runs the
-skeleton's own gate there.** A manifest can be satisfied and still produce a skeleton that does not build — a seam left unmarked beside a removed
+**`cloudflareWorkerSteps({ features: {} })` appends `validate-features`, a `full`-tier row that curates into a temporary directory once per profile
+and runs each skeleton's own gate there.** A profile is one `--drop` list. The default is each feature dropped alone and then every feature
+together, since a line two features share is exercised both ways only by that set; `profiles` names another. An empty `profiles`, or a
+profile that drops nothing, fails the row: either would pass having proved no skeleton. The row stops at the first profile
+that fails, and names it. A manifest can be satisfied and still produce a skeleton that does not build — a seam left unmarked beside a removed
 directory it imports — and only running the skeleton's gate finds that. The verb itself still stops at the tree; the row is what verifies it.
 
-**The row runs the skeleton's `standard` tier, never `full`.** The skeleton's step table still carries `validate-strip` when the demonstrator's
-does, so a `full` run inside the skeleton would strip it again. `standard` holds every row that judges and runs the code, without the recursion.
+**The row runs the skeleton's `standard` tier, never `full`.** The skeleton's step table still carries `validate-features` when the demonstrator's
+does, so a `full` run inside the skeleton would curate it again. `standard` holds every row that judges and runs the code, without the recursion.
 
 **The skeleton borrows the demonstrator's `node_modules` through a symlink, and the row unlinks it before removing the temporary tree.** Installing
 afresh would make the row a network operation; removing the tree with the link still in place would let the recursive removal follow it into the

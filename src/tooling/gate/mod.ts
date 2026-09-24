@@ -33,7 +33,7 @@ export {
   namespaceGraphStep,
   packagingStep,
   ssrBoundaryStep,
-  stripStep,
+  featuresStep,
   testStep,
   typeAwareLintStep,
   checkStep,
@@ -215,8 +215,8 @@ export {
 } from "./checks/source-scan";
 export { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./checks/ssr-boundary";
 export type { SsrBoundaryCheckConfig } from "./checks/types";
-export { checkStrip } from "./checks/strip";
-export type { StripCheckConfig, StripRunner } from "./checks/types";
+export { checkFeatures } from "./checks/features";
+export type { CurateRunner, FeaturesCheckConfig } from "./checks/types";
 export type { GateCommandConfig } from "./types";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 export type { CheckResult, Finding, FindingLevel } from "./types";

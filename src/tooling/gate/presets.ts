@@ -18,7 +18,7 @@ import {
   markdownStep,
   modernCssStep,
   ssrBoundaryStep,
-  stripStep,
+  featuresStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -149,8 +149,13 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
   if (options.db) steps.push(...dbSchemaStep({ root }));
   if (options.browser) steps.push(browserStep({ tier: "full" }));
-  if (options.workerd) steps.push(workerdStep({ tier: "full" }));
-  if (options.strip) steps.push(stripStep({ root, ...(options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut }) }));
+  if (options.workerd !== undefined && options.workerd !== false) {
+    steps.push(workerdStep({ tier: "full", ...(options.workerd === true ? {} : { parallel: options.workerd.parallel }) }));
+  }
+  if (options.features !== undefined) {
+    const assets = options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut };
+    steps.push(featuresStep({ root, ...options.features, ...assets }));
+  }
 
   return steps;
 }

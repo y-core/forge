@@ -124,7 +124,14 @@ async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
   const parsed = v.safeParse(schema, body, { abortEarly: true });
   if (parsed.success) return ok(parsed.output);
   const field = parsed.issues[0] === undefined ? "" : describeValidationIssue(parsed.issues[0]);
-  return err({ field, message: FIELD_REFUSAL[field] ?? FIELD_REFUSAL_DEFAULT, values });
+  return err({ field, message: refusalFor(schema, field), values });
+}
+
+/** The copy for a refused field the schema declares; any other name is the visitor's own, and earns the default. */
+function refusalFor(schema: v.GenericSchema, field: string): string {
+  const entries: unknown = "entries" in schema ? schema.entries : undefined;
+  const declared = typeof entries === "object" && entries !== null && Object.hasOwn(entries, field);
+  return declared && Object.hasOwn(FIELD_REFUSAL, field) ? (FIELD_REFUSAL[field] ?? FIELD_REFUSAL_DEFAULT) : FIELD_REFUSAL_DEFAULT;
 }
 
 // Held to the schema the rename path holds a label to, so one field cannot be bounded on one route

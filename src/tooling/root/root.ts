@@ -3,10 +3,10 @@ import { createCfCommands } from "../cf/commands";
 import { addCommand, createCommand } from "../cli/command";
 import { loadConfigModule } from "../cli/config-module";
 import type { CommandBase } from "../cli/types";
+import { createCurateCommand } from "../curate/commands";
 import { createDbCommands } from "../db/commands";
 import { createGateBinCommand } from "../gate/command";
 import { createReleaseBinCommand } from "../release/release";
-import { createStripCommand } from "../strip/commands";
 
 /** Where `forge` looks for an application's own command table. @public */
 export const DEFAULT_COMMANDS_CONFIG = "config/commands.ts";
@@ -17,7 +17,7 @@ export async function createRootCommand(cwd: string = process.cwd()): Promise<Co
 
   addCommand(root, createGateBinCommand());
   addCommand(root, createReleaseBinCommand());
-  addCommand(root, createStripCommand());
+  addCommand(root, createCurateCommand());
   addCommand(root, createCfCommands());
   addCommand(root, createAssetsCommands());
   addCommand(root, createDbCommands());

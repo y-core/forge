@@ -199,7 +199,7 @@ forge db backup                 # a verified artifact you can restore from
 forge cf sync                   # report account-binding drift; --commit to create and write back
 forge cf gen env                # emit env.schema.ts from wrangler.jsonc + .dev.vars
 forge release                   # resolve the version from git, promote the changelog, commit, tag
-forge strip ../skeleton          # copy the working tree minus config/strip.ts's directories and marked lines
+forge curate ../skeleton        # copy the working tree minus config/features.ts's directories and marked lines
 ```
 
 Every verb that could change something reports by default and writes only when told to. `warden sync`, `warden search` and `warden serve` are the
@@ -323,7 +323,7 @@ Everything here is **Node/Bun only** and unreachable from a Worker — `validate
 | `@y-core/forge/tooling/db` | D1 — migrations, backup, seeds, sync & Time Travel (`forge db`) | [src/tooling/db/README.md][db-readme] |
 | `@y-core/forge/tooling/cf` | Cloudflare — account bindings, zone rules, env schema (`forge cf`) | [src/tooling/cf/README.md][cf-readme] |
 | `@y-core/forge/tooling/release` | Release workflow — version, changelog & surface guard | [src/tooling/release/README.md][release-readme] |
-| `@y-core/forge/tooling/strip` | Reducing a demonstrator to its skeleton from a manifest | [src/tooling/strip/README.md][strip-readme] |
+| `@y-core/forge/tooling/curate` | Reducing a demonstrator to its skeleton from a feature manifest | [src/tooling/curate/README.md][curate-readme] |
 | `@y-core/forge/tooling/lint` | Forge's oxlint rules, and the rule catalogs the gate reads | [src/tooling/lint/README.md][lint-readme] |
 | `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names | [src/tooling/lint/README.md][lint-readme] |
 | `@y-core/forge/tooling/term` | Terminal rendering — width, wrapping, grids & colour | [src/tooling/term/README.md][term-readme] |
@@ -359,6 +359,7 @@ MIT — see [LICENSE](LICENSE). This covers everything the package ships, includ
 [config-readme]: src/config/README.md
 [context-readme]: src/context/README.md
 [crypto-readme]: src/crypto/README.md
+[curate-readme]: src/tooling/curate/README.md
 [db-readme]: src/tooling/db/README.md
 [dev-readme]: src/dev/README.md
 [form-readme]: src/form/README.md
@@ -377,7 +378,6 @@ MIT — see [LICENSE](LICENSE). This covers everything the package ships, includ
 [session-readme]: src/session/README.md
 [site-readme]: src/site/README.md
 [storage-readme]: src/storage/README.md
-[strip-readme]: src/tooling/strip/README.md
 [term-readme]: src/tooling/term/README.md
 [testing-readme]: src/testing/README.md
 [tooling-assets-readme]: src/tooling/assets/README.md

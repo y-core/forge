@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "../curate/curate.fixture";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
@@ -173,6 +174,15 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
     expect(workerd?.requires?.tool).toBe("workerd");
   });
 
+  it("runs two spec files at once by default, and the number `parallel` names when given", () => {
+    const command = (workerd: boolean | { parallel: number }) => {
+      const row = cloudflareWorkerSteps({ workerd }).at(-1);
+      return row !== undefined && "cmd" in row ? row.cmd : undefined;
+    };
+    expect(command(true)).toEqual(["bun", "test", "--parallel=2", "tests/workerd/"]);
+    expect(command({ parallel: 1 })).toEqual(["bun", "test", "--parallel=1", "tests/workerd/"]);
+  });
+
   it("orders the workerd row after the browser row when both opt-ins are taken", () => {
     expect(labelsOf(cloudflareWorkerSteps({ browser: true, workerd: true })).slice(-2)).toEqual(["test:browser", "test:workerd"]);
   });
@@ -183,28 +193,54 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
   });
 });
 
-describe("cloudflareWorkerSteps() — the strip row", () => {
-  it("puts validate-strip last, after test:workerd, on the full tier", () => {
-    const steps = cloudflareWorkerSteps({ strip: true, browser: true, workerd: true, db: true });
+describe("cloudflareWorkerSteps() — the features row", () => {
+  it("puts validate-features last, after test:workerd, on the full tier", () => {
+    const steps = cloudflareWorkerSteps({ features: {}, browser: true, workerd: true, db: true });
 
-    expect(labelsOf(steps).slice(-2)).toEqual(["test:workerd", "validate-strip"]);
+    expect(labelsOf(steps).slice(-2)).toEqual(["test:workerd", "validate-features"]);
     expect(steps.at(-1)?.tier).toBe("full");
   });
 
-  it("omits the row for an app with no strip manifest to verify", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-strip");
-    expect(labelsOf(cloudflareWorkerSteps({ strip: false }))).not.toContain("validate-strip");
+  it("omits the row for an app with no feature manifest to verify", () => {
+    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-features");
   });
 
-  it("hands the row the preset's root, so a root with no manifest fails naming `config/strip.ts`", async () => {
-    const root = gateFixtureRoot({ "README.md": "# app\n" }, "forge-gate-strip-");
-    const row = cloudflareWorkerSteps({ root, strip: true }).at(-1);
-    if (row === undefined || !isCheckStep(row)) throw new Error("no strip row");
+  it("hands the row the preset's root, so a root with no manifest fails naming `config/features.ts`", async () => {
+    const root = gateFixtureRoot({ "README.md": "# app\n" }, "forge-gate-features-");
+    const row = cloudflareWorkerSteps({ root, features: {} }).at(-1);
+    if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
     const result = await row.run("full");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.ok).toBe(false);
-    expect(result.findings[0]?.message).toContain("`config/strip.ts`");
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "No feature manifest at `config/features.ts` — forge curate needs one, default-exporting defineFeatures({...})",
+    ]);
+  });
+
+  it("hands the row the profiles it is given, so a profile naming no feature fails naming that profile", async () => {
+    const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
+    const row = cloudflareWorkerSteps({ root, features: { profiles: [["blog"]] } }).at(-1);
+    if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
+    const result = await row.run("full");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "--drop blog: cannot drop unknown feature `blog` — the manifest names `showcase`, `contact`",
+    ]);
+  });
+
+  it("hands the row an empty profile list, so the row fails rather than passing having proved nothing", async () => {
+    const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
+    const row = cloudflareWorkerSteps({ root, features: { profiles: [] } }).at(-1);
+    if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
+    const result = await row.run("full");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "`profiles` is empty — the check would prove no skeleton; omit it for the defaults",
+    ]);
   });
 });
 

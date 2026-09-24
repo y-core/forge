@@ -747,15 +747,17 @@ export interface IccProfileCheckConfig {
   module: string;
 }
 
-/** What the strip check needs to reproduce the skeleton and build it before gating it. @public */
-export interface StripCheckConfig {
-  /** The demonstrator's working tree, holding `config/strip.ts`. */
+/** What the features check needs to reproduce the skeleton and build it before gating it. @public */
+export interface FeaturesCheckConfig {
+  /** The demonstrator's working tree, holding `config/features.ts`. */
   root: string;
   /** Assets config path, relative to `root`; omit when the skeleton has no asset build to run first. */
   assetConfig?: string;
   /** Where the asset build writes its manifest. Defaults to `.forge/assets.ts`. */
   assetOut?: string;
+  /** The `--drop` lists to prove, each a skeleton of its own. Defaults to each feature alone, then every feature together. */
+  profiles?: readonly (readonly string[])[];
 }
 
-/** Runs one command inside the stripped tree and answers how it exited. @public */
-export type StripRunner = (argv: readonly [string, ...string[]], cwd: string, env: typeof process.env) => CaptureResult;
+/** Runs one command inside the curated tree and answers how it exited. @public */
+export type CurateRunner = (argv: readonly [string, ...string[]], cwd: string, env: typeof process.env) => CaptureResult;

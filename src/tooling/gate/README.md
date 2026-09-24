@@ -134,8 +134,8 @@ Most rows are opt-in, and each option is a question about your repository rather
 | Markdown oxfmt has been told to ignore | `markdown` | `validate-markdown` |
 | A library's `.tsx` compiled under a consumer's tsconfig | `jsx` | `validate-jsx`; an application states `jsxImportSource` once instead |
 | Cloned `.claude/` trees | `warden: true` | The `warden sync --check` row |
-| D1 schemas, Playwright specs, workerd specs | `db`, `browser`, `workerd` | The prerequisite-bearing rows, last in the table |
-| A demonstrator with a `config/strip.ts` manifest | `strip: true` | `validate-strip` — strips into a temp tree and runs its `standard` gate there, last in the table |
+| D1 schemas, Playwright specs, workerd specs | `db`, `browser`, `workerd` (`{ parallel: 1 }` while `startDevServer` cannot start two servers at once) | The prerequisite-bearing rows, last in the table |
+| A demonstrator with a `config/features.ts` manifest | `features: {}` | `validate-features` — curates into a temp tree once per profile (default: each feature alone, then all) and runs its `standard` gate there, last in the table |
 
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's installed manifest, so an app
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing` — whose fakes lose every write — or

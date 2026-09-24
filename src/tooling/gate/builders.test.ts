@@ -15,7 +15,7 @@ import {
   lintStep,
   markdownStep,
   namespaceGraphStep,
-  stripStep,
+  featuresStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -241,17 +241,17 @@ describe("workerdStep()", () => {
   });
 });
 
-describe("stripStep()", () => {
-  it("is the validate-strip row, on the full tier because it runs a whole second gate", () => {
-    const step = stripStep({ root: "/nowhere" });
+describe("featuresStep()", () => {
+  it("is the validate-features row, on the full tier because it runs a whole second gate", () => {
+    const step = featuresStep({ root: "/nowhere" });
 
-    expect(step.label).toBe("validate-strip");
+    expect(step.label).toBe("validate-features");
     expect(step.tier).toBe("full");
   });
 
   it("takes no tier override, since a lower tier would recurse into the gate it runs", () => {
-    // @ts-expect-error -- `tier` is not part of the options stripStep takes
-    expect(stripStep({ root: "/nowhere" }, { tier: "quality" }).tier).toBe("full");
+    // @ts-expect-error -- `tier` is not part of the options featuresStep takes
+    expect(featuresStep({ root: "/nowhere" }, { tier: "quality" }).tier).toBe("full");
   });
 });
 

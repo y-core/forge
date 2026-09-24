@@ -73,7 +73,7 @@ A fact that is stable and short â€” a naming convention, a posture, a boundary â
 | CSRF and Turnstile field names | `src/form/constants.ts` |
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
 | The database host config's fields and their defaults | `DbHostConfig` in `src/tooling/db/types.ts` |
-| The strip manifest's shape | `StripConfigSchema` in `src/tooling/strip/types.ts` |
+| The feature manifest's shape | `FeatureManifestSchema` in `src/tooling/curate/types.ts` |
 | Bash allowlist patterns, including the exit-check literal | `.claude/settings.local.json` `permissions.allow` |
 
 ### 2b. Enforced Rules

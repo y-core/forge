@@ -1,0 +1,741 @@
+import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { CliError } from "../cli/errors";
+import { execute } from "../cli/execute";
+import type { CliIO } from "../cli/types";
+import { createCurateCommand, curateTree, listWorkingTree } from "./commands";
+import { CURATE_FIXTURE_FEATURES, CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "./curate.fixture";
+import type { CurateRequest, FeatureManifest } from "./types";
+
+const scratch: string[] = [];
+
+function tracked<T extends string>(path: T): T {
+  scratch.push(path);
+  return path;
+}
+
+function repo(manifest?: string): string {
+  return tracked(curateFixtureRepo(manifest));
+}
+
+/** A path in a fresh parent that does not exist yet. */
+function freshTarget(): string {
+  return join(tracked(mkdtempSync(join(tmpdir(), "forge-curate-out-"))), "skeleton");
+}
+
+function failure(body: () => unknown): Error {
+  try {
+    body();
+  } catch (error) {
+    if (error instanceof Error) return error;
+    throw error;
+  }
+  throw new Error("expected a failure");
+}
+
+function refusal(body: () => unknown): CliError {
+  const error = failure(body);
+  if (error instanceof CliError) return error;
+  throw error;
+}
+
+function read(root: string, path: string): string {
+  return readFileSync(join(root, path), "utf-8");
+}
+
+/** Curates into a fresh target that must stay unwritten, and answers the refusal's message once its kind is `invalid-args`. */
+function refused(request: Omit<CurateRequest, "target">): string {
+  const target = freshTarget();
+  const error = refusal(() => curateTree({ ...request, target }));
+  expect(error.kind).toBe("invalid-args");
+  expect(existsSync(target)).toBe(false);
+  return error.message;
+}
+
+/** The fixture manifest with one feature's entry replaced. */
+function withFeature(name: string, feature: { directories: string[]; seams: string[] }): FeatureManifest {
+  return { ...CURATE_FIXTURE_FEATURES, [name]: feature };
+}
+
+/** The fixture manifest with `file` added to the seams of each feature `names` lists. */
+function withSeam(file: string, names: readonly string[] = ["showcase", "contact"]): FeatureManifest {
+  const features = Object.entries(CURATE_FIXTURE_FEATURES).map(([name, { directories, seams }]) => [
+    name,
+    { directories, seams: names.includes(name) ? [...seams, file] : seams },
+  ]);
+  return Object.fromEntries(features);
+}
+
+afterAll(() => {
+  for (const path of scratch) rmSync(path, { recursive: true, force: true });
+});
+
+const APP = [
+  'import { demo } from "./showcase/demo"; // feature:showcase',
+  'import { contact } from "./contact/form"; // feature:contact',
+  "export const app = 1;",
+  "register(demo); /* feature:showcase */",
+  "mountShared(demo, contact); // feature:showcase,contact",
+  "",
+];
+const README = ["# app", "<!-- feature:showcase:begin -->", "## Showcase", "<!-- feature:showcase:end -->", "Start here.", ""];
+const TOML = ['name = "app"', "contact = true # feature:contact", ""];
+
+function lines(source: readonly string[], keep: readonly number[]): string {
+  return keep.map((index) => source[index]).join("\n");
+}
+
+describe("listWorkingTree()", () => {
+  it("lists tracked and untracked files, and leaves out ignored ones and a tracked file deleted from disk", () => {
+    expect(listWorkingTree(repo()).sort()).toEqual([
+      ".gitignore",
+      "README.md",
+      "config/app.toml",
+      "notes.txt",
+      "src/app.ts",
+      "src/contact/form.ts",
+      "src/showcase/demo.ts",
+      "src/showcase/nested/panel.ts",
+      "tests/showcase/demo.test.ts",
+    ]);
+  });
+
+  it("refuses a directory that is not a git working tree as an external failure", () => {
+    const plain = tracked(mkdtempSync(join(tmpdir(), "forge-curate-plain-")));
+    const error = refusal(() => listWorkingTree(plain));
+    expect(error.kind).toBe("external");
+    expect(error.message).toBe(`git ls-files failed in ${plain} — forge curate copies a git working tree`);
+  });
+});
+
+describe("curateTree() — a plain copy", () => {
+  it("copies every listed file byte for byte when nothing is dropped, and nothing git ignores, deleted or under node_modules", () => {
+    const root = repo();
+    const target = freshTarget();
+    const report = curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: [] });
+
+    expect([...report.files].sort()).toEqual(listWorkingTree(root).sort());
+    expect(report.dropped).toEqual([]);
+    expect(report.directories).toEqual([]);
+    expect(report.seams).toEqual([]);
+    expect(report.manifest).toBeUndefined();
+    expect(read(target, "src/app.ts")).toBe(APP.join("\n"));
+    expect(read(target, "README.md")).toBe(README.join("\n"));
+    expect(read(target, "src/showcase/nested/panel.ts")).toBe("export const panel = 1;\n");
+    expect(read(target, "notes.txt")).toBe("untracked, not ignored\n");
+    expect(existsSync(join(target, "debug.log"))).toBe(false);
+    expect(existsSync(join(target, "node_modules"))).toBe(false);
+    expect(existsSync(join(target, "gone.ts"))).toBe(false);
+  });
+
+  it("copies the manifest verbatim and reports it kept when nothing is dropped", () => {
+    const target = freshTarget();
+    const report = curateTree({
+      root: repo(CURATE_FIXTURE_MANIFEST),
+      target,
+      config: CURATE_FIXTURE_FEATURES,
+      drop: [],
+      manifest: "config/features.ts",
+    });
+
+    expect(report.manifest).toBeUndefined();
+    expect(read(target, "config/features.ts")).toBe(CURATE_FIXTURE_MANIFEST);
+  });
+});
+
+describe("curateTree() — dropping features", () => {
+  it("drops one feature's directory, reported without its trailing slash, and keeps the other feature's", () => {
+    const target = freshTarget();
+    const report = curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(report.dropped).toEqual(["showcase"]);
+    expect(report.directories).toEqual(["src/showcase"]);
+    expect(existsSync(join(target, "src/showcase"))).toBe(false);
+    expect(read(target, "src/contact/form.ts")).toBe("export const contact = 1;\n");
+    expect(read(target, "tests/showcase/demo.test.ts")).toBe("// untracked spec\n");
+  });
+
+  it("removes the dropped feature's `//` and `/* */` lines and keeps a line shared with a feature that remains", () => {
+    const target = freshTarget();
+    curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(read(target, "src/app.ts")).toBe(lines(APP, [1, 2, 4, 5]));
+  });
+
+  it("removes the other feature's `//` and `#` lines and keeps the same shared line", () => {
+    const target = freshTarget();
+    curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["contact"] });
+
+    expect(read(target, "src/app.ts")).toBe(lines(APP, [0, 2, 3, 4, 5]));
+    expect(read(target, "config/app.toml")).toBe(lines(TOML, [0, 2]));
+  });
+
+  it("removes a shared line once every feature it names is dropped", () => {
+    const target = freshTarget();
+    curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase", "contact"] });
+
+    expect(read(target, "src/app.ts")).toBe("export const app = 1;\n");
+  });
+
+  it("removes a dropped feature's `<!-- -->` region with both its markers", () => {
+    const target = freshTarget();
+    curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(read(target, "README.md")).toBe("# app\nStart here.\n");
+  });
+
+  it("keeps a region whose feature remains, its markers included", () => {
+    const target = freshTarget();
+    curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["contact"] });
+
+    expect(read(target, "README.md")).toBe(README.join("\n"));
+  });
+
+  it("reports each file that lost lines with the count it lost, and the dropped features' directories", () => {
+    const report = curateTree({ root: repo(), target: freshTarget(), config: CURATE_FIXTURE_FEATURES, drop: ["showcase", "contact"] });
+
+    expect(report.dropped).toEqual(["showcase", "contact"]);
+    expect(report.directories).toEqual(["src/showcase", "src/contact"]);
+    expect(report.seams).toEqual([
+      { file: "README.md", removed: 3 },
+      { file: "config/app.toml", removed: 1 },
+      { file: "src/app.ts", removed: 4 },
+    ]);
+  });
+
+  it("leaves the source tree untouched", () => {
+    const root = repo();
+    curateTree({ root, target: freshTarget(), config: CURATE_FIXTURE_FEATURES, drop: ["showcase", "contact"] });
+
+    expect(read(root, "src/app.ts")).toBe(APP.join("\n"));
+    expect(read(root, "README.md")).toBe(README.join("\n"));
+    expect(existsSync(join(root, "src/showcase/demo.ts"))).toBe(true);
+  });
+
+  it("writes into a target that exists and is empty", () => {
+    const target = tracked(mkdtempSync(join(tmpdir(), "forge-curate-empty-")));
+    curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(read(target, "notes.txt")).toBe("untracked, not ignored\n");
+  });
+
+  it("keeps a line that carries a marker anywhere but at its end, and removes one followed only by whitespace", () => {
+    const root = repo();
+    writeFileSync(
+      join(root, "src/doc.ts"),
+      'const doc = "lines ending /* feature:showcase */ go";\nregister(); /* feature:showcase */  \n',
+      "utf-8",
+    );
+    const target = freshTarget();
+    const config = withSeam("src/doc.ts", ["showcase"]);
+    const report = curateTree({ root, target, config, drop: ["showcase"] });
+
+    expect(read(target, "src/doc.ts")).toBe('const doc = "lines ending /* feature:showcase */ go";\n');
+    expect(report.seams).toContainEqual({ file: "src/doc.ts", removed: 1 });
+  });
+
+  it("closes a region whose end marker lists the same features in another order", () => {
+    const root = repo();
+    writeFileSync(join(root, "src/both.ts"), "a;\n// feature:showcase,contact:begin\nb;\n// feature:contact,showcase:end\nc;\n", "utf-8");
+    const target = freshTarget();
+    curateTree({ root, target, config: withSeam("src/both.ts"), drop: ["contact", "showcase"] });
+
+    expect(read(target, "src/both.ts")).toBe("a;\nc;\n");
+  });
+
+  const TWO_FEATURE_REGION = "a;\n// feature:showcase,contact:begin\nb;\n// feature:showcase,contact:end\nc;\n";
+  const TWO_FEATURE_CASES: [string[], string][] = [
+    [["showcase"], TWO_FEATURE_REGION],
+    [["contact"], TWO_FEATURE_REGION],
+    [["showcase", "contact"], "a;\nc;\n"],
+  ];
+  for (const [drop, expected] of TWO_FEATURE_CASES) {
+    it(`${drop.length === 2 ? "removes" : "keeps"} a region naming two features when --drop is ${drop.join(",")}`, () => {
+      const root = repo();
+      writeFileSync(join(root, "src/both.ts"), TWO_FEATURE_REGION, "utf-8");
+      const target = freshTarget();
+      curateTree({ root, target, config: withSeam("src/both.ts"), drop });
+
+      expect(read(target, "src/both.ts")).toBe(expected);
+    });
+  }
+
+  const NESTED_LINE = "a;\n// feature:showcase:begin\nb;\nc; // feature:contact\n// feature:showcase:end\nd;\n";
+  const NESTED_LINE_CASES: [string[], string][] = [
+    [["contact"], "a;\n// feature:showcase:begin\nb;\n// feature:showcase:end\nd;\n"],
+    [["showcase"], "a;\nd;\n"],
+  ];
+  for (const [drop, expected] of NESTED_LINE_CASES) {
+    it(`reads a line marker inside a region on its own when --drop is ${drop.join(",")}`, () => {
+      const root = repo();
+      writeFileSync(join(root, "src/nested.ts"), NESTED_LINE, "utf-8");
+      const target = freshTarget();
+      curateTree({ root, target, config: withSeam("src/nested.ts"), drop });
+
+      expect(read(target, "src/nested.ts")).toBe(expected);
+    });
+  }
+
+  it("does not read a file holding a NUL byte for a marker, and copies it as it is", () => {
+    const root = repo();
+    const binary = "\0other(); // feature:unknown\n";
+    writeFileSync(join(root, "blob.bin"), binary, "utf-8");
+    const target = freshTarget();
+    curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(read(target, "blob.bin")).toBe(binary);
+  });
+
+  it("does not read a file that is not UTF-8 for a marker, and copies it as it is", () => {
+    const root = repo();
+    const bytes = new Uint8Array([0xff, 0xfe, ...new TextEncoder().encode("other(); // feature:unknown\n")]);
+    writeFileSync(join(root, "latin.txt"), bytes);
+    const target = freshTarget();
+    curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect([...readFileSync(join(target, "latin.txt"))]).toEqual([...bytes]);
+  });
+
+  it("copies a symbolic link that is not a seam as the link itself", () => {
+    const root = repo();
+    symlinkSync("../README.md", join(root, "src/readme.md"));
+    const target = freshTarget();
+    curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(readlinkSync(join(target, "src/readme.md"))).toBe("../README.md");
+  });
+});
+
+describe("curateTree() — the manifest", () => {
+  it("keeps the manifest while a feature remains, and removes the dropped feature's line from it", () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const report = curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"], manifest: "config/features.ts" });
+
+    expect(report.manifest).toBeUndefined();
+    expect(report.files).toContain("config/features.ts");
+    expect(report.seams).toContainEqual({ file: "config/features.ts", removed: 1 });
+    expect(read(target, "config/features.ts")).toBe(lines(CURATE_FIXTURE_MANIFEST.split("\n"), [0, 2, 3, 4, 5, 6]));
+  });
+
+  it("keeps the manifest while a feature remains, and removes the dropped feature's region from it", () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const report = curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["contact"], manifest: "config/features.ts" });
+
+    expect(report.manifest).toBeUndefined();
+    expect(report.seams).toContainEqual({ file: "config/features.ts", removed: 3 });
+    expect(read(target, "config/features.ts")).toBe(lines(CURATE_FIXTURE_MANIFEST.split("\n"), [0, 1, 5, 6]));
+  });
+
+  it("leaves the manifest out once every feature is dropped, reports it, and leaves the source's copy as it was", () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const report = curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase", "contact"], manifest: "config/features.ts" });
+
+    expect(report.manifest).toBe("config/features.ts");
+    expect(report.files).not.toContain("config/features.ts");
+    expect(report.seams.map((seam) => seam.file)).not.toContain("config/features.ts");
+    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
+    expect(read(root, "config/features.ts")).toBe(CURATE_FIXTURE_MANIFEST);
+  });
+
+  it("recognises the manifest by an absolute path inside the root", () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const report = curateTree({
+      root,
+      target,
+      config: CURATE_FIXTURE_FEATURES,
+      drop: ["showcase", "contact"],
+      manifest: join(root, "config/features.ts"),
+    });
+
+    expect(report.manifest).toBe("config/features.ts");
+    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
+  });
+
+  it("leaves out nothing for a manifest outside the root", () => {
+    const outside = tracked(mkdtempSync(join(tmpdir(), "forge-curate-manifest-")));
+    const target = freshTarget();
+    const report = curateTree({
+      root: repo(),
+      target,
+      config: CURATE_FIXTURE_FEATURES,
+      drop: ["showcase", "contact"],
+      manifest: join(outside, "features.ts"),
+    });
+
+    expect(report.manifest).toBeUndefined();
+    expect(read(target, "notes.txt")).toBe("untracked, not ignored\n");
+  });
+
+  it("refuses the manifest's markers when no manifest path is given, since the file is then a seam of no feature", () => {
+    const message = refused({ root: repo(CURATE_FIXTURE_MANIFEST), config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] });
+
+    expect(message).toBe("`config/features.ts:2` marks feature `showcase`, but `config/features.ts` is not one of its seams in the manifest");
+  });
+});
+
+describe("curateTree() — refusals, each before anything is written", () => {
+  it("refuses to drop a feature the manifest does not name", () => {
+    expect(refused({ root: repo(), config: CURATE_FIXTURE_FEATURES, drop: ["showcase", "blog"] })).toBe(
+      "cannot drop unknown feature `blog` — the manifest names `showcase`, `contact`",
+    );
+  });
+
+  it("refuses a directory the working tree holds nothing under, even for a feature not dropped", () => {
+    const config = withFeature("contact", { directories: ["src/missing"], seams: [] });
+
+    expect(refused({ root: repo(), config, drop: ["showcase"] })).toBe("directory `src/missing` names nothing in the working tree");
+  });
+
+  it("refuses a seam naming a file the working tree does not hold", () => {
+    const config = withFeature("contact", { directories: [], seams: ["debug.log"] });
+
+    expect(refused({ root: repo(), config, drop: [] })).toBe("seam file `debug.log` is not in the working tree");
+  });
+
+  it("refuses a seam naming the manifest itself", () => {
+    const config = withFeature("contact", { directories: ["src/contact"], seams: ["config/features.ts"] });
+
+    expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, drop: [], manifest: "config/features.ts" })).toBe(
+      "seam file `config/features.ts` is the feature manifest, which every feature may mark without listing it",
+    );
+  });
+
+  const INSIDE: [string, FeatureManifest][] = [
+    ["its own feature's", withFeature("showcase", { directories: ["src/showcase"], seams: ["src/showcase/demo.ts"] })],
+    ["another feature's", withFeature("contact", { directories: [], seams: ["src/showcase/demo.ts"] })],
+  ];
+  for (const [whose, config] of INSIDE) {
+    it(`refuses a seam file inside ${whose} directory`, () => {
+      expect(refused({ root: repo(), config, drop: [] })).toBe(
+        "seam file `src/showcase/demo.ts` lies inside `src/showcase`, a directory of feature `showcase`",
+      );
+    });
+  }
+
+  const LINKS: [string, (root: string) => string][] = [
+    ["an absolute", (root) => join(root, "real/main.ts")],
+    ["a relative", () => "../real/main.ts"],
+  ];
+  for (const [kind, pointTo] of LINKS) {
+    it(`refuses a seam file that is ${kind} symbolic link, leaving the file it points at as it was`, () => {
+      const root = repo();
+      const original = "line1 /* feature:showcase */\nkeep\n";
+      mkdirSync(join(root, "real"));
+      writeFileSync(join(root, "real/main.ts"), original, "utf-8");
+      symlinkSync(pointTo(root), join(root, "src/main.ts"));
+      const config = withSeam("src/main.ts", ["showcase"]);
+
+      expect(refused({ root, config, drop: ["showcase"] })).toBe(
+        "seam file `src/main.ts` is a symbolic link — forge curate edits only a regular file",
+      );
+      expect(read(root, "real/main.ts")).toBe(original);
+    });
+  }
+
+  /** A root whose `src` is a link to its sibling `real`, listed as a stale index lists it: the link and a file beneath it. */
+  function linkedParent(): { base: string; root: string } {
+    const base = tracked(mkdtempSync(join(tmpdir(), "forge-curate-linked-")));
+    const root = join(base, "repo");
+    mkdirSync(join(root, "real"), { recursive: true });
+    writeFileSync(join(root, "real/worker.ts"), "export const worker = 1; // feature:showcase\n", "utf-8");
+    symlinkSync("../repo/real", join(root, "src"));
+    return { base, root };
+  }
+
+  const LINKED_CONFIGS: [string, FeatureManifest][] = [
+    ["a kept file", { contact: { directories: ["lib"], seams: [] } }],
+    ["a seam file", { showcase: { directories: [], seams: ["src/worker.ts"] } }],
+  ];
+  for (const [kind, config] of LINKED_CONFIGS) {
+    it(`refuses ${kind} beneath a symbolic link to a directory, writing nothing inside the target or through the link`, () => {
+      const { base, root } = linkedParent();
+      const target = join(base, "deep/out");
+      const error = refusal(() => curateTree({ root, target, config, drop: [] }, () => ["src", "src/worker.ts", "lib/x.ts"]));
+
+      expect(error.kind).toBe("invalid-args");
+      expect(error.message).toBe("`src/worker.ts` lies under `src`, a symbolic link — forge curate reads and writes only through real directories");
+      expect(existsSync(target)).toBe(false);
+      expect(existsSync(join(base, "deep/repo/real/worker.ts"))).toBe(false);
+      expect(read(root, "real/worker.ts")).toBe("export const worker = 1; // feature:showcase\n");
+    });
+  }
+
+  it("refuses an untracked nested repository, which git lists as a directory", () => {
+    const root = repo();
+    mkdirSync(join(root, "nested"));
+    writeFileSync(join(root, "nested/inner.ts"), "export const inner = 1;\n", "utf-8");
+    spawnSync("git", ["init", "-q"], { cwd: join(root, "nested") });
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] })).toBe(
+      "`nested/` is a directory git does not list inside — a nested repository or a submodule, which forge curate cannot copy",
+    );
+  });
+
+  const MALFORMED: [string, string][] = [
+    ["an edge that is neither begin nor end", "feature:showcase:middle"],
+    ["a segment after the edge", "feature:showcase:begin:x"],
+  ];
+  for (const [kind, marker] of MALFORMED) {
+    it(`refuses a marker with ${kind}`, () => {
+      const root = repo();
+      writeFileSync(join(root, "src/app.ts"), `${APP.join("\n")}tail(); // ${marker}\n`, "utf-8");
+
+      expect(refused({ root, config: CURATE_FIXTURE_FEATURES, drop: [] })).toBe(
+        `\`src/app.ts:6\` ends with malformed marker \`${marker}\` — write \`feature:<feature>[,<feature>…][:begin|:end]\``,
+      );
+    });
+  }
+
+  it("refuses a marker naming a feature the manifest does not", () => {
+    const root = repo();
+    writeFileSync(join(root, "src/app.ts"), `${APP.join("\n")}tail(); // feature:showcase,blog\n`, "utf-8");
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, drop: [] })).toBe(
+      "`src/app.ts:6` names unknown feature `blog` — the manifest names `showcase`, `contact`",
+    );
+  });
+
+  it("refuses a marker in a file that is a seam of no feature", () => {
+    const root = repo();
+    writeFileSync(join(root, "src/extra.ts"), "export const extra = 1;\nother(); // feature:showcase\n", "utf-8");
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, drop: [] })).toBe(
+      "`src/extra.ts:2` marks feature `showcase`, but `src/extra.ts` is not one of its seams in the manifest",
+    );
+  });
+
+  it("refuses a marker in a seam of another feature", () => {
+    const root = repo();
+    writeFileSync(join(root, "config/app.toml"), `${TOML.join("\n")}demo = true # feature:showcase\n`, "utf-8");
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, drop: ["contact"] })).toBe(
+      "`config/app.toml:3` marks feature `showcase`, but `config/app.toml` is not one of its seams in the manifest",
+    );
+  });
+
+  it("refuses a marker in a file inside the directory being dropped, which the copy would not hold", () => {
+    const root = repo();
+    writeFileSync(join(root, "src/showcase/demo.ts"), "export const demo = 1; // feature:showcase\n", "utf-8");
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] })).toBe(
+      "`src/showcase/demo.ts:1` marks feature `showcase`, but `src/showcase/demo.ts` is not one of its seams in the manifest",
+    );
+  });
+
+  function regionRefusal(source: string): string {
+    const root = repo();
+    writeFileSync(join(root, "src/region.ts"), source, "utf-8");
+    return refused({ root, config: withSeam("src/region.ts"), drop: [] });
+  }
+
+  it("refuses a region opened inside another", () => {
+    expect(regionRefusal("// feature:showcase:begin\n// feature:contact:begin\n// feature:contact:end\n// feature:showcase:end\n")).toBe(
+      "`src/region.ts:2` opens a region inside the one opened at line 1 — regions do not nest",
+    );
+  });
+
+  it("refuses an end marker with no region open", () => {
+    expect(regionRefusal("a;\n// feature:showcase:end\n")).toBe("`src/region.ts:2` closes a region that no marker opened");
+  });
+
+  it("refuses an end marker naming other features than the open region", () => {
+    expect(regionRefusal("// feature:showcase,contact:begin\na;\n// feature:showcase:end\n")).toBe(
+      "`src/region.ts:3` closes `feature:showcase`, but the region open since line 1 is `feature:showcase,contact`",
+    );
+  });
+
+  it("refuses a marker naming one feature twice", () => {
+    expect(regionRefusal("// feature:showcase,showcase:begin\na;\n// feature:showcase,contact:end\n")).toBe(
+      "`src/region.ts:1` names feature `showcase` twice",
+    );
+  });
+
+  it("refuses a region that never closes", () => {
+    expect(regionRefusal("a;\n// feature:showcase:begin\nb;\n// feature:contact\n")).toBe("`src/region.ts:2` opens a region that never closes");
+  });
+
+  it("refuses a listed seam file that holds no marker for its feature, even one holding another feature's", () => {
+    const config = withFeature("contact", { directories: ["src/contact"], seams: ["src/app.ts", "config/app.toml", "README.md"] });
+
+    expect(refused({ root: repo(), config, drop: [] })).toBe("seam file `README.md` holds no `feature:contact` marker");
+  });
+
+  it("refuses a target directory that already holds something, and leaves what it holds", () => {
+    const target = tracked(mkdtempSync(join(tmpdir(), "forge-curate-full-")));
+    writeFileSync(join(target, "keep.txt"), "mine\n", "utf-8");
+    const error = refusal(() => curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] }));
+
+    expect(error.kind).toBe("invalid-args");
+    expect(error.message).toBe(`${target} is not empty — forge curate writes only into a fresh directory`);
+    expect(readdirSync(target)).toEqual(["keep.txt"]);
+    expect(read(target, "keep.txt")).toBe("mine\n");
+  });
+
+  it("refuses a target that is a file", () => {
+    const parent = tracked(mkdtempSync(join(tmpdir(), "forge-curate-file-")));
+    const target = join(parent, "skeleton");
+    writeFileSync(target, "", "utf-8");
+    const error = refusal(() => curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] }));
+
+    expect(error.kind).toBe("invalid-args");
+    expect(error.message).toBe(`${target} is not a directory`);
+    expect(read(parent, "skeleton")).toBe("");
+  });
+});
+
+describe("curateTree() — a copy failing partway", () => {
+  /** The working tree's listing with a FIFO, which cannot be copied, placed between its real files. */
+  function withPipe(root: string): (from: string) => string[] {
+    spawnSync("mkfifo", [join(root, "pipe")]);
+    return (from) => {
+      const files = listWorkingTree(from).sort();
+      return [...files.slice(0, 2), "pipe", ...files.slice(2)];
+    };
+  }
+
+  function pipeFailure(target: string): string {
+    const destination = join(target, "pipe");
+    return `Cannot copy a FIFO pipe: cp returned EINVAL (cannot copy a FIFO pipe: ${destination}) ${destination}`;
+  }
+
+  it("removes the target it created", () => {
+    const root = repo();
+    const target = freshTarget();
+
+    expect(failure(() => curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] }, withPipe(root))).message).toBe(
+      pipeFailure(target),
+    );
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("removes every parent directory it created, and none it did not", () => {
+    const root = repo();
+    const base = tracked(mkdtempSync(join(tmpdir(), "forge-curate-parents-")));
+    const target = join(base, "p1/p2/out");
+
+    expect(failure(() => curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] }, withPipe(root))).message).toBe(
+      pipeFailure(target),
+    );
+    expect(readdirSync(base)).toEqual([]);
+  });
+
+  it("empties a target that existed before the curation, and leaves the directory", () => {
+    const root = repo();
+    const target = tracked(mkdtempSync(join(tmpdir(), "forge-curate-empty-")));
+
+    expect(failure(() => curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, drop: ["showcase"] }, withPipe(root))).message).toBe(
+      pipeFailure(target),
+    );
+    expect(readdirSync(target)).toEqual([]);
+  });
+});
+
+describe("createCurateCommand()", () => {
+  function io() {
+    const out: string[] = [];
+    const err: string[] = [];
+    const codes: number[] = [];
+    const cli: CliIO = {
+      stdout: (line) => void out.push(line),
+      stderr: (line) => void err.push(line),
+      exit: ((code: number) => void codes.push(code)) as CliIO["exit"],
+    };
+    return { cli, out, err, codes };
+  }
+
+  it("takes exactly one argument, the target directory", async () => {
+    const { cli, err, codes } = io();
+    await execute(createCurateCommand(), [], cli);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(['Error: Command "curate" requires exactly 1 argument(s), got 0']);
+  });
+
+  it("reads `config/features.ts` under --root, drops what --drop names and reports each row", async () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const { cli, out, codes } = io();
+    await execute(createCurateCommand(), [target, "--root", root, "--drop", "showcase"], cli);
+
+    expect(codes).toEqual([]);
+    expect(existsSync(join(target, "src/showcase"))).toBe(false);
+    expect(read(target, "src/contact/form.ts")).toBe("export const contact = 1;\n");
+    expect(out).toEqual([
+      `  files:    8 copied to ${target}`,
+      "  dropped:  showcase",
+      "  removed:  src/showcase",
+      "  seams:    config/features.ts −1, README.md −3, src/app.ts −2",
+      "  manifest: (kept, or outside the working tree)",
+    ]);
+  });
+
+  it("makes a plain copy when --drop is not given", async () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const { cli, out, codes } = io();
+    await execute(createCurateCommand(), [target, "--root", root], cli);
+
+    expect(codes).toEqual([]);
+    expect(read(target, "src/app.ts")).toBe(APP.join("\n"));
+    expect(out.slice(1)).toEqual([
+      "  dropped:  (none — a plain copy)",
+      "  removed:  (no directories)",
+      "  seams:    (no lines)",
+      "  manifest: (kept, or outside the working tree)",
+    ]);
+  });
+
+  it("reads --drop as a comma list, trimming each name and ignoring empty ones", async () => {
+    const root = repo(CURATE_FIXTURE_MANIFEST);
+    const target = freshTarget();
+    const { cli, out, codes } = io();
+    await execute(createCurateCommand(), [target, "--root", root, "--drop", " showcase, ,contact,"], cli);
+
+    expect(codes).toEqual([]);
+    expect(read(target, "src/app.ts")).toBe("export const app = 1;\n");
+    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
+    expect(out.slice(1, 3)).toEqual(["  dropped:  showcase, contact", "  removed:  src/showcase, src/contact"]);
+    expect(out.at(-1)).toBe("  manifest: config/features.ts left out");
+  });
+
+  it("reads the manifest --config names instead, and leaves that one out", async () => {
+    const root = repo();
+    writeFileSync(join(root, "features.alt.ts"), `export default ${JSON.stringify(CURATE_FIXTURE_FEATURES)};\n`, "utf-8");
+    const target = freshTarget();
+    const { cli, codes } = io();
+    await execute(createCurateCommand(), [target, "--root", root, "--config", "features.alt.ts", "--drop", "showcase,contact"], cli);
+
+    expect(codes).toEqual([]);
+    expect(existsSync(join(target, "src/showcase"))).toBe(false);
+    expect(existsSync(join(target, "features.alt.ts"))).toBe(false);
+    expect(read(target, "notes.txt")).toBe("untracked, not ignored\n");
+  });
+
+  it("refuses a root with no manifest, writing nothing", async () => {
+    const target = freshTarget();
+    const { cli, err, codes } = io();
+    await execute(createCurateCommand(), [target, "--root", repo()], cli);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["Error: No feature manifest at `config/features.ts` — forge curate needs one, default-exporting defineFeatures({...})"]);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("refuses a --drop naming a feature the manifest does not, writing nothing", async () => {
+    const target = freshTarget();
+    const { cli, err, codes } = io();
+    await execute(createCurateCommand(), [target, "--root", repo(CURATE_FIXTURE_MANIFEST), "--drop", "blog"], cli);
+
+    expect(codes).toEqual([1]);
+    expect(err).toEqual(["Error: cannot drop unknown feature `blog` — the manifest names `showcase`, `contact`"]);
+    expect(existsSync(target)).toBe(false);
+  });
+});

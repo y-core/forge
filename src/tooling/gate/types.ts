@@ -9,6 +9,7 @@ import type { ImportBoundaryCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
+import type { FeaturesCheckConfig } from "./checks/types";
 import type { GATE_MODES } from "./steps";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
@@ -142,8 +143,8 @@ export interface CloudflareWorkerStepOptions {
   db?: boolean;
   /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
   browser?: boolean;
-  /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
-  workerd?: boolean;
+  /** Whether to emit the `full`-tier `test:workerd` step, or its spec-file concurrency when the default of 2 is too many. Defaults to `false`. */
+  workerd?: boolean | { parallel: number };
   /** Omit to emit no JSX-pragma row. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. */
@@ -156,8 +157,8 @@ export interface CloudflareWorkerStepOptions {
   design?: CloudflareWorkerDesignOptions;
   /** The markdown conventions to hold prose to; omit to emit no row. */
   markdown?: Omit<MarkdownCheckConfig, "root">;
-  /** Omit to emit no strip row; reads `config/strip.ts`. */
-  strip?: boolean;
+  /** Omit to emit no features row; reads `config/features.ts`, and `{}` proves the default profiles. */
+  features?: Pick<FeaturesCheckConfig, "profiles">;
 }
 
 /** The fields `forgeChecks` reads from the consuming package's `package.json`. @public */
