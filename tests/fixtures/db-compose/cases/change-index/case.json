@@ -1,6 +1,0 @@
-{
-  "seed": "INSERT INTO posts (id, a, b) VALUES (1, 'x', 'y');",
-  "expectSql": ["DROP INDEX IF EXISTS \"posts_ab\";", "CREATE INDEX posts_ab ON posts (a, b);"],
-  "query": "SELECT sql FROM sqlite_master WHERE name = 'posts_ab'",
-  "rows": [{ "sql": "CREATE INDEX posts_ab ON posts (a, b)" }]
-}

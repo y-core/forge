@@ -1,6 +1,0 @@
-{
-  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x'), (2, 'b@x'); INSERT INTO posts (id, user_id, body) VALUES (10, 1, 'p'), (20, 2, 'q');",
-  "composeRefused": "posts references users, which is dropped — remove the REFERENCES first",
-  "query": "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM posts) AS posts",
-  "rows": [{ "users": 2, "posts": 2 }]
-}

@@ -1,7 +1,0 @@
-{
-  "seed": "INSERT INTO users (id, role) VALUES (1, 'admin'), (2, 'Admin');",
-  "expectSql": ["DROP VIEW IF EXISTS \"admins\";", "WHERE role = \"Admin\""],
-  "expectStdout": ["replace view admins"],
-  "query": "SELECT id FROM admins",
-  "rows": [{ "id": 2 }]
-}

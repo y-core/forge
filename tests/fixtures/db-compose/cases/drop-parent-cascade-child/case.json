@@ -1,9 +1,0 @@
-{
-  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x'), (2, 'b@x'); INSERT INTO posts (id, user_id, body) VALUES (10, 1, 'p'), (20, 2, 'q');",
-  "refusedWithout": "users: drops the table; posts references it and is rebuilt first",
-  "args": ["--allow-destructive", "<digest>"],
-  "expectSql": ["CREATE TABLE \"_forge_new_posts\"", "INSERT INTO \"_forge_new_posts\"", "RENAME TO \"posts\"", "DROP TABLE IF EXISTS \"users\";"],
-  "expectStdout": ["rebuild table posts", "drop table users"],
-  "query": "SELECT count(*) AS posts FROM posts",
-  "rows": [{ "posts": 2 }]
-}

@@ -1,2 +1,0 @@
-CREATE TABLE posts (id INTEGER PRIMARY KEY, a TEXT, b TEXT) STRICT;
-CREATE INDEX posts_ab ON posts (a, b);

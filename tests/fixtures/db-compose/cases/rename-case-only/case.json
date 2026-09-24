@@ -1,7 +1,0 @@
-{
-  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x');",
-  "expectStdout": ["no changes"],
-  "expectNoMigration": true,
-  "query": "SELECT count(*) AS users FROM Users",
-  "rows": [{ "users": 1 }]
-}

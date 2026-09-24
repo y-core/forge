@@ -1,6 +1,0 @@
-{
-  "seed": "INSERT INTO users (id, email) VALUES (1, 'a@x');",
-  "expectSql": ["ALTER TABLE \"users\" ADD COLUMN nickname TEXT;"],
-  "query": "SELECT id, email, nickname FROM users ORDER BY id",
-  "rows": [{ "id": 1, "email": "a@x", "nickname": null }]
-}

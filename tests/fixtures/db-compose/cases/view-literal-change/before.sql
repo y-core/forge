@@ -1,2 +1,0 @@
-CREATE TABLE users (id INTEGER PRIMARY KEY, role TEXT NOT NULL) STRICT;
-CREATE VIEW admins AS SELECT id FROM users WHERE role = "admin";

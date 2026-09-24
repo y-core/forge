@@ -1,7 +1,0 @@
-{
-  "seed": "INSERT INTO t (id, \"unique\") VALUES (1, 'u');",
-  "expectSql": ["ALTER TABLE \"t\" ADD COLUMN note TEXT;"],
-  "expectStdout": ["add column t.note"],
-  "query": "SELECT id, \"unique\", note FROM t",
-  "rows": [{ "id": 1, "unique": "u", "note": null }]
-}

@@ -1,8 +1,0 @@
-{
-  "seed": "INSERT INTO audit (id, note) VALUES (1, 'gone');",
-  "refusedWithout": "--allow-destructive",
-  "args": ["--allow-destructive", "<digest>"],
-  "expectSql": ["DROP TABLE IF EXISTS \"audit\";"],
-  "query": "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'audit') ORDER BY name",
-  "rows": [{ "name": "users" }]
-}

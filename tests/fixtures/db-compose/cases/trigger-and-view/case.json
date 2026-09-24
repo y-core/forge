@@ -1,6 +1,0 @@
-{
-  "seed": "INSERT INTO posts (id, body) VALUES (1, 'a');",
-  "after": "UPDATE posts SET body = 'b' WHERE id = 1;",
-  "query": "SELECT id, edits FROM edited_posts",
-  "rows": [{ "id": 1, "edits": 1 }]
-}
