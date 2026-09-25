@@ -73,7 +73,7 @@ export interface CopyTarget {
   readonly source: string;
   readonly label: string;
   readonly copied: string;
-  /** Announced through the status span, never through the button's accessible name. */
+  /** What the copy controller passes to `announce()` on success, never the button's accessible name. */
   readonly announce: string;
   readonly failed: string;
 }

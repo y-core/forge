@@ -199,7 +199,7 @@ Rebuttable only by a written brief. Where you depart, name the brief line beside
 
 ### 2i. Interaction and Announcement
 
-64. **Count** live regions on the page. Expect exactly 1, the flash container. `forge-ui-a11y-one-live-region`
+64. **Count** live regions on the page. Expect only the `<Announcer />`'s. `forge-ui-a11y-one-live-region`
 65. **Count** `data-*` state attributes you emit, then count their ARIA counterparts. Expect equal. `forge-ui-a11y-aria-beside-data`
 66. **Grep** `rg 'focus:' | rg -v 'focus-visible:|focus-within:'`. Expect 0 hits. `forge-ui-interaction-focus-visible`
 67. **Count** motion moments per interaction. Expect 1. `forge-ui-interaction-one-moment`

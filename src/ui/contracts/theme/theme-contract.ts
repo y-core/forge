@@ -22,9 +22,6 @@ export const COPY_TARGET_ATTR = "data-copy-target";
 /** The attribute on the span holding a copy button's swappable text. @public */
 export const COPY_LABEL_ATTR = "data-copy-label";
 
-/** The attribute on a copy button's `role='status'` span, valued with its target's id. @public */
-export const COPY_STATUS_ATTR = "data-copy-status";
-
 /** How long a copy button reads "Copied" before its own label returns. @public */
 export const COPY_CONFIRM_MS = 2000;
 

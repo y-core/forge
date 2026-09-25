@@ -1,5 +1,6 @@
 import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
 import { safeRedirectPath } from "../../http/redirect-path";
+import { announce } from "../../ui/client/announce";
 import { ownerWindow } from "../../ui/client/dom";
 import {
   PASSKEY,
@@ -14,7 +15,7 @@ import {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
-import type { PasskeyFailureReason, PasskeyOutcomeDetail } from "../types";
+import type { PasskeyFailureReason, PasskeyMode, PasskeyOutcomeDetail } from "../types";
 import type { PasskeyContract, PasskeyCredentials, PasskeyRealm } from "./types";
 
 /** Creation options as JSON: every `BufferSource` field crosses the wire base64url-encoded. */
@@ -32,8 +33,12 @@ type RequestOptionsJson = Omit<PublicKeyCredentialRequestOptions, "allowCredenti
 
 const bytes = (value: string): Uint8Array<ArrayBuffer> => base64urlDecode(value);
 
-/** The message shown in the status region for each way a ceremony can end. */
-const MESSAGES: Record<PasskeyFailureReason, string> = {
+const PASSKEY_ANNOUNCE_CHANNEL = "passkey";
+
+const SUCCESS_MESSAGES: Record<PasskeyMode, string> = { registration: "Passkey created.", authentication: "Passkey accepted. Signing you in." };
+
+/** The message shown in the status line, and announced, for each way a ceremony can fail. */
+const FAILURE_MESSAGES: Record<PasskeyFailureReason, string> = {
   unsupported: "This browser cannot use passkeys. Please try again in a current version of Chrome, Edge, Firefox or Safari.",
   declined: "The passkey prompt was dismissed. Press the button to try again.",
   "already-enrolled": "This device already has a passkey for your account.",
@@ -217,7 +222,10 @@ export function mountPasskey(root: HTMLElement): () => void {
   const realm = realmOf(ownerWindow(root));
 
   const report = (outcome: PasskeyOutcomeDetail) => {
-    if (status && outcome.reason) status.textContent = MESSAGES[outcome.reason];
+    const failed = outcome.reason !== undefined;
+    const message = outcome.reason ? FAILURE_MESSAGES[outcome.reason] : SUCCESS_MESSAGES[outcome.mode];
+    if (status && failed) status.textContent = message;
+    announce(message, { channel: PASSKEY_ANNOUNCE_CHANNEL, politeness: failed ? "assertive" : "polite", repeat: true, within: root });
     root.dispatchEvent(new CustomEvent<PasskeyOutcomeDetail>(PASSKEY_OUTCOME_EVENT, { detail: outcome, bubbles: true }));
   };
 

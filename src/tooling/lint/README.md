@@ -54,7 +54,7 @@ can load; both spellings export the plugin as `lintPlugin` and as the default ex
 | `a11y-label-association` | `forge-ui-a11y-label-association` | A `<label>` with neither a `for` nor a wrapped control |
 | `a11y-live-politeness` | `forge-ui-a11y-live-politeness` | An `aria-live` that is not `polite`, or an `assertive` that states no reason |
 | `a11y-no-aria-readonly-on-button` | `forge-ui-a11y-no-aria-readonly-on-button` | `aria-readonly` on a role that carries no such state |
-| `a11y-one-live-region` | `forge-ui-a11y-one-live-region` | A second live region beside the page's one announcer |
+| `a11y-one-live-region` | `forge-ui-a11y-one-live-region` | An `aria-live`, or a `role` of `alert`, `status` or `log`, beside the page's one `<Announcer />` |
 | `catalog-wrong-raw-input` | `forge-ui-catalog-wrong-raw-input` | A raw control in composed markup where the component wrapping it belongs |
 | `color-theme-no-raw-utility` | `forge-ui-color-theme-no-raw-utility` | A raw palette utility with no `dark:` counterpart in the same class list |
 | `color-token-only` | `forge-ui-color-token-only` | A colour utility naming a raw palette value instead of a theme token |

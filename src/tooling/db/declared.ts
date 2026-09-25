@@ -29,7 +29,7 @@ export function snapshotPath(run: DbRunContext): string {
   return join(run.config.root, "schema.snapshot.json");
 }
 
-/** What `compose` and `schema check` say when `config/db.ts` names no schema at all. @internal */
+/** What `compose` says when refusing to compose from no schema while history exists. @internal */
 export const NO_SCHEMAS =
   "config/db.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
   '  export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] } satisfies DbHostConfig;\n' +

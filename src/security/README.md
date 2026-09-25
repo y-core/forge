@@ -166,6 +166,21 @@ The hash cannot reach production, because production never imports the entry tha
 
 ---
 
+## Shaping Strict-Transport-Security
+
+The default is a two-year policy with `includeSubDomains` and `preload`. `hsts` changes any part of it, and `hsts: false` drops the header:
+
+```ts
+// strict-transport-security: max-age=31536000; includeSubDomains
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE], hsts: { maxAge: 31536000, preload: false } }));
+```
+
+**Turn `preload` off unless you mean to submit the domain to the browsers' preload list** — a listing takes months to undo. Why that is, and which
+hostname to reach development at so the policy does not follow you to every local project, are [`SECURITY_HARDENING.md`][sh-2e] §2e's and
+[§3f][sh-3f]'s.
+
+---
+
 ## Guarding a mutating route
 
 `originProtection` is the one to reach for by default: it applies Fetch Metadata **and** an `Origin`/`Referer` allowlist, exempting safe methods

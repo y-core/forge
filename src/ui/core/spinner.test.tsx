@@ -14,17 +14,17 @@ const statusText = (html: string) => /<span[^>]*>([^<]*)<\/span><\/span>$/.exec(
 describe("Spinner", () => {
   it("renders the whole indicator exactly, forwarded attributes and label escaped", async () => {
     expect(await render(<Spinner icon={icon} label={`R&D's`} id='sp1' data-note='a&b' />)).toBe(
-      '<span data-slot="spinner" role="status" class="inline-flex items-center justify-center" id="sp1" data-note="a&amp;b">' +
+      '<span data-slot="spinner" class="inline-flex items-center justify-center" id="sp1" data-note="a&amp;b">' +
         '<svg data-slot="icon" viewBox="0 0 24 24" class="motion-safe:animate-spin size-6" aria-hidden="true"><use href="/sprite.svg#icon-spinner"></use></svg>' +
         '<span class="sr-only motion-reduce:not-sr-only">R&amp;D&#39;s</span></span>',
     );
   });
 
-  it("announces itself as a live status region, so the spin is not the only signal that work is running", async () => {
-    expect(attrsOf(await busy())).toEqual({ "data-slot": "spinner", role: "status" });
+  it("opens no live region of its own, because the busy channel of `announce()` speaks its label", async () => {
+    expect(attrsOf(await busy())).toEqual({ "data-slot": "spinner" });
   });
 
-  it("carries a default label, because a status region with no name announces nothing", async () => {
+  it("carries a default label, because a spinner with no text gives the busy channel nothing to say", async () => {
     expect(statusText(await busy())).toBe("Loading…");
   });
 

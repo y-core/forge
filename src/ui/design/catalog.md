@@ -49,6 +49,7 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
 | Surface a background result the user did not wait for | `Toast` inside `Toast.Container` | `@y-core/forge/ui/core` |
 | Carry a result across a redirect | `Flash` / `FlashContainer` / `createFlash` | `@y-core/forge/ui/server` |
 | Swap a notification into a live page out-of-band | `FlashOob` | `@y-core/forge/ui/server` |
+| Tell a screen reader something without showing it | `Announcer` once in the layout, then `announce()` from `ui/client` | `@y-core/forge/ui/core` |
 | Show a record's liveness as a coloured dot | `Status` (needs a `label`) | `@y-core/forge/ui/core` |
 | Hang a count or a dot off the corner of a control | `Indicator` (`.Item` takes `placement`) | `@y-core/forge/ui/core` |
 

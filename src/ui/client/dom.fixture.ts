@@ -65,6 +65,11 @@ export class FakeElement {
     return this;
   }
 
+  appendChild(kid: FakeElement): FakeElement {
+    this.append(kid);
+    return kid;
+  }
+
   remove(): void {
     if (!this.parent) return;
     const at = this.parent.children.indexOf(this);
@@ -136,12 +141,13 @@ export class FakeElement {
     return out;
   }
 
-  /** Supports the shapes the controllers actually use: `[attr]`, `[attr='v']`, `tag`, and lists. */
+  /** Supports the shapes the controllers actually use: `[attr]`, `[attr='v']`, `.class`, `tag`, and lists. */
   matches(selector: string): boolean {
     return selector.split(",").some((part) => {
       const one = part.trim();
       if (one === "*") return true;
       if (one.startsWith("#")) return this.id === one.slice(1);
+      if (one.startsWith(".")) return (this.attrs.get("class") ?? "").split(/\s+/).includes(one.slice(1));
       const attr = /^\[([a-z-]+)(?:~?=['"]?([^'"\]]*)['"]?)?\]$/.exec(one);
       if (attr === null) return one.toUpperCase() === this.tagName;
       const [, name = "", expected] = attr;
@@ -297,6 +303,37 @@ export class FakeCredentials {
   }
 }
 
+/** What a {@link FakeMutationObserver} hands its callback: the nodes one mutation inserted. */
+export interface FakeMutationRecord {
+  addedNodes: FakeElement[];
+}
+
+/** A `MutationObserver` a test fires by hand with {@link FakeMutationObserver.deliver}. */
+export class FakeMutationObserver {
+  readonly targets: FakeElement[] = [];
+  connected = false;
+
+  private readonly callback: (records: FakeMutationRecord[]) => void;
+
+  constructor(callback: (records: FakeMutationRecord[]) => void) {
+    this.callback = callback;
+  }
+
+  observe(target: FakeElement): void {
+    this.targets.push(target);
+    this.connected = true;
+  }
+
+  disconnect(): void {
+    this.connected = false;
+  }
+
+  /** Hands the callback one record per inserted node, as the platform would once the mutation settles. */
+  deliver(...added: FakeElement[]): void {
+    if (this.connected) this.callback(added.map((node) => ({ addedNodes: [node] })));
+  }
+}
+
 /** A window whose timers a test drives by hand, so no test ever waits on a real clock. */
 export class FakeWindow {
   private seq = 0;
@@ -346,14 +383,36 @@ export class FakeWindow {
     return Promise.resolve(new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 }));
   }
 
-  setTimeout(fn: () => void, _ms?: number): number {
+  /** Every observer the realm's `MutationObserver` built, once {@link observeMutations} has given it one. */
+  readonly observers: FakeMutationObserver[] = [];
+
+  /** Absent until a test asks, as it is in a realm with no DOM mutation support. */
+  MutationObserver: (new (callback: (records: FakeMutationRecord[]) => void) => FakeMutationObserver) | undefined;
+
+  /** Gives the realm a `MutationObserver` whose every instance lands in {@link observers}. */
+  observeMutations(): void {
+    const observers = this.observers;
+    this.MutationObserver = class extends FakeMutationObserver {
+      constructor(callback: (records: FakeMutationRecord[]) => void) {
+        super(callback);
+        observers.push(this);
+      }
+    };
+  }
+
+  /** The delay each pending timer was armed with, by id. */
+  readonly delays = new Map<number, number>();
+
+  setTimeout(fn: () => void, ms = 0): number {
     this.seq += 1;
     this.timers.set(this.seq, fn);
+    this.delays.set(this.seq, ms);
     return this.seq;
   }
 
   clearTimeout(id: number): void {
     this.timers.delete(id);
+    this.delays.delete(id);
   }
 
   /** The real one: a microtask is not a clock, so `await Promise.resolve()` drains it in order. */
@@ -365,6 +424,7 @@ export class FakeWindow {
   flush(): void {
     const pending = [...this.timers.entries()].sort(([a], [b]) => a - b);
     this.timers.clear();
+    this.delays.clear();
     for (const [, fn] of pending) fn();
   }
 

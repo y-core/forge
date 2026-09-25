@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
 import { FakeEvent, fakeTree } from "../../ui/client/dom.fixture";
 import type { FakeElement, FakeWindow } from "../../ui/client/dom.fixture";
+import { ANNOUNCER_REGION_SLOTS } from "../../ui/contracts/announcer-contract";
 import {
   PASSKEY,
   PASSKEY_CSRF_HEADER_ATTR,
@@ -270,8 +271,14 @@ describe("encodeCredential / ceremonyReason", () => {
   });
 });
 
-/** A scope root carrying the full contract, plus the refs the controller addresses. */
-function fixture(overrides: Record<string, string> = {}): { root: FakeElement; win: FakeWindow; trigger: FakeElement } {
+/** A scope root carrying the full contract, plus the refs the controller addresses, beside an `<Announcer />`'s regions. */
+function fixture(overrides: Record<string, string> = {}): {
+  root: FakeElement;
+  win: FakeWindow;
+  trigger: FakeElement;
+  polite: FakeElement;
+  assertive: FakeElement;
+} {
   const { doc, el } = fakeTree();
   const root = el("DIV", {
     "data-scope": "passkey",
@@ -289,7 +296,10 @@ function fixture(overrides: Record<string, string> = {}): { root: FakeElement; w
   unsupported.hidden = true;
   root.append(trigger, status, unsupported);
   doc.body.append(root);
-  return { root, win: doc.defaultView, trigger };
+  const polite = el("DIV", { "data-slot": ANNOUNCER_REGION_SLOTS.polite });
+  const assertive = el("DIV", { "data-slot": ANNOUNCER_REGION_SLOTS.assertive });
+  doc.root.append(polite, assertive);
+  return { root, win: doc.defaultView, trigger, polite, assertive };
 }
 
 describe("readPasskeyContract", () => {
@@ -407,5 +417,68 @@ describe("mountPasskey", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(win.requests).toEqual([]);
+  });
+});
+
+describe("mountPasskey — the outcome is spoken through the page's announcer", () => {
+  const spoken = (region: FakeElement): string[] => region.children.map((node) => node.textContent);
+
+  it("interrupts with the unsupported message at mount, before any press", () => {
+    const { root, win, polite, assertive } = fixture();
+    win.PublicKeyCredential = undefined;
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    win.flush();
+
+    expect(spoken(assertive)).toEqual([
+      "This browser cannot use passkeys. Please try again in a current version of Chrome, Edge, Firefox or Safari.",
+    ]);
+    expect(spoken(polite)).toEqual([]);
+    dispose();
+  });
+
+  it("announces a success politely", async () => {
+    const { root, win, trigger, polite, assertive } = fixture();
+    win.credentials.answer = ASSERTION;
+    win.replies.set(OPTIONS_PATH, { body: REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { body: { ok: true } });
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    win.flush();
+
+    expect(spoken(polite)).toEqual(["Passkey accepted. Signing you in."]);
+    expect(spoken(assertive)).toEqual([]);
+    dispose();
+  });
+
+  it("interrupts with a refusal, and speaks the same refusal again on a second press", async () => {
+    const { root, win, trigger, polite, assertive } = fixture();
+    win.credentials.answer = ASSERTION;
+    win.replies.set(OPTIONS_PATH, { body: REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { status: 403, body: {} });
+
+    const appended: string[] = [];
+    const append = assertive.append.bind(assertive);
+    assertive.append = (...nodes: FakeElement[]) => {
+      appended.push(...nodes.map((node) => node.textContent));
+      return append(...nodes);
+    };
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    const press = async () => {
+      trigger.dispatchEvent(new FakeEvent("click"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      win.flush();
+    };
+    await press();
+    await press();
+
+    const refused = "That passkey wasn't accepted. Please try again.";
+    expect(appended).toEqual([refused, refused]);
+    expect(spoken(polite)).toEqual([]);
+    expect(root.querySelector(`[data-ref='${PASSKEY.status}']`)?.textContent).toBe(refused);
+    dispose();
   });
 });

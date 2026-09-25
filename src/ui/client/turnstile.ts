@@ -1,3 +1,4 @@
+import { ANNOUNCE_TURNSTILE_CHANNEL } from "../contracts/announcer-contract";
 import {
   TURNSTILE,
   TURNSTILE_ABANDONED_EVENT,
@@ -10,6 +11,7 @@ import {
   TURNSTILE_SCRIPT_URL,
 } from "../contracts/turnstile-contract";
 import type { TurnstileAbandonReason, TurnstileAbandonedDetail } from "../contracts/types";
+import { announce } from "./announce";
 import { activeElement, asElement, contains, eventTarget, ownerDocument, ownerWindow } from "./dom";
 
 interface TurnstileAPI {
@@ -157,7 +159,10 @@ export function mountTurnstile(root: HTMLElement): () => void {
   const reveal = (name: string, shown: boolean) => {
     if (disposed) return;
     const message = ref(name, container);
-    if (message) message.hidden = !shown;
+    if (!message) return;
+    const revealed = shown && message.hidden;
+    message.hidden = !shown;
+    if (revealed) announce(message.textContent ?? "", { channel: ANNOUNCE_TURNSTILE_CHANNEL, politeness: "assertive", within: container });
   };
 
   const showFallback = () => reveal(TURNSTILE.fallback, true);

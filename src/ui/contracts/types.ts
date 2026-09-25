@@ -4,6 +4,9 @@ import type { APPEARANCES } from "./vocabulary";
 import type { PRESENTATION_ATTRS } from "./vocabulary";
 import type { TONES } from "./vocabulary";
 
+/** Which of the page's two announcer regions a message is spoken through. @public */
+export type AnnouncePoliteness = "polite" | "assertive";
+
 /** The actions a checkable menu row names in `data-on-click` and the client scope handles. @public */
 export type MenuAction = "check" | "select";
 

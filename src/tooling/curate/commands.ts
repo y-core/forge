@@ -22,7 +22,8 @@ import type { Command } from "../cli/types";
 import { definitionList } from "../term/grid";
 import { DEFAULT_FEATURE_MANIFEST, loadFeatures } from "./config";
 import { describeFeatureGraph, featureGraph, quoteList, resolveFeatures } from "./graph";
-import type { CurateReport, CurateRequest, CurateRunner, FeatureManifest, FeatureSelection, SeamEdit } from "./types";
+import { trimScripts } from "./scripts";
+import type { CurateReport, CurateRequest, CurateRunner, FeatureGraph, FeatureManifest, FeatureSelection, SeamEdit } from "./types";
 
 const REGENERATE_TAIL = 40;
 
@@ -233,6 +234,51 @@ function withoutTrailingSlash(path: string): string {
   return path.replace(/\/+$/, "");
 }
 
+/** Refuses an owned file that is absent, the manifest, inside a directory, or a seam of a feature other than its owner that could be kept while the owner is dropped. */
+function assertOwnedFiles(files: readonly string[], config: FeatureManifest, graph: FeatureGraph, manifest: string | undefined): void {
+  const owned = Object.entries(config).flatMap(([feature, { directories }]) => directories.map((directory) => ({ feature, directory })));
+  for (const [owner, { files: listed = [] }] of Object.entries(config)) {
+    for (const file of listed) {
+      if (!files.includes(file)) throw new CliError("invalid-args", `owned file \`${file}\` is not in the working tree`);
+      if (file === manifest) throw new CliError("invalid-args", `owned file \`${file}\` is the feature manifest, which no feature may own`);
+      const inside = owned.find(({ directory }) => isUnder(file, withoutTrailingSlash(directory)));
+      if (inside !== undefined) {
+        throw new CliError(
+          "invalid-args",
+          `owned file \`${file}\` lies inside \`${withoutTrailingSlash(inside.directory)}\`, a directory of feature \`${inside.feature}\``,
+        );
+      }
+      const marker = Object.entries(config).find(
+        ([feature, { seams }]) => feature !== owner && seams.includes(file) && graph.closure.get(feature)?.has(owner) !== true,
+      )?.[0];
+      if (marker !== undefined) {
+        throw new CliError(
+          "invalid-args",
+          `owned file \`${file}\` of feature \`${owner}\` is a seam of feature \`${marker}\`, which does not require it — keeping \`${marker}\` would lose the file`,
+        );
+      }
+    }
+  }
+}
+
+/** `package.json` as the copy writes it, without the dropped features' scripts; refuses a script `package.json` does not define. */
+function curatePackageScripts(root: string, files: readonly string[], config: FeatureManifest, dropped: ReadonlySet<string>): string | undefined {
+  const named = Object.entries(config).filter(([, { scripts = [] }]) => scripts.length > 0);
+  if (named.length === 0) return undefined;
+  if (!files.includes("package.json")) {
+    throw new CliError("invalid-args", `feature \`${named[0]?.[0]}\` names scripts, and the working tree holds no package.json`);
+  }
+  const text = readFileSync(join(root, "package.json"), "utf-8");
+  const defined = (JSON.parse(text) as { scripts?: Record<string, unknown> }).scripts ?? {};
+  for (const [feature, { scripts = [] }] of named) {
+    const unknown = scripts.find((name) => !Object.hasOwn(defined, name));
+    if (unknown !== undefined)
+      throw new CliError("invalid-args", `feature \`${feature}\` names script \`${unknown}\`, which package.json does not define`);
+  }
+  const removed = named.flatMap(([feature, { scripts = [] }]) => (dropped.has(feature) ? scripts : []));
+  return removed.length === 0 ? undefined : trimScripts(text, removed);
+}
+
 function describeCommand(argv: readonly string[]): string {
   return `\`${argv.join(" ")}\``;
 }
@@ -285,10 +331,9 @@ export function curateTree(
   const features = Object.keys(config);
   const plan = resolveFeatures(config, request.selection);
   const dropped = new Set(plan.dropped);
+  const graph = featureGraph(config);
   const regenerating =
-    plan.dropped.length === 0
-      ? []
-      : featureGraph(config).order.filter((feature) => plan.kept.includes(feature) && config[feature]?.regenerate !== undefined);
+    plan.dropped.length === 0 ? [] : graph.order.filter((feature) => plan.kept.includes(feature) && config[feature]?.regenerate !== undefined);
   assertFreshTarget(target);
 
   const files = list(root);
@@ -302,13 +347,17 @@ export function curateTree(
   }
   assertRegenerable(root, files, config, regenerating);
   const manifest = locateManifest(root, files, request.manifest);
+  assertOwnedFiles(files, config, graph, manifest);
+  const packageJson = curatePackageScripts(root, files, config, dropped);
   const leavesManifest = plan.kept.length === 0;
   const directories = owned.filter(({ feature }) => dropped.has(feature)).map(({ directory }) => directory);
+  const ownedFiles = plan.dropped.flatMap((feature) => config[feature]?.files ?? []);
   const regenerated = regenerating.flatMap((feature) => (config[feature]?.regenerate?.remove ?? []).map(withoutTrailingSlash));
   const kept = files.filter(
     (file) =>
       !(file === manifest && leavesManifest) &&
       !directories.some((directory) => isUnder(file, directory)) &&
+      !ownedFiles.includes(file) &&
       !regenerated.some((path) => file === path || isUnder(file, path)),
   );
 
@@ -364,6 +413,7 @@ export function curateTree(
       cpSync(join(root, file), destination, { verbatimSymlinks: true, errorOnExist: true, force: false });
     }
     for (const [file, lines] of edited) writeFileSync(join(target, file), lines.join("\n"));
+    if (packageJson !== undefined && kept.includes("package.json")) writeFileSync(join(target, "package.json"), packageJson);
     regenerateTree(root, target, config, regenerating, run);
   } catch (error) {
     removeWritten(target, created);
@@ -376,6 +426,8 @@ export function curateTree(
     dropped: plan.dropped,
     added: plan.added,
     directories,
+    ownedFiles,
+    scripts: plan.dropped.flatMap((feature) => config[feature]?.scripts ?? []),
     seams,
     manifest: leavesManifest ? manifest : undefined,
     regenerated: regenerating,
@@ -444,7 +496,8 @@ export function createCurateCommand(): Command<typeof curateFlags> {
           { term: "kept:", description: report.kept.join(", ") || "(none)" },
           { term: "dropped:", description: report.dropped.join(", ") || "(none — a plain copy)" },
           { term: "added:", description: describeAdditions(report, selection) },
-          { term: "removed:", description: report.directories.join(", ") || "(no directories)" },
+          { term: "removed:", description: [...report.directories, ...report.ownedFiles].join(", ") || "(no directories or files)" },
+          { term: "scripts:", description: report.scripts.join(", ") || "(none removed)" },
           { term: "seams:", description: report.seams.map((seam) => `${seam.file} −${seam.removed}`).join(", ") || "(no lines)" },
           { term: "regenerated:", description: describeRegenerated(report, config) },
           { term: "manifest:", description: report.manifest === undefined ? "(kept, or outside the working tree)" : `${report.manifest} left out` },

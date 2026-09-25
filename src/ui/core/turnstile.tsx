@@ -45,10 +45,10 @@ export const Turnstile: FC<TurnstileProps> = ({
     data-tabindex={tabindex}
     class={cn(appearance === "always" ? RESERVED_BOX[size] : undefined, cls)}
     {...rest}>
-    <p data-ref={TURNSTILE.fallback} role='alert' hidden={true} class='text-sm text-destructive-text'>
+    <p data-ref={TURNSTILE.fallback} hidden={true} class='text-sm text-destructive-text'>
       {children ?? LABEL_DEFAULTS.turnstileFallback}
     </p>
-    <p data-ref={TURNSTILE.unsupported} role='alert' hidden={true} class='text-sm text-destructive-text'>
+    <p data-ref={TURNSTILE.unsupported} hidden={true} class='text-sm text-destructive-text'>
       {unsupported ?? LABEL_DEFAULTS.turnstileUnsupported}
     </p>
   </div>

@@ -39,8 +39,8 @@ export const AuthPasskeyScope: FC<{ contract: AuthPasskeyContract; class?: strin
   </div>
 );
 
-// No `aria-live` here: the page has one announcer, and the ceremony reaches it by dispatching
-// `PASSKEY_OUTCOME_EVENT` on this scope root. This paragraph is the visible half only.
+// No `aria-live` here: the controller speaks the outcome through `announce()` and the page's one
+// `<Announcer />`, so a live region of its own would be heard twice. This line is the visible half only.
 /** The progress line and the no-WebAuthn fallback every ceremony renders, whichever page hosts it. @internal */
 export const AuthPasskeyStatus: FC<{ unsupported: string }> = ({ unsupported }) => (
   <>

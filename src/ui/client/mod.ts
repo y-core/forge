@@ -1,3 +1,5 @@
+export { announce } from "./announce";
+export type { AnnounceOptions } from "./types";
 export { bindControls } from "./bind";
 export { bindAttr, bindText } from "./bind-display";
 export type { BindTextOptions } from "./types";

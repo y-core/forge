@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { ANNOUNCE_FAILURE_ATTR } from "./announcer-contract";
 import { BIND_ATTR_ATTR, BIND_TEXT_ATTR } from "./bind-contract";
 import { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 import { DIALOG_OPEN_MODAL_ATTR } from "./dialog-contract";
@@ -8,7 +9,7 @@ import { MENU_KEEP_OPEN_ATTR } from "./menu-contract";
 import { NAVBAR_DRAWER_ATTR } from "./navbar-contract";
 import { POPOVER_COORDS_ATTR } from "./overlay-contract";
 import { TABS_MOUNTED_ATTR } from "./tabs-contract";
-import { COPY_LABEL_ATTR, COPY_STATUS_ATTR, COPY_TARGET_ATTR, HEX_ATTR, SCALE_ROW_ATTR } from "./theme/theme-contract";
+import { COPY_LABEL_ATTR, COPY_TARGET_ATTR, HEX_ATTR, SCALE_ROW_ATTR } from "./theme/theme-contract";
 import { TOOLTIP_MOUNTED_ATTR } from "./toggle-contract";
 import { TOOLBAR_ITEM_ATTR } from "./toolbar-contract";
 import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs.fixture";
@@ -16,6 +17,7 @@ import { WIRING_ATTRS, WIRING_PREFIXES } from "./wiring-attrs.fixture";
 const EXPECTED = [
   "data-action",
   "data-activation",
+  "data-announce-failure",
   "data-as",
   "data-bind-attr",
   "data-bind-text",
@@ -26,7 +28,6 @@ const EXPECTED = [
   "data-content",
   "data-coords",
   "data-copy-label",
-  "data-copy-status",
   "data-copy-target",
   "data-decoration",
   "data-field",
@@ -78,6 +79,7 @@ describe("WIRING_ATTRS — one declaration of the wiring vocabulary", () => {
 
   it("takes each already-declared name from its constant rather than restating it", () => {
     const declared = [
+      ANNOUNCE_FAILURE_ATTR,
       BIND_ATTR_ATTR,
       BIND_TEXT_ATTR,
       ACTIVE_COMPOSITE_ITEM,
@@ -94,8 +96,8 @@ describe("WIRING_ATTRS — one declaration of the wiring vocabulary", () => {
     expect(declared.filter((name) => !(name in WIRING_ATTRS))).toEqual([]);
   });
 
-  it("keeps the five theme-declared names in step with their constants across the leaf boundary", () => {
-    expect([COPY_TARGET_ATTR, COPY_LABEL_ATTR, COPY_STATUS_ATTR, SCALE_ROW_ATTR, HEX_ATTR].filter((name) => !(name in WIRING_ATTRS))).toEqual([]);
+  it("keeps the theme-declared names in step with their constants across the leaf boundary", () => {
+    expect([COPY_TARGET_ATTR, COPY_LABEL_ATTR, SCALE_ROW_ATTR, HEX_ATTR].filter((name) => !(name in WIRING_ATTRS))).toEqual([]);
   });
 
   it("matches `data-on-*` and htmx's `data-hx-*` by prefix, since neither is one name", () => {

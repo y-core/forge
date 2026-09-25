@@ -22,15 +22,20 @@ const RegenerateSchema = v.strictObject({
   ),
 });
 
-/** One feature: the directories it owns outright, the files holding its `feature:<feature>` markers, the features it needs, and how it regenerates. */
+/** One feature: the directories and files it owns outright, its `package.json` scripts, the files holding its `feature:<feature>` markers, the features it needs, and how it regenerates. */
 const FeatureSchema = v.pipe(
   v.strictObject({
     directories: v.array(TreePathSchema),
+    files: v.optional(v.array(TreePathSchema)),
+    scripts: v.optional(v.array(v.pipe(v.string(), v.nonEmpty()))),
     seams: v.array(TreePathSchema),
     requires: v.optional(v.array(FeatureNameSchema)),
     regenerate: v.optional(RegenerateSchema),
   }),
-  v.check((feature) => feature.directories.length + feature.seams.length > 0, "a feature must name something to remove"),
+  v.check(
+    (feature) => feature.directories.length + (feature.files?.length ?? 0) + (feature.scripts?.length ?? 0) + feature.seams.length > 0,
+    "a feature must name something to remove",
+  ),
 );
 
 /** The feature manifest `config/features.ts` default-exports. @public */
@@ -91,6 +96,10 @@ export interface CurateReport {
   added: readonly FeatureAddition[];
   /** The dropped features' directories, each with its trailing `/` dropped. */
   directories: readonly string[];
+  /** The files the dropped features own, left out of the copy. */
+  ownedFiles: readonly string[];
+  /** The dropped features' `package.json` scripts, removed from the copy's. */
+  scripts: readonly string[];
   /** Every file that lost a line, in working-tree order. */
   seams: readonly SeamEdit[];
   /** The root-relative manifest path left out of the copy, or `undefined` when the copy keeps it or the working tree does not hold it. */

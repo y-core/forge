@@ -27,8 +27,8 @@ describe("Turnstile", () => {
     ).toBe(
       '<div data-slot="turnstile" data-scope="turnstile" data-ref="turnstile" data-sitekey="site-123" data-size="compact" data-load="eager"' +
         ' class="h-35 w-37.5 mt-4" data-note="a&amp;b">' +
-        '<p data-ref="turnstile-fallback" role="alert" hidden class="text-sm text-destructive-text">Retry &amp; reload &lt;now&gt;</p>' +
-        '<p data-ref="turnstile-unsupported" role="alert" hidden class="text-sm text-destructive-text">Use Chrome&#39;s latest</p></div>',
+        '<p data-ref="turnstile-fallback" hidden class="text-sm text-destructive-text">Retry &amp; reload &lt;now&gt;</p>' +
+        '<p data-ref="turnstile-unsupported" hidden class="text-sm text-destructive-text">Use Chrome&#39;s latest</p></div>',
     );
   });
 

@@ -88,10 +88,49 @@ describe("createSecurityHeaders — defaults", () => {
 });
 
 describe("createSecurityHeaders — custom options", () => {
-  it("overrides hstsMaxAge", async () => {
-    const headers = await headersFor(createSecurityHeaders({ hstsMaxAge: 31536000 }));
+  it("overrides the HSTS max-age, keeping both default tokens", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: { maxAge: 31536000 } }));
     expect(headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains; preload");
   });
+
+  it("emits the default HSTS string for an empty hsts object", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: {} }));
+    expect(headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains; preload");
+  });
+
+  it("treats an hsts field given as undefined as omitted, keeping its default", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: { maxAge: undefined, includeSubDomains: undefined, preload: undefined } }));
+    expect(headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains; preload");
+  });
+
+  it("omits strict-transport-security when hsts is false", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: false }));
+    expect(headers.get("strict-transport-security")).toBeNull();
+    expect(headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("drops only includeSubDomains when that flag is false", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: { includeSubDomains: false } }));
+    expect(headers.get("strict-transport-security")).toBe("max-age=63072000; preload");
+  });
+
+  it("drops only preload when that flag is false", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: { preload: false } }));
+    expect(headers.get("strict-transport-security")).toBe("max-age=63072000; includeSubDomains");
+  });
+
+  it("prints max-age alone when both flags are false", async () => {
+    const headers = await headersFor(createSecurityHeaders({ hsts: { maxAge: 0, includeSubDomains: false, preload: false } }));
+    expect(headers.get("strict-transport-security")).toBe("max-age=0");
+  });
+
+  for (const maxAge of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    it(`rejects an HSTS maxAge of ${String(maxAge)} at factory time`, () => {
+      expect(() => createSecurityHeaders({ hsts: { maxAge } })).toThrow(
+        `Invalid HSTS maxAge ${String(maxAge)}: must be a non-negative integer number of seconds`,
+      );
+    });
+  }
 
   it("overrides scriptSrc", async () => {
     const headers = await headersFor(createSecurityHeaders({ scriptSrc: ["'self'", "https://cdn.example.com"] }));
@@ -346,12 +385,22 @@ describe("applySecurityHeaders", () => {
   it("combines header options with an explicit nonce", () => {
     const hardened = applySecurityHeaders(new Response("ok"), {
       scriptSrc: ["'self'", NONCE, "https://cdn.example.com"],
-      hstsMaxAge: 31536000,
+      hsts: { maxAge: 31536000 },
       nonce: "fixed",
     });
     const csp = hardened.headers.get("content-security-policy") ?? "";
     expect(csp).toContain("script-src 'self' 'nonce-fixed' https://cdn.example.com");
     expect(hardened.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains; preload");
+  });
+
+  it("omits strict-transport-security when hsts is false", () => {
+    expect(applySecurityHeaders(new Response("ok"), { hsts: false }).headers.get("strict-transport-security")).toBeNull();
+  });
+
+  it("rejects a negative HSTS maxAge", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { hsts: { maxAge: -1 } })).toThrow(
+      "Invalid HSTS maxAge -1: must be a non-negative integer number of seconds",
+    );
   });
 
   it("accepts a base64url nonce with padding", () => {
@@ -447,9 +496,9 @@ describe("mergeSecurityHeaders", () => {
   });
 
   it("returns base unchanged for empty extra", () => {
-    const base = { scriptSrc: ["'self'"], connectSrc: ["'self'"], hstsMaxAge: 100 };
+    const base: SecurityHeadersOptions = { scriptSrc: ["'self'"], connectSrc: ["'self'"], hsts: { maxAge: 100 } };
     const merged = mergeSecurityHeaders(base, {});
-    expect(merged).toEqual({ scriptSrc: ["'self'"], connectSrc: ["'self'"], hstsMaxAge: 100 });
+    expect(merged).toEqual({ scriptSrc: ["'self'"], connectSrc: ["'self'"], hsts: { maxAge: 100 } });
   });
 
   it("does not mutate base", () => {
@@ -485,10 +534,32 @@ describe("mergeSecurityHeaders", () => {
     expect(mergeSecurityHeaders({}, { imgSrc: ["https://images.example.com"] }).imgSrc).toEqual(["'self'", "data:", "https://images.example.com"]);
   });
 
-  it("overrides hstsMaxAge when provided", () => {
-    const base = { scriptSrc: ["'self'"], hstsMaxAge: 100 };
-    const merged = mergeSecurityHeaders(base, { hstsMaxAge: 200 });
-    expect(merged.hstsMaxAge).toBe(200);
+  it("merges an hsts object onto a base hsts object field by field", () => {
+    const base: SecurityHeadersOptions = { hsts: { maxAge: 100, preload: false } };
+    expect(mergeSecurityHeaders(base, { hsts: { maxAge: 200 } }).hsts).toEqual({ maxAge: 200, preload: false });
+  });
+
+  it("keeps a base hsts field the extra gives as undefined", () => {
+    const base: SecurityHeadersOptions = { hsts: { maxAge: 100, preload: false } };
+    expect(mergeSecurityHeaders(base, { hsts: { maxAge: undefined, preload: undefined } }).hsts).toEqual({ maxAge: 100, preload: false });
+  });
+
+  it("leaves the base hsts object untouched when merging onto it", () => {
+    const base: SecurityHeadersOptions = { hsts: { maxAge: 100 } };
+    mergeSecurityHeaders(base, { hsts: { preload: false } });
+    expect(base.hsts).toEqual({ maxAge: 100 });
+  });
+
+  it("lets an extra hsts false replace a base hsts object", () => {
+    expect(mergeSecurityHeaders({ hsts: { maxAge: 100 } }, { hsts: false }).hsts).toBe(false);
+  });
+
+  it("lets an extra hsts object replace a base hsts false", () => {
+    expect(mergeSecurityHeaders({ hsts: false }, { hsts: { preload: false } }).hsts).toEqual({ preload: false });
+  });
+
+  it("keeps a base hsts false when the extra omits hsts", () => {
+    expect(mergeSecurityHeaders({ hsts: false }, {}).hsts).toBe(false);
   });
 
   it("overrides cross-origin policies when provided, preserving unset ones", () => {

@@ -201,7 +201,7 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNami
   );
 };
 
-/** A field's error message as a live `alert`, rendering nothing when it has no children. @internal */
+/** A field's error message, rendering nothing when it has no children; `announce()` speaks it, not a role. @internal */
 export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
   class: cls,
   id,
@@ -222,7 +222,7 @@ export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
       data-slot={slotToken("field-error", inherited)}
       class={cn("text-sm font-normal text-destructive-text", cls)}
       id={resolvedId}
-      role={role ?? "alert"}
+      role={role}
       {...props}>
       {children}
     </p>

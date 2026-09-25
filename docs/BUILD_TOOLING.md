@@ -34,7 +34,7 @@ audience: internal
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
-- §2l Forge's Own Release Proves the Demonstrator Still Demonstrates Every Component: the consumer spec `release:gate` runs, and its side effect
+- §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:full` alone, and where component coverage is checked
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
 - §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
 - §4 tooling/curate — Reducing a Demonstrator to Its Skeleton: features chosen at copy time, every refusal before a write
@@ -493,18 +493,15 @@ swapped a published dependency for a working copy, and the failure mode — a bu
 the worst kind to diagnose. Because it is a command, a plain `bun i` restores the pinned tag and the override has to be asked for again, which is
 the behaviour a consumer can reason about.
 
-### 2l. Forge's Own Release Proves the Demonstrator Still Demonstrates Every Component
+### 2l. A Forge Release Never Waits on a Consumer
 
-**`release:gate`, the command `config/release.ts` hands `forge release`, runs `verify:full` and then the demonstrator's coverage spec against this
-checkout's packed tarball.** `src/tooling/dev/coverage.ts` syncs the sibling `../starter` through `syncForge` (§2k) and runs
-`tests/unit/showcase/coverage.fixture.test.tsx` there. The spec's output passes through, and the closing error names the owing repository: add the
-missing demo there, or excuse the component in its coverage-missing list with the task that owes it. A missing sibling or a moved spec fails before
-anything is synced, naming the path it looked for.
+**The gate `config/release.ts` hands `forge release` is `verify:full`, and it reads nothing outside this checkout.** A consumer depends on forge,
+never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is the
+dependency inverted.
 
-**The sibling, not a pinned ref:** a pin goes stale, this workspace cannot reach `github.com`, and the sibling is what `bun run dev:forge` pairs
-with. The trade-off is that its working tree runs as it stands, so a red spec there blocks a forge release — narrowed to the one named spec. It is
-not a `full` row because CI has no sibling. **It leaves the starter's `node_modules/@y-core/forge` holding this checkout's pack**, the state
-`bun run dev:forge` leaves; `bun i` there restores the pinned tag. The gate says so on every outcome after the sync, pass or fail.
+**A check that every published component is demonstrated belongs to the demonstrator.** Its own gate runs the coverage spec against the forge it
+installs, so a release that publishes a new component turns the demonstrator red on upgrade, and the demo or its excuse lands there. To check ahead
+of a release, the demonstrator runs that spec after `forge dev sync` (§2k).
 
 ---
 
@@ -551,7 +548,8 @@ different posture; forge itself ships the step rather than running it, having no
 lines of the features it drops.** The manifest is the module an application default-exports `defineFeatures({...})` from — `features.ts` in its
 `config/` unless `--config` names another — and `@y-core/forge/tooling/curate` publishes both the verb and that helper. Its use is a demonstrator
 application whose remainder, with some or all of its demonstrations removed, is the application a new project starts from. The manifest is the whole
-of forge's understanding of that split: forge knows nothing about what a feature means, only which directories and seam files it names.
+of forge's understanding of that split: forge knows nothing about what a feature means, only which directories, files, `package.json` scripts and
+seam files it names.
 
 The working tree is what `git ls-files --cached --others --exclude-standard` lists — tracked and untracked files alike, minus what `.gitignore`
 excludes and what has been deleted from disk — so a skeleton carries no `node_modules`, no build output and no local secret the demonstrator
@@ -587,8 +585,18 @@ must name the features its begin named, and a region left open is refused; each 
 reads every text file in the tree, and refuses either one: otherwise the line survives into the skeleton, and nothing reports it unless it happens
 to import something the curation removed. The manifest itself is the one file every feature may mark without listing it.
 
-Every other byte of the file is kept, its final newline included, so a skeleton differs from its demonstrator by exactly the marked lines and the
-removed directories.
+Every other byte of the file is kept, its final newline included, so a skeleton differs from its demonstrator by exactly the marked lines, the
+removed directories and files, and the removed scripts.
+
+**A file a feature owns is left out whole, and it may not be a seam of a feature that could outlive its owner.** Some files cannot move into a
+feature's directory — a tool reads its config from a fixed path — so a feature names them in `files`. A kept feature marking a file the copy then
+leaves out would lose its lines without a word, so the file may be a seam only of its owner or of features that require the owner, which the
+graph (§4c) drops with it.
+
+**`package.json` takes no comment, so a feature names its scripts instead, and each is removed as its line.** The file is edited rather than
+re-serialised because a formatter owns its layout, and a rewrite would reflow every short array the formatter keeps on one line. The edit is then
+held against the parsed file with the scripts deleted, and a layout on which removing lines is not exactly that — entries sharing a line, a value
+continued onto the next — is refused rather than guessed at.
 
 ### 4b. The Gate Row Verifies the Skeleton It Produced
 

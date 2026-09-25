@@ -14,6 +14,7 @@ export type {
   CrossOriginResult,
   CspSourceValue,
   DeriveAllowedOriginsOptions,
+  HstsOptions,
   OriginProtectionOptions,
   OriginResult,
   ParsedUrl,

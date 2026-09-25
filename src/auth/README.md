@@ -361,6 +361,9 @@ resume();
 
 **Without that import the ceremony buttons render correctly and do nothing.**
 
+The controller speaks each outcome through `announce()`, so **the page needs `<Announcer />` from `@y-core/forge/ui/core`** in its layout: a
+refusal interrupts, a success does not. Without one the ceremony still works and says nothing to a screen reader.
+
 Import the `PASSKEY_*` constants from `@y-core/forge/auth` when you render a ceremony root yourself: `PASSKEY` for the `data-ref` names,
 `PASSKEY_SCOPE`, `PASSKEY_MODE_ATTR`, the `PASSKEY_OPTIONS_*` and `PASSKEY_VERIFY_*` path and token attributes, `PASSKEY_CSRF_HEADER_ATTR` with
 its `PASSKEY_CSRF_HEADER_DEFAULT`, and `PASSKEY_REDIRECT_ATTR` with its `PASSKEY_REDIRECT_FALLBACK`.

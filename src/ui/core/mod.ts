@@ -1,5 +1,6 @@
 export { Accordion } from "./accordion";
 export { Alert } from "./alert";
+export { Announcer } from "./announcer";
 export type { PanelAppearance } from "./types";
 export { Avatar } from "./avatar";
 export { Badge } from "./badge";

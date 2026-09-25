@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { TOAST_CONTAINER_SCOPE } from "../contracts/toast-contract";
 import { Toast } from "./toast";
 
 const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, "");
@@ -25,7 +26,7 @@ describe("Toast", () => {
     );
   });
 
-  it("claims no role and no live region of its own, since the container announces the whole stack", async () => {
+  it("claims no role and no live region of its own, since the page's `<Announcer />` speaks it", async () => {
     const html = await render(<Toast>Message</Toast>);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "toast", "data-tone": "neutral", "data-appearance": "soft" });
@@ -105,15 +106,14 @@ describe("Toast", () => {
 });
 
 describe("Toast.Container", () => {
-  it("is the one polite live region the stack is announced through, defaulting to the bottom right", async () => {
+  it("is a named, visual stack that resumes as a scope and opens no live region, defaulting to the bottom right", async () => {
     const html = await render(<Toast.Container />);
 
     expect(attrsOf(html)).toEqual({
       "data-slot": "toast-container",
+      "data-scope": TOAST_CONTAINER_SCOPE,
       "data-position": "bottom-right",
       "aria-label": "Notifications",
-      "aria-live": "polite",
-      "aria-atomic": "false",
     });
     expect(classesOf(html).filter((token) => token === "fixed" || token === "z-50")).toEqual(["fixed", "z-50"]);
   });
@@ -131,7 +131,7 @@ describe("Toast.Container", () => {
     ]);
   });
 
-  it("nests the toasts it was given inside the live region, where an insertion can be announced", async () => {
+  it("nests the toasts it was given inside the stack its scope announces from", async () => {
     expect(
       slotsOf(
         await render(
@@ -146,10 +146,9 @@ describe("Toast.Container", () => {
   it("forwards an id and a data attribute through the spread", async () => {
     expect(attrsOf(await render(<Toast.Container id='toasts' data-testid='container' />))).toEqual({
       "data-slot": "toast-container",
+      "data-scope": TOAST_CONTAINER_SCOPE,
       "data-position": "bottom-right",
       "aria-label": "Notifications",
-      "aria-live": "polite",
-      "aria-atomic": "false",
       id: "toasts",
       "data-testid": "container",
     });

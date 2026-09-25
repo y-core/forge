@@ -1,6 +1,6 @@
 import { migrationsDigest } from "../migrate/files";
 import type { DbRunContext } from "../types";
-import { baselineSchemaModel, declaredDigests, desiredSchemaModel, readSchemaInputs } from "./compose";
+import { baselineSchemaModel, declaredDigests, desiredSchemaModel, missingSchemas, readSchemaInputs } from "./compose";
 import { describeSchemaDifference } from "./introspect";
 import { loadDesired } from "./scratch";
 import type { SchemaCheckReport, SchemaInputs, SchemaSnapshot } from "./types";
@@ -24,12 +24,8 @@ export async function checkSchema(run: DbRunContext, options: { replay: boolean;
   const inputs = readSchemaInputs(run);
   const report = { snapshotPath: inputs.snapshotPath, schemas: inputs.schemas.map((source) => source.declared) };
 
-  // An absent file is dropped on the way in, so a declaration naming one is indistinguishable from
-  // no declaration at all by the time the states are counted — and "clean" is the wrong answer.
-  const missing = inputs.schemas.filter((source) => !inputs.states.some((state) => state.source === source.declared));
-  if (missing.length > 0) {
-    return { ...report, problems: missing.map((source) => `${source.declared} is declared in config/db.ts and no file is there to read`) };
-  }
+  const missing = missingSchemas(inputs);
+  if (missing.length > 0) return { ...report, problems: missing };
 
   if (inputs.snapshot === null) {
     if (inputs.states.length === 0) return { ...report, problems: null };

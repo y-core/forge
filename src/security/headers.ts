@@ -4,7 +4,7 @@ import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { base64urlEncode, randomBytes } from "../crypto/mod";
 import { NONCE } from "./nonce";
-import type { ApplySecurityHeadersOptions, CspSourceValue, PermissionsPolicyOptions, SecurityHeadersOptions } from "./types";
+import type { ApplySecurityHeadersOptions, CspSourceValue, HstsOptions, PermissionsPolicyOptions, SecurityHeadersOptions } from "./types";
 import { UNSAFE_CSP_SOURCES, UNSAFE_INLINE } from "./unsafe";
 
 const CSP_DIRECTIVES = ["scriptSrc", "connectSrc", "frameSrc", "imgSrc", "styleSrc", "fontSrc", "workerSrc", "childSrc"] as const;
@@ -90,6 +90,28 @@ function assertValidCspOptions(options?: SecurityHeadersOptions): void {
   }
 }
 
+const HSTS_DEFAULT_MAX_AGE = 63072000;
+
+function assertValidHstsOptions(hsts?: false | HstsOptions): void {
+  if (!hsts || hsts.maxAge === undefined) return;
+  if (!Number.isInteger(hsts.maxAge) || hsts.maxAge < 0) {
+    throw new Error(`Invalid HSTS maxAge ${String(hsts.maxAge)}: must be a non-negative integer number of seconds`);
+  }
+}
+
+function mergeHstsOptions(base: false | HstsOptions | undefined, extra: false | HstsOptions): false | HstsOptions {
+  if (extra === false || !base) return extra;
+  const stated = Object.entries(extra).filter(([, value]) => value !== undefined);
+  return { ...base, ...Object.fromEntries(stated) };
+}
+
+function buildHsts(hsts: HstsOptions): string {
+  const tokens = [`max-age=${hsts.maxAge ?? HSTS_DEFAULT_MAX_AGE}`];
+  if (hsts.includeSubDomains !== false) tokens.push("includeSubDomains");
+  if (hsts.preload !== false) tokens.push("preload");
+  return tokens.join("; ");
+}
+
 /** Layers extra CSP sources onto a base policy, concatenating each directive's source list. @public */
 export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partial<SecurityHeadersOptions>): SecurityHeadersOptions {
   const merged: SecurityHeadersOptions = { ...base };
@@ -97,7 +119,7 @@ export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partia
     const extraSources = extra[key];
     if (extraSources) merged[key] = [...(base[key] ?? CSP_DEFAULTS[key] ?? []), ...extraSources];
   }
-  if (extra.hstsMaxAge !== undefined) merged.hstsMaxAge = extra.hstsMaxAge;
+  if (extra.hsts !== undefined) merged.hsts = mergeHstsOptions(base.hsts, extra.hsts);
   if (extra.permissionsPolicy) merged.permissionsPolicy = { ...base.permissionsPolicy, ...extra.permissionsPolicy };
   if (extra.crossOriginOpenerPolicy !== undefined) merged.crossOriginOpenerPolicy = extra.crossOriginOpenerPolicy;
   if (extra.crossOriginResourcePolicy !== undefined) merged.crossOriginResourcePolicy = extra.crossOriginResourcePolicy;
@@ -158,9 +180,9 @@ interface PrecomputedSecurityHeaders {
 }
 
 function precomputeSecurityHeaders(options?: SecurityHeadersOptions): PrecomputedSecurityHeaders {
-  const hstsMaxAge = options?.hstsMaxAge ?? 63072000;
+  const hsts = options?.hsts ?? {};
   const entries: [string, string][] = [
-    ["strict-transport-security", `max-age=${hstsMaxAge}; includeSubDomains; preload`],
+    ...(hsts === false ? [] : [["strict-transport-security", buildHsts(hsts)] as [string, string]]),
     ["referrer-policy", "strict-origin-when-cross-origin"],
     ["x-content-type-options", "nosniff"],
     ["permissions-policy", buildPermissionsPolicy(options?.permissionsPolicy)],
@@ -187,6 +209,7 @@ export function applySecurityHeaders(response: Response, options?: ApplySecurity
     throw new Error("Invalid CSP nonce: must be a non-empty base64 or base64url value (no quotes, whitespace or CSP separators)");
   }
   assertValidCspOptions(headerOptions);
+  assertValidHstsOptions(headerOptions.hsts);
   const headers = new Headers(response.headers);
   for (const [name, value] of renderSecurityHeaders(precomputeSecurityHeaders(headerOptions), nonce)) {
     headers.set(name, value);
@@ -197,6 +220,7 @@ export function applySecurityHeaders(response: Response, options?: ApplySecurity
 /** Middleware applying CSP with a per-request nonce, HSTS, and the rest of forge's security headers. @public */
 export function createSecurityHeaders(options?: SecurityHeadersOptions): Middleware {
   assertValidCspOptions(options);
+  assertValidHstsOptions(options?.hsts);
   const precomputed = precomputeSecurityHeaders(options);
 
   return async (context, next) => {

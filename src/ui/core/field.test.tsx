@@ -195,6 +195,14 @@ describe("Field primitives", () => {
     expect(attrsOf(html, 'data-slot="field-separator"')).toEqual({ "data-content": "true", "data-slot": "field-separator" });
     expect(contentOf(html, "span")).toBe("or");
   });
+
+  it("renders an error with no live-region role, because `announce()` speaks a failed submission's first error", async () => {
+    expect(attrsOf(await render(<FieldError name='email'>Required</FieldError>))).toEqual({ "data-slot": "field-error", id: "field-email-error" });
+  });
+
+  it("still takes a role the caller passes", async () => {
+    expect(attrsOf(await render(<FieldError role='note'>Required</FieldError>))).toEqual({ "data-slot": "field-error", role: "note" });
+  });
 });
 
 function idsAndRefs(html: string): string[] {
@@ -423,7 +431,7 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
       attrsOf(await render(<FieldLabel name=''>hi</FieldLabel>)),
       attrsOf(await render(<FieldDescription name=''>hi</FieldDescription>)),
       attrsOf(await render(<FieldError name=''>bad</FieldError>)),
-    ]).toEqual([{ "data-slot": "field-label" }, { "data-slot": "field-description" }, { "data-slot": "field-error", role: "alert" }]);
+    ]).toEqual([{ "data-slot": "field-label" }, { "data-slot": "field-description" }, { "data-slot": "field-error" }]);
   });
 
   it("a whole blank-named field declares and references no id at all", async () => {
@@ -538,7 +546,7 @@ describe("Field ids — a name or scope must be a single id token", () => {
       attrsOf(await render(<FieldLabel name='first name'>Name</FieldLabel>)),
       attrsOf(await render(<FieldDescription name='first name'>Work address</FieldDescription>)),
       attrsOf(await render(<FieldError name='first name'>Required</FieldError>)),
-    ]).toEqual([{ "data-slot": "field-label" }, { "data-slot": "field-description" }, { "data-slot": "field-error", role: "alert" }]);
+    ]).toEqual([{ "data-slot": "field-label" }, { "data-slot": "field-description" }, { "data-slot": "field-error" }]);
   });
 });
 

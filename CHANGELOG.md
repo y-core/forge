@@ -18,7 +18,82 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **Change `hstsMaxAge: n` to `hsts: { maxAge: n }`** in `createSecurityHeaders`, `applySecurityHeaders` and
+   `mergeSecurityHeaders` options.
+2. **Stamp `<Announcer />` from `@y-core/forge/ui/core` once in your layout**, and import
+   `@y-core/forge/ui/core/client` before `resume()` if the client entry does not already. forge's `pageShell` does
+   not stamp it for you.
+3. **Replace a copy button's `COPY_STATUS_ATTR` span with a call to `announce()`** passing the copy target's
+   `announce` text.
+4. **Replace any `aria-live`, `role="alert"`, `role="status"` or `role="log"` of your own with `announce()`**, giving a
+   separate stream a channel of its own. `forge/a11y-one-live-region` now reports each one.
+
+### Breaking Changes
+
+- **`hstsMaxAge` is replaced by `hsts`, with no alias.** `hsts: false` omits `Strict-Transport-Security`; an object
+  sets `maxAge` and turns off `includeSubDomains` or `preload` one at a time. An app that set neither gets the same
+  header as before. A `maxAge` that is not a non-negative integer now throws.
+- **Toasts, field errors, htmx spinners and Turnstile failures are spoken only through `<Announcer />`.** It holds
+  the page's only live regions. Without it they are silent, and the first `announce()` warns once.
+- **`Toast.Container` is no longer a live region.** It drops `aria-live` and `aria-atomic` and becomes the eager
+  `toast-container` scope, which announces the toasts it holds; `FlashContainer`, which renders one, changes with
+  it. It needs `@y-core/forge/ui/core/client` imported before `resume()`.
+- **`FieldError` (`FormField.Error`) drops its default `role="alert"`.** A role you pass still renders. The first
+  error of a failed submission is announced assertively instead.
+- **`Spinner` drops `role="status"`.** Its `sr-only` label stays, and is announced on the busy channel while an
+  htmx request runs.
+- **`Turnstile`'s fallback and unsupported messages drop `role="alert"`.** The controller announces one when it
+  reveals it.
+- **The log viewer's failure `Alert`s drop `role="alert"`.** Each carries `ANNOUNCE_FAILURE_ATTR` instead, so a failed read
+  or load-more is announced assertively when its panel arrives, in an htmx swap or with the page, through the `<Announcer />`
+  in your shell's layout.
+- **`COPY_STATUS_ATTR` is removed from `@y-core/forge/ui/contracts/theme`.** A copy target's `announce` text is
+  passed to `announce()` rather than written into a `role="status"` span.
+- **`forge/a11y-one-live-region` also reports `role="alert"`, `role="status"` and `role="log"`,** and names
+  `announce()` and `<Announcer />` as the route. An element whose `aria-live` is `off` is not reported, and one
+  live by both its role and its `aria-live` is reported once.
+
+### Added
+
+- **`<Announcer />` in `ui/core` and `announce()` in `ui/client`.** `announce(text, { channel, politeness, repeat })`
+  speaks the latest message on a channel once it settles, skips an identical repeat unless asked, and cancels on
+  empty text, which also forgets the channel's last message. `within` names a node whose document speaks it, for a
+  frame other than the ambient one. Each message is its own node in the region and is removed after
+  `ANNOUNCE_LINGER_MS`, so two channels settling together are both heard. Toasts have a channel that speaks every
+  toast, and Turnstile failures one of their own. Its options type is `AnnounceOptions`.
+- **`ui/contracts` exports the announcer's contract**: `ANNOUNCER_SCOPE`, `ANNOUNCER_REGION_SLOTS`,
+  `ANNOUNCE_SETTLE_MS`, `ANNOUNCE_LINGER_MS`, `ANNOUNCE_BUSY_CHANNEL`, `ANNOUNCE_FORM_ERROR_CHANNEL`,
+  `ANNOUNCE_FAILURE_CHANNEL`, `ANNOUNCE_TOAST_CHANNEL`, `ANNOUNCE_TURNSTILE_CHANNEL` and the `AnnouncePoliteness`
+  type, with `TOAST_CONTAINER_SCOPE` beside the toast's.
+- **`ANNOUNCE_FAILURE_ATTR` in `ui/contracts` marks a failure panel.** Its value is the message, announced
+  assertively on the failure channel when the panel arrives in an htmx swap or with the page.
+- **`HstsOptions` in `security`**, the type of the `hsts` option's object form. A field given as `undefined` keeps
+  its default.
+- **A curated feature owns single files and `package.json` scripts.** A feature's `files` are left out of a copy
+  that drops it, for a file that cannot live in the feature's directory, such as `config/db.ts`. Its `scripts` are
+  removed from `package.json` line by line, so the formatter's layout survives. `forge curate` refuses an owned file
+  that is absent, the manifest, inside a directory, or a seam of another feature not requiring its owner. It also
+  refuses a script `package.json` does not define, scripts named when the working tree holds no `package.json`, and a
+  `package.json` not holding one script per line. The report gains `ownedFiles` and `scripts`, and the CLI prints both.
+
+### Changed
+
+- **forge's release gate is `verify:full` alone.** It no longer runs forge-starter's showcase coverage spec, so a
+  component the starter has yet to demonstrate cannot block a forge release; that check belongs to the starter's own gate.
+
+### Fixed
+
+- **A passkey ceremony's outcome is now spoken.** On the enrolment and verification pages the status line is not a
+  live region, and nothing listened for `PASSKEY_OUTCOME_EVENT`, so a screen reader heard neither a refusal nor a
+  success. The `auth/client` controller now calls `announce()` on a channel of its own: a refusal assertively, a
+  browser with no WebAuthn included, and a success politely. It needs the layout's `<Announcer />`.
+  `PASSKEY_OUTCOME_EVENT` still fires, for your own code.
+- **`forge db migrate compose` refuses a declared schema whose file is missing, and names it.** It used to say
+  `config/db.ts` names no `schemas` when every file was missing. When only some were missing, it composed from the
+  rest without a word, which could write DROPs for the missing schema's tables. It now prints the same line
+  `forge db schema check` does for each missing file, before `--restamp` too.
 
 ---
 

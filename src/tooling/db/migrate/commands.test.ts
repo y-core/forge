@@ -218,13 +218,22 @@ describe("forge db migrate compose --custom", () => {
     expect(result.err).toEqual(["Error: Flag --allow-destructive requires a value"]);
   });
 
-  it("refuses to compose when config/db.ts names no schemas, and says what to write", async () => {
+  it("refuses to compose when a declared schema's file is missing, and names it", async () => {
     const root = appRoot();
     const io = fakeDbIo({}, { now: NOW });
     wire(io);
     const result = await drive(io, ["migrate", "compose", "--root", root]);
-    expect(result.code).toBe(1);
-    expect(result.err[0]).toContain("config/db.ts names no `schemas`");
+    expect(result).toEqual({ out: [], err: ["Error: schema.sql is declared in config/db.ts and no file is there to read"], code: 1 });
+  });
+
+  it("refuses to compose when one of two declared schemas is missing, names only that one, and writes nothing", async () => {
+    const root = appRoot();
+    const io = fakeDbIo({ [join(root, "a.sql")]: "CREATE TABLE a (id INTEGER PRIMARY KEY) STRICT;\n" }, { now: NOW });
+    wire(io);
+    const before = [...io.files.keys()];
+    const result = await drive(io, ["migrate", "compose", "--root", root], { schemas: ["a.sql", "b.sql"] });
+    expect(result).toEqual({ out: [], err: ["Error: b.sql is declared in config/db.ts and no file is there to read"], code: 1 });
+    expect([...io.files.keys()]).toEqual(before);
   });
 
   it("exits 0 with nothing to compose when config/db.ts names no schemas and there is no history", async () => {

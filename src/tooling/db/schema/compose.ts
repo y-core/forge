@@ -55,6 +55,13 @@ export function readSchemaInputs(run: DbRunContext): SchemaInputs {
   return { migrations: readMigrations(run), schemas, states, snapshotPath: path, snapshot: readSchemaSnapshot(run.io, path), claims };
 }
 
+/** Each declared schema with no file to read — dropped from the states on the way in, so nothing downstream can tell it was declared. @internal */
+export function missingSchemas(inputs: SchemaInputs): string[] {
+  return inputs.schemas
+    .filter((source) => !inputs.states.some((state) => state.source === source.declared))
+    .map((source) => `${source.declared} is declared in config/db.ts and no file is there to read`);
+}
+
 /** The replayed model of every migration on disk, from the cache when the migrations have not changed. @internal */
 export function baselineSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): Promise<SchemaModel> {
   const key = scratchModelKey(scratchWranglerVersion(run), migrationsDigest(inputs.migrations));
@@ -185,9 +192,10 @@ function composeFromNoSchema(run: DbRunContext, inputs: SchemaInputs, dryRun: bo
 export async function composeMigration(run: DbRunContext, options: ComposeOptions): Promise<ComposeOutcome> {
   const inputs = readSchemaInputs(run);
   if (options.custom) return writeCustom(run, inputs, options);
+  const missing = missingSchemas(inputs);
+  if (missing.length > 0) throw new CliError("invalid-args", missing.join("\n"));
   if (options.restamp !== undefined) return restampMigration(run, inputs, options.restamp, options.dryRun);
   if (inputs.schemas.length === 0) return composeFromNoSchema(run, inputs, options.dryRun);
-  if (inputs.states.length === 0) throw new CliError("invalid-args", NO_SCHEMAS);
 
   const renames: SchemaRename[] = options.renames.map(parseSchemaRename);
   const migrationsDir = declaredMigrations(run).path;

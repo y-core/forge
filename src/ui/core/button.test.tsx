@@ -187,7 +187,7 @@ describe("Button", () => {
       </Button>,
     );
 
-    expect(attrsOf(html, 'data-slot="spinner"')).toEqual({ "data-slot": "spinner", role: "status" });
+    expect(attrsOf(html, 'data-slot="spinner"')).toEqual({ "data-slot": "spinner" });
     expect(classesOf(html, 'data-slot="icon"')).toEqual(["motion-safe:animate-spin", "size-4"]);
     expect(childrenOf(html).endsWith("</span>Save")).toBe(true);
   });

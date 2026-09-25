@@ -83,7 +83,7 @@ describe("PasskeyEditView", () => {
     expect(attrsOf(html, 'data-slot="field"')["data-invalid"]).toBe("");
     expect(attrOf(html, 'id="field-label"', "aria-invalid")).toBe("true");
     expect(elementOf(html, "p", 'id="field-label-error"')).toBe(
-      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-label-error" role="alert">' +
+      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-label-error">' +
         '<svg data-slot="icon" class="me-2 inline-block size-4" aria-hidden="true"><use href="/assets/icons.svg#icon-alert"></use></svg>' +
         `${FIELD_REFUSAL}</p>`,
     );

@@ -631,18 +631,22 @@ var a11yNoAriaReadonlyOnButton = {
 };
 
 // src/tooling/lint/rules/a11y-one-live-region.ts
+var LIVE_ROLES = /* @__PURE__ */ new Set(["alert", "status", "log"]);
+var ROUTE = "speak through `announce()` into the page's one `<Announcer />`";
 var a11yOneLiveRegion = {
   meta: { type: "problem", docs: { description: "A page has one live region; a second one interleaves its announcements with the first." } },
   create(context) {
     const report = reporter(context, "forge-ui-a11y-one-live-region");
     return {
       JSXOpeningElement(node) {
-        const value = statedString(attributeNamed(node, "aria-live")?.value);
-        if (value === void 0 || value === "off") return;
-        report(
-          `\`aria-live="${value}"\` opens a second live region \u2014 route the announcement into \`Toast.Container\` or \`FlashContainer\``,
-          node.loc
-        );
+        const liveAttribute = attributeNamed(node, "aria-live");
+        if (liveAttribute) {
+          const live = statedString(liveAttribute.value);
+          if (live !== void 0 && live !== "off") report(`\`aria-live="${live}"\` opens a second live region \u2014 ${ROUTE}`, node.loc);
+          return;
+        }
+        const role = statedString(attributeNamed(node, "role")?.value);
+        if (role !== void 0 && LIVE_ROLES.has(role)) report(`\`role="${role}"\` opens a second live region \u2014 ${ROUTE}`, node.loc);
       }
     };
   }

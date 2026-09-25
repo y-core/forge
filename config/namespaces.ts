@@ -54,7 +54,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     http: "value",
     jsx: "value",
     logging: "value",
-    "ui/contracts": "type",
+    "ui/contracts": "value",
     "ui/core": "value",
   },
   security: { dev: "type", logging: "value" },

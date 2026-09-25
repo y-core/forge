@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { FakeElement, FakeEvent, fakeTree } from "../client/dom.fixture";
 import { resume, resumeScope } from "../client/resume";
 import { ALERT_SCOPE } from "../contracts/alert-contract";
+import { ANNOUNCE_FAILURE_ATTR, ANNOUNCER_REGION_SLOTS, ANNOUNCER_SCOPE } from "../contracts/announcer-contract";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
 import { ISLAND_STATE_KEY } from "../contracts/island-contract";
-import { TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
+import { TOAST_CONTAINER_SCOPE, TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
 // Import client.ts to register the toast and alert scopes as a side effect.
 import "./client";
 
@@ -122,6 +123,78 @@ describe("toast scope — auto-close", () => {
     const root = new FakeEl(TOAST_SCOPE, { [TOAST_DURATION_KEY]: 0 }) as unknown as HTMLElement;
     resumeScope(root);
     expect(capturedTimer).toBeUndefined();
+  });
+});
+
+/** A page with an `<Announcer />`, so a scope's announcement has somewhere to land. */
+function announcedPage() {
+  const { doc, el } = fakeTree();
+  const polite = el("DIV", { "data-slot": ANNOUNCER_REGION_SLOTS.polite });
+  const assertive = el("DIV", { "data-slot": ANNOUNCER_REGION_SLOTS.assertive });
+  doc.root.append(el("DIV", { "data-scope": ANNOUNCER_SCOPE }).append(polite, assertive));
+  return { doc, el, win: doc.defaultView, polite, assertive };
+}
+
+/** The messages `region` holds now, one per node. */
+const heldBy = (region: FakeElement): string[] => region.children.map((node) => node.textContent);
+
+describe("toast-container scope", () => {
+  it("announces the toasts it holds at load, and every toast inserted until it is disposed", () => {
+    const { doc, el, win, polite } = announcedPage();
+    win.observeMutations();
+    const toast = (text: string) => {
+      const described = el("DIV", { "data-slot": "toast-description" });
+      described.textContent = text;
+      return el("DIV", { "data-slot": "toast" }).append(el("DIV", { "data-slot": "toast-body" }).append(described));
+    };
+    doc.root.append(el("SECTION", { "data-scope": TOAST_CONTAINER_SCOPE }).append(toast("Signed in")));
+
+    const release = resume(doc as never);
+    win.flush();
+    const atLoad = heldBy(polite);
+    win.observers[0]?.deliver(toast("Saved"));
+    win.flush();
+    const inserted = heldBy(polite);
+    release();
+
+    expect({ atLoad, inserted, connected: win.observers[0]?.connected }).toEqual({ atLoad: ["Signed in"], inserted: ["Saved"], connected: false });
+  });
+});
+
+describe("announcer scope", () => {
+  it("interrupts with the first field error a full-page submission rendered", () => {
+    const { doc, el, win, assertive } = announcedPage();
+    const first = el("P", { "data-slot": "field-error" });
+    first.textContent = "Enter an email address";
+    const second = el("P", { "data-slot": "field-error" });
+    second.textContent = "Choose a password";
+    doc.root.append(el("FORM").append(first, second));
+
+    const release = resume(doc as never);
+    win.flush();
+    release();
+
+    expect(heldBy(assertive)).toEqual(["Enter an email address"]);
+  });
+
+  it("interrupts with the failure panel a page was rendered with", () => {
+    const { doc, el, win, assertive } = announcedPage();
+    doc.root.append(el("DIV", { [ANNOUNCE_FAILURE_ATTR]: "Could not read the log stream" }));
+
+    const release = resume(doc as never);
+    win.flush();
+    release();
+
+    expect(heldBy(assertive)).toEqual(["Could not read the log stream"]);
+  });
+
+  it("says nothing on a page with no field error or failure panel", () => {
+    const { doc, win } = announcedPage();
+
+    const release = resume(doc as never);
+    release();
+
+    expect(win.timers.size).toBe(0);
   });
 });
 

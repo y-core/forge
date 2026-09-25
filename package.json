@@ -38,7 +38,6 @@
     "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && oxfmt src/tooling/lint/data/design-scale.ts",
     "lint": "bun run src/tooling/root/bin.ts verify --only lint",
     "release": "bun run src/tooling/root/bin.ts release",
-    "release:gate": "bun run verify:full && bun run src/tooling/dev/coverage.ts ../starter tests/unit/showcase/coverage.fixture.test.tsx",
     "test": "bun test",
     "test:browser": "playwright test",
     "test:workerd": "bun test --parallel=2 tests/workerd/",

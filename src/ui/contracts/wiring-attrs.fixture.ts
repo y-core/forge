@@ -1,3 +1,4 @@
+import { ANNOUNCE_FAILURE_ATTR } from "./announcer-contract";
 import { BIND_ATTR_ATTR, BIND_TEXT_ATTR } from "./bind-contract";
 import { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 import { DIALOG_OPEN_MODAL_ATTR } from "./dialog-contract";
@@ -10,7 +11,7 @@ import { TOOLTIP_MOUNTED_ATTR } from "./toggle-contract";
 import { TOOLBAR_ITEM_ATTR } from "./toolbar-contract";
 
 // Read by tests only: a runtime reference would retain the whole table in every bundle that spreads
-// a hook. The five `contracts/theme/` names are literal because `ui/contracts` is LEAF.
+// a hook. The `contracts/theme/` names are literal because `ui/contracts` is LEAF.
 /** Every `data-*` name that addresses structure or wires a controller, with the reason it exists. @internal */
 export const WIRING_ATTRS: Record<string, string> = {
   "data-slot": "the addressable-element token itself",
@@ -48,6 +49,7 @@ export const WIRING_ATTRS: Record<string, string> = {
   [TOOLTIP_MOUNTED_ATTR]: "marks a tooltip its controller has taken over",
   [NAVBAR_DRAWER_ATTR]: "arms the drawer controller on a narrow viewport",
   [POPOVER_COORDS_ATTR]: "the anchor rect a popover is positioned against",
+  [ANNOUNCE_FAILURE_ATTR]: "the message a failure panel is announced with when it arrives",
 
   "data-filter": "the auth tokens an element is shown for",
   "data-filters": "the active auth-token set a demo publishes",
@@ -65,7 +67,6 @@ export const WIRING_ATTRS: Record<string, string> = {
   "data-share-url": "the query string the whole customiser state round-trips through",
   "data-copy-target": "what a copy button copies",
   "data-copy-label": "the copy button's resting label",
-  "data-copy-status": "where a copy button reports success",
 
   "data-decoration": "Link's text decoration — deliberately not the `appearance` emphasis axis",
   "data-as": "FieldLayout.Legend's type scale — deliberately not the `appearance` emphasis axis",

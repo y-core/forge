@@ -78,7 +78,7 @@ describe("VerifyView", () => {
     expect(attrsOf(html, 'data-slot="field"')["data-invalid"]).toBe("");
     expect(attrOf(html, 'id="field-code"', "aria-invalid")).toBe("true");
     expect(elementOf(html, "p", 'id="field-code-error"')).toBe(
-      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-code-error" role="alert">' +
+      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-code-error">' +
         '<svg data-slot="icon" class="me-2 inline-block size-4" aria-hidden="true"><use href="/assets/icons.svg#icon-alert"></use></svg>' +
         "That code has expired.</p>",
     );

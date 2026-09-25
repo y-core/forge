@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { render } from "../../testing/render";
 import { mount, SECURE_ORIGIN } from "../../ui/client/browser.fixture";
+import { ANNOUNCER_REGION_SLOTS } from "../../ui/contracts/announcer-contract";
+import { Announcer } from "../../ui/core/announcer";
 import {
   PASSKEY,
   PASSKEY_MODE_ATTR,
@@ -37,7 +40,9 @@ const b64url = (bytes: number[]): string =>
     .replaceAll("/", "_")
     .replaceAll("=", "");
 
-const FIXTURE = `<!doctype html><html><body>
+/** The ceremony root beside the page's real `<Announcer />`. */
+const fixture = async (): Promise<string> => `<!doctype html><html><body>
+  ${await render(Announcer({}))}
   <div data-scope="${PASSKEY_SCOPE}"
        ${PASSKEY_MODE_ATTR}="registration"
        ${PASSKEY_OPTIONS_PATH_ATTR}="${OPTIONS_PATH}"
@@ -94,16 +99,19 @@ async function routeCeremony(page: Page, options: { verifyStatus?: number } = {}
 
 /** Mounts the fixture with the controller exposed and the outcome recorder installed. */
 async function mountCeremony(page: Page): Promise<void> {
-  await mount(page, FIXTURE, { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
-  await page.evaluate((eventName) => {
-    window.passkeyOutcomes = [];
-    const root = document.querySelector<HTMLElement>("[data-scope]");
-    if (!root) throw new Error("no scope root in the fixture");
-    root.addEventListener(eventName, (event) => {
-      window.passkeyOutcomes.push((event as CustomEvent<{ mode: string; reason?: string }>).detail);
-    });
-    window.passkeyCleanup = window.forgePasskey.mountPasskey(root);
-  }, PASSKEY_OUTCOME_EVENT);
+  await mount(page, await fixture(), { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
+  await page.evaluate(
+    ({ eventName, scope }) => {
+      window.passkeyOutcomes = [];
+      const root = document.querySelector<HTMLElement>(`[data-scope='${scope}']`);
+      if (!root) throw new Error("no scope root in the fixture");
+      root.addEventListener(eventName, (event) => {
+        window.passkeyOutcomes.push((event as CustomEvent<{ mode: string; reason?: string }>).detail);
+      });
+      window.passkeyCleanup = window.forgePasskey.mountPasskey(root);
+    },
+    { eventName: PASSKEY_OUTCOME_EVENT, scope: PASSKEY_SCOPE },
+  );
 }
 
 const outcomes = (page: Page) => page.evaluate(() => window.passkeyOutcomes);
@@ -136,26 +144,33 @@ test.describe("passkey controller — a real ceremony against a virtual authenti
     await expect.poll(() => outcomes(page)).toEqual([{ mode: "registration", reason: "verification-failed" }]);
     expect(page.url()).toBe(before);
     await expect(page.locator(`[data-ref='${PASSKEY.status}']`)).not.toBeEmpty();
+    await expect(page.locator(`[data-slot='${ANNOUNCER_REGION_SLOTS.assertive}']`)).toHaveText("That passkey wasn't accepted. Please try again.");
   });
 
   test("reveals the unsupported message before any press when the realm has no WebAuthn", async ({ page }) => {
     // No virtual authenticator, and `PublicKeyCredential` deleted before the controller mounts:
     // the realm a browser without WebAuthn presents.
-    await mount(page, FIXTURE, { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
-    await page.evaluate((eventName) => {
-      Reflect.deleteProperty(window, "PublicKeyCredential");
-      window.passkeyOutcomes = [];
-      const root = document.querySelector<HTMLElement>("[data-scope]");
-      if (!root) throw new Error("no scope root in the fixture");
-      root.addEventListener(eventName, (event) => {
-        window.passkeyOutcomes.push((event as CustomEvent<{ mode: string; reason?: string }>).detail);
-      });
-      window.passkeyCleanup = window.forgePasskey.mountPasskey(root);
-    }, PASSKEY_OUTCOME_EVENT);
+    await mount(page, await fixture(), { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
+    await page.evaluate(
+      ({ eventName, scope }) => {
+        Reflect.deleteProperty(window, "PublicKeyCredential");
+        window.passkeyOutcomes = [];
+        const root = document.querySelector<HTMLElement>(`[data-scope='${scope}']`);
+        if (!root) throw new Error("no scope root in the fixture");
+        root.addEventListener(eventName, (event) => {
+          window.passkeyOutcomes.push((event as CustomEvent<{ mode: string; reason?: string }>).detail);
+        });
+        window.passkeyCleanup = window.forgePasskey.mountPasskey(root);
+      },
+      { eventName: PASSKEY_OUTCOME_EVENT, scope: PASSKEY_SCOPE },
+    );
 
     await expect(page.locator(`[data-ref='${PASSKEY.unsupported}']`)).toBeVisible();
     await expect(page.locator(`[data-ref='${PASSKEY.trigger}']`)).toBeDisabled();
     expect(await outcomes(page)).toEqual([{ mode: "registration", reason: "unsupported" }]);
+    await expect(page.locator(`[data-slot='${ANNOUNCER_REGION_SLOTS.assertive}']`)).toHaveText(
+      "This browser cannot use passkeys. Please try again in a current version of Chrome, Edge, Firefox or Safari.",
+    );
   });
 
   test("the disposer leaves a root no press can drive", async ({ page }) => {

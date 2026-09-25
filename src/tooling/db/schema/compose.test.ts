@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../../cf/types";
+import { CliError } from "../../cli/errors";
 import { PLAIN } from "../../term/color";
 import { argvHas, fakeDbIo, schemaModelRows } from "../db.fixture";
 import { sha256 } from "../digest";
@@ -162,10 +163,12 @@ function wire(
 const pragmaReads = (io: FakeDbIo) => io.d1Calls.flatMap((call) => call.statements).filter((statement) => statement.includes("pragma_")).length;
 
 describe("composeMigration()", () => {
-  it("refuses to compose when config/db.ts names no schema on disk, pointing at the pull that bootstraps one", async () => {
+  it("refuses to compose when a declared schema's file is missing, naming it", async () => {
     const { run } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
 
-    await expect(composeMigration(run, OPTIONS)).rejects.toThrow("config/db.ts names no `schemas`");
+    await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
+      new CliError("invalid-args", "schema.sql is declared in config/db.ts and no file is there to read"),
+    );
   });
 
   it("composes nothing and writes nothing when config/db.ts names no schemas and there is no history, as `schema check` passes it", async () => {
@@ -441,7 +444,7 @@ describe("await composeMigration() — the union of every declared schema", () =
   const libFiles = (libSchema: string): Record<string, string> => ({ [`${ROOT}/${LIB}`]: libSchema });
 
   it("composes a library's table into the app's own directory, because the app owns every file that runs", async () => {
-    const { run, io } = context(libFiles(schemaText([USERS])), HOST);
+    const { run, io } = context({ ...libFiles(schemaText([USERS])), [SCHEMA]: schemaText([]) }, HOST);
     wire(io, { baseline: [], desired: [USERS] });
 
     const outcome = await composeMigration(run, OPTIONS);
@@ -454,7 +457,9 @@ describe("await composeMigration() — the union of every declared schema", () =
     const { run, io } = context(libFiles(schemaText([USERS])), { schemas: ["schema.sql"] });
     wire(io, { baseline: [], desired: [] });
 
-    await expect(composeMigration(run, OPTIONS)).rejects.toThrow("config/db.ts names no `schemas`");
+    await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
+      new CliError("invalid-args", "schema.sql is declared in config/db.ts and no file is there to read"),
+    );
   });
 
   it("records every declared schema's digest in the snapshot and the stamp, keyed by the path config names", async () => {

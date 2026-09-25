@@ -3,6 +3,8 @@ import type { Page } from "@playwright/test";
 
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
+import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
+import { LABEL_DEFAULTS } from "../contracts/labels";
 import {
   TURNSTILE_ABANDONED_EVENT,
   TURNSTILE_ACTION_PATTERN,
@@ -13,6 +15,7 @@ import {
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
 } from "../contracts/turnstile-contract";
+import { Announcer } from "../core/announcer";
 import { Turnstile } from "../core/turnstile";
 import { mount } from "./browser.fixture";
 import { TURNSTILE_FOCUS_GUARD_MS } from "./turnstile";
@@ -64,10 +67,18 @@ const FAKE_SCRIPT = `
   };
 `;
 
-/** The real SSR markup: a form with a field to focus and the `<Turnstile>` widget inside it. */
+/** The real SSR markup: a form with a field to focus and the `<Turnstile>` widget inside it, beside the page's `<Announcer />`. */
 function formMarkup(load: "eager" | "focus" = "focus"): Promise<string> {
   return render(
-    jsx("form", { id: "form", children: [jsx("input", { id: "field", name: "email" }), Turnstile({ siteKey: "site-key", size: "normal", load })] }),
+    jsx("div", {
+      children: [
+        jsx("form", {
+          id: "form",
+          children: [jsx("input", { id: "field", name: "email" }), Turnstile({ siteKey: "site-key", size: "normal", load })],
+        }),
+        Announcer({}),
+      ],
+    }),
   );
 }
 
@@ -1165,6 +1176,7 @@ test.describe("mountTurnstile — fails visible", () => {
 
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
     expect(warnings).toEqual(["[turnstile] challenge error 300010"]);
+    await expect(page.locator(`[data-slot='${ANNOUNCER_REGION_SLOTS.assertive}']`)).toHaveText(LABEL_DEFAULTS.turnstileFallback);
   });
 
   test("takes the fallback back down when a retried challenge succeeds", async ({ page }) => {
@@ -1198,6 +1210,7 @@ test.describe("mountTurnstile — fails visible", () => {
     await expect(page.locator("[data-ref='turnstile-unsupported']")).toHaveText(
       "This browser cannot run the security challenge. Please try again in a current version of Chrome, Edge, Firefox or Safari.",
     );
+    await expect(page.locator(`[data-slot='${ANNOUNCER_REGION_SLOTS.assertive}']`)).toHaveText(LABEL_DEFAULTS.turnstileUnsupported);
     // The blocker advice stays down: nothing the visitor disables would help.
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
   });

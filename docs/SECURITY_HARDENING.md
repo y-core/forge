@@ -139,6 +139,15 @@ a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both 
 
 - **Emitted with a hardened default:** `Content-Security-Policy` (strict, per-request nonce), `Strict-Transport-Security`, `X-Content-Type-Options`,
   `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`.
+- **`Strict-Transport-Security` defaults to a two-year `max-age` with `includeSubDomains` and `preload`, and one option, `hsts`, shapes it.**
+  `hsts: false` omits the header. An object sets `maxAge`, a non-negative integer of seconds that throws otherwise, and turns off either token
+  with `includeSubDomains: false` or `preload: false`; each field it leaves out keeps its default, which `HSTS_DEFAULT_MAX_AGE` in
+  `src/security/headers.ts` owns for `maxAge`. `mergeSecurityHeaders` merges two `hsts` objects field by field, while an `extra` of `false`, or
+  an object laid over a base of `false`, replaces the base outright.
+
+  **`preload` is kept in the default and is the one token worth deciding on purpose.** On its own it does nothing; it is the consent
+  hstspreload.org requires before listing a domain, and a listing ships inside browser releases, so leaving the list again takes months. An app
+  that will never submit its domain, or cannot yet promise https on every subdomain, sets `preload: false`.
 - **`X-Frame-Options` is emitted although `frame-ancestors` already covers it** — the redundancy is deliberate, for user agents that honour only the
   legacy header.
 - **`Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` each have a named override** (`crossOriginOpenerPolicy`,
@@ -255,6 +264,13 @@ by default.
 **The posture itself is canon.** Development is https at every hop, the dev server's local protocol is set to https, a scheme-rewriting middleware
 is never the fix, and `upgrade-insecure-requests`/HSTS/`Secure` cookies stay hardcoded: [`WORKERS_PLATFORM.md`][wp-4e] §4e rules on all of it, and a
 consuming app cites that. This section holds only what is forge's own — how `allowedOrigins` reaches the guards of §3b–§3e.
+
+**HSTS is on in development too, so choose the dev hostname for it.** A browser stores the policy per hostname, on every port, and with the
+default `includeSubDomains` for every name below it. Stored for bare `localhost`, it forces https on every local project that browser opens there.
+Reach dev at a per-project hostname or at `127.0.0.1`, never at bare `localhost`; a browser stores no policy for an IP address at all. To clear a
+policy a browser already holds, delete it in that browser's own HSTS settings. An untrusted dev certificate is no defence to rely on either way —
+a browser ignores the header on a connection with a certificate error (RFC 6797, section 8.1), so whether a policy was stored depends on whether
+the certificate was trusted at the time.
 
 **`BASE_URL` is the derivation source.** `deriveAllowedOrigins` (`src/security/url.ts`) builds the allowed-origin set from it, and
 `BaseUrlConfigSchema` validates it at boot. In dev that value is the canonical proxy origin — the same URL the browser is pointed at, https and all.

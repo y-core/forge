@@ -29,8 +29,22 @@ describe("FeatureManifestSchema", () => {
     expect(issues(only({ seams: ["src/worker.ts"] }))).toEqual([]);
   });
 
-  it("refuses a feature that names nothing to remove", () => {
+  it("accepts a feature that owns only files, and one that owns only scripts", () => {
+    expect(issues(only({ files: ["config/db.ts"] }))).toEqual([]);
+    expect(issues(only({ scripts: ["db:migrate"] }))).toEqual([]);
+  });
+
+  it("refuses a feature that names nothing to remove, empty files and scripts included", () => {
     expect(issues(only({}))).toEqual(["showcase: a feature must name something to remove"]);
+    expect(issues(only({ files: [], scripts: [] }))).toEqual(["showcase: a feature must name something to remove"]);
+  });
+
+  it("refuses an owned file climbing out of the root", () => {
+    expect(issues(only({ files: ["../config/db.ts"] }))).toEqual([`showcase.files.0: ${PATH_RULE}`]);
+  });
+
+  it("refuses an empty script name", () => {
+    expect(issues(only({ scripts: [""] }))[0]).toStartWith("showcase.scripts.0: ");
   });
 
   it("refuses a manifest that names no feature", () => {

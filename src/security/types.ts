@@ -32,6 +32,15 @@ export interface PermissionsPolicyOptions {
   payment?: string[];
 }
 
+/** Strict-Transport-Security tokens; each omitted field keeps forge's default of two years, `includeSubDomains` and `preload`. @public */
+export interface HstsOptions {
+  /** Seconds the browser holds the policy; a non-negative integer. */
+  maxAge?: number | undefined;
+  includeSubDomains?: boolean | undefined;
+  /** Consent to the browsers' preload list, which takes months to leave again. */
+  preload?: boolean | undefined;
+}
+
 /** CSP source lists, HSTS, Permissions-Policy, and cross-origin policy options for security headers. @public */
 export interface SecurityHeadersOptions {
   scriptSrc?: CspValue;
@@ -42,7 +51,8 @@ export interface SecurityHeadersOptions {
   fontSrc?: CspValue;
   workerSrc?: CspValue;
   childSrc?: CspValue;
-  hstsMaxAge?: number;
+  /** `false` omits the header. */
+  hsts?: false | HstsOptions;
   permissionsPolicy?: PermissionsPolicyOptions;
   crossOriginOpenerPolicy?: "same-origin" | "same-origin-allow-popups" | "unsafe-none";
   crossOriginResourcePolicy?: "same-origin" | "same-site" | "cross-origin";

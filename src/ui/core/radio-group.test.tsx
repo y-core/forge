@@ -60,7 +60,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
     expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description", id: "field-plan-description" });
   });
 
-  it("an invalid group with no description names the error alone, and the error announces itself", async () => {
+  it("an invalid group with no description names the error alone, and the error claims no live-region role", async () => {
     const html = await render(
       <RadioGroup name='plan' invalid>
         <RadioGroup.Error name='plan'>Choose a plan.</RadioGroup.Error>
@@ -68,7 +68,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
     );
 
     expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-plan-error", "data-invalid": "" });
-    expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-plan-error", role: "alert" });
+    expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-plan-error" });
   });
 
   it("an invalid group with a description names both, description first", async () => {

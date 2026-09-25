@@ -3,6 +3,7 @@
 import { hxAttrs } from "../../html/htmx/htmx-attrs";
 import { oobSwap, SWAP } from "../../html/htmx/htmx-patterns";
 import type { FC } from "../../jsx/types";
+import { ANNOUNCE_FAILURE_ATTR } from "../../ui/contracts/announcer-contract";
 import type { Tone } from "../../ui/contracts/types";
 import { Alert } from "../../ui/core/alert";
 import { Badge } from "../../ui/core/badge";
@@ -31,6 +32,20 @@ function detailRowId(key: string): string {
 }
 
 const LEVEL_TONE: Readonly<Record<LogLevel, Tone>> = { debug: "neutral", info: "info", warn: "warning", error: "destructive" };
+
+interface LogFailureAlertProps {
+  title: string;
+  description: string;
+  class: string;
+}
+
+const LogFailureAlert: FC<LogFailureAlertProps> = ({ title, description, class: cls, children }) => (
+  <Alert tone='destructive' class={cls} {...{ [ANNOUNCE_FAILURE_ATTR]: `${title}. ${description}` }}>
+    <Alert.Title>{title}</Alert.Title>
+    <Alert.Description>{description}</Alert.Description>
+    {children}
+  </Alert>
+);
 
 /** Badge for a log level. @internal */
 export const LogLevelBadge: FC<{ level: LogLevel }> = ({ level }) => (
@@ -156,13 +171,12 @@ interface LogLoadMoreRowProps {
 export const LogLoadMoreRow: FC<LogLoadMoreRowProps> = ({ cursor, complete, loadMoreAction, level, q, failed, "hx-swap-oob": oob }) => (
   <tr id={LOG_LOAD_MORE_ID} hx-swap-oob={oob}>
     <td colspan={LOG_COLUMNS} class='px-4 py-2 text-center'>
-      {/* `role` is the caller's here: htmx swaps this in after a failed request, so nothing else
-          tells a reader it failed — the carve-out `forge-ui-a11y-one-live-region` leaves open. */}
       {failed ? (
-        <Alert tone='destructive' role='alert' class='mb-2 text-start'>
-          <Alert.Title>Could not load the next page</Alert.Title>
-          <Alert.Description>The channel did not answer. The entries already loaded are unaffected.</Alert.Description>
-        </Alert>
+        <LogFailureAlert
+          title='Could not load the next page'
+          description='The channel did not answer. The entries already loaded are unaffected.'
+          class='mb-2 text-start'
+        />
       ) : null}
       {!complete && cursor ? (
         <Button
@@ -301,10 +315,10 @@ const LogEmptyRow: FC<{ level?: string | undefined; q?: string | undefined; clea
 const LogErrorRow: FC<{ level?: string | undefined; q?: string | undefined; retryAction: string }> = ({ level, q, retryAction }) => (
   <tr>
     <td colspan={LOG_COLUMNS} class='px-4 py-4'>
-      {/* Same carve-out: an htmx-swapped failure panel, announced because the swap itself is silent. */}
-      <Alert tone='destructive' role='alert' class='flex flex-col items-start gap-2'>
-        <Alert.Title>Could not read the log stream</Alert.Title>
-        <Alert.Description>The channel did not answer. Entries already loaded are still shown below.</Alert.Description>
+      <LogFailureAlert
+        title='Could not read the log stream'
+        description='The channel did not answer. Entries already loaded are still shown below.'
+        class='flex flex-col items-start gap-2'>
         <Button
           tone='neutral'
           appearance='outline'
@@ -318,7 +332,7 @@ const LogErrorRow: FC<{ level?: string | undefined; q?: string | undefined; retr
           })}>
           Retry
         </Button>
-      </Alert>
+      </LogFailureAlert>
     </td>
   </tr>
 );

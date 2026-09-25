@@ -197,8 +197,8 @@ the signal. Override never — dropping `field` because a control is bound is ho
 **Default: the message renders inside the field's own `FormField`, adjacent to the control.**
 <!-- rule:forge-ui-form-error-inline -->
 
-`FormField.Error` renders a `role="alert"` paragraph with the derived error id. Override never for placement; a summary may be added, not
-substituted.
+`FormField.Error` renders a paragraph with the derived error id and no role; the first error of a failed submission is announced for you.
+Override never for placement; a summary may be added, not substituted.
 
 **Default: a top-of-form summary appears only in addition to the inline messages, and only when more than one field failed.**
 <!-- rule:forge-ui-form-error-summary --> An `Alert` `destructive` above the `Form`, naming the count and linking to the first failure. Override

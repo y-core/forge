@@ -682,6 +682,23 @@ replaces scoped markup needs.
 
 Theme is **not** a controller here — it is a resumable scope registered by [`ui/chrome/client`](#y-coreforgeuichromeclient).
 
+### Tell a screen reader something
+
+Stamp `<Announcer />` from `ui/core` once in your layout, then speak through it from the client:
+
+```ts
+import { announce } from "@y-core/forge/ui/client";
+
+announce("Draft saved", { channel: "save-status" });
+announce("Payment declined", { politeness: "assertive" });
+announce("", { channel: "save-status" }); // cancels a message still settling
+```
+
+Give each independent stream its own `channel`: a later message replaces one on the same channel that has not been spoken yet, and an identical
+message is skipped unless you pass `repeat: true`. Toasts, a failed submission's first field error, and htmx request spinners are announced for
+you, so do not repeat them. Without an `<Announcer />` the call does nothing and warns once. The channel semantics are
+[`UI_CLIENT_RUNTIME.md`][ucr-2m] §2m.
+
 ### Hold state in signals
 
 `createSignal` is the cell, `computed` the derived read-only view, and `effect` the subscription that returns a disposer. Reading `.value` inside a
@@ -1069,6 +1086,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ucr-2c]: ../../docs/UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
 [ucr-2d]: ../../docs/UI_CLIENT_RUNTIME.md#2d-the-disposer-contract
 [ucr-2i]: ../../docs/UI_CLIENT_RUNTIME.md#2i-openpopoverat--coordinate-placement
+[ucr-2m]: ../../docs/UI_CLIENT_RUNTIME.md#2m-announce--the-pages-one-voice
 [ucr-3a]: ../../docs/UI_CLIENT_RUNTIME.md#3a-signals--reactive-state
 [ucr-3b]: ../../docs/UI_CLIENT_RUNTIME.md#3b-lazy-loading
 [ucr-3c]: ../../docs/UI_CLIENT_RUNTIME.md#3c-resumable-scopes

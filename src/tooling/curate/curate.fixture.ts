@@ -9,6 +9,19 @@ const TRACKED: Record<string, string> = {
   ".gitignore": "node_modules/\n*.log\n",
   "README.md": "# app\n<!-- feature:showcase:begin -->\n## Showcase\n<!-- feature:showcase:end -->\nStart here.\n",
   "config/app.toml": 'name = "app"\ncontact = true # feature:contact\n',
+  "config/contact.toml": 'to = "team"\n',
+  "package.json": [
+    "{",
+    '  "name": "app",',
+    '  "scripts": {',
+    '    "build": "tsc",',
+    '    "contact:send": "bun run src/contact/form.ts",',
+    '    "showcase:demo": "bun run src/showcase/demo.ts"',
+    "  },",
+    '  "private": true',
+    "}",
+    "",
+  ].join("\n"),
   "src/app.ts": [
     'import { demo } from "./showcase/demo"; // feature:showcase',
     'import { contact } from "./contact/form"; // feature:contact',
@@ -32,16 +45,16 @@ const UNTRACKED: Record<string, string> = {
 
 /** The manifest the fixture's markers are written against, as `CURATE_FIXTURE_MANIFEST` spells it. */
 export const CURATE_FIXTURE_FEATURES: FeatureManifest = {
-  showcase: { directories: ["src/showcase/"], seams: ["src/app.ts", "README.md"] },
-  contact: { directories: ["src/contact"], seams: ["src/app.ts", "config/app.toml"] },
+  showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] },
+  contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },
 };
 
 /** `CURATE_FIXTURE_FEATURES` as a `config/features.ts` module, each feature's entry marked so a curation keeps exactly the remaining ones. */
 export const CURATE_FIXTURE_MANIFEST = [
   "export default {",
-  '  showcase: { directories: ["src/showcase/"], seams: ["src/app.ts", "README.md"] }, // feature:showcase',
+  '  showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] }, // feature:showcase',
   "  // feature:contact:begin",
-  '  contact: { directories: ["src/contact"], seams: ["src/app.ts", "config/app.toml"] },',
+  '  contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },',
   "  // feature:contact:end",
   "};",
   "",

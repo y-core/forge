@@ -19,18 +19,16 @@ const RELEASE_ONLY = ["validate-changelog", "test:browser", "test:workerd", "db:
 
 describe("the gate a release runs", () => {
   it("names the script rather than the binary, which is what tells an unrunnable gate from a failing one", () => {
-    expect(release.gateCommand).toEqual(["bun", "run", "release:gate"]);
+    expect(release.gateCommand).toEqual(["bun", "run", "verify:full"]);
   });
 
-  it("names a script that runs the full tier first, then the demonstrator's coverage spec against this checkout", () => {
+  // A consumer's suite in the gate would let a consumer's progress block a forge release (BUILD_TOOLING.md §2l).
+  it("runs the full tier and nothing outside this checkout", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
-    const script = release.gateCommand?.[2] ?? "";
-    const gate = scripts[script] ?? "";
+    const gate = scripts[release.gateCommand?.[2] ?? ""] ?? "";
 
-    expect(Object.hasOwn(scripts, script)).toBe(true);
-    expect(gate.split("&&")[0]?.trim()).toBe("bun run verify:full");
-    expect(scripts["verify:full"]).toContain("--full");
-    expect(gate).toContain("src/tooling/dev/coverage.ts ../starter tests/unit/showcase/coverage.fixture.test.tsx");
+    expect(gate).toBe("bun run src/tooling/root/bin.ts verify --full");
+    expect(Object.values(scripts).filter((script) => script.includes("../"))).toEqual([]);
   });
 
   // A step whose `requires` probe fails is skipped below `full` and failed at `full`, so re-tiering

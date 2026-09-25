@@ -52,9 +52,9 @@ The choice is not about duration. It is about whether you already know the shape
 an empty state, and a skeleton would promise rows that never arrive.
 
 **Default: a `Spinner` marks a wait inside a control or a wait of unknown shape, never a region whose layout you can already draw.**
-<!-- rule:forge-ui-state-spinner-scope --> `Spinner` requires an `icon` (`ForgeIcon<"spinner">`) and renders `role="status"` with an `sr-only` label
-— the label is the announcement, so give it a real one. Override for a very short wait in a known-shape region, where a skeleton flash is more
-disruptive than a small spinner.
+<!-- rule:forge-ui-state-spinner-scope --> `Spinner` requires an `icon` (`ForgeIcon<"spinner">`) and renders an `sr-only` label with no role
+— the label is what the busy channel announces, so give it a real one. Override for a very short wait in a known-shape region, where a skeleton
+flash is more disruptive than a small spinner.
 
 **Default: the placeholder occupies the same box the result will.**
 <!-- rule:forge-ui-state-preserve-layout -->

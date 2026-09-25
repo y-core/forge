@@ -61,7 +61,7 @@ describe("controls/RadioGroup", () => {
         '<legend data-slot="radio-group-label" class="mb-1 text-sm font-medium text-foreground">Toppings</legend>' +
         item("field-toppings-olives", "toppings", "olives", "toppings", "Olives") +
         '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick any.</p>' +
-        '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" role="alert">Pick one.</p></fieldset>',
+        '<p data-slot="field-error" class="text-sm font-normal text-destructive-text">Pick one.</p></fieldset>',
     );
   });
 });

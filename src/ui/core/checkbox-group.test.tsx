@@ -60,7 +60,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
     expect(attrsOf(html, DESCRIPTION)).toEqual({ "data-slot": "field-description", id: "field-toppings-description" });
   });
 
-  it("an invalid group with no description names the error alone, and the error announces itself", async () => {
+  it("an invalid group with no description names the error alone, and the error claims no live-region role", async () => {
     const html = await render(
       <CheckboxGroup name='toppings' invalid>
         <CheckboxGroup.Error name='toppings'>Pick at least one.</CheckboxGroup.Error>
@@ -68,7 +68,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
     );
 
     expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-toppings-error", "data-invalid": "" });
-    expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-toppings-error", role: "alert" });
+    expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-toppings-error" });
   });
 
   it("an invalid group with a description names both, description first", async () => {

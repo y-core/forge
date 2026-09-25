@@ -1,3 +1,17 @@
+import type { AnnouncePoliteness } from "../contracts/types";
+
+/** Options for {@link announce}. @public */
+export interface AnnounceOptions {
+  /** The stream a message coalesces within: a later message on it replaces one still settling. @default "default" */
+  channel?: string | undefined;
+  /** Which announcer region speaks it; `assertive` interrupts, so keep it for a failure that stops the reader's task. @default "polite" */
+  politeness?: AnnouncePoliteness | undefined;
+  /** Speaks a message identical to the one this channel last spoke, which is otherwise skipped. @default false */
+  repeat?: boolean | undefined;
+  /** A node in the document whose `<Announcer />` speaks, for a frame other than the ambient one. */
+  within?: Node | undefined;
+}
+
 /** Options for {@link bindText}. */
 export interface BindTextOptions {
   /** Renders a signal's value as the text to write. @default String */

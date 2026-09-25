@@ -31,6 +31,7 @@ audience: consumer
 - §2j mountCarouselDots — Strip-Driven Dot Marker: why it lifts the selected spelling off the row instead of restating it
 - §2k mountScrollSpy — Fragment Nav Current Marker: what orders the entries, and what it refuses to emit
 - §2l mountViewportCollapse — Width-Driven Disclosure: which state the server renders, and how the user takes over
+- §2m announce — The Page's One Voice: channels, the settle, the cancel, and the channels forge speaks on
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: the settled-value guarantee and the rules that hold it up
 - §3b Lazy Loading: the deferred import, and the failure that must not be silent
@@ -372,6 +373,44 @@ server's state at teardown would be a second override at the worst possible mome
 It fails quiet when the element is absent, is not a disclosure, or the realm has no `matchMedia`, and the element is duck-typed on its `open`
 property rather than through `instanceof`, for the cross-realm reason `src/ui/README.md`'s controller primitives give.
 
+### 2m. `announce` — The Page's One Voice
+
+**Every announcement goes through `announce()`, into the two regions `<Announcer />` renders** ([`UI_SSR_COMPONENTS.md`][usc-1o] §1o). Separate
+live regions interleave their speech with no order between them. So a toast, a field error, a busy indicator, a failure panel and a Turnstile
+failure are all visual, and hand their text over rather than speaking for themselves.
+
+**A channel is a stream in which only the latest message matters.** A message waits `ANNOUNCE_SETTLE_MS` before it is spoken, and a later message
+on the same channel replaces it, so a burst of status text is heard once, as its final state. **An identical consecutive message on a channel is
+skipped unless `repeat` is set.** forge's toast, field-error, failure, busy and passkey sites set it, because a second toast, a second failed
+submission or a second refused ceremony is a new event even in the same words; the Turnstile message does not. **Empty text cancels the channel's
+pending message and forgets its last one**, so a prompt cancelled with Esc and raised again is spoken again.
+
+**Each message is appended to its region as a node of its own, and removed after `ANNOUNCE_LINGER_MS`.** Two channels settling together both reach
+the screen reader rather than the second overwriting the first before it is read, and a repeat is a new node rather than a rewrite of the old one.
+The regions are not `aria-atomic`, so an addition is read alone and a message still lingering is never spoken twice. Removing it keeps spent text
+out of a browse-mode reader's path.
+
+**The toast channel is the one that never drops a message.** A later toast joins the pending ones instead of replacing them, so two toasts from
+separate swaps inside one settle are both spoken. Toasts reach it through `announceToast`, which is internal; no app message shares a channel with a
+toast or with the Turnstile failure, so neither is cancelled by the app's own `announce()`.
+
+| Site | Channel | Politeness |
+| --- | --- | --- |
+| `Toast.Container`: the toasts it holds at load, and each one inserted later, `FlashOob` included | `toast` | polite |
+| A failed submission's first `FieldError`: at load through the announcer's own scope, after a swap on `htmx:load` | `form-error` | assertive |
+| The first element carrying `ANNOUNCE_FAILURE_ATTR`, its value the message: at load through the announcer's scope, after a swap on `htmx:load` | `failure` | assertive |
+| A `Spinner` in the request's indicator, on `htmx:beforeSend`; one a swap inserts already visible, on `htmx:load` | `busy` | polite |
+| The `Turnstile` fallback or unsupported message, when the controller reveals it | `turnstile` | assertive |
+| A passkey ceremony's outcome in `auth/client`, a missing WebAuthn at mount included | `passkey` | assertive for a refusal, polite for a success |
+
+**The busy channel exists for its cancel.** `htmx:afterRequest` sends it empty text, so a request answered inside the settle is never announced:
+the reader hears the spinner's label only for a wait long enough to notice. It listens on `htmx:beforeSend` rather than `htmx:beforeRequest`,
+because htmx marks a request's indicators between the two.
+
+**Without an `<Announcer />` the call is a no-op that warns once per document.** A missing announcer is one layout mistake, and a warning per call
+would bury every other one. **The state is per document**, in a `WeakMap` keyed by it, so a frame's announcer is its own, and `within` takes any
+node in the document to speak in.
+
 ---
 
 ## 3. Signals and Lazy Loading
@@ -507,4 +546,5 @@ covers are catalogued in [`NAMESPACES.md`][namespaces-3a] §3a.
 [usc]: ./UI_SSR_COMPONENTS.md
 [usc-1a]: ./UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes
 [usc-1h]: ./UI_SSR_COMPONENTS.md#1h-overlays-and-disclosures
+[usc-1o]: ./UI_SSR_COMPONENTS.md#1o-announcer--the-one-live-region
 [usc-2d]: ./UI_SSR_COMPONENTS.md#2d-scoped-components-require-the-client-scope-import

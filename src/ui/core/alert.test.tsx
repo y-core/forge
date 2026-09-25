@@ -22,7 +22,7 @@ describe("Alert", () => {
     expect(attrsOf(await callout())).toEqual({ "data-slot": "alert", "data-tone": "neutral", "data-appearance": "soft" });
   });
 
-  it("carries no role at any tone, because the flash region is the page's one live region", async () => {
+  it("carries no role at any tone, because the page's `<Announcer />` is its one live region", async () => {
     const tones = ["neutral", "primary", "destructive", "success", "warning", "info"] as const;
     const rendered = await Promise.all(tones.map((tone) => callout({ tone })));
 

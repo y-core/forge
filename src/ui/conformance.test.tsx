@@ -54,6 +54,7 @@ interface Participant {
 const CORE_PARTICIPANTS: Record<string, Participant> = {
   Accordion: { slot: "accordion" },
   Alert: { slot: "alert" },
+  Announcer: { slot: "announcer" },
   Avatar: { slot: "avatar" },
   Badge: { slot: "badge" },
   Breadcrumbs: { slot: "breadcrumbs" },

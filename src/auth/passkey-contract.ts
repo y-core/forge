@@ -5,7 +5,7 @@ export const PASSKEY_SCOPE = "passkey";
 export const PASSKEY = {
   /** Control the visitor presses to start the ceremony. */
   trigger: "passkey-trigger",
-  /** Live region the controller writes progress and refusals into. */
+  /** Visible line the controller writes a refusal into; the page's `<Announcer />` speaks it. */
   status: "passkey-status",
   /** Inline message revealed when the browser has no `PublicKeyCredential` at all. */
   unsupported: "passkey-unsupported",

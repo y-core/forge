@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
 import { TURNSTILE, TURNSTILE_ABANDONED_EVENT } from "../contracts/turnstile-contract";
 import type { TurnstileAbandonedDetail } from "../contracts/types";
+import { announce } from "./announce";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./dom.fixture";
 import { findWidget, hasTurnstileApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
 
@@ -370,5 +372,25 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     expect(reported).toEqual([{ reason: "error", submitter: pressed as unknown as HTMLElement }]);
     expect(scene.issued).toEqual([]);
     expect({ disabled: pressed.disabled, busy: pressed.getAttribute("aria-busy") }).toEqual({ disabled: false, busy: null });
+  });
+});
+
+describe("mountTurnstile — a revealed failure is announced on its own channel", () => {
+  it("interrupts with the fallback, and an app message on the default channel does not cancel it", () => {
+    const scene = mountedScene({ "hx-post": "/contact" });
+    const doc = scene.form.ownerDocument as FakeDocument;
+    const assertive = new FakeElement("DIV", { "data-slot": ANNOUNCER_REGION_SLOTS.assertive });
+    doc.root.append(assertive);
+    const fallback = new FakeElement("P", { "data-ref": TURNSTILE.fallback });
+    fallback.hidden = true;
+    fallback.textContent = "The security check could not load.";
+    scene.form.querySelector(`[data-ref='${TURNSTILE.widget}']`)?.append(fallback);
+
+    const errored = scene.calls.params?.["error-callback"] as (code?: unknown) => void;
+    errored(300010);
+    announce("Payment declined", { politeness: "assertive", within: doc as unknown as Node });
+    doc.defaultView.flush();
+
+    expect(assertive.children.map((node) => node.textContent)).toEqual(["The security check could not load.", "Payment declined"]);
   });
 });

@@ -321,6 +321,10 @@ renders correctly; the table just falls back to a `max-h-dvh` box.
 The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts it must add
 `@source "…/@y-core/forge/src/logging";` to its own stylesheet or every class renders unstyled.
 
+A failed request's alert is spoken through `announce()`, so **the shell must render `<Announcer />` from `@y-core/forge/ui/core`**, and the client
+entry must import `@y-core/forge/ui/client/htmx` and `@y-core/forge/ui/core/client` before `resume()`. Without them the alert still renders and
+says nothing to a screen reader.
+
 ---
 
 ## Writing your own channel

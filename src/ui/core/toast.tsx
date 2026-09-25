@@ -4,7 +4,7 @@ import type { FC, JSX } from "../../jsx/types";
 import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { scopeAttrs } from "../contracts/scope-attrs";
-import { TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
+import { TOAST_CONTAINER_SCOPE, TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
 import type { Tone } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
 import type { PanelAppearance } from "./types";
@@ -37,8 +37,6 @@ const positionClasses: Record<ToastPosition, string> = {
   "bottom-right": "bottom-4 right-4 items-end",
 };
 
-// Only the container is a live region: nesting one inside another has undefined announcement
-// behaviour, and only the container announces a toast inserted after load.
 const ToastContainer: FC<ToastContainerProps> = ({
   position = "bottom-right",
   label = LABEL_DEFAULTS.toast,
@@ -49,10 +47,9 @@ const ToastContainer: FC<ToastContainerProps> = ({
 }) => (
   <section
     data-slot={slotToken("toast-container", inherited)}
+    data-scope={TOAST_CONTAINER_SCOPE}
     data-position={position}
     aria-label={label}
-    aria-live='polite'
-    aria-atomic='false'
     class={cn("fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
     {...rest}>
     {children}

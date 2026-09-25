@@ -79,31 +79,31 @@ describe("Flash", () => {
 });
 
 describe("FlashContainer", () => {
-  it("always renders toast-container with id and aria-live even when no messages", async () => {
+  it("always renders toast-container with its id and scope, and no live region, even when no messages", async () => {
     const out = await render(<FlashContainer />);
     expect(out).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container"></section>',
+      '<section data-slot="toast-container" data-scope="toast-container" data-position="bottom-right" aria-label="Notifications" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container"></section>',
     );
   });
 
   it("always renders wrapper even with empty messages array", async () => {
     const out = await render(<FlashContainer messages={[]} />);
     expect(out).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container"></section>',
+      '<section data-slot="toast-container" data-scope="toast-container" data-position="bottom-right" aria-label="Notifications" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container"></section>',
     );
   });
 
   it("renders messages inside the container", async () => {
     const out = await render(<FlashContainer messages={[{ type: "info", text: "Hello" }]} />);
     expect(out).toBe(
-      '<section data-slot="toast-container" data-position="bottom-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container"><div data-slot="toast" data-tone="info" data-appearance="soft" data-scope="toast" data-island-state="{&quot;duration&quot;:5000}" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 shadow-lg [--tone:var(--color-info)] [--tone-fg:var(--color-info-foreground)] [--tone-text:var(--color-info-text)] [--tone-soft:var(--color-status-info-subtle)] [--tone-soft-fg:var(--color-status-info-subtle-foreground)] [--tone-soft-border:var(--color-status-info-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)] pe-10"><div data-slot="toast-body" class="flex-1 space-y-1"><div data-slot="toast-description" class="text-sm opacity-90">Hello</div></div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div></section>',
+      '<section data-slot="toast-container" data-scope="toast-container" data-position="bottom-right" aria-label="Notifications" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 bottom-4 right-4 items-end" id="flash-container"><div data-slot="toast" data-tone="info" data-appearance="soft" data-scope="toast" data-island-state="{&quot;duration&quot;:5000}" class="relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 shadow-lg [--tone:var(--color-info)] [--tone-fg:var(--color-info-foreground)] [--tone-text:var(--color-info-text)] [--tone-soft:var(--color-status-info-subtle)] [--tone-soft-fg:var(--color-status-info-subtle-foreground)] [--tone-soft-border:var(--color-status-info-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)] pe-10"><div data-slot="toast-body" class="flex-1 space-y-1"><div data-slot="toast-description" class="text-sm opacity-90">Hello</div></div><button type="button" data-slot="toast-close" aria-label="Dismiss notification" data-on-click="dismiss" class="absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity"><span aria-hidden="true" class="text-sm leading-none">×</span></button></div></section>',
     );
   });
 
   it("reflects position prop as data-position attribute", async () => {
     const out = await render(<FlashContainer position='top-right' />);
     expect(out).toBe(
-      '<section data-slot="toast-container" data-position="top-right" aria-label="Notifications" aria-live="polite" aria-atomic="false" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 right-4 items-end" id="flash-container"></section>',
+      '<section data-slot="toast-container" data-scope="toast-container" data-position="top-right" aria-label="Notifications" class="fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4 top-4 right-4 items-end" id="flash-container"></section>',
     );
   });
 });

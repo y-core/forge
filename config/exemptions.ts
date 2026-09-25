@@ -30,6 +30,7 @@ export const LICENCE_HEADERS: ReadonlyMap<string, string> = new Map([
 export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/bind-contract.ts", "its one function is covered where it is used, by `client/bind-display.test.ts`"],
   ["src/ui/contracts/alert-contract.ts", "declared contract constants — the markup that uses them is tested"],
+  ["src/ui/contracts/announcer-contract.ts", "declared contract constants — the markup and the controller that use them are tested"],
   ["src/ui/contracts/composite-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/dialog-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/island-contract.ts", "declared contract constants — the markup that uses them is tested"],
@@ -46,7 +47,6 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/toggle-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/toolbar-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/turnstile-contract.ts", "declared contract constants — the markup that uses them is tested"],
-  ["src/ui/client/htmx.ts", "a vendor side-effect import with no forge surface of its own"],
   ["src/test-setup.ts", "the preload that every spec runs under; it has no behaviour to assert"],
   ["src/tooling/lint/data/design-scale.ts", "generated from the stylesheet, and `designScaleStep` holds it against the source"],
   ["src/form/constants.ts", "declared data — the parsers that read the constants are tested"],

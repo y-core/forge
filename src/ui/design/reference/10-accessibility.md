@@ -24,9 +24,9 @@ rebuttable.
 - §3b Naming a control with no visible text: the `sr-only` span, and the `aria-label` fallback
 - §3c Required markers and `aria-readonly`: which element carries the state, and which cannot
 - §4 Heading order: level from position, size from a class
-- §5 Motion and live regions: one live region, why the container is it, and what a skeleton announces
-- §5a One live region, and why `Toast` is not one: nested regions, insertions, and the silent toast
-- §5b Politeness and the announced wait: when a message earns an interruption, and pairing a skeleton
+- §5 Motion and live regions: one live region, why the `Announcer` is it, and what a skeleton announces
+- §5a One live region, and why `Toast` is not one: the `Announcer`, `announce()`, and the visual stack
+- §5b Politeness and the announced wait: when a message earns an interruption, and the spinner the busy channel speaks
 - §6 An optional prop a reader's tooling can still see: why `?: T | undefined` is an accessibility rule
 
 ---
@@ -125,7 +125,7 @@ Default: when a control genuinely has no visible text — an icon-only `Button s
 rather than an `aria-label`, wherever the layout allows it — unless the sr-only span would be read twice because the control already has a name.
 <!-- rule:forge-ui-a11y-icon-plus-text --> `Icon` is `aria-hidden` by default, so it contributes nothing to the name; the `sr-only` span is real
 text that a reviewer can see in the source next to what it names, and that survives translation the way an attribute value tends not to. `Spinner`
-is the shipped example of the pattern: `role="status"` on the wrapper, `aria-hidden` on the glyph, and an `sr-only` label.
+is the shipped example of the pattern: `aria-hidden` on the glyph and an `sr-only` label.
 
 Default: an icon-only `Button` — `shape="icon"` or `shape="circle"` — carries an `aria-label` naming the action it performs, unless the
 visually-hidden span above is used instead, which is the preferred form wherever the layout allows it. <!-- rule:forge-ui-icon-button-label -->
@@ -181,31 +181,36 @@ the Floor; this is where in the process it gets satisfied. Durations and the one
 
 ### 5a. One live region, and why `Toast` is not one
 
-Default: route transient announcements into the existing flash region and add no live region of your own — unless the surface has a genuinely
-separate stream of updates that must not interleave with notifications. <!-- rule:forge-ui-a11y-one-live-region --> `Toast.Container` already
-renders `aria-live="polite"` with `aria-label="Notifications"` and `aria-atomic="false"`, and `FlashContainer` is that container at the well-known
-id `#flash-container`. A second live region on the page means two announcers competing over one utterance queue, and the reader hears fragments of
-both.
+Default: speak through `announce()` and add no live region of your own — unless the surface has a genuinely separate stream of updates, which is
+what a channel of its own is for. <!-- rule:forge-ui-a11y-one-live-region --> `<Announcer />`, stamped once in the layout, renders the page's only
+live regions, one polite and one assertive, and `announce(text, { channel, politeness })` is how anything reaches them. A second live region on
+the page means two announcers competing over one utterance queue, and the reader hears fragments of both. The rule reports `aria-live` and the
+roles that imply it, `alert`, `status` and `log`, alike.
 
-**The container is the live region and a `Toast` is not**, deliberately. A live region nested in a live region has undefined announcement behaviour,
-and of the two only the container can announce an _insertion_ — `FlashOob` swaps a toast in after load, and an element that did not exist when the
-region was read is announced by nothing. **A `Toast` rendered outside a `Toast.Container` is therefore silent**, and giving one `role="status"`
-would not fix that: `role="status"` implies `aria-live="polite"`, so N toasts would be N+1 live regions — exactly what this rule forbids.
+**`Toast` and `Toast.Container` are visual, deliberately.** The container is a scope that hands each toast it holds to `announce()`, at load and
+whenever one is inserted, `FlashOob` included. The announcer's regions exist from the first paint, which is what makes an insertion reliable, where
+a region inserted after load is not. **A `Toast` rendered outside a `Toast.Container` is therefore silent**, and giving one `role="status"` would
+not fix that: it would be a second live region, exactly what this rule forbids. Call `announce()` with its text instead.
+
+**Something to say with nothing to show goes through `announce()` too** — a save status, a prompt, a count that changed. Give it a channel of its
+own, so a burst settles to its last message and never cancels another stream's.
 
 **`Alert` carries no role either.** It states a condition that persists on the page rather than an arriving one, so it is read where the reader
-meets it; urgency goes through the flash region. A caller who genuinely needs an announcement passes `role` themselves, and the politeness rule
-below governs which.
+meets it. A failure panel that a failed request brings is the exception: give it `ANNOUNCE_FAILURE_ATTR` holding its message, and that message is
+announced assertively when it arrives. **`FormField.Error` carries none** — it is reached through its control's `aria-describedby`, and the first
+error of a failed submission is announced assertively for you.
 
 ### 5b. Politeness and the announced wait
 
-Default: leave a live region polite — unless the message is a failure that stops the reader's current task, which is the only case that earns an
+Default: leave an announcement polite — unless the message is a failure that stops the reader's current task, which is the only case that earns an
 interruption. <!-- rule:forge-ui-a11y-live-politeness -->
 
 Default: pair a `Skeleton` region with one announcement, because `Skeleton` renders `aria-hidden="true"` and is silent by design — unless the wait
 is short enough that nothing needs to be announced. <!-- rule:forge-ui-a11y-spinner-announces --> Which placeholder a wait takes is
 [`07-states.md`][states]'s (`forge-ui-state-skeleton-shape`, `forge-ui-state-spinner-scope`, `forge-ui-state-one-indicator`); what this rule adds is
 that a skeleton-only region announces nothing at all. A region that swaps under the reader carries `aria-busy` while it is in flight, and a
-`Spinner`'s `sr-only` `label` is the utterance — so give it a real one rather than the `Loading…` default.
+`Spinner` carries no role: its `sr-only` `label` is what the busy channel speaks while the request runs, and a request answered inside the settle
+is never spoken at all. The label is the utterance, so give it a real one rather than the `Loading…` default.
 
 ```tsx
 // Wrong — a shimmering block and nothing at all for a reader who cannot see it shimmer.

@@ -95,6 +95,18 @@ const APP = [
 ];
 const README = ["# app", "<!-- feature:showcase:begin -->", "## Showcase", "<!-- feature:showcase:end -->", "Start here.", ""];
 const TOML = ['name = "app"', "contact = true # feature:contact", ""];
+const PACKAGE = [
+  "{",
+  '  "name": "app",',
+  '  "scripts": {',
+  '    "build": "tsc",',
+  '    "contact:send": "bun run src/contact/form.ts",',
+  '    "showcase:demo": "bun run src/showcase/demo.ts"',
+  "  },",
+  '  "private": true',
+  "}",
+  "",
+];
 
 function lines(source: readonly string[], keep: readonly number[]): string {
   return keep.map((index) => source[index]).join("\n");
@@ -106,7 +118,9 @@ describe("listWorkingTree()", () => {
       ".gitignore",
       "README.md",
       "config/app.toml",
+      "config/contact.toml",
       "notes.txt",
+      "package.json",
       "src/app.ts",
       "src/contact/form.ts",
       "src/showcase/demo.ts",
@@ -132,9 +146,12 @@ describe("curateTree() — a plain copy", () => {
     expect([...report.files].sort()).toEqual(listWorkingTree(root).sort());
     expect(report.dropped).toEqual([]);
     expect(report.directories).toEqual([]);
+    expect(report.ownedFiles).toEqual([]);
+    expect(report.scripts).toEqual([]);
     expect(report.seams).toEqual([]);
     expect(report.manifest).toBeUndefined();
     expect(read(target, "src/app.ts")).toBe(APP.join("\n"));
+    expect(read(target, "package.json")).toBe(PACKAGE.join("\n"));
     expect(read(target, "README.md")).toBe(README.join("\n"));
     expect(read(target, "src/showcase/nested/panel.ts")).toBe("export const panel = 1;\n");
     expect(read(target, "notes.txt")).toBe("untracked, not ignored\n");
@@ -168,6 +185,66 @@ describe("curateTree() — dropping features", () => {
     expect(existsSync(join(target, "src/showcase"))).toBe(false);
     expect(read(target, "src/contact/form.ts")).toBe("export const contact = 1;\n");
     expect(read(target, "tests/showcase/demo.test.ts")).toBe("// untracked spec\n");
+  });
+
+  it("leaves out the file a dropped feature owns and removes its script from the middle of package.json's scripts", () => {
+    const target = freshTarget();
+    const report = curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, selection: { drop: ["contact"] } });
+
+    expect(report.ownedFiles).toEqual(["config/contact.toml"]);
+    expect(report.scripts).toEqual(["contact:send"]);
+    expect(report.files).not.toContain("config/contact.toml");
+    expect(existsSync(join(target, "config/contact.toml"))).toBe(false);
+    expect(read(target, "package.json")).toBe(
+      '{\n  "name": "app",\n  "scripts": {\n    "build": "tsc",\n    "showcase:demo": "bun run src/showcase/demo.ts"\n  },\n  "private": true\n}\n',
+    );
+  });
+
+  it("keeps the file a remaining feature owns, and removes a dropped feature's last script with the comma before it", () => {
+    const target = freshTarget();
+    const report = curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, selection: { drop: ["showcase"] } });
+
+    expect(report.ownedFiles).toEqual([]);
+    expect(report.scripts).toEqual(["showcase:demo"]);
+    expect(read(target, "config/contact.toml")).toBe('to = "team"\n');
+    expect(read(target, "package.json")).toBe(
+      '{\n  "name": "app",\n  "scripts": {\n    "build": "tsc",\n    "contact:send": "bun run src/contact/form.ts"\n  },\n  "private": true\n}\n',
+    );
+  });
+
+  it("removes every dropped feature's script, leaving the ones no feature names", () => {
+    const target = freshTarget();
+    const report = curateTree({ root: repo(), target, config: CURATE_FIXTURE_FEATURES, selection: { drop: ["showcase", "contact"] } });
+
+    expect(report.scripts).toEqual(["showcase:demo", "contact:send"]);
+    expect(read(target, "package.json")).toBe('{\n  "name": "app",\n  "scripts": {\n    "build": "tsc"\n  },\n  "private": true\n}\n');
+  });
+
+  it("leaves out a file a feature owns while it is a seam of a feature requiring the owner, the two dropped together", () => {
+    const config: FeatureManifest = {
+      showcase: { ...CURATE_FIXTURE_FEATURES.showcase!, requires: ["contact"] },
+      contact: { ...CURATE_FIXTURE_FEATURES.contact!, files: ["README.md"] },
+    };
+    const target = freshTarget();
+    const report = curateTree({ root: repo(), target, config, selection: { drop: ["contact"] } });
+
+    expect(report.dropped).toEqual(["showcase", "contact"]);
+    expect(report.ownedFiles).toEqual(["README.md"]);
+    expect(existsSync(join(target, "README.md"))).toBe(false);
+  });
+
+  it("keeps a file its owner also marks for a plain copy, and leaves it out when the owner is dropped", () => {
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["config/app.toml"] });
+    const plain = freshTarget();
+    const dropping = freshTarget();
+
+    curateTree({ root: repo(), target: plain, config, selection: { drop: [] } });
+    const report = curateTree({ root: repo(), target: dropping, config, selection: { drop: ["contact"] } });
+
+    expect(read(plain, "config/app.toml")).toBe(TOML.join("\n"));
+    expect(report.ownedFiles).toEqual(["config/app.toml"]);
+    expect(report.seams.map(({ file }) => file)).not.toContain("config/app.toml");
+    expect(existsSync(join(dropping, "config/app.toml"))).toBe(false);
   });
 
   it("removes the dropped feature's `//` and `/* */` lines and keeps a line shared with a feature that remains", () => {
@@ -427,6 +504,65 @@ describe("curateTree() — refusals, each before anything is written", () => {
 
     expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, selection: { drop: [] }, manifest: "config/features.ts" })).toBe(
       "seam file `config/features.ts` is the feature manifest, which every feature may mark without listing it",
+    );
+  });
+
+  it("refuses an owned file the working tree does not hold", () => {
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["config/missing.toml"] });
+
+    expect(refused({ root: repo(), config, selection: { drop: [] } })).toBe("owned file `config/missing.toml` is not in the working tree");
+  });
+
+  it("refuses an owned file that is the manifest", () => {
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["config/features.ts"] });
+
+    expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, selection: { drop: [] }, manifest: "config/features.ts" })).toBe(
+      "owned file `config/features.ts` is the feature manifest, which no feature may own",
+    );
+  });
+
+  it("refuses an owned file inside a feature's directory", () => {
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["src/showcase/demo.ts"] });
+
+    expect(refused({ root: repo(), config, selection: { drop: [] } })).toBe(
+      "owned file `src/showcase/demo.ts` lies inside `src/showcase`, a directory of feature `showcase`",
+    );
+  });
+
+  it("refuses an owned file that is a seam of a feature not requiring its owner, even for a plain copy", () => {
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["README.md"] });
+
+    expect(refused({ root: repo(), config, selection: { drop: [] } })).toBe(
+      "owned file `README.md` of feature `contact` is a seam of feature `showcase`, which does not require it — keeping `showcase` would lose the file",
+    );
+  });
+
+  it("refuses a script package.json does not define, even for a feature not dropped", () => {
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, scripts: ["contact:missing"] });
+
+    expect(refused({ root: repo(), config, selection: { drop: ["showcase"] } })).toBe(
+      "feature `contact` names script `contact:missing`, which package.json does not define",
+    );
+  });
+
+  it("refuses a feature naming scripts when the working tree holds no package.json", () => {
+    const root = repo();
+    rmSync(join(root, "package.json"));
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, selection: { drop: [] } })).toBe(
+      "feature `showcase` names scripts, and the working tree holds no package.json",
+    );
+  });
+
+  it("refuses to remove a script from a package.json whose scripts are not one entry per line", () => {
+    const root = repo();
+    writeFileSync(
+      join(root, "package.json"),
+      '{ "scripts": { "build": "tsc", "contact:send": "bun run src/contact/form.ts", "showcase:demo": "bun run src/showcase/demo.ts" } }\n',
+    );
+
+    expect(refused({ root, config: CURATE_FIXTURE_FEATURES, selection: { drop: ["showcase"] } })).toBe(
+      "package.json's scripts are not one entry per line — forge curate removes a script by removing its line",
     );
   });
 
@@ -938,11 +1074,12 @@ describe("createCurateCommand()", () => {
     expect(existsSync(join(target, "src/showcase"))).toBe(false);
     expect(read(target, "src/contact/form.ts")).toBe("export const contact = 1;\n");
     expect(out).toEqual([
-      row("files:", `8 copied to ${target}`),
+      row("files:", `10 copied to ${target}`),
       row("kept:", "contact"),
       row("dropped:", "showcase"),
       row("added:", "(none)"),
       row("removed:", "src/showcase"),
+      row("scripts:", "showcase:demo"),
       row("seams:", "config/features.ts −1, README.md −3, src/app.ts −2"),
       row("regenerated:", "(none)"),
       row("manifest:", "(kept, or outside the working tree)"),
@@ -961,7 +1098,8 @@ describe("createCurateCommand()", () => {
       row("kept:", "showcase, contact"),
       row("dropped:", "(none — a plain copy)"),
       row("added:", "(none)"),
-      row("removed:", "(no directories)"),
+      row("removed:", "(no directories or files)"),
+      row("scripts:", "(none removed)"),
       row("seams:", "(no lines)"),
       row("regenerated:", "(none)"),
       row("manifest:", "(kept, or outside the working tree)"),
@@ -977,7 +1115,11 @@ describe("createCurateCommand()", () => {
     expect(codes).toEqual([]);
     expect(read(target, "src/app.ts")).toBe("export const app = 1;\n");
     expect(existsSync(join(target, "config/features.ts"))).toBe(false);
-    expect(out.slice(2, 5)).toEqual([row("dropped:", "showcase, contact"), row("added:", "(none)"), row("removed:", "src/showcase, src/contact")]);
+    expect(out.slice(2, 5)).toEqual([
+      row("dropped:", "showcase, contact"),
+      row("added:", "(none)"),
+      row("removed:", "src/showcase, src/contact, config/contact.toml"),
+    ]);
     expect(out.at(-1)).toBe(row("manifest:", "config/features.ts left out"));
   });
 
@@ -1074,11 +1216,12 @@ describe("createCurateCommand()", () => {
 
     expect(codes).toEqual([]);
     expect(out).toEqual([
-      row("files:", `10 copied to ${target}`),
+      row("files:", `12 copied to ${target}`),
       row("kept:", "showcase, contact"),
       row("dropped:", "(none — a plain copy)"),
       row("added:", "showcase (required by contact)"),
-      row("removed:", "(no directories)"),
+      row("removed:", "(no directories or files)"),
+      row("scripts:", "(none removed)"),
       row("seams:", "(no lines)"),
       row("regenerated:", "(none)"),
       row("manifest:", "(kept, or outside the working tree)"),
@@ -1102,7 +1245,7 @@ describe("createCurateCommand()", () => {
     expect(err).toEqual([]);
     expect(codes).toEqual([]);
     expect(out.slice(1, 4)).toEqual([row("kept:", "notes"), row("dropped:", "showcase, contact"), row("added:", "contact (requires showcase)")]);
-    expect(out[6]).toBe(row("regenerated:", "notes (`true`)"));
+    expect(out[7]).toBe(row("regenerated:", "notes (`true`)"));
   });
 
   it("drops every feature and leaves the manifest out for an empty --keep", async () => {

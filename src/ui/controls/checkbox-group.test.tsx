@@ -58,7 +58,7 @@ describe("controls/CheckboxGroup", () => {
         `<input type="checkbox" data-slot="checkbox-group-input" id="field-toppings-olives" name="toppings" value="olives" class="${INPUT_CLASS}" data-field="toppings" data-value="olives">` +
         "Olives</label>" +
         '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick any.</p>' +
-        '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" role="alert">Pick one.</p></fieldset>',
+        '<p data-slot="field-error" class="text-sm font-normal text-destructive-text">Pick one.</p></fieldset>',
     );
   });
 });

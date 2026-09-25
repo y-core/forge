@@ -138,8 +138,8 @@
       "rules": { "forge/catalog-wrong-raw-input": "error" }
     },
     {
-      // `toast.tsx` is where the page's one live region lives, so it cannot be a second one.
-      "files": ["src/ui/core/toast.tsx"],
+      // `announcer.tsx` is where the page's one live region lives, so it cannot be a second one.
+      "files": ["src/ui/core/announcer.tsx"],
       "rules": { "forge/a11y-one-live-region": "off" }
     },
     {

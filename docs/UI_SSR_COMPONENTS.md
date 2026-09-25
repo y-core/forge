@@ -37,6 +37,7 @@ audience: consumer
 - §1m The Prop Vocabulary: the ratified props, the ban on `variant`, and the one `size` exemption
 - §1n Optional Input Props Carry an Explicit `| undefined`: why the union is universal on input types, and what the guard-form spread was hiding
   from a11y lint
+- §1o Announcer — The One Live Region: where the layout stamps it, and why every other component is visual
 - §2 The Signal-Binding Seam: how SSR markup names a client-side binding
 - §2a The Binding Ownership Boundary: what forge owns in both directions, and what the app supplies
 - §2c ui/controls — Bound Variants: the static barrel, the bespoke case, and the deliberate name collision
@@ -377,6 +378,20 @@ see as an attribute, leaving every such site unlinted. `@types/react` writes `cl
 **Never fix such an error at a forge call site with a guard-form spread; widen the declaration instead.** What stays is the **truthiness** spread,
 `{...(open ? { open: true } : {})}`, an omit-when-false HTML semantic.
 
+### 1o. `Announcer` — The One Live Region
+
+**Stamp `<Announcer />` once, in the page layout, and render no other live region.** It is a visually hidden container holding the page's only
+live regions, one polite and one assertive, and every announcement reaches them through `announce()` ([`UI_CLIENT_RUNTIME.md`][ucr-2m] §2m). **It
+belongs in the first render**, because a region inserted after load is announced unreliably. forge's `pageShell` cannot stamp it: `app` has no
+edge to `ui`, and one element does not earn one. The application's layout does. A page without it still renders, and `announce()` warns once and
+speaks nothing. It is a scope as well, which announces an error already on the page at load, so it needs the client import of §2d.
+
+**`Toast.Container`, `FieldError`, `Spinner`, the `Turnstile` messages and the log viewer's `Alert`s are visual, with no live-region role or
+`aria-live`.** A `Toast.Container` is an eager scope that hands the toasts it holds, at load and on insertion, to `announce()`. A `FieldError` is
+reached through its control's `aria-describedby`, and the first one on a failed submission is announced. A `Spinner`'s `sr-only` label is what
+the busy channel speaks. A caller's own `role` still passes through `FieldError` and `Alert`; `forge-ui-a11y-one-live-region` is what refuses one
+that opens a region.
+
 ---
 
 ## 2. The Signal-Binding Seam
@@ -435,6 +450,7 @@ warning as a missing client-entry import or a scope-name typo — never as an ex
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
 [ucr]: ./UI_CLIENT_RUNTIME.md
 [ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
+[ucr-2m]: ./UI_CLIENT_RUNTIME.md#2m-announce--the-pages-one-voice
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ucr-5]: ./UI_CLIENT_RUNTIME.md#5-never-use-uiclient-in-an-ssr-context
 [ui-readme]: ../src/ui/README.md

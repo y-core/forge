@@ -38,7 +38,22 @@ export default defineFeatures({
 });
 ```
 
-A feature's `directories` are removed whole, with or without a trailing `/`. Its `seams` are the files holding its markers. Wrap each feature's
+A feature's `directories` are removed whole, with or without a trailing `/`. Its `seams` are the files holding its markers.
+
+A file that must stay where a tool reads it, outside every feature's directory, goes in the feature's `files` and is left out whole. Scripts in
+`package.json`, which takes no marker, go in `scripts` by name:
+
+```ts
+db: {
+  directories: ["config/db/"],
+  files: ["config/db.ts"],
+  scripts: ["db:migrate", "db:reset"],
+  seams: ["src/worker.ts"],
+},
+```
+
+Each script is removed as its line, so `package.json` has to hold one script per line, as a formatter writes it. An owned file may be a seam only
+of its owner or a feature that requires the owner, since either is dropped with it. Wrap each feature's
 entry in its own region, as above: a copy that keeps some features keeps the manifest, and the regions trim it to the features it kept. Feature
 names are lowercase letters, digits and `-`. Every path is relative to the repository root; an absolute path, a `..` segment and a leading `./`
 are refused.
@@ -113,8 +128,8 @@ forge curate out --config config/lite.ts         # a manifest other than the def
 | `--config <path>` | Manifest module, relative to the root (default: `features.ts` in `config/`) |
 | `--root <path>` | The working tree to copy (default: the working directory) |
 
-The report lists the files copied, the features kept and dropped, each feature the graph `added` and why, the directories removed, the lines
-each seam lost, the regenerations run, and whether the manifest was left out.
+The report lists the files copied, the features kept and dropped, each feature the graph `added` and why, the directories and owned files
+removed, the scripts removed from `package.json`, the lines each seam lost, the regenerations run, and whether the manifest was left out.
 
 The copy is what git sees: tracked and untracked files, minus anything `.gitignore` excludes and anything deleted from disk. `node_modules` is
 never copied. The manifest is copied unless every feature is dropped.
@@ -129,6 +144,10 @@ whichever features you drop, and refuses when:
 - a directory in the manifest holds no file in the working tree
 - a seam holds no marker for its feature
 - a seam is not in the working tree, lies inside any feature's directory, is a symbolic link, or is the manifest itself
+- an owned file is not in the working tree, lies inside any feature's directory, is the manifest, or is a seam of a feature other than its owner
+  that does not require the owner
+- a feature names scripts and the working tree holds no `package.json`, names a script `package.json` does not define, or has its scripts removed
+  from a `package.json` that does not hold one script per line
 - a marker is malformed, names an unknown feature, or sits in a file that is not one of that feature's seams
 - a region nests inside another, is never closed, is closed without being opened, or closes with features its begin did not name
 - a file to copy or edit lies beneath a symbolic link to a directory, which a stale git index lists
