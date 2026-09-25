@@ -164,11 +164,29 @@ async function proveEmitted(run: DbRunContext, inputs: SchemaInputs, sql: string
   return model;
 }
 
+/** Answers an app declaring no schema with nothing to compose — unless a snapshot or a migration is history that composing nothing would drop. */
+function composeFromNoSchema(run: DbRunContext, inputs: SchemaInputs, dryRun: boolean): ComposeOutcome {
+  const latest = inputs.migrations[inputs.migrations.length - 1]?.name;
+  const held = [
+    ...(inputs.snapshot === null ? [] : [`${inputs.snapshotPath} exists`]),
+    ...(latest === undefined ? [] : [`the migrations reach ${latest}`]),
+  ];
+  if (held.length > 0) {
+    throw new CliError(
+      "invalid-args",
+      `${held.join(" and ")} — there is history to hold in step, so composing from no schema is refused:\n${NO_SCHEMAS}`,
+    );
+  }
+  if (!run.json) run.print("config/db.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose");
+  return { path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun };
+}
+
 /** Composes the next migration from every declared schema, proving it against a replay of the migrations before writing it. @public */
 export async function composeMigration(run: DbRunContext, options: ComposeOptions): Promise<ComposeOutcome> {
   const inputs = readSchemaInputs(run);
   if (options.custom) return writeCustom(run, inputs, options);
   if (options.restamp !== undefined) return restampMigration(run, inputs, options.restamp, options.dryRun);
+  if (inputs.schemas.length === 0) return composeFromNoSchema(run, inputs, options.dryRun);
   if (inputs.states.length === 0) throw new CliError("invalid-args", NO_SCHEMAS);
 
   const renames: SchemaRename[] = options.renames.map(parseSchemaRename);

@@ -18,7 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **`forge db migrate compose` composes nothing for an app that declares no schema.** An empty
+  `schemas` with no snapshot and no migration now exits 0 and writes nothing, as
+  `forge db schema check` already passed it, so a copy that keeps the database and drops every
+  schema can regenerate. Over a snapshot or a migration it is still refused, naming which.
 
 ---
 

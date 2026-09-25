@@ -54,8 +54,9 @@ any other and gets no special resolution.
 
 An entry may be a directory, in which case every `.sql` file inside it is concatenated in name order — one file per table, if that reads better. An
 entry whose path is absent is not an error: it declares nothing, and the schema is composed from whatever the others declare. An app that owns no
-tables of its own is the ordinary starting point — the declarations are then its libraries' alone. Compose refuses only when _nothing_ declared is
-on disk, and says what to write.
+tables of its own is the ordinary starting point — the declarations are then its libraries' alone. An empty `schemas` with no snapshot and no
+migration composes nothing and exits 0, the answer `forge db schema check` gives the same state. Compose refuses an empty `schemas` over a snapshot
+or a migration, which composing nothing would drop, and entries that are all absent; each refusal says what to write.
 
 **A desired-state file is hand-written, and there is no verb that generates one.** Composition runs one way — declaration to migration — and a
 reverse verb would be a second way to author the file that is right only when it is byte-faithful. Adopting a database forge did not build is the

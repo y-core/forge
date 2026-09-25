@@ -168,6 +168,55 @@ describe("composeMigration()", () => {
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow("config/db.ts names no `schemas`");
   });
 
+  it("composes nothing and writes nothing when config/db.ts names no schemas and there is no history, as `schema check` passes it", async () => {
+    const { run, io, out } = context({}, {});
+
+    const outcome = await composeMigration(run, OPTIONS);
+
+    expect(outcome).toEqual({ path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun: false });
+    expect(out).toEqual(["config/db.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"]);
+    expect([...io.files.keys()]).toEqual([]);
+    expect(io.calls).toEqual([]);
+  });
+
+  describe("refuses an empty `schemas` over history, which composing nothing would drop", () => {
+    const guidance =
+      "config/db.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
+      '  export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] } satisfies DbHostConfig;\n' +
+      "Each entry is a file of plain `CREATE TABLE` text stating that schema once — write it, then compose.";
+    const snapshot = formatSchemaSnapshot(buildSchemaSnapshot({ desired: { "schema.sql": "old" }, declared: {}, migrationsDigest: "old" }));
+    const refusal = async (files: Record<string, string>) => {
+      const { run, io } = context(files, {});
+      const error = await composeMigration(run, OPTIONS).then(
+        () => null,
+        (thrown: unknown) => thrown,
+      );
+      return { message: error instanceof Error ? error.message : null, files: [...io.files.keys()].sort(), calls: io.calls };
+    };
+
+    it("names the migrations on disk", async () => {
+      expect(await refusal({ [`${MIGRATIONS}/0001_init.sql`]: INIT })).toEqual({
+        message: `the migrations reach 0001_init — there is history to hold in step, so composing from no schema is refused:\n${guidance}`,
+        files: [`${MIGRATIONS}/0001_init.sql`],
+        calls: [],
+      });
+    });
+
+    it("names the snapshot on disk", async () => {
+      expect(await refusal({ [SNAPSHOT]: snapshot })).toEqual({
+        message: `${SNAPSHOT} exists — there is history to hold in step, so composing from no schema is refused:\n${guidance}`,
+        files: [SNAPSHOT],
+        calls: [],
+      });
+    });
+
+    it("names both when both are on disk", async () => {
+      expect((await refusal({ [SNAPSHOT]: snapshot, [`${MIGRATIONS}/0001_init.sql`]: INIT })).message).toBe(
+        `${SNAPSHOT} exists and the migrations reach 0001_init — there is history to hold in step, so composing from no schema is refused:\n${guidance}`,
+      );
+    });
+  });
+
   it("writes a named custom migration with the custom header and nothing else", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
 

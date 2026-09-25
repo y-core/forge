@@ -226,6 +226,29 @@ describe("forge db migrate compose --custom", () => {
     expect(result.code).toBe(1);
     expect(result.err[0]).toContain("config/db.ts names no `schemas`");
   });
+
+  it("exits 0 with nothing to compose when config/db.ts names no schemas and there is no history", async () => {
+    const root = appRoot();
+    const io = fakeDbIo({}, { now: NOW });
+    wire(io);
+    const result = await drive(io, ["migrate", "compose", "--root", root], {});
+    expect(result).toEqual({
+      out: ["config/db.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"],
+      err: [],
+      code: null,
+    });
+  });
+
+  it("exits 1 when config/db.ts names no schemas and a migration is on disk", async () => {
+    const root = appRoot();
+    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    wire(io);
+    const result = await drive(io, ["migrate", "compose", "--root", root], {});
+    expect(result.code).toBe(1);
+    expect(result.err[0]).toStartWith(
+      "Error: the migrations reach 0001_init — there is history to hold in step, so composing from no schema is refused:",
+    );
+  });
 });
 
 describe("forge db migrate status", () => {
