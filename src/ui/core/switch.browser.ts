@@ -9,10 +9,10 @@ const TRACK = "[data-slot~='switch-track']";
 const THUMB = "[data-slot~='switch-thumb']";
 const INPUT = "[data-slot~='switch-input']";
 
-const markup = (): Promise<string> => render(Switch({ children: "Snap to grid" }));
+const markup = (size: "sm" | "md" | "lg" = "md"): Promise<string> => render(Switch({ size, children: "Snap to grid" }));
 
-async function mountCompiled(page: Page): Promise<void> {
-  const html = await markup();
+async function mountCompiled(page: Page, size: "sm" | "md" | "lg" = "md"): Promise<void> {
+  const html = await markup(size);
   // Reduced motion reads the settled value: `motion-safe:transition-*` would otherwise leave it mid-interpolation.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await mount(page, html);
@@ -32,11 +32,17 @@ async function acrossToggle(page: Page, selector: string, property: string): Pro
 }
 
 test.describe("Switch — the checked paint reaches both halves of the control", () => {
-  test("the thumb slides once the checkbox is checked", async ({ page }) => {
-    await mountCompiled(page);
+  for (const [size, travel] of [
+    ["sm", "12px"],
+    ["md", "16px"],
+    ["lg", "20px"],
+  ] as const) {
+    test(`the thumb slides once the checkbox is checked, at size ${size}`, async ({ page }) => {
+      await mountCompiled(page, size);
 
-    expect(await acrossToggle(page, THUMB, "translate")).toEqual({ before: "none", after: "16px" });
-  });
+      expect(await acrossToggle(page, THUMB, "translate")).toEqual({ before: "none", after: travel });
+    });
+  }
 
   test("the thumb is a descendant of the track, which is why a sibling-only selector misses it", async ({ page }) => {
     await mount(page, await markup());

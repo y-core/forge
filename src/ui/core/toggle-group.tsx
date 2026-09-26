@@ -27,18 +27,18 @@ type ToggleGroupItemProps = Omit<JSX.IntrinsicElements["input"], "type" | "child
   size?: Size | undefined;
 };
 
-const GROUP_BASE = "flex justify-center min-w-0 border-0 m-0 p-0";
+const GROUP_BASE = "group/toggle-group flex justify-center min-w-0 border-0 m-0 p-0";
 
 const ITEM_BASE =
-  "bg-transparent border-input border-s-0 cursor-pointer " +
-  "rounded-none first:rounded-s-field first:border-s last:rounded-e-field " +
-  "hover:text-accent-foreground " +
-  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:border-s " +
-  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:border-t-0 " +
-  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:rounded-none " +
-  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:border-t " +
-  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:first:rounded-t-field " +
-  "[[data-slot~=toggle-group][data-orientation=vertical]_&]:last:rounded-b-field";
+  "bg-transparent border-input cursor-pointer rounded-none hover:text-accent-foreground " +
+  "group-data-[orientation=horizontal]/toggle-group:border-s-0 " +
+  "group-data-[orientation=horizontal]/toggle-group:first:border-s " +
+  "group-data-[orientation=horizontal]/toggle-group:first:rounded-s-field " +
+  "group-data-[orientation=horizontal]/toggle-group:last:rounded-e-field " +
+  "group-data-[orientation=vertical]/toggle-group:border-t-0 " +
+  "group-data-[orientation=vertical]/toggle-group:first:border-t " +
+  "group-data-[orientation=vertical]/toggle-group:first:rounded-t-field " +
+  "group-data-[orientation=vertical]/toggle-group:last:rounded-b-field";
 
 // A `<fieldset>` with no legend is an unnamed group, and this one renders none: the name is required
 // rather than optional so a group cannot announce itself as "group" and nothing else.

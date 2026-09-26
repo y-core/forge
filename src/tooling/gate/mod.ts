@@ -68,7 +68,7 @@ export { canonical, fileURLToPathish, hasTailwind, isBareSpecifier, loadDesignSy
 export type { ClassOrderCheckConfig } from "./checks/types";
 export { checkClassOrder, droppedToken, validateClassOrder } from "./checks/class-order";
 export type { ClassTokensCheckConfig, SourceLiteral } from "./checks/types";
-export { checkClassTokens, stringLiterals, unknownTokens } from "./checks/class-tokens";
+export { checkClassTokens, danglingVariants, stringLiterals, unknownTokens } from "./checks/class-tokens";
 export { checkCoLocation, declaredByName, testCandidates } from "./checks/co-location";
 export type { CoLocationCheckConfig } from "./checks/types";
 export { checkCommentBudget } from "./checks/comment-budget";

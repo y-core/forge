@@ -60,6 +60,9 @@ const TOOLING = /^(?:oxlint-|eslint-|biome-ignore|prettier-ignore|@ts-|@jsx[A-Za
 /** The `/* <marker>: <rule> — <reason> *​/` form `suppressedBy` reads. */
 const SUPPRESSION = /^\/\*\s*[a-z][a-z0-9-]*:\s*\S+\s+—\s+\S/;
 
+/** A TypeScript triple-slash directive — compiler input in comment syntax. */
+const TRIPLE_SLASH = /^\/\/\/\s*<(?:reference|amd-module|amd-dependency)\b/;
+
 /** A definite count of what exists, which goes stale the moment the population changes. */
 const TALLY = /\bthe\s+(?:both|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+([A-Za-z][A-Za-z-]{2,}s)\b/i;
 
@@ -127,7 +130,7 @@ function isAnnotationBlock(span: CommentSpan): boolean {
 
 /** Whether a comment is machine-readable directive rather than prose — outside the budget entirely. @public */
 export function isToolingDirective(span: CommentSpan): boolean {
-  return TOOLING.test(body(span)) || SUPPRESSION.test(span.text) || isAnnotationBlock(span);
+  return TOOLING.test(body(span)) || SUPPRESSION.test(span.text) || TRIPLE_SLASH.test(span.text) || isAnnotationBlock(span);
 }
 
 // `{@link X}` is the inline form: a cross-reference an editor resolves, costing the reader no line

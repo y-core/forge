@@ -83,3 +83,47 @@ test.describe("ToggleGroup — the pressed paint follows the click", () => {
     expect(state[0]?.background).not.toBe(pressed);
   });
 });
+
+async function itemEdges(page: Page, orientation: "horizontal" | "vertical"): Promise<Array<{ corners: boolean[]; top: boolean; start: boolean }>> {
+  const html = await render(
+    ToggleGroup({
+      label: "Alignment",
+      orientation,
+      children: ["alpha", "beta", "gamma"].map((value) => ToggleGroup.Item({ bind: "align", value, children: value })),
+    }),
+  );
+  await mount(page, html);
+  await page.addStyleTag({ content: await compiledCss(renderedClasses(html)) });
+
+  return page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-slot~='toggle-group-item']")].map((el) => {
+      const s = getComputedStyle(el);
+      const round = (radius: string) => parseFloat(radius) > 0;
+      return {
+        corners: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].map(round),
+        top: parseFloat(s.borderTopWidth) > 0,
+        start: parseFloat(s.borderLeftWidth) > 0,
+      };
+    }),
+  );
+}
+
+test.describe("ToggleGroup — a vertical group joins its items top to bottom", () => {
+  test("rounds only the outer corners of the column and draws one rule between items", async ({ page }) => {
+    expect(await itemEdges(page, "vertical")).toEqual([
+      { corners: [true, true, false, false], top: true, start: true },
+      { corners: [false, false, false, false], top: false, start: true },
+      { corners: [false, false, true, true], top: false, start: true },
+    ]);
+  });
+});
+
+test.describe("ToggleGroup — a horizontal group joins its items start to end", () => {
+  test("rounds only the outer corners of the row and draws one rule between items", async ({ page }) => {
+    expect(await itemEdges(page, "horizontal")).toEqual([
+      { corners: [true, false, false, true], top: true, start: true },
+      { corners: [false, false, false, false], top: true, start: false },
+      { corners: [false, true, true, false], top: true, start: false },
+    ]);
+  });
+});

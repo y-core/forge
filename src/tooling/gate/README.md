@@ -94,7 +94,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `cssSourcesStep` → `validate-css-sources` | Every utility class the library emits is visible to a consumer's Tailwind scan |
 | `cssTokensStep` → `validate-css-tokens` | No `@theme` token is declared in a namespace the utility vocabulary overloads |
 | `classOrderStep` → `validate-class-order` | Every class literal is a fixed point of `cn`, so sorting one cannot change what it renders |
-| `classTokensStep` → `validate-class-tokens` | Every class token in the source resolves to CSS the design system compiles |
+| `classTokensStep` → `validate-class-tokens` | Every class token in the source resolves to CSS the design system compiles, and none ends in a variant that an interpolation completes |
 | `classGroupsStep` → `validate-class-groups` | `cn`'s conflict table matches the one regenerated from the design system |
 | `designScaleStep` → `validate-design-scale` | The design-scale data the lint plugin reads matches the one regenerated from the design system |
 | `contrastStep` → `validate-contrast` | Every audited foreground/background pair meets its contrast criterion |

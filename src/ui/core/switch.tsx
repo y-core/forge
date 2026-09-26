@@ -28,11 +28,10 @@ const SWITCH_TRACK = cn(
 const SWITCH_THUMB = "absolute start-0.5 top-0.5 rounded-selector bg-background motion-safe:transition-transform";
 
 const TRACK_SIZE = { sm: "h-4 w-7", md: "h-5 w-9", lg: "h-6 w-11" } as const;
-const CHECKED = "[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&]:";
 const THUMB_SIZE = {
-  sm: `size-3 ${CHECKED}translate-x-3 ${CHECKED}rtl:-translate-x-3`,
-  md: `size-4 ${CHECKED}translate-x-4 ${CHECKED}rtl:-translate-x-4`,
-  lg: `size-5 ${CHECKED}translate-x-5 ${CHECKED}rtl:-translate-x-5`,
+  sm: "size-3 group-has-checked/switch:translate-x-3 group-has-checked/switch:rtl:-translate-x-3",
+  md: "size-4 group-has-checked/switch:translate-x-4 group-has-checked/switch:rtl:-translate-x-4",
+  lg: "size-5 group-has-checked/switch:translate-x-5 group-has-checked/switch:rtl:-translate-x-5",
 } as const;
 
 /** A labelled on/off toggle backed by a native checkbox with the `switch` role. @public */
@@ -56,7 +55,7 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
       {...stateAttrs({ orientation: "horizontal" })}
       data-label-position={labelPlacement}
       {...presentationAttrs({ size })}
-      class={cn("state-busy inline-flex items-center gap-2 state-invalid", labelPlacement === "before" && "flex-row-reverse", cls)}>
+      class={cn("group/switch state-busy inline-flex items-center gap-2 state-invalid", labelPlacement === "before" && "flex-row-reverse", cls)}>
       {/* oxlint-disable-next-line jsx-a11y/role-has-required-aria-props -- a native checkbox supplies `aria-checked` from its own checkedness; writing it would desync on toggle. */}
       <input data-slot={slotToken("switch-input", inherited)} type='checkbox' role='switch' class='peer sr-only' {...resolved} {...state} />
       <span data-slot='switch-track' aria-hidden='true' class={cn(SWITCH_TRACK, TRACK_SIZE[size])}>

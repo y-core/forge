@@ -3,11 +3,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { checkClassTokens, stringLiterals, unknownTokens } from "./class-tokens";
+import { checkClassTokens, danglingVariants, stringLiterals, unknownTokens } from "./class-tokens";
 import { hasTailwind, loadDesignSystem } from "./design-system";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 const STYLESHEET = "src/ui/assets/css/tailwind.css";
+
+const CHECKED = "[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&]:";
+const SWITCH_SOURCE = `const CHECKED = "${CHECKED}";\nconst THUMB = \`size-4 \${CHECKED}translate-x-4\`;`;
 
 /** A throwaway repository root holding exactly the files given. */
 function fixtureRoot(files: Record<string, string>): string {
@@ -141,6 +144,40 @@ describe("unknownTokens", () => {
   });
 });
 
+describe("danglingVariants", () => {
+  const variant = (token: string): boolean => token === "hover:" || token === CHECKED;
+
+  it("reports a variant const that a template completes, as the switch thumb once did", () => {
+    expect(danglingVariants("src/ui/core/switch.tsx", SWITCH_SOURCE, variant)).toEqual([
+      {
+        level: "fail",
+        message: "class fragment ends in a variant — Tailwind scans source text and never sees the composed class",
+        file: "src/ui/core/switch.tsx",
+        line: 1,
+        detail: [`\`${CHECKED}\``],
+      },
+    ]);
+  });
+
+  it("reports a variant written inline ahead of an interpolation", () => {
+    const source = "const a = `hover:${x}`;";
+    expect(danglingVariants("a.tsx", source, variant).map((finding) => finding.detail)).toEqual([["`hover:`"]]);
+  });
+
+  it("says nothing about a colon-ending word the predicate does not take for a variant", () => {
+    expect(danglingVariants("a.tsx", 'label("Expected:")', variant)).toEqual([]);
+  });
+
+  it("says nothing about a whole class string, however permissive the predicate", () => {
+    expect(danglingVariants("a.tsx", 'cn("hover:bg-accent size-4")', () => true)).toEqual([]);
+  });
+
+  it("reports the same fragment once per line, however many literals repeat it", () => {
+    const source = "cn(`hover:${a}`, `hover:${b}`);";
+    expect(danglingVariants("a.tsx", source, variant).map((finding) => [finding.line, finding.detail])).toEqual([[1, ["`hover:`"]]]);
+  });
+});
+
 describe("unknownTokens — the constructs it must not flag", () => {
   it.skipIf(!hasTailwind())("leaves every real-corpus form the design system does compile alone", async () => {
     const ds = await loadDesignSystem(resolve(ROOT, STYLESHEET));
@@ -200,6 +237,25 @@ describe("checkClassTokens", () => {
       "`src/ui` matched no source — refusing to report a green class-token gate that scanned nothing",
     ]);
   });
+
+  it.skipIf(!hasTailwind())("fails on a variant const completed by a template, and reads `Expected:` as prose", async () => {
+    const root = fixtureRoot({ "src/ui/core/switch.tsx": `${SWITCH_SOURCE}\nlabel("Expected:");` });
+    const result = await checkClassTokens({ root, sources: ["src/ui"], stylesheet: resolve(ROOT, STYLESHEET) });
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => [finding.file, finding.line, finding.detail])).toEqual([
+      ["src/ui/core/switch.tsx", 1, [`\`${CHECKED}\``]],
+    ]);
+  });
+
+  for (const spec of ["src/ui/core/switch.browser.ts", "src/ui/core/switch.browser.tsx"]) {
+    it.skipIf(!hasTailwind())(`scans no browser spec such as \`${spec}\``, async () => {
+      const root = fixtureRoot({ [spec]: SWITCH_SOURCE });
+      const result = await checkClassTokens({ root, sources: ["src/ui"], stylesheet: resolve(ROOT, STYLESHEET) });
+      expect(result.findings.map((finding) => finding.message)).toEqual([
+        "`src/ui` matched no source — refusing to report a green class-token gate that scanned nothing",
+      ]);
+    });
+  }
 
   it("fails on a `sources` entry naming nothing, even beside one that finds files", async () => {
     const root = fixtureRoot({ "src/ui/a.tsx": 'const a = "p-2";' });

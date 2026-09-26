@@ -1,7 +1,7 @@
 import { MENU_GROUP_SELECTOR, MENU_ITEM_SELECTOR, MENU_KEEP_OPEN_ATTR, MENU_RADIO_SELECTOR } from "../contracts/menu-contract";
 import { applyStateAttrs } from "../contracts/state-attrs";
 import { isDisabled, leavesRing, mountRovingFocus } from "./composite";
-import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument } from "./dom";
+import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument, ownerWindow } from "./dom";
 import type { MenuOptions } from "./types";
 
 const SUBMENU_TRIGGER_SELECTOR = '[data-slot~="menu-submenu-trigger"]';
@@ -138,12 +138,15 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
   }
 
   let pressingInvoker = false;
+  let settleTimer = 0;
+  const win = ownerWindow(popup);
 
   const onPointerDown = (event: Event) => {
+    win.clearTimeout(settleTimer);
     pressingInvoker = contains(openerOf(popup), eventTarget(event) as Node | null);
   };
 
-  // A press released off the invoker fires no click, so the focus-out it deferred is settled here.
+  // A press released off the invoker with no click to follow settles the focus-out it deferred here.
   const settleInvokerPress = () => {
     if (!pressingInvoker) return;
     pressingInvoker = false;
@@ -164,7 +167,18 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
       pressingInvoker = false;
       return;
     }
-    settleInvokerPress();
+    if (!contains(openerOf(popup), eventTarget(event) as Node | null)) {
+      settleInvokerPress();
+      return;
+    }
+    // A captured pointer still clicks its capture target, and that click lands later in this same task.
+    settleTimer = win.setTimeout(settleInvokerPress, 0);
+  };
+
+  const onInvokerClick = (event: Event) => {
+    if (!contains(openerOf(popup), eventTarget(event) as Node | null)) return;
+    win.clearTimeout(settleTimer);
+    pressingInvoker = false;
   };
 
   // The platform light-dismisses a popover on pointer-down outside it and on Escape, never on focus
@@ -187,6 +201,7 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
   doc.addEventListener("pointerdown", onPointerDown, true);
   doc.addEventListener("pointerup", onPointerUp, true);
   doc.addEventListener("pointercancel", settleInvokerPress, true);
+  doc.addEventListener("click", onInvokerClick, true);
 
   return () => {
     popup.removeEventListener("beforetoggle", onBeforeToggle);
@@ -197,6 +212,8 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     doc.removeEventListener("pointerdown", onPointerDown, true);
     doc.removeEventListener("pointerup", onPointerUp, true);
     doc.removeEventListener("pointercancel", settleInvokerPress, true);
+    doc.removeEventListener("click", onInvokerClick, true);
+    win.clearTimeout(settleTimer);
     disposeFocus();
   };
 }

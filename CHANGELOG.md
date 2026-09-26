@@ -18,7 +18,24 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`validate-class-tokens` fails on a class fragment that ends in a variant.** A constant such as `"hover:"`
+  interpolated into `` `${HOVER}underline` `` renders the right markup, but Tailwind scans source text, never sees
+  the composed class and emits no rule for it. A token ending in `:` is reported only when Tailwind reads it as a
+  variant, so prose such as `"Expected:"` passes. `danglingVariants` is exported from `@y-core/forge/tooling/gate`.
+
+### Fixed
+
+- **A checked `Switch` slides its thumb across.** The checked-state classes were assembled from a variable, so
+  Tailwind emitted no CSS for them and the thumb stayed at the start in every size.
+- **A `Menu` closes when a press on its trigger is dragged off and released while the page captures the pointer.**
+  The captured click still reached the trigger and reopened the menu. The menu now closes once.
+- **`validate-comment-budget` no longer counts a `/// <reference>` directive as a comment line.** A two-line reason
+  directly beneath one used to be reported as a three-line run. The `amd-module` and `amd-dependency` directives are
+  exempt too.
+- **`validate-class-tokens` no longer scans `*.browser.ts` Playwright specs**, which it already meant to skip
+  along with `*.test.ts`.
 
 ---
 

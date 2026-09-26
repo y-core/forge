@@ -233,7 +233,7 @@ describe("mountMenu", () => {
         matches: (selector: string) => selector === ":popover-open" || FakeElement.prototype.matches.call(popup, selector),
         hidePopover: () => hides.push(popup.id),
       });
-      return { popup, trigger, hides };
+      return { popup, trigger, elsewhere, hides, win: doc.defaultView };
     }
 
     it("leaves the menu open while the invoker is pressed, so its own toggle closes it", () => {
@@ -259,17 +259,18 @@ describe("mountMenu", () => {
       expect(hides).toEqual(["m"]);
     });
 
-    it("closes the menu when a press on the invoker is released off it with focus left outside", () => {
-      const { popup, trigger, hides } = openWithInvoker();
+    it("closes the menu at once, arming no timer, when a press on the invoker is released onto something else", () => {
+      const { popup, trigger, elsewhere, hides, win } = openWithInvoker();
       const dispose = mountMenu(popup as never);
 
       trigger.dispatchEvent(new FakeEvent("pointerdown"));
       trigger.focus();
       popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
-      popup.dispatchEvent(new FakeEvent("pointerup"));
+      elsewhere.dispatchEvent(new FakeEvent("pointerup", OFF_TRIGGER));
+      const pending = win.timers.size;
       dispose();
 
-      expect(hides).toEqual(["m"]);
+      expect({ hides, pending }).toEqual({ hides: ["m"], pending: 0 });
     });
 
     it("leaves the closing to the click when the press is released on the invoker", () => {
@@ -289,19 +290,81 @@ describe("mountMenu", () => {
       ["off it", OFF_TRIGGER],
       ["outside the viewport", OFF_VIEWPORT],
     ] as const) {
-      it(`closes the menu when a captured press on the invoker is released ${where}, though the pointerup targets the invoker`, () => {
-        const { popup, trigger, hides } = openWithInvoker();
+      it(`closes the menu once the task ends when a captured press on the invoker is released ${where} and no click follows`, () => {
+        const { popup, trigger, hides, win } = openWithInvoker();
         const dispose = mountMenu(popup as never);
 
         trigger.dispatchEvent(new FakeEvent("pointerdown"));
         trigger.focus();
         popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
         trigger.dispatchEvent(new FakeEvent("pointerup", point));
+        const beforeTimer = [...hides];
+        win.flush();
         dispose();
 
-        expect(hides).toEqual(["m"]);
+        expect({ beforeTimer, afterTimer: hides }).toEqual({ beforeTimer: [], afterTimer: ["m"] });
+      });
+
+      it(`leaves the closing to the click when a captured press released ${where} still clicks the invoker`, () => {
+        const { popup, trigger, hides, win } = openWithInvoker();
+        const dispose = mountMenu(popup as never);
+
+        trigger.dispatchEvent(new FakeEvent("pointerdown"));
+        trigger.focus();
+        popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+        trigger.dispatchEvent(new FakeEvent("pointerup", point));
+        trigger.dispatchEvent(new FakeEvent("click"));
+        win.flush();
+        dispose();
+
+        expect(hides).toEqual([]);
       });
     }
+
+    it("still closes on a click that lands off the invoker after a captured release", () => {
+      const { popup, trigger, elsewhere, hides, win } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      trigger.dispatchEvent(new FakeEvent("pointerup", OFF_TRIGGER));
+      elsewhere.dispatchEvent(new FakeEvent("click"));
+      win.flush();
+      dispose();
+
+      expect(hides).toEqual(["m"]);
+    });
+
+    it("drops a pending settle when a new press on the invoker starts before it runs", () => {
+      const { popup, trigger, hides, win } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      trigger.dispatchEvent(new FakeEvent("pointerup", OFF_TRIGGER));
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      win.flush();
+      dispose();
+
+      expect(hides).toEqual([]);
+    });
+
+    it("cancels a pending settle on dispose, so a swapped-out menu is never closed by a timer", () => {
+      const { popup, trigger, hides, win } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      trigger.dispatchEvent(new FakeEvent("pointerup", OFF_TRIGGER));
+      dispose();
+      const pending = win.timers.size;
+      win.flush();
+
+      expect({ hides, pending }).toEqual({ hides: [], pending: 0 });
+    });
 
     it("closes the menu when a press on the invoker is cancelled with focus left outside", () => {
       const { popup, trigger, hides } = openWithInvoker();
@@ -356,6 +419,21 @@ describe("mountMenu", () => {
         before: 0,
         toggle: 0,
         keydown: 0,
+      });
+    });
+
+    it("removes its document-level pointer and click listeners on dispose", () => {
+      const { doc, popup } = navigableMenu();
+      const onDoc = () =>
+        Object.fromEntries(["pointerdown", "pointerup", "pointercancel", "click"].map((type) => [type, doc.listeners.get(type)?.length ?? 0]));
+
+      const dispose = mountMenu(popup as never);
+      const mounted = onDoc();
+      dispose();
+
+      expect({ mounted, disposed: onDoc() }).toEqual({
+        mounted: { pointerdown: 1, pointerup: 1, pointercancel: 1, click: 1 },
+        disposed: { pointerdown: 0, pointerup: 0, pointercancel: 0, click: 0 },
       });
     });
 

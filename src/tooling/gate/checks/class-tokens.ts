@@ -10,7 +10,7 @@ import type { ClassTokensCheckConfig, SourceLiteral } from "./types";
 
 // Specs are excluded: they assert on *rendered* markup, so a class string in one is a fragment of an
 // HTML literal (`gap-4"></ol>`) or an invented fixture name — neither is a token anything renders.
-const SCANNED = (name: string): boolean => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name);
+const SCANNED = (name: string): boolean => /\.tsx?$/.test(name) && !/\.(test|browser)\.tsx?$/.test(name);
 
 // Every literal, not only the ones in a class position: a class string can live in a module-level
 // `const` (`src/ui/core/link.tsx`), which no class-position scan reaches.
@@ -110,6 +110,28 @@ export function unknownTokens(file: string, source: string, known: (token: strin
   return findings;
 }
 
+/** Reports every class fragment ending in a variant prefix, which only an interpolation completes. @public */
+export function danglingVariants(file: string, source: string, isVariantPrefix: (token: string) => boolean): Finding[] {
+  const findings: Finding[] = [];
+  const seen = new Set<string>();
+
+  for (const literal of stringLiterals(source)) {
+    for (const token of literal.text.split(/\s+/)) {
+      const key = `${literal.line}:${token}`;
+      if (!token.endsWith(":") || seen.has(key) || !isVariantPrefix(token)) continue;
+      seen.add(key);
+      findings.push(
+        fail("class fragment ends in a variant — Tailwind scans source text and never sees the composed class", {
+          file,
+          line: literal.line,
+          detail: [`\`${token}\``],
+        }),
+      );
+    }
+  }
+  return findings;
+}
+
 /** Walks the configured sources and reports every class token the compiled design system produces no CSS for. @public */
 export async function checkClassTokens(config: ClassTokensCheckConfig): Promise<CheckResult> {
   const { root, sources } = config;
@@ -128,11 +150,22 @@ export async function checkClassTokens(config: ClassTokensCheckConfig): Promise<
   ].filter(Boolean);
   // A candidate Tailwind cannot turn into a rule comes back as `null` or as an empty node list,
   // depending on the version — both mean the same thing, so both count as producing no CSS.
-  const parsed = ds.candidatesToAst(candidates);
-  const known = new Set(candidates.filter((_, i) => (parsed[i]?.length ?? 0) > 0));
+  const probes = candidates.filter((token) => token.endsWith(":")).map((token) => `${token}block`);
+  const batch = [...candidates, ...probes];
+  const parsed = ds.candidatesToAst(batch);
+  const known = new Set(batch.filter((_, i) => (parsed[i]?.length ?? 0) > 0));
 
-  const findings = files.flatMap((file) => unknownTokens(file, contents.get(file) as string, (token) => known.has(token), declared));
+  const findings = files.flatMap((file) => {
+    const source = contents.get(file) as string;
+    return [
+      ...danglingVariants(file, source, (token) => known.has(`${token}block`)),
+      ...unknownTokens(file, source, (token) => known.has(token), declared),
+    ];
+  });
   // Not "every class string resolves to CSS": a token the design system nowhere nearly declares is
   // dropped as prose, and an all-unknown literal is skipped entirely.
-  return checkResult(findings, `${candidates.length} distinct tokens over ${files.length} files: no class token near-misses a real utility`);
+  return checkResult(
+    findings,
+    `${candidates.length} distinct tokens over ${files.length} files: no class token near-misses a real utility or ends in a variant`,
+  );
 }

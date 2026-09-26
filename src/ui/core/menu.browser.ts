@@ -12,6 +12,7 @@ declare global {
     forgeResume: typeof import("../client/resume");
     activations: string[];
     keyClaims: { key: string; prevented: boolean }[];
+    triggerClicks: number;
   }
 }
 
@@ -420,6 +421,38 @@ test.describe("Menu — the trigger toggles it", () => {
 
     await expect.poll(() => isOpen(page)).toBe(false);
     await expect.poll(() => expanded(page)).toBe("false");
+  });
+
+  test("a press dragged off a trigger that captures the pointer closes the menu once, and its captured click does not reopen it", async ({
+    page,
+  }) => {
+    await mountMenu(page, ROWS);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+    await page.evaluate(() => {
+      const trigger = document.querySelector<HTMLElement>("[data-slot~='menu-trigger']");
+      if (!trigger) throw new Error("no trigger");
+      window.triggerClicks = 0;
+      trigger.addEventListener("pointerdown", (event) => trigger.setPointerCapture(event.pointerId));
+      trigger.addEventListener("click", () => (window.triggerClicks += 1));
+    });
+    const box = await page.locator("[data-slot~='menu-trigger']").boundingBox();
+    const viewport = page.viewportSize();
+    if (!box || !viewport) throw new Error("the trigger has no layout box");
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(viewport.width - 5, viewport.height - 5);
+    await page.mouse.up();
+
+    await expect.poll(() => isOpen(page)).toBe(false);
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    await page.waitForTimeout(50);
+    expect({ open: await isOpen(page), expanded: await expanded(page), clicks: await page.evaluate(() => window.triggerClicks) }).toEqual({
+      open: false,
+      expanded: "false",
+      clicks: 1,
+    });
   });
 });
 

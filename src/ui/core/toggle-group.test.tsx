@@ -71,13 +71,12 @@ describe("ToggleGroup.Item", () => {
         " font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-sm px-3 text-sm [--tone:var(--color-foreground)]" +
         " [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)]" +
         " [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] [--focus-ring:var(--color-ring)] text-foreground" +
-        " hover:bg-accent bg-transparent border-input border-s-0 cursor-pointer rounded-none first:rounded-s-field first:border-s" +
-        " last:rounded-e-field hover:text-accent-foreground [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-s" +
-        " [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:border-t-0" +
-        " [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:rounded-none" +
-        " [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:border-t" +
-        " [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:first:rounded-t-field" +
-        " [[data-slot~=toggle-group][data-orientation=vertical]_&amp;]:last:rounded-b-field has-[:checked]:bg-primary" +
+        " hover:bg-accent bg-transparent border-input cursor-pointer rounded-none hover:text-accent-foreground" +
+        " group-data-[orientation=horizontal]/toggle-group:border-s-0 group-data-[orientation=horizontal]/toggle-group:first:border-s" +
+        " group-data-[orientation=horizontal]/toggle-group:first:rounded-s-field" +
+        " group-data-[orientation=horizontal]/toggle-group:last:rounded-e-field group-data-[orientation=vertical]/toggle-group:border-t-0" +
+        " group-data-[orientation=vertical]/toggle-group:first:border-t group-data-[orientation=vertical]/toggle-group:first:rounded-t-field" +
+        " group-data-[orientation=vertical]/toggle-group:last:rounded-b-field has-[:checked]:bg-primary" +
         ' has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary extra-cls">' +
         '<input data-slot="toggle-group-input" type="radio" name="n" value="v" class="sr-only">R&amp;D&#39;s &lt;view&gt;</label>',
     );

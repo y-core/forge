@@ -93,6 +93,22 @@ describe("isToolingDirective() — outside the budget entirely", () => {
     expect(isToolingDirective(only("/**\n-- row-removal-authorised-by: feat-1\n*/"))).toBe(false);
   });
 
+  it("is true of every triple-slash directive TypeScript reads", () => {
+    const directives = [
+      '/// <reference path="./worker.d.ts" />',
+      '/// <reference types="bun" />',
+      '/// <reference lib="dom" />',
+      '/// <amd-module name="worker" />',
+      '/// <amd-dependency path="legacy" />',
+    ];
+
+    expect(directives.map((source) => isToolingDirective(only(source)))).toEqual([true, true, true, true, true]);
+  });
+
+  it("is false of a triple-slash XML doc tag, which is prose in directive clothing", () => {
+    expect(isToolingDirective(only("/// <summary>"))).toBe(false);
+  });
+
   it("is false of prose that merely opens with a word", () => {
     expect(isToolingDirective(only("// globally unique across every ledger"))).toBe(false);
   });
@@ -162,6 +178,12 @@ describe("validateCommentBudget() — §5a form 3, a one-or-two-line inline why"
 
   it("breaks a run on a directive, which is not prose the reader pays for", () => {
     expect(messages("// one\n// two\n// oxlint-disable-next-line no-explicit-any\n// three\n// four\n")).toEqual([]);
+  });
+
+  it("passes a two-line why directly under a `/// <reference>`, which does not join the run", () => {
+    expect(
+      messages('/// <reference path="./worker.d.ts" />\n// The runtime types come from the pool,\n// not from the package.\nconst a = 1;\n'),
+    ).toEqual([]);
   });
 
   it("passes a two-line block-form why, and fails a three-line one", () => {

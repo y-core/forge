@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 
 import { attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
@@ -8,13 +9,13 @@ const INPUT = 'data-slot="switch-input"';
 const TRACK = 'data-slot="switch-track"';
 const THUMB = 'data-slot="switch-thumb"';
 
-const CHECKED_TRACK = "[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&amp;]:";
+const CHECKED_TRACK = "group-has-checked/switch:";
 
 describe("Switch", () => {
   it("renders the whole control exactly, the label text escaped", async () => {
     expect(await render(<Switch>{`R&D's "grid" <x>`}</Switch>)).toBe(
       '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" data-size="md"' +
-        ' class="state-busy inline-flex items-center gap-2 state-invalid">' +
+        ' class="group/switch state-busy inline-flex items-center gap-2 state-invalid">' +
         '<input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only">' +
         '<span data-slot="switch-track" aria-hidden="true" class="relative shrink-0 rounded-selector bg-track peer-checked:bg-primary' +
         ' peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 motion-safe:transition-colors h-5 w-9">' +
@@ -132,6 +133,19 @@ describe("Switch — size, invalid and busy", () => {
       added: ["size-5", `${CHECKED_TRACK}translate-x-5`, `${CHECKED_TRACK}rtl:-translate-x-5`],
       dropped: ["size-4", `${CHECKED_TRACK}translate-x-4`, `${CHECKED_TRACK}rtl:-translate-x-4`],
     });
+  });
+
+  it("writes every thumb class verbatim in its source, so Tailwind's scanner emits a rule for each", async () => {
+    const source = readFileSync(new URL("./switch.tsx", import.meta.url).pathname, "utf-8");
+
+    const emitted = await Promise.all((["sm", "md", "lg"] as const).map(async (size) => classesOf(await render(<Switch size={size} />), THUMB)));
+
+    expect(
+      emitted
+        .flat()
+        .map((token) => token.replaceAll("&amp;", "&"))
+        .filter((token) => !source.includes(token)),
+    ).toEqual([]);
   });
 
   it("stamps data-invalid beside aria-invalid on the input, so CSS and a reader agree", async () => {
