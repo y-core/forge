@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.3.6] — 2026-09-26
+
 ### Added
 
 - **`validate-class-tokens` fails on a class fragment that ends in a variant.** A constant such as `"hover:"`
@@ -4990,6 +4996,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.3.6]: https://github.com/y-core/forge/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/y-core/forge/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/y-core/forge/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/y-core/forge/compare/v0.3.2...v0.3.3
