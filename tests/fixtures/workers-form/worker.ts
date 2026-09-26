@@ -1,6 +1,5 @@
-// The one route shape a consuming app's contact form has: `csrfProtection` ahead of a `defineAction`
-// whose schema declares `name` first. Under Bun the co-located suites cover it; this fixture exists
-// so the same chain is exercised where it actually runs — inside workerd.
+// A consuming app's contact-form chain, run inside workerd because the co-located suites run it
+// only under Bun, whose `Request` parses bodies workerd may not.
 import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 

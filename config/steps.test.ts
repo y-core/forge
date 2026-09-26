@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { declaredByName } from "../src/tooling/gate/checks/co-location";
 import { isBrowserSubpath } from "../src/tooling/gate/checks/exports";
+import { resolveSources } from "../src/tooling/gate/checks/source-scan";
 import { type GateMode, selectSteps } from "../src/tooling/gate/mod";
 import { BROWSER_ONLY, CO_LOCATION_EXEMPT } from "./exemptions";
-import { STEPS } from "./steps";
+import { COMMENT_BUDGET_SOURCES, STEPS } from "./steps";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -45,6 +46,17 @@ describe("the gate's step table", () => {
 
     expect(flag(row?.cmd ?? [])).toBe("2");
     expect(flag(scripts["test:workerd"] ?? "")).toBe(flag(row?.cmd ?? []));
+  });
+
+  it("holds every tracked TypeScript file to the comment budget, root config files included", () => {
+    const tracked = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"], { cwd: ROOT })
+      .stdout.toString()
+      .split("\n")
+      .filter((file) => file !== "");
+    const scanned = new Set(resolveSources(ROOT, COMMENT_BUDGET_SOURCES, (name) => name.endsWith(".ts") || name.endsWith(".tsx")));
+
+    expect(tracked).toContain("playwright.config.ts");
+    expect(tracked.filter((file) => !scanned.has(file))).toEqual([]);
   });
 });
 

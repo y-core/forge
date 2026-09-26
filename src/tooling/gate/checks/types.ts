@@ -186,6 +186,8 @@ export interface PackagingCheckConfig {
   exports: ExportsMap;
   /** Further entry modules, relative to `root` — a `bin` script is reachable without being an export. */
   entries?: readonly string[];
+  /** Files the tarball must carry, relative to `root` — each must exist and survive the `files` array. */
+  required?: readonly string[];
 }
 
 /** A colour scheme the theme is audited in. */

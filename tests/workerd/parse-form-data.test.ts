@@ -1,6 +1,5 @@
 // Bun's `Request` parses bodies workerd may not, so a suite driven through `app.request` cannot see a
-// divergence between the two at all. These cases run the same chain inside workerd, which is where a
-// deployed app reads its forms.
+// divergence between the two; these run the same chain inside workerd, where a deployed app reads forms.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 import { type DevServer, startDevServer } from "@y-core/forge/testing/workerd";
@@ -87,10 +86,8 @@ it("reads the CSRF token from the body field, where the guard parses the body be
   expect(await res.text()).toBe("<p>Thanks, Jane.</p>");
 });
 
-// This is the shape the `wrangler dev` report was actually seeing. A tripped bot guard answers in a
-// validation refusal's clothes, naming the first declared field whatever the body said, so a guard
-// that cannot pass in development is indistinguishable from a body that never arrived — from the
-// outside. The log line asserted in `pipeline.test.ts` is what tells the two apart.
+// A tripped bot guard answers as a validation refusal naming the first declared field, so from the
+// outside it is indistinguishable from a lost body; the log line `pipeline.test.ts` asserts tells them apart.
 describe("a tripped bot guard under workerd", () => {
   const post = async (fields: Record<string, string>): Promise<Response> =>
     fetch(`${server.origin}/api/guarded`, urlencoded(fields, await token("/api/guarded")));

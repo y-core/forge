@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
@@ -78,7 +78,17 @@ export function fixtureName(file: string): string {
   return `${base.slice(0, -ext.length)}.fixture${ext}`;
 }
 
-/** Reports every module only a test reaches that the published tarball would still carry. @public */
+/** A finding for each required file that is missing on disk or that the `files` array leaves out. */
+function missingRequired(config: PackagingCheckConfig): Finding[] {
+  return (config.required ?? []).flatMap((file) => {
+    if (!existsSync(resolve(config.root, file))) return [fail("a file the tarball must carry does not exist", { file })];
+    if (!isPacked(file, config.files))
+      return [fail("a file the tarball must carry is left out by the `files` array", { file, detail: [`add \`${file}\` to \`files\``] })];
+    return [];
+  });
+}
+
+/** Reports every module only a test reaches that the published tarball would still carry, and every required file it would lack. @public */
 export function checkPackaging(config: PackagingCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const walked = sources.flatMap((dir) => collectFiles(config.root, dir, (name) => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext))));
@@ -104,18 +114,21 @@ export function checkPackaging(config: PackagingCheckConfig): CheckResult {
     for (const target of imported) importers.set(target, [...(importers.get(target) ?? []), file]);
   }
 
-  const findings: Finding[] = walked
-    .filter((file) => !isTestSource(file) && !reachable.has(file) && (importers.get(file) ?? []).length > 0)
-    .filter((file) => isPacked(file, config.files))
-    .map((file) =>
-      fail("no published subpath reaches this module — only a test does, and the tarball still carries it", {
-        file,
-        detail: [
-          `imported by: ${(importers.get(file) ?? []).join(", ")}`,
-          `rename it \`${fixtureName(file)}\` — the \`files\` array excludes every \`*.fixture.ts\` and nothing else`,
-        ],
-      }),
-    );
+  const findings: Finding[] = [
+    ...missingRequired(config),
+    ...walked
+      .filter((file) => !isTestSource(file) && !reachable.has(file) && (importers.get(file) ?? []).length > 0)
+      .filter((file) => isPacked(file, config.files))
+      .map((file) =>
+        fail("no published subpath reaches this module — only a test does, and the tarball still carries it", {
+          file,
+          detail: [
+            `imported by: ${(importers.get(file) ?? []).join(", ")}`,
+            `rename it \`${fixtureName(file)}\` — the \`files\` array excludes every \`*.fixture.ts\` and nothing else`,
+          ],
+        }),
+      ),
+  ];
 
   return checkResult(findings, `${reachable.size} of ${walked.length} modules are reachable from a published subpath`);
 }

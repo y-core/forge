@@ -4,28 +4,23 @@ import { isDisabled, leavesRing, mountRovingFocus } from "./composite";
 import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument } from "./dom";
 import type { MenuOptions } from "./types";
 
-/** The row that opens a nested panel, and the panel itself. */
 const SUBMENU_TRIGGER_SELECTOR = '[data-slot~="menu-submenu-trigger"]';
 const MENU_POPUP_SELECTOR = '[data-slot~="menu-popup"]';
 
-/** A row that navigates rather than invoking — the one row shape the platform cannot close a menu from. */
 const LINK_ROW_SELECTOR = "a[role='menuitem']";
 
 // The cap is the whole point: `commandfor` may name a panel from an invoker inside that same panel,
 // which makes the chain a cycle, and an uncapped walk over it hangs the tab it was serving.
-/** The chain outward from `from`, `from` itself first, stepping by `next` and bounded against a cycle. */
 function* chainOut<T>(from: T | null, next: (at: T) => T | null): Generator<T> {
   for (let at = from, hop = 0; at && hop < 16; at = next(at), hop += 1) yield at;
 }
 
-/** Whether a menu popup is nested inside another one. */
 function isNested(popup: HTMLElement): boolean {
   // Climbing from `parentNode` rather than the popup keeps `closest` from matching the popup itself,
   // and rather than `parentElement` because a slotted popup's parent can be a `ShadowRoot`.
   return closestAcross(popup.parentNode, MENU_POPUP_SELECTOR) != null;
 }
 
-/** Writes a checkable row's state to both the ARIA property and the styling hook. */
 function setChecked(item: HTMLElement, checked: boolean): void {
   item.setAttribute("aria-checked", String(checked));
   applyStateAttrs(item, { checked });
@@ -56,7 +51,6 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     opener = asElement(activeElement(popup));
   };
 
-  /** The first row the ring would navigate to: `focus()` on a natively disabled one is a no-op. */
   function firstRingItem(): HTMLElement | null {
     for (const item of popup.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)) {
       if (!leavesRing(item)) return item;
@@ -70,8 +64,6 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
       firstRingItem()?.focus();
       return;
     }
-    // Only reclaim focus the close actually stranded: a click elsewhere has already put focus where
-    // the user wants it.
     const active = activeElement(popup);
     if (active && active !== ownerDocument(popup).body && !contains(popup, active)) return;
     opener?.focus();
@@ -102,18 +94,15 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     }
 
     if (!isNested(popup) || !popup.matches(":popover-open")) return;
-    // The same path Escape takes: the platform hides the popup and `onToggle` restores focus.
     keyEvent.preventDefault();
     popup.hidePopover();
   };
 
-  /** The element whose `commandfor` names `panel`, which is the row or button that opened it. */
   function openerOf(panel: HTMLElement): HTMLElement | null {
     if (!panel.id) return null;
     return ownerDocument(popup).querySelector<HTMLElement>(`[commandfor="${CSS.escape(panel.id)}"]`);
   }
 
-  /** The panel `panel` was opened from, by DOM nesting or by the `commandfor` that names it. */
   function parentPanelOf(panel: HTMLElement): HTMLElement | null {
     const nested = closestAcross<HTMLElement>(panel.parentNode, MENU_POPUP_SELECTOR);
     if (nested) return nested;
@@ -121,13 +110,11 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     return invoker ? closestAcross<HTMLElement>(invoker, MENU_POPUP_SELECTOR) : null;
   }
 
-  /** The invoker that opened whichever panel holds `node`, which is the next link outward from it. */
   function openerOutside(node: Node): Node | null {
     const panel = closestAcross<HTMLElement>(node, MENU_POPUP_SELECTOR);
     return panel === null ? null : openerOf(panel);
   }
 
-  /** Whether `node` is still inside this menu — in the popup itself, or in a panel it opened. */
   // A submenu panel need not be a DOM descendant of the one it belongs to; `commandfor` is the
   // relationship, and following it is what keeps a parent open while its submenu holds focus.
   function withinMenu(node: Node): boolean {
@@ -143,18 +130,52 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     if (popup.matches(":popover-open")) popup.hidePopover();
   };
 
+  function closeMenuToward(next: Node): void {
+    for (const panel of chainOut(popup, parentPanelOf)) {
+      if (contains(panel, next)) break;
+      if (panel.matches(":popover-open")) panel.hidePopover();
+    }
+  }
+
+  let pressingInvoker = false;
+
+  const onPointerDown = (event: Event) => {
+    pressingInvoker = contains(openerOf(popup), eventTarget(event) as Node | null);
+  };
+
+  // A press released off the invoker fires no click, so the focus-out it deferred is settled here.
+  const settleInvokerPress = () => {
+    if (!pressingInvoker) return;
+    pressingInvoker = false;
+    const active = activeElement(popup);
+    if (!active || active === ownerDocument(popup).body || withinMenu(active)) return;
+    closeMenuToward(active);
+  };
+
+  // A touch pointer is implicitly captured, so its `pointerup` targets the invoker wherever the finger
+  // lifts; only the release point says whether it lifted there.
+  function releasedOnInvoker(event: Event): boolean {
+    const { clientX, clientY } = event as PointerEvent;
+    return contains(openerOf(popup), ownerDocument(popup).elementFromPoint(clientX, clientY));
+  }
+
+  const onPointerUp = (event: Event) => {
+    if (releasedOnInvoker(event)) {
+      pressingInvoker = false;
+      return;
+    }
+    settleInvokerPress();
+  };
+
   // The platform light-dismisses a popover on pointer-down outside it and on Escape, never on focus
   // leaving it — so Tab out is the one exit APG asks for that `popover="auto"` does not give.
   const onFocusOut = (event: Event) => {
     const next = (event as FocusEvent).relatedTarget as Node | null;
     // A null `relatedTarget` is the popup being hidden under the focus it held, not a user leaving it.
     if (!next || withinMenu(next)) return;
-    // Outwards from this panel, stopping at the one focus moved into: Tab out of a submenu closes the
-    // whole chain, while ArrowLeft back onto the parent row closes only the panel it left.
-    for (const panel of chainOut(popup, parentPanelOf)) {
-      if (contains(panel, next)) break;
-      if (panel.matches(":popover-open")) panel.hidePopover();
-    }
+    // Closing here on a press of the invoker lets its click's `toggle-popover` reopen the menu.
+    if (pressingInvoker) return;
+    closeMenuToward(next);
   };
 
   popup.addEventListener("beforetoggle", onBeforeToggle);
@@ -162,6 +183,10 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
   popup.addEventListener("keydown", onKeyDown);
   popup.addEventListener("focusout", onFocusOut);
   popup.addEventListener("click", onActivateLink);
+  const doc = ownerDocument(popup);
+  doc.addEventListener("pointerdown", onPointerDown, true);
+  doc.addEventListener("pointerup", onPointerUp, true);
+  doc.addEventListener("pointercancel", settleInvokerPress, true);
 
   return () => {
     popup.removeEventListener("beforetoggle", onBeforeToggle);
@@ -169,6 +194,9 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     popup.removeEventListener("keydown", onKeyDown);
     popup.removeEventListener("focusout", onFocusOut);
     popup.removeEventListener("click", onActivateLink);
+    doc.removeEventListener("pointerdown", onPointerDown, true);
+    doc.removeEventListener("pointerup", onPointerUp, true);
+    doc.removeEventListener("pointercancel", settleInvokerPress, true);
     disposeFocus();
   };
 }

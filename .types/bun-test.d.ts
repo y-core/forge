@@ -1,9 +1,5 @@
-// Minimal ambient declaration for bun:test.
-// The full bun-types package causes overload-resolution conflicts: its
-// expect(actual?: never) trap overload beats any-typed values (e.g.
-// Response.json() → any → picks Matchers<undefined> → toEqual fails).
-// This stub resolves the "Cannot find module 'bun:test'" error while keeping
-// test matcher calls unblocked.
+// A stub rather than bun-types: its `expect(actual?: never)` overload beats an any-typed value, so
+// `expect(await response.json()).toEqual(…)` resolves to `Matchers<undefined>` and fails to typecheck.
 
 declare module "bun:test" {
   type AnyFn = (...args: any[]) => any;
@@ -30,8 +26,7 @@ declare module "bun:test" {
   type TestFn = () => void | Promise<void>;
   interface TestCase {
     (name: string, fn: TestFn, timeout?: number): void;
-    /** Skips the case when the condition holds — how a test that needs a file outside the
-     *  repository declines to run rather than failing on a clean checkout. */
+    /** Skips the case when the condition holds. */
     skipIf(condition: boolean): (name: string, fn: TestFn, timeout?: number) => void;
     todo(name: string, fn?: TestFn, timeout?: number): void;
   }

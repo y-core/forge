@@ -1,10 +1,5 @@
-// Four questions about D1 that a fake cannot answer, asked of the real thing: does it accept and
-// enforce `STRICT`, what does a mid-batch failure leave behind, what JavaScript shape does a BLOB
-// column read back as, and which rows-affected field a write populates. The spec posts the files
-// from `src/auth/schema.sql` here rather than importing them, so what runs is what a consumer composes.
-//
-// `/guards` then runs the shipped store adapters themselves against that schema, because a guard
-// answered by a fake is a guard whose SQL was never executed.
+// The spec posts `src/auth/schema.sql` here rather than importing it, so what runs is what a consumer
+// composes, and a guard answered by a fake would be one whose SQL was never executed.
 import { createAdminUserStore } from "../../../src/auth/stores/admin-users";
 import { createChallengeStore } from "../../../src/auth/stores/challenges";
 import { createCredentialStore } from "../../../src/auth/stores/credentials";
@@ -43,9 +38,8 @@ function messageOf(thrown: unknown): string {
   return thrown instanceof Error ? thrown.message : String(thrown);
 }
 
-// `wrangler dev` persists this database under the fixture, so a table created by an earlier run
-// outlives the schema that created it: `CREATE TABLE IF NOT EXISTS` then silently keeps the old
-// columns and a new index over a new one fails. The spec drops them before it applies anything.
+// `wrangler dev` persists this database, so `CREATE TABLE IF NOT EXISTS` would silently keep an
+// earlier run's columns and a new index over a new one would fail.
 async function resetSchema(db: D1Database): Promise<Response> {
   const tables = ["auth_nonces", "auth_challenges", "auth_otp_state", "auth_identity_links", "auth_credentials", "auth_factors", "auth_users"];
   for (const table of tables) await db.prepare(`DROP TABLE IF EXISTS ${table}`).run();
@@ -103,9 +97,7 @@ async function probeBatch(db: D1Database): Promise<Response> {
   return json({ batchError, survivingRows: rows.results.map((row) => row.id) });
 }
 
-// Whether a fragment appended after a write can abort the batch when that write matched nothing:
-// `changes()` must report the previous statement, and an expression must be able to raise outside a
-// trigger. The text run here is the shipped one, so what `requireRowsWritten()` mints is what is proved.
+// The shipped fragment rather than a copy, so what `requireRowsWritten()` mints is what is proved.
 const GUARD = requireRowsWritten().text;
 
 async function probeChanges(db: D1Database): Promise<Response> {
@@ -320,12 +312,7 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
   const link = must(await links.link({ userId: erin, provider: "github", subject: "erin" }, AT), "link erin");
   must(await otp.issue(erin, { token: "c2VhbGVk", attempts: 0, issuedAt: AT, expiresAt: AT + 600_000 }, 60_000), "issue erin's code");
 
-  // Two guesses of a budget of two, then a third that the statement refuses before any code is
-  // compared — until the lockout window has run from the last admitted guess, when the next one
-  // reopens the budget at a count of one. An accepted step clears it outright.
   const LOCKOUT_MS = 60_000;
-  // One statement now answers the row too, so the count it reports is the count that guess wrote —
-  // there is no second read for a parallel guess to slip between.
   const spend = async (userId: string, at: number): Promise<number | null> =>
     must(await factors.countAttempt(userId, "totp-app", 2, at, LOCKOUT_MS), `spend at ${at}`)?.failedAttempts ?? null;
   const spendFirst = await spend(erin, AT + 1);
@@ -370,9 +357,8 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
   };
 }
 
-// The claim the move off KV rests on: one challenge is taken once, and one nonce is consumed once,
-// however many requests ask at the same moment. A fake cannot settle either — both are the database
-// serialising writers, not anything the adapter does.
+// A fake cannot settle a single take under concurrent requests: that is the database serialising
+// writers, not anything the adapter does.
 async function probeEphemera(db: D1Database): Promise<Record<string, unknown>> {
   const { client, challenges, nonces } = await storesOn(db);
   const record = { challenge: "Y2hhbGxlbmdl", sessionId: "sess-1" };

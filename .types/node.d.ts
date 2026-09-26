@@ -1,16 +1,11 @@
-// Minimal ambient declarations for node: built-ins used in forge CLI/pkg/assets modules.
-// Avoids pulling in @types/node, which pollutes the global scope and conflicts
-// with the Wrangler/workerd-generated Workers runtime types and DOM types.
+// A stub rather than @types/node, whose globals conflict with the generated Workers runtime types and
+// the DOM types.
 
-// Node's Buffer extends Uint8Array; declare minimally so execSync return type resolves, plus the
-// one method beyond it that forge calls.
 declare interface Buffer extends Uint8Array {
   equals(other: Uint8Array): boolean;
   toString(encoding?: string): string;
 }
 
-// A stdin/stdout stream, declared only as far as the prompt in `cli/sync` needs it: whether a
-// terminal is attached, and something readline can be handed.
 interface NodeStdioStream {
   readonly isTTY?: boolean;
   readonly columns?: number;
@@ -55,7 +50,6 @@ declare const process: {
   once(event: string, listener: () => void): void;
 };
 
-// The promise-returning readline, used for the one confirmation `forge sync --rotate` asks.
 declare module "node:readline/promises" {
   interface Interface {
     question(query: string): Promise<string>;
@@ -86,8 +80,7 @@ declare module "node:path" {
   export function basename(path: string, ext?: string): string;
   export function extname(path: string): string;
   export function relative(from: string, to: string): string;
-  /** POSIX-semantics variants, used where a path is a repo-relative identifier rather than a
-   *  filesystem location and must resolve the same way on every host. */
+  /** POSIX-semantics variants, for a path that must resolve the same way on every host. */
   export const posix: PathApi;
 }
 
@@ -165,8 +158,7 @@ declare module "node:child_process" {
   interface SpawnSyncReturns {
     status: number | null;
     error?: Error;
-    /** Present only when the child's output was captured and decoded — i.e. when `stdio` did not
-     *  redirect it away and an `encoding` was given. */
+    /** Present only when `stdio` captured the output and an `encoding` decoded it. */
     stdout?: string;
     stderr?: string;
   }
@@ -189,7 +181,6 @@ declare module "node:child_process" {
   export function spawn(command: string, args?: string[], options?: SpawnOptions): ChildProcess;
 }
 
-// The in-memory stream a test hands `confirm` in place of a terminal.
 declare module "node:stream" {
   export class PassThrough implements NodeStdioStream {
     isTTY?: boolean;

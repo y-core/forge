@@ -5,7 +5,6 @@ import { fail } from "../finding";
 import type { Finding } from "../types";
 import type { CommentSpan } from "./types";
 
-/** The suffixes that mark a file test-only. The one list — every check that must not judge a test reads it. */
 const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
 
 // None of the three is deployed: a spec is not shipped, a `.browser.ts` spec runs under Playwright,
@@ -80,9 +79,11 @@ export function collectSource(root: string, source: string, accept: (name: strin
   return collectFiles(root, source, accept);
 }
 
-/** Whether `file` is `prefix` or sits beneath it. @public */
+/** Whether `file` is `prefix` or sits beneath it, where a prefix led by a `**` segment matches the rest at any depth. @public */
 export function excludedBy(file: string, prefixes: readonly string[]): boolean {
-  return prefixes.some((prefix) => file === prefix || file.startsWith(`${prefix}/`));
+  return prefixes.some((prefix) =>
+    prefix.startsWith("**/") ? `/${file}/`.includes(`/${prefix.slice(3)}/`) : file === prefix || file.startsWith(`${prefix}/`),
+  );
 }
 
 /** Every file under `sources`, honouring `!`-prefixed exclusions — deduped and sorted. Walks, judges nothing. @public */
@@ -105,7 +106,6 @@ export function suppressedBy(marker: string): (lines: readonly string[], line: n
   };
 }
 
-/** The index just past a string opened at `start`, or -1 when it never closes. */
 function endOfQuoted(source: string, start: number): number {
   const quote = source[start];
   for (let i = start + 1; i < source.length; i++) {
@@ -122,7 +122,6 @@ function endOfQuoted(source: string, start: number): number {
   return -1;
 }
 
-/** The index just past a regex literal opened at `start`, or -1 when it is a division sign after all. */
 function endOfRegex(source: string, start: number): number {
   let inClass = false;
   for (let i = start + 1; i < source.length; i++) {
@@ -145,7 +144,6 @@ function endOfRegex(source: string, start: number): number {
 
 // `<` and `>` are not openers, whatever they are in JavaScript: in a `.tsx` file the `/` after one
 // closes a JSX tag, and reading `</p>` as a regex swallows the `//` comment on the same line.
-/** Whether a `/` opens a regex literal rather than dividing, decided from the token before it. */
 const OPENS_REGEX = /(?:=>|[({[,;:=!&|?+\-*%~^]|\b(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*$/;
 
 // One pass over strings, regex literals and comments together, so none can start inside another —
@@ -238,7 +236,6 @@ export function blankSourceComments(source: string): string {
   return blank(source, true);
 }
 
-/** The index just past a string or template literal opened at `start`, skipping `${…}` by recursion. */
 function endOfString(source: string, start: number): number {
   const quote = source[start];
   for (let i = start + 1; i < source.length; i++) {

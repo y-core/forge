@@ -1,7 +1,7 @@
 /// <reference path="../../../src/testing/node.d.ts" />
-// The only program that holds `src/testing/node.d.ts` to being sufficient: forge's own `tsconfig.json`
-// excludes it, so `snapshot.ts` typechecks there against the far richer `.types/node.d.ts` and proves
-// nothing. Under `"types": []` a missing or over-wide declaration fails here instead.
+
+// Forge's own `tsconfig.json` checks `snapshot.ts` against the richer `.types/node.d.ts`, so only this
+// program, under `"types": []`, fails on a missing or over-wide declaration in `src/testing/node.d.ts`.
 import { matchTextSnapshot } from "@y-core/forge/testing/snapshot";
 
 export const compare = (actual: string): Promise<string> =>

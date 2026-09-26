@@ -55,6 +55,9 @@ const EXPORTS = pkg.exports as ExportsMap;
 
 const GEN = "bun run gen:bundles";
 
+/** Every tree the comment budget holds, with the generated bundles a local `wrangler dev` leaves in any `.wrangler` excluded. */
+export const COMMENT_BUDGET_SOURCES = ["src", "config", "warden/src", "tests", ".types", "playwright.config.ts", "!**/.wrangler"];
+
 /** The gate's steps, in execution order. */
 export const STEPS: readonly Step[] = [
   typecheckStep(),
@@ -85,8 +88,15 @@ export const STEPS: readonly Step[] = [
   jsxStep({ root: ROOT }),
   menuNamingStep({ root: ROOT }),
   coLocationStep({ root: ROOT, sources: ["src", "warden"], exempt: CO_LOCATION_EXEMPT }),
-  commentBudgetStep({ root: ROOT, sources: ["src", "config", "warden/src"], licences: LICENCE_HEADERS }),
-  packagingStep({ root: ROOT, sources: ["src"], files: pkg.files, exports: EXPORTS, entries: Object.values(pkg.bin) }),
+  commentBudgetStep({ root: ROOT, sources: COMMENT_BUDGET_SOURCES, licences: LICENCE_HEADERS }),
+  packagingStep({
+    root: ROOT,
+    sources: ["src"],
+    files: pkg.files,
+    exports: EXPORTS,
+    entries: Object.values(pkg.bin),
+    required: ["README.md", "CHANGELOG.md"],
+  }),
   ssrBoundaryStep({
     root: ROOT,
     clientDirs: ["src/ui/client", "src/auth/client"],

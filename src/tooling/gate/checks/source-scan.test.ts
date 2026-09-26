@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -175,6 +175,13 @@ describe("excludedBy() — the prefix boundary", () => {
   it("excludes nothing when no prefix is given", () => {
     expect(excludedBy("src/ui/design", [])).toBe(false);
   });
+
+  it("matches a `**`-led prefix at any depth, on whole segments only", () => {
+    expect(excludedBy(".wrangler/tmp/a.ts", ["**/.wrangler"])).toBe(true);
+    expect(excludedBy("tests/fixtures/db-schema/.wrangler/tmp/a.ts", ["**/.wrangler"])).toBe(true);
+    expect(excludedBy("tests/fixtures/db-schema/.wranglerrc/a.ts", ["**/.wrangler"])).toBe(false);
+    expect(excludedBy("tests/fixtures/not.wrangler/a.ts", ["**/.wrangler"])).toBe(false);
+  });
 });
 
 describe("resolveSources() — the walk a `!` entry narrows", () => {
@@ -201,6 +208,22 @@ describe("resolveSources() — the walk a `!` entry narrows", () => {
 
   it("returns nothing when every source is excluded", () => {
     expect(resolveSources(root, ["src", "!src"], () => true)).toEqual([]);
+  });
+
+  it("drops every `.wrangler` bundle a `!**/` entry names, whichever fixture holds it", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "forge-wrangler-"));
+    const bundle = "tests/fixtures/db-schema/.wrangler/tmp/bundle-x/entry.ts";
+    try {
+      for (const path of ["tests/fixtures/db-schema/worker.ts", bundle]) {
+        mkdirSync(dirname(join(scratch, path)), { recursive: true });
+        writeFileSync(join(scratch, path), "", "utf-8");
+      }
+
+      expect(resolveSources(scratch, ["tests"], (name) => name.endsWith(".ts"))).toContain(bundle);
+      expect(resolveSources(scratch, ["tests", "!**/.wrangler"], (name) => name.endsWith(".ts"))).toEqual(["tests/fixtures/db-schema/worker.ts"]);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
 

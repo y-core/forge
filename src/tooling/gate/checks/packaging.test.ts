@@ -111,6 +111,33 @@ describe("checkPackaging()", () => {
       "rename it `fixture.fixture.ts` — the `files` array excludes every `*.fixture.ts` and nothing else",
     ]);
   });
+
+  describe("required", () => {
+    const TREE = { "src/ui/mod.ts": "export const nothing = 1;", "CHANGELOG.md": "# Changelog" };
+
+    it("fails a required file the `files` array leaves out, naming it", () => {
+      const result = run(TREE, { required: ["CHANGELOG.md"] });
+      expect(result.ok).toBe(false);
+      expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
+        ["CHANGELOG.md", "a file the tarball must carry is left out by the `files` array"],
+      ]);
+    });
+
+    it("passes a required file the `files` array carries", () => {
+      expect(files(TREE, { required: ["CHANGELOG.md"], files: [...FILES, "CHANGELOG.md"] })).toEqual([]);
+    });
+
+    it("fails a required file a later negation excludes", () => {
+      expect(files(TREE, { required: ["CHANGELOG.md"], files: [...FILES, "CHANGELOG.md", "!*.md"] })).toEqual(["CHANGELOG.md"]);
+    });
+
+    it("fails a required file missing on disk, even when the `files` array names it", () => {
+      const result = run({ "src/ui/mod.ts": "export const nothing = 1;" }, { required: ["CHANGELOG.md"], files: [...FILES, "CHANGELOG.md"] });
+      expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
+        ["CHANGELOG.md", "a file the tarball must carry does not exist"],
+      ]);
+    });
+  });
 });
 
 describe("moduleImports()", () => {

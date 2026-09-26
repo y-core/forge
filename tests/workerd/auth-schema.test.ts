@@ -1,8 +1,5 @@
-// `fakeD1` answers what it is told to answer, so three questions about D1 stay open until the real
-// runtime is asked: whether it accepts and enforces `STRICT`, what a mid-batch failure leaves
-// behind, and what shape a BLOB column reads back as. `src/auth/schema.sql` — the whole of what
-// `lib-auth` publishes — is posted to the fixture rather than imported by it, so what runs is the
-// one-shot build a consumer may take.
+// `fakeD1` answers what it is told to answer, so these questions stay open until real D1 is asked;
+// `src/auth/schema.sql` is posted rather than imported, so what runs is the build a consumer takes.
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
@@ -65,9 +62,8 @@ describe("D1 open question — batch() under a mid-batch failure", () => {
   });
 });
 
-// Every last-admin, replay and ownership guard in `src/auth/stores/` decides on `rowsWritten > 0`,
-// which `createD1Client` reads as `meta.rows_written ?? meta.changes`. If a matched write reported
-// zero, every one of those guards would invert and refuse the write it should have allowed.
+// Every guard in `src/auth/stores/` decides on `rowsWritten > 0`, so a matched write reporting zero
+// would invert each one and refuse the write it should have allowed.
 describe("D1 open question — which field a write reports rows-affected in", () => {
   it("populates both fields, and agrees between them, so the client's fallback never has to choose", async () => {
     const probe = (await get("/rows-written")) as Record<string, { rows_written: number | null; changes: number | null; resolved: number }>;
@@ -98,9 +94,8 @@ describe("D1 open question — which field a write reports rows-affected in", ()
   });
 });
 
-// A fake answers a guard with whatever it was told to answer, so `src/auth/stores/*.test.ts` proves
-// the statement's text and this proves the statement. The `/guards` route runs the shipped adapters
-// against `schema.sql`: mutating `NOT_LAST_ADMIN` turns these red, and a fake's would stay green.
+// `src/auth/stores/*.test.ts` proves each statement's text against a fake; this proves the statement,
+// so mutating `NOT_LAST_ADMIN` turns these red where a fake's would stay green.
 describe("the shipped store adapters against real D1", () => {
   let guards: Record<string, Record<string, unknown>>;
 
@@ -131,8 +126,6 @@ describe("the shipped store adapters against real D1", () => {
     expect(guards.ownership).toEqual({
       removeByStranger: false,
       removeByOwner: true,
-      // The attempt ceiling, decided by the statement: two guesses admitted, the third refused
-      // before any code is compared, and a stranger's guess spending nothing of the owner's budget.
       // The count each guess reports is the count that guess wrote, straight out of `RETURNING`.
       spendFirst: 1,
       spendSecond: 2,
@@ -191,9 +184,8 @@ describe("the ephemeral stores against real D1", () => {
   });
 });
 
-// spike-260912-53: a guarded `UPDATE` that matches nothing is a success, and the batch commits. Can
-// a fragment appended after it abort the batch instead? Only if `changes()` carries between the
-// batch's statements and an expression can raise outside a trigger.
+// A guarded `UPDATE` matching nothing commits the batch; an appended fragment can abort it only if
+// `changes()` carries between statements and an expression can raise outside a trigger.
 describe("D1 open question — a rows-written guard inside batch()", () => {
   let probe: Record<string, unknown>;
 

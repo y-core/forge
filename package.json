@@ -355,6 +355,7 @@
   },
   "files": [
     "README.md",
+    "CHANGELOG.md",
     "docs/",
     "src/app/",
     "src/assets/",

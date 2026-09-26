@@ -1,8 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { MENU_ITEM_SELECTOR } from "../contracts/menu-contract";
-import { FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
-import type { FakeElement } from "./dom.fixture";
+import { FakeElement, FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
 import { checkMenuItem, mountMenu } from "./menu";
 
 const MENU_ITEM_ROLES = [...MENU_ITEM_SELECTOR.matchAll(/\[role='([^']+)'\]/g)].map((match) => match[1] as string);
@@ -203,6 +202,129 @@ describe("mountMenu", () => {
       dispose();
 
       expect(popup.id).toBe("first");
+    });
+  });
+
+  describe("mountMenu — focus moving to the popup's own invoker", () => {
+    const ON_TRIGGER = { clientX: 10, clientY: 10 };
+    const OFF_TRIGGER = { clientX: 200, clientY: 200 };
+    const OFF_VIEWPORT = { clientX: -5, clientY: -5 };
+
+    /** An open popup, the trigger that names it, and a record of every `hidePopover()` call. */
+    function openWithInvoker() {
+      installCssEscape();
+      const { doc, el } = fakeTree();
+      const label = el("SPAN", { id: "label" });
+      const trigger = el("BUTTON", { commandfor: "m", id: "trigger" });
+      trigger.append(label);
+      const popup = el("DIV", { "data-slot": "menu-popup", role: "menu", id: "m" });
+      popup.append(el("BUTTON", { role: "menuitem", id: "row" }));
+      const elsewhere = el("DIV", { id: "elsewhere" });
+      doc.root.append(trigger, popup, elsewhere);
+      Object.assign(doc, {
+        elementFromPoint: (x: number, y: number) => {
+          if (x === ON_TRIGGER.clientX && y === ON_TRIGGER.clientY) return label;
+          if (x === OFF_TRIGGER.clientX && y === OFF_TRIGGER.clientY) return elsewhere;
+          return null;
+        },
+      });
+      const hides: string[] = [];
+      Object.assign(popup, {
+        matches: (selector: string) => selector === ":popover-open" || FakeElement.prototype.matches.call(popup, selector),
+        hidePopover: () => hides.push(popup.id),
+      });
+      return { popup, trigger, hides };
+    }
+
+    it("leaves the menu open while the invoker is pressed, so its own toggle closes it", () => {
+      const { popup, trigger, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      dispose();
+
+      expect(hides).toEqual([]);
+    });
+
+    it("closes the menu when focus reaches the invoker with no press, as Shift+Tab does", () => {
+      const { popup, trigger, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.dispatchEvent(new FakeEvent("pointerup", ON_TRIGGER));
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      dispose();
+
+      expect(hides).toEqual(["m"]);
+    });
+
+    it("closes the menu when a press on the invoker is released off it with focus left outside", () => {
+      const { popup, trigger, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      popup.dispatchEvent(new FakeEvent("pointerup"));
+      dispose();
+
+      expect(hides).toEqual(["m"]);
+    });
+
+    it("leaves the closing to the click when the press is released on the invoker", () => {
+      const { popup, trigger, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+      trigger.dispatchEvent(new FakeEvent("pointerup", ON_TRIGGER));
+      dispose();
+
+      expect(hides).toEqual([]);
+    });
+
+    for (const [where, point] of [
+      ["off it", OFF_TRIGGER],
+      ["outside the viewport", OFF_VIEWPORT],
+    ] as const) {
+      it(`closes the menu when a captured press on the invoker is released ${where}, though the pointerup targets the invoker`, () => {
+        const { popup, trigger, hides } = openWithInvoker();
+        const dispose = mountMenu(popup as never);
+
+        trigger.dispatchEvent(new FakeEvent("pointerdown"));
+        trigger.focus();
+        popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: trigger }));
+        trigger.dispatchEvent(new FakeEvent("pointerup", point));
+        dispose();
+
+        expect(hides).toEqual(["m"]);
+      });
+    }
+
+    it("closes the menu when a press on the invoker is cancelled with focus left outside", () => {
+      const { popup, trigger, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      trigger.dispatchEvent(new FakeEvent("pointercancel"));
+      dispose();
+
+      expect(hides).toEqual(["m"]);
+    });
+
+    it("leaves the menu open when a released press never moved focus out of it", () => {
+      const { popup, trigger, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      (popup.children[0] as FakeElement).focus();
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      popup.dispatchEvent(new FakeEvent("pointerup"));
+      dispose();
+
+      expect(hides).toEqual([]);
     });
   });
 

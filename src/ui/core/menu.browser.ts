@@ -348,6 +348,79 @@ test.describe("Menu — Tab leaves and closes", () => {
     expect(await isOpen(page)).toBe(false);
     expect(await page.evaluate(() => document.querySelector("[data-slot~='menu-trigger']")?.getAttribute("aria-expanded"))).toBe("false");
   });
+
+  test("Shift+Tab from the first row onto the trigger closes the menu", async ({ page }) => {
+    await mountWithTrailingStop(page);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.keyboard.press("Shift+Tab");
+
+    await expect.poll(() => isOpen(page)).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? [])).toEqual(["menu-trigger"]);
+  });
+});
+
+test.describe("Menu — the trigger toggles it", () => {
+  function expanded(page: Page): Promise<string | null | undefined> {
+    return page.evaluate(() => document.querySelector("[data-slot~='menu-trigger']")?.getAttribute("aria-expanded"));
+  }
+
+  test("a second click on the trigger closes the menu, and a third opens it again", async ({ page }) => {
+    await mountMenu(page, ROWS);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.click("[data-slot~='menu-trigger']");
+
+    await expect.poll(() => isOpen(page)).toBe(false);
+    await expect.poll(() => expanded(page)).toBe("false");
+
+    await page.click("[data-slot~='menu-trigger']");
+
+    await expect.poll(() => isOpen(page)).toBe(true);
+    await expect.poll(() => expanded(page)).toBe("true");
+  });
+
+  test("a press on the trigger dragged off and released elsewhere closes the menu", async ({ page }) => {
+    await mountMenu(page, ROWS);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+    const box = await page.locator("[data-slot~='menu-trigger']").boundingBox();
+    const viewport = page.viewportSize();
+    if (!box || !viewport) throw new Error("the trigger has no layout box");
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(viewport.width - 5, viewport.height - 5);
+    await page.mouse.up();
+
+    await expect.poll(() => isOpen(page)).toBe(false);
+    await expect.poll(() => expanded(page)).toBe("false");
+  });
+
+  test("a touch press on the trigger lifted off it closes the menu, though its pointerup targets the trigger", async ({ page }) => {
+    await mountMenu(page, ROWS);
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error("the page has no viewport");
+
+    await page.evaluate(
+      ({ x, y }) => {
+        const trigger = document.querySelector<HTMLElement>("[data-slot~='menu-trigger']");
+        if (!trigger) throw new Error("no trigger");
+        const init = { bubbles: true, composed: true, pointerType: "touch", pointerId: 7 };
+        trigger.dispatchEvent(new PointerEvent("pointerdown", init));
+        trigger.focus();
+        trigger.dispatchEvent(new PointerEvent("pointerup", { ...init, clientX: x, clientY: y }));
+      },
+      { x: viewport.width - 5, y: viewport.height - 5 },
+    );
+
+    await expect.poll(() => isOpen(page)).toBe(false);
+    await expect.poll(() => expanded(page)).toBe("false");
+  });
 });
 
 test.describe("Menu — opening focuses a row the ring can reach", () => {
@@ -609,6 +682,42 @@ test.describe("Menu — submenus", () => {
       .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []))
       .toEqual(["menu-submenu-trigger"]);
   });
+});
+
+test.describe("Menu — Tab out of a submenu closes the whole chain", () => {
+  async function chainMarkup(placement: "nested" | "detached"): Promise<string> {
+    const submenu = Menu.Popup({ triggered: true, id: "recent-menu", children: submenuRows() });
+    const popup = Menu.Popup({
+      triggered: true,
+      id: "file-menu",
+      children: [
+        Menu.Item({ id: "new", for: "file-menu", children: "New" }),
+        Menu.SubmenuTrigger({ for: "recent-menu", children: "Recent" }),
+        ...(placement === "nested" ? [submenu] : []),
+      ],
+    });
+    const html = await render(
+      Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup, ...(placement === "detached" ? [submenu] : [])] }),
+    );
+    return `<div data-scope="demo">${html}<button id="after">after</button></div>`;
+  }
+
+  for (const placement of ["nested", "detached"] as const) {
+    test(`${placement}: opening the submenu keeps the parent open, and Tab out of it closes both`, async ({ page }) => {
+      await mount(page, await chainMarkup(placement), EXPOSE);
+      await start(page);
+      await page.click("[data-slot~='menu-trigger']");
+      await expect.poll(() => focusedId(page)).toBe("new");
+      await page.click("[data-slot~='menu-submenu-trigger']");
+      await expect.poll(() => focusedId(page)).toBe("r0");
+      expect(await isOpen(page)).toBe(true);
+
+      await page.keyboard.press("Tab");
+
+      await expect.poll(() => submenuOpen(page)).toBe(false);
+      await expect.poll(() => isOpen(page)).toBe(false);
+    });
+  }
 });
 
 function submenuRows(): JSXNode[] {

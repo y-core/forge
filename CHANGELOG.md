@@ -18,7 +18,20 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`packagingStep` takes a `required` list.** Each named file must exist and survive the `files` array, or
+  `validate-packaging` fails naming it. forge requires `README.md` and `CHANGELOG.md`.
+- **A `!` source entry led by `**/` excludes that path at any depth.** `!**/.wrangler` keeps every generated
+  `wrangler dev` bundle out of `commentBudgetStep`, `modernCssStep` and every other step whose `sources` takes a `!`
+  entry, where one used to name a single subtree. `excludedBy` matches the same form.
+
+### Fixed
+
+- **A second click on a `Menu.Trigger` closes the menu.** The press moved focus out of the menu onto the trigger, so
+  `mountMenu` closed it on focus-out and the click's `toggle-popover` opened it again. A press released on the menu's
+  own trigger now leaves the closing to that click, one dragged off it and released elsewhere closes the menu, and Tab
+  and Shift+Tab out still close it.
 
 ---
 
