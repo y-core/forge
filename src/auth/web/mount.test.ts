@@ -168,7 +168,7 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     const token = html.match(/name="_csrf" value="([^"]+)"/)?.[1] ?? "";
     expect(token).not.toBe("");
 
-    const cookie = page.headers.getSetCookie().find((c) => c.startsWith("__session="));
+    const cookie = page.headers.getSetCookie().find((c) => c.startsWith("__Host-session="));
     expect(cookie).toBeDefined();
 
     const body = new URLSearchParams({ email: "ada@example.com", _csrf: token });
@@ -421,7 +421,7 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
   let cookie = "";
 
   function keep(res: Response): Response {
-    const set = res.headers.getSetCookie().find((value) => value.startsWith("__session="));
+    const set = res.headers.getSetCookie().find((value) => value.startsWith("__Host-session="));
     if (set !== undefined) cookie = set.split(";")[0] ?? cookie;
     return res;
   }

@@ -270,7 +270,8 @@ if (!verdict.ok) return new Response("Forbidden", { status: 403 }); // log verdi
 return serveObject(r2Backend(c.env.ASSETS), c.request, verdict.data);
 ```
 
-`expiresInSeconds` defaults to `3600`. What the HMAC covers, the order the checks run in, and why the refusal reason belongs in your logs rather
+`expiresInSeconds` defaults to `3600` and must be a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME` (seven days), or signing throws.
+What the HMAC covers, the order the checks run in, and why the refusal reason belongs in your logs rather
 than in the response are [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
 
 ---

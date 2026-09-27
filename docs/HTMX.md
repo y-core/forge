@@ -114,6 +114,11 @@ does not own the trade — it owns that the trade be visible. So the layer is bo
 being emitted at all, since a route that never reaches `createSecurityHeaders` or `applySecurityHeaders` has no CSP from forge. The control above
 both — who wrote the attribute value — is the one that depends on neither.
 
+**Forge leaves htmx's `allowEval` and `allowScriptTags` at their default, on.** Turning off `allowEval` would silently cancel the `UNSAFE_EVAL`
+opt-in above, a second switch for one decision; turning off `allowScriptTags` would stop a page's own `<script type="module">` from running after an
+`hx-boost` navigation (`src/app/shell.tsx`); and the default CSP already blocks both paths for injected content, since it permits no eval and only
+nonced inline script.
+
 **`hx-on:*` is deliberately absent from the JSX attribute types and stays absent.** Typing it means a template-pattern index signature — the suffix
 is an arbitrary event name, so no fixed set of keys covers it — added to the htmx attribute interface in `src/jsx/types.ts`. That interface is mixed
 into both the HTML and SVG attribute bases, which every per-tag element type extends and every `ui/core` prop type reaches through

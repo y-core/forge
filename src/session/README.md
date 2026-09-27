@@ -28,7 +28,7 @@ Registered once at app level: a hardened cookie, a storage backend, and the midd
 ```ts
 import { createCookieSessionStorage, createSignedCookie, sessionMiddleware } from "@y-core/forge/session";
 
-const sessionCookie = createSignedCookie("__session", {
+const sessionCookie = createSignedCookie("__Host-session", {
   secrets: [env.SESSION_SECRET], // at least 32 characters, or the factory throws
   maxAge: 60 * 60 * 24 * 7,
   sameSite: "Lax",
@@ -63,7 +63,6 @@ id**; the data lives server-side in KV under that id with a sliding TTL.
 app.use(
   "*",
   createAnonymousSession<AppEnv>({
-    cookieName: "app_session",
     secret: (c) => c.env.SESSION_SECRET, // ≥ 32 chars, enforced
     kv: (c) => c.env.SESSIONS_KV,
   }),
@@ -74,7 +73,9 @@ const session = sessionCtx.get(c);
 session.set("settings", validated.settings); // dirty → saved to KV, Set-Cookie (id only)
 ```
 
-The cookie is signed, `httpOnly`, `Secure` and `SameSite=Lax` in every configuration, with no option to relax any of them.
+The cookie is signed, `httpOnly`, `Secure` and `SameSite=Lax` in every configuration, with no option to relax any of them. It is named
+`__Host-session` unless `cookieName` says otherwise; keep the `__Host-` prefix on a name of your own, because it is what makes the browser refuse a
+cookie of that name planted by a sibling subdomain.
 
 ---
 
@@ -114,7 +115,7 @@ A rotation is two deploys, and the upgrade in between happens on its own.
 reports `rotating` from its own array.
 
 ```ts
-const cookie = createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD] });
+const cookie = createSignedCookie("__Host-session", { secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD] });
 ```
 
 From here `sessionMiddleware` re-signs each still-old cookie on the next request that carries it. A session never used again is never upgraded, so
@@ -124,7 +125,7 @@ leave this deploy in place for at least the cookie's `maxAge`.
 a client inactive for the whole window.
 
 ```ts
-const cookie = createSignedCookie("__session", { secrets: [env.SESSION_SECRET_NEW] });
+const cookie = createSignedCookie("__Host-session", { secrets: [env.SESSION_SECRET_NEW] });
 ```
 
 `createAnonymousSession` takes the same array from its `secret` resolver, and each element is length-checked individually.
@@ -145,8 +146,9 @@ app.use("*", sessionMiddleware(storage, sessionCookie, { reissue: true }));
 ```
 
 Every request carrying a parseable, non-empty session cookie then gets a fresh `Set-Cookie`, so the new attributes land. It also re-arms `Max-Age`
-and makes every such response uncacheable — **set it for the deploy window that pushes the change, then take it back out.** A request carrying no
-session cookie still emits nothing.
+and takes every such response out of shared caches, because the app rewrites `Cache-Control: public` to `private` on any response carrying a
+`Set-Cookie` — **set it for the deploy window that pushes the change, then take it back out.** A request carrying no session cookie still emits
+nothing.
 
 ---
 
@@ -219,6 +221,11 @@ is [`NAMESPACES.md`][namespaces-5a] §5a's, and the boundary behind it [`BOUNDAR
 construction option, and `SignedCookieAttributes` keeps all three off `serialize` too, so a caller that tries to relax one gets a compile error
 rather than a line that is accepted and quietly discarded. The signed `serialize` still re-forces `httpOnly` and `secure` at runtime, which is what
 catches an `as any` or a decorating wrapper the type never saw.
+
+**A `__Host-` name is held to the scope the prefix promises.** The browser stores a `__Host-` cookie only when it is `Secure`, has `Path=/` and
+carries no `Domain`, and in return refuses one planted from a sibling subdomain. `createSignedCookie` throws on a `__Host-` name given a `domain` or
+a `path` other than `/`, at construction and on a per-call override to `serialize`, so the cookie cannot be written in a shape the browser would
+silently drop.
 
 **`Secure` is not configurable, and that is the point.** A session cookie that loses `Secure` fails silently in every way that would otherwise catch
 it: no test goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and replays the session.

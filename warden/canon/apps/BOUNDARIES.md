@@ -1,6 +1,6 @@
 ---
 title: Application Boundaries
-description: "SSR versus browser, middleware ordering and guard placement, validate-at-boundary, no-PII logging, and the fail-closed posture."
+description: "SSR versus browser, middleware ordering and guard placement, validate-at-boundary, no-PII logging, the fail-closed posture, and what a shared cache may store."
 ---
 
 # Application Boundaries
@@ -24,6 +24,7 @@ description: "SSR versus browser, middleware ordering and guard placement, valid
 - §2b Guards Live in the Route's Middleware List: never inline in a handler
 - §2c Guard Order Within a Route: cheapest and most transport-shaped first
 - §2d Rejection Status Discipline: what each refusal returns
+- §2e A Route Answers Only the Method It Declares: no override, no state-changing GET
 - §3 Validate at the Boundary: untrusted input stops at the handler
 - §3a The Boundary Rule: services receive typed domain objects
 - §3b Ordered Validation Steps: reject cheaply before parsing expensively
@@ -36,6 +37,8 @@ description: "SSR versus browser, middleware ordering and guard placement, valid
 - §5b required false — Non-Security Features Only: the deliberate asymmetry
 - §5c No Silent Error Swallowing: a caught exception is not a passed check
 - §5d Recording a Fail-Open Exception: how the rare carve-out is ratified
+- §6 Shared Caches: what a cache may store for everyone
+- §6a A Per-Visitor Response Is Never `public`: `public` means identical for every reader
 
 ---
 
@@ -119,6 +122,16 @@ bug.
 
 **A malformed or bot-shaped body is `400`.** **An oversized body is `413`.** **A wrong content type is `415`.** **A failed schema validation is
 `422`.** Consistency here is what makes a fail-case test assertable ([`TESTING.md`][testing-5] §5).
+
+### 2e. A Route Answers Only the Method It Declares
+
+**A state-changing handler is reached by its own method and by no other.** A method override — a `_method` form field, an
+`X-HTTP-Method-Override` header, a query parameter — lets a request arrive as one method and be routed as another, while every guard that keys on
+the method, and every cache that stores by it, judged the method the request arrived with.
+
+**A `GET` never changes state.** It is the method a link, a prefetch and a crawler send without asking anyone, so a write behind it is a write any
+page on the web can trigger. An HTML form that cannot send the method a route wants posts, and the route accepts `POST`; the method is never
+rewritten before routing.
 
 ---
 
@@ -258,6 +271,20 @@ security boundary; the open failure degrades presentation and never authorisatio
 and listed in [`CODE_REVIEW.md`][cr-6] §6, so a reviewer meets it as a known pattern rather than as a finding.
 
 **An exception that is not written down does not exist.** The next reviewer is right to flag it, and the argument gets had again from scratch.
+
+---
+
+## 6. Shared Caches
+
+### 6a. A Per-Visitor Response Is Never `public`
+
+**A response whose body depends on who asked is `private` or `no-store`, never `public`.** That covers a response that reads the session, names the
+signed-in visitor, or sets a cookie. A shared cache keys on the URL rather than on the visitor, so a `public` per-visitor response is served to the
+next visitor who asks for the same URL — one visitor's page, token or cookie handed to another.
+
+**`public` is a claim that the response is identical for every reader**, and is written only where that holds. The library may enforce part of it —
+demoting `public` on a response that sets a cookie — but a response that reads the session and sets nothing is invisible to that check, so the
+claim stays the author's to make and the reviewer's to test.
 
 [aa-1b]: ./APP_ARCHITECTURE.md#1b-composition-order
 [aa-2]: ./APP_ARCHITECTURE.md#2-the-layer-stack

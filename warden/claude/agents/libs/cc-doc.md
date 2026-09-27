@@ -13,7 +13,7 @@ description: >
   - "Update the security implementation doc to reflect the new guard tier"
   - "Write the README for the session namespace"
   - "Add TSDoc to the newly exported storage symbols"
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Edit, Write, Bash, mcp__warden, mcp__ledger
 model: opus
 color: cyan
 ---

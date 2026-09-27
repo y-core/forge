@@ -310,6 +310,10 @@ What that settles:
 `createSignedObjectUrl(signingKey, baseUrl, objectKey, options?)` produces an HMAC-SHA-256-signed URL expiring after `expiresInSeconds` (default
 `3600`), appending `?key=`, `?exp=`, and `?sig=`. Import the key once with `importSigningKey`.
 
+**A lifetime is a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME`, seven days.** Signing throws on anything else — a fraction
+included, since it would mint an `exp` that verification refuses — and `verifySignedObjectUrl` answers `"invalid-format"` for an `exp` that is not
+all digits, rather than reading its leading number (`src/storage/r2/signing.ts`).
+
 **The HMAC covers a length-prefixed payload — `${key.length}:${key}|${exp}`** — so the key/exp boundary stays unambiguous even when the object key
 itself contains the `|` delimiter.
 

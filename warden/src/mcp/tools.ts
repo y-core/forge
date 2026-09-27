@@ -126,7 +126,7 @@ const CORPUS_NOUNS: Record<string, string> = { canon: "canon", project: "project
 
 /** The one line that tells a model what this corpus is about, by filename only. */
 function coverage(db: Database): string {
-  const rows = db.query<{ corpus: string; path: string }>("SELECT corpus, path FROM source ORDER BY corpus, path").all();
+  const rows = db.query<{ corpus: string; path: string }, []>("SELECT corpus, path FROM source ORDER BY corpus, path").all();
   if (rows.length === 0) return "";
 
   const names = [...new Set(rows.map((row) => row.path.split("/").at(-1) ?? row.path))];

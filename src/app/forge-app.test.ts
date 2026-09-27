@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { Middleware } from "@remix-run/fetch-router";
 
+import { setPendingHeader } from "../context/pending-headers";
 import type { AppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
 import type { LogChannel, LogRecord, Logger } from "../logging/types";
@@ -10,6 +11,7 @@ import type { MatcherResourceErrorDetails } from "../router/mod";
 import { collectExecutionContext, mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { Forge } from "./forge-app";
+import { definePage } from "./page";
 
 /** The `executionCtx` every `fetch` call in this file passes, since the argument is required. */
 const ctx = (): ExecutionContext => collectExecutionContext().executionCtx;
@@ -636,5 +638,38 @@ describe("Forge — the matcher resource budget", () => {
 
     const res = await app.request(`/route-0/${"c".repeat(32 * 1024)}`);
     expect({ status: res.status, refused }).toEqual({ status: 200, refused: undefined });
+  });
+});
+
+describe("Forge — a cookie-setting response is never shared-cacheable", () => {
+  const writeCookie: Middleware = async (context, next) => {
+    const res = await next();
+    setPendingHeader(context, "set-cookie", "sid=abc; HttpOnly", { append: true });
+    return res;
+  };
+
+  const publicPageApp = (withCookie: boolean): Forge => {
+    const app = new Forge();
+    if (withCookie) app.use("*", writeCookie);
+    mapHandler(app, "GET", "/", definePage({ cache: { scope: "public", maxAge: 60 }, view: () => new Response("ok") }));
+    return app;
+  };
+
+  it("rewrites an explicit public page to private when its session writes a cookie", async () => {
+    const res = await publicPageApp(true).request("/");
+    expect(res.headers.getSetCookie()).toEqual(["sid=abc; HttpOnly"]);
+    expect(res.headers.get("cache-control")).toBe("private, max-age=60");
+  });
+
+  it("leaves the same public page public when no cookie is written", async () => {
+    const res = await publicPageApp(false).request("/");
+    expect(res.headers.get("cache-control")).toBe("public, max-age=60");
+  });
+
+  it("rewrites a handler's own public Cache-Control beside its own Set-Cookie", async () => {
+    const app = new Forge();
+    mapHandler(app, "GET", "/", () => new Response("ok", { headers: { "cache-control": "public, max-age=300", "set-cookie": "a=1" } }));
+    const res = await app.request("/");
+    expect(res.headers.get("cache-control")).toBe("private, max-age=300");
   });
 });

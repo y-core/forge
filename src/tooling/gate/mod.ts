@@ -33,6 +33,7 @@ export {
   namespaceGraphStep,
   packagingStep,
   ssrBoundaryStep,
+  stubGlobalsStep,
   featuresStep,
   testStep,
   typeAwareLintStep,
@@ -124,6 +125,8 @@ export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
 
 export type { MenuNamingCheckConfig } from "./checks/types";
 export { checkMenuNaming, triggeredPopupIds, triggerTargets, validateMenuNaming } from "./checks/menu-naming";
+export type { StubGlobalsCheckConfig } from "./checks/types";
+export { checkStubGlobals, declaredStubGlobals, findStubGlobalReferences } from "./checks/stub-globals";
 export type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
 export { bundleSource, checkBundle, hasEsbuild, writeBundle } from "./checks/bundle";
 export { checkIccProfile, renderIccModule } from "./checks/icc-profile";

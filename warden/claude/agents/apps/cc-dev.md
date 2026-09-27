@@ -13,7 +13,7 @@ description: >
   - "Fix the validation-shape bug in the submission handler"
   - "Add the new config field and update every reader"
   - "Refactor the email service per the approved plan"
-tools: Read, Grep, Glob, Edit, Write, Bash, Agent, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Edit, Write, Bash, Agent, mcp__warden, mcp__ledger
 model: opus
 color: magenta
 ---

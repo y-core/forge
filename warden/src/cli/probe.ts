@@ -63,7 +63,7 @@ export function probe(options: ProbeOptions): string {
     lines.push(`# probe ${options.root} (${options.kind})`, "");
     lines.push("## corpora");
     const counts = db
-      .query<{ corpus: string; documents: number; chunks: number }>(
+      .query<{ corpus: string; documents: number; chunks: number }, []>(
         `SELECT source.corpus AS corpus, count(DISTINCT source.id) AS documents, count(chunk.id) AS chunks
          FROM source LEFT JOIN chunk ON chunk.source_id = source.id GROUP BY source.corpus ORDER BY source.corpus`,
       )
@@ -129,14 +129,14 @@ export function probe(options: ProbeOptions): string {
 
     lines.push("## top-1");
     for (const id of [...topOne].sort()) lines.push(id);
-    for (const row of db.query<{ path: string }>("SELECT path FROM source WHERE corpus = 'canon' ORDER BY path").all()) {
+    for (const row of db.query<{ path: string }, []>("SELECT path FROM source WHERE corpus = 'canon' ORDER BY path").all()) {
       if (!topOne.has(`canon:${row.path}`)) lines.push(`UNREACHED canon:${row.path}`);
     }
     lines.push("");
 
     lines.push("## rules");
     const glossless = db
-      .query<{ id: string; rules: string }>("SELECT id, rules FROM chunk WHERE searchable = 1 AND gloss = '' AND rules <> '' ORDER BY id")
+      .query<{ id: string; rules: string }, []>("SELECT id, rules FROM chunk WHERE searchable = 1 AND gloss = '' AND rules <> '' ORDER BY id")
       .all();
     for (const row of glossless) lines.push(`${pad(String(row.rules.split(/\s+/).length), 4)}${pad(row.id, 56)} ${row.rules}`);
     lines.push(`${glossless.length} gloss-less chunks carry rules`);

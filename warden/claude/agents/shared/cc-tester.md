@@ -15,7 +15,7 @@ description: >
   - "Verify the current change passes the full gate"
   - "Run the export and docs steps after the barrel change"
   - "Re-run the gate after cc-dev's fix and confirm it is green"
-tools: Read, Grep, Glob, Bash, Agent
+tools: Read, Grep, Glob, LSP, Bash, Agent
 model: sonnet
 color: green
 ---

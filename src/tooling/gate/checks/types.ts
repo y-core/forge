@@ -443,6 +443,18 @@ export interface MenuNamingCheckConfig {
   sources?: readonly string[];
 }
 
+/** What the stub-globals check compares: the private declaration stubs against the shipped modules. @public */
+export interface StubGlobalsCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** The `.d.ts` files or directories the repository type-checks against and does not ship. */
+  stubs: readonly string[];
+  /** Globals a stub declares that a consumer's real runtime types declare as well, such as `Bun` or `process`. */
+  shared: readonly string[];
+  /** The shipped trees, relative to `root`; a `!` entry drops a subtree. */
+  sources: readonly string[];
+}
+
 /** How a line was classified; a `fence`, `frontmatter` or `indented-code` line is never rewritten. @public */
 export type MarkdownLineKind =
   | "blank"

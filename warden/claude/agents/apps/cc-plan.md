@@ -13,7 +13,7 @@ description: >
   - "Where should this belong — a controller, a service, or the model?"
   - "Design the config schema addition for the new integration"
   - "Plan the extraction of the duplicated rendering path into a shared view"
-tools: Read, Grep, Glob, Bash, Write, Agent, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Bash, Write, Agent, mcp__warden, mcp__ledger
 model: opus
 color: blue
 ---

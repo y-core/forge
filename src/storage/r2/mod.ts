@@ -3,7 +3,7 @@ export { ACTIVE_CONTENT_EXTENSIONS, CONTENT_TYPE_DEFAULT, inferContentType, isAc
 export { r2Backend } from "./r2-backend";
 export { serveObject } from "./serve";
 export { UnsatisfiableRangeError } from "./errors";
-export { createSignedObjectUrl, importSigningKey, verifySignedObjectUrl } from "./signing";
+export { createSignedObjectUrl, importSigningKey, MAX_SIGNED_URL_LIFETIME, verifySignedObjectUrl } from "./signing";
 export { createObjectStore } from "./store";
 export type {
   ListObjectsResult,

@@ -26,6 +26,7 @@ import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
 import { checkPackaging } from "./checks/packaging";
 import { checkSsrBoundary } from "./checks/ssr-boundary";
+import { checkStubGlobals } from "./checks/stub-globals";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
 import type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
@@ -46,6 +47,7 @@ import type { ImportBoundaryCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { MenuNamingCheckConfig } from "./checks/types";
+import type { StubGlobalsCheckConfig } from "./checks/types";
 import type { ModernCssCheckConfig } from "./checks/types";
 import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
@@ -265,6 +267,11 @@ export function jsxStep(config: JsxCheckConfig, options: StepOptions = {}): Chec
 /** Checks every `triggered` menu popup is paired with the trigger it takes its name from. @public */
 export function menuNamingStep(config: MenuNamingCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-menu-naming", () => checkMenuNaming(config), options);
+}
+
+/** Checks that no shipped module names a global only the repository's private type stubs declare. @public */
+export function stubGlobalsStep(config: StubGlobalsCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-stub-globals", () => checkStubGlobals(config), options);
 }
 
 /** The dependency every design-system step shares — `tailwindcss` is an optional peer. */

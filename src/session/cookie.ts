@@ -26,6 +26,8 @@ const EXPIRY_LIMIT = 9_999_999_999;
 // doc-comment and enforces nothing; a browser over it discards the whole header without a word.
 const COOKIE_MAX_BYTES = 4096;
 
+const HOST_PREFIX = /^__host-/i;
+
 /** Encodes a value to its wire payload: `base64(utf8(value))`, standard alphabet, padding retained. */
 function encodePayload(value: string): string {
   // A lone surrogate is unrepresentable in UTF-8: TextEncoder would substitute U+FFFD and `parse`
@@ -73,6 +75,14 @@ function mergeAttributes(defaults: CookieAttributes, override: CookieAttributes 
     // A partitioned cookie is only honoured alongside Secure.
     secure: partitioned === true ? true : (override?.secure ?? defaults.secure),
   };
+}
+
+/** Refuses a `__Host-` name scoped wider than a browser stores it under: with a domain, or on any path but `/`. */
+function refuseHostPrefixScope(caller: string, name: string, attributes: { domain?: string | undefined; path?: string | undefined }): void {
+  if (!HOST_PREFIX.test(name)) return;
+  if (attributes.domain !== undefined)
+    throw new Error(`${caller}: "${name}" is a __Host- cookie, so it must not carry a domain (got ${attributes.domain})`);
+  if (attributes.path !== "/") throw new Error(`${caller}: "${name}" is a __Host- cookie, so its path must be "/" (got ${attributes.path})`);
 }
 
 /** The epoch second past which a value serialized under `attributes` stops verifying, or `null` where they bound nothing. */
@@ -150,6 +160,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
   // `secure` is hardcoded, not an option: development is https at every hop, so it is correct there
   // by construction (`WORKERS_PLATFORM.md` §4e), and relaxing it ships a cookie readable in transit.
   const defaults: CookieAttributes = { path: "/", ...rest, sameSite: sameSite ?? "Lax", httpOnly: true, secure: true };
+  refuseHostPrefixScope("createSignedCookie", name, defaults);
   // Fixed at construction because `parse` has no per-call attributes to consult: a value omitting an
   // expiry where a lifetime is configured is not a value of this cookie, and answers `null`.
   const bounded = expiryOf(mergeAttributes(defaults, undefined)) !== null;
@@ -225,6 +236,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
       // Re-forced over the override, not merely set in the defaults: the override wins in the merge,
       // so an `as any` or a decorating wrapper could otherwise relax what the type refuses to take.
       const merged = mergeAttributes(defaults, { ...attributes, httpOnly: true, secure: true });
+      refuseHostPrefixScope("serialize", name, merged);
       // `""` short-circuits both directions: the destroy path costs no encode and no HMAC.
       if (value === "") return setCookie(name, "", merged);
       let expiry: number | null = null;

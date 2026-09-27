@@ -28,7 +28,7 @@ const db = openDatabase(":memory:");
 build(db, CORPUS, "1.0.0");
 
 const rowids = db
-  .query<{ rowid: number }>("SELECT rowid FROM chunk")
+  .query<{ rowid: number }, []>("SELECT rowid FROM chunk")
   .all()
   .map((row) => row.rowid);
 
@@ -85,7 +85,7 @@ describe("coverage()", () => {
   it("scores a multi-term aliased query exactly as term-by-term weighting would", () => {
     // The batched posting-list read has to be arithmetically the same as one `documentFrequency`
     // and one pool intersection per term — this is what pins that.
-    const total = db.query<{ n: number }>("SELECT count(*) AS n FROM chunk").get()?.n ?? 0;
+    const total = db.query<{ n: number }, []>("SELECT count(*) AS n FROM chunk").get()?.n ?? 0;
     const expected = rowids.map((rowid) => {
       let earned = 0;
       let whole = 0;
@@ -97,7 +97,9 @@ describe("coverage()", () => {
         const weight = idf(total, documentFrequency(db, term));
         whole += weight;
         const carries = (word: string) =>
-          db.query<{ n: number }>("SELECT count(*) AS n FROM chunk_fts WHERE chunk_fts MATCH ? AND rowid = ?").get(`"${word}"`, rowid)?.n === 1;
+          db
+            .query<{ n: number }, [string, number]>("SELECT count(*) AS n FROM chunk_fts WHERE chunk_fts MATCH ? AND rowid = ?")
+            .get(`"${word}"`, rowid)?.n === 1;
         if (carries(term)) earned += weight;
         else if (alias !== undefined && carries(alias)) earned += weight * 0.5;
       }

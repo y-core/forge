@@ -60,7 +60,9 @@ function toSection(row: Row): Section {
 // prefixes alone would take `§10` for a child of `§1`.
 function childrenOf(db: Database, id: string, own: Row): Row[] {
   const rows = db
-    .query<Row>(`${SELECT} WHERE chunk.source_id = (SELECT source_id FROM chunk WHERE id = ?) AND chunk.ordinal > ? ORDER BY chunk.ordinal`)
+    .query<Row, [string, number]>(
+      `${SELECT} WHERE chunk.source_id = (SELECT source_id FROM chunk WHERE id = ?) AND chunk.ordinal > ? ORDER BY chunk.ordinal`,
+    )
     .all(id, own.ordinal);
   const kept: Row[] = [];
   for (const row of rows) {
@@ -73,7 +75,7 @@ function childrenOf(db: Database, id: string, own: Row): Row[] {
 
 /** One section by chunk id, with its immediate neighbours when asked for. @public */
 export function readSection(db: Database, id: string, neighbours = 0): Section[] {
-  const own = db.query<Row>(`${SELECT} WHERE chunk.id = ?`).get(id);
+  const own = db.query<Row, [string]>(`${SELECT} WHERE chunk.id = ?`).get(id);
   if (own === null) return [];
   // A bodyless `§N` is an addressable heading whose rule lives in its `§Na` children, so reading one
   // has to answer with them; `neighbours` is an ordinal window and would pull in the section before.
@@ -83,7 +85,7 @@ export function readSection(db: Database, id: string, neighbours = 0): Section[]
   }
   if (neighbours <= 0) return [toSection(own)];
   const rows = db
-    .query<Row>(
+    .query<Row, [string, number, number]>(
       `${SELECT} WHERE chunk.source_id = (SELECT source_id FROM chunk WHERE id = ?) AND chunk.ordinal BETWEEN ? AND ? ORDER BY chunk.ordinal`,
     )
     .all(id, own.ordinal - neighbours, own.ordinal + neighbours);
@@ -93,12 +95,12 @@ export function readSection(db: Database, id: string, neighbours = 0): Section[]
 /** Every section of one document, by path, each corpus's copy returned whole and never interleaved. @public */
 export function outline(db: Database, path: string): OutlineEntry[] {
   return db
-    .query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`)
+    .query<Row, [string]>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`)
     .all(path)
     .map((row) => ({ id: row.id, section: row.section, title: row.title, gloss: row.gloss, level: /^\d+$/.test(row.section) ? 1 : 2 }));
 }
 
 /** Every section of one document, whole. @public */
 export function readDocument(db: Database, path: string): Section[] {
-  return db.query<Row>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`).all(path).map(toSection);
+  return db.query<Row, [string]>(`${SELECT} WHERE source.path = ? ORDER BY source.id, chunk.ordinal`).all(path).map(toSection);
 }

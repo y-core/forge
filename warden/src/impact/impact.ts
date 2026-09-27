@@ -59,16 +59,18 @@ export function impact(db: Database, root: string, sources: readonly SourceDoc[]
   const touched: Touched[] = [];
   const unindexed: string[] = [];
 
-  const chunksOf = db.query<ChunkRow>(
+  const chunksOf = db.query<ChunkRow, [string, string]>(
     `SELECT chunk.id, chunk.heading_path, chunk.line, chunk.end_line
        FROM chunk JOIN source ON source.id = chunk.source_id
       WHERE source.corpus = ? AND source.path = ?
       ORDER BY chunk.ordinal`,
   );
-  const inbound = db.query<{ from_id: string }>(
+  const inbound = db.query<{ from_id: string }, [string]>(
     "SELECT DISTINCT from_id FROM relation WHERE to_id = ? AND kind IN ('cites', 'defers') ORDER BY from_id",
   );
-  const outbound = db.query<{ to_id: string }>("SELECT DISTINCT to_id FROM relation WHERE from_id = ? AND kind = 'governs' ORDER BY to_id");
+  const outbound = db.query<{ to_id: string }, [string]>(
+    "SELECT DISTINCT to_id FROM relation WHERE from_id = ? AND kind = 'governs' ORDER BY to_id",
+  );
 
   for (const file of files) {
     const doc = byFile.get(resolve(root, file.path));

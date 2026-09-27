@@ -13,7 +13,7 @@ description: >
   - "Where should a new date-formatting helper live — an existing namespace or a new one?"
   - "Design the API surface for a new storage binding client"
   - "Plan the extraction of pipeline builders into a handler namespace"
-tools: Read, Grep, Glob, Bash, Write, Agent, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Bash, Write, Agent, mcp__warden, mcp__ledger
 model: opus
 color: blue
 ---

@@ -24,7 +24,7 @@ export function openDatabase(path: string): Database {
   // server's `refresh()` waits rather than failing.
   db.run("PRAGMA busy_timeout = 5000");
 
-  const tables = db.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").all();
+  const tables = db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").all();
   if (tables.length === 0) {
     db.exec(SCHEMA);
     return db;
@@ -34,7 +34,9 @@ export function openDatabase(path: string): Database {
   // carrying one but no stamp died between the two and already has this shape.
   const stamped = readMeta(db, "schema_version");
   if (stamped !== undefined && stamped !== SCHEMA_VERSION) {
-    for (const table of db.query<{ name: string; type: string }>("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view')").all()) {
+    for (const table of db
+      .query<{ name: string; type: string }, []>("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view')")
+      .all()) {
       // An fts5 table owns shadow tables that go with it, and dropping those directly is an error.
       if (!table.name.startsWith("chunk_fts_")) db.run(`DROP ${table.type} IF EXISTS "${table.name}"`);
     }
@@ -45,7 +47,7 @@ export function openDatabase(path: string): Database {
 
 /** Reads one `meta` value. @public */
 export function readMeta(db: Database, key: string): string | undefined {
-  return db.query<{ value: string }>("SELECT value FROM meta WHERE key = ?").get(key)?.value;
+  return db.query<{ value: string }, [string]>("SELECT value FROM meta WHERE key = ?").get(key)?.value;
 }
 
 /** Writes one `meta` value. @public */

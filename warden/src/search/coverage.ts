@@ -22,14 +22,14 @@ export function idf(total: number, df: number): number {
 
 /** How many chunks carry `term`, read through the index's own tokenizer. @public */
 export function documentFrequency(db: Database, term: string): number {
-  return db.query<{ n: number }>("SELECT count(*) AS n FROM chunk_fts WHERE chunk_fts MATCH ?").get(quote(term))?.n ?? 0;
+  return db.query<{ n: number }, [string]>("SELECT count(*) AS n FROM chunk_fts WHERE chunk_fts MATCH ?").get(quote(term))?.n ?? 0;
 }
 
 /** Every rowid matching `expression`, as one posting-list read. */
 function matching(db: Database, expression: string): number[] {
   // FTS5 does not push a `rowid IN (…)` restriction into the match, so narrowing the SQL to the
   // candidate pool costs the same full scan; the list is read once and intersected in memory.
-  const rows = db.query<{ rowid: number }>("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH ?").all(expression);
+  const rows = db.query<{ rowid: number }, [string]>("SELECT rowid FROM chunk_fts WHERE chunk_fts MATCH ?").all(expression);
   return rows.map((row) => row.rowid);
 }
 
@@ -39,7 +39,7 @@ export function coverage(db: Database, query: string, rowids: readonly number[],
   const typed = queryTerms(query);
   if (typed.length === 0 || rowids.length === 0) return scores;
 
-  const total = db.query<{ n: number }>("SELECT count(*) AS n FROM chunk").get()?.n ?? 0;
+  const total = db.query<{ n: number }, []>("SELECT count(*) AS n FROM chunk").get()?.n ?? 0;
   let whole = 0;
 
   const pool = new Set(rowids);

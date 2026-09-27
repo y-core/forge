@@ -221,7 +221,7 @@ describe("checkGoldenQueries()", () => {
 
     expect(checkGoldenQueries(settings).ok).toBe(true);
     const after = openDatabase(indexPath);
-    const titles = after.query<{ title: string }>("SELECT DISTINCT title FROM chunk").all();
+    const titles = after.query<{ title: string }, []>("SELECT DISTINCT title FROM chunk").all();
     after.close();
 
     expect(titles).toEqual([{ title: "sentinel" }]);

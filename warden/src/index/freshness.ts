@@ -28,7 +28,7 @@ export function freshness(db: Database, sources: readonly SourceDoc[], canonVers
     return { fresh: false, rebuild: true, stale: [], reason: "the schema, the indexer or the canon version changed" };
   }
 
-  const rows = db.query<Row>("SELECT corpus, tree, path, size, mtime, hash FROM source").all();
+  const rows = db.query<Row, []>("SELECT corpus, tree, path, size, mtime, hash FROM source").all();
   const indexed = new Map(rows.map((row) => [`${row.corpus}/${row.tree ?? ""}/${row.path}`, row]));
 
   if (indexed.size !== sources.length) {

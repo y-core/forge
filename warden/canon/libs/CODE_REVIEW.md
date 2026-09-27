@@ -195,14 +195,15 @@ gate does not clear it. The reverse holds too: disorder fixed outside the change
 
 ## 4. Severity Calibration
 
-- **Critical — blocks merge.** Any §2 invariant; a hardcoded secret; a missing guard on a state-changing endpoint; an unchecked error on a
-  security-critical path.
+- **Critical — blocks merge.** Any §2 invariant; a hardcoded secret; a missing guard on a reachable state-changing endpoint; an unchecked error on
+  a security-critical path.
 - **Major — fix before merge.** A new export missing from its barrel; a security test missing its fail case; an undeclared cross-namespace edge;
   wrong entity encoding in an assertion; a route registered outside the declarative pattern; any gate step failing; a comment outside the
   [`CODE_RULES.md`][cr-5a] §5a budget.
 - **Minor — consider fixing.** An export with no TSDoc line at all; an imperative loop where an array method reads better; a name breaking the
   [`NAMESPACE_DESIGN.md`][nd-4b] §4b suffix convention.
-- **Informational — note only.** Future namespace splits, alternative API designs, performance observations with no security impact.
+- **Informational — note only.** Future namespace splits, alternative API designs, performance observations with no security impact; a missing
+  second layer where another layer already blocks the attack.
 
 **Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line costs one read; an unbudgeted one is re-read on
 every pass, is reachable by no gate, and goes stale silently. **Never report "expand this comment" as a finding.**
@@ -229,7 +230,12 @@ Before reporting any finding:
 3. **Check the export map** before claiming a symbol is unexported or a subpath does not exist.
 4. **Check the runtime** before flagging an API as unavailable — `crypto.subtle`, streams, and `URL` are all present in Workers.
 
-**A finding you could not verify is a question, not a finding.** Report it as one.
+**A security finding shows the whole path or it is not reported.** It names who acts — a caller trusted less than the code assumes — what they send,
+which control that input gets past, and what it then reaches. A finding that cannot fill in all four has found a pattern that looks like an attack,
+not an attack.
+
+**A finding you could not verify is a question, not a finding.** Report it as one, naming the one fact you could not establish and the check — a
+file to read, a command to run — that would settle it.
 
 ---
 

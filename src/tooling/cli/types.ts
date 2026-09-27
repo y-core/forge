@@ -1,3 +1,5 @@
+import type process from "node:process";
+
 import type { Colorize } from "../term/types";
 
 export interface BooleanFlagDef {
@@ -194,9 +196,9 @@ export interface ConfirmOptions {
   /** `--yes`: skip the prompt entirely. */
   yes?: boolean | undefined;
   /** Stream the answer is read from. Defaults to `process.stdin`. */
-  input?: NodeStdioStream;
+  input?: typeof process.stdin;
   /** Stream the question is written to. Defaults to `process.stdout`. */
-  output?: NodeStdioStream;
+  output?: typeof process.stdout;
   /** Whether a prompt can be shown. Defaults to `input.isTTY`. */
   interactive?: boolean;
   /** Where the preamble lines go. Defaults to `console.log`. */

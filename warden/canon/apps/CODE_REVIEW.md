@@ -186,6 +186,34 @@ rg -n 'toContain\(|toMatch\(' --glob '*.test.ts*'
 _Triage:_ legitimate on non-markup strings — an error message, a log line. **A hit asserting on rendered markup is a defect**
 ([`TESTING.md`][testing-3a] §3a).
 
+**Request headers building an absolute URL**
+
+```bash
+rg -n -i "headers\.get\(['\"](host|x-forwarded-[a-z]+)['\"]\)" src/
+```
+
+_Triage:_ a hit that only logs the value, or compares it against configured values, is fine. A hit whose value reaches an absolute URL — a redirect,
+a link in an email, a callback address — lets the client choose the origin, which is a header trusted without a decision to trust it
+([`BOUNDARIES.md`][boundaries-3c] §3c).
+
+**Redirect target taken from the request**
+
+```bash
+rg -n "searchParams\.get\(['\"](next|return|returnTo|redirect|redirectTo|url)['\"]\)" src/
+```
+
+_Triage:_ a hit that never reaches a redirect is fine. A hit passed to a redirect is an open redirect unless it goes through the library's check
+first — a local check is the security surface [`FORGE_CONSUMPTION.md`][fc-3d] §3d keeps out of application code.
+
+**Method override**
+
+```bash
+rg -n -i "_method|x-http-method-override" src/
+```
+
+_Triage:_ a hit in a test asserting the override is refused is fine. A hit that reads the value to change how a request is routed is the defect
+[`BOUNDARIES.md`][boundaries-2e] §2e names.
+
 The comment budget is gated (§3a) and carries no command here. What a gate cannot decide — whether a sentence earns its place — is §3c.
 
 ### 3c. Tier 3 — Judgement
@@ -203,6 +231,18 @@ the code refuse — or continue?_ A `catch` that proceeds is the defect ([`BOUND
 
 **Validation reach.** Read each service signature. _Does any parameter accept raw form data, a query string, or an unvalidated record?_
 ([`BOUNDARIES.md`][boundaries-3a] §3a.)
+
+**Login and logout routes.** Read their controller bindings. _Is each guarded like every other state-changing route, although no session exists
+before login?_ A login form without the guard lets another site sign a visitor in as the attacker ([`BOUNDARIES.md`][boundaries-2b] §2b). _Is the
+signed-in session established through the library's session handling rather than a cookie of the application's making?_
+([`FORGE_CONSUMPTION.md`][fc-3d] §3d.)
+
+**Inbound webhooks.** Read every route a third party calls. _Is its signature verified through the library before the body is acted on — and where
+the library has no verifier, is the request refused rather than checked by local code?_ ([`FORGE_CONSUMPTION.md`][fc-1a] §1a,
+[`FORGE_CONSUMPTION.md`][fc-3d] §3d.)
+
+**Shared cacheability.** Read every route and response declared `public`. _Is the body the same for every reader — or does it read the session, name
+the visitor, or set a cookie?_ ([`BOUNDARIES.md`][boundaries-6a] §6a.)
 
 **Re-implementation.** For each new utility, _does the shared library already publish it?_ Search the library's export map before accepting a local
 one ([`FORGE_CONSUMPTION.md`][fc-1a] §1a).
@@ -235,15 +275,15 @@ gate does not clear it. The reverse holds too: disorder fixed outside the change
 
 ## 4. Severity Calibration
 
-- **Critical — blocks merge.** Any §2 invariant; a hardcoded secret; a missing guard on a state-changing route; an inline script without a nonce; a
-  service accepting raw form data; module-level mutable state written per request.
+- **Critical — blocks merge.** Any §2 invariant; a hardcoded secret; a missing guard on a reachable state-changing route; an inline script without
+  a nonce; a service accepting raw form data; module-level mutable state written per request.
 - **Major — fix before merge.** A handler calling an external API directly; a view containing business logic or a service call; a route defined
   outside the route map; a re-implementation of a library capability; a missing fail-case test on a guarded route; wrong guard order; a raw
   environment read for a configured value; any gate step failing; a comment outside the [`CODE_RULES.md`][cr-5a] §5a budget.
 - **Minor — consider fixing.** An exported function with no TSDoc line at all; a substring assertion where an exact one is possible; an unused
   import; an imperative loop where an array method reads better.
 - **Informational — note only.** Alternative interaction patterns; future integration suggestions; additional edge-case tests; performance
-  observations with no security impact.
+  observations with no security impact; a missing second layer where another layer already blocks the attack.
 
 **Excess prose is Major, absence is Minor — the asymmetry is deliberate.** A missing summary line costs one read; an unbudgeted one is re-read on
 every pass, is reachable by no gate, and goes stale silently. **Never report "expand this comment" as a finding.**
@@ -270,7 +310,12 @@ Before reporting any finding:
 4. **Search for the library export before claiming something is re-implemented** — it may already be used elsewhere in the same file.
 5. **Check the runtime** before flagging an API as unavailable — `crypto.subtle`, streams, and `URL` are all present in Workers.
 
-**A finding you could not verify is a question, not a finding.** Report it as one.
+**A security finding shows the whole path or it is not reported.** It names who acts — a caller trusted less than the code assumes — what they send,
+which control that input gets past, and what it then reaches. A finding that cannot fill in all four has found a pattern that looks like an attack,
+not an attack.
+
+**A finding you could not verify is a question, not a finding.** Report it as one, naming the one fact you could not establish and the check — a
+file to read, a command to run — that would settle it.
 
 ---
 
@@ -306,12 +351,15 @@ reviewer reads both.
 [boundaries-1b]: ./BOUNDARIES.md#1b-splitting-a-component-across-the-boundary
 [boundaries-2b]: ./BOUNDARIES.md#2b-guards-live-in-the-routes-middleware-list
 [boundaries-2c]: ./BOUNDARIES.md#2c-guard-order-within-a-route
+[boundaries-2e]: ./BOUNDARIES.md#2e-a-route-answers-only-the-method-it-declares
 [boundaries-3a]: ./BOUNDARIES.md#3a-the-boundary-rule
+[boundaries-3c]: ./BOUNDARIES.md#3c-trust-boundaries-on-inbound-headers
 [boundaries-4]: ./BOUNDARIES.md#4-no-pii-in-logs
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
 [boundaries-5c]: ./BOUNDARIES.md#5c-no-silent-error-swallowing
 [boundaries-5d]: ./BOUNDARIES.md#5d-recording-a-fail-open-exception
+[boundaries-6a]: ./BOUNDARIES.md#6a-a-per-visitor-response-is-never-public
 [cr-1a]: ../shared/CODE_RULES.md#1a-no-module-level-mutable-variables
 [cr-1c]: ../shared/CODE_RULES.md#1c-constants-are-acceptable
 [cr-1e]: ../shared/CODE_RULES.md#1e-browser-only-modules-are-exempt

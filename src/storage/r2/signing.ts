@@ -2,6 +2,9 @@ import { base64urlDecodeOrNull, base64urlEncode, hmacSign, importHmacKeyFromHex,
 import { err, ok } from "../../result/result";
 import type { SignedUrlOptions, SignedUrlVerdict } from "./types";
 
+/** Longest lifetime, in seconds, that `createSignedObjectUrl` will sign. @public */
+export const MAX_SIGNED_URL_LIFETIME = 604_800;
+
 /** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for signing operations. @public */
 export function importSigningKey(hexSecret: string): Promise<CryptoKey> {
   return importHmacKeyFromHex(hexSecret, "Signing secret");
@@ -20,6 +23,9 @@ export async function createSignedObjectUrl(
   options?: SignedUrlOptions,
 ): Promise<string> {
   const expiresIn = options?.expiresInSeconds ?? 3600;
+  if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > MAX_SIGNED_URL_LIFETIME) {
+    throw new RangeError(`createSignedObjectUrl: expiresInSeconds must be an integer in 1…${MAX_SIGNED_URL_LIFETIME}, got ${expiresIn}`);
+  }
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
   const payload = signingPayload(objectKey, exp);
   const sig = base64urlEncode(await hmacSign(signingKey, payload));
@@ -45,8 +51,8 @@ export async function verifySignedObjectUrl(signingKey: CryptoKey, url: string):
 
   if (!objectKey || !expStr || !sig) return err("invalid-format");
 
-  const exp = parseInt(expStr, 10);
-  if (!Number.isInteger(exp)) return err("invalid-format");
+  if (!/^\d+$/.test(expStr)) return err("invalid-format");
+  const exp = Number(expStr);
 
   if (Math.floor(Date.now() / 1000) > exp) return err("expired");
 

@@ -9,6 +9,7 @@ import { applyPendingHeaders } from "../context/pending-headers";
 import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
 import { escapeHtml } from "../http/escape";
+import { CacheControl } from "../http/headers";
 import { createLogger } from "../logging/logger";
 import { requestLog } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
@@ -26,6 +27,18 @@ const BASELINE_HEADERS = {
   "content-security-policy": "default-src 'none'",
   "referrer-policy": "no-referrer",
 } as const;
+
+/** Downgrades a `public` `Cache-Control` to `private` on a response that sets a cookie. */
+function privatizeCookieResponse(res: Response): Response {
+  if (res.headers.getSetCookie().length === 0) return res;
+  const cacheControl = new CacheControl(res.headers.get("cache-control") ?? "");
+  if (!cacheControl.public) return res;
+  delete cacheControl.public;
+  cacheControl.private = true;
+  const headers = new Headers(res.headers);
+  headers.set("cache-control", cacheControl.toString());
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 function hardenedText(body: string, status: number, extra?: Record<string, string>): Response {
   return new Response(body, { status, headers: { ...BASELINE_HEADERS, "content-type": "text/plain; charset=utf-8", ...extra } });
@@ -154,7 +167,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
     const applyHeaders: Middleware = async (context, next) => {
       const res = await next();
-      return applyPendingHeaders(context, res);
+      return privatizeCookieResponse(applyPendingHeaders(context, res));
     };
 
     const guarded: Middleware[] = this._globals.map(

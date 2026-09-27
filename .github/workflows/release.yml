@@ -14,8 +14,7 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -26,13 +25,21 @@ jobs:
     name: publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Its protection rules (who may approve, which tags may deploy) are a repository setting, not this file.
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # `packageManager` in package.json, not `latest`: a floating runtime makes the gate that guards
       # a release a different gate from the one `forge release` ran locally, and the difference
       # surfaces as a red tag. `engines.bun` is a consumer floor and a range, so it pins nothing.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
 
@@ -57,6 +64,11 @@ jobs:
 
       - name: pack
         run: bun pm pack --filename "y-core-forge-${VERSION}.tgz"
+
+      - name: attest provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: y-core-forge-${{ env.VERSION }}.tgz
 
       - name: publish release
         env:

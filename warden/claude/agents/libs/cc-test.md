@@ -13,7 +13,7 @@ description: >
   - "Add round-trip tests for the session cookie serializer"
   - "Cover the oversized-body path in the form parser"
   - "Audit test coverage for the form namespace"
-tools: Read, Grep, Glob, Edit, Write, Bash, Agent, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Edit, Write, Bash, Agent, mcp__warden, mcp__ledger
 model: opus
 color: yellow
 ---

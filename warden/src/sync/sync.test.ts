@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { WARDEN_ROOT } from "../paths";
 import { copyTree, identical, sync, syncTrees, walk } from "./sync";
 
 function tree(files: Record<string, string>, prefix: string): string {
@@ -103,5 +104,17 @@ describe("sync()", () => {
 
     expect(sync(repo, [{ tree: ".claude/agents", from: [join(tmpdir(), "warden-absent-source")] }])).toEqual([]);
     expect(existsSync(join(repo, ".claude/agents/own.md"))).toBe(true);
+  });
+});
+
+describe("the shipped agent corpus", () => {
+  it("grants LSP to every agent whose text tells it to use the language server", () => {
+    const agents = join(WARDEN_ROOT, "claude", "agents");
+    const missing = walk(agents).filter((path) => {
+      const source = readFileSync(join(agents, path), "utf-8");
+      const tools = /^tools: (.*)$/m.exec(source)?.[1]?.split(", ") ?? [];
+      return source.includes("LSP plugin") && !tools.includes("LSP");
+    });
+    expect(missing).toEqual([]);
   });
 });

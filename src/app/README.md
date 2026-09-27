@@ -166,7 +166,8 @@ Either the loader or the view may return a `Response` to short-circuit — a red
 still apply to it.
 
 **`cache` and `headers` answer different questions.** `cache` is the page's _default_ policy, set only on a response that states none of its own, so
-a redirect or a `no-store` refusal keeps what it said. `headers` is applied last and overrides everything, including `cache`.
+a redirect or a `no-store` refusal keeps what it said. `headers` is applied last and overrides everything, including `cache` — except
+that a `public` on a response carrying a `Set-Cookie` is rewritten to `private`.
 
 **`scope` defaults to `"private"`** — the browser may store the page, a shared cache may not. Write `scope: "public"` when the page is the same for
 every reader and you want an edge or proxy to serve it. The full lifecycle, including what a `schema` on a page changes, is

@@ -13,7 +13,7 @@ description: >
   - "Add the fail-case tests for every rejection path on this route"
   - "Cover the oversized-body path on the submission handler"
   - "Audit test coverage for the email service"
-tools: Read, Grep, Glob, Edit, Write, Bash, Agent, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Edit, Write, Bash, Agent, mcp__warden, mcp__ledger
 model: opus
 color: yellow
 ---

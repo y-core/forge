@@ -12,7 +12,7 @@ description: >
   - "Update the config implementation doc to reflect the new binding"
   - "Write the README for the services directory"
   - "Add TSDoc to the newly exported model types"
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Edit, Write, Bash, mcp__warden, mcp__ledger
 model: opus
 color: cyan
 ---

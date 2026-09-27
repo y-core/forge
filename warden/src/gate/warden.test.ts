@@ -162,7 +162,7 @@ describe("checkWarden()", () => {
     checkWarden({ root, kind: "libs", indexPath: path, canonRoot: join(root, "warden/canon") });
 
     const db = openDatabase(path);
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM source").get()?.c).toBe(3);
+    expect(db.query<{ c: number }, []>("SELECT count(*) AS c FROM source").get()?.c).toBe(3);
     db.close();
   });
 });

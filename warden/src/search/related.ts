@@ -35,10 +35,10 @@ export function related(db: Database, id: string, kinds?: readonly string[], dep
       // document reaches every section of it.
       const docId = current.split("#")[0] ?? current;
       const out = db
-        .query<Row>("SELECT kind, from_id, to_id, raw FROM relation WHERE from_id = ? OR from_id = ? ORDER BY kind, raw")
+        .query<Row, [string, string]>("SELECT kind, from_id, to_id, raw FROM relation WHERE from_id = ? OR from_id = ? ORDER BY kind, raw")
         .all(current, docId);
       const inbound = db
-        .query<Row>("SELECT kind, from_id, to_id, raw FROM relation WHERE to_id = ? OR to_id = ? ORDER BY kind, from_id")
+        .query<Row, [string, string]>("SELECT kind, from_id, to_id, raw FROM relation WHERE to_id = ? OR to_id = ? ORDER BY kind, from_id")
         .all(current, docId);
 
       for (const row of out) {
@@ -80,7 +80,7 @@ export function unresolved(db: Database, corpora?: readonly Corpus[]): Related[]
   // `from_id` is a chunk id in one corpus and a source id in another, and both spell the corpus first.
   const scope = corpora === undefined ? "" : ` AND (${corpora.map(() => "from_id LIKE ? ESCAPE '\\'").join(" OR ")})`;
   return db
-    .query<Row>(`SELECT kind, from_id, to_id, raw FROM relation WHERE to_id IS NULL${scope} ORDER BY from_id, raw`)
+    .query<Row, string[]>(`SELECT kind, from_id, to_id, raw FROM relation WHERE to_id IS NULL${scope} ORDER BY from_id, raw`)
     .all(...(corpora ?? []).map((corpus) => `${corpus}:%`))
     .map((row) => ({ kind: row.kind, id: row.from_id, raw: row.raw }));
 }

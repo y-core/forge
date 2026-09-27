@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { Database, SQLQueryBindings } from "bun:sqlite";
 
 import { COLUMN_WEIGHTS } from "../index/schema";
 import type { Corpus } from "../types";
@@ -98,7 +98,7 @@ export function search(db: Database, query: string, options: SearchOptions = {})
   const floor = options.floor ?? FLOOR;
 
   const filters: string[] = [];
-  const params: unknown[] = [match];
+  const params: SQLQueryBindings[] = [match];
   if (options.corpus !== undefined) {
     filters.push("source.corpus = ?");
     params.push(options.corpus);
@@ -123,7 +123,7 @@ export function search(db: Database, query: string, options: SearchOptions = {})
     ORDER BY score DESC, chunk.id ASC
     LIMIT ?`;
 
-  const rows = db.query<Row>(sql).all(...params);
+  const rows = db.query<Row, SQLQueryBindings[]>(sql).all(...params);
   const carried = coverage(
     db,
     query,
@@ -160,7 +160,7 @@ function excerpts(db: Database, ranked: readonly { rowid: number; hit: Hit }[], 
   if (ranked.length === 0) return [];
   const rowids = ranked.map((entry) => entry.rowid);
   const sources = db
-    .query<{ rowid: number; rules: string; body: string }>(
+    .query<{ rowid: number; rules: string; body: string }, number[]>(
       `SELECT rowid, rules, body FROM chunk WHERE rowid IN (${rowids.map(() => "?").join(", ")})`,
     )
     .all(...rowids);

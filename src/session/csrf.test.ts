@@ -28,8 +28,8 @@ function fakeSessionKV(): SessionKVBinding {
 }
 
 /** The cookie a browser would send back, from the `Set-Cookie` the response carried. */
-function carry(res: Response): string {
-  const header = res.headers.getSetCookie().find((c) => c.startsWith("__session="));
+function carry(res: Response, name = "__session"): string {
+  const header = res.headers.getSetCookie().find((c) => c.startsWith(`${name}=`));
   if (!header) throw new Error("no session cookie on the response");
   return header.split(";")[0] ?? "";
 }
@@ -142,7 +142,7 @@ describe("sessionMiddleware composed with csrfProtection", () => {
 
     const page = await app.request("/signup", {}, env);
     const token = await page.text();
-    const cookie = carry(page);
+    const cookie = carry(page, "__Host-session");
 
     const res = await app.request("/signup", { method: "POST", headers: { "X-CSRF-Token": token, cookie } }, env);
     expect(res.status).toBe(200);

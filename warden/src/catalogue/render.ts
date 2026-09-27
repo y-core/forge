@@ -47,7 +47,7 @@ export interface CatalogueScope {
 export function renderCatalogue(db: Database, scope: CatalogueScope = {}): string {
   const local = scope.local === true;
   const where = local ? "" : " WHERE corpus = 'canon'";
-  const rows = db.query<Row>(`SELECT corpus, tree, path, title, description FROM source${where} ORDER BY corpus, tree, path`).all();
+  const rows = db.query<Row, []>(`SELECT corpus, tree, path, title, description FROM source${where} ORDER BY corpus, tree, path`).all();
 
   const sections: string[] = [header(local ? "all" : "canon")];
   let group: string | null = null;

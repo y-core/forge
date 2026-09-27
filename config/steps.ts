@@ -32,6 +32,7 @@ import {
   namespaceGraphStep,
   packagingStep,
   ssrBoundaryStep,
+  stubGlobalsStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -113,6 +114,12 @@ export const STEPS: readonly Step[] = [
     sources: ["src"],
   }),
   devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/dev", "src/testing"] }),
+  stubGlobalsStep({
+    root: ROOT,
+    stubs: [".types"],
+    shared: ["Bun", "Buffer", "ExecutionContext", "ImportMeta", "SubtleCrypto", "process"],
+    sources: ["src", "warden/src", "!src/tooling/dev"],
+  }),
   { label: "warden", tail: 20, cmd: ["bun", "warden/src/bin.ts", "sync", "--check"], fix: ["bun", "warden/src/bin.ts", "sync"] },
   docsStep({
     root: ROOT,

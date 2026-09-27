@@ -52,7 +52,7 @@ describe("build()", () => {
     const db = openDatabase(":memory:");
     build(db, fixture({ "docs/A.md": doc("A", "The comment budget.") }, "warden-fts-"), "1.0.0");
 
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"budget"')?.c).toBe(1);
+    expect(db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"budget"')?.c).toBe(1);
     db.close();
   });
 
@@ -72,8 +72,8 @@ describe("build()", () => {
     build(db, first, "1.0.0");
     build(db, second, "1.0.0");
 
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"honeypot"')?.c).toBe(1);
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"budget"')?.c).toBe(0);
+    expect(db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"honeypot"')?.c).toBe(1);
+    expect(db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"budget"')?.c).toBe(0);
     db.close();
   });
 
@@ -100,14 +100,14 @@ describe("build()", () => {
     build(db, fixture({ "docs/A.md": source }, "warden-organising-"), "1.0.0");
 
     // Addressable and outlined, so a `§3` citation resolves and a reader sees the title they scan for.
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk WHERE section = '3'").get()?.c).toBe(1);
+    expect(db.query<{ c: number }, []>("SELECT count(*) AS c FROM chunk WHERE section = '3'").get()?.c).toBe(1);
     // Asserted through MATCH on a term only its own gloss carries: on an external-content table a
     // bare `WHERE rowid` reads the content table and finds the row whether indexed or not.
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"subpath"')?.c).toBe(0);
+    expect(db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_fts WHERE chunk_fts MATCH ?").get('"subpath"')?.c).toBe(0);
     // Its title is still reachable, because every child's heading trail carries it.
     expect(
       db
-        .query<{ id: string }>("SELECT chunk.id FROM chunk_fts JOIN chunk ON chunk.rowid = chunk_fts.rowid WHERE chunk_fts MATCH ?")
+        .query<{ id: string }, [string]>("SELECT chunk.id FROM chunk_fts JOIN chunk ON chunk.rowid = chunk_fts.rowid WHERE chunk_fts MATCH ?")
         .get('"catalog"')?.id,
     ).toContain("#3a");
     db.close();
@@ -118,8 +118,8 @@ describe("build()", () => {
     build(db, fixture({ "docs/A.md": doc("A", "Body."), "docs/B.md": doc("B", "Body.") }, "warden-replace-a-"), "1.0.0");
     build(db, fixture({ "docs/A.md": doc("A", "Body.") }, "warden-replace-b-"), "1.0.0");
 
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM source").get()?.c).toBe(1);
-    expect(db.query<{ c: number }>("SELECT count(*) AS c FROM chunk").get()?.c).toBe(1);
+    expect(db.query<{ c: number }, []>("SELECT count(*) AS c FROM source").get()?.c).toBe(1);
+    expect(db.query<{ c: number }, []>("SELECT count(*) AS c FROM chunk").get()?.c).toBe(1);
     db.close();
   });
 
@@ -134,7 +134,7 @@ describe("build()", () => {
     const db = openDatabase(":memory:");
     build(db, fixture({ "docs/A.md": doc("A", "Body.") }, "warden-stamp-"), "9.9.9");
 
-    expect(db.query<{ value: string }>("SELECT value FROM meta WHERE key = 'canon_version'").get()?.value).toBe("9.9.9");
+    expect(db.query<{ value: string }, []>("SELECT value FROM meta WHERE key = 'canon_version'").get()?.value).toBe("9.9.9");
     db.close();
   });
 });

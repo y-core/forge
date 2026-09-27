@@ -85,7 +85,7 @@ export function checkWarden(config: WardenCheckConfig): CheckResult {
 
 /** The document count per corpus, in the fixed order, omitting a corpus this repository has none of. */
 function perCorpus(db: Database): string {
-  const rows = db.query<{ corpus: string; n: number }>("SELECT corpus, count(*) AS n FROM source GROUP BY corpus").all();
+  const rows = db.query<{ corpus: string; n: number }, []>("SELECT corpus, count(*) AS n FROM source GROUP BY corpus").all();
   const counted = new Map(rows.map((row) => [row.corpus, row.n]));
   return CORPORA.filter((corpus) => counted.has(corpus))
     .map((corpus) => `${counted.get(corpus) ?? 0} ${corpus}`)
@@ -114,7 +114,7 @@ const OWNED: readonly Corpus[] = ["canon", "project"];
 /** A document that produced no chunk is a document nothing can retrieve. */
 function emptyDocuments(db: Database): Finding[] {
   return db
-    .query<{ path: string }>(
+    .query<{ path: string }, string[]>(
       `SELECT path FROM source WHERE corpus IN (${OWNED.map(() => "?").join(", ")})
          AND id NOT IN (SELECT source_id FROM chunk) ORDER BY path`,
     )
@@ -125,7 +125,7 @@ function emptyDocuments(db: Database): Finding[] {
 /** Every governing section must carry a Quick Reference line, the highest-weighted retrieval column there is. */
 function missingGloss(db: Database, docsDir: string): Finding[] {
   return db
-    .query<{ id: string; path: string }>(
+    .query<{ id: string; path: string }, [string]>(
       `SELECT chunk.id, source.path FROM chunk JOIN source ON source.id = chunk.source_id
        WHERE chunk.gloss = '' AND chunk.section NOT LIKE '~%'
          AND (source.corpus = 'canon' OR (source.corpus = 'project' AND source.path LIKE ? ESCAPE '\\')) ORDER BY chunk.id`,

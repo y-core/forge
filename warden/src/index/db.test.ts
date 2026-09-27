@@ -64,6 +64,14 @@ describe("openDatabase()", () => {
     expect(() => second.query("SELECT search_body FROM chunk").all()).toThrow();
     second.close();
   });
+
+  it("types `query` as bun-types does, so a call a consumer's tsc rejects fails this repository's too", () => {
+    const db = openDatabase(join(mkdtempSync(join(tmpdir(), "warden-db-")), "index.sqlite"));
+    // @ts-expect-error -- bun-types gives `query`'s `ParamsType` no default, so one type argument is an error
+    const statement = db.query<{ n: number }>("SELECT 1 AS n");
+    expect(statement.get()).toEqual({ n: 1 });
+    db.close();
+  });
 });
 
 describe("meta", () => {

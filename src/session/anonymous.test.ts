@@ -99,6 +99,37 @@ describe("createAnonymousSession — KV mode", () => {
     expect(res.headers.get("set-cookie") ?? "").toContain("Secure");
   });
 
+  it("names the default cookie __Host-session, with Path=/, Secure and no Domain", async () => {
+    const { kv } = fakeSessionKV();
+    const res = await rotatingApp([SECRET]).request("/save", { method: "POST" }, { SESSIONS: kv });
+    const header = res.headers.get("set-cookie") ?? "";
+    expect(header.startsWith("__Host-session=")).toBe(true);
+    expect(header).toContain("Path=/");
+    expect(header).toContain("Secure");
+    expect(header).not.toContain("Domain");
+  });
+
+  it("does not read a validly signed session sent under the unprefixed __session name", async () => {
+    const { kv } = fakeSessionKV();
+    const legacy = createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
+      cookieName: "__session",
+      secret: () => SECRET,
+      kv: (c) => c.env.SESSIONS,
+    });
+    const legacyApp = new Forge<{ SESSIONS: SessionKVBinding }>();
+    legacyApp.use("*", legacy);
+    mapHandler(legacyApp, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("settings", { theme: "dark" });
+      return new Response("saved");
+    });
+    const seeded = await legacyApp.request("/save", { method: "POST" }, { SESSIONS: kv });
+    const planted = (seeded.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    expect(planted.startsWith("__session=")).toBe(true);
+
+    const res = await rotatingApp([SECRET]).request("/read", { headers: { cookie: planted } }, { SESSIONS: kv });
+    expect(await res.json()).toEqual({ settings: null });
+  });
+
   it("caches the built middleware per env object identity", async () => {
     let storageBuilds = 0;
     const { kv } = fakeSessionKV();

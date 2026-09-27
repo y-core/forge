@@ -157,3 +157,16 @@ test.describe("htmx — content a swap introduces", () => {
     });
   }
 });
+
+test.describe("htmx — the configured module", () => {
+  test("leaves eval and swapped-in script tags allowed, so the CSP is what blocks them", async ({ page }) => {
+    await mount(page, "<div></div>", EXPOSE);
+
+    const config = await page.evaluate(() => {
+      const { allowEval, allowScriptTags } = window.forgeHtmx.htmx.config;
+      return { allowEval, allowScriptTags };
+    });
+
+    expect(config).toEqual({ allowEval: true, allowScriptTags: true });
+  });
+});

@@ -10,7 +10,7 @@ describe("SCHEMA", () => {
     expect(() => db.exec(SCHEMA)).not.toThrow();
     expect(
       db
-        .query<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
         .map((row) => row.name),
     ).toContain("chunk");
@@ -21,7 +21,7 @@ describe("TOKENIZE", () => {
   const db = new Database(":memory:");
   db.run(`CREATE VIRTUAL TABLE t USING fts5(a, tokenize = "${TOKENIZE}")`);
   db.run("INSERT INTO t VALUES (?)", ["When to Throw vs Return Result ui/core forge-ui-focus-ring @y-core/forge/ui/chrome §5c"]);
-  const matches = (query: string) => db.query<{ c: number }>("SELECT count(*) AS c FROM t WHERE t MATCH ?").get(`"${query}"`)?.c ?? 0;
+  const matches = (query: string) => db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM t WHERE t MATCH ?").get(`"${query}"`)?.c ?? 0;
 
   it("keeps a slashed, hyphenated or sectioned identifier as one term", () => {
     expect(matches("ui/core")).toBe(1);

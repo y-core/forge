@@ -458,6 +458,36 @@ describe("construction guards", () => {
   });
 });
 
+describe("createSignedCookie — the __Host- prefix", () => {
+  it("refuses a domain at construction", () => {
+    expect(() => createSignedCookie("__Host-s", { secrets: [SECRET], domain: "example.com" })).toThrow(
+      'createSignedCookie: "__Host-s" is a __Host- cookie, so it must not carry a domain (got example.com)',
+    );
+  });
+
+  it("refuses a path other than / at construction", () => {
+    expect(() => createSignedCookie("__Host-s", { secrets: [SECRET], path: "/app" })).toThrow(
+      'createSignedCookie: "__Host-s" is a __Host- cookie, so its path must be "/" (got /app)',
+    );
+  });
+
+  it("refuses a domain or a path other than / on a per-call override", async () => {
+    const cookie = createSignedCookie("__Host-s", { secrets: [SECRET] });
+    await expect(cookie.serialize("v", { domain: "example.com" })).rejects.toThrow(
+      'serialize: "__Host-s" is a __Host- cookie, so it must not carry a domain',
+    );
+    await expect(cookie.serialize("v", { path: "/app" })).rejects.toThrow('serialize: "__Host-s" is a __Host- cookie, so its path must be "/"');
+  });
+
+  it("serializes with Path=/, Secure and no Domain under its defaults", async () => {
+    const header = await createSignedCookie("__Host-s", { secrets: [SECRET] }).serialize("v");
+    expect(header.startsWith("__Host-s=")).toBe(true);
+    expect(header).toContain("Path=/");
+    expect(header).toContain("Secure");
+    expect(header).not.toContain("Domain");
+  });
+});
+
 describe("key cache", () => {
   /** Counts `importKey` calls while `run` executes. */
   async function countImports(run: () => Promise<unknown>): Promise<number> {

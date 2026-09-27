@@ -11,7 +11,7 @@ const DEFAULT_MAX_AGE = 60 * 60 * 24 * 365;
 
 /** Anonymous per-visitor session middleware over a signed id cookie, with data in KV or in the cookie. @public */
 export function createAnonymousSession<Bindings = Record<string, unknown>>(options: AnonymousSessionOptions<Bindings>): Middleware {
-  const cookieName = options.cookieName ?? "__session";
+  const cookieName = options.cookieName ?? "__Host-session";
   const maxAge = options.maxAge ?? DEFAULT_MAX_AGE;
   // An empty name is the one path to `SetCookie.toString()` returning `""`, i.e. an empty header.
   if (cookieName === "") {

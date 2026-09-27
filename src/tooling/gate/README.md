@@ -86,6 +86,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `ssrBoundaryStep` → `validate-ssr-boundary` | No Worker-executed module reaches the browser-only tier |
 | `importBoundaryStep` → `validate-import-boundary` | No module outside a guarded directory imports one at value, save the files named as `crossings`; a crossing naming no scanned file fails; given `features`, each feature's directory is guarded too, and imports only the features it requires |
 | `devBoundaryStep` → `validate-dev-boundary` | The Worker's `main` is not a `*.dev.ts` entry, nothing imports one, and only such an entry imports a dev-only module at value |
+| `stubGlobalsStep` → `validate-stub-globals` | No shipped module names a global only your private `.d.ts` stubs declare, which a consumer's real types cannot resolve; `shared` lists the globals the real types declare too, and an entry no stub declares fails |
 | `exposureStep` → `validate-exposure` | Every deployment the Worker config describes states `workers_dev`, `preview_urls` and its routing key; `require: "unroutable"` demands the values that keep it off the public internet |
 | `assetRootStep` → `validate-asset-root` | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions |
 | `assetManifestStep` → `validate-asset-manifest` | Every path the emitted assets manifest maps to exists under the served asset directory |

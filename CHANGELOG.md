@@ -18,7 +18,55 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **Pass `cookieName: "__session"` to `createAnonymousSession`** to keep the sessions your visitors already hold. The
+   default name is now `__Host-session`, so an app that leaves it unset signs every live visitor out on deploy.
+
+### Breaking Changes
+
+- **`createAnonymousSession`'s cookie is named `__Host-session` by default.** The prefix makes a browser refuse a
+  cookie of that name planted from a sibling subdomain. A request carrying only the old `__session` gets a fresh
+  session.
+- **`createSignedCookie` throws on a `__Host-` name given a `domain` or a `path` other than `/`**, at construction
+  and on a per-call override to `serialize`. A browser drops such a cookie without a word.
+- **`createSignedObjectUrl` throws on a lifetime that is not a whole number of seconds from 1 to
+  `MAX_SIGNED_URL_LIFETIME` (604 800, seven days).** `MAX_SIGNED_URL_LIFETIME` is exported from
+  `@y-core/forge/storage/r2`.
+- **`verifySignedObjectUrl` answers `"invalid-format"` for an `exp` that is not all digits**, where it used to read
+  the leading number.
+
+### Added
+
+- **A `validate-stub-globals` gate step** fails a shipped module that names a global only forge's private
+  `.types/` stubs declare, which a consumer's real `bun-types` and `@types/node` cannot resolve.
+  `stubGlobalsStep` and `checkStubGlobals` are exported from `@y-core/forge/tooling/gate`.
+
+### Changed
+
+- **A response carrying a `Set-Cookie` never leaves the app as `Cache-Control: public`.** The app's final header
+  step rewrites it to `private`, whether the `public` came from a page's `cache`, its `headers` or the handler.
+- **The release workflow pins every action to a commit SHA** and no longer persists the checkout token. Its
+  permissions are scoped to the job, the packed tarball carries a build-provenance attestation, and the job runs
+  under a `release` environment.
+- **The libs and apps `CODE_REVIEW.md` hold a security finding to the boundary it crosses.** A finding names the
+  lower-trust principal, the input, the control crossed and the resource reached; a missing guard on a reachable
+  state-changing path is Critical; a missing second layer where another already blocks the attack is
+  Informational; and a question names the one missing fact and the check that settles it. The apps review adds
+  items for host and `X-Forwarded-*` headers in absolute URLs, open redirects, login sessions and webhook
+  signatures. These draw on the Cloudflare security-audit reference (MIT, commit c1c8a8c).
+- **The apps `BOUNDARIES.md` rules that a route answers only the method it declares (§2e) and that a per-visitor
+  response is never `public` (§6a).** The apps `CODE_REVIEW.md` gains a method-override command and a
+  shared-cacheability question citing them.
+
+### Fixed
+
+- **`@y-core/forge/warden/steps` type-checks in a consumer.** warden's `bun:sqlite` calls pass both type
+  arguments the real `bun-types` requires, and the confirm prompt's stream options no longer name a type only
+  forge's private stubs declare. Forge's own `bun:sqlite` stub now matches `bun-types`, so a one-argument
+  `query<Row>()` fails forge's gate too.
+- **Every synced `cc-*` agent lists `LSP` in its `tools:`.** Each one's text already told it to trace symbols
+  through the language server, which its allowlist did not grant. A test holds the agent corpus to it.
 
 ---
 

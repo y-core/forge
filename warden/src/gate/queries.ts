@@ -151,7 +151,7 @@ export function checkGoldenQueries(config: GoldenCheckConfig, mode: GateMode = "
 
     if (config.coverage !== false) {
       const canon = db
-        .query<{ corpus: string; tree: string | null; path: string }>(
+        .query<{ corpus: string; tree: string | null; path: string }, []>(
           "SELECT corpus, tree, path FROM source WHERE corpus = 'canon' ORDER BY tree, path",
         )
         .all();
