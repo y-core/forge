@@ -258,21 +258,41 @@ return serveObject(r2Backend(c.env.ASSETS), c.request, key, { contentDisposition
 A signed URL delegates GET access to one object for a fixed window without exposing the bucket.
 
 ```ts
-import { createSignedObjectUrl, importSigningKey, r2Backend, serveObject, verifySignedObjectUrl } from "@y-core/forge/storage/r2";
+import { createSignedObjectUrl, importSignedUrlKeyRing, r2Backend, serveObject, verifySignedObjectUrl } from "@y-core/forge/storage/r2";
 
-const signingKey = await importSigningKey(c.env.SIGNING_SECRET); // hex, from a secret binding — never a literal
+const ring = await importSignedUrlKeyRing([c.env.SIGNED_URL_KEY]); // hex, from a secret binding — never a literal
 
-const url = await createSignedObjectUrl(signingKey, c.request.url, "avatars/42.png", { expiresInSeconds: 600 });
+const url = await createSignedObjectUrl(ring, c.request.url, "avatars/42.png", { expiresInSeconds: 600 });
 
 // On the receiving route:
-const verdict = await verifySignedObjectUrl(signingKey, c.request.url);
+const verdict = await verifySignedObjectUrl(ring, c.request.url);
 if (!verdict.ok) return new Response("Forbidden", { status: 403 }); // log verdict.error; do not echo it
 return serveObject(r2Backend(c.env.ASSETS), c.request, verdict.data);
 ```
 
 `expiresInSeconds` defaults to `3600` and must be a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME` (seven days), or signing throws.
-What the HMAC covers, the order the checks run in, and why the refusal reason belongs in your logs rather
-than in the response are [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
+A refused link answers `"invalid-format"`, `"expired"`, `"unknown-key"` or `"invalid-signature"`. What the HMAC covers, the order the checks run
+in, and why the refusal reason belongs in your logs rather than in the response are [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
+
+**Give signed URLs a secret of their own.** Reusing the CSRF secret ties the two rotations together, and a leak of one retires both.
+
+---
+
+## Rotating the signed-URL secret
+
+Prepend the new secret and deploy:
+
+```ts
+const ring = await importSignedUrlKeyRing([c.env.SIGNED_URL_KEY_NEW, c.env.SIGNED_URL_KEY_OLD]);
+```
+
+Links minted after the deploy carry the new secret's key id; links already handed out keep verifying against the old one.
+
+**Remove the old secret only once `MAX_SIGNED_URL_LIFETIME` (seven days) has passed since the deploy.** No link outlives that, so nothing still
+valid depends on the old secret. Remove it earlier and every unexpired link it signed answers `"unknown-key"`.
+
+**A leaked secret is removed at once, not after the wait.** Every link it signed dies with it — that is the point, and the price. Re-issue the
+links you still need under the new secret. The retention rule is [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
 
 ---
 

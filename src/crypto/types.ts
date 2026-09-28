@@ -31,6 +31,12 @@ export interface TotpOptions extends HotpOptions {
   epoch?: number;
 }
 
+/** Keys valid for HMAC verification, and the id of the one that signs. @public */
+export interface HmacKeyRing {
+  activeKeyId: string;
+  keys: Record<string, CryptoKey>;
+}
+
 /** The byte encodings a UUID may arrive in — `readonly number[]` is what D1 returns for a `BLOB` column. @public */
 export type UuidByteInput = readonly number[] | Uint8Array | ArrayBuffer;
 

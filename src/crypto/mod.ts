@@ -4,12 +4,14 @@ export { base64DecodeOrNull, base64Encode, base64urlDecode, base64urlDecodeOrNul
 export { bytesToHex, concatBytes, hexToBytes, randomBytes, TEXT_DECODER, TEXT_ENCODER, utf8Decode, utf8Encode } from "./bytes";
 export type { CborDecoded, CborValue } from "./types";
 export { cborDecodeFirst } from "./cbor";
+export { crc32 } from "./crc32";
 export type { CoseAlgorithm, CosePublicKey } from "./types";
 export { decodeCoseKey, decodeCosePublicKey } from "./cose";
 export { ECDSA_P256_COORDINATE_BYTES, unwrapEcdsaSignature } from "./der";
 export { sha256 } from "./digest";
 export { hkdfExpand, hkdfExtract } from "./hkdf";
-export { hmacSign, hmacVerify, importHmacKey, importHmacKeyFromHex } from "./hmac";
+export type { HmacKeyRing } from "./types";
+export { hmacSign, hmacVerify, importHmacKey, importHmacKeyFromHex, importHmacKeyRing, lookupHmacKey } from "./hmac";
 export type { HotpHash, HotpOptions, TotpOptions } from "./types";
 export { hotpCode, totpCode, totpCounter } from "./hotp";
 export { timingSafeEqual, timingSafeEqualBytes } from "./timing";

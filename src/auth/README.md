@@ -279,6 +279,85 @@ session directly.
 
 ---
 
+## Issuing API tokens and guarding an API with them
+
+A personal access token lets a script or another service call your API as one of your users. Build the service per request, over the store's D1
+adapter:
+
+```ts
+import { createAccessTokenService, createAccessTokenStore } from "@y-core/forge/auth";
+
+const tokensFor = (c: AppContext<Env>) =>
+  createAccessTokenService({
+    store: createAccessTokenStore(createD1Client(c.env.DB)),
+    prefix: "nt_",
+    scopes: ["notes:read", "notes:write"],
+  });
+```
+
+The scope list is typed from the literal you pass, so a scope you never configured is a compile error wherever the service or its guard is
+asked for one. `prefix` is what a secret scanner keys on: a lowercase letter, then letters or digits, then one underscore. **Every token
+expires**: `maxLifetimeMs` defaults to `AUTH_ACCESS_TOKEN_MAX_LIFETIME_MS`, and passing `null` is the only way to admit a token that never does.
+
+**Show the token once.** `issue` answers the plaintext and the stored record together, and only the SHA-256 of the plaintext is kept, so a
+token the user did not copy is gone and they issue another:
+
+```ts
+const now = Date.now();
+const issued = await tokensFor(c).issue({ userId, label: "Laptop CLI", scopes: ["notes:read"], expiresAt: now + 90 * 86_400_000 }, now);
+// issued.data.token is the plaintext — render it on this response and never again.
+```
+
+A refusal is an `AccessTokenIssueReason` — no scope, a scope outside the list, a missing expiry, or one outside `(now, now + maxLifetimeMs]` —
+or the store's `AuthStoreError`.
+
+`list(userId)` answers the user's tokens for a settings page, and `revoke(id, userId, at)` carries the owner, so a token id belonging to somebody
+else revokes nothing.
+
+**Guard the API routes with `requireBearer`, and read the token off `accessTokenCtx`:**
+
+```ts
+import { accessTokenCtx, requireBearer } from "@y-core/forge/auth/web";
+
+app.use("/api/*", requireBearer({ tokens: tokensFor, scopes: ["notes:read"] }));
+// …in a handler:
+const { userId, id } = accessTokenCtx.get(c);
+```
+
+It reads the `Authorization` header and nothing else — a session cookie or an `?access_token=` query parameter is not a credential here — and
+every listed scope must be held. The refusals follow RFC 6750:
+
+| Request | Status | `WWW-Authenticate` |
+| --- | --- | --- |
+| No `Bearer` credentials | 401 | `Bearer` |
+| A token that is malformed, fails its checksum, is unknown, revoked or expired | 401 | `Bearer error="invalid_token"` |
+| A valid token missing a scope | 403 | `Bearer error="insufficient_scope", scope="…"` |
+| The store cannot be read | 503 | none |
+
+**Rate-limit by token, after the guard.** Mount `rateLimit` from `@y-core/forge/security` behind `requireBearer` with `app.use`, keyed on the
+token it admitted:
+
+```ts
+app.use("/api/*", requireBearer({ tokens: tokensFor, scopes: ["notes:read"] }));
+app.use("/api/*", rateLimit<Env>({ limiter: (c) => c.env.API_LIMITER, key: (c) => accessTokenCtx.get(c).id }));
+```
+
+A guard group's own `rateLimit` cannot do this: it runs before the group's guards, when no token has been admitted yet.
+
+**Restrict a token to some of your own records in your own table**, keyed by the token's `id` — a notebook allowlist, say. Forge's table holds
+only what verifying the token needs.
+
+**A token is `{prefix}{secret}{checksum}`.** The secret is 24 random bytes in base32, and the checksum is the base32 of the big-endian CRC-32 of
+everything before it. A scanner matches the prefix followed by 46 characters of the RFC 4648 base32 alphabet, and confirms a hit offline by
+recomputing the CRC over all but the last seven characters, without ever calling you.
+
+**There is no timing-safe compare, and none is missing.** The lookup key is the SHA-256 of a 192-bit secret, so timing the index tells an attacker
+nothing about any token they do not already hold.
+
+**A deactivated owner's tokens stop verifying at once** and verify again on reactivation; deleting the user removes their tokens in the same batch.
+
+---
+
 ## Showing a navbar that knows who is signed in
 
 `authNav` answers what a per-request navbar needs — the filter tokens this viewer holds, and a sign-out control carrying a token bound
@@ -390,6 +469,8 @@ purpose of its own, which is a change to this namespace rather than a call you c
 
 `authNonceKey(ring, token)` derives the key to spend a token against a `NonceStore`.
 
+A value you store rather than send belongs in [`@y-core/forge/keyring`][keyring-readme], not in a token with a long TTL.
+
 ---
 
 ## Applying the auth schema to your database
@@ -411,6 +492,9 @@ forge db migrate
 
 The forward-only policy, what the snapshot records, and the undo for each target are [`DATABASE_MANAGEMENT.md`][dm]'s. A change here that needs a
 backfill is announced in forge's `CHANGELOG.md`, and you write it as `forge db migrate compose --custom <name>`.
+
+**An upgrade that adds a table reaches your database only through a migration you compose** — `auth_access_tokens` is one: run
+`forge db migrate compose` after upgrading, before the first token is issued.
 
 For a database that will never be migrated, the desired state is also the one-shot build:
 
@@ -523,6 +607,8 @@ contract — and know that **the methods below carry rules the caller does none 
 | `IdentityLinkStore.unlink(id, userId)` | Carry the owner in the `WHERE`, so a link id belonging to somebody else unlinks nothing |
 | `OtpStateStore.discard(userId, token)` | Delete **that named code** and no other, so an undelivered issue returns its cooldown without wiping a racing issue that did send |
 | `OtpStateStore.issue` / `countAttempt` | Decide in one conditional statement. A read then a write hands every parallel request a free extra guess |
+| `AccessTokenStore.recordUse(id, at, intervalMs)` | Decide the throttle in the one conditional statement: stamp `last_used_at` only where none landed after `at - intervalMs`, and report whether it did |
+| `AccessTokenStore.findByHash(tokenHash)` | Answer `null` for a token whose owner is deactivated, so a deactivated account's tokens stop verifying without being revoked |
 
 Contract-wide rules hold for every method you write:
 
@@ -575,8 +661,8 @@ wrong layer.
 ## Security
 
 **Never render a reason a flow or a store hands back.** `redactSigninReason` is required at the rendering boundary, and `AuthEmailChangeReason`,
-`AuthFactorReason`, `AuthTokenReason` and `AuthStoreError` have no equivalent — they are for logs and branching only ([`FORGE_ERRORS.md`][eh-1c]
-§1c).
+`AuthFactorReason`, `AuthTokenReason`, `AccessTokenReason` and `AuthStoreError` have no equivalent — they are for logs and branching only
+([`FORGE_ERRORS.md`][eh-1c] §1c).
 
 **Session lifetime is absolute, and two bounds refuse one.** A session is refused once it is older than `AUTH_SESSION_MAX_MS` measured from when
 it was established and never refreshed, and again when it was established at or before the account's revocation barrier — which is how removing a
@@ -652,6 +738,7 @@ go beyond `isAdmin`.
 [eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../form/README.md
+[keyring-readme]: ../keyring/README.md
 [namespaces-5h]: ../../docs/NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [session-readme]: ../session/README.md

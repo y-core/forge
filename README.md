@@ -304,6 +304,7 @@ through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and ow
 | `@y-core/forge/storage/db` | D1 through `sql` fragments, answering with a `Result` | [src/storage/README.md][storage-readme] |
 | `@y-core/forge/storage/kv` | Workers KV through a codec you choose | [src/storage/README.md][storage-readme] |
 | `@y-core/forge/storage/r2` | R2 through a swappable object-storage backend | [src/storage/README.md][storage-readme] |
+| `@y-core/forge/keyring` | Sealing a stored secret under your own key ring, with rotation | [src/keyring/README.md][keyring-readme] |
 | `@y-core/forge/testing` | Fixtures and fakes — context, storage, CSRF, SSR render | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/workerd` | `wrangler dev` fixture server (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
 | `@y-core/forge/testing/snapshot` | Text against a committed fixture, as a line diff (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
@@ -367,6 +368,7 @@ MIT — see [LICENSE](LICENSE). This covers everything the package ships, includ
 [html-readme]: src/html/README.md
 [http-readme]: src/http/README.md
 [jsx-readme]: src/jsx/README.md
+[keyring-readme]: src/keyring/README.md
 [lint-readme]: src/tooling/lint/README.md
 [logging-readme]: src/logging/README.md
 [namespaces]: docs/NAMESPACES.md

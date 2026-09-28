@@ -1,13 +1,14 @@
 ---
 title: Transport-Layer Hardening
-description: "Hardening a Forge app before any handler runs: CSP with per-request nonces, cross-origin guards, CORS, rate limiting, and request identity."
+description: "Transport-layer hardening for a Forge app: CSP with per-request nonces, cross-origin guards, CORS, rate limiting, request identity, and webhook signing and verification."
 audience: consumer
 ---
 
 # `@y-core/forge/security`
 
-Everything about an HTTP request that is decided before your handler sees it: which scripts the browser may run, which origins may talk to you, how
-often one client may knock, and what to call this request in the logs.
+Hardening at the HTTP layer: which scripts the browser may run, which origins may talk to you, how often one client may knock, and what to call
+this request in the logs — all decided before your handler sees the request. Webhooks are the exception, because they are signed on the way out and
+verified inside the handler that receives them.
 
 This namespace works on the raw HTTP layer only; it knows nothing about users, sessions or application state ([`BOUNDARIES.md`][boundaries-2] §2).
 
@@ -147,6 +148,69 @@ nonce instead: `scriptSrc: ["'self'", UNSAFE_INLINE]`.
 That bites through a merge too. `scriptSrc` defaults to `["'self'", NONCE]` and `mergeSecurityHeaders` backfills that default, so merging
 `{ scriptSrc: [UNSAFE_INLINE] }` onto a base that never mentioned `scriptSrc` yields `'self'`, the nonce and `UNSAFE_INLINE` together — and throws.
 Name the whole directive in the merge, nonce omitted, when that is the policy you want.
+
+---
+
+## Rolling out a stricter policy in report-only first
+
+A tightened policy that breaks a page breaks it for every visitor at once. Ship the candidate as `Content-Security-Policy-Report-Only` first: the
+browser enforces nothing from it and reports every load it would have blocked. Trusted Types is the usual candidate:
+
+```ts
+app.use(
+  "*",
+  createSecurityHeaders({
+    scriptSrc: ["'self'", NONCE],
+    reporting: { endpoint: "https://example.com/csp-reports" },
+    reportOnly: { trustedTypes: { policies: ["app"] } },
+  }),
+);
+// reporting-endpoints: csp-endpoint="https://example.com/csp-reports"
+// content-security-policy-report-only: … require-trusted-types-for 'script'; trusted-types app; report-uri …; report-to csp-endpoint
+```
+
+**`reportOnly` states only what differs from the enforced policy.** Each field you put in it replaces the enforced one for the report-only policy;
+each field you leave out is inherited. So the candidate above reports under the same `script-src` the page already enforces, plus Trusted Types.
+Stating `scriptSrc` in `reportOnly` replaces the list outright, so name `'self'` and `NONCE` again there as you would at the top level. Both
+policies share the request's nonce.
+
+**Read the reports at `endpoint`.** It must be an absolute `https` URL, and it throws at construction otherwise. The browser posts a violation
+there by one of two routes: `report-to` names the `Reporting-Endpoints` group (`csp-endpoint` unless you set `group`), and a `report-uri` fallback
+carrying the same URL covers browsers that do not support `report-to` yet. Both go on the enforced policy too, so a real block is reported as well.
+
+**Promote the candidate once the reports go quiet.** Move `trustedTypes` to the top level and delete `reportOnly`:
+
+```ts
+createSecurityHeaders({
+  scriptSrc: ["'self'", NONCE],
+  reporting: { endpoint: "https://example.com/csp-reports" },
+  trustedTypes: { policies: ["app"] },
+});
+```
+
+Keep `reporting` after the promotion, so a regression still reaches you. `trustedTypes: { policies: [] }` allows no policy at all, and
+`require: false` drops `require-trusted-types-for` while keeping the list of allowed names.
+
+---
+
+## Loosening the policy on one route
+
+Some routes need a source the rest of the app must not have. A Web Worker script that compiles WebAssembly needs `WASM_UNSAFE_EVAL`, and a page
+should not carry it. `createRouteSecurityHeaders` widens the CSP on one route only:
+
+```ts
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE] }));
+app.use("/workers/*", createRouteSecurityHeaders({ scriptSrc: [WASM_UNSAFE_EVAL] }));
+// on /workers/* only: script-src 'self' 'nonce-<base64url>' 'wasm-unsafe-eval'
+```
+
+The route's options are laid over the app's by the same rules as `mergeSecurityHeaders`: each source list is added to the app's, not substituted
+for it, and the route shares the request's nonce. It takes CSP options only, so `trustedTypes`, `reporting` and `reportOnly` are welcome but `hsts`
+and the cross-origin policies are not.
+
+**It must run after `createSecurityHeaders` on the same request.** Otherwise it throws, because it has no app policy to widen. A combination the
+validator refuses, such as `UNSAFE_INLINE` merged onto the default nonce, throws on the route's first request rather than at startup, so request
+the route once in development after you add it.
 
 ---
 
@@ -352,6 +416,61 @@ what `extraOrigins` may hold, and how the set reaches the guards, are [`SECURITY
 
 ---
 
+## Signing and verifying webhooks
+
+Both sides follow [Standard Webhooks](https://www.standardwebhooks.com): three headers, an HMAC-SHA256 over `id.timestamp.body`, and
+`whsec_`-prefixed secrets of at least 32 bytes. Store each secret in a Worker secret, never in source.
+
+### Sending
+
+```ts
+import { signWebhook } from "@y-core/forge/security";
+
+const body = JSON.stringify(event);
+const headers = await signWebhook({ id: event.id, body, secrets: [env.WEBHOOK_SECRET] });
+await fetch(endpoint, { method: "POST", body, headers: { ...headers, "content-type": "application/json" } });
+```
+
+**Reuse the `id` on every retry of the same message.** It is how a receiver tells a retry from a new event. An id containing `.` throws, because it
+would make the signed content ambiguous.
+
+### Receiving
+
+Verification runs inside the handler rather than as middleware, and hands back the exact bytes that were signed. Parse only after it succeeds:
+
+```ts
+import { verifyWebhook } from "@y-core/forge/security";
+
+const verified = await verifyWebhook(c.request, { secrets: [env.WEBHOOK_SECRET] });
+if (!verified.ok) return new Response("Unauthorized", { status: 401 });
+const event: unknown = JSON.parse(new TextDecoder().decode(verified.data.body));
+```
+
+**`verifyWebhook` consumes the request body.** `verified.data.body` is the only copy. Validate the parsed value before trusting its shape — a valid
+signature proves who sent it, not what it contains. Deduplicate on `verified.data.id`.
+
+The reason for a refusal is in `.error` — a missing header, a malformed timestamp or signature, a timestamp outside the tolerance in either
+direction, an oversized body, or a signature that matches no secret. Log it; never send it back.
+
+The defaults are a five-minute skew window (`toleranceSeconds: 300`) and a 1 MiB body (`maxBytes: 1_048_576`). An oversized body is refused from
+its `Content-Length` before any byte is read, and metered as it streams in case that header is absent or wrong.
+
+### Rotating a secret
+
+Pass every secret that is currently valid. The sender emits one signature per secret, and the receiver accepts a match against any of them:
+
+```ts
+await signWebhook({ id, body, secrets: [env.WEBHOOK_SECRET_NEXT, env.WEBHOOK_SECRET] });
+await verifyWebhook(c.request, { secrets: [env.WEBHOOK_SECRET_NEXT, env.WEBHOOK_SECRET] });
+```
+
+Add the new secret on both sides, move the sender to it, then remove the old one.
+
+**A malformed secret, an empty `secrets` list or a zero `maxBytes` throws immediately**, before any request is read — a configuration mistake is a
+deployment defect, not a refused webhook.
+
+---
+
 ## Security
 
 The guards above are building blocks rather than a posture. Pair them to the threat.
@@ -389,6 +508,11 @@ plain inputs and return plain results. They reach a route only through the facto
 **A malformed CSP source throws rather than shipping.** Every string source must be a single CSP source token — non-empty, and free of whitespace,
 `;`, `,` and control characters — because a malformed entry silently breaks the whole policy instead of one directive.
 
+**A handler's own `Content-Security-Policy` can tighten the app's policy, never loosen it.** A CSP your handler sets is sent alongside the app's,
+not in place of it, and the browser enforces both. That is how `serveObject`'s `sandbox` survives. To loosen the policy on a route, use
+`createRouteSecurityHeaders`, never a header in the handler. A handler's `Content-Security-Policy-Report-Only` is different: the app's replaces it
+when the app sends one. Why the two headers behave differently is [`SECURITY_HARDENING.md`][sh-2f] §2f's.
+
 ---
 
 ## See also
@@ -396,8 +520,8 @@ plain inputs and return plain results. They reach a route only through the facto
 - [`src/form/README.md`][form-readme] — CSRF tokens, and form parsing with byte caps
 - [`src/session/README.md`][session-readme] — session cookies and the middleware that persists them
 - [`src/http/README.md`][http-readme] — `safeUrl` sanitization, response builders, typed headers
-- [`docs/SECURITY_HARDENING.md`][sh] — the header set and nonce contract (§2), origin-guard tiering (§3e), `allowedOrigins` in dev (§3f),
-  rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)
+- [`docs/SECURITY_HARDENING.md`][sh] — the header set and nonce contract (§2), route policies and a handler's own CSP (§2f), origin-guard
+  tiering (§3e), `allowedOrigins` in dev (§3f), rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)
 - [`WORKERS_PLATFORM.md`][wp-4e] §4e — the https-everywhere dev transport posture the origin guards depend on
 
 [assets-readme]: ../tooling/assets/README.md
@@ -415,6 +539,7 @@ plain inputs and return plain results. They reach a route only through the facto
 [sh-1]: ../../docs/SECURITY_HARDENING.md#1-what-is-not-in-security
 [sh-2c]: ../../docs/SECURITY_HARDENING.md#2c-mergesecurityheaders-for-devprod-split
 [sh-2e]: ../../docs/SECURITY_HARDENING.md#2e-default-header-set
+[sh-2f]: ../../docs/SECURITY_HARDENING.md#2f-createroutesecurityheaders-and-the-handler-set-csp
 [sh-3a]: ../../docs/SECURITY_HARDENING.md#3a-cors-middleware-for-api-routes
 [sh-3e]: ../../docs/SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
 [sh-3f]: ../../docs/SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev

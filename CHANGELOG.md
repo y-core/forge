@@ -18,7 +18,62 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **Replace `importSigningKey(hex)` with `importSignedUrlKeyRing([hex])`** and pass the ring to `createSignedObjectUrl` and
+   `verifySignedObjectUrl`. Signed URLs minted before the upgrade carry no key id and answer `"invalid-format"`, so links
+   already handed out stop working on deploy — at most seven days' worth. Re-issue any you still need.
+2. **Rename `CsrfKeyRing` to `HmacKeyRing`** in `@y-core/forge/form` imports. The shape is unchanged.
+3. **Compose a migration for the new `auth_access_tokens` table** with `forge db migrate compose` and apply it before you
+   deploy, even if you issue no access tokens: deleting a user now also deletes that user's tokens, and fails on a
+   database without the table.
+
+### Breaking Changes
+
+- **`importSigningKey` is removed from `@y-core/forge/storage/r2`**; `importSignedUrlKeyRing` takes secrets newest first.
+- **`createSignedObjectUrl` and `verifySignedObjectUrl` take an `HmacKeyRing`**, and a signed URL carries a `kid` the HMAC
+  covers. `SignedUrlFailure` gains `"unknown-key"`.
+- **`CsrfKeyRing` is replaced by `HmacKeyRing`**, exported from `@y-core/forge/form` and `@y-core/forge/storage/r2`.
+
+### Added
+
+- **`createSecurityHeaders` takes `trustedTypes`, `reporting` and `reportOnly`.** `trustedTypes` emits
+  `require-trusted-types-for 'script'` and a `trusted-types` list of policy names. `reporting` emits
+  `Reporting-Endpoints` and adds `report-to` with a `report-uri` fallback to the CSP; its endpoint must be an absolute
+  https URL. `reportOnly` emits `Content-Security-Policy-Report-Only` under the same nonce, replacing each directive
+  it states and inheriting the rest. `mergeSecurityHeaders` merges all three.
+- **`createRouteSecurityHeaders` widens the CSP on one route**, such as a Web Worker script that needs
+  `WASM_UNSAFE_EVAL`, and throws when `createSecurityHeaders` has not run earlier on the request.
+- **The `CspDirectiveOptions`, `CspOptions`, `CspReportingOptions` and `TrustedTypesOptions` types** are exported
+  from `@y-core/forge/security`.
+- **Signed object URLs rotate.** The first secret in the ring signs, and every secret verifies until it is removed; keep a
+  retired secret for `MAX_SIGNED_URL_LIFETIME`.
+- **`@y-core/forge/keyring` seals a secret your app stores under a key ring of its own.** `importKeyRing`,
+  `sealAtRest` and `openAtRest` bind each frame to an app-named purpose and to the row it is stored in, and
+  `openAtRest` answers the key id so a row can be re-sealed after a rotation. `atRestKeyId` reads that id without a
+  ring, for counting what an old secret still holds. TOTP secrets `auth` already stored keep opening unchanged.
+- **Personal access tokens in `auth`.** `createAccessTokenService` issues a token once, stores only its SHA-256,
+  and verifies, lists and revokes it; `createAccessTokenStore` is its D1 adapter. `requireBearer` in
+  `@y-core/forge/auth/web` admits a request by an `Authorization: Bearer` token, refusing per RFC 6750, and puts
+  the token's record on `accessTokenCtx`. The tokens live in a new `auth_access_tokens` table in
+  `src/auth/schema.sql` (see Upgrading).
+- **`signWebhook` and `verifyWebhook` in `@y-core/forge/security` follow Standard Webhooks.** The signer emits one
+  `v1` signature per active `whsec_` secret, and the verifier checks the timestamp window, caps the body read and
+  answers the exact bytes that were signed, so an app parses only after the check.
+
+### Changed
+
+- **A response's own `Content-Security-Policy` is combined with the app's instead of overwritten by it**, whether a
+  handler set it or a proxied upstream response carried it. The browser enforces both, so it can only tighten the
+  app's policy. Use `createRouteSecurityHeaders` to loosen a route.
+
+### Fixed
+
+- **`serveObject`'s `sandbox` for an active content type survives inside a Forge app and under
+  `applySecurityHeaders`.** The app's CSP used to replace it, so an uploaded HTML or SVG object served `inline`
+  rendered unsandboxed on the app's origin.
+- **The passkey client no longer posts WebAuthn client extension results**, so PRF or `largeBlob` output can never
+  reach the server.
 
 ---
 

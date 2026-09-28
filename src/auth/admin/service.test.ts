@@ -66,7 +66,7 @@ function fakeAdminUsers(seed: readonly AuthUser[]) {
       const row = rows[index];
       if (index < 0 || !row) return Promise.resolve(ok("not-found" as const));
       if (!(row.isAdmin === false || row.deactivatedAt !== null || activeAdmins() > 1)) return Promise.resolve(ok("last-admin-delete" as const));
-      batches.push(["auth_credentials", "auth_factors", "auth_identity_links", "auth_users"]);
+      batches.push(["auth_credentials", "auth_factors", "auth_identity_links", "auth_access_tokens", "auth_users"]);
       rows.splice(index, 1);
       return Promise.resolve(ok("changed" as const));
     },
@@ -145,7 +145,7 @@ describe("createAdminUserService — named writes", () => {
     const bob = userRow({ emailKey: "bob@example.com" });
     const built = service([alice, bob]);
     expect(await built.admin.remove(bob.id)).toEqual({ ok: true, data: "changed" });
-    expect(built.users.batches).toEqual([["auth_credentials", "auth_factors", "auth_identity_links", "auth_users"]]);
+    expect(built.users.batches).toEqual([["auth_credentials", "auth_factors", "auth_identity_links", "auth_access_tokens", "auth_users"]]);
   });
 });
 

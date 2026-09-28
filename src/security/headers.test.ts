@@ -3,9 +3,9 @@ import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
 import { setPendingHeader } from "../context/pending-headers";
 import { mapHandler } from "../testing/route";
-import { applySecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHeaders } from "./headers";
-import { NONCE } from "./nonce";
-import type { CspSourceValue, SecurityHeadersOptions } from "./types";
+import { applySecurityHeaders, createRouteSecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHeaders } from "./headers";
+import { NONCE, TURNSTILE_CSP } from "./nonce";
+import type { CspOptions, CspSourceValue, SecurityHeadersOptions } from "./types";
 import { UNSAFE_EVAL, UNSAFE_HASHES, UNSAFE_INLINE, WASM_UNSAFE_EVAL } from "./unsafe";
 
 const tokenMessage = (name: string) =>
@@ -26,6 +26,16 @@ const UNSAFE_CASES: readonly { token: string; exportName: string; placeholder: C
 
 const optOutSources = (placeholder: CspSourceValue): CspSourceValue[] =>
   placeholder === UNSAFE_INLINE ? ["'self'", placeholder] : ["'self'", NONCE, placeholder];
+
+const D = applySecurityHeaders(new Response("ok"), { nonce: "abc" }).headers.get("content-security-policy") ?? "";
+
+const D_RO = D.replace("; upgrade-insecure-requests", "");
+
+const R = "https://r.example/csp";
+
+const hardenedWith = (options: SecurityHeadersOptions) => applySecurityHeaders(new Response("ok"), { ...options, nonce: "abc" }).headers;
+
+const nonceIn = (csp: string | null) => /'nonce-([^']+)'/.exec(csp ?? "")?.[1] ?? "";
 
 async function headersFor(middleware: ReturnType<typeof createSecurityHeaders>) {
   const app = new Forge();
@@ -436,6 +446,12 @@ describe("applySecurityHeaders", () => {
     );
   });
 
+  it("appends a response's own CSP after forge's instead of overwriting it", () => {
+    const own = new Response("ok", { headers: { "content-security-policy": "sandbox" } });
+    const hardened = applySecurityHeaders(own, { nonce: "abc" });
+    expect(hardened.headers.get("content-security-policy")).toBe(`${D}, sandbox`);
+  });
+
   it("preserves status, statusText, body, and pre-existing headers", async () => {
     const original = new Response("teapot body", { status: 418, statusText: "I'm a teapot", headers: { "x-custom": "kept" } });
     const hardened = applySecurityHeaders(original, { nonce: "n" });
@@ -597,6 +613,19 @@ describe("createSecurityHeaders — pending-header precedence", () => {
     expect(res.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
   });
 
+  it("combines a CSP the route handler set with the app's, so the handler's can only tighten it", async () => {
+    const app = new Forge();
+    app.use("*", createSecurityHeaders());
+    mapHandler(app, "GET", "/", () => new Response("ok", { headers: { "content-security-policy": "sandbox" } }));
+
+    const res = await app.request("/");
+
+    const policies = (res.headers.get("content-security-policy") ?? "").split(", ");
+    expect(policies).toHaveLength(2);
+    expect(policies[0]).toStartWith("default-src 'self'");
+    expect(policies[1]).toBe("sandbox");
+  });
+
   it("reaches the error page when a guard registered deeper throws", async () => {
     const app = new Forge();
     app.use("*", createSecurityHeaders());
@@ -646,5 +675,292 @@ describe("createSecurityHeaders — precomputed headers", () => {
   it("renders a CSP containing no NUL", async () => {
     const headers = await headersFor(createSecurityHeaders());
     expect(headers.get("content-security-policy")?.includes("\u0000")).toBe(false);
+  });
+});
+
+describe("createSecurityHeaders — Trusted Types", () => {
+  it("emits require-trusted-types-for and the policy names", () => {
+    expect(hardenedWith({ trustedTypes: { policies: ["forge", "dompurify"] } }).get("content-security-policy")).toBe(
+      `${D}; require-trusted-types-for 'script'; trusted-types forge dompurify`,
+    );
+  });
+
+  it("appends 'allow-duplicates' when asked", () => {
+    expect(hardenedWith({ trustedTypes: { policies: ["forge"], allowDuplicates: true } }).get("content-security-policy")).toBe(
+      `${D}; require-trusted-types-for 'script'; trusted-types forge 'allow-duplicates'`,
+    );
+  });
+
+  it("omits require-trusted-types-for when require is false", () => {
+    expect(hardenedWith({ trustedTypes: { policies: ["forge"], require: false } }).get("content-security-policy")).toBe(
+      `${D}; trusted-types forge`,
+    );
+  });
+
+  it("renders an empty policy list as 'none'", () => {
+    expect(hardenedWith({ trustedTypes: { policies: [] } }).get("content-security-policy")).toBe(
+      `${D}; require-trusted-types-for 'script'; trusted-types 'none'`,
+    );
+  });
+
+  it("reaches the response through the middleware", async () => {
+    const headers = await headersFor(createSecurityHeaders({ trustedTypes: { policies: ["forge"] } }));
+    expect(headers.get("content-security-policy")).toEndWith("; require-trusted-types-for 'script'; trusted-types forge");
+  });
+});
+
+describe("createSecurityHeaders — Trusted Types and reporting validation", () => {
+  for (const name of ["my policy", "*", "'none'", "a;script-src"]) {
+    it(`rejects the policy name ${JSON.stringify(name)}`, () => {
+      expect(() => createSecurityHeaders({ trustedTypes: { policies: [name] } })).toThrow(
+        `Invalid Trusted Types policy name ${JSON.stringify(name)}: must be one or more of A-Z a-z 0-9 - # = _ / @ . %`,
+      );
+    });
+  }
+
+  it("accepts a policy name drawing on every permitted character class", () => {
+    expect(() => createSecurityHeaders({ trustedTypes: { policies: ["a-Z0_9#=/@.%"] } })).not.toThrow();
+  });
+
+  it("rejects allowDuplicates with no policy names", () => {
+    expect(() => createSecurityHeaders({ trustedTypes: { policies: [], allowDuplicates: true } })).toThrow(
+      "Invalid trustedTypes: allowDuplicates needs at least one policy name",
+    );
+  });
+
+  const BAD_ENDPOINTS = [
+    "http://r.example/csp",
+    "/csp",
+    "https://r.example/a,b",
+    "https://r.example/a;b",
+    'https://r.example/a"b',
+    "https://r.example/a\\b",
+    "https://r.example/a b",
+  ];
+  for (const endpoint of BAD_ENDPOINTS) {
+    it(`rejects the reporting endpoint ${JSON.stringify(endpoint)}`, () => {
+      expect(() => createSecurityHeaders({ reporting: { endpoint } })).toThrow(
+        `Invalid CSP reporting endpoint ${JSON.stringify(endpoint)}: must be an absolute https URL with no whitespace, ';', ',', '"' or '\\'`,
+      );
+    });
+  }
+
+  for (const group of ["CSP", "1csp", "csp endpoint"]) {
+    it(`rejects the reporting group ${JSON.stringify(group)}`, () => {
+      expect(() => createSecurityHeaders({ reporting: { endpoint: R, group } })).toThrow(
+        `Invalid CSP reporting group ${JSON.stringify(group)}: must be a lowercase letter followed by lowercase letters, digits, '_' or '-'`,
+      );
+    });
+  }
+
+  it("rejects an unsafe string source in reportOnly, naming the reportOnly directive", () => {
+    expect(() => createSecurityHeaders({ reportOnly: { scriptSrc: ["'self'", "'unsafe-eval'"] } })).toThrow(
+      unsafeMessage("reportOnly.scriptSrc", "'unsafe-eval'", "UNSAFE_EVAL"),
+    );
+  });
+
+  it("rejects UNSAFE_INLINE beside a nonce in reportOnly", () => {
+    expect(() => createSecurityHeaders({ reportOnly: { scriptSrc: ["'self'", NONCE, UNSAFE_INLINE] } })).toThrow(
+      inertInlineMessage("reportOnly.scriptSrc"),
+    );
+  });
+
+  it("validates Trusted Types and reporting on every applySecurityHeaders call", () => {
+    expect(() => applySecurityHeaders(new Response("ok"), { trustedTypes: { policies: ["*"] } })).toThrow("Invalid Trusted Types policy name");
+    expect(() => applySecurityHeaders(new Response("ok"), { reporting: { endpoint: "/csp" } })).toThrow("Invalid CSP reporting endpoint");
+  });
+});
+
+describe("createSecurityHeaders — reporting", () => {
+  it("appends report-uri and report-to to the CSP", () => {
+    expect(hardenedWith({ reporting: { endpoint: R } }).get("content-security-policy")).toBe(`${D}; report-uri ${R}; report-to csp-endpoint`);
+  });
+
+  it("names the endpoint in Reporting-Endpoints under the default group", () => {
+    expect(hardenedWith({ reporting: { endpoint: R } }).get("reporting-endpoints")).toBe(`csp-endpoint="${R}"`);
+  });
+
+  it("uses a stated group in both headers", () => {
+    const headers = hardenedWith({ reporting: { endpoint: R, group: "notes-csp" } });
+    expect(headers.get("content-security-policy")).toBe(`${D}; report-uri ${R}; report-to notes-csp`);
+    expect(headers.get("reporting-endpoints")).toBe(`notes-csp="${R}"`);
+  });
+
+  it("emits neither the header nor the directives without reporting", () => {
+    const headers = hardenedWith({});
+    expect(headers.get("reporting-endpoints")).toBeNull();
+    expect(headers.get("content-security-policy")).toBe(D);
+  });
+});
+
+describe("createSecurityHeaders — Report-Only", () => {
+  it("emits no Report-Only header by default", () => {
+    expect(hardenedWith({}).get("content-security-policy-report-only")).toBeNull();
+  });
+
+  it("builds the Report-Only policy from the enforced one plus the stated fields", () => {
+    const headers = hardenedWith({ reportOnly: { trustedTypes: { policies: ["forge"] } } });
+    expect(headers.get("content-security-policy-report-only")).toBe(`${D_RO}; require-trusted-types-for 'script'; trusted-types forge`);
+    expect(headers.get("content-security-policy")).toBe(D);
+  });
+
+  it("never carries upgrade-insecure-requests, which browsers ignore in Report-Only", () => {
+    const headers = hardenedWith({ reportOnly: { connectSrc: ["'self'"] } });
+    expect(headers.get("content-security-policy-report-only")).not.toContain("upgrade-insecure-requests");
+  });
+
+  it("shares the request's nonce with the enforced policy", async () => {
+    let observed = "";
+    const app = new Forge();
+    app.use("*", createSecurityHeaders({ reportOnly: { trustedTypes: { policies: ["forge"] } } }));
+    mapHandler(app, "GET", "/", (context) => {
+      observed = getNonce(context);
+      return new Response("ok");
+    });
+    const res = await app.request("/");
+    expect(observed).not.toBe("");
+    expect(nonceIn(res.headers.get("content-security-policy"))).toBe(observed);
+    expect(nonceIn(res.headers.get("content-security-policy-report-only"))).toBe(observed);
+  });
+
+  it("replaces a stated field and inherits an unstated one", () => {
+    const headers = hardenedWith({
+      scriptSrc: ["'self'", NONCE, TURNSTILE_CSP],
+      connectSrc: ["'self'", "https://api.example"],
+      reportOnly: { scriptSrc: ["'self'", NONCE] },
+    });
+    const enforced = headers.get("content-security-policy") ?? "";
+    const reportOnly = headers.get("content-security-policy-report-only") ?? "";
+    expect(enforced).toContain(`script-src 'self' 'nonce-abc' ${TURNSTILE_CSP};`);
+    expect(reportOnly).toContain("script-src 'self' 'nonce-abc';");
+    expect(reportOnly).not.toContain(TURNSTILE_CSP);
+    expect(reportOnly).toContain("connect-src 'self' https://api.example;");
+  });
+
+  it("reports the Report-Only policy's violations to the same endpoint", () => {
+    const headers = hardenedWith({ reporting: { endpoint: R }, reportOnly: { connectSrc: ["'self'"] } });
+    expect(headers.get("content-security-policy-report-only")).toBe(`${D_RO}; report-uri ${R}; report-to csp-endpoint`);
+  });
+});
+
+describe("mergeSecurityHeaders — CSP family", () => {
+  it("concatenates Trusted Types policies, letting the extra's stated flags win", () => {
+    const merged = mergeSecurityHeaders(
+      { trustedTypes: { policies: ["forge"], allowDuplicates: false, require: false } },
+      { trustedTypes: { policies: ["dompurify"], allowDuplicates: true } },
+    );
+    expect(merged.trustedTypes).toEqual({ policies: ["forge", "dompurify"], allowDuplicates: true, require: false });
+  });
+
+  it("takes the extra's Trusted Types when the base has none", () => {
+    expect(mergeSecurityHeaders({}, { trustedTypes: { policies: ["forge"] } }).trustedTypes).toEqual({ policies: ["forge"] });
+  });
+
+  it("replaces reporting", () => {
+    const merged = mergeSecurityHeaders({ reporting: { endpoint: R, group: "old" } }, { reporting: { endpoint: "https://s.example/csp" } });
+    expect(merged.reporting).toEqual({ endpoint: "https://s.example/csp" });
+  });
+
+  it("concatenates a Report-Only directive onto the base's Report-Only list", () => {
+    const merged = mergeSecurityHeaders({ reportOnly: { connectSrc: ["'self'"] } }, { reportOnly: { connectSrc: ["https://beta.example"] } });
+    expect(merged.reportOnly?.connectSrc).toEqual(["'self'", "https://beta.example"]);
+  });
+
+  it("backfills a Report-Only directive the base never stated from the merged enforced list", () => {
+    const merged = mergeSecurityHeaders(
+      { connectSrc: ["'self'"] },
+      { connectSrc: ["https://api.example"], reportOnly: { connectSrc: ["https://beta.example"] } },
+    );
+    expect(merged.reportOnly?.connectSrc).toEqual(["'self'", "https://api.example", "https://beta.example"]);
+  });
+
+  it("keeps the base's Report-Only options when the extra states none", () => {
+    const base: SecurityHeadersOptions = { reportOnly: { scriptSrc: ["'self'", NONCE] } };
+    expect(mergeSecurityHeaders(base, { connectSrc: ["https://api.example"] }).reportOnly).toEqual({ scriptSrc: ["'self'", NONCE] });
+  });
+
+  it("leaves the base's Trusted Types policies untouched", () => {
+    const base: SecurityHeadersOptions = { trustedTypes: { policies: ["forge"] } };
+    mergeSecurityHeaders(base, { trustedTypes: { policies: ["dompurify"] } });
+    expect(base.trustedTypes?.policies).toEqual(["forge"]);
+  });
+});
+
+describe("createRouteSecurityHeaders", () => {
+  async function routeHeaders(path: string, extra: CspOptions, base?: SecurityHeadersOptions) {
+    let nonce = "";
+    let error: Error | undefined;
+    const app = new Forge();
+    app.setOnError((err) => {
+      error = err;
+      return new Response("error", { status: 500 });
+    });
+    app.use("*", createSecurityHeaders(base));
+    app.use("/workers/*", createRouteSecurityHeaders(extra));
+    const handler = (context: Parameters<typeof getNonce>[0]) => {
+      nonce = getNonce(context);
+      return new Response("ok");
+    };
+    mapHandler(app, "GET", "/", handler);
+    mapHandler(app, "GET", "/workers/x.js", handler);
+    const res = await app.request(path);
+    return { res, nonce, error };
+  }
+
+  it("adds the extra sources on its route only", async () => {
+    const worker = await routeHeaders("/workers/x.js", { scriptSrc: [WASM_UNSAFE_EVAL] });
+    expect(worker.res.headers.get("content-security-policy")).toContain(`script-src 'self' 'nonce-${worker.nonce}' 'wasm-unsafe-eval';`);
+    const page = await routeHeaders("/", { scriptSrc: [WASM_UNSAFE_EVAL] });
+    expect(page.res.headers.get("content-security-policy")).not.toContain("wasm-unsafe-eval");
+  });
+
+  it("renders the request's own nonce", async () => {
+    const { res, nonce } = await routeHeaders("/workers/x.js", { scriptSrc: [WASM_UNSAFE_EVAL] });
+    expect(nonce).not.toBe("");
+    expect(nonceIn(res.headers.get("content-security-policy"))).toBe(nonce);
+  });
+
+  it("merges over the app's options rather than the defaults", async () => {
+    const { res, nonce } = await routeHeaders("/workers/x.js", { scriptSrc: [WASM_UNSAFE_EVAL] }, { scriptSrc: ["'self'", NONCE, TURNSTILE_CSP] });
+    expect(res.headers.get("content-security-policy")).toContain(`script-src 'self' 'nonce-${nonce}' ${TURNSTILE_CSP} 'wasm-unsafe-eval';`);
+  });
+
+  it("re-queues the Report-Only policy, inheriting the merged enforced list", async () => {
+    const { res, nonce } = await routeHeaders(
+      "/workers/x.js",
+      { scriptSrc: [WASM_UNSAFE_EVAL] },
+      { reportOnly: { trustedTypes: { policies: ["forge"] } } },
+    );
+    const reportOnly = res.headers.get("content-security-policy-report-only") ?? "";
+    expect(reportOnly).toContain(`script-src 'self' 'nonce-${nonce}' 'wasm-unsafe-eval';`);
+    expect(reportOnly).toEndWith("; trusted-types forge");
+  });
+
+  it("rejects an unsafe string source at construction", () => {
+    expect(() => createRouteSecurityHeaders({ scriptSrc: ["'wasm-unsafe-eval'"] })).toThrow(
+      unsafeMessage("scriptSrc", "'wasm-unsafe-eval'", "WASM_UNSAFE_EVAL"),
+    );
+  });
+
+  it("fails the request when createSecurityHeaders has not run before it", async () => {
+    let error: Error | undefined;
+    const app = new Forge();
+    app.setOnError((err) => {
+      error = err;
+      return new Response("error", { status: 500 });
+    });
+    app.use("*", createRouteSecurityHeaders({ scriptSrc: [WASM_UNSAFE_EVAL] }));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const res = await app.request("/");
+
+    expect(res.status).toBe(500);
+    expect(error?.message).toBe("createRouteSecurityHeaders: createSecurityHeaders must run earlier on this request");
+  });
+
+  it("fails the request when the merge produces an invalid policy", async () => {
+    const { res, error } = await routeHeaders("/workers/x.js", { scriptSrc: [UNSAFE_INLINE] });
+    expect(res.status).toBe(500);
+    expect(error?.message).toBe(inertInlineMessage("scriptSrc"));
   });
 });

@@ -121,7 +121,6 @@ export function encodeCredential(credential: PublicKeyCredential): Record<string
     rawId: base64urlEncode(credential.rawId),
     type: credential.type,
     authenticatorAttachment: credential.authenticatorAttachment,
-    clientExtensionResults: credential.getClientExtensionResults?.() ?? {},
     response: {
       clientDataJSON: base64urlEncode(response.clientDataJSON),
       ...(attestation.attestationObject ? { attestationObject: base64urlEncode(attestation.attestationObject) } : {}),

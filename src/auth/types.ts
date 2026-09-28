@@ -117,6 +117,27 @@ export interface AuthCredentialInput {
   readonly label?: string | null;
 }
 
+/** An issued access token as stored — the secret itself is never part of it. @public */
+export interface AuthAccessToken<Scope extends string = string> {
+  readonly id: string;
+  readonly userId: string;
+  readonly label: string;
+  readonly scopes: readonly Scope[];
+  readonly expiresAt: number | null;
+  readonly lastUsedAt: number | null;
+  readonly revokedAt: number | null;
+  readonly createdAt: number;
+}
+
+/** @public */
+export interface AuthAccessTokenInput {
+  readonly userId: string;
+  readonly tokenHash: Uint8Array<ArrayBuffer>;
+  readonly label: string;
+  readonly scopes: readonly string[];
+  readonly expiresAt: number | null;
+}
+
 /** A federated identity bound to a local user. @public */
 export interface AuthIdentityLink {
   readonly id: string;
@@ -219,6 +240,17 @@ export interface CredentialStore {
   recordUse(id: string, signCount: number, backedUp: boolean, at: number): Promise<AuthStoreResult<boolean>>;
   relabel(id: string, userId: string, label: string | null, at: number): Promise<AuthStoreResult<boolean>>;
   removeForUser(id: string, userId: string): Promise<AuthStoreResult<boolean>>;
+}
+
+/** @public */
+export interface AccessTokenStore {
+  create(input: AuthAccessTokenInput, at: number): Promise<AuthStoreResult<AuthAccessToken>>;
+  /** A token whose owner is deactivated is not found. */
+  findByHash(tokenHash: Uint8Array<ArrayBuffer>): Promise<AuthStoreResult<AuthAccessToken | null>>;
+  listByUser(userId: string): Promise<AuthStoreResult<readonly AuthAccessToken[]>>;
+  /** Stamps `last_used_at` unless one landed within `intervalMs`, deciding in the one statement. */
+  recordUse(id: string, at: number, intervalMs: number): Promise<AuthStoreResult<boolean>>;
+  revoke(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
 }
 
 /** @public */

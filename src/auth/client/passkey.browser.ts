@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { CDPSession, Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { mount, SECURE_ORIGIN } from "../../ui/client/browser.fixture";
@@ -41,10 +41,10 @@ const b64url = (bytes: number[]): string =>
     .replaceAll("=", "");
 
 /** The ceremony root beside the page's real `<Announcer />`. */
-const fixture = async (): Promise<string> => `<!doctype html><html><body>
+const fixture = async (mode = "registration"): Promise<string> => `<!doctype html><html><body>
   ${await render(Announcer({}))}
   <div data-scope="${PASSKEY_SCOPE}"
-       ${PASSKEY_MODE_ATTR}="registration"
+       ${PASSKEY_MODE_ATTR}="${mode}"
        ${PASSKEY_OPTIONS_PATH_ATTR}="${OPTIONS_PATH}"
        ${PASSKEY_VERIFY_PATH_ATTR}="${VERIFY_PATH}"
        ${PASSKEY_OPTIONS_TOKEN_ATTR}="${OPTIONS_TOKEN}"
@@ -58,18 +58,40 @@ const fixture = async (): Promise<string> => `<!doctype html><html><body>
 </body></html>`;
 
 /** Attaches a CDP virtual authenticator, so `navigator.credentials` runs a real ceremony. */
-async function addVirtualAuthenticator(page: Page): Promise<void> {
+async function addVirtualAuthenticator(page: Page): Promise<{ session: CDPSession; authenticatorId: string }> {
   const session = await page.context().newCDPSession(page);
   await session.send("WebAuthn.enable");
-  await session.send("WebAuthn.addVirtualAuthenticator", {
+  const { authenticatorId } = await session.send("WebAuthn.addVirtualAuthenticator", {
     options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
+  });
+  return { session, authenticatorId };
+}
+
+/** Enrols a discoverable credential for `RP_ID` directly, so a spec can start at the assertion. */
+async function addDiscoverableCredential(page: Page): Promise<void> {
+  const { session, authenticatorId } = await addVirtualAuthenticator(page);
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey));
+  await session.send("WebAuthn.addCredential", {
+    authenticatorId,
+    credential: {
+      credentialId: btoa("step-up-credential"),
+      isResidentCredential: true,
+      rpId: RP_ID,
+      privateKey: btoa(String.fromCharCode(...pkcs8)),
+      userHandle: btoa("user-1"),
+      signCount: 0,
+    },
   });
 }
 
 // Registered *after* `mount`: playwright matches routes newest-first, so the origin catch-all
 // `mount` installs would otherwise answer both endpoints with the empty fixture page.
 /** Serves the two ceremony endpoints, recording each request so the spec can read the tokens back. */
-async function routeCeremony(page: Page, options: { verifyStatus?: number } = {}): Promise<Array<{ url: string; token: string | null }>> {
+async function routeCeremony(
+  page: Page,
+  options: { verifyStatus?: number; mode?: "registration" | "authentication" } = {},
+): Promise<Array<{ url: string; token: string | null }>> {
   const seen: Array<{ url: string; token: string | null }> = [];
 
   await page.route(`**${OPTIONS_PATH}`, async (route) => {
@@ -77,15 +99,24 @@ async function routeCeremony(page: Page, options: { verifyStatus?: number } = {}
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        challenge: b64url([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
-        rp: { id: RP_ID, name: "Forge" },
-        user: { id: b64url([20, 21, 22, 23]), name: "a@forge.test", displayName: "A" },
-        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-        timeout: 60_000,
-        attestation: "none",
-        authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
-      }),
+      body: JSON.stringify(
+        options.mode === "authentication"
+          ? {
+              challenge: b64url([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+              rpId: RP_ID,
+              timeout: 60_000,
+              userVerification: "required",
+            }
+          : {
+              challenge: b64url([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+              rp: { id: RP_ID, name: "Forge" },
+              user: { id: b64url([20, 21, 22, 23]), name: "a@forge.test", displayName: "A" },
+              pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+              timeout: 60_000,
+              attestation: "none",
+              authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+            },
+      ),
     });
   });
 
@@ -98,8 +129,8 @@ async function routeCeremony(page: Page, options: { verifyStatus?: number } = {}
 }
 
 /** Mounts the fixture with the controller exposed and the outcome recorder installed. */
-async function mountCeremony(page: Page): Promise<void> {
-  await mount(page, await fixture(), { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
+async function mountCeremony(page: Page, mode = "registration"): Promise<void> {
+  await mount(page, await fixture(mode), { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
   await page.evaluate(
     ({ eventName, scope }) => {
       window.passkeyOutcomes = [];
@@ -132,6 +163,37 @@ test.describe("passkey controller — a real ceremony against a virtual authenti
       { url: VERIFY_PATH, token: VERIFY_TOKEN },
     ]);
   });
+
+  for (const mode of ["registration", "authentication"] as const) {
+    test(`posts no PRF or largeBlob output from the ${mode} ceremony, even when the authenticator returns some`, async ({ page }) => {
+      if (mode === "authentication") await addDiscoverableCredential(page);
+      else await addVirtualAuthenticator(page);
+      await mountCeremony(page, mode);
+      await routeCeremony(page, { mode });
+      const posted: string[] = [];
+      await page.route(`**${VERIFY_PATH}`, async (route) => {
+        posted.push(route.request().postData() ?? "");
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+      });
+      const secret = Array.from({ length: 32 }, () => 0xab);
+      await page.evaluate((bytes) => {
+        const output = new Uint8Array(bytes).buffer;
+        PublicKeyCredential.prototype.getClientExtensionResults = () =>
+          ({ prf: { enabled: true, results: { first: output } }, largeBlob: { blob: output } }) as AuthenticationExtensionsClientOutputs;
+      }, secret);
+
+      await page.click(`[data-ref='${PASSKEY.trigger}']`);
+
+      await page.waitForURL("**/account/passkeys");
+      expect(posted).toHaveLength(1);
+      const body = posted[0] ?? "";
+      expect(body).not.toContain("prf");
+      expect(body).not.toContain("largeBlob");
+      expect(body).not.toContain("clientExtensionResults");
+      expect(body).not.toContain(b64url(secret).slice(0, 16));
+      expect(JSON.parse(body).credential.response).toHaveProperty(mode === "authentication" ? "signature" : "attestationObject");
+    });
+  }
 
   test("reports a refused verification as its own outcome and does not navigate", async ({ page }) => {
     await addVirtualAuthenticator(page);

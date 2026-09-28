@@ -1,5 +1,6 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
+import type { HmacKeyRing } from "../crypto/mod";
 import type { DevAllowance } from "../dev/types";
 import type { GuardResult } from "../result/types";
 
@@ -70,20 +71,14 @@ export type CsrfResult = GuardResult<
   "expired" | "future-timestamp" | "invalid-format" | "invalid-signature" | "missing-token" | "path-mismatch" | "subject-mismatch" | "unknown-key"
 >;
 
-/** A key ring for CSRF secret rotation — one active signing key plus all keys valid for verification. @public */
-export interface CsrfKeyRing {
-  activeKeyId: string;
-  keys: Record<string, CryptoKey>;
-}
-
 /** A function that resolves a CSRF secret key (or key ring) from the request context. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies per consumer
-export type CsrfSecretResolver = (c: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+export type CsrfSecretResolver = (c: RequestContext<any, any>) => CryptoKey | HmacKeyRing | Promise<CryptoKey | HmacKeyRing>;
 
 /** Options for `csrfMinter`, which are `csrfProtection`'s minting half. @public */
 export interface CsrfMinterOptions {
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+  secret: (context: RequestContext<any, any>) => CryptoKey | HmacKeyRing | Promise<CryptoKey | HmacKeyRing>;
   /** Binds the token to a subject — pass the same resolver the `csrfProtection` guarding the path was given, or `false` where it opted out. */
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
@@ -92,7 +87,7 @@ export interface CsrfMinterOptions {
 /** Options for the `csrfProtection` middleware. @public */
 export interface CsrfProtectionOptions {
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  secret: (context: RequestContext<any, any>) => CryptoKey | CsrfKeyRing | Promise<CryptoKey | CsrfKeyRing>;
+  secret: (context: RequestContext<any, any>) => CryptoKey | HmacKeyRing | Promise<CryptoKey | HmacKeyRing>;
   tokenField?: string;
   headerName?: string;
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies

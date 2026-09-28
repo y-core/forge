@@ -1,5 +1,6 @@
 // The spec posts `src/auth/schema.sql` here rather than importing it, so what runs is what a consumer
 // composes, and a guard answered by a fake would be one whose SQL was never executed.
+import { createAccessTokenStore } from "../../../src/auth/stores/access-tokens";
 import { createAdminUserStore } from "../../../src/auth/stores/admin-users";
 import { createChallengeStore } from "../../../src/auth/stores/challenges";
 import { createCredentialStore } from "../../../src/auth/stores/credentials";
@@ -41,7 +42,16 @@ function messageOf(thrown: unknown): string {
 // `wrangler dev` persists this database, so `CREATE TABLE IF NOT EXISTS` would silently keep an
 // earlier run's columns and a new index over a new one would fail.
 async function resetSchema(db: D1Database): Promise<Response> {
-  const tables = ["auth_nonces", "auth_challenges", "auth_otp_state", "auth_identity_links", "auth_credentials", "auth_factors", "auth_users"];
+  const tables = [
+    "auth_access_tokens",
+    "auth_nonces",
+    "auth_challenges",
+    "auth_otp_state",
+    "auth_identity_links",
+    "auth_credentials",
+    "auth_factors",
+    "auth_users",
+  ];
   for (const table of tables) await db.prepare(`DROP TABLE IF EXISTS ${table}`).run();
   return json({ dropped: tables });
 }
@@ -223,6 +233,7 @@ const AT = 1_700_000_000_000;
 /** Every store the guards live in, over one client, on an empty set of tables. */
 async function storesOn(db: D1Database) {
   for (const table of [
+    "auth_access_tokens",
     "auth_nonces",
     "auth_challenges",
     "auth_otp_state",
@@ -244,6 +255,7 @@ async function storesOn(db: D1Database) {
     otp: createOtpStateStore(client),
     challenges: createChallengeStore(client),
     nonces: createNonceStore(client),
+    accessTokens: createAccessTokenStore(client),
   };
 }
 
@@ -295,7 +307,7 @@ async function probeDeactivatedAdmin(db: D1Database): Promise<Record<string, unk
 }
 
 async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, unknown>> {
-  const { users, admins, credentials, factors, links, otp } = await storesOn(db);
+  const { users, admins, credentials, factors, links, otp, accessTokens } = await storesOn(db);
   const person = async (local: string): Promise<string> =>
     must(await users.create({ email: `${local}@example.test`, emailKey: `${local}@example.test` }, AT), `create ${local}`).id;
 
@@ -311,6 +323,10 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
   const factor = must(await factors.enrol({ userId: erin, kind: "totp-app", secret: new Uint8Array([9]) }, AT), "enrol factor");
   const link = must(await links.link({ userId: erin, provider: "github", subject: "erin" }, AT), "link erin");
   must(await otp.issue(erin, { token: "c2VhbGVk", attempts: 0, issuedAt: AT, expiresAt: AT + 600_000 }, 60_000), "issue erin's code");
+  must(
+    await accessTokens.create({ userId: erin, tokenHash: new Uint8Array(32).fill(1), label: "CLI", scopes: ["notes:read"], expiresAt: null }, AT),
+    "issue erin's token",
+  );
 
   const LOCKOUT_MS = 60_000;
   const spend = async (userId: string, at: number): Promise<number | null> =>
@@ -348,6 +364,7 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
     removeFactorByStranger: must(await factors.remove(factor.id, frank), "remove factor as stranger"),
     removeUser: must(await admins.remove(erin), "delete erin"),
     leftBehind: {
+      auth_access_tokens: await countOf(db, "auth_access_tokens"),
       auth_credentials: await countOf(db, "auth_credentials"),
       auth_factors: await countOf(db, "auth_factors"),
       auth_identity_links: await countOf(db, "auth_identity_links"),
@@ -405,6 +422,46 @@ async function probeEmailLength(db: D1Database): Promise<Record<string, unknown>
   };
 }
 
+async function probeAccessTokens(db: D1Database): Promise<Record<string, unknown>> {
+  const { users, admins, accessTokens } = await storesOn(db);
+  const person = async (local: string): Promise<string> =>
+    must(await users.create({ email: `${local}@example.test`, emailKey: `${local}@example.test` }, AT), `create ${local}`).id;
+
+  const kim = await person("kim");
+  const lee = await person("lee");
+  const hash = new Uint8Array(32).fill(2);
+  const input = { userId: kim, tokenHash: hash, label: "CLI", scopes: ["notes:read"], expiresAt: null };
+  const token = must(await accessTokens.create(input, AT), "issue kim's token");
+  const duplicate = await accessTokens.create({ ...input, userId: lee }, AT);
+
+  const INTERVAL_MS = 60_000;
+  const use = async (at: number): Promise<boolean> => must(await accessTokens.recordUse(token.id, at, INTERVAL_MS), `use at ${at}`);
+  const useFirst = await use(AT + 1);
+  const useInsideInterval = await use(AT + INTERVAL_MS);
+  const useAtEdge = await use(AT + 1 + INTERVAL_MS);
+
+  const revokeByStranger = must(await accessTokens.revoke(token.id, lee, AT + 2), "revoke as stranger");
+  const revokeByOwner = must(await accessTokens.revoke(token.id, kim, AT + 3), "revoke as owner");
+  const revokeAgain = must(await accessTokens.revoke(token.id, kim, AT + 4), "revoke again");
+
+  must(await admins.setDeactivated(kim, true, AT + 5), "deactivate kim");
+  const foundWhileDeactivated = must(await accessTokens.findByHash(hash), "find while deactivated")?.id ?? null;
+  must(await admins.setDeactivated(kim, false, AT + 6), "reactivate kim");
+  const foundAfterReactivation = must(await accessTokens.findByHash(hash), "find after reactivation")?.id === token.id;
+
+  return {
+    duplicate: duplicate.ok ? "accepted" : { code: duplicate.error.code, constraint: duplicate.error.constraint },
+    useFirst,
+    useInsideInterval,
+    useAtEdge,
+    revokeByStranger,
+    revokeByOwner,
+    revokeAgain,
+    foundWhileDeactivated,
+    foundAfterReactivation,
+  };
+}
+
 async function probeGuards(db: D1Database): Promise<Response> {
   return json({
     lastAdmin: await probeLastAdmin(db),
@@ -413,6 +470,7 @@ async function probeGuards(db: D1Database): Promise<Response> {
     ownership: await probeOwnershipAndCounter(db),
     ephemera: await probeEphemera(db),
     emailLength: await probeEmailLength(db),
+    accessTokens: await probeAccessTokens(db),
   });
 }
 

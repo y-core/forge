@@ -17,6 +17,7 @@ import type { AuthFactorRequirement } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
+import type { AccessTokenService } from "../tokens/types";
 import type { AdminUserStore } from "../types";
 import type { AuthFactorKind } from "../types";
 import type { UserStore } from "../types";
@@ -87,6 +88,14 @@ export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
   /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
   readonly medium?: AuthMedium;
   /** This request's clock, which the absolute session lifetime is measured against. Defaults to `Date.now`. */
+  readonly now?: () => number;
+}
+
+/** What `requireBearer` needs to admit a request by the access token it presents. @public */
+export interface AccessTokenGuardOptions<Scope extends string, Bindings = Record<string, unknown>> {
+  readonly tokens: AuthGuardResolver<Bindings, Pick<AccessTokenService<Scope>, "verify">>;
+  /** Every scope listed must be held. */
+  readonly scopes?: readonly NoInfer<Scope>[];
   readonly now?: () => number;
 }
 

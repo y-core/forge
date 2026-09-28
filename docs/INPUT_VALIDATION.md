@@ -251,7 +251,7 @@ Both are path-scoped: `createCsrfToken(key, path, options?)` embeds the path, an
 along with the signature and a freshness window. The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`; **there is no bare
 `number` overload.**
 
-`verifyCsrfToken` accepts a single `CryptoKey` or a `CsrfKeyRing` and returns a `CsrfResult` — a `GuardResult` alias with the reason code in
+`verifyCsrfToken` accepts a single `CryptoKey` or an `HmacKeyRing` and returns a `CsrfResult` — a `GuardResult` alias with the reason code in
 `error`. **Inspect `result.ok`; never echo `result.error` to a client.**
 
 **Use this API only when `csrfProtection` cannot be applied directly** — a custom JSON API with non-standard token transport.

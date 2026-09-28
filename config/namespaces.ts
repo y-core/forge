@@ -11,6 +11,7 @@ export const LEAF: readonly string[] = [
   "dev",
   "html/htmx",
   "http",
+  "keyring",
   "result",
   "router",
   "session",
@@ -26,7 +27,7 @@ export const LEAF: readonly string[] = [
 /** Every declared cross-namespace edge: source → target → whether it survives type erasure. */
 export const EDGES: Record<string, Record<string, EdgeKind>> = {
   app: { config: "value", dev: "type", form: "value", http: "value", jsx: "value", logging: "value", security: "value" },
-  auth: { "storage/db": "value" },
+  auth: { keyring: "value", "storage/db": "value" },
   "auth/client": { auth: "value", http: "value", "ui/client": "value" },
   "auth/web": {
     app: "value",

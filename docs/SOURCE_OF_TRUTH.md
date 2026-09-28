@@ -166,6 +166,8 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
 | The `output/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/output/pdf/README.md` |
+| The `keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/keyring/README.md` |
+| The AES-GCM seal budget — the random-nonce bound per `(kid, purpose)` subkey, what crossing it costs, the rotation cadence it sets | [`AUTH_MOUNTING.md`][am-7] §7 |
 
 **The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document
 per namespace whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to
@@ -220,5 +222,6 @@ stylesheet that was never written would satisfy the shape and send a reader to a
 [ag-5d]: ../warden/canon/shared/AGENT_GUIDE.md#5d-crossing-the-governance-boundary
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
+[am-7]: ./AUTH_MOUNTING.md#7-rotating-the-key-ring
 [cr-5]: ../warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification

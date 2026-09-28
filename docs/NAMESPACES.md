@@ -39,6 +39,8 @@ audience: internal
 - §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
 - §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
 - §5j `output` — One Namespace per Output Format: the container and its children, the bare-component carve-out, the call shape, and the JSX edge
+- §5k `keyring` — At-Rest Sealing Under the App's Own Root Secret: what routes here rather than to `auth` or `crypto`, and the one-way edge
+  between them
 - §6 When to Add a New Namespace: criteria and checklist
 - §7 Binding a Subpath to Its Governance: a row lists a subpath, a prose rule binds it
 
@@ -97,7 +99,7 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/auth` | `src/auth/mod.ts` | `resolveAuthServices`, `AUTH_SUPPORTED_ALGORITHMS`, `normalizeEmail`, `AuthStoreError`; types `AuthAlgorithm`, `AuthKeyRing`, `AuthOptions`, `AuthSecretResolver`, `AuthServices`, `AuthUser` — the identity domain, which produces no `Response` and touches no `Session` (§5h) |
 | `@y-core/forge/auth/schema.sql` | `src/auth/schema.sql` | No runtime: the identity tables' desired state, named in a consumer's `schemas` load order ahead of its own — see §3a |
 | `@y-core/forge/auth/client` | `src/auth/client/mod.ts` | No value exports — a side-effect barrel registering the passkey ceremony scope; the controller lives beside it in `src/auth/client/`, and the contract it reads is `auth`'s `PASSKEY_*` data (§5h) |
-| `@y-core/forge/auth/web` | `src/auth/web/mod.ts` | `authRoutes`, `accountRoutes`, `adminRoutes`, `authPaths` and `AUTH_ROUTE_GROUPS`; the guards `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment` and `createAuthGuards`, with `authCtx`, `resolveAuthIdentity` — which reads, and clears the session's auth keys when the store refuses the id — and the session writers `establishAuthSession` / `markAuthStepUp` / `clearAuthSession`; the form schemas and `renderAuthPage` — the mountable web layer over the `auth` domain, one-way (§5h) |
+| `@y-core/forge/auth/web` | `src/auth/web/mod.ts` | `authRoutes`, `accountRoutes`, `adminRoutes`, `authPaths` and `AUTH_ROUTE_GROUPS`; the guards `requireAuth`, `requireAdmin`, `requireEnrolment`, `requirePendingEnrolment`, `requireBearer` and `createAuthGuards`, with `authCtx`, `resolveAuthIdentity` — which reads, and clears the session's auth keys when the store refuses the id — and the session writers `establishAuthSession` / `markAuthStepUp` / `clearAuthSession`; the form schemas and `renderAuthPage` — the mountable web layer over the `auth` domain, one-way (§5h) |
 | `@y-core/forge/tooling/assets` | `src/tooling/assets/mod.ts` | `defineAssetsConfig`, `loadConfig`, `AssetsConfig`; `buildAll`, `buildCSS`, `buildJS`, `buildSprites`, `copyAssets`; and `createAssetsCommands`, the `forge assets` subtree. The pipeline and the CLI face that drives it are one namespace |
 | `@y-core/forge/tooling/cli` | `src/tooling/cli/mod.ts` | `createCommand`, `addCommand`, `execute`, `CliError`; plus the shared foundation the tool namespaces read config through — `resolveAppRoot`, `loadConfigModule`, the JSONC parser and editor, and the barrel parser |
 | `@y-core/forge/tooling/gate` | `src/tooling/gate/mod.ts` | the verification gate — the gate command factory, the step builders and presets, and every check. It also owns the changelog and semver parsers, which is what lets `tooling/release` depend on it and never the reverse. The gate's formatters stay out of the barrel ([`BUILD_TOOLING.md`][bt-2f] §2f) |
@@ -117,6 +119,7 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 | `@y-core/forge/jsx/jsx-runtime` | `src/jsx/jsx-runtime.ts` | automatic-runtime transform target |
 | `@y-core/forge/jsx/jsx-dev-runtime` | `src/jsx/jsx-dev-runtime.ts` | automatic-runtime dev transform target |
 | `@y-core/forge/jsx/register` | `src/jsx/register.ts` | global JSX runtime registration |
+| `@y-core/forge/keyring` | `src/keyring/mod.ts` | `importKeyRing`, `sealAtRest`, `openAtRest`, `atRestKeyId`; types `KeyRing`, `AtRestBinding`, `AtRestOpened`, `AtRestRefusal` — at-rest sealing under the app's own root secret (§5k) |
 | `@y-core/forge/html/htmx` | `src/html/htmx/mod.ts` | `isHxRequest`, `readHxRequest`, `hxHeaders`, `hxAttrs`, `SWAP`, and the pattern helpers |
 | `@y-core/forge/http` | `src/http/mod.ts` | `html`, `escapeHtml`, `safeUrl`, `rawHtml`, `scriptJson`, `styleText`, `htmlResponse`, `fragmentResponse`, `pdfResponse`, `renderError`, `renderSuccess`, `renderValidationErrors`, the typed header classes |
 | `@y-core/forge/logging` | `src/logging/mod.ts` | `createLogger`, `consoleChannel`, `kvLogChannel`, `withMinLevel`, `withLevels`, `withRedaction`, `requestLogger`, `requestLog`, `serializeError`, and the redaction policy set `defineLogRedaction` / `DEFAULT_LOG_REDACTION` / `LOG_REDACTED` |
@@ -159,7 +162,7 @@ to exist, so a citation of `theme-forest.css` cannot satisfy the shape and send 
 
 | Directory | Purpose | Consumers |
 | --- | --- | --- |
-| `src/crypto/` | HMAC / timing-safe / base64url and base32 utilities, HKDF, AES-GCM, HOTP/TOTP, CBOR / COSE / DER decoding, UUIDv7 generation | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+| `src/crypto/` | HMAC / timing-safe / base64url, base32 and CRC32 utilities, HKDF, AES-GCM, HOTP/TOTP, CBOR / COSE / DER decoding, UUIDv7 generation | `auth`, `form`, `keyring`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
 
 **`crypto` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.ts`. The allowlist is what lets
 a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
@@ -289,7 +292,7 @@ counting as a layering violation.**
 | Namespace | Public? | Imported as | Consumers |
 | --- | --- | --- | --- |
 | `result` | public | concrete file `../result/result` | anyone |
-| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, lint-exempt) | `auth`, `form`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
+| `crypto` | sealed-internal (§3b) | `crypto/mod` (barrel, lint-exempt) | `auth`, `form`, `keyring`, `logging`, `security`, `session`, `storage/db`, `storage/r2` |
 | `context` | public | concrete file `../context/{accessor,app-context,env-validation}` | `app`, `form`, `logging`, `logging/viewer`, `security`, `session`, `storage/db`, `storage/kv`, `storage/r2`, `testing`, `ui/server` |
 | `validation` | public | `validation/mod` (the `v` facade) | `app`, `assets`, `config`, `context`, `form`, `logging/viewer`, `security`, `storage/db`, `storage/kv`, `storage/r2` |
 
@@ -315,8 +318,8 @@ exemption already covers.
 
 ### 5a. security — Transport-Layer Hardening Only
 
-`security` is strictly transport-layer: CSP, CORS, origin verification, rate limiting, request identity. **It does not handle authentication,
-sessions, or permissions.**
+`security` is strictly transport-layer: CSP, CORS, origin verification, rate limiting, request identity, webhook signing and verification. **It
+does not handle authentication, sessions, or permissions.**
 
 Identity is application-layer, so authentication and permissions belong in `auth` (§5h).
 
@@ -526,6 +529,23 @@ component, so the format lowers the tree itself, and recognising a fragment mean
 rather than a fallback. Widening
 `./jsx/jsx-runtime` instead would let a PDF component stand where `renderToString` is called, which is the guarantee that runtime exists to keep.
 
+### 5k. `keyring` — At-Rest Sealing Under the App's Own Root Secret
+
+**A value an app stores and later reads back under its own secret is sealed through `@y-core/forge/keyring`.** A webhook secret, a third-party
+token, any credential a row carries: the consumer names the purpose and binds the row as context, and the namespace owns the ring, the subkey
+derivation and the frame. It does not route to `auth`, because none of it is identity (§5h), and it is not a `crypto` subpath, because `crypto` is
+sealed-internal (§3b) and publishes nothing.
+
+**`keyring` is a leaf, and the edge is one-way: `auth` imports `keyring`, and `keyring` never names `auth`.** `auth` seals its TOTP secrets
+through the same functions; `keyring` imports only the `crypto` and `result` primitives (§4c).
+
+**Each caller works under its own domain.** A domain is the pair of labels a ring derives key ids and subkeys under, so one root secret imported
+by `auth` and by `keyring` answers different key ids and different subkeys — a frame sealed by one never opens under the other. The public
+`sealAtRest` and `openAtRest` always use `keyring`'s own domain; the functions that take a domain are `@internal`, and `auth` is their only
+caller.
+
+What a frame is, re-sealing, retiring an old secret and one ring per root secret are rulings of [`src/keyring/README.md`][keyring-readme].
+
 ---
 
 ## 6. When to Add a New Namespace
@@ -575,6 +595,7 @@ second repository needs it.
 [eh-1]: ./FORGE_ERRORS.md#1-result-monad
 [eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
+[keyring-readme]: ../src/keyring/README.md
 [la]: ./FORGE_STRUCTURE.md
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [nd-1]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1-barrel-rules-and-export-discipline

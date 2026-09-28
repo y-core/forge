@@ -109,6 +109,22 @@ CREATE TABLE IF NOT EXISTS auth_identity_links (
 CREATE UNIQUE INDEX IF NOT EXISTS auth_identity_links_provider_subject ON auth_identity_links (provider, subject);
 CREATE INDEX IF NOT EXISTS auth_identity_links_user_id ON auth_identity_links (user_id);
 
+CREATE TABLE IF NOT EXISTS auth_access_tokens (
+  id BLOB PRIMARY KEY NOT NULL,
+  user_id BLOB NOT NULL REFERENCES auth_users (id) ON DELETE CASCADE,
+  token_hash BLOB NOT NULL,
+  label TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  expires_at INTEGER,
+  last_used_at INTEGER,
+  revoked_at INTEGER,
+  created_at INTEGER NOT NULL,
+  CHECK (length(token_hash) = 32 AND length(label) BETWEEN 1 AND 100)
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_access_tokens_token_hash ON auth_access_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS auth_access_tokens_user_id ON auth_access_tokens (user_id);
+
 -- The live emailed code for one identity, and the guesses spent against it. Durable and not KV:
 -- both counters are conditional writes on the primary factor, and KV can only read then write, so
 -- parallel guesses would each be compared against the same count.

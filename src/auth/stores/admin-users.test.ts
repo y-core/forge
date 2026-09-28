@@ -81,6 +81,7 @@ describe("createAdminUserStore", () => {
       "auth_factors",
       "auth_identity_links",
       "auth_otp_state",
+      "auth_access_tokens",
       "auth_users",
     ]);
   });
@@ -166,7 +167,7 @@ describe("createAdminUserStore — the last-admin guard", () => {
     const [client, db] = clientOf((sql) => (sql.includes("AS present") ? [{ present: 1, deletable: 0 }] : []));
     expect(await createAdminUserStore(client).remove(USER_ID)).toEqual({ ok: true, data: "last-admin-delete" });
     const deletes = db.calls.filter((call) => call.sql.includes("DELETE FROM"));
-    expect(deletes).toHaveLength(5);
+    expect(deletes).toHaveLength(6);
     for (const call of deletes) expect(call.sql.replace(/\s+/g, " ")).toContain(GUARD);
   });
 

@@ -5,19 +5,34 @@ import { get, route } from "@remix-run/fetch-router/routes";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
+import { bytesToHex } from "../../crypto/mod";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
 import { AUTH_FRESH_STEP_UP_MS } from "../config";
+import { AuthStoreError } from "../errors";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorContext, AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
-import type { AuthUser, UserStore } from "../types";
-import { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment, resolveAuth } from "./guards";
-import { AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
+import { formatAccessToken } from "../tokens/codec";
+import { createAccessTokenService } from "../tokens/service";
+import type { AccessTokenStore, AuthAccessToken, AuthUser, UserStore } from "../types";
+import {
+  accessTokenCtx,
+  createAuthGuards,
+  requireAdmin,
+  requireAuth,
+  requireBearer,
+  requireEnrolment,
+  requireFreshStepUp,
+  requirePendingEnrolment,
+  resolveAuth,
+} from "./guards";
+import { authCtx, AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
+import type { AuthIdentity } from "./types";
 import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore, fakeSessionCookie } from "./web.fixture";
 
 const authMap = authRoutes("/auth");
@@ -983,5 +998,120 @@ describe("the enrolment guards — the step-up window they hold at construction"
   it("accepts the window omitted, which means the mark lasts the session", () => {
     expect(() => requireEnrolment({ factors, ...enrolment })).not.toThrow();
     expect(() => requirePendingEnrolment({ factors, ...enrolment })).not.toThrow();
+  });
+});
+
+describe("requireBearer", () => {
+  const AT = 1_700_000_000_000;
+  const EXPIRES_AT = AT + 86_400_000;
+
+  /** One array-backed token store a real service verifies against; `down` answers every lookup with an outage. */
+  function bearerService(down = false) {
+    const rows: { hash: string; record: AuthAccessToken }[] = [];
+    const store: AccessTokenStore = {
+      create: async (input, at) => {
+        const record = { ...input, id: `t${rows.length + 1}`, lastUsedAt: null, revokedAt: null, createdAt: at };
+        rows.push({ hash: bytesToHex(input.tokenHash), record });
+        return ok(record);
+      },
+      findByHash: async (tokenHash) =>
+        down
+          ? { ok: false, error: new AuthStoreError("unavailable", "accessTokens.findByHash") }
+          : ok(rows.find((row) => row.hash === bytesToHex(tokenHash))?.record ?? null),
+      listByUser: async () => ok([]),
+      recordUse: async () => ok(true),
+      revoke: async () => ok(true),
+    };
+    const service = createAccessTokenService({ store, prefix: "nt_", scopes: ["notes:read", "notes:write"] });
+    const issue = async (change: Partial<AuthAccessToken> = {}) => {
+      const outcome = await service.issue({ userId: "u1", label: "CLI", scopes: ["notes:read"], expiresAt: EXPIRES_AT }, AT);
+      if (!outcome.ok) throw new Error("issue failed");
+      const row = rows.at(-1);
+      if (row) row.record = { ...row.record, ...change };
+      return outcome.data.token;
+    };
+    return { service, issue };
+  }
+
+  function bearerApp(service: ReturnType<typeof bearerService>["service"], now = AT, seed: SessionSeed = {}, identity?: AuthIdentity): Forge {
+    const preset: Parameters<Forge["use"]>[1] = (context, next) => {
+      if (identity !== undefined) authCtx.set(context, identity);
+      return next();
+    };
+    const guard = requireBearer({ tokens: perRequest(service), scopes: ["notes:read"], now: () => now });
+    const app = guardedApp([preset, guard], seed);
+    mapHandler(app, "GET", "/api/token", (context) => new Response(accessTokenCtx.get(context).id));
+    return app;
+  }
+
+  it("admits a valid token holding the scope and puts its record on the request", async () => {
+    const { service, issue } = bearerService();
+    const res = await bearerApp(service).request("/api/token", { headers: { Authorization: `Bearer ${await issue()}` } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("t1");
+  });
+
+  it("reads the scheme name case-insensitively", async () => {
+    const { service, issue } = bearerService();
+    const res = await bearerApp(service).request("/api/token", { headers: { Authorization: `bearer ${await issue()}` } });
+    expect(res.status).toBe(200);
+  });
+
+  it("challenges with a bare Bearer when no credentials were presented, whatever else the request carries", async () => {
+    const { service, issue } = bearerService();
+    const token = await issue();
+    const identity = { userId: "u1", email: "ada@example.com", isAdmin: false, stepUpAt: null };
+    const requests: [string, Forge, string, RequestInit][] = [
+      ["no header", bearerApp(service), "/api/token", {}],
+      ["Basic", bearerApp(service), "/api/token", { headers: { Authorization: "Basic dTE6cHc=" } }],
+      ["a signed-in session", bearerApp(service, AT, { userId: "u1" }, identity), "/api/token", {}],
+      ["a query parameter", bearerApp(service), `/api/token?access_token=${token}`, {}],
+    ];
+    for (const [name, app, path, init] of requests) {
+      const res = await app.request(path, init);
+      expect(`${name}: ${res.status} ${res.headers.get("WWW-Authenticate")}`).toBe(`${name}: 401 Bearer`);
+    }
+  });
+
+  it("refuses a malformed, mismatched, unknown, revoked or expired token as invalid_token", async () => {
+    const { service, issue } = bearerService();
+    const valid = await issue();
+    const presented = [
+      "nt_short",
+      `${valid.slice(0, -1)}${valid.endsWith("A") ? "B" : "A"}`,
+      formatAccessToken("nt_", new Uint8Array(24)),
+      await issue({ revokedAt: AT - 1 }),
+    ];
+    for (const token of presented) {
+      const res = await bearerApp(service).request("/api/token", { headers: { Authorization: `Bearer ${token}` } });
+      expect(`${res.status} ${res.headers.get("WWW-Authenticate")}`).toBe('401 Bearer error="invalid_token"');
+      expect(await res.json()).toEqual({ error: "invalid_token" });
+    }
+    const expired = await bearerApp(service, EXPIRES_AT).request("/api/token", { headers: { Authorization: `Bearer ${valid}` } });
+    expect(`${expired.status} ${expired.headers.get("WWW-Authenticate")}`).toBe('401 Bearer error="invalid_token"');
+  });
+
+  it("answers 403 insufficient_scope, naming the scope the route demands", async () => {
+    const { service, issue } = bearerService();
+    const token = await issue();
+    const app = guardedApp([requireBearer({ tokens: perRequest(service), scopes: ["notes:write"], now: () => AT })]);
+    const res = await app.request("/account/passkeys", { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(403);
+    expect(res.headers.get("WWW-Authenticate")).toBe('Bearer error="insufficient_scope", scope="notes:write"');
+    expect(await res.json()).toEqual({ error: "insufficient_scope" });
+  });
+
+  it("answers 503 with no challenge when the store cannot be read", async () => {
+    const { service } = bearerService(true);
+    const token = formatAccessToken("nt_", new Uint8Array(24));
+    const res = await bearerApp(service).request("/api/token", { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("WWW-Authenticate")).toBeNull();
+  });
+
+  it("refuses at compile time a scope the service was not configured with", () => {
+    const { service } = bearerService();
+    // @ts-expect-error — "admin" is not one of the service's scopes.
+    expect(() => requireBearer({ tokens: perRequest(service), scopes: ["admin"] })).not.toThrow();
   });
 });

@@ -13,7 +13,18 @@ export {
   createVerifyActions,
 } from "./actions";
 export type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthGuardResolver, AuthRouteMaps } from "./types";
-export { createAuthGuards, requireAdmin, requireAuth, requireEnrolment, requireFreshStepUp, requirePendingEnrolment, resolveAuth } from "./guards";
+export type { AccessTokenGuardOptions } from "./types";
+export {
+  accessTokenCtx,
+  createAuthGuards,
+  requireAdmin,
+  requireAuth,
+  requireBearer,
+  requireEnrolment,
+  requireFreshStepUp,
+  requirePendingEnrolment,
+  resolveAuth,
+} from "./guards";
 export type { AuthIdentity } from "./types";
 export type { AuthNav, AuthNavContext, AuthNavOptions } from "./types";
 export { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { hexToBytes, randomBytes, utf8Encode } from "./bytes";
-import { hmacSign, hmacVerify, importHmacKey, importHmacKeyFromHex } from "./hmac";
+import { hmacSign, hmacVerify, importHmacKey, importHmacKeyFromHex, importHmacKeyRing, lookupHmacKey } from "./hmac";
 
 describe("importHmacKeyFromHex", () => {
   const validHex = "a".repeat(32); // 16 bytes
@@ -68,5 +68,56 @@ describe("importHmacKey", () => {
     const fromHex = await importHmacKeyFromHex(hex, "secret");
     const fromBytes = await importHmacKey(hexToBytes(hex));
     expect(await hmacSign(fromBytes, "x")).toEqual(await hmacSign(fromHex, "x"));
+  });
+});
+
+describe("importHmacKeyRing", () => {
+  const s1 = "0123456789abcdef".repeat(4);
+  const s2 = "fedcba9876543210".repeat(4);
+
+  it("makes the first secret's kid active and holds every secret's kid", async () => {
+    const ring = await importHmacKeyRing([s1, s2], "Label");
+    const firstOnly = await importHmacKeyRing([s1], "Label");
+    const secondOnly = await importHmacKeyRing([s2], "Label");
+    expect(ring.activeKeyId).toBe(firstOnly.activeKeyId);
+    expect(Object.keys(ring.keys).sort()).toEqual([firstOnly.activeKeyId, secondOnly.activeKeyId].sort());
+    expect(firstOnly.activeKeyId).not.toBe(secondOnly.activeKeyId);
+  });
+
+  it("derives known-answer kids, case-insensitively", async () => {
+    expect((await importHmacKeyRing([s1], "Label")).activeKeyId).toBe("qK5ubukpq-o6");
+    expect((await importHmacKeyRing([s1.toUpperCase()], "Label")).activeKeyId).toBe("qK5ubukpq-o6");
+    expect((await importHmacKeyRing([s2], "Label")).activeKeyId).toBe("e50H8kBLECs8");
+  });
+
+  it("derives a twelve-character base64url kid", async () => {
+    const ring = await importHmacKeyRing(["ab".repeat(32)], "Label");
+    expect(ring.activeKeyId).toMatch(/^[A-Za-z0-9_-]{12}$/);
+  });
+
+  it("carries the label into an odd-length secret's error", async () => {
+    await expect(importHmacKeyRing(["abc"], "Label")).rejects.toThrow("Label must have an even number of hex characters");
+  });
+
+  it("carries the label into a non-hex secret's error", async () => {
+    await expect(importHmacKeyRing(["zz".repeat(16)], "Label")).rejects.toThrow("Label must contain only hexadecimal characters (0-9, a-f, A-F)");
+  });
+
+  it("carries the label into a short secret's error", async () => {
+    await expect(importHmacKeyRing(["aabb"], "Label")).rejects.toThrow("Label must be at least 32 hex characters (16 bytes)");
+  });
+
+  it("rejects an empty secret list, naming the label", async () => {
+    await expect(importHmacKeyRing([] as never, "Label")).rejects.toThrow("Label: a key ring requires at least one secret");
+  });
+});
+
+describe("lookupHmacKey", () => {
+  it("resolves a present kid and nothing else, prototype names included", async () => {
+    const ring = await importHmacKeyRing(["ab".repeat(32)], "Label");
+    expect(lookupHmacKey(ring, ring.activeKeyId)).toBe(ring.keys[ring.activeKeyId]!);
+    for (const kid of ["absent-kid00", "constructor", "__proto__", "toString"]) {
+      expect(lookupHmacKey(ring, kid)).toBeUndefined();
+    }
   });
 });

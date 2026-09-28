@@ -13,7 +13,7 @@ export interface SignedUrlOptions {
 }
 
 /** Why a signed URL failed verification. @public */
-export type SignedUrlFailure = "expired" | "invalid-signature" | "invalid-format";
+export type SignedUrlFailure = "expired" | "invalid-signature" | "invalid-format" | "unknown-key";
 
 /** A verified signed URL's object key, or the reason it was refused. @public */
 export type SignedUrlVerdict = Result<string, SignedUrlFailure>;

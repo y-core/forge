@@ -74,6 +74,18 @@ export interface IdentityLinkRow {
   updated_at: number;
 }
 
+/** @internal */
+export interface AccessTokenRow {
+  id: unknown;
+  user_id: unknown;
+  label: string;
+  scopes: string;
+  expires_at: number | null;
+  last_used_at: number | null;
+  revoked_at: number | null;
+  created_at: number;
+}
+
 /** What a scheduled `totp-app` secret purge acts on. @public */
 export interface TotpSecretPurgeOptions {
   /** The ring itself, never a bare key id: the purge deletes the complement of the active key, so a wrong one deletes the live enrolments. */

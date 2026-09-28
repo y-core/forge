@@ -1,20 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlDecode, base64urlEncode, utf8Encode } from "../../crypto/mod";
+import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
 import { AUTH_KV_MIN_TTL_SECONDS } from "../config";
 import type { AuthKeyRing } from "../types";
 import { importAuthKeyRing } from "./ring";
-import {
-  AUTH_KID_BYTES,
-  AUTH_TOKEN_VERSION,
-  authNonceKey,
-  authNonceTtlSeconds,
-  decodeAuthToken,
-  encodeAuthToken,
-  openAtRest,
-  sealAtRest,
-  tokenKeyId,
-} from "./token";
+import { AUTH_TOKEN_VERSION, authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken, tokenKeyId } from "./token";
 import type { AuthTokenPurpose } from "./types";
 
 const SECRET_A = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
@@ -299,73 +289,6 @@ describe("non-canonical base64url spellings of one token", () => {
   });
 });
 
-describe("sealAtRest / openAtRest", () => {
-  const PLAINTEXT = new Uint8Array([9, 8, 7, 6, 5]) as Uint8Array<ArrayBuffer>;
-  const CONTEXT = utf8Encode("totp-app u1");
-  const OTHER_CONTEXT = utf8Encode("totp-app u2");
-
-  it("frames the ciphertext as kid(6) ‖ nonce(12) ‖ ciphertext‖tag and opens it again", async () => {
-    const ring = await ringOf(SECRET_A);
-    const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(frame.byteLength).toBe(AUTH_KID_BYTES + 12 + PLAINTEXT.byteLength + 16);
-    expect(base64urlEncode(frame.subarray(0, AUTH_KID_BYTES))).toBe(ring.activeKeyId);
-    expect(await openAtRest(ring, "totpWrap", CONTEXT, frame)).toEqual({ ok: true, data: { plaintext: PLAINTEXT, kid: ring.activeKeyId } });
-  });
-
-  it("gives a different frame each time, so two seals of one plaintext do not match", async () => {
-    const ring = await ringOf(SECRET_A);
-    const first = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    const second = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(base64urlEncode(first)).not.toBe(base64urlEncode(second));
-  });
-
-  it("refuses a frame opened under a different context", async () => {
-    const ring = await ringOf(SECRET_A);
-    const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(await openAtRest(ring, "totpWrap", OTHER_CONTEXT, frame)).toEqual({ ok: false, error: "unopenable" });
-  });
-
-  it("refuses a frame opened under a different purpose, because the subkeys differ", async () => {
-    const ring = await ringOf(SECRET_A);
-    const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    // `unopenable` rather than `no-key`: the ring resolves this key id under either purpose, and it
-    // is the subkey derived from it that differs.
-    expect(await openAtRest(ring, "verify", CONTEXT, frame)).toEqual({ ok: false, error: "unopenable" });
-  });
-
-  // The key id comes back with the bytes, which is how a caller tells a frame under a retired key
-  // from one under the active key without decoding the frame a second time.
-  it("refuses a frame whose key the ring does not hold, and opens one under a retired key", async () => {
-    const retiring = await ringOf(SECRET_A);
-    const sealed = await sealAtRest(retiring, "totpWrap", CONTEXT, PLAINTEXT);
-    // `no-key` and not `unopenable`: an operator who retired a key too early can put it back, and a
-    // caller that could not tell the two apart would clear rows that are perfectly good.
-    expect(await openAtRest(await ringOf(SECRET_B), "totpWrap", CONTEXT, sealed)).toEqual({ ok: false, error: "no-key" });
-    expect(await openAtRest(await ringOf(SECRET_B, SECRET_A), "totpWrap", CONTEXT, sealed)).toEqual({
-      ok: true,
-      data: { plaintext: PLAINTEXT, kid: retiring.activeKeyId },
-    });
-  });
-
-  it("refuses a frame no longer than its own header, and one with a flipped byte", async () => {
-    const ring = await ringOf(SECRET_A);
-    const frame = await sealAtRest(ring, "totpWrap", CONTEXT, PLAINTEXT);
-    expect(await openAtRest(ring, "totpWrap", CONTEXT, frame.slice(0, AUTH_KID_BYTES + 12))).toEqual({ ok: false, error: "unopenable" });
-    const tampered = frame.slice();
-    tampered[tampered.byteLength - 1] = (tampered[tampered.byteLength - 1] ?? 0) ^ 0xff;
-    expect(await openAtRest(ring, "totpWrap", CONTEXT, tampered)).toEqual({ ok: false, error: "unopenable" });
-  });
-
-  it("refuses to seal under a ring holding no key for its active id", async () => {
-    const broken: AuthKeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
-    await expect(sealAtRest(broken, "totpWrap", CONTEXT, PLAINTEXT)).rejects.toThrow(
-      'sealAtRest: the key ring has no key for its active key id "AAAAAAAA"',
-    );
-  });
-});
-
-// The raw subkey was cached and the imported key was not, so every seal, open and sign re-ran
-// `crypto.subtle.importKey` — once per token operation, on the request path.
 describe("the imported key is cached, not just the derived bytes", () => {
   it("re-imports nothing once a purpose has been used, however many operations follow", async () => {
     const ring = await importAuthKeyRing([SECRET_A]);

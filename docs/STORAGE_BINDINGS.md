@@ -32,7 +32,7 @@ audience: consumer
 - §3 storage/r2 — Object Store: object storage and HTTP serving
 - §3a createObjectStore Factory: backend in, typed store out
 - §3b serveObject — Direct Response from a Backend: statuses and Content-Disposition
-- §3c Signed URLs for Secure Object Access: length-prefixed HMAC and verification order
+- §3c Signed URLs for Secure Object Access: the key ring, length-prefixed HMAC, verification order and retention
 - §3d r2Backend — Storage Backend Adapter: the testable seam
 - §3e Binding Validation for R2: the R2 form of the pattern
 - §4 Binding Resolve/Validate Pattern: the shared lifecycle contract
@@ -280,7 +280,8 @@ already _is_ `text/html`:
 - **`serveObject` downloads one.** When the _stored_ type is active (`isActiveContentType`, matched on the essence so casing and a `charset`
   parameter cannot hide one), the response carries `Content-Security-Policy: sandbox` and — unless the caller passed a `contentDisposition` —
   `Content-Disposition: attachment`, overriding a stored `inline`. This is what closes the case the put-side default cannot see: an app that stored
-  an attacker-supplied MIME type explicitly.
+  an attacker-supplied MIME type explicitly. Inside a Forge app, or under `applySecurityHeaders`, the `sandbox` is combined with the app's CSP
+  rather than replaced by it ([`SECURITY_HARDENING.md`][sh-2f] §2f).
 
 Serving untrusted uploads from a separate origin is still the stronger arrangement, and `contentDisposition: "attachment"` is still available for
 types forge does not class as active.
@@ -307,23 +308,35 @@ What that settles:
 
 ### 3c. Signed URLs for Secure Object Access
 
-`createSignedObjectUrl(signingKey, baseUrl, objectKey, options?)` produces an HMAC-SHA-256-signed URL expiring after `expiresInSeconds` (default
-`3600`), appending `?key=`, `?exp=`, and `?sig=`. Import the key once with `importSigningKey`.
+`createSignedObjectUrl(ring, baseUrl, objectKey, options?)` produces an HMAC-SHA-256-signed URL expiring after `expiresInSeconds` (default
+`3600`), appending `?key=`, `?exp=`, `?kid=` and `?sig=`. The ring comes from `importSignedUrlKeyRing(secrets)`, which takes hex secrets newest
+first: the first one signs, and every one verifies. **The ring is the `HmacKeyRing` CSRF uses** ([`INPUT_VALIDATION.md`][iv-3b] §3b), but signed
+URLs take a secret of their own.
 
 **A lifetime is a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME`, seven days.** Signing throws on anything else — a fraction
-included, since it would mint an `exp` that verification refuses — and `verifySignedObjectUrl` answers `"invalid-format"` for an `exp` that is not
-all digits, rather than reading its leading number (`src/storage/r2/signing.ts`).
+included, since it would mint an `exp` that verification refuses (`src/storage/r2/signing.ts`).
 
-**The HMAC covers a length-prefixed payload — `${key.length}:${key}|${exp}`** — so the key/exp boundary stays unambiguous even when the object key
-itself contains the `|` delimiter.
+**The HMAC covers the key id as well as the object key and expiry, each length-prefixed — `${kid.length}:${kid}|${key.length}:${key}|${exp}`.**
+The prefixes keep every field boundary unambiguous even when an object key contains the `|` delimiter. A URL whose `kid` is moved onto another
+member of the ring fails the signature because the MAC covers the `kid`, so it fails even where both kids name the same key.
 
-`verifySignedObjectUrl(signingKey, url)` **checks expiry first, then compares signatures in constant time**, returning forge's one `Result`
-primitive — `SignedUrlVerdict`, i.e. `Result<string, SignedUrlFailure>`, whose `data` is the object key and whose `error` is `"expired"`,
-`"invalid-signature"` or `"invalid-format"`. **The reason is for the operator, not the client** ([`FORGE_ERRORS.md`][eh-1c] §1c): echoing which
-check failed tells a caller what to change next.
+`verifySignedObjectUrl(ring, url)` returns forge's one `Result` primitive — `SignedUrlVerdict`, i.e. `Result<string, SignedUrlFailure>`, whose
+`data` is the object key. **The checks run in this order, and the first to fail names the `error`:**
 
-**`hexSecret` must come from a secret binding, never from source code. Never serve an object from a signed-URL path without verifying the signature
-first.**
+1. A URL that does not parse, lacks `key`, `exp`, `kid` or `sig`, or carries an `exp` that is not all digits answers `"invalid-format"`.
+2. An `exp` in the past answers `"expired"`.
+3. A `kid` the ring does not hold answers `"unknown-key"`.
+4. A signature that does not match, compared in constant time, answers `"invalid-signature"`.
+
+**The reason is for the operator, not the client** ([`FORGE_ERRORS.md`][eh-1c] §1c): echoing which check failed tells a caller what to change
+next.
+
+**A retired secret stays on the ring for `MAX_SIGNED_URL_LIFETIME` after the deploy that demoted it.** No link outlives that window, so removing
+the secret any earlier turns every unexpired link it signed into `"unknown-key"`. A leaked secret is the exception: remove it at once and accept
+that its links die. A URL signed before key rings existed carries no `kid` and answers `"invalid-format"`; it is not a supported path.
+
+**Every secret must come from a secret binding, never from source code. Never serve an object from a signed-URL path without verifying the
+signature first.**
 
 ### 3d. r2Backend — Storage Backend Adapter
 
@@ -435,8 +448,10 @@ exist before the worker reaches a serving state.
 [dm-6c]: ./DATABASE_MANAGEMENT.md#6c-status---check-exit-conditions
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[iv-3b]: ./INPUT_VALIDATION.md#3b-importcsrfkey-and-importcsrfkeyring--secret-import
 [lint-readme]: ../src/tooling/lint/README.md
 [namespaces-3b]: ./NAMESPACES.md#3b-internal-namespaces
+[sh-2f]: ./SECURITY_HARDENING.md#2f-createroutesecurityheaders-and-the-handler-set-csp
 [sh-4b]: ./SECURITY_HARDENING.md#4b-the-dev-allowance-for-a-missing-binding
 [sl]: ./STRUCTURED_LOGGING.md
 [sl-2d]: ./STRUCTURED_LOGGING.md#2d-channel-selection-by-environment

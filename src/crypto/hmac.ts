@@ -1,4 +1,11 @@
+import { base64urlEncode } from "./base64";
 import { hexToBytes, utf8Encode } from "./bytes";
+import { sha256 } from "./digest";
+import type { HmacKeyRing } from "./types";
+
+async function keyFingerprint(hexSecret: string): Promise<string> {
+  return base64urlEncode(await sha256(hexSecret.toLowerCase())).slice(0, 12);
+}
 
 /** Imports raw bytes as an HMAC-SHA-256 CryptoKey for sign + verify. @internal */
 export function importHmacKey(raw: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
@@ -12,6 +19,31 @@ export async function importHmacKeyFromHex(hexSecret: string, label = "secret"):
   const pairs = hexSecret.match(/.{2}/g);
   if (!pairs || pairs.length < 16) throw new Error(`${label} must be at least 32 hex characters (16 bytes)`);
   return importHmacKey(hexToBytes(hexSecret));
+}
+
+/** Imports hex-encoded secrets into a key ring, the first becoming the active signing key. @internal */
+export async function importHmacKeyRing(secrets: [string, ...string[]], label: string): Promise<HmacKeyRing> {
+  const entries = await Promise.all(
+    secrets.map(async (hex) => {
+      const kid = await keyFingerprint(hex);
+      const key = await importHmacKeyFromHex(hex, label);
+      return [kid, key] as const;
+    }),
+  );
+  const first = entries[0];
+  if (!first) throw new Error(`${label}: a key ring requires at least one secret`);
+  const activeKeyId = first[0];
+  const keys: Record<string, CryptoKey> = {};
+  for (const [kid, key] of entries) {
+    keys[kid] = key;
+  }
+  return { activeKeyId, keys };
+}
+
+/** Resolves a key id to its key in the ring, or undefined where the ring holds none. @internal */
+// `Object.hasOwn` and not `ring.keys[kid]`: an attacker-supplied kid of `constructor` must not resolve.
+export function lookupHmacKey(ring: HmacKeyRing, kid: string): CryptoKey | undefined {
+  return Object.hasOwn(ring.keys, kid) ? ring.keys[kid] : undefined;
 }
 
 /** Signs data with an HMAC-SHA-256 key, encoding strings as UTF-8. @internal */

@@ -41,8 +41,25 @@ export interface HstsOptions {
   preload?: boolean | undefined;
 }
 
-/** CSP source lists, HSTS, Permissions-Policy, and cross-origin policy options for security headers. @public */
-export interface SecurityHeadersOptions {
+/** Trusted Types enforcement: the policy names the page may create. @public */
+export interface TrustedTypesOptions {
+  /** `[]` renders `'none'`. */
+  policies: string[];
+  allowDuplicates?: boolean | undefined;
+  /** `false` omits `require-trusted-types-for 'script'`; on by default. */
+  require?: boolean | undefined;
+}
+
+/** Where the browser reports CSP violations. @public */
+export interface CspReportingOptions {
+  /** An absolute https URL, emitted in both `Reporting-Endpoints` and the `report-uri` fallback. */
+  endpoint: string;
+  /** Defaults to `csp-endpoint`. */
+  group?: string | undefined;
+}
+
+/** The directives one Content-Security-Policy is built from. @public */
+export interface CspDirectiveOptions {
   scriptSrc?: CspValue;
   connectSrc?: CspValue;
   frameSrc?: CspValue;
@@ -51,6 +68,18 @@ export interface SecurityHeadersOptions {
   fontSrc?: CspValue;
   workerSrc?: CspValue;
   childSrc?: CspValue;
+  trustedTypes?: TrustedTypesOptions;
+}
+
+/** The CSP family: the enforced directives, violation reporting, and a Report-Only candidate. @public */
+export interface CspOptions extends CspDirectiveOptions {
+  reporting?: CspReportingOptions;
+  /** Each field stated here replaces the enforced policy's; an unstated one is inherited. */
+  reportOnly?: CspDirectiveOptions;
+}
+
+/** CSP options, HSTS, Permissions-Policy, and cross-origin policy options for security headers. @public */
+export interface SecurityHeadersOptions extends CspOptions {
   /** `false` omits the header. */
   hsts?: false | HstsOptions;
   permissionsPolicy?: PermissionsPolicyOptions;
@@ -118,3 +147,47 @@ export interface CorsOptions {
 
 /** Bare variable record set by `requestId`. @public */
 export type RequestIdContext = { requestId: string };
+
+/** What `signWebhook` signs, and with which secrets. @public */
+export interface WebhookSignOptions {
+  /** Unique per message and reused on every retry, so a receiver can deduplicate; must not contain ".". */
+  readonly id: string;
+  readonly body: string | Uint8Array<ArrayBuffer>;
+  /** Every active `whsec_` secret; one signature is emitted per entry, so a rotation signs with both. */
+  readonly secrets: readonly string[];
+  /** Milliseconds since the epoch; defaults to `Date.now`. */
+  readonly now?: () => number;
+}
+
+/** Secrets and limits `verifyWebhook` checks a request against. @public */
+export interface WebhookVerifyOptions {
+  /** Candidate `whsec_` secrets; a signature under any one of them verifies. */
+  readonly secrets: readonly string[];
+  /** Allowed clock skew in seconds, in either direction; defaults to 300. */
+  readonly toleranceSeconds?: number;
+  /** Body ceiling in bytes, checked against `Content-Length` and then metered; defaults to 1 MiB. */
+  readonly maxBytes?: number;
+  /** Milliseconds since the epoch; defaults to `Date.now`. */
+  readonly now?: () => number;
+}
+
+/** The Standard Webhooks headers `signWebhook` produces, assignable to `HeadersInit`. @public */
+export type WebhookSignatureHeaders = { readonly "webhook-id": string; readonly "webhook-timestamp": string; readonly "webhook-signature": string };
+
+/** A webhook whose signature matched, carrying the exact bytes that were signed. @public */
+export interface VerifiedWebhook {
+  readonly id: string;
+  /** Seconds since the epoch, as signed. */
+  readonly timestamp: number;
+  readonly body: Uint8Array<ArrayBuffer>;
+}
+
+/** Why `verifyWebhook` refused a request — a server diagnostic, never echoed to the sender. @public */
+export type WebhookRefusal =
+  | "missing-header"
+  | "invalid-timestamp"
+  | "timestamp-too-old"
+  | "timestamp-too-new"
+  | "invalid-signature"
+  | "body-too-large"
+  | "signature-mismatch";

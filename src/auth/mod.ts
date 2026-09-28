@@ -1,4 +1,6 @@
 export {
+  AUTH_ACCESS_TOKEN_MAX_LIFETIME_MS,
+  AUTH_ACCESS_TOKEN_USE_INTERVAL_MS,
   AUTH_ADMIN_ROLE,
   AUTH_FRESH_STEP_UP_MS,
   AUTH_IDENTIFYING_FACTORS,
@@ -30,6 +32,7 @@ export type { EmailOtpOptions } from "./factors/types";
 export { createEmailOtpFactor } from "./factors/email-otp";
 export type { AuthStoreErrorCode } from "./types";
 export { AuthStoreError } from "./errors";
+export { createAccessTokenStore } from "./stores/access-tokens";
 export { createAdminUserStore } from "./stores/admin-users";
 export { createCredentialStore } from "./stores/credentials";
 export { createFactorStore } from "./stores/factors";
@@ -122,11 +125,23 @@ export {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "./passkey-contract";
+export type {
+  AccessTokenIssued,
+  AccessTokenIssueInput,
+  AccessTokenIssueReason,
+  AccessTokenReason,
+  AccessTokenService,
+  AccessTokenServiceOptions,
+} from "./tokens/types";
+export { createAccessTokenService } from "./tokens/service";
 export { AUTH_TOKEN_VERSION, authNonceKey, decodeAuthToken, encodeAuthToken } from "./keys/token";
 export type { AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./keys/types";
 export type {
+  AccessTokenStore,
   AdminUserOutcome,
   AdminUserStore,
+  AuthAccessToken,
+  AuthAccessTokenInput,
   AuthAlgorithm,
   AuthChallenge,
   AuthCredential,

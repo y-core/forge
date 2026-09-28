@@ -8,17 +8,18 @@ import {
   hmacSign,
   hmacVerify,
   importHmacKeyFromHex,
+  importHmacKeyRing,
+  lookupHmacKey,
   randomBytes,
-  sha256,
   utf8Decode,
   utf8Encode,
 } from "../crypto/mod";
+import type { HmacKeyRing } from "../crypto/mod";
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "./constants";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { isFormCapConflict, parseFormData } from "./parse-form-data";
 import type {
-  CsrfKeyRing,
   CsrfMinterOptions,
   CsrfProtectionOptions,
   CsrfResult,
@@ -39,16 +40,7 @@ export const csrfMinterCtx = contextVar<(path: string) => Promise<string>>(CSRF_
 /** Typed accessor for the pre-minted CSRF token, bound to the current request's pathname, set by `csrfProtection` on GET/HEAD. @public */
 export const csrfTokenCtx = contextVar<string>(CSRF_TOKEN_KEY);
 
-async function keyFingerprint(hexSecret: string): Promise<string> {
-  return base64urlEncode(await sha256(hexSecret.toLowerCase())).slice(0, 12);
-}
-
-// `Object.hasOwn` and not `ring.keys[kid]`: an attacker-supplied kid of `constructor` must not resolve.
-function lookupKey(ring: CsrfKeyRing, kid: string): CryptoKey | undefined {
-  return Object.hasOwn(ring.keys, kid) ? ring.keys[kid] : undefined;
-}
-
-function normalizeRing(keyOrRing: CryptoKey | CsrfKeyRing): CsrfKeyRing {
+function normalizeRing(keyOrRing: CryptoKey | HmacKeyRing): HmacKeyRing {
   if ("activeKeyId" in keyOrRing) {
     return keyOrRing;
   }
@@ -61,22 +53,8 @@ export function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
 }
 
 /** Imports hex-encoded secrets into a CSRF key ring, the first becoming the active signing key. @public */
-export async function importCsrfKeyRing(secrets: [string, ...string[]]): Promise<CsrfKeyRing> {
-  const entries = await Promise.all(
-    secrets.map(async (hex) => {
-      const kid = await keyFingerprint(hex);
-      const key = await importCsrfKey(hex);
-      return [kid, key] as const;
-    }),
-  );
-  const first = entries[0];
-  if (!first) throw new Error("CSRF key ring requires at least one secret");
-  const activeKeyId = first[0];
-  const keys: Record<string, CryptoKey> = {};
-  for (const [kid, key] of entries) {
-    keys[kid] = key;
-  }
-  return { activeKeyId, keys };
+export function importCsrfKeyRing(secrets: [string, ...string[]]): Promise<HmacKeyRing> {
+  return importHmacKeyRing(secrets, "CSRF secret");
 }
 
 /** Creates a signed CSRF token embedding kid, path, optional subject, timestamp, and 16 random bytes. @public */
@@ -96,7 +74,7 @@ export async function createCsrfToken(key: CryptoKey, path: string, options: Csr
 
 /** Verifies a CSRF token. @public */
 export async function verifyCsrfToken(
-  keyOrRing: CryptoKey | CsrfKeyRing,
+  keyOrRing: CryptoKey | HmacKeyRing,
   token: string,
   path: string,
   options: CsrfVerifyOptions = {},
@@ -141,7 +119,7 @@ export async function verifyCsrfToken(
   }
 
   const ring = normalizeRing(keyOrRing);
-  const key = lookupKey(ring, _kid);
+  const key = lookupHmacKey(ring, _kid);
   if (!key) return err("unknown-key");
 
   const valid = await hmacVerify(key, payloadStr, sigBytes);
@@ -165,10 +143,10 @@ export type { CsrfSecretResolver };
 
 /** Resolves the ring `secret` names, cached per `env` — a key import on every request is pure waste. */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-function ringResolver(secret: CsrfSecretResolver): (context: RequestContext<any, any>) => Promise<CsrfKeyRing> {
-  const ringCache = new WeakMap<object, CsrfKeyRing>();
+function ringResolver(secret: CsrfSecretResolver): (context: RequestContext<any, any>) => Promise<HmacKeyRing> {
+  const ringCache = new WeakMap<object, HmacKeyRing>();
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  return async (context: RequestContext<any, any>): Promise<CsrfKeyRing> => {
+  return async (context: RequestContext<any, any>): Promise<HmacKeyRing> => {
     // oxlint-disable-next-line typescript/no-explicit-any -- env shape varies across apps and tests
     const envObj = (context as any).env;
     const cacheKey = envObj && typeof envObj === "object" ? (envObj as object) : null;
@@ -183,8 +161,8 @@ function ringResolver(secret: CsrfSecretResolver): (context: RequestContext<any,
 }
 
 /** The ring's active key, or a throw naming the key id nothing in it answers to. */
-function activeCsrfKey(ring: CsrfKeyRing): CryptoKey {
-  const key = lookupKey(ring, ring.activeKeyId);
+function activeCsrfKey(ring: HmacKeyRing): CryptoKey {
+  const key = lookupHmacKey(ring, ring.activeKeyId);
   if (!key) throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
   return key;
 }

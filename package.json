@@ -160,6 +160,10 @@
       "types": "./src/jsx/register.ts",
       "import": "./src/jsx/register.ts"
     },
+    "./keyring": {
+      "types": "./src/keyring/mod.ts",
+      "import": "./src/keyring/mod.ts"
+    },
     "./logging": {
       "types": "./src/logging/mod.ts",
       "import": "./src/logging/mod.ts"
@@ -368,6 +372,7 @@
     "src/html/",
     "src/http/",
     "src/jsx/",
+    "src/keyring/",
     "src/logging/",
     "src/output/",
     "src/result/",

@@ -1,3 +1,4 @@
+import { KEYRING_KEY_ID_LENGTH } from "../keyring/ring";
 import type { AuthAlgorithm, AuthFactorKind } from "./types";
 
 // A primary factor must identify the visitor: `email-otp` does, because the visitor types the
@@ -14,7 +15,7 @@ export const AUTH_SUPPORTED_ALGORITHMS: readonly AuthAlgorithm[] = [-7, -257];
 export const AUTH_ADMIN_ROLE = "admin";
 
 /** A key id is eight base64url characters, which is exactly the six kid bytes a token frame carries. @public */
-export const AUTH_KEY_ID_LENGTH = 8;
+export const AUTH_KEY_ID_LENGTH = KEYRING_KEY_ID_LENGTH;
 
 /** Shortest expiration Workers KV accepts — session storage's floor, and the one a ceremony borrows. @public */
 export const AUTH_KV_MIN_TTL_SECONDS = 60;
@@ -71,3 +72,9 @@ export const AUTH_PASSKEY_ASSERTION_ID_MAX = 1400;
 
 /** The alphabet a presented credential id must be drawn from. @public */
 export const AUTH_PASSKEY_ASSERTION_ID_SHAPE = /^[A-Za-z0-9_-]+$/;
+
+/** Longest lifetime an access token may be issued with unless a deployment lifts the ceiling — 366 days, in milliseconds. @public */
+export const AUTH_ACCESS_TOKEN_MAX_LIFETIME_MS = 31_622_400_000;
+
+/** The shortest gap between two `last_used_at` stamps on one access token, in milliseconds. @public */
+export const AUTH_ACCESS_TOKEN_USE_INTERVAL_MS = 60_000;

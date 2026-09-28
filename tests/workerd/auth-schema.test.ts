@@ -150,8 +150,22 @@ describe("the shipped store adapters against real D1", () => {
       confirmByStranger: false,
       removeFactorByStranger: false,
       removeUser: "changed",
-      // Only `frank` is left: the delete batch took the user and all four child rows together.
-      leftBehind: { auth_credentials: 0, auth_factors: 0, auth_identity_links: 0, auth_otp_state: 0, auth_users: 1 },
+      // Only `frank` is left: the delete batch took the user and every child row together.
+      leftBehind: { auth_access_tokens: 0, auth_credentials: 0, auth_factors: 0, auth_identity_links: 0, auth_otp_state: 0, auth_users: 1 },
+    });
+  });
+
+  it("refuses a duplicate hash, throttles a use stamp to its interval, scopes revocation to the owner, and hides a deactivated owner's token", () => {
+    expect(guards.accessTokens).toEqual({
+      duplicate: { code: "conflict", constraint: "auth_access_tokens.token_hash" },
+      useFirst: true,
+      useInsideInterval: false,
+      useAtEdge: true,
+      revokeByStranger: false,
+      revokeByOwner: true,
+      revokeAgain: false,
+      foundWhileDeactivated: null,
+      foundAfterReactivation: true,
     });
   });
 });

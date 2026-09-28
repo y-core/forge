@@ -1,9 +1,10 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it, spyOn } from "bun:test";
 
 import { RequestContext } from "@remix-run/fetch-router";
 
 import { Forge } from "../app/forge-app";
 import type { AppContext } from "../context/types";
+import type { HmacKeyRing } from "../crypto/types";
 import { mapHandler } from "../testing/route";
 import {
   createCsrfToken,
@@ -18,7 +19,6 @@ import {
 } from "./csrf";
 import { csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
-import type { CsrfKeyRing } from "./types";
 
 describe("importCsrfKey()", () => {
   it("rejects an odd-length hex string", async () => {
@@ -492,7 +492,7 @@ describe("CSRF token", () => {
 
   it("round-trip with explicit kid and ring succeeds", async () => {
     const token = await createCsrfToken(key, "/api/contact", { kid: "v2" });
-    const ring: CsrfKeyRing = { activeKeyId: "v2", keys: { v2: key } };
+    const ring: HmacKeyRing = { activeKeyId: "v2", keys: { v2: key } };
     const result = await verifyCsrfToken(ring, token, "/api/contact");
     expect(result).toEqual({ ok: true });
   });
@@ -569,7 +569,7 @@ describe("CSRF token", () => {
 
   it("rejects a token whose kid is absent from the ring (unknown-key)", async () => {
     const token = await createCsrfToken(key, "/api/contact", { kid: "orphan" });
-    const ring: CsrfKeyRing = { activeKeyId: "v1", keys: { v1: key } };
+    const ring: HmacKeyRing = { activeKeyId: "v1", keys: { v1: key } };
     const result = await verifyCsrfToken(ring, token, "/api/contact");
     expect(result).toEqual({ ok: false, error: "unknown-key" });
   });
@@ -578,7 +578,7 @@ describe("CSRF token", () => {
   for (const pollutedKid of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
     it(`rejects a token whose kid is the inherited member "${pollutedKid}" (unknown-key, not a throw)`, async () => {
       const token = await createCsrfToken(key, "/api/contact", { kid: pollutedKid });
-      const ring: CsrfKeyRing = { activeKeyId: "v1", keys: { v1: key } };
+      const ring: HmacKeyRing = { activeKeyId: "v1", keys: { v1: key } };
       const result = await verifyCsrfToken(ring, token, "/api/contact");
       expect(result).toEqual({ ok: false, error: "unknown-key" });
     });
@@ -592,14 +592,14 @@ describe("CSRF token", () => {
 
   it("still resolves an own key whose id shadows an inherited member name", async () => {
     const token = await createCsrfToken(key, "/api/contact", { kid: "constructor" });
-    const ring: CsrfKeyRing = { activeKeyId: "constructor", keys: { constructor: key } };
+    const ring: HmacKeyRing = { activeKeyId: "constructor", keys: { constructor: key } };
     const result = await verifyCsrfToken(ring, token, "/api/contact");
     expect(result).toEqual({ ok: true });
   });
 
   it("rejects a token with a tampered kid (invalid-signature)", async () => {
     const key2 = await importCsrfKey("cc".repeat(32));
-    const ring: CsrfKeyRing = { activeKeyId: "k1", keys: { k1: key, k2: key2 } };
+    const ring: HmacKeyRing = { activeKeyId: "k1", keys: { k1: key, k2: key2 } };
 
     const token = await createCsrfToken(key, "/api/contact", { kid: "k1" });
     const dotIdx = token.indexOf(".");
@@ -730,6 +730,27 @@ describe("importCsrfKeyRing()", () => {
     const ring = await importCsrfKeyRing(["aa".repeat(32), "bb".repeat(32)]);
     const kids = Object.keys(ring.keys);
     expect(kids[0]).not.toBe(kids[1]);
+  });
+});
+
+describe("CSRF token byte-identity", () => {
+  const FIXTURE_SECRET = "0123456789abcdef".repeat(4);
+  const FIXTURE_TOKEN =
+    "cUs1dWJ1a3BxLW82fC9maXh0dXJlfHNlc3MtZml4dHVyZXwxNzkwMDAwMDAwMDAwfDc0ODRhOTlkMWRlYzc0MzUwMjg3NDRlZTc3M2MzOTYw.w6qBu-J85edheKYnIRLNCyE4Y-YWYThn82K7XYfJfwA";
+
+  it("derives the same active key id as before the ring moved", async () => {
+    const ring = await importCsrfKeyRing([FIXTURE_SECRET]);
+    expect(ring.activeKeyId).toBe("qK5ubukpq-o6");
+  });
+
+  it("verifies a token minted before the ring moved", async () => {
+    const ring = await importCsrfKeyRing([FIXTURE_SECRET]);
+    const now = spyOn(Date, "now").mockReturnValue(1_790_000_000_000);
+    try {
+      expect(await verifyCsrfToken(ring, FIXTURE_TOKEN, "/fixture", { subject: "sess-fixture" })).toEqual({ ok: true });
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 

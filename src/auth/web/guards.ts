@@ -12,11 +12,11 @@ import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { authFactorContext } from "../factors/registry";
 import type { AuthFactorResolution } from "../factors/types";
 import { authLimit } from "../limits";
-import type { AuthFactorKind } from "../types";
+import type { AuthAccessToken, AuthFactorKind } from "../types";
 import { authCtx, resolveAuthIdentity } from "./identity";
 import { authEnrolTarget } from "./paths";
 import { AUTH_ROUTE_GROUPS } from "./routes";
-import type { AuthIdentity } from "./types";
+import type { AccessTokenGuardOptions, AuthIdentity } from "./types";
 import type { AuthGuardName, AuthMedium, AuthRouteGroup } from "./types";
 import type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthRouteMaps } from "./types";
 
@@ -119,6 +119,38 @@ export function requireAdmin(): Middleware {
     const identity = establishedIdentity(context, "requireAdmin");
     if (!identity.isAdmin) return new Response("Forbidden", { status: 403 });
     return next();
+  };
+}
+
+/** The access token `requireBearer` admitted this request with. @public */
+export const accessTokenCtx = contextVar<AuthAccessToken>("auth.accessToken");
+
+const BEARER_CREDENTIALS = /^Bearer +(\S+)$/i;
+
+/** Admits a request only on a valid `Authorization: Bearer` access token holding every listed scope, refusing per RFC 6750. @public */
+export function requireBearer<Scope extends string, Bindings = Record<string, unknown>>(
+  options: AccessTokenGuardOptions<Scope, Bindings>,
+): Middleware {
+  const required = options.scopes ?? [];
+  return async (context, next) => {
+    const presented = BEARER_CREDENTIALS.exec(context.request.headers.get("Authorization") ?? "")?.[1];
+    if (presented === undefined) return jsonResponse({ error: NOT_SIGNED_IN }, 401, { "WWW-Authenticate": "Bearer" });
+
+    const tokens = await options.tokens(getAppContext<Bindings>(context));
+    const verified = await tokens.verify(presented, guardNow(options), required);
+    if (verified.ok) {
+      accessTokenCtx.set(context, verified.data);
+      return next();
+    }
+    if (verified.error === "insufficient-scope") {
+      return jsonResponse({ error: "insufficient_scope" }, 403, {
+        "WWW-Authenticate": `Bearer error="insufficient_scope", scope="${required.join(" ")}"`,
+      });
+    }
+    if (typeof verified.error === "string") {
+      return jsonResponse({ error: "invalid_token" }, 401, { "WWW-Authenticate": 'Bearer error="invalid_token"' });
+    }
+    return jsonResponse({ error: UNAVAILABLE }, 503);
   };
 }
 

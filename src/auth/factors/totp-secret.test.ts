@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { bytesToHex, uuidv7 } from "../../crypto/mod";
+import { bytesToHex, hexToBytes, utf8Encode, uuidv7 } from "../../crypto/mod";
+import { importKeyRing } from "../../keyring/ring";
+import { openAtRest } from "../../keyring/seal";
 import { importAuthKeyRing } from "../keys/ring";
 import type { AuthKeyRing } from "../types";
 import { openTotpSecret, sealTotpSecret } from "./totp-secret";
@@ -89,5 +91,27 @@ describe("openTotpSecret", () => {
       "a flipped byte": "unopenable",
       "too short to hold a frame": "unopenable",
     });
+  });
+});
+
+describe("a TOTP frame sealed before the keyring namespace existed", () => {
+  const FIXTURE_USER_ID = "0190f5c2-7c1e-7000-8000-000000000001";
+  const FIXTURE_KID = "OeXXoIsd";
+  const FIXTURE_FRAME = "39e5d7a08b1d62a88452a8b23d3cadc02eb96d2166d06fdff6402530122c3383132d8211af0ce6a2e483bae6e81c55c8fb1cc0bb1f00";
+
+  it("still derives the same key id from the same root secret", () => {
+    expect(ringA.activeKeyId).toBe(FIXTURE_KID);
+  });
+
+  it("still opens, byte for byte", async () => {
+    expect(await openTotpSecret(ringA, FIXTURE_USER_ID, hexToBytes(FIXTURE_FRAME))).toEqual({ ok: true, data: { secret: SECRET, stale: false } });
+  });
+
+  it("does not open under the keyring's own domain, whether the key id is derived there or copied across", async () => {
+    const binding = { purpose: "totpWrap", context: utf8Encode(`totp-app ${FIXTURE_USER_ID}`) };
+    const frame = hexToBytes(FIXTURE_FRAME);
+    expect(await openAtRest(await importKeyRing([ROOT_A]), binding, frame)).toEqual({ ok: false, error: "no-key" });
+    const copied = { activeKeyId: FIXTURE_KID, keys: { [FIXTURE_KID]: hexToBytes(ROOT_A) } };
+    expect(await openAtRest(copied, binding, frame)).toEqual({ ok: false, error: "unopenable" });
   });
 });

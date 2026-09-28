@@ -24,6 +24,7 @@ audience: consumer
 - §2c mergeSecurityHeaders for Dev/Prod Split: layering the live-reload hash
 - §2d getNonce and Automatic URL Sanitization: reading the nonce; `safeUrl` at render time
 - §2e Default Header Set: which headers are emitted, which are opt-in, and which are a route concern
+- §2f createRouteSecurityHeaders and the Handler-Set CSP: why a response's own CSP combines with the app's, and how a route loosens it instead
 - §3 CORS and Origin Protection: the cross-origin guards
 - §3a cors Middleware for API Routes: scoped application and response rebuild
 - §3b originGuard — Strict Origin Allowlist: the Origin/Referer tier
@@ -71,10 +72,10 @@ names the nonce, the header names the same nonce, and nothing else in the docume
 
 **Every request gets a fresh nonce** — a static nonce defeats nonce enforcement entirely.
 
-**Only the nonce is per-request.** The CSP is rendered once at factory time into a template holding a NUL placeholder where the nonce goes, the
-other headers are computed once and frozen, and a request does one `replaceAll` over the template. The placeholder is unreachable to a caller:
-`CSP_SOURCE_TOKEN` is `/^[\x21-\x7e]+$/`, which excludes NUL, and `assertValidCspOptions` still throws from the factory — before the first request —
-rather than from the render.
+**Only the nonce is per-request.** Each CSP header is rendered once at factory time into a template holding a NUL placeholder where the nonce goes,
+the other headers are computed once and frozen, and a request does one `replaceAll` per template. The placeholder is unreachable to a caller:
+`CSP_SOURCE_TOKEN` is `/^[\x21-\x7e]+$/`, which excludes NUL. Validation still throws from the factory, before the first request, rather than from
+the render: `assertValidSecurityHeadersOptions` is the entry, and it runs `assertValidCspDirectives` once for each policy it will emit.
 
 **Computed headers are queued on the per-request pending-header channel** and flushed once by the app's outermost `applyHeaders` pass, rather than
 each middleware rebuilding its own `Response`.
@@ -89,8 +90,9 @@ each middleware rebuilding its own `Response`.
   overlaps — `createSecurityHeaders` owns the names it sets, `requestId` owns `x-request-id`, and session and flash use `set-cookie` with
   `{ append: true }` — so this is observable only from consumer middleware. Pinned in `src/security/headers.test.ts`.
 
-Both the pending channel and a header baked into the handler's own `Response` are still resolved in the channel's favour: `applyPendingHeaders`
-set-overwrites onto the response.
+A header baked into the handler's own `Response` is resolved in the channel's favour: `applyPendingHeaders` set-overwrites onto the response.
+**`Content-Security-Policy` is the one name that combines instead of overwriting.** The queued policy is set and the response's own is appended
+after it, so a handler's CSP can only tighten the app's (§2f).
 
 **Register once at app level via `app.use("*", …)`** so every route inherits the headers.
 
@@ -176,10 +178,57 @@ a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both 
   block. `'wasm-unsafe-eval'` is narrowest — WebAssembly compilation only, granting no JavaScript evaluation — and is what a WebAssembly consumer
   reaches for rather than `UNSAFE_EVAL`. What each one costs in practice, and the pairing the validator refuses because CSP Level 3 would
   ignore it, are `src/security/README.md`'s, at the point a caller reaches for it.
+- **Trusted Types, violation reporting and a Report-Only policy are opt-in**, and none of their headers or directives is emitted until its option is
+  set. Each has its own merge rule in `mergeSecurityHeaders`, because each is a different kind of value.
+
+  `trustedTypes` adds `require-trusted-types-for 'script'` and a `trusted-types` list of policy names, each name held to the Trusted Types name
+  grammar. `require: false` omits the first directive, so an app can restrict which policies exist before it requires them. Merging concatenates
+  the policy lists, and an `allowDuplicates` or `require` the extra states wins.
+
+  `reporting` emits `Reporting-Endpoints` and adds `report-to` to every CSP, with a `report-uri` fallback beside it because browser support for
+  `report-to` still varies. The endpoint must be an absolute https URL and throws otherwise. Merging replaces `reporting` outright: an app has one
+  place its reports go, not a list.
+
+  `reportOnly` emits `Content-Security-Policy-Report-Only` from the same builder and under the same nonce as the enforced policy. A field it states
+  replaces the enforced field, and a field it leaves out is inherited, so a candidate is written as its difference from the enforced policy. It
+  never carries `upgrade-insecure-requests`, which browsers ignore in a report-only policy. Merging concatenates its source lists as it does the
+  enforced ones, and a directive the base's `reportOnly` never stated is backfilled from the merged enforced list rather than from the default,
+  which is what inheritance would have given it.
 - **`Cache-Control` is deliberately not a blanket default.** Caching is a per-route decision (`definePage({ cache })`), and a namespace-wide value
   would either over-cache a private page or defeat caching everywhere. Within that per-route decision, `cache.scope` defaults to `"private"`: a page
   that states a `maxAge` and no scope is browser-cacheable and never shared-cacheable, so forgetting the field on a personalised page cannot let an
   edge serve one reader's HTML to another. Edge caching is opted into with `scope: "public"`.
+
+### 2f. createRouteSecurityHeaders and the Handler-Set CSP
+
+**A response's own `Content-Security-Policy` is combined with the app's, never replaced by it.** Both the pending-header flush
+(`applyPendingHeaders`) and `applySecurityHeaders` set the app's policy and then append the one the response already carried, so the response
+leaves with two policies. A browser enforces every policy it receives, and a load must pass all of them. A second policy can therefore only take
+permissions away: a handler's CSP tightens the app's and cannot loosen it. That is what makes combining safe as the default for every response,
+including an upstream response a handler proxies through unchanged.
+
+**The case this protects is `serveObject`'s `sandbox`.** Whether an object is active content is known only after the backend read, inside
+`storage/r2`, which is a leaf with no request context ([`STORAGE_BINDINGS.md`][sb-3b] §3b). No middleware could decide it in advance. If the app's
+policy overwrote the handler's, an uploaded HTML or SVG object served `inline` would render on the app's origin under the app policy instead of in
+a sandbox.
+
+**`Content-Security-Policy-Report-Only` still overwrites.** The combine rule is justified by enforcement, and a report-only policy enforces
+nothing, so a handler's candidate gives up no protection when the app's replaces it.
+
+**Loosening a route is `createRouteSecurityHeaders(extra)`'s job, because a handler's header cannot do it.** The middleware lays `extra` over the
+options `createSecurityHeaders` recorded on the request, by `mergeSecurityHeaders`' rules (§2c, §2e), and queues the CSP family again under the
+request's nonce. It is registered deeper than the app-level factory, so its queue wins per name (§2a).
+
+- **It throws when `createSecurityHeaders` has not run on the request.** Without the app's options it has nothing to widen and no nonce to render
+  with, and a policy built from defaults alone would silently drop every directive the app declared.
+- **It takes `CspOptions`, not `SecurityHeadersOptions`.** The CSP family is the only part of the header set rendered against the request's nonce,
+  so it is the only part whose route variant must be built from the app's options and this request together. The rest of the set is origin-wide
+  posture: HSTS, for one, is stored per hostname, so a per-route value is not one a browser can hold.
+- **The merged policy is built once per base-options object.** A `WeakMap` keyed on the options object the app passed to `createSecurityHeaders`
+  holds the rendered templates, so a request on the route pays one `replaceAll` per header, as it does at app level.
+- **An invalid merge throws at the route's first request, not at construction.** `extra` is validated alone when the middleware is built, but the
+  app's options exist only on a request. A combination the validator refuses — `UNSAFE_INLINE` merged onto a backfilled nonce (§2e) — is never
+  cached, so it throws on every request to the route.
 
 ---
 
@@ -207,7 +256,9 @@ excluded delimiters, each of which fixes a real widening bug). The preflight hea
 
 ### 3b. originGuard — Strict Origin Allowlist
 
-Middleware that rejects any request whose `Origin` is not in the allowlist. Use on webhook or privileged endpoints.
+Middleware that rejects any request whose `Origin` is not in the allowlist. Use on privileged endpoints a browser calls. **Never put it on a webhook
+receiver:** a delivery is server-to-server and carries no origin signal, so this guard refuses it. A receiver checks the signature with
+`verifyWebhook` instead ([Signing and verifying webhooks][security-webhooks]).
 
 **It fails closed on no signal at all.** `Origin` decides where it is present; otherwise the `Referer`'s origin does; a request carrying neither is
 `"missing"` and is refused with `403` like a disallowed one. Safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) are exempt before the check runs, so what
@@ -241,7 +292,7 @@ The middleware below defend against cross-origin mutation. They form a deliberat
 | --- | --- | --- | --- |
 | `originProtection(options)` | `Sec-Fetch-Site` **and** the `Origin`/`Referer` allowlist, both applied | Falls back to Fetch-Metadata vouching; fails closed with no signal at all | **The default.** Broadest coverage — modern browsers plus older UAs |
 | `crossOriginProtection(options)` | `Sec-Fetch-Site` only | Fails closed (`403`) unless a dev allowance grants `missingFetchMetadata` | Stricter, no allowlist |
-| `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Webhook/privileged endpoints keyed purely on an origin allowlist |
+| `originGuard(allowed)` | `Origin`/`Referer` only | Fails closed (`403`) — no signal is refused like a disallowed one | Privileged browser-called endpoints keyed purely on an origin allowlist — never a webhook receiver |
 
 **`originProtection` is the recommended default** — the others are the single-signal tiers it is built from.
 
@@ -409,5 +460,6 @@ namespace, and why identity is application-layer.
 [ram-3d]: ./ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [sb-3b]: ./STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
+[security-webhooks]: ../src/security/README.md#signing-and-verifying-webhooks
 [sl-3c]: ./STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger
 [wp-4e]: ../warden/canon/apps/WORKERS_PLATFORM.md#4e-development-transport-posture

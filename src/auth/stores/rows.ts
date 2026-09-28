@@ -3,8 +3,17 @@ import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client, SqlFragment } from "../../storage/db/types";
 import { AuthStoreError } from "../errors";
-import type { AdminUserOutcome, AuthCredential, AuthFactor, AuthFactorKind, AuthIdentityLink, AuthStoreResult, AuthUser } from "../types";
-import type { CredentialRow, FactorRow, IdentityLinkRow, UserRow } from "./types";
+import type {
+  AdminUserOutcome,
+  AuthAccessToken,
+  AuthCredential,
+  AuthFactor,
+  AuthFactorKind,
+  AuthIdentityLink,
+  AuthStoreResult,
+  AuthUser,
+} from "../types";
+import type { AccessTokenRow, CredentialRow, FactorRow, IdentityLinkRow, UserRow } from "./types";
 
 /** How many rows a listing returns when the caller names no limit. @internal */
 export const DEFAULT_PAGE_LIMIT = 50;
@@ -148,6 +157,28 @@ export function readIdentityLink(row: IdentityLinkRow): AuthIdentityLink {
     subject: row.subject,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function readScopes(value: string): string[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || !parsed.every((scope) => typeof scope === "string")) {
+    throw new TypeError("access token store: expected scopes to read back as a JSON array of strings");
+  }
+  return parsed as string[];
+}
+
+/** @internal */
+export function readAccessToken(row: AccessTokenRow): AuthAccessToken {
+  return {
+    id: toUuid(row.id),
+    userId: toUuid(row.user_id),
+    label: row.label,
+    scopes: readScopes(row.scopes),
+    expiresAt: row.expires_at,
+    lastUsedAt: row.last_used_at,
+    revokedAt: row.revoked_at,
+    createdAt: row.created_at,
   };
 }
 

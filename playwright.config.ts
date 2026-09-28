@@ -10,6 +10,7 @@ export default defineConfig({
   testDir: ".",
   // No `webServer`: `src/ui/client/browser.fixture.ts` bundles each module under test into `page.setContent()` markup.
   testMatch: "src/**/*.browser.ts",
+  testIgnore: "**/.claude/**",
   fullyParallel: true,
   // Playwright's default is half the cores, and this set's cost is almost all per-test fixed overhead.
   workers: "100%",

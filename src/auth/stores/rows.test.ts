@@ -8,6 +8,7 @@ import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
 import { AuthStoreError } from "../errors";
+import { createAccessTokenStore } from "./access-tokens";
 import { createAdminUserStore } from "./admin-users";
 import { createChallengeStore } from "./challenges";
 import { createCredentialStore } from "./credentials";
@@ -383,11 +384,18 @@ describe("schema drift", () => {
     await createChallengeStore(client).take("k1");
     await createNonceStore(client).markConsumed("n1", 900);
     await purgeAuthEphemera(client, 1);
+    const accessTokens = createAccessTokenStore(client);
+    await accessTokens.create({ userId: USER_ID, tokenHash: new Uint8Array(32), label: "CLI", scopes: ["notes:read"], expiresAt: 2 }, 1);
+    await accessTokens.findByHash(new Uint8Array(32));
+    await accessTokens.listByUser(USER_ID);
+    await accessTokens.recordUse(OTHER_ID, 1, 60_000);
+    await accessTokens.revoke(OTHER_ID, USER_ID, 1);
     return db.calls.map((call) => call.sql);
   }
 
   it("parses every table and its columns out of the DDL", () => {
     expect([...TABLES.keys()].sort()).toEqual([
+      "auth_access_tokens",
       "auth_challenges",
       "auth_credentials",
       "auth_factors",

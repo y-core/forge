@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
+import { Forge } from "../../app/forge-app";
+import { applySecurityHeaders, createSecurityHeaders } from "../../security/headers";
 import { fakeR2 } from "../../testing/fakes";
+import { mapHandler } from "../../testing/route";
 import { UnsatisfiableRangeError } from "./errors";
 import { r2Backend } from "./r2-backend";
 import { serveObject } from "./serve";
@@ -354,6 +357,35 @@ describe("serveObject — active content types", () => {
       etag: '"abc123"',
       "x-content-type-options": "nosniff",
     });
+  });
+});
+
+describe("serveObject — under forge's security headers", () => {
+  const servePage = (request: Request) =>
+    serveObject(makeBackend(makeObjectBody({ key: "page.html", contentType: "text/html" })), request, "page.html", {
+      contentDisposition: "inline",
+    });
+
+  it("keeps the sandbox beside the app-wide CSP inside a Forge app", async () => {
+    const app = new Forge();
+    app.use("*", createSecurityHeaders());
+    mapHandler(app, "GET", "/files/page.html", (c) => servePage(c.request));
+
+    const res = await app.request("/files/page.html");
+
+    const policies = (res.headers.get("content-security-policy") ?? "").split(", ");
+    expect(policies).toHaveLength(2);
+    expect(policies[0]).toStartWith("default-src 'self'");
+    expect(policies[1]).toBe("sandbox");
+  });
+
+  it("keeps the sandbox when the response is hardened with applySecurityHeaders", async () => {
+    const res = applySecurityHeaders(await servePage(new Request("http://x/page.html")), { nonce: "abc" });
+
+    const policies = (res.headers.get("content-security-policy") ?? "").split(", ");
+    expect(policies).toHaveLength(2);
+    expect(policies[0]).toStartWith("default-src 'self'");
+    expect(policies[1]).toBe("sandbox");
   });
 });
 

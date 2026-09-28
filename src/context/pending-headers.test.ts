@@ -16,12 +16,31 @@ describe("setPendingHeader / applyPendingHeaders", () => {
 
   it("set-overwrites a single-valued header so it appears exactly once (no duplication)", () => {
     const c = createTestContext(new Request("http://test/"));
+    setPendingHeader(c, "referrer-policy", "strict-origin-when-cross-origin");
+
+    const res = applyPendingHeaders(c, new Response("body", { headers: { "referrer-policy": "unsafe-url" } }));
+
+    expect(res.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+    expect([...res.headers].filter(([name]) => name === "referrer-policy")).toHaveLength(1);
+  });
+
+  it("combines a response's own CSP after the queued one", () => {
+    const c = createTestContext(new Request("http://test/"));
     setPendingHeader(c, "content-security-policy", "default-src 'self'");
 
     const res = applyPendingHeaders(c, new Response("body", { headers: { "content-security-policy": "default-src 'none'" } }));
 
-    expect(res.headers.get("content-security-policy")).toBe("default-src 'self'");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'self', default-src 'none'");
     expect([...res.headers].filter(([name]) => name === "content-security-policy")).toHaveLength(1);
+  });
+
+  it("leaves a response's own CSP untouched when only other headers are queued", () => {
+    const c = createTestContext(new Request("http://test/"));
+    setPendingHeader(c, "referrer-policy", "no-referrer");
+
+    const res = applyPendingHeaders(c, new Response("body", { headers: { "content-security-policy": "sandbox" } }));
+
+    expect(res.headers.get("content-security-policy")).toBe("sandbox");
   });
 
   it("returns the original response unchanged when no headers are pending", async () => {

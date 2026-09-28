@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
+import { importKeyRing, lookupKeyRingKey } from "../../keyring/ring";
+import { openAtRest, sealAtRest } from "../../keyring/seal";
 import { createTestContext } from "../../testing/context";
 import { buildRequest } from "../../testing/request";
 import type { AuthKeyRing } from "../types";
-import { importAuthKeyRing, lookupAuthKey, resolveAuthServices } from "./ring";
+import { importAuthKeyRing, resolveAuthServices } from "./ring";
 
 function ring(overrides: Partial<AuthKeyRing> = {}): AuthKeyRing {
   return { activeKeyId: "k1", keys: { k1: new Uint8Array(32).fill(7) }, ...overrides };
@@ -14,53 +16,30 @@ function contextFor(env: object): any {
   return createTestContext(buildRequest("https://app.example/auth/signin"), { env });
 }
 
-describe("lookupAuthKey", () => {
-  it("returns the key a ring declares", () => {
-    expect(lookupAuthKey(ring(), "k1")?.byteLength).toBe(32);
-  });
-
-  it("returns undefined for an id the ring does not declare", () => {
-    expect(lookupAuthKey(ring(), "k9")).toBeUndefined();
-  });
-
-  it("returns undefined for an inherited property name, so `constructor` cannot resolve", () => {
-    for (const kid of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
-      expect(lookupAuthKey(ring(), kid)).toBeUndefined();
-    }
-  });
-});
-
-// The floor is a length check, and 32 zero bytes clears it. These are the two shapes that say the
-// secret was never generated at all.
 describe("importAuthKeyRing — the entropy floor", () => {
-  it("refuses a secret whose bytes are all the same value, however long it is", async () => {
+  it("names importAuthKeyRing when it refuses a degenerate secret", async () => {
     await expect(importAuthKeyRing(["00".repeat(32)])).rejects.toThrow(
       "importAuthKeyRing: a secret whose bytes are all the same value is not a secret",
     );
-    await expect(importAuthKeyRing(["ff".repeat(48)])).rejects.toThrow("is not a secret");
   });
+});
 
-  it("refuses a secret drawn from too small an alphabet, naming the count it found", async () => {
-    await expect(importAuthKeyRing(["0102".repeat(16)])).rejects.toThrow(
-      "importAuthKeyRing: a secret carrying only 2 distinct byte values is not one a CSPRNG produced",
-    );
-  });
+describe("importAuthKeyRing — kept apart from at-rest sealing", () => {
+  const SECRET = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
+  const binding = { purpose: "webhook-secret", context: new TextEncoder().encode("webhooks 1") as Uint8Array<ArrayBuffer> };
+  const plaintext = new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer>;
 
-  it("accepts a secret a CSPRNG would plausibly have produced", async () => {
-    const imported = await importAuthKeyRing(["9f2c7a41b6d0e358142b9ce70af6135d8b47e29c0d63a5f81e4720cb36d9a875"]);
-    expect(Object.keys(imported.keys)).toHaveLength(1);
-  });
+  it("is refused by the public sealAtRest, while a ring from importKeyRing over the same secret seals and opens", async () => {
+    const authRing = await importAuthKeyRing([SECRET]);
+    await expect(sealAtRest(authRing, binding, plaintext)).rejects.toThrow("never the auth key ring");
 
-  it("refuses a degenerate secret even when a good one comes first, since a retired key still opens tokens", async () => {
-    await expect(importAuthKeyRing(["9f2c7a41b6d0e358142b9ce70af6135d8b47e29c0d63a5f81e4720cb36d9a875", "00".repeat(32)])).rejects.toThrow(
-      "is not a secret",
-    );
+    const appRing = await importKeyRing([SECRET]);
+    const frame = await sealAtRest(appRing, binding, plaintext);
+    expect(await openAtRest(appRing, binding, frame)).toEqual({ ok: true, data: { plaintext, kid: appRing.activeKeyId } });
   });
 });
 
 describe("resolveAuthServices", () => {
-  // Keyed on the env alone, two mounts with different `AuthOptions` on one env shared one
-  // `AuthServices`, and the second silently read the first's key ring.
   it("answers two option sets on one env with their own services, rather than the first caller's", async () => {
     const context = contextFor({ DB: {} });
     const first = { secret: () => ring() };
@@ -68,7 +47,6 @@ describe("resolveAuthServices", () => {
 
     expect((await resolveAuthServices(context, first)).keys.activeKeyId).toBe("k1");
     expect((await resolveAuthServices(context, second)).keys.activeKeyId).toBe("k2");
-    // And the first is still cached, rather than having been evicted by the second.
     expect((await resolveAuthServices(context, first)).keys.activeKeyId).toBe("k1");
   });
 
@@ -94,7 +72,7 @@ describe("resolveAuthServices", () => {
   it("returns the resolved key ring", async () => {
     const services = await resolveAuthServices(contextFor({}), { secret: () => ring() });
     expect(services.keys.activeKeyId).toBe("k1");
-    expect(lookupAuthKey(services.keys, "k1")?.byteLength).toBe(32);
+    expect(lookupKeyRingKey(services.keys, "k1")?.byteLength).toBe(32);
   });
 
   it("awaits an async secret resolver", async () => {

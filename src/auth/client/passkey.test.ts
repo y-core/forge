@@ -261,6 +261,22 @@ describe("encodeCredential / ceremonyReason", () => {
     expect(encoded.authenticatorAttachment).toBe("platform");
   });
 
+  it("carries no client extension results, so PRF and largeBlob output never reaches the server", () => {
+    const secret = new Uint8Array(32).fill(0xab);
+    const withExtensions = {
+      ...ASSERTION,
+      response: ASSERTION.response,
+      getClientExtensionResults: () => ({ prf: { results: { first: secret } }, largeBlob: { blob: secret } }),
+    } as unknown as PublicKeyCredential;
+
+    const body = JSON.stringify(encodeCredential(withExtensions));
+
+    expect(body).not.toContain("clientExtensionResults");
+    expect(body).not.toContain("prf");
+    expect(body).not.toContain("largeBlob");
+    expect(body).not.toContain(base64urlEncode(secret).slice(0, 16));
+  });
+
   it("maps only the two named DOMException names, and everything else to one reason", () => {
     const named = (name: string) => Object.assign(new Error(name), { name });
 

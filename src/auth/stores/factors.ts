@@ -1,9 +1,10 @@
 import { base64urlDecode, uuidFromBytes, uuidv7Bytes } from "../../crypto/mod";
+import { KEYRING_KID_BYTES } from "../../keyring/ring";
 import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import type { AuthFactorRequirement } from "../factors/types";
-import { AUTH_KID_BYTES, assertAuthKeyId } from "../keys/token";
+import { assertAuthKeyId } from "../keys/token";
 import { authLimit } from "../limits";
 import type { AuthStoreResult, FactorStore } from "../types";
 import { inList, readFactor, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
@@ -41,7 +42,7 @@ export async function purgeStaleTotpSecrets(db: D1Client, at: number, options: T
   const outcome = await db.execute(
     sql`DELETE FROM auth_factors
         WHERE kind = 'totp-app' AND secret IS NOT NULL
-          AND substr(secret, 1, ${AUTH_KID_BYTES}) != ${base64urlDecode(activeKeyId)}
+          AND substr(secret, 1, ${KEYRING_KID_BYTES}) != ${base64urlDecode(activeKeyId)}
           AND COALESCE(last_verified_at, created_at) <= ${at - idleForMs}`,
   );
   return outcome.ok ? ok(outcome.data.rowsWritten) : err(storeError("factors.purgeStaleTotpSecrets", outcome.error));
@@ -158,7 +159,7 @@ export function createFactorStore(db: D1Client): FactorStore {
     async countSecretsNotUnder(kind, kid) {
       const outcome = await db.queryOne<{ held: number }>(
         sql`SELECT COUNT(*) AS held FROM auth_factors
-            WHERE kind = ${kind} AND secret IS NOT NULL AND substr(secret, 1, ${AUTH_KID_BYTES}) != ${base64urlDecode(kid)}`,
+            WHERE kind = ${kind} AND secret IS NOT NULL AND substr(secret, 1, ${KEYRING_KID_BYTES}) != ${base64urlDecode(kid)}`,
       );
       return outcome.ok ? ok(outcome.data?.held ?? 0) : err(storeError("factors.countSecretsNotUnder", outcome.error));
     },

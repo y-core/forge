@@ -15,8 +15,8 @@ export { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 export { isFormCapConflict, parseFormData } from "./parse-form-data";
 export { formToObject } from "./to-object";
 export { verifyTurnstile } from "./turnstile";
+export type { HmacKeyRing } from "../crypto/mod";
 export type {
-  CsrfKeyRing,
   CsrfMinterOptions,
   CsrfProtectionOptions,
   CsrfResult,

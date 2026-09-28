@@ -31,7 +31,9 @@ export function applyPendingHeaders(context: RequestContext<any, any>, response:
   }
   for (const [name, value] of pending.entries()) {
     if (name === "set-cookie") continue;
+    const own = name === "content-security-policy" ? response.headers.get(name) : null;
     headers.set(name, value);
+    if (own !== null) headers.append(name, own);
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
