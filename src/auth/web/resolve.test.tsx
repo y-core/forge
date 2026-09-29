@@ -801,15 +801,27 @@ interface Holding {
   readonly passkey?: AuthFactorRequirement;
   readonly remaining?: number;
   readonly storeDown?: boolean;
+  readonly onRead?: () => void;
 }
 
 /** A registry whose explicit factors list `held` as confirmed, the recovery-code one counting `remaining` unused codes. */
-function holdingRegistry(held: readonly AuthFactorKind[], { totp = "optional", passkey, remaining = 10, storeDown = false }: Holding = {}) {
+function holdingRegistry(
+  held: readonly AuthFactorKind[],
+  { totp = "optional", passkey, remaining = 10, storeDown = false, onRead = () => {} }: Holding = {},
+) {
   const listed = (kind: AuthFactorKind) => ({
     ...fakeFactorService(kind),
-    listEnrolments: async () => (storeDown ? err(new Error("store down") as never) : ok(held.includes(kind) ? [confirmedRow(kind)] : [])),
+    listEnrolments: async () => {
+      onRead();
+      return storeDown ? err(new Error("store down") as never) : ok(held.includes(kind) ? [confirmedRow(kind)] : []);
+    },
   });
-  const codes = Object.assign(listed("recovery-code"), { remaining: async () => ok(remaining) }) as AuthFactorService;
+  const codes = Object.assign(listed("recovery-code"), {
+    remaining: async () => {
+      onRead();
+      return ok(remaining);
+    },
+  }) as AuthFactorService;
   return createFactorRegistry(fakeFactorStore(held), {
     offered: [
       fakeFactorOffer("email-otp", "primary"),
@@ -868,6 +880,46 @@ describe("the verify page's step-up picker", () => {
   it("offers no picker to an account holding a single second factor", async () => {
     expect((await verifyOf(["totp-app"], "/page")).choices).toEqual([]);
   });
+});
+
+describe("the verify page's recovery-standing lookup", () => {
+  const verifyReading = async (held: readonly AuthFactorKind[], holding: Holding) => {
+    let reads = 0;
+    const factors = holdingRegistry(held, { ...holding, onRead: () => (reads += 1) });
+    const options = optionsWith({ users: fakeAuthUserStore([viewer]), factors });
+    const html = await (await loaderApp(loadVerify, options, unproved).request("/page?next=%2Fapp")).text();
+    return { html, reads };
+  };
+
+  it("reads no recovery standing for an authenticator-app step-up, which renders no passkey ceremony", async () => {
+    const { html, reads } = await verifyReading(["totp-app"], {});
+    expect({ prompt: textOf(html, "div", 'data-slot="card-description"'), reads }).toEqual({
+      prompt: "Enter the current code from your authenticator app.",
+      reads: 0,
+    });
+  });
+
+  const passkeyCases: readonly { label: string; held: readonly AuthFactorKind[]; remaining?: number; expected: string }[] = [
+    {
+      label: "sends a passkey step-up by a holder who never confirmed codes on to generate them, return-to kept",
+      held: ["passkey"],
+      expected: "/account/recovery-codes?next=%2Fapp",
+    },
+    {
+      label: "sends a passkey step-up by a holder with codes to spare on to the return-to",
+      held: ["passkey", "recovery-code"],
+      remaining: 2,
+      expected: "/app",
+    },
+  ];
+
+  for (const { label, held, remaining, expected } of passkeyCases) {
+    it(label, async () => {
+      const { html, reads } = await verifyReading(held, { passkey: "optional", ...(remaining === undefined ? {} : { remaining }) });
+      expect(attrOf(html, `data-scope="${PASSKEY_SCOPE}"`, PASSKEY_REDIRECT_ATTR)).toBe(expected);
+      expect(reads).toBeGreaterThan(0);
+    });
+  }
 });
 
 describe("the verify page for a session that owes nothing", () => {
@@ -1002,6 +1054,32 @@ describe("the recovery-code resolvers", () => {
       return view.ok ? Response.json(view.data.props.fallbackFactors) : view.error;
     }, member);
     expect(await (await app.request("/page")).json()).toEqual(["email-otp", "totp-app"]);
+  });
+
+  it("offers an implicit factor as a way back in, though the account holds no enrolment row for it", async () => {
+    const options = optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+      factors: holdingRegistry(["passkey"], { passkey: "optional" }),
+    });
+    const app = guardedApp(async (c) => {
+      const view = await resolveAuthView(c, options, { name: "accountPasskeys", guarded: AUTH_VIEW_GUARDS.accountPasskeys });
+      return view.ok ? Response.json(view.data.props.fallbackFactors) : view.error;
+    }, member);
+    expect(await (await app.request("/page")).json()).toEqual(["email-otp"]);
+  });
+
+  it("lists an implicit factor on the factors panel as always on, and an explicit one without a row as not set up", async () => {
+    const options = optionsWith({ factors: holdingRegistry([]), credentials: fakeAuthCredentialStore([]) });
+    const app = guardedApp(async (c) => {
+      const view = await resolveAuthView(c, options, { name: "accountFactors", guarded: AUTH_VIEW_GUARDS.accountFactors });
+      return view.ok ? Response.json(view.data.props.factors) : view.error;
+    }, member);
+    expect(await (await app.request("/page")).json()).toEqual([
+      { kind: "email-otp", state: "always", at: null },
+      { kind: "totp-app", state: "none", at: null },
+      { kind: "recovery-code", state: "none", at: null },
+    ]);
   });
 
   it("tells a visitor back from a recovery code how many codes they have left", async () => {

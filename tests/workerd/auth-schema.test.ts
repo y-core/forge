@@ -201,6 +201,22 @@ describe("the shipped store adapters against real D1", () => {
       leftAfterReset: { auth_credentials: 0, auth_factors: 0, auth_recovery_codes: 0 },
     });
   });
+
+  it("revokes at the reset instant every token the user still held, keeps an earlier revocation's instant, and leaves another user's tokens live", () => {
+    expect(guards.resetTokens?.revokedAt).toEqual({
+      rae: { cli: 1_700_000_000_020, ci: 1_700_000_000_020, retired: 1_700_000_000_001 },
+      sam: { "sam-cli": null },
+    });
+  });
+
+  it("has requireBearer refuse a token it admitted before its owner's factor reset, while another user's token still passes", () => {
+    expect({
+      resetFactors: guards.resetTokens?.resetFactors,
+      before: guards.resetTokens?.bearerBeforeReset,
+      after: guards.resetTokens?.bearerAfterReset,
+      stranger: guards.resetTokens?.bearerStrangerAfterReset,
+    }).toEqual({ resetFactors: "changed", before: "200 null", after: '401 Bearer error="invalid_token"', stranger: "200 null" });
+  });
 });
 
 // The whole reason the challenge and nonce stores left KV. A fake settles neither: both rest on the

@@ -431,8 +431,8 @@ What all of them share with `keyring` is the strength rule, which is [`SECURITY_
 
 ### 5l. `security` — Webhook Message Authentication, by Local Ruling
 
-**`signWebhook` and `verifyWebhook` are `security`'s, although they read the body and [`BOUNDARIES.md`][boundaries-2a] §2a does not list
-them.** A webhook signature authenticates the whole message and is a transport artefact; [`BOUNDARIES.md`][boundaries-2c] §2c sends CSRF to
+**`createWebhookSigning` is `security`'s, although its `verify` reads the body and [`BOUNDARIES.md`][boundaries-2a] §2a does not list
+it.** A webhook signature authenticates the whole message and is a transport artefact; [`BOUNDARIES.md`][boundaries-2c] §2c sends CSRF to
 `form` because it reads one form field. No other home holds: a `webhook` namespace would be one file and fails
 [`NAMESPACE_DESIGN.md`][nd-5a] §5a, `form` parses forms, `auth` is user identity, and `http` owns output.
 

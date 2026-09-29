@@ -40,14 +40,10 @@ const authDemandCtx = contextVar<AuthFactorResolution>("auth.demand");
 
 // A group that answers in JSON is refused in JSON: a browser controller posting a ceremony step
 // cannot read an HTML sign-in page, and follows the redirect only to parse the wrong document.
-/** The refusal `medium` calls for — `html` builds its own answer, `json` carries the message as a body. */
 function refuse(medium: AuthMedium | undefined, message: string, status: number, html: () => Response): Response {
   return medium === "json" ? jsonResponse({ error: message }, status) : html();
 }
 
-// Reused rather than re-resolved: with `resolveAuth` mounted globally, every guarded request would
-// otherwise read the user store twice for the same answer.
-/** The identity already on this request, or the one this request's session resolves to against the store. */
 async function establishIdentity<Bindings>(
   context: Parameters<Middleware>[0],
   options: Pick<AuthGuardOptions<Bindings>, "users" | "now">,
@@ -62,7 +58,6 @@ async function establishIdentity<Bindings>(
   return resolveAuthIdentity(session, users, guardNow(options));
 }
 
-/** Whether the visitor can arrive back at this request's own URL by GET. */
 function replayableMethod(context: Parameters<Middleware>[0]): boolean {
   const method = context.method.toUpperCase();
   return method === "GET" || method === "HEAD";
@@ -70,7 +65,6 @@ function replayableMethod(context: Parameters<Middleware>[0]): boolean {
 
 // An htmx request's own URL is a fragment endpoint, not a page, so the return-to is the page it was
 // sent from; a mutation's URL has no GET handler to arrive back at.
-/** The same-origin path sign-in returns this request to, or `null` when it names none. */
 function signinReturnPath(context: Parameters<Middleware>[0]): string | null {
   if (!isHxRequest(context)) {
     return replayableMethod(context) ? safeRedirectPath(`${context.url.pathname}${context.url.search}`, "/") : null;
@@ -125,13 +119,11 @@ export function resolveAuth<Bindings = Record<string, unknown>>(
   };
 }
 
-/** Puts `identity` on `context` beside the step-up window this guard measures its mark against. */
 function establish(context: Parameters<Middleware>[0], identity: AuthIdentity, options: Pick<AuthGuardOptions, "stepUpMaxAgeMs" | "now">): void {
   authCtx.set(context, identity);
   stepUpWindowCtx.set(context, stepUpWindow(options));
 }
 
-/** The identity `requireAuth` established, or a throw naming the guard that was ordered before it. */
 function establishedIdentity(context: Parameters<Middleware>[0], guard: string): AuthIdentity {
   const identity = authCtx.getOptional(context);
   if (identity === undefined) {
@@ -183,16 +175,12 @@ export function requireBearer<Scope extends string, Bindings = Record<string, un
   };
 }
 
-/** What this request still owes the factor policy, once the session's own step-up is taken into account. */
 type AuthDemand =
   | { readonly status: "none" }
   | { readonly status: "enrolment"; readonly kinds: readonly AuthFactorKind[] }
   | { readonly status: "step-up" }
   | { readonly status: "unknown" };
 
-// `undefined` is legal and means the mark lasts the session, so it is passed through rather than
-// resolved against a default no window would be right for.
-/** Refuses a step-up window too short for any mark to survive being written. */
 function assertStepUpMaxAge(operation: string, option: string, requested: number | undefined): void {
   if (requested === undefined) return;
   authLimit(operation, option, requested, {
@@ -203,13 +191,12 @@ function assertStepUpMaxAge(operation: string, option: string, requested: number
   });
 }
 
-/** This request's clock, the one every mark is written and measured against. */
 function guardNow(options: { readonly now?: () => number }): number {
   return options.now === undefined ? Date.now() : options.now();
 }
 
-/** Whether `stepUpAt` still counts as of `now`, given the configured lifetime. */
-function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined, now: number): boolean {
+/** Whether `stepUpAt` still counts as of `now`, given the configured lifetime. @internal */
+export function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined, now: number): boolean {
   if (stepUpAt === null) return false;
   const age = now - stepUpAt;
   // A negative age is a mark dated into the future: it would satisfy every window until the clock
@@ -218,7 +205,6 @@ function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined, now:
   return maxAgeMs === undefined || age < maxAgeMs;
 }
 
-/** The lifetime a step-up mark is measured against, and the clock reading it is measured at. */
 interface AuthStepUpWindow {
   readonly maxAgeMs: number | undefined;
   readonly now: number;
@@ -226,7 +212,6 @@ interface AuthStepUpWindow {
 
 const stepUpWindowCtx = contextVar<AuthStepUpWindow>("auth.stepUpWindow");
 
-/** The window `options` configures, read on this request's clock. */
 function stepUpWindow(options: { readonly stepUpMaxAgeMs?: number; readonly now?: () => number }): AuthStepUpWindow {
   return { maxAgeMs: options.stepUpMaxAgeMs, now: guardNow(options) };
 }
@@ -238,13 +223,19 @@ export function authStepUpWindow(context: Parameters<Middleware>[0]): AuthStepUp
   return stepUpWindowCtx.getOptional(context);
 }
 
+const freshStepUpWindowCtx = contextVar<AuthStepUpWindow>("auth.freshStepUpWindow");
+
+/** The window `requireFreshStepUp` measures a state-changing request's mark against, or `undefined` when it did not run. @internal */
+export function authFreshStepUpWindow(context: Parameters<Middleware>[0]): AuthStepUpWindow | undefined {
+  return freshStepUpWindowCtx.getOptional(context);
+}
+
 /** Whether `resolved` demands a second factor that a session marked `stepUpAt` has not proved inside `window`; no window proves nothing. @internal */
 export function authStepUpOwed(resolved: AuthFactorResolution, stepUpAt: number | null, window: AuthStepUpWindow | undefined): boolean {
   const demanded = resolved.status === "step-up-required" || (resolved.status === "enrolment-required" && resolved.stepUpKinds.length > 0);
   return demanded && (window === undefined || !stepUpHolds(stepUpAt, window.maxAgeMs, window.now));
 }
 
-// One reader for both guards, so the demand is computed in one place and they only disagree about which side of it they admit.
 async function resolveFactorDemand<Bindings>(
   context: Parameters<Middleware>[0],
   identity: AuthIdentity,
@@ -259,7 +250,6 @@ async function resolveFactorDemand<Bindings>(
   return resolved.data;
 }
 
-/** The outstanding demand for the identity on `context`. */
 async function resolveAuthDemand<Bindings>(
   context: Parameters<Middleware>[0],
   identity: AuthIdentity,
@@ -276,7 +266,6 @@ async function resolveAuthDemand<Bindings>(
 
 // A throw and not a redirect: a kind nothing can be enrolled on has no page to send anyone to, so
 // redirecting is the loop this exists to prevent.
-/** Where a request owing one of `kinds` goes to clear it, or a throw naming the option that omits it. */
 function enrolmentTarget<Bindings>(options: AuthEnrolmentGuardOptions<Bindings>, kinds: readonly AuthFactorKind[]): string {
   const target = authEnrolTarget(options.enrolmentPaths, kinds);
   if (target !== undefined) return target;
@@ -286,7 +275,6 @@ function enrolmentTarget<Bindings>(options: AuthEnrolmentGuardOptions<Bindings>,
   );
 }
 
-/** Refuses a guard chain whose enrolment redirect could never name a page. */
 function assertEnrolmentPaths(operation: string, paths: Partial<Record<AuthFactorKind, string>>): void {
   if (Object.values(paths).some((path) => path !== undefined)) return;
   throw new Error(
@@ -341,6 +329,8 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
   assertStepUpMaxAge("requireFreshStepUp", "freshStepUpMaxAgeMs", maxAgeMs ?? undefined);
 
   return async (context, next) => {
+    const fresh: AuthStepUpWindow = { maxAgeMs: maxAgeMs ?? undefined, now: guardNow(options) };
+    freshStepUpWindowCtx.set(context, fresh);
     if (maxAgeMs === null) return next();
     if (SAFE_METHODS.has(context.method.toUpperCase())) return next();
 
@@ -348,14 +338,13 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
     const resolved = await resolveFactorDemand(context, identity, options);
     if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
     if (resolved.status !== "step-up-required") return next();
-    if (stepUpHolds(identity.stepUpAt, maxAgeMs, guardNow(options))) return next();
+    if (stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
     return refuse(options.medium, STEP_UP_STALE, 403, () => createAuthRedirect(context, options.stepUpPath));
   };
 }
 
-/** The nested map at `path` within `routes`, or `undefined` when that builder was never called. */
 function mapAt(routes: AuthRouteMaps, path: readonly string[]): RouteMap | undefined {
   const [builder, ...rest] = path;
   let current = routes[builder as keyof AuthRouteMaps];
@@ -368,7 +357,6 @@ function mapAt(routes: AuthRouteMaps, path: readonly string[]): RouteMap | undef
 
 // Direct leaves only: a nested group registers its own stack, so covering its paths from the parent
 // would run the shared guards on it twice.
-/** Every `Route` sitting directly in `routeMap`. */
 function ownRoutes(routeMap: RouteMap): Route[] {
   return Object.values(routeMap).filter((value): value is Route => value instanceof Route);
 }
@@ -377,17 +365,13 @@ function ownRoutes(routeMap: RouteMap): Route[] {
 // the import that would share this set fails `validate-namespace-graph`.
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
-/** Whether any direct leaf answers a state-changing method — what decides a group gets origin protection. */
 function mutates(routes: readonly Route[]): boolean {
   return routes.some((leaf) => !SAFE_METHODS.has(leaf.method));
 }
 
-/** Fails a group listing a guard that reads the identity before the `require-auth` that establishes it. */
 function assertGuardOrder(group: AuthRouteGroup): void {
   const auth = group.guards.indexOf("require-auth");
   for (const [index, guard] of group.guards.entries()) {
-    // `resolve-auth` establishes rather than reads, and it establishes nothing on an anonymous
-    // request, so it neither needs `require-auth` before it nor stands in for one after it.
     if (guard === "require-auth" || guard === "resolve-auth" || (auth !== -1 && auth < index)) continue;
     throw new Error(
       `createAuthGuards: group \`${group.path.join(".")}\` lists \`${guard}\` without \`require-auth\` before it — that guard reads the identity \`requireAuth\` establishes, so in this order every request to the group fails instead of being authorised.`,
@@ -395,7 +379,6 @@ function assertGuardOrder(group: AuthRouteGroup): void {
   }
 }
 
-/** Wires one guard name to the middleware that implements it, carrying the group's own medium. */
 function guardMiddleware<Bindings>(
   name: AuthGuardName,
   options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment">,
@@ -417,7 +400,6 @@ function guardMiddleware<Bindings>(
       ...(group.clearsStepUp === true ? { clearsStepUp: true } : {}),
       medium,
     });
-  // No JSON branch: `require-admin` sits on no JSON group, and an unused branch is an untested one.
   if (name === "require-admin") return requireAdmin();
   if (name === "require-pending-enrolment") return requirePendingEnrolment({ ...options.enrolment, medium });
   if (name === "require-fresh-step-up") return requireFreshStepUp({ ...options.enrolment, medium });
@@ -432,8 +414,6 @@ export function createAuthGuards<Bindings = Record<string, unknown>>(options: Au
 
     const groupName = group.path.join(".");
     const routeMap = mapAt(options.routes, group.path);
-    // A group that declares guards and finds no map is a wiring error, never a choice: its routes
-    // are mounted by something. A group declaring none is legitimately absent, as `admin` is.
     if (routeMap === undefined) {
       if (group.guards.length === 0) continue;
       throw new Error(

@@ -5,6 +5,7 @@ import { get, route } from "@remix-run/fetch-router/routes";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
+import { getAppContext } from "../../context/types";
 import { bytesToHex } from "../../crypto/mod";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
@@ -20,6 +21,7 @@ import { createAccessTokenService } from "../tokens/service";
 import type { AccessTokenStore, AuthAccessToken, AuthUser, UserStore } from "../types";
 import {
   accessTokenCtx,
+  authFreshStepUpWindow,
   createAuthGuards,
   requireAdmin,
   requireAuth,
@@ -28,6 +30,7 @@ import {
   requireFreshStepUp,
   requirePendingEnrolment,
   resolveAuth,
+  stepUpHolds,
 } from "./guards";
 import { authCtx, AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
@@ -813,6 +816,68 @@ describe("requireFreshStepUp", () => {
   });
 });
 
+describe("authFreshStepUpWindow", () => {
+  const CLOCK = 5_000_000;
+
+  function windowApp(guards: readonly Parameters<Forge["use"]>[1][]) {
+    const seen: unknown[] = [];
+    const app = guardedApp(guards, { userId: "u1" });
+    const record = (context: Parameters<typeof authFreshStepUpWindow>[0]) => {
+      seen.push(authFreshStepUpWindow(getAppContext(context)));
+      return new Response("recorded");
+    };
+    mapHandler(app, "GET", "/account/window", record);
+    mapHandler(app, "POST", "/account/window", record);
+    return { seen, app };
+  }
+
+  const stack = (fresh: { freshStepUpMaxAgeMs?: number | null }) => [
+    requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
+    requireFreshStepUp({ factors: satisfied, ...enrolment, now: () => CLOCK, ...fresh }),
+  ];
+
+  const cases: readonly { label: string; fresh: { freshStepUpMaxAgeMs?: number | null }; expected: unknown }[] = [
+    { label: "the configured window", fresh: { freshStepUpMaxAgeMs: 60_000 }, expected: { maxAgeMs: 60_000, now: CLOCK } },
+    { label: "fifteen minutes when none is configured", fresh: {}, expected: { maxAgeMs: 15 * 60_000, now: CLOCK } },
+    { label: "an unbounded window for `null`", fresh: { freshStepUpMaxAgeMs: null }, expected: { maxAgeMs: undefined, now: CLOCK } },
+  ];
+
+  for (const { label, fresh, expected } of cases) {
+    it(`returns ${label} on the guard's clock, for a safe and a state-changing request alike`, async () => {
+      const { seen, app } = windowApp(stack(fresh));
+      const answers = [
+        await (await app.request("/account/window")).text(),
+        await (await app.request("/account/window", { method: "POST" })).text(),
+      ];
+      expect({ answers, seen }).toStrictEqual({ answers: ["recorded", "recorded"], seen: [expected, expected] });
+    });
+  }
+
+  it("returns `undefined` when `requireFreshStepUp` did not run", async () => {
+    const { seen, app } = windowApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()])))]);
+    await app.request("/account/window", { method: "POST" });
+    expect(seen).toStrictEqual([undefined]);
+  });
+});
+
+describe("stepUpHolds", () => {
+  const cases: readonly { label: string; stepUpAt: number | null; maxAgeMs: number | undefined; expected: boolean }[] = [
+    { label: "no mark, even under an unbounded window", stepUpAt: null, maxAgeMs: undefined, expected: false },
+    { label: "a mark written this instant", stepUpAt: 10_000, maxAgeMs: 1_000, expected: true },
+    { label: "a mark one millisecond inside the window", stepUpAt: 9_001, maxAgeMs: 1_000, expected: true },
+    { label: "a mark exactly as old as the window", stepUpAt: 9_000, maxAgeMs: 1_000, expected: false },
+    { label: "a mark dated into the future", stepUpAt: 10_001, maxAgeMs: 1_000, expected: false },
+    { label: "a mark dated into the future under an unbounded window", stepUpAt: 10_001, maxAgeMs: undefined, expected: false },
+    { label: "an arbitrarily old mark under an unbounded window", stepUpAt: 0, maxAgeMs: undefined, expected: true },
+  ];
+
+  for (const { label, stepUpAt, maxAgeMs, expected } of cases) {
+    it(`answers ${expected} for ${label}`, () => {
+      expect(stepUpHolds(stepUpAt, maxAgeMs, 10_000)).toBe(expected);
+    });
+  }
+});
+
 describe("the enrolment guards' redirects to an htmx request", () => {
   const HX = { "HX-Request": "true" };
   const stepUp: AuthFactorResolution = { status: "step-up-required", kinds: ["totp-app"] };
@@ -993,6 +1058,16 @@ describe("createAuthGuards", () => {
         `createAuthGuards: group \`account\` lists \`${guard}\` without \`require-auth\` before it`,
       );
     }
+  });
+
+  it("throws when `resolve-auth` stands where `require-auth` must, before `require-admin`", () => {
+    expect(() =>
+      createAuthGuards({ ...chain, groups: [{ path: ["admin", "users"], guards: ["resolve-auth", "require-admin"], medium: "html" }] }),
+    ).toThrow("createAuthGuards: group `admin.users` lists `require-admin` without `require-auth` before it");
+  });
+
+  it("wires a group of `resolve-auth` alone, which needs no `require-auth` before it", () => {
+    expect(() => createAuthGuards({ ...chain, groups: [{ path: ["account"], guards: ["resolve-auth"], medium: "html" }] })).not.toThrow();
   });
 
   // The option this replaces could only be checked for presence, which a middleware other than the

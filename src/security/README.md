@@ -422,53 +422,61 @@ Both sides follow [Standard Webhooks](https://www.standardwebhooks.com): three h
 `whsec_`-prefixed secrets held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule — `whsec_$(openssl rand -base64 32)` gives one. Store each
 secret in a Worker secret, never in source.
 
-### Sending
+Both sides start from one `createWebhookSigning` instance, created once at app level like a signed cookie and reused by every request:
 
 ```ts
-import { signWebhook } from "@y-core/forge/security";
+import { createWebhookSigning } from "@y-core/forge/security";
 
+const webhooks = createWebhookSigning({ secrets: [env.WEBHOOK_SECRET] }); // a weak or malformed secret throws — see below
+```
+
+**Build the instance at app level, never inside a handler.** The instance imports each secret's key on first use and keeps it, so building one
+per request imports every key again on every request.
+
+**A configuration mistake throws here, before any request is read** — a malformed secret, an empty `secrets` list, or a `toleranceSeconds` or
+`maxBytes` that is not a whole number of at least 1. It is a deployment defect, not a refused webhook.
+
+### Sending a webhook
+
+```ts
 const body = JSON.stringify(event);
-const headers = await signWebhook({ id: event.id, body, secrets: [env.WEBHOOK_SECRET] });
+const headers = await webhooks.sign({ id: event.id, body });
 await fetch(endpoint, { method: "POST", body, headers: { ...headers, "content-type": "application/json" } });
 ```
 
-**Reuse the `id` on every retry of the same message.** It is how a receiver tells a retry from a new event. An id containing `.` throws, because it
-would make the signed content ambiguous.
+**Reuse the `id` on every retry of the same message.** It is how a receiver tells a retry from a new event. An empty id, or one containing `.`,
+throws, because the receiver could not deduplicate on it or the signed content would be ambiguous.
 
-### Receiving
+### Receiving a webhook
 
 Verification runs inside the handler rather than as middleware, and hands back the exact bytes that were signed. Parse only after it succeeds:
 
 ```ts
-import { verifyWebhook } from "@y-core/forge/security";
-
-const verified = await verifyWebhook(c.request, { secrets: [env.WEBHOOK_SECRET] });
+const verified = await webhooks.verify(c.request);
 if (!verified.ok) return new Response("Unauthorized", { status: 401 });
 const event: unknown = JSON.parse(new TextDecoder().decode(verified.data.body));
 ```
 
-**`verifyWebhook` consumes the request body.** `verified.data.body` is the only copy. Validate the parsed value before trusting its shape — a valid
+**`verify` consumes the request body.** `verified.data.body` is the only copy. Validate the parsed value before trusting its shape — a valid
 signature proves who sent it, not what it contains. Deduplicate on `verified.data.id`.
 
 The reason for a refusal is in `.error` — a missing header, a malformed timestamp or signature, a timestamp outside the tolerance in either
 direction, an oversized body, or a signature that matches no secret. Log it; never send it back.
 
-The defaults are a five-minute skew window (`toleranceSeconds: 300`) and a 1 MiB body (`maxBytes: 1_048_576`). An oversized body is refused from
-its `Content-Length` before any byte is read, and metered as it streams in case that header is absent or wrong.
+The defaults are a five-minute skew window (`toleranceSeconds: 300`) and a 1 MiB body (`maxBytes: 1_048_576`); pass either to
+`createWebhookSigning` to change it. An oversized body is refused from its `Content-Length` before any byte is read, and metered as it streams in
+case that header is absent or wrong.
 
 ### Rotating a secret
 
 Pass every secret that is currently valid. The sender emits one signature per secret, and the receiver accepts a match against any of them:
 
 ```ts
-await signWebhook({ id, body, secrets: [env.WEBHOOK_SECRET_NEXT, env.WEBHOOK_SECRET] });
-await verifyWebhook(c.request, { secrets: [env.WEBHOOK_SECRET_NEXT, env.WEBHOOK_SECRET] });
+const webhooks = createWebhookSigning({ secrets: [env.WEBHOOK_SECRET_NEXT, env.WEBHOOK_SECRET] });
 ```
 
-Add the new secret on both sides, move the sender to it, then remove the old one.
-
-**A malformed secret, an empty `secrets` list or a zero `maxBytes` throws immediately**, before any request is read — a configuration mistake is a
-deployment defect, not a refused webhook.
+Add the new secret on both sides, move the sender to it, then remove the old one. Each step is a deploy, which creates a fresh instance with the new
+list.
 
 ---
 

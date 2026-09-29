@@ -1,5 +1,4 @@
-// The spec posts `src/auth/schema.sql` here rather than importing it, so what runs is what a consumer
-// composes, and a guard answered by a fake would be one whose SQL was never executed.
+import { Forge } from "../../../src/app/forge-app";
 import { createAccessTokenStore } from "../../../src/auth/stores/access-tokens";
 import { createAdminUserStore } from "../../../src/auth/stores/admin-users";
 import { createChallengeStore } from "../../../src/auth/stores/challenges";
@@ -11,9 +10,12 @@ import { createNonceStore } from "../../../src/auth/stores/nonces";
 import { createOtpStateStore } from "../../../src/auth/stores/otp-state";
 import { createRecoveryCodeStore } from "../../../src/auth/stores/recovery-codes";
 import { createUserStore } from "../../../src/auth/stores/users";
+import { createAccessTokenService } from "../../../src/auth/tokens/service";
+import { requireBearer } from "../../../src/auth/web/guards";
 import type { Result } from "../../../src/result/result";
 import { createD1Client } from "../../../src/storage/db/client";
 import { requireRowsWritten } from "../../../src/storage/db/sql";
+import { mapHandler } from "../../../src/testing/route";
 
 interface Env {
   DB: D1Database;
@@ -184,7 +186,6 @@ async function probeBlob(db: D1Database): Promise<Response> {
   });
 }
 
-/** What one write reported, in both fields the client reads and in the order it reads them. */
 async function writeMeta(db: D1Database, sql: string, ...params: unknown[]): Promise<Record<string, unknown>> {
   const meta = (
     await db
@@ -192,12 +193,7 @@ async function writeMeta(db: D1Database, sql: string, ...params: unknown[]): Pro
       .bind(...params)
       .run()
   ).meta as Record<string, unknown>;
-  return {
-    rows_written: meta.rows_written ?? null,
-    changes: meta.changes ?? null,
-    // What `createD1Client` actually returns for this write.
-    resolved: meta.rows_written ?? meta.changes ?? 0,
-  };
+  return { rows_written: meta.rows_written ?? null, changes: meta.changes ?? null, resolved: meta.rows_written ?? meta.changes ?? 0 };
 }
 
 async function probeRowsWritten(db: D1Database): Promise<Response> {
@@ -211,7 +207,6 @@ async function probeRowsWritten(db: D1Database): Promise<Response> {
   return json({
     updateMatched: await writeMeta(db, "UPDATE probe_rows SET n = ? WHERE id = ?", 11, 1),
     updateUnmatched: await writeMeta(db, "UPDATE probe_rows SET n = ? WHERE id = ?", 99, 404),
-    // The refusal path exactly as a guard writes it: the row exists, the guard is what fails.
     updateGuardRefused: await writeMeta(db, "UPDATE probe_rows SET n = ? WHERE id = ? AND n > ?", 12, 1, 1_000),
     // A matched row whose value does not change — SQLite counts it, and a guard must not read that as a refusal.
     updateNoOp: await writeMeta(db, "UPDATE probe_rows SET n = ? WHERE id = ?", 11, 1),
@@ -220,7 +215,7 @@ async function probeRowsWritten(db: D1Database): Promise<Response> {
   });
 }
 
-function must<T>(outcome: Result<T>, what: string): T {
+function must<T>(outcome: Result<T, unknown>, what: string): T {
   if (!outcome.ok) throw new Error(`${what}: ${messageOf(outcome.error)}`);
   return outcome.data;
 }
@@ -232,7 +227,6 @@ async function countOf(db: D1Database, table: string, where = "1"): Promise<numb
 
 const AT = 1_700_000_000_000;
 
-/** Every store the guards live in, over one client, on an empty set of tables. */
 async function storesOn(db: D1Database) {
   for (const table of [
     "auth_access_tokens",
@@ -263,8 +257,6 @@ async function storesOn(db: D1Database) {
   };
 }
 
-// Each scenario starts from empty tables, so no earlier one's surviving admin answers a later
-// one's guard. Every value below is decided by the shipped adapters' SQL, run by real D1.
 async function probeLastAdmin(db: D1Database): Promise<Record<string, unknown>> {
   const { users, admins } = await storesOn(db);
   const admin = async (local: string): Promise<string> =>
@@ -302,7 +294,6 @@ async function probeDeactivatedAdmin(db: D1Database): Promise<Record<string, unk
   return {
     deactivateDave: must(await admins.setDeactivated(dave, true, AT + 1), "deactivate dave"),
     deactivateGina: must(await admins.setDeactivated(gina, true, AT + 2), "deactivate gina"),
-    // Both are still admins by column, and neither could sign in to undo a lockout.
     demoteDeactivated: must(await admins.setAdmin(dave, false, AT + 3), "demote dave"),
     removeDeactivated: must(await admins.remove(gina), "delete gina"),
     demoteLastActive: must(await admins.setAdmin(carol, false, AT + 4), "demote carol"),
@@ -363,7 +354,6 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
     advanceByStranger: must(await factors.recordVerification(factor.id, frank, 57, AT + 5), "advance as stranger"),
     advanceFirst: must(await factors.recordVerification(factor.id, erin, 57, AT + 6), "advance 57"),
     advanceReplay: must(await factors.recordVerification(factor.id, erin, 57, AT + 7), "replay 57"),
-    // Zero again: the accepted step is what clears the guesses, so this is the reset holding.
     spentAfterAdvance: await countOf(db, "auth_factors", "failed_attempts > 0"),
     confirmByStranger: must(await factors.confirm(factor.id, frank, AT + 8), "confirm as stranger"),
     removeFactorByStranger: must(await factors.remove(factor.id, frank), "remove factor as stranger"),
@@ -380,8 +370,6 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
   };
 }
 
-// A fake cannot settle a single take under concurrent requests: that is the database serialising
-// writers, not anything the adapter does.
 async function probeEphemera(db: D1Database): Promise<Record<string, unknown>> {
   const { client, challenges, nonces } = await storesOn(db);
   const record = { challenge: "Y2hhbGxlbmdl", sessionId: "sess-1" };
@@ -394,8 +382,6 @@ async function probeEphemera(db: D1Database): Promise<Record<string, unknown>> {
     (outcome) => must(outcome, "consume the nonce"),
   );
 
-  // Expiry is the predicate on the read, never a row being gone: a challenge written already dead
-  // is invisible, and a purge only reclaims the space it left.
   must(await challenges.put("stale", record, -1), "put an expired challenge");
   const takeExpired = must(await challenges.take("stale"), "take the expired challenge");
 
@@ -409,13 +395,10 @@ async function probeEphemera(db: D1Database): Promise<Record<string, unknown>> {
     takeExpired,
     beforePurge,
     challengesAfterPurge: await countOf(db, "auth_challenges"),
-    // A consumed nonce is still live, so the purge leaves it: only the dead rows go.
     noncesAfterPurge: await countOf(db, "auth_nonces"),
   };
 }
 
-// The web schema caps a typed address at 254 characters before `normalizeEmail` NFKC-expands it, so
-// the CHECK is the backstop — and `storeError` must call it the caller's fault, not an outage.
 async function probeEmailLength(db: D1Database): Promise<Record<string, unknown>> {
   const { users } = await storesOn(db);
   const long = `${"a".repeat(250)}@example.test`;
@@ -549,6 +532,42 @@ async function probeRecoveryCodes(db: D1Database): Promise<Record<string, unknow
   };
 }
 
+async function probeResetTokens(db: D1Database): Promise<Record<string, unknown>> {
+  const { users, admins, accessTokens } = await storesOn(db);
+  const person = async (local: string): Promise<string> =>
+    must(await users.create({ email: `${local}@example.test`, emailKey: `${local}@example.test` }, AT), `create ${local}`).id;
+  const service = createAccessTokenService({ store: accessTokens, prefix: "rt_", scopes: ["notes:read"], maxLifetimeMs: null });
+  const issue = async (userId: string, label: string) => service.issue({ userId, label, scopes: ["notes:read"], expiresAt: null }, AT);
+  const revokedAtByLabel = async (userId: string) =>
+    Object.fromEntries(must(await accessTokens.listByUser(userId), "list tokens").map((token) => [token.label, token.revokedAt]));
+
+  const app = new Forge();
+  app.use("*", requireBearer({ tokens: () => service, scopes: ["notes:read"], now: () => AT + 30 }));
+  mapHandler(app, "GET", "/api", () => new Response("admitted"));
+  const bearer = async (token: string): Promise<string> => {
+    const res = await app.request("/api", { headers: { Authorization: `Bearer ${token}` } });
+    return `${res.status} ${res.headers.get("WWW-Authenticate")}`;
+  };
+
+  const rae = await person("rae");
+  const sam = await person("sam");
+  const cli = must(await issue(rae, "cli"), "issue rae's cli token").token;
+  must(await issue(rae, "ci"), "issue rae's ci token");
+  const retired = must(await issue(rae, "retired"), "issue rae's retired token");
+  must(await accessTokens.revoke(retired.accessToken.id, rae, AT + 1), "revoke rae's retired token");
+  const samToken = must(await issue(sam, "sam-cli"), "issue sam's token").token;
+  const bearerBeforeReset = await bearer(cli);
+
+  const resetFactors = must(await admins.resetFactors(rae, AT + 20), "reset rae's factors");
+  return {
+    resetFactors,
+    bearerBeforeReset,
+    bearerAfterReset: await bearer(cli),
+    bearerStrangerAfterReset: await bearer(samToken),
+    revokedAt: { rae: await revokedAtByLabel(rae), sam: await revokedAtByLabel(sam) },
+  };
+}
+
 async function probeGuards(db: D1Database): Promise<Response> {
   return json({
     lastAdmin: await probeLastAdmin(db),
@@ -559,6 +578,7 @@ async function probeGuards(db: D1Database): Promise<Response> {
     emailLength: await probeEmailLength(db),
     accessTokens: await probeAccessTokens(db),
     recoveryCodes: await probeRecoveryCodes(db),
+    resetTokens: await probeResetTokens(db),
   });
 }
 

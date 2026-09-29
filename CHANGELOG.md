@@ -178,9 +178,10 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `@y-core/forge/auth/web` admits a request by an `Authorization: Bearer` token, refusing per RFC 6750, and puts
   the token's record on `accessTokenCtx`. The tokens live in a new `auth_access_tokens` table in
   `src/auth/schema.sql` (see Upgrading).
-- **`signWebhook` and `verifyWebhook` in `@y-core/forge/security` follow Standard Webhooks.** The signer emits one
-  `v1` signature per active `whsec_` secret, and the verifier checks the timestamp window, caps the body read and
-  answers the exact bytes that were signed, so an app parses only after the check.
+- **`createWebhookSigning` in `@y-core/forge/security` signs and verifies Standard Webhooks.** Its `sign` emits one
+  `v1` signature per active `whsec_` secret, and its `verify` checks the timestamp window, caps the body read and
+  answers the exact bytes that were signed, so an app parses only after the check. Create the instance once and
+  reuse it: it imports each secret's key a single time, and throws at construction on a bad secret or limit.
 - **`StorePutOptions` takes `sha256`**, a hex string or bytes, and `r2Backend` passes it to R2, which refuses a body
   that does not match; `fakeR2` checks it the same way, refusing a malformed digest with a `TypeError` and a mismatch
   with R2's error 10037. It covers a single `put` only, since R2 multipart uploads accept no checksum.

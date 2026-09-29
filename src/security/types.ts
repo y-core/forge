@@ -1,6 +1,6 @@
 import type { AppContext } from "../context/types";
 import type { DevAllowance } from "../dev/types";
-import type { GuardResult } from "../result/types";
+import type { GuardResult, Result } from "../result/types";
 import type { NONCE } from "./nonce";
 import type { UNSAFE_CSP_SOURCES } from "./unsafe";
 
@@ -148,20 +148,9 @@ export interface CorsOptions {
 /** Bare variable record set by `requestId`. @public */
 export type RequestIdContext = { requestId: string };
 
-/** What `signWebhook` signs, and with which secrets. @public */
-export interface WebhookSignOptions {
-  /** Unique per message and reused on every retry, so a receiver can deduplicate; must not contain ".". */
-  readonly id: string;
-  readonly body: string | Uint8Array<ArrayBuffer>;
-  /** Every active `whsec_` secret; one signature is emitted per entry, so a rotation signs with both. */
-  readonly secrets: readonly string[];
-  /** Milliseconds since the epoch; defaults to `Date.now`. */
-  readonly now?: () => number;
-}
-
-/** Secrets and limits `verifyWebhook` checks a request against. @public */
-export interface WebhookVerifyOptions {
-  /** Candidate `whsec_` secrets; a signature under any one of them verifies. */
+/** Secrets, limits and clock that `createWebhookSigning` fixes for every `sign` and `verify`. @public */
+export interface WebhookSigningOptions {
+  /** Every active `whsec_` secret; `sign` emits one signature per entry and `verify` accepts a signature under any one. */
   readonly secrets: readonly string[];
   /** Allowed clock skew in seconds, in either direction; defaults to 300. */
   readonly toleranceSeconds?: number;
@@ -171,7 +160,22 @@ export interface WebhookVerifyOptions {
   readonly now?: () => number;
 }
 
-/** The Standard Webhooks headers `signWebhook` produces, assignable to `HeadersInit`. @public */
+/** The message `sign` signs. @public */
+export interface WebhookSignOptions {
+  /** Unique per message and reused on every retry, so a receiver can deduplicate; must not contain ".". */
+  readonly id: string;
+  readonly body: string | Uint8Array<ArrayBuffer>;
+}
+
+/** A Standard Webhooks signer and verifier bound to the secrets it was created with. @public */
+export interface WebhookSigning {
+  /** Signs a body under every active secret, answering the three Standard Webhooks headers. */
+  sign(message: WebhookSignOptions): Promise<WebhookSignatureHeaders>;
+  /** Checks a request against any active secret, answering the exact signed body bytes. */
+  verify(request: Request): Promise<Result<VerifiedWebhook, WebhookRefusal>>;
+}
+
+/** The Standard Webhooks headers `sign` produces, assignable to `HeadersInit`. @public */
 export type WebhookSignatureHeaders = { readonly "webhook-id": string; readonly "webhook-timestamp": string; readonly "webhook-signature": string };
 
 /** A webhook whose signature matched, carrying the exact bytes that were signed. @public */
@@ -182,7 +186,7 @@ export interface VerifiedWebhook {
   readonly body: Uint8Array<ArrayBuffer>;
 }
 
-/** Why `verifyWebhook` refused a request — a server diagnostic, never echoed to the sender. @public */
+/** Why `verify` refused a request — a server diagnostic, never echoed to the sender. @public */
 export type WebhookRefusal =
   | "missing-header"
   | "invalid-timestamp"

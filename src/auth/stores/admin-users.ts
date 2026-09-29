@@ -7,7 +7,6 @@ import { adminRefusal, NO_ADMIN_YET, NOT_LAST_ADMIN, ownerRemovable, pageLimit, 
 import type { UserRow } from "./types";
 
 // Prefix-anchored, so the unique index on `email_key` answers the search rather than a full scan.
-/** Turns a search term into a prefix `LIKE` pattern, escaping the `%` and `_` a caller's text may carry. */
 function likeTerm(query: string): string {
   return `${normalizeEmail(query).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
@@ -124,6 +123,7 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
         sql`DELETE FROM auth_credentials WHERE user_id = ${key}`,
         sql`DELETE FROM auth_factors WHERE user_id = ${key}`,
         sql`DELETE FROM auth_recovery_codes WHERE user_id = ${key}`,
+        sql`UPDATE auth_access_tokens SET revoked_at = ${at} WHERE user_id = ${key} AND revoked_at IS NULL`,
         sql`UPDATE auth_users SET sessions_invalid_before = ${at}, updated_at = ${at}
             WHERE id = ${key} AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ${at})`,
       ]);

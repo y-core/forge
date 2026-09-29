@@ -23,6 +23,6 @@ export interface AdminUserService {
   deactivate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   reactivate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   remove(id: string): Promise<AuthStoreResult<AdminUserOutcome>>;
-  /** Clears every second factor and recovery code and signs the user out everywhere — the last resort, leaving email alone to re-enrol with. */
+  /** Clears every second factor and recovery code, ends every session and revokes every bearer token — the last resort, leaving email alone to re-enrol with. */
   resetFactors(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
 }

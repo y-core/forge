@@ -414,10 +414,15 @@ already confirmed.
   one;
 - `recovery-code` is the only explicit second factor, because codes recover a factor and have nothing to recover on their own.
 
-**Codes are issued only to a user who holds a confirmed authenticator app or passkey and has stepped up within `AUTH_FRESH_STEP_UP_MS`.** Both code
-`POST`s check this in the handler, not through `require-fresh-step-up`, which admits a user the policy owes no step-up. Without it, holding the
-mailbox would be enough to mint a way past the second factor. A user holding neither factor gets a 409, and a stale step-up is redirected to verify
-and brought back to the codes page.
+**Codes are issued only to a user who holds a confirmed authenticator app or passkey and has stepped up inside the `require-fresh-step-up`
+window.** Both code `POST`s check this in the handler, not through `require-fresh-step-up`, which admits a user the policy owes no step-up. Without
+it, holding the mailbox would be enough to mint a way past the second factor. A user holding neither factor gets a 409, and a stale step-up is
+redirected to verify and brought back to the codes page.
+
+**The handler measures the step-up against the window the guard is configured with, never a window of its own.** A tightened
+`freshStepUpMaxAgeMs` tightens code issuance with it, and `null` still demands a step-up in this session, of any age — the guard opting out of the
+demand does not let a mailbox mint codes. Where `require-fresh-step-up` did not run on the request, no window exists and the handler sends the user
+to verify on every attempt. The window itself is set at the mount ([`AUTH_MOUNTING.md`][am-2] §2).
 
 **A new set replaces the old one only when the user types one of the new codes back.** Generating a set stages it, and the old set keeps working
 until the confirmation, so a set the user never saved costs them nothing.
@@ -443,9 +448,9 @@ set. A code is spent on getting in, so the repair is the next thing the user mus
 
 ### 8e. The Administrator's Reset Is the Last Resort
 
-**The reset deletes the user's factors, passkeys and recovery codes, and raises their revocation barrier, in one batch.** Every session the
-user holds is refused on its next request. The control is on the account's admin factors page and posts to `adminRoutes`' `users.resetFactors`,
-which sits in `admin.users`, so the administrator must have stepped up recently.
+**The reset deletes the user's factors, passkeys and recovery codes, revokes every bearer token they hold, and raises their revocation barrier,
+in one batch.** Every session and every token the user holds is refused on its next request. The control is on the account's admin factors page
+and posts to `adminRoutes`' `users.resetFactors`, which sits in `admin.users`, so the administrator must have stepped up recently.
 
 **This is the one path back that lets an account in on less than it needed before.** The user signs in with the address alone. Where a second
 factor is demanded they enrol it on the strength of the mailbox and are then sent to generate codes; where none is, they are simply signed in.
@@ -455,6 +460,7 @@ That is why the reset takes an administrator rather than anything the user can d
 
 [am]: ./AUTH_MOUNTING.md
 [am-1]: ./AUTH_MOUNTING.md#1-the-mount-in-order
+[am-2]: ./AUTH_MOUNTING.md#2-the-route-groups-and-their-guards
 [am-6]: ./AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
 [auth-readme]: ../src/auth/README.md
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases

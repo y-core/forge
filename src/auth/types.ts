@@ -206,7 +206,7 @@ export interface AdminUserStore {
   setAdmin(id: string, isAdmin: boolean, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   setDeactivated(id: string, deactivated: boolean, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   remove(id: string): Promise<AuthStoreResult<AdminUserOutcome>>;
-  /** Deletes every factor, credential and recovery code the user holds and refuses their sessions, in one batch. */
+  /** Deletes every factor, credential and recovery code the user holds, revokes their bearer tokens and refuses their sessions, in one batch. */
   resetFactors(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
 }
 

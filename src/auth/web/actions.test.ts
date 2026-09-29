@@ -12,6 +12,7 @@ import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
 import type { TestAction } from "../../testing/types";
+import { AuthStoreError } from "../errors";
 import { createPasskeyFactor } from "../factors/passkey";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService } from "../factors/types";
@@ -33,7 +34,9 @@ import {
   createTotpManageActions,
   createVerifyActions,
 } from "./actions";
+import { requireFreshStepUp } from "./guards";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
+import { authEnrolmentPaths } from "./paths";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 import {
   attrOf,
@@ -65,13 +68,14 @@ interface Seed {
   readonly stepUpWrites?: number[];
   /** When the seeded identity last stepped up, as `requireAuth` would have read it off the session. */
   readonly stepUpAt?: number;
+  readonly stepUpAfter?: unknown[];
 }
 
 /** A `Forge` app with a seeded session and a deterministic CSRF minter, but no CSRF verification. */
 function actionApp(seed: Seed = {}): Forge {
   const app = new Forge();
   app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-  app.use("*", (context, next) => {
+  app.use("*", async (context, next) => {
     const session = sessionCtx.get(context);
     // Both, because a mounted route has both: the guards establish the identity every action reads,
     // and the session is what a sign-out clears and a step-up marks.
@@ -85,6 +89,7 @@ function actionApp(seed: Seed = {}): Forge {
       });
     }
     if (seed.pendingEmail !== undefined) session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, seed.pendingEmail);
+    if (seed.stepUpAt !== undefined) session.set(AUTH_STEP_UP_SESSION_KEY, seed.stepUpAt);
     const marks = seed.stepUpWrites;
     if (marks !== undefined) {
       const write = session.set.bind(session);
@@ -95,7 +100,9 @@ function actionApp(seed: Seed = {}): Forge {
     }
     csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
     csrfFieldCtx.set(context, "_csrf");
-    return next();
+    const response = await next();
+    seed.stepUpAfter?.push(session.get(AUTH_STEP_UP_SESSION_KEY) ?? null);
+    return response;
   });
   return app;
 }
@@ -140,6 +147,15 @@ describe("createSigninActions", () => {
     expect(res.status).toBe(422);
     expect(res.headers.get("location")).toBeNull();
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  });
+
+  it("keeps the refused address in the field of the 422 re-render, so the visitor can correct it", async () => {
+    const options = fakeAuthWebOptions();
+    const app = mounted(actionApp(), "POST", "/auth/signin", createSigninActions(options).signinSubmit);
+
+    const res = await app.request("/auth/signin", formBody({ email: "ada@example" }));
+    expect(res.status).toBe(422);
+    expect(attrOf(await res.text(), 'id="field-email"', "value")).toBe("ada@example");
   });
 
   for (const [kind, name] of [
@@ -240,6 +256,15 @@ describe("createVerifyActions on the second half of a sign-in", () => {
     const res = await app.request("/auth/verify", formBody({ code: "123456" }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/enrol/passkey");
+  });
+
+  it("carries the return-to onto the enrolment page an owed enrolment redirects to", async () => {
+    const options = completing({ status: "enrolment-required", kinds: ["passkey"], stepUpKinds: [] });
+    const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+
+    const res = await app.request("/auth/verify?next=%2Faccount%2Ftotp", formBody({ code: "123456" }));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/auth/enrol/passkey?next=%2Faccount%2Ftotp");
   });
 
   it("redirects an owed step-up back to the verification page", async () => {
@@ -468,6 +493,243 @@ describe("createVerifyActions on a step-up", () => {
 
     expect(await answer("grace@example.com")).toEqual(await answer("nobody@example.com"));
   });
+});
+
+describe("a step-up is recorded on a verified factor and on no other outcome", () => {
+  const EARLIER = 400;
+  const VERIFIED_AT = 1_000;
+  const PRIMARY = { service: fakeFactorService("email-otp"), role: "primary" } as const;
+
+  async function marked(action: TestAction, route: string, url: string, init: RequestInit, seed: Seed = {}) {
+    const stepUpWrites: number[] = [];
+    const stepUpAfter: unknown[] = [];
+    const app = mounted(actionApp({ ...seed, stepUpWrites, stepUpAfter }), "POST", route, action);
+    const res = await app.request(url, init);
+    return { status: res.status, location: res.headers.get("location"), stepUpWrites, stepUpAt: stepUpAfter[0] };
+  }
+
+  const acceptingStepUp = fakeAuthSigninFlow({ stepUp: async (userId, kind, _code, at) => ok({ kind, userId, verifiedAt: at }) });
+
+  function secondFactor(enrolled: readonly AuthFactorKind[], requirement: "optional" | "mandatory"): Partial<AuthRequestServices> {
+    return {
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(enrolled), {
+        offered: [PRIMARY, { service: fakeFactorService("totp-app"), role: "second", requirement }, recoveryOffer()],
+      }),
+    };
+  }
+
+  function verifySubmit(services: Partial<AuthRequestServices>): TestAction {
+    return createVerifyActions(optionsWith(services)).submit;
+  }
+
+  const refusedStepUps = (["unrecognised", "too-many-attempts", "unavailable", "unusable", "expired"] as const).map((reason) => ({
+    outcome: `a step-up code the flow refuses as ${reason}`,
+    services: { ...secondFactor(["totp-app"], "optional"), signin: fakeAuthSigninFlow({ stepUp: async () => err(reason) }) },
+    url: "/auth/verify",
+    code: "123456",
+    status: 422,
+    location: null,
+  }));
+
+  const refusedBeforeTheFlow = [
+    {
+      outcome: "a step-up code the schema refuses",
+      services: { ...secondFactor(["totp-app"], "optional"), signin: acceptingStepUp },
+      url: "/auth/verify",
+      code: "12",
+      status: 422,
+      location: null,
+    },
+    {
+      outcome: "the enrolment detour, taken before an attempt is spent",
+      services: { ...secondFactor([], "mandatory"), signin: acceptingStepUp },
+      url: "/auth/verify",
+      code: "123456",
+      status: 303,
+      location: "/auth/enrol/totp",
+    },
+    {
+      outcome: "the detour of a session owing no step-up",
+      services: { ...secondFactor([], "optional"), signin: acceptingStepUp },
+      url: "/auth/verify?next=%2Fapp",
+      code: "123456",
+      status: 303,
+      location: "/app",
+    },
+    {
+      outcome: "the detour of a session whose factor standing cannot be read",
+      services: {
+        ...secondFactor(["totp-app"], "optional"),
+        factors: { ...fakeFactorRegistry(["totp-app"]), resolve: async () => err(new AuthStoreError("unavailable", "resolve")) },
+        signin: acceptingStepUp,
+      },
+      url: "/auth/verify",
+      code: "123456",
+      status: 503,
+      location: null,
+    },
+  ];
+
+  for (const { outcome, services, url, code, status, location } of [...refusedStepUps, ...refusedBeforeTheFlow]) {
+    for (const [held, stepUpAt] of [
+      ["no earlier mark", null],
+      ["an earlier mark", EARLIER],
+    ] as const) {
+      it(`leaves ${held} as it was on ${outcome}`, async () => {
+        const seed: Seed = stepUpAt === null ? { userId: "u9" } : { userId: "u9", stepUpAt };
+        expect(await marked(verifySubmit(services), "/auth/verify", url, formBody({ code }), seed)).toEqual({
+          status,
+          location,
+          stepUpWrites: [],
+          stepUpAt,
+        });
+      });
+    }
+  }
+
+  it("replaces an earlier mark with the moment a step-up code verified", async () => {
+    const services = { ...secondFactor(["totp-app"], "optional"), signin: acceptingStepUp };
+    const result = await marked(verifySubmit(services), "/auth/verify", "/auth/verify", formBody({ code: "123456" }), {
+      userId: "u9",
+      stepUpAt: EARLIER,
+    });
+    expect({ status: result.status, stepUpWrites: result.stepUpWrites, stepUpAt: result.stepUpAt }).toEqual({
+      status: 303,
+      stepUpWrites: [VERIFIED_AT],
+      stepUpAt: VERIFIED_AT,
+    });
+  });
+
+  it("leaves an earlier mark as it was when a step-up code is resent", async () => {
+    const action = createVerifyActions(optionsWith({ ...secondFactor(["totp-app"], "optional"), signin: acceptingStepUp })).resend;
+    const result = await marked(action, "/auth/verify/resend", "/auth/verify/resend", formBody({}), { userId: "u9", stepUpAt: EARLIER });
+    expect({ status: result.status, stepUpWrites: result.stepUpWrites, stepUpAt: result.stepUpAt }).toEqual({
+      status: 303,
+      stepUpWrites: [],
+      stepUpAt: EARLIER,
+    });
+  });
+
+  for (const { outcome, signin, seed, status, location, stepUpAt } of [
+    {
+      outcome: "a sign-in code the flow refuses",
+      signin: acceptingStepUp,
+      seed: { pendingEmail: "grace@example.com", stepUpAt: EARLIER },
+      status: 422,
+      location: null,
+      stepUpAt: EARLIER,
+    },
+    {
+      outcome: "a sign-in code posted with no sign-in started",
+      signin: acceptingStepUp,
+      seed: { stepUpAt: EARLIER },
+      status: 303,
+      location: "/auth/signin",
+      stepUpAt: EARLIER,
+    },
+    {
+      outcome: "a completed sign-in, which clears a carried-over mark rather than recording one",
+      signin: fakeAuthSigninFlow({
+        stepUp: acceptingStepUp.stepUp,
+        complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" as const } }),
+      }),
+      seed: { pendingEmail: "grace@example.com", stepUpAt: EARLIER },
+      status: 303,
+      location: "/app",
+      stepUpAt: null,
+    },
+  ]) {
+    it(`records no step-up on ${outcome}`, async () => {
+      const services = { ...secondFactor(["totp-app"], "optional"), signin };
+      expect(await marked(verifySubmit(services), "/auth/verify", "/auth/verify?next=%2Fapp", formBody({ code: "123456" }), seed)).toEqual({
+        status,
+        location,
+        stepUpWrites: [],
+        stepUpAt,
+      });
+    });
+  }
+
+  const FINISH = "/auth/verify/passkey/finish";
+
+  function passkeyFinish(verifies: boolean, offered = true): TestAction {
+    const passkey = {
+      ...fakeFactorService("passkey"),
+      verifyChallenge: async (userId: string, _presented: string, at: number) =>
+        verifies ? ok({ kind: "passkey" as const, userId, verifiedAt: at }) : err("unrecognised" as const),
+    } as AuthFactorService;
+    const factors = createFactorRegistry(fakeFactorStore(offered ? ["passkey"] : []), {
+      offered: offered ? [PRIMARY, { service: passkey, role: "second", requirement: "optional" }, recoveryOffer()] : [PRIMARY],
+    });
+    return createPasskeyStepUpActions(optionsWith({ users: fakeAuthUserStore([signedIn]), factors })).finish;
+  }
+
+  const assertion = { credential: { id: "c", response: {} } };
+
+  it("replaces an earlier mark with the moment a passkey assertion verified", async () => {
+    const result = await marked(passkeyFinish(true), FINISH, FINISH, jsonBody(assertion), { userId: "u9", stepUpAt: EARLIER });
+    expect({ status: result.status, stepUpWrites: result.stepUpWrites, stepUpAt: result.stepUpAt }).toEqual({
+      status: 200,
+      stepUpWrites: [VERIFIED_AT],
+      stepUpAt: VERIFIED_AT,
+    });
+  });
+
+  for (const { outcome, action, init, seed, status } of [
+    {
+      outcome: "a passkey assertion the factor refuses",
+      action: passkeyFinish(false),
+      init: jsonBody(assertion),
+      seed: { userId: "u9" },
+      status: 401,
+    },
+    { outcome: "a passkey finish carrying no credential", action: passkeyFinish(true), init: jsonBody({}), seed: { userId: "u9" }, status: 400 },
+    {
+      outcome: "a passkey finish whose JSON does not parse",
+      action: passkeyFinish(true),
+      init: { method: "POST", body: '{"credential":', headers: { "content-type": "application/json" } },
+      seed: { userId: "u9" },
+      status: 400,
+    },
+    {
+      outcome: "a passkey finish a cross-site form posted as text/plain",
+      action: passkeyFinish(true),
+      init: { method: "POST", body: JSON.stringify(assertion), headers: { "content-type": "text/plain;charset=UTF-8" } },
+      seed: { userId: "u9" },
+      status: 415,
+    },
+    {
+      outcome: "a passkey finish past the ceremony cap",
+      action: passkeyFinish(true),
+      init: jsonBody({ credential: { id: "c", padding: "x".repeat(AUTH_CEREMONY_MAX_BYTES) } }),
+      seed: { userId: "u9" },
+      status: 413,
+    },
+    {
+      outcome: "a passkey finish from a session signed in as nobody",
+      action: passkeyFinish(true),
+      init: jsonBody(assertion),
+      seed: {},
+      status: 401,
+    },
+    {
+      outcome: "a passkey finish where the deployment offers no passkey",
+      action: passkeyFinish(true, false),
+      init: jsonBody(assertion),
+      seed: { userId: "u9" },
+      status: 401,
+    },
+  ]) {
+    it(`leaves an earlier mark as it was on ${outcome}`, async () => {
+      const result = await marked(action, FINISH, FINISH, init, { ...seed, stepUpAt: EARLIER });
+      expect({ status: result.status, stepUpWrites: result.stepUpWrites, stepUpAt: result.stepUpAt }).toEqual({
+        status,
+        stepUpWrites: [],
+        stepUpAt: EARLIER,
+      });
+    });
+  }
 });
 
 describe("createSignoutActions", () => {
@@ -900,7 +1162,7 @@ describe("createRecoveryCodeActions", () => {
     updatedAt: 1,
   });
 
-  function codePages(holds: readonly AuthFactorKind[]) {
+  function codePages(holds: readonly AuthFactorKind[], guard: { readonly freshStepUpMaxAgeMs?: number | null; readonly mounted?: boolean } = {}) {
     const calls: string[] = [];
     const holding = (kind: "totp-app" | "passkey") =>
       ({ ...fakeFactorService(kind), listEnrolments: async () => ok(holds.includes(kind) ? [confirmedRow(kind)] : []) }) as AuthFactorService;
@@ -928,8 +1190,18 @@ describe("createRecoveryCodeActions", () => {
     });
     const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
     const actions = createRecoveryCodeActions(options);
+    const freshStepUp = requireFreshStepUp({
+      factors: () => ({ resolve: async () => ok({ status: "satisfied" as const }) }),
+      enrolmentPaths: authEnrolmentPaths(options.paths.auth),
+      stepUpPath: options.paths.auth.verify.show(),
+      settledPath: "/account",
+      now: () => NOW,
+      ...(guard.freshStepUpMaxAgeMs === undefined ? {} : { freshStepUpMaxAgeMs: guard.freshStepUpMaxAgeMs }),
+    });
     const app = (seed: Seed) => {
-      const mountedApp = mounted(actionApp(seed), "POST", "/account/recovery-codes", actions.recoveryCodesGenerate);
+      const guardedApp = actionApp(seed);
+      if (seed.userId !== undefined && guard.mounted !== false) guardedApp.use("*", freshStepUp);
+      const mountedApp = mounted(guardedApp, "POST", "/account/recovery-codes", actions.recoveryCodesGenerate);
       return mounted(mountedApp, "POST", "/account/recovery-codes/confirm", actions.recoveryCodesConfirm);
     };
     return { calls, app };
@@ -1008,6 +1280,83 @@ describe("createRecoveryCodeActions", () => {
         answers.push({ status: res.status, location: res.headers.get("location") });
       }
       expect({ answers, calls }).toEqual({ answers: [expected, expected], calls: [] });
+    });
+  }
+
+  const TO_VERIFY = { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" };
+  const ADMITTED = {
+    answers: [
+      { status: 200, location: null },
+      { status: 303, location: "/app" },
+    ],
+    calls: ["begin:u9", `complete:u9:${ISSUED[1]}`],
+  };
+  const REFUSED = { answers: [TO_VERIFY, TO_VERIFY], calls: [] };
+  const MINUTE = 60_000;
+
+  const windows: readonly {
+    label: string;
+    guard: { readonly freshStepUpMaxAgeMs?: number | null; readonly mounted?: boolean };
+    seed: Seed;
+    expected: typeof ADMITTED | typeof REFUSED;
+  }[] = [
+    {
+      label: "refuses a 10-minute-old step-up under a configured 60 s window",
+      guard: { freshStepUpMaxAgeMs: MINUTE },
+      seed: { userId: "u9", stepUpAt: NOW - 10 * MINUTE },
+      expected: REFUSED,
+    },
+    {
+      label: "admits a step-up one millisecond inside a configured 60 s window",
+      guard: { freshStepUpMaxAgeMs: MINUTE },
+      seed: { userId: "u9", stepUpAt: NOW - MINUTE + 1 },
+      expected: ADMITTED,
+    },
+    {
+      label: "admits a step-up one millisecond inside the default 15-minute window",
+      guard: {},
+      seed: { userId: "u9", stepUpAt: NOW - FRESH_MS + 1 },
+      expected: ADMITTED,
+    },
+    {
+      label: "refuses a step-up one millisecond outside the default 15-minute window",
+      guard: {},
+      seed: { userId: "u9", stepUpAt: NOW - FRESH_MS - 1 },
+      expected: REFUSED,
+    },
+    {
+      label: "admits a day-old step-up in this session when the window is `null`",
+      guard: { freshStepUpMaxAgeMs: null },
+      seed: { userId: "u9", stepUpAt: NOW - 24 * 60 * MINUTE },
+      expected: ADMITTED,
+    },
+    {
+      label: "refuses a session that never stepped up when the window is `null`",
+      guard: { freshStepUpMaxAgeMs: null },
+      seed: { userId: "u9" },
+      expected: REFUSED,
+    },
+    {
+      label: "refuses even a just-made step-up when `requireFreshStepUp` published no window",
+      guard: { mounted: false },
+      seed: { userId: "u9", stepUpAt: NOW - 1 },
+      expected: REFUSED,
+    },
+  ];
+
+  for (const { label, guard, seed, expected } of windows) {
+    it(`${label}, on both code POSTs`, async () => {
+      const { calls, app } = codePages(["totp-app"], guard);
+      const mountedApp = app(seed);
+      const answers = [];
+      for (const [path, fields] of [
+        ["/account/recovery-codes", {}],
+        ["/account/recovery-codes/confirm?next=%2Fapp", { code: ISSUED[1] ?? "" }],
+      ] as const) {
+        const res = await mountedApp.request(path, formBody(fields));
+        answers.push({ status: res.status, location: res.headers.get("location") });
+      }
+      expect({ answers, calls }).toEqual(expected);
     });
   }
 

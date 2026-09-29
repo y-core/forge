@@ -5,7 +5,7 @@ import { assertSecretStrength } from "../crypto/strength";
 import { timingSafeEqualBytes } from "../crypto/timing";
 import { err, ok } from "../result/result";
 import type { Result } from "../result/types";
-import type { VerifiedWebhook, WebhookRefusal, WebhookSignatureHeaders, WebhookSignOptions, WebhookVerifyOptions } from "./types";
+import type { VerifiedWebhook, WebhookRefusal, WebhookSignatureHeaders, WebhookSigning, WebhookSigningOptions, WebhookSignOptions } from "./types";
 
 const WEBHOOK_SECRET_PREFIX = "whsec_";
 const WEBHOOK_TOLERANCE_SECONDS_DEFAULT = 300;
@@ -31,10 +31,24 @@ function decodeWebhookSecret(operation: string, secret: string): Uint8Array<Arra
   return raw;
 }
 
-function webhookSecretKeys(operation: string, secrets: readonly string[]): Promise<CryptoKey[]> {
+function decodeWebhookSecrets(operation: string, secrets: readonly string[]): Uint8Array<ArrayBuffer>[] {
   if (secrets.length === 0) throw new Error(`${operation}: secrets is empty — at least one active secret is needed to sign or verify.`);
-  const raws = secrets.map((secret) => decodeWebhookSecret(operation, secret));
-  return Promise.all(raws.map((raw) => importHmacKey(raw)));
+  return secrets.map((secret) => decodeWebhookSecret(operation, secret));
+}
+
+function createWebhookKeyCache(raws: readonly Uint8Array<ArrayBuffer>[]): () => Promise<CryptoKey[]> {
+  const keys: (Promise<CryptoKey> | undefined)[] = raws.map(() => undefined);
+  function keyFor(index: number, raw: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
+    const cached = keys[index];
+    if (cached) return cached;
+    const pending = importHmacKey(raw);
+    keys[index] = pending;
+    pending.catch(() => {
+      if (keys[index] === pending) keys[index] = undefined;
+    });
+    return pending;
+  }
+  return () => Promise.all(raws.map((raw, index) => keyFor(index, raw)));
 }
 
 function assertWholeAtLeastOne(operation: string, knob: string, value: number, unit: string, why: string): void {
@@ -51,24 +65,20 @@ export function computeWebhookSignature(key: CryptoKey, content: SignedContent):
   return hmacSign(key, concatBytes(utf8Encode(`${content.id}.${content.timestamp}.`), content.body));
 }
 
-async function signWebhookHeaders(keys: Promise<CryptoKey[]>, options: WebhookSignOptions): Promise<WebhookSignatureHeaders> {
-  const timestamp = epochSeconds(options.now);
-  const body = typeof options.body === "string" ? utf8Encode(options.body) : options.body;
-  const content = { id: options.id, timestamp, body };
+async function signWebhookHeaders(
+  keys: Promise<CryptoKey[]>,
+  message: WebhookSignOptions,
+  now: (() => number) | undefined,
+): Promise<WebhookSignatureHeaders> {
+  const timestamp = epochSeconds(now);
+  const body = typeof message.body === "string" ? utf8Encode(message.body) : message.body;
+  const content = { id: message.id, timestamp, body };
   const macs = await Promise.all((await keys).map((key) => computeWebhookSignature(key, content)));
   return {
-    "webhook-id": options.id,
+    "webhook-id": message.id,
     "webhook-timestamp": String(timestamp),
     "webhook-signature": macs.map((mac) => `v1,${base64Encode(mac)}`).join(" "),
   };
-}
-
-/** Signs a webhook body under every active secret, answering the three Standard Webhooks headers. @public */
-export function signWebhook(options: WebhookSignOptions): Promise<WebhookSignatureHeaders> {
-  if (options.id === "") throw new Error("signWebhook: id is empty — a receiver deduplicates retries on it.");
-  if (options.id.includes(".")) throw new Error('signWebhook: id contains ".", which makes the signed content ambiguous.');
-  const keys = webhookSecretKeys("signWebhook", options.secrets);
-  return signWebhookHeaders(keys, options);
 }
 
 function parseWebhookTimestamp(value: string): number | null {
@@ -116,7 +126,7 @@ async function readWebhookBody(request: Request, maxBytes: number): Promise<Resu
 
 async function readVerifiedWebhook(
   request: Request,
-  keys: Promise<CryptoKey[]>,
+  loadKeys: () => Promise<CryptoKey[]>,
   limits: WebhookLimits,
 ): Promise<Result<VerifiedWebhook, WebhookRefusal>> {
   const id = request.headers.get("webhook-id");
@@ -139,24 +149,30 @@ async function readVerifiedWebhook(
   if (!body.ok) return body;
 
   const content = { id, timestamp, body: body.data };
-  const expected = await Promise.all((await keys).map((key) => computeWebhookSignature(key, content)));
+  const expected = await Promise.all((await loadKeys()).map((key) => computeWebhookSignature(key, content)));
   const matches = expected.flatMap((mac) => candidates.map((candidate) => timingSafeEqualBytes(mac, candidate)));
   if (!matches.includes(true)) return err("signature-mismatch");
   return ok({ id, timestamp, body: body.data });
 }
 
-/** Verifies a Standard Webhooks request against any active secret, answering the exact signed body bytes. @public */
-export function verifyWebhook(request: Request, options: WebhookVerifyOptions): Promise<Result<VerifiedWebhook, WebhookRefusal>> {
-  const keys = webhookSecretKeys("verifyWebhook", options.secrets);
+/** Creates a Standard Webhooks signer and verifier over fixed secrets, importing each secret's key once. @public */
+export function createWebhookSigning(options: WebhookSigningOptions): WebhookSigning {
+  const operation = "createWebhookSigning";
+  const loadKeys = createWebhookKeyCache(decodeWebhookSecrets(operation, options.secrets));
   const toleranceSeconds = options.toleranceSeconds ?? WEBHOOK_TOLERANCE_SECONDS_DEFAULT;
   const maxBytes = options.maxBytes ?? WEBHOOK_MAX_BYTES_DEFAULT;
-  assertWholeAtLeastOne(
-    "verifyWebhook",
-    "toleranceSeconds",
-    toleranceSeconds,
-    "second",
-    "a zero window refuses every webhook from a clock not in step",
-  );
-  assertWholeAtLeastOne("verifyWebhook", "maxBytes", maxBytes, "byte", "a zero ceiling refuses every webhook that carries a body");
-  return readVerifiedWebhook(request, keys, { toleranceSeconds, maxBytes, now: options.now });
+  assertWholeAtLeastOne(operation, "toleranceSeconds", toleranceSeconds, "second", "a zero window refuses every webhook from a clock not in step");
+  assertWholeAtLeastOne(operation, "maxBytes", maxBytes, "byte", "a zero ceiling refuses every webhook that carries a body");
+  const limits: WebhookLimits = { toleranceSeconds, maxBytes, now: options.now };
+
+  return {
+    sign(message: WebhookSignOptions): Promise<WebhookSignatureHeaders> {
+      if (message.id === "") throw new Error("sign: id is empty — a receiver deduplicates retries on it.");
+      if (message.id.includes(".")) throw new Error('sign: id contains ".", which makes the signed content ambiguous.');
+      return signWebhookHeaders(loadKeys(), message, options.now);
+    },
+    verify(request: Request): Promise<Result<VerifiedWebhook, WebhookRefusal>> {
+      return readVerifiedWebhook(request, loadKeys, limits);
+    },
+  };
 }

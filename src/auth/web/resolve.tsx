@@ -37,7 +37,6 @@ import type { VerifyChoice } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
 import type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 
-/** How many accounts one administrative page lists before the forward cursor takes over. */
 const ADMIN_PAGE_SIZE = 25;
 
 const UNAVAILABLE = "Service Unavailable";
@@ -68,12 +67,10 @@ export function resolveAuthViewer<Bindings>(c: AppContext<Bindings>): AuthIdenti
   return authCtx.getOptional(c) ?? null;
 }
 
-/** Factors other than the passkey and recovery codes that would still admit `userId` once every passkey is gone. */
 async function resolveFallbackFactors(services: AuthRequestSurface, userId: string): Promise<AuthFactorKind[]> {
   const kinds: AuthFactorKind[] = [];
   for (const service of services.factors.offered) {
     if (service.kind === "passkey" || service.kind === "recovery-code") continue;
-    // An implicit factor has no enrolment row to read: offering it is the enrolment.
     if (service.enrolment === "implicit") {
       kinds.push(service.kind);
       continue;
@@ -84,7 +81,6 @@ async function resolveFallbackFactors(services: AuthRequestSurface, userId: stri
   return kinds;
 }
 
-/** A step-up over `kinds`, presenting the one the request's `factor` parameter names when it is among them. */
 function stepUpDemand<Bindings>(
   c: AppContext<Bindings>,
   services: AuthRequestSurface,
@@ -121,12 +117,10 @@ export async function resolveAuthVerifyDemand<Bindings>(
 
 const RECOVERABLE_KINDS: readonly AuthFactorKind[] = ["totp-app", "passkey"];
 
-/** Whether `service` can count a user's unused codes, which forge's own recovery-code factor does. */
 function countsRecoveryCodes(service: AuthFactorService): service is RecoveryCodeFactorService {
   return service.kind === "recovery-code" && "remaining" in service && typeof service.remaining === "function";
 }
 
-/** Whether `service` holds a confirmed enrolment for `userId`, or `null` when its store is down. */
 async function holdsConfirmed(service: AuthFactorService | undefined, userId: string): Promise<boolean | null> {
   if (service === undefined) return false;
   const enrolled = await service.listEnrolments(userId);
@@ -151,7 +145,6 @@ export async function resolveRecoveryStanding(services: AuthRequestSurface, user
   return { recoverable, confirmed, remaining: remaining.data };
 }
 
-/** Where the visitor goes once `enrolled` is confirmed, or `null` for no enrolment: an enrolment still owed, codes still owed, or `otherwise`. */
 async function afterFactorTarget<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -208,20 +201,16 @@ export function authVerifyDetour<Bindings>(c: AppContext<Bindings>, options: Aut
 
 // Both code factors are bounded 6–8 at construction, so this narrows rather than clamps: a width the
 // field cannot render is one no factor can be configured with.
-/** Every width the one-time-code field renders. */
 const FIELD_WIDTHS: readonly OtpLength[] = [4, 5, 6, 7, 8];
 
-/** The presented factor's code width as a field size, or `undefined` for a factor answered by a ceremony. */
 function codeWidth(digits: number | null): OtpLength | undefined {
   return FIELD_WIDTHS.find((width) => width === digits);
 }
 
-/** Who a page reads its data for: signed in wherever its guards include `require-auth`. */
 type AuthViewViewer<Name extends AuthViewName> = "require-auth" extends (typeof AUTH_VIEW_GUARDS)[Name][number]
   ? AuthIdentity
   : AuthIdentity | null;
 
-/** One page's props, or the refusal its data answered with. */
 type AuthViewResolver<Name extends AuthViewName> = <Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -253,7 +242,6 @@ async function resolveSignin<Bindings>(
 }
 
 // `mandatoryForRoles` cannot count towards this: a sign-up has no identity, so it has no roles.
-/** The factor a new account is asked to enrol once the address is confirmed, or `undefined` for none. */
 function signupEnrols(services: AuthRequestSurface): AuthFactorKind | undefined {
   return services.factors.seconds.find((offer) => offer.requirement === "mandatory" && offer.service.enrolment === "explicit")?.service.kind;
 }
@@ -303,22 +291,23 @@ async function resolveVerify<Bindings>(
   const stepUp = demand.owed === "step-up" && demand.identity !== null ? demand.identity : null;
   const asking = (path: string, kind: AuthFactorKind) => authWithQuery(authReturnQuery(c, options, path), AUTH_FACTOR_PARAM, kind);
   const choices: VerifyChoice[] = demand.kinds.map((kind) => ({ kind, href: asking(auth.verify.show(), kind) }));
-  // The rendered target is the one the controller follows: a step-up changes nothing the next page is chosen by.
-  const passkeyRedirect =
-    stepUp === null ? authReturnPath(c, options) : await authAfterStepUpTarget(c, options, stepUp, "passkey", authReturnPath(c, options));
+  const passkeyContract = async () => {
+    // The rendered target is the one the controller follows: a step-up changes nothing the next page is chosen by.
+    const redirect =
+      stepUp === null ? authReturnPath(c, options) : await authAfterStepUpTarget(c, options, stepUp, "passkey", authReturnPath(c, options));
+    return authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, redirect);
+  };
 
   return ok({
     factor: demand.factor,
     ...(codeWidth(demand.digits) === undefined ? {} : { codeDigits: codeWidth(demand.digits) }),
-    passkey: usesPasskey ? await authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, passkeyRedirect) : undefined,
+    passkey: usesPasskey ? await passkeyContract() : undefined,
     ...(stepUp === null || choices.length < 2 ? {} : { choices }),
     submitPath: stepUp === null ? authReturnQuery(c, options, submitPath) : asking(submitPath, demand.factor),
-    // Carried like the submit path, and minted on the bare one for the same reason.
     ...(resendPath === undefined ? {} : { resendPath: authReturnQuery(c, options, resendPath) }),
     signinPath: auth.signin(),
     csrfToken: await mintCsrf(c, submitPath),
-    // Its own token, because `csrfProtection` binds one to the path it was minted for and this page
-    // posts to two. Sharing `csrfToken` here made every "send another code" a 403.
+    // Its own token: `csrfProtection` binds one to the path it was minted for, and this page posts to two.
     ...(resendPath === undefined ? {} : { resendToken: await mintCsrf(c, resendPath) }),
     resent: c.url.searchParams.has(AUTH_RESENT_PARAM),
     // The factor's own number, so the page cannot promise a wait it does not enforce.
@@ -354,7 +343,6 @@ async function resolveEnrolPasskey<Bindings>(
   });
 }
 
-/** One page of the visitor's registered passkeys, or the single credential `only` names. */
 async function passkeyPage<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -434,7 +422,6 @@ async function resolvePasskeyEdit<Bindings>(
   });
 }
 
-/** Where this mount of the authenticator-app page posts, since it is served both as an owed enrolment and as an account setting. */
 interface TotpPageTargets {
   readonly enrolPath: string;
   readonly removePath?: string | undefined;
@@ -525,11 +512,9 @@ async function resolveEmailChange<Bindings>(
   });
 }
 
-/** Every offered factor and where `userId` stands on it, read off the registry so the panel describes this deployment. */
 async function resolveFactorRows(services: AuthRequestSurface, userId: string): Promise<AuthFactorRow[] | null> {
   const rows: AuthFactorRow[] = [];
   for (const service of services.factors.offered) {
-    // An implicit factor keeps no enrolment row, so there is nothing to read and nothing owed.
     if (service.enrolment === "implicit") {
       rows.push({ kind: service.kind, state: "always", at: null });
       continue;
@@ -549,7 +534,6 @@ async function resolveFactorRows(services: AuthRequestSurface, userId: string): 
   return rows;
 }
 
-/** The factors panel for one account, whoever the route let through — `extra` carries what only one reader is offered. */
 async function factorsPanel<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -675,8 +659,6 @@ async function adminUserPage<Bindings>(
   return ok({
     user: found.data,
     lastAdmin: found.data.isAdmin && found.data.deactivatedAt === null && counted.data <= 1,
-    // The controls that would lock this administrator out of the console they are standing in.
-    // The action refuses them; this is what stops the page offering them in the first place.
     self: viewer.userId === found.data.id,
     outcome: state.outcome ?? null,
     paths: admin,
@@ -714,7 +696,6 @@ async function resolveAdminElevate<Bindings>(
 
 // A mapped table rather than a `switch`: TypeScript does not narrow a generic return type from a
 // parameter discriminant, so every branch of a switch would need an unchecked cast.
-/** The props-builder behind each page name. */
 const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<Name> } = {
   signin: resolveSignin,
   signup: resolveSignup,
@@ -760,7 +741,6 @@ export const AUTH_VIEW_GUARDS = {
 
 // `require-auth` and `require-admin` are observable here and re-checked rather than trusted; the enrolment
 // pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.
-/** Who may read the page, or the refusal an unguarded or under-privileged request gets. */
 function refuseUnguarded<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,

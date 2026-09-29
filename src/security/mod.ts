@@ -31,9 +31,10 @@ export type {
   VerifiedWebhook,
   WebhookRefusal,
   WebhookSignatureHeaders,
+  WebhookSigning,
+  WebhookSigningOptions,
   WebhookSignOptions,
-  WebhookVerifyOptions,
 } from "./types";
 export { UNSAFE_EVAL, UNSAFE_HASHES, UNSAFE_INLINE, WASM_UNSAFE_EVAL } from "./unsafe";
 export { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";
-export { signWebhook, verifyWebhook } from "./webhook";
+export { createWebhookSigning } from "./webhook";

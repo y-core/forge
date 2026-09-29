@@ -13,12 +13,12 @@ import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { sessionCtx } from "../../session/session";
 import { describeValidationIssue, v } from "../../validation/mod";
-import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { authFactorContext } from "../factors/registry";
 import type { EnrollableFactorService } from "../factors/types";
 import { redactSigninReason } from "../flows/signin";
 import type { AuthSigninNotice } from "../flows/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
+import { authFreshStepUpWindow, stepUpHolds } from "./guards";
 import {
   clearAuthSession,
   establishAuthSession,
@@ -68,7 +68,6 @@ import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types"
 const NO_SESSION =
   "auth/web action: no session on this request — mount `sessionMiddleware` before the auth routes, or a sign-in writes an identity nothing can read back.";
 
-/** Copy for a refusal about the whole attempt, one per notice the sign-in flow may fold a reason to. */
 const SIGNIN_NOTICE: Readonly<Record<AuthSigninNotice, string>> = {
   throttled: "Too many attempts. Wait a while before asking for another code.",
   unavailable: "We could not reach the sign-in service. Please try again in a moment.",
@@ -76,7 +75,6 @@ const SIGNIN_NOTICE: Readonly<Record<AuthSigninNotice, string>> = {
   unusable: "This sign-in method can't be checked right now. Choose another method below.",
 };
 
-/** Copy for a refused field, since `describeValidationIssue` returns a field name and no wording. */
 const FIELD_REFUSAL: Readonly<Record<string, string>> = {
   email: "Enter an email address in the form name@example.com.",
   code: "That code is not the shape we sent. Enter the digits exactly as they appear.",
@@ -111,15 +109,12 @@ function notFound(): Response {
   return new Response("Not Found", { status: 404 });
 }
 
-/** Why a submission never reached the domain, in the words the page that re-renders it will show. */
 interface AuthSubmissionRefusal {
   readonly field: string;
   readonly message: string;
-  /** Every string field the visitor sent, so a re-render keeps what they typed. */
   readonly values: Readonly<Record<string, string>>;
 }
 
-/** The submitted body, or the refusal the page re-renders with. */
 async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
   c: AppContext<Bindings>,
   schema: schema,
@@ -145,16 +140,12 @@ async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
   return err({ field, message: refusalFor(schema, field), values });
 }
 
-/** The copy for a refused field the schema declares; any other name is the visitor's own, and earns the default. */
 function refusalFor(schema: v.GenericSchema, field: string): string {
   const entries: unknown = "entries" in schema ? schema.entries : undefined;
   const declared = typeof entries === "object" && entries !== null && Object.hasOwn(entries, field);
   return declared && Object.hasOwn(FIELD_REFUSAL, field) ? (FIELD_REFUSAL[field] ?? FIELD_REFUSAL_DEFAULT) : FIELD_REFUSAL_DEFAULT;
 }
 
-// Held to the schema the rename path holds a label to, so one field cannot be bounded on one route
-// and unbounded on another.
-/** The enrolment nickname, or the refusal an over-long one earns. */
 function readEnrolmentNickname(presented: unknown): Result<string | null, undefined> {
   if (presented === undefined || presented === null) return ok(null);
   if (typeof presented !== "string") return err(undefined);
@@ -167,12 +158,10 @@ function readEnrolmentNickname(presented: unknown): Result<string | null, undefi
 /** The largest ceremony envelope a JSON endpoint reads before it answers 413. @internal */
 export const AUTH_CEREMONY_MAX_BYTES = 65_536;
 
-/** What reading a ceremony body produced: the parsed JSON, or the refusal the endpoint owes. */
 type CeremonyBody = { readonly ok: true; readonly body: unknown } | { readonly ok: false; readonly response: Response };
 
 // The stages `parseFormData` proves: refuse on a `Content-Length` that already says too much,
 // then meter the stream, because a chunked body's header may be absent or lying.
-/** The JSON body a ceremony endpoint was posted, capped at `AUTH_CEREMONY_MAX_BYTES`. */
 async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<CeremonyBody> {
   // `text/plain` is a form's `enctype` and needs no preflight, so a cross-site form can post a
   // JSON-shaped body. Parsing on shape alone would read it; only the declared type refuses it.
@@ -213,12 +202,10 @@ async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<Cere
 
 // The resolution's own `kinds` and never a fixed page: under a policy offering the authenticator app
 // and no passkey, the passkey page is one this deployment does not serve.
-/** The enrolment page an owed `kinds` is cleared on, or the settled path when forge mounts none for any of them. */
 function enrolTarget<Bindings>(options: AuthWebOptions<Bindings>, kinds: readonly AuthFactorKind[]): string {
   return authEnrolTarget(authEnrolmentPaths(options.paths.auth), kinds) ?? authSettledPath(options);
 }
 
-/** Where a sign-in that has just been established sends the visitor next. */
 async function signedInTarget<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -303,7 +290,6 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
           if (stepped.error === "unusable") requestLog.getOptional(c)?.warn("auth.factor.unusable", { kind: demand.factor });
           return loadVerify(c, options, { error: SIGNIN_NOTICE[redactSigninReason(stepped.error)], status: 422 });
         }
-        // The only place a step-up is ever recorded: every other outcome leaves the mark alone.
         markAuthStepUp(session, at, authNow(options));
         const target = await authAfterStepUpTarget(c, options, demand.identity, demand.factor, authReturnPath(c, options));
         return createAuthRedirect(c, target);
@@ -319,8 +305,6 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       establishAuthSession(session, completed.data.user.id, at, authNow(options));
       const resolution = completed.data.resolution;
-      // A successful outcome of a correct sign-in, not a refusal of one: the visitor proved the
-      // primary factor and owes an enrolment, which is a page to visit — carrying the return-to on.
       if (resolution.status === "enrolment-required" && resolution.stepUpKinds.length === 0) {
         return createAuthRedirect(c, authReturnQuery(c, options, enrolTarget(options, resolution.kinds)));
       }
@@ -448,8 +432,6 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
       const credential = body?.credential;
       if (credential === undefined || credential === null) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
-      // The same cap the rename path holds a label to. Without it a name typed at enrolment reached
-      // `credentials.create` on a trim alone, where the same field renamed later is bounded at 64.
       const nickname = readEnrolmentNickname(body?.nickname);
       if (!nickname.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
@@ -513,7 +495,6 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
 
 // The barrier refuses every session established at or before it, this one included, so the acting
 // session is re-stamped past it: the visitor stays where they are and every other device does not.
-/** Raises this account's revocation barrier and carries the acting session over it. */
 async function revokeOtherSessions(services: AuthRequestSurface, session: Session, userId: string, at: number): Promise<boolean> {
   const revoked = await services.users.revokeSessions(userId, at);
   if (!revoked.ok) return false;
@@ -521,12 +502,10 @@ async function revokeOtherSessions(services: AuthRequestSurface, session: Sessio
   return true;
 }
 
-/** How a refused confirmation re-renders — the page it was posted from, which differs by mount. */
 type AuthPageReload<Bindings> = (c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, state?: AuthPageState) => Promise<Response>;
 
 const TOTP_KIND: AuthFactorKind = "totp-app";
 
-/** The code the visitor typed, confirmed against their authenticator-app enrolment, or the answer the page owes them. */
 async function confirmTotp<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -605,7 +584,6 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
 
 // Checked here and not left to `require-fresh-step-up`: that guard admits a user the policy owes no
 // step-up, and issuing codes on email alone would let a mailbox mint a way past the second factor.
-/** The identity allowed to be issued recovery codes now, with the factor issuing them, or the answer a request without that standing gets. */
 async function recoveryCodeHolder<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -621,8 +599,8 @@ async function recoveryCodeHolder<Bindings>(
   if (standing === null) return err(unavailable());
   if (!standing.recoverable) return err(new Response(RECOVERY_CODES_UNOWED, { status: 409 }));
 
-  const age = authNow(options) - (identity.stepUpAt ?? Number.NEGATIVE_INFINITY);
-  if (age < 0 || age >= AUTH_FRESH_STEP_UP_MS) {
+  const fresh = authFreshStepUpWindow(c);
+  if (fresh === undefined || !stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) {
     const verify = authWithQuery(auth.verify.show(), options.returnParam ?? "next", account.recoveryCodes());
     return err(createAuthRedirect(c, verify));
   }
@@ -680,7 +658,6 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
   };
 }
 
-/** The status a refused administrative write answers with, by the guard that refused it. */
 function adminRefusalStatus(outcome: AdminUserOutcome): number | undefined {
   if (outcome === "changed") return undefined;
   if (outcome === "not-found") return 404;
@@ -702,8 +679,6 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       const id = c.params.id;
       if (id === undefined) return notFound();
 
-      // Unlike the last-admin guard this needs no in-statement race protection: the acting
-      // administrator is fixed for this request, so no concurrent write can change who they are.
       const viewer = resolveAuthViewer(c);
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
       // The role is judged here and not left to the group's `require-admin`: that guard runs on the
@@ -815,7 +790,6 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
       const claimed = await services.admin.claimFirst(identity.userId, authNow(options));
       if (!claimed.ok) return unavailable();
       if (claimed.data === "changed") return createAuthRedirect(c, options.paths.admin.users.list());
-      // A signed-in session naming a row that is gone; the claim page has nothing to say about it.
       if (claimed.data === "not-found") return unavailable();
       return loadAdminElevate(c, options, { status: 409 });
     },

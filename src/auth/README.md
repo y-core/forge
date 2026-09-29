@@ -283,7 +283,8 @@ public, or its own check of `authCtx.get(c).stepUpAt`.
 
 **`requireFreshStepUp` is on unless you turn it off**, and `freshStepUpMaxAgeMs` is its window: omit it for `AUTH_FRESH_STEP_UP_MS`, or pass
 `null`, which is the only opt-out. It demands nothing of a user whose own resolution owes no step-up, so a deployment offering no second factor
-is not locked out of its own admin pages.
+is not locked out of its own admin pages. Recovery codes are issued against the same window, and under `null` still need a step-up in the session
+([`AUTH_FLOWS.md`][af-8c] §8c).
 
 **A guard refuses in the medium its group answers in.** Pass `medium: "json"` and `requireAuth` answers `401 {"error": …}` and the enrolment
 guards `403 {"error": …}` instead of redirecting — which is what a browser controller posting a ceremony step can actually read.
@@ -730,7 +731,7 @@ contract — and know that **the methods below carry rules the caller does none 
 | `FactorStore.remove` | Delete the factor and, in the same batch, the user's recovery codes and `recovery-code` row once no confirmed `totp-app` or `passkey` remains. Split, a failure between them leaves an account holding codes alone |
 | `RecoveryCodeStore.consume` | Spend a live, unused code and clear the factor's `failed_attempts` in one batch — clearing only when this call spent the code. A staged code, a used one or another user's never matches |
 | `RecoveryCodeStore.commit` | Swap the staged set in for the live one and confirm the factor in one batch, so a failure leaves the old set working |
-| `AdminUserStore.resetFactors` | Delete the user's factors, credentials and recovery codes, and raise the revocation barrier, in one batch |
+| `AdminUserStore.resetFactors` | Delete the user's factors, credentials and recovery codes, revoke their unrevoked bearer tokens, and raise the revocation barrier, in one batch |
 | `IdentityLinkStore.unlink` | Carry the owner in the `WHERE`, so a link id belonging to somebody else unlinks nothing |
 | `OtpStateStore.discard` | Delete **that named code** and no other, so an undelivered issue returns its cooldown without wiping a racing issue that did send |
 | `OtpStateStore.issue` / `countAttempt` | Decide in one conditional statement. A read then a write hands every parallel request a free extra guess |

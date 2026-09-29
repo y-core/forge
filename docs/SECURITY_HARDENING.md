@@ -314,7 +314,7 @@ excluded delimiters, each of which fixes a real widening bug). The preflight hea
 
 Middleware that rejects any request whose `Origin` is not in the allowlist. Use on privileged endpoints a browser calls. **Never put it on a webhook
 receiver:** a delivery is server-to-server and carries no origin signal, so this guard refuses it. A receiver checks the signature with
-`verifyWebhook` instead ([Signing and verifying webhooks][security-webhooks]).
+`createWebhookSigning`'s `verify` instead ([Signing and verifying webhooks][security-webhooks]).
 
 **It fails closed on no signal at all.** `Origin` decides where it is present; otherwise the `Referer`'s origin does; a request carrying neither is
 `"missing"` and is refused with `403` like a disallowed one. Safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) are exempt before the check runs, so what
@@ -527,7 +527,7 @@ passes it, so passing proves nothing about a secret chosen by hand.
 | Signed-URL secret | `importSignedUrlKeyRing` | the hex-decoded bytes |
 | Key-ring root secret | `importKeyRing`, `importAuthKeyRing`, and a hand-built `AuthKeyRing` when `resolveAuthServices` checks it | the hex-decoded bytes |
 | Session secret | `createSignedCookie`, so `createAnonymousSession` and flash cookies too | the UTF-8 bytes of the string, never hex-decoded |
-| Webhook secret | `signWebhook`, `verifyWebhook` | the base64-decoded bytes after `whsec_` |
+| Webhook secret | `createWebhookSigning` | the base64-decoded bytes after `whsec_` |
 
 A session secret is used as the string it is, so 64 hex characters count as 64 bytes there. Hex-decoding it instead would change the HMAC key
 and invalidate every cookie already issued.

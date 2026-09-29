@@ -119,7 +119,7 @@ describe("createAdminUserStore — resetFactors", () => {
     return clientOf((sql) => (sql.includes("AS present") ? [{ present }] : []), { rowsWritten: () => 1 });
   }
 
-  it("probes, deletes every credential, factor and recovery code, and raises the sign-out mark, in one batch", async () => {
+  it("probes, deletes every credential, factor and recovery code, revokes the access tokens, and raises the sign-out mark, in one batch", async () => {
     const [client, db] = resetterOf(1);
     expect(await createAdminUserStore(client).resetFactors(USER_ID, 9_000)).toEqual({ ok: true, data: "changed" });
     const key = uuidToBytes(USER_ID);
@@ -128,6 +128,7 @@ describe("createAdminUserStore — resetFactors", () => {
       { sql: "DELETE FROM auth_credentials WHERE user_id = ?", params: [key] },
       { sql: "DELETE FROM auth_factors WHERE user_id = ?", params: [key] },
       { sql: "DELETE FROM auth_recovery_codes WHERE user_id = ?", params: [key] },
+      { sql: "UPDATE auth_access_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", params: [9_000, key] },
       {
         sql: "UPDATE auth_users SET sessions_invalid_before = ?, updated_at = ? WHERE id = ? AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ?)",
         params: [9_000, 9_000, key, 9_000],
@@ -135,11 +136,11 @@ describe("createAdminUserStore — resetFactors", () => {
     ]);
   });
 
-  it("leaves the sessions, identity links, one-time codes and access tokens alone", async () => {
+  it("leaves the sessions, identity links and one-time codes alone", async () => {
     const [client, db] = resetterOf(1);
     await createAdminUserStore(client).resetFactors(USER_ID, 9_000);
     const touched = db.calls.map((call) => /(?:FROM|UPDATE) (auth_\w+)/.exec(call.sql)?.[1]);
-    expect(touched.filter((table) => ["auth_identity_links", "auth_otp_state", "auth_access_tokens"].includes(table ?? ""))).toEqual([]);
+    expect(touched.filter((table) => ["auth_identity_links", "auth_otp_state"].includes(table ?? ""))).toEqual([]);
   });
 
   it("answers `not-found` when the probe finds no such user", async () => {
