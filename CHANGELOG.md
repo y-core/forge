@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.3.9] — 2026-09-29
+
 ### Upgrading
 
 1. **If you override `PasskeyEnrolView`, replace its `signoutPath` and `signoutCsrfToken` props with `exit`.** It is
@@ -5369,6 +5375,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.3.9]: https://github.com/y-core/forge/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/y-core/forge/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/y-core/forge/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/y-core/forge/compare/v0.3.5...v0.3.6
