@@ -47,8 +47,8 @@ export default STEPS;
 ```
 
 A hand-written row states its `label` (the `--only` token and the name reported on failure), its `cmd`, and the `tail` of captured output to show
-when it fails. Add `fix` for what `--fix` should spawn instead, `tier` for the lowest mode it runs in, and `requires` for a tool the machine may
-not have.
+when it fails. Add `fix` for what `--fix` should spawn instead, `tier` for the lowest mode it runs in, `requires` for a tool the machine
+may not have, and `watches` for the paths `--affected` should run it on.
 
 Then wire the scripts:
 
@@ -174,8 +174,8 @@ above because a subpath under a `client` segment is browser-only by its own name
 escapes — `browserOnly`, `sideEffectOnly`, `sealedInternal` — are each held to the tree they name: an entry the convention already derives, or
 one naming a subpath the map does not have, fails rather than sitting inert.
 
-Every builder takes `{ tier, requires }` as its last argument, so a check can be raised to any tier whatever its default, and its dependency
-replaced or dropped with `requires: null`.
+Every builder takes `{ tier, requires, watches }` as its last argument, so a check can be raised to any tier whatever its default, its dependency
+replaced or dropped with `requires: null`, and the paths `--affected` reads it by replaced or dropped with `watches: null`.
 
 ### Opting out of a markdown rule
 
@@ -225,6 +225,8 @@ bun run verify:full                # everything, prerequisites included (`--full
 bun run verify --list              # print the resolved selection, run nothing
 bun run verify --only lint,test    # narrow the run (branded as scoped)
 bun run verify --fix               # run each selected step's fixer instead
+bun run verify --reuse             # answer at once if this exact tree already passed
+bun run verify --affected          # run only the steps this change touches (branded as scoped)
 ```
 
 | Flag | Effect |
@@ -234,6 +236,8 @@ bun run verify --fix               # run each selected step's fixer instead
 | `--only <a,b>` | Run only those steps, in the run's own order. Repeatable and comma-separated; an unknown label is refused with the known ones listed. |
 | `--list` | Print the resolved selection and exit, running nothing. |
 | `--fix` | Run each selected step's fixer instead of the step. Steps without one are counted as having no fixer. |
+| `--reuse` | Exit green at once when a passing run of this exact tree is on record at this mode or above; otherwise run the gate. Takes no `--only`, `--fix`, `--list` or `--affected`. |
+| `--affected` | Run only the steps whose `watches` the working tree's changes touch. Always a scoped run; refused outside a git work tree. |
 | `--config <path>` | Step-table module, relative to `--root` or absolute. Default `config/steps.ts`. |
 | `--root <path>` | Directory every step runs in, and the base a relative `--config` resolves against. Default the working directory. |
 
@@ -254,8 +258,8 @@ window is still recoverable. A narrowed run brands its summary as scoped, so a s
 **`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only lint` runs the check and writes nothing; `--fix`
 writes and checks nothing, and closes by naming the run that confirms it. Script them as `lint` and `fix` so the distinction shows at the call site.
 
-**`createGateCommand({ cwd, steps, binDir? })` stays published** for the case the binary cannot serve. It takes the same flags minus `--config` and
-`--root`, because the bin command delegates to it as soon as the table is loaded:
+**`createGateCommand` stays published** for the case the binary cannot serve. It takes the same flags minus `--config` and `--root`, because the bin
+command delegates to it as soon as the table is loaded:
 
 ```ts
 import { execute, resolveAppRoot } from "@y-core/forge/tooling/cli";
@@ -263,6 +267,91 @@ import { createGateCommand } from "@y-core/forge/tooling/gate";
 
 await execute(createGateCommand({ cwd: resolveAppRoot(), steps: STEPS }));
 ```
+
+---
+
+## Skipping a run this tree already passed
+
+`--reuse` is for the second run of a tree nobody has touched since the first — a reviewer's baseline after the developer's closing run. **If the
+gate has a passing run of these exact bytes on record, it prints one line and exits 0**:
+
+```text
+✓ verify — reused the passing full run of tree 9d1e5c2a07b4f36e8a51c0d9b2f7e4a6c3185d20; no step ran
+```
+
+Otherwise it says why and runs the gate as if the flag were absent:
+
+```text
+○ no passing run of tree 5a27f0c8e3d19b64a7c2e8f1d05b3a96e4c7d812 on record at standard or above; running the gate
+```
+
+**Only a green run of the whole gate records a receipt.** The run must be unscoped — no `--only` and no `--affected` — pass at least one step, fail
+none and skip none. `--fix` and `--list` never record one, and `--reuse` refuses to be combined with any of them, because it stands in for a whole
+gate run. A red or skipped unscoped run deletes the receipt it finds, so the newest verdict on a tree is the one that stands. A scoped run leaves
+the receipt alone.
+
+**The receipt names a hash of the working tree, not a commit.** Tracked and untracked files are both hashed and ignored files are not, so an edit,
+a new untracked file or a deletion each means the next `--reuse` runs the gate, and reverting the change makes the old receipt answer again. If
+something writes into the tree while the gate runs, the run records nothing and prints `○ the tree changed during the run — no receipt written`.
+
+**A receipt answers its own mode and every mode below it.** A `full` pass answers `verify --reuse` and `verify --mode quality --reuse`; a
+`quality` pass never answers `verify --reuse`. A later lower-mode pass on the same tree keeps the higher-mode receipt rather than replacing it. The
+receipt also lists the steps it ran, so a table that now selects a step the receipt does not name runs the gate again.
+
+**The receipt lives in the git directory**, at `git rev-parse --git-path forge-verify-receipt.json` — `.git/forge-verify-receipt.json`, and a
+linked worktree gets its own. Nothing in your `.gitignore` needs to change. Why it lives there is [`BUILD_TOOLING.md`][bt-2f] §2f's.
+
+**Outside a git work tree there is no hash, so there is no receipt.** A passing run records nothing, and `--reuse` prints
+`○ not a git work tree — no receipt to reuse; running the gate` and runs.
+
+**A nested git repository inside the tree is hashed as a gitlink**, which records only the commit its `HEAD` points at. An uncommitted edit inside
+it therefore changes no hash, and a receipt recorded before the edit still answers. Run the gate without `--reuse` after working in one.
+
+---
+
+## Running only what a change touches
+
+`--affected` runs the steps a working-tree change can affect and skips the rest. It is for the inner loop: **the run is always branded scoped**,
+even when every step ran, and it never records a receipt, so a task still closes on the unscoped gate ([`TESTING.md`][testing-6] §6).
+
+The change is the working tree against `HEAD`: staged and unstaged edits, deletions, untracked files, and both halves of a rename, with ignored
+files left out. The whole repository is read, so a change above `--root` is seen too. Outside a git work tree the flag is refused.
+
+**A step runs when a changed path matches one of its `watches` globs**, which are relative to the directory the gate runs in. `*` stays inside one
+path segment, `**` crosses segments, and dot-directories match. `dir/**` matches everything beneath `dir` but not `dir` itself. **A step with no
+`watches` runs on every change**, which is the safe reading of a step whose inputs nobody declared.
+
+**Builders derive `watches` from their own config**, so most rows need nothing: `jsxStep({ root: ROOT, sources: ["src"] })` watches `src` and
+everything under it. A builder whose inputs no path list bounds — the type program, a test suite, a bundle built from an import graph — derives
+none and runs on every change. The `watches` option overrides the derived value:
+
+```ts
+contrastStep(config, { watches: ["src/ui/assets/css/**", "src/ui/contracts/theme/**"] }), // replaces the derived list
+lintStep({ sources: ["src/"], watches: null }), // drops it, so the step runs on every change
+{ label: "check:bindings", tail: 30, cmd: ["bun", "run", "tools/check-bindings.ts"], watches: ["tools/**", "wrangler.jsonc"] },
+```
+
+A table that declares `watches: []` or an entry starting with `!` is refused: a declaration may only widen what a step runs on, and either form
+would silently skip the step.
+
+**A change to a gate-wide input runs every step.** `DEFAULT_GATE_INPUTS` names the paths every step reads — the manifest and lockfile among them,
+and anything above the gate's root. `forge verify` adds the step-table module itself. To add paths of your own, export `GATE_INPUTS` from the
+table module; it is appended to the default and can never remove from it:
+
+```ts
+// config/steps.ts
+export const GATE_INPUTS: readonly string[] = ["tools/gate/**"];
+```
+
+Embedding the gate through `createGateCommand` instead, pass the same list as `gateInputs`.
+
+**When no step is touched, nothing runs and the exit is 0.** A clean tree prints
+`○ verify --affected — no change against HEAD; nothing ran ⚠ scoped run (0 of N steps) — not the gate`, and a change that matches no step says
+how many paths it saw instead. Neither line is a green gate.
+
+The flag composes with the rest. `--mode` picks the tier first, `--only` then narrows to the labels it names, and `--affected` narrows what is left.
+`--fix --affected` runs the fixers of the affected steps, and `--list --affected` prints the affected selection without running it. Only `--reuse`
+refuses it.
 
 ---
 
@@ -334,9 +423,15 @@ expect(labels("quality").every((label) => labels("standard").includes(label))).t
 
 // Selection calls no probe, so what a table selects never depends on the machine it runs on.
 expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
+
+// `changed` is what `--affected` passes: assert which rows a given edit reaches.
+const touched = selectSteps(STEPS, { mode: "standard", changed: ["src/ui/x.tsx"] });
+if (touched.ok) expect(touched.steps.map((s) => s.label)).not.toContain("validate-exposure");
 ```
 
-Refusals come back as `{ ok: false, error }` rather than a throw: a duplicate label, an unknown `--only` label, and a selection of zero steps.
+Refusals come back as `{ ok: false, error }` rather than a throw: a duplicate label, `watches: []` or a `!` entry in `watches`, an unknown
+`--only` label, and a selection of zero steps. **A zero-step selection is not refused when `changed` is given** — it comes back `ok` with no steps,
+and an empty `changed` selects nothing at all, not even a step with no `watches`.
 **The duplicate check is a property of the table**, so it runs before the mode is applied and before `--only` narrows — a malformed table is refused
 whichever run was asked for.
 
@@ -390,6 +485,10 @@ exist, which is what lets `tsc` run on a clean checkout — so `validate-asset-m
 
 **Import `resolveChromiumPath` from `@y-core/forge/tooling/gate/chromium`, not from the barrel.** Node refuses to strip types from a file under
 `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a `playwright.config.ts` must load the prebuilt `.mjs` at that subpath.
+
+**A value your table imports from outside `config/` is an input no builder can see.** `--affected` reads a builder's `watches` from its config
+paths, so an allowlist or rule table imported from `src/…` is invisible to it, and an edit there skips the step. State `watches` on that row
+yourself, or add the module's path to `GATE_INPUTS`.
 
 **An empty `--only` array is the flag's absence, not a request for nothing.** That is what a repeatable flag resolves to when it was never given,
 and reading it as "select no steps" would refuse every unscoped run.

@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { isCheckStep } from "../../src/tooling/gate/steps";
 import { libraryDocsDir } from "./corpus/dependency";
 import { GOLDEN, NEGATIVE } from "./gate/golden";
-import { changelogStep, designStep, docsStep, wardenAppSteps, wardenQueriesStep } from "./steps";
+import { changelogStep, designStep, docsStep, duplicatesStep, wardenAppSteps, wardenQueriesStep, wardenStep } from "./steps";
 
 const EXPORTS = { ".": "./src/mod.ts" };
 
@@ -45,6 +45,31 @@ describe("warden steps", () => {
 
   it("defers the walk until the runner calls it, so building a table touches no disk", () => {
     expect(() => docsStep({ root: "/nowhere/forge-no-such-root", packageName: "@scope/pkg", exports: EXPORTS })).not.toThrow();
+  });
+});
+
+describe("warden steps — watches", () => {
+  it("derives the changelog row's watches from the two files it reads", () => {
+    expect(changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }).watches).toEqual(["CHANGELOG.md", "config/changelog-sections.json"]);
+  });
+
+  it("honours the changelog row's file and sectionsFile overrides", () => {
+    const step = changelogStep({ root: "/nowhere", packageVersion: "1.0.0", file: "HISTORY.md", sectionsFile: "meta/sections.json" });
+
+    expect(step.watches).toEqual(["HISTORY.md", "meta/sections.json"]);
+  });
+
+  it("derives nothing for the rows that read paths across the tree", () => {
+    const scope = { root: "/nowhere", kind: "libs" } as const;
+    const rows = [
+      docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }),
+      designStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, designDir: "design", cssDir: "css" }),
+      wardenStep(scope),
+      wardenQueriesStep(scope),
+      duplicatesStep(scope),
+    ];
+
+    expect(rows.filter((step) => Object.hasOwn(step, "watches")).map((step) => step.label)).toEqual([]);
   });
 });
 

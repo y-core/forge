@@ -121,6 +121,14 @@ export interface ConfigModuleRequest {
   what: string;
 }
 
+/** A config module's default export beside its whole namespace, for the named exports a bin also reads. */
+export interface LoadedConfigModule<T> {
+  /** The module's `export default`. */
+  value: T;
+  /** The module namespace object, keyed by export name. */
+  exports: Readonly<Record<string, unknown>>;
+}
+
 /** How wide to render, and what to render it in. @public */
 export interface HelpOptions {
   /** Columns the block must fit in. Defaults to 80, so a test can pin it and stay exact-match. */

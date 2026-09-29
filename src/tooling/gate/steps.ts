@@ -1,8 +1,13 @@
+import { matchesGlob } from "node:path";
+
 import { splitList } from "../cli/parse";
 import type { CheckStep, GateMode, Selection, Step } from "./types";
 
 /** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
 export const GATE_MODES = ["quality", "standard", "full"] as const;
+
+/** Paths every step reads, so a change to one selects the whole table under `--affected`. @public */
+export const DEFAULT_GATE_INPUTS: readonly string[] = ["package.json", "bun.lock", "bunfig.toml", "tsconfig*.json", "config/**", "../**"];
 
 /** Narrows a step to the in-process variant. @public */
 export function isCheckStep(step: Step): step is CheckStep {
@@ -26,11 +31,28 @@ function invalidTable(steps: readonly Step[]): string | undefined {
     return `Duplicate step label: ${duplicated.join(", ")}. A label is the \`--only\` token and the name reported on failure, so it must name exactly one step.`;
   }
 
+  for (const step of steps) {
+    if (step.watches === undefined) continue;
+    if (step.watches.length === 0) return `Step "${step.label}" declares an empty \`watches\` — omit it to run the step on every change.`;
+    const negated = step.watches.find((entry) => entry.startsWith("!"));
+    if (negated !== undefined) {
+      return `Step "${step.label}" declares \`watches\` entry "${negated}" — a declaration only widens, so \`!\` exclusions are refused.`;
+    }
+  }
+
   return undefined;
 }
 
-/** Resolves which steps to run in `mode`, cheaper tier first and declared order within a tier, optionally narrowed by an `--only` list. @public */
-export function selectSteps(steps: readonly Step[], opts: { mode: GateMode; only?: readonly string[] }): Selection {
+function touches(step: Step, changed: readonly string[]): boolean {
+  if (changed.length === 0) return false;
+  return step.watches === undefined || step.watches.some((glob) => changed.some((path) => matchesGlob(path, glob)));
+}
+
+/** Resolves which steps to run in `mode`, cheaper tier first and declared order within a tier, narrowed by an `--only` list and by the paths `changed` touches. @public */
+export function selectSteps(
+  steps: readonly Step[],
+  opts: { mode: GateMode; only?: readonly string[]; changed?: readonly string[]; gateInputs?: readonly string[] },
+): Selection {
   const malformed = invalidTable(steps);
   if (malformed !== undefined) return { ok: false, error: malformed };
 
@@ -55,12 +77,19 @@ export function selectSteps(steps: readonly Step[], opts: { mode: GateMode; only
     selected = inMode.filter((step) => wanted.includes(step.label));
   }
 
-  if (selected.length === 0) {
+  const changed = opts.changed;
+  if (changed !== undefined) {
+    const inputs = [...DEFAULT_GATE_INPUTS, ...(opts.gateInputs ?? [])];
+    const wide = changed.some((path) => inputs.some((glob) => matchesGlob(path, glob)));
+    if (!wide) selected = selected.filter((step) => touches(step, changed));
+  }
+
+  if (selected.length === 0 && changed === undefined) {
     // Echoed as the caller wrote it, not as the splitter read it: a list that names nothing is
     // exactly the case where the reader needs to see their own text back.
     const scope = only === undefined ? "" : ` from --only "${only.join(" ")}"`;
     return { ok: false, error: `No steps selected for ${describe(opts.mode)}${scope} — refusing to report a green gate that ran nothing.` };
   }
 
-  return { ok: true, steps: selected, total: inMode.length, scoped: selected.length < inMode.length };
+  return { ok: true, steps: selected, total: inMode.length, scoped: changed !== undefined || selected.length < inMode.length };
 }

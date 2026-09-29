@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { checkResult } from "./finding";
-import { GATE_MODES, isCheckStep, selectSteps } from "./steps";
+import { DEFAULT_GATE_INPUTS, GATE_MODES, isCheckStep, selectSteps } from "./steps";
 import type { Step } from "./types";
 
 const FIXTURE: readonly Step[] = [
@@ -333,5 +333,106 @@ describe("selectSteps() — the repeatable --only", () => {
     // refuses every unscoped run.
     const result = selectSteps(FIXTURE, { mode: "quality", only: [] });
     expect(result.ok && result.scoped).toBe(false);
+  });
+});
+
+describe("selectSteps() — the paths a change touches", () => {
+  const WATCHED: readonly Step[] = [
+    { label: "ui", tail: 10, cmd: ["u"], watches: ["src/ui/**"] },
+    { label: "docs", tail: 10, cmd: ["d"], watches: ["docs/**/*.md", "README.md"] },
+    { label: "everything", tail: 10, cmd: ["e"] },
+    { label: "browser", tier: "full", tail: 10, cmd: ["b"], watches: ["src/**"] },
+  ];
+
+  function affected(
+    changed: readonly string[],
+    extra: { mode?: "quality" | "full"; gateInputs?: readonly string[]; only?: readonly string[] } = {},
+  ): string[] {
+    const result = selectSteps(WATCHED, { mode: extra.mode ?? "full", changed, ...extra });
+    return result.ok ? labelsOf(result.steps) : [`refused: ${result.error}`];
+  }
+
+  it("selects a step whose glob matches a changed path, keeps an undeclared one, and drops the rest", () => {
+    expect(affected(["src/ui/button.tsx"])).toEqual(["ui", "everything", "browser"]);
+    expect(affected(["docs/NAMESPACES.md"])).toEqual(["docs", "everything"]);
+  });
+
+  it("publishes the default gate-wide inputs", () => {
+    expect([...DEFAULT_GATE_INPUTS]).toEqual(["package.json", "bun.lock", "bunfig.toml", "tsconfig*.json", "config/**", "../**"]);
+  });
+
+  it("selects every step when a default gate-wide input changes", () => {
+    for (const path of ["package.json", "bun.lock", "bunfig.toml", "tsconfig.build.json", "config/x.ts", "../bun.lock"]) {
+      expect(affected([path])).toEqual(["ui", "docs", "everything", "browser"]);
+    }
+  });
+
+  it("selects every step when a path matches a gateInputs extension", () => {
+    expect(affected(["tools/gen.ts"], { gateInputs: ["tools/**"] })).toEqual(["ui", "docs", "everything", "browser"]);
+  });
+
+  it("selects nothing, and refuses nothing, for an empty change list", () => {
+    const result = selectSteps(WATCHED, { mode: "full", changed: [] });
+
+    expect(result).toEqual({ ok: true, steps: [], total: 4, scoped: true });
+  });
+
+  it("gives an empty selection when no declared glob matches and every step declares one", () => {
+    const declared = WATCHED.filter((step) => step.watches !== undefined);
+    const result = selectSteps(declared, { mode: "full", changed: ["scripts/x.sh"] });
+
+    expect(result.ok && labelsOf(result.steps)).toEqual([]);
+  });
+
+  it("still refuses an unknown --only label under a change list", () => {
+    expect(affected(["src/ui/a.tsx"], { only: ["nope"] })[0]).toStartWith('refused: Unknown --only label: "nope".');
+  });
+
+  it("intersects --only with the change list", () => {
+    expect(affected(["src/ui/a.tsx"], { only: ["docs", "ui"] })).toEqual(["ui"]);
+  });
+
+  it("refuses a duplicated label before looking at the change list", () => {
+    const table: readonly Step[] = [...WATCHED, { label: "ui", tail: 10, cmd: ["x"] }];
+    const result = selectSteps(table, { mode: "full", changed: [] });
+
+    expect(result.ok ? "" : result.error).toStartWith("Duplicate step label: ui.");
+  });
+
+  it("refuses an empty watches list, which would silently skip the step", () => {
+    const result = selectSteps([{ label: "lint", tail: 10, cmd: ["x"], watches: [] }], { mode: "quality" });
+
+    expect(result.ok ? "" : result.error).toBe('Step "lint" declares an empty `watches` — omit it to run the step on every change.');
+  });
+
+  it("refuses a negated watches entry, since a declaration only widens", () => {
+    const result = selectSteps([{ label: "lint", tail: 10, cmd: ["x"], watches: ["src/**", "!src/gen/**"] }], { mode: "quality" });
+
+    expect(result.ok ? "" : result.error).toBe(
+      'Step "lint" declares `watches` entry "!src/gen/**" — a declaration only widens, so `!` exclusions are refused.',
+    );
+  });
+
+  it("keeps the tier order under a change list", () => {
+    const inverted: readonly Step[] = [
+      { label: "browser", tier: "full", tail: 10, cmd: ["b"], watches: ["src/**"] },
+      { label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] },
+    ];
+    const result = selectSteps(inverted, { mode: "full", changed: ["src/a.ts"] });
+
+    expect(result.ok && labelsOf(result.steps)).toEqual(["lint", "browser"]);
+  });
+
+  it("marks the run scoped under a change list even when every step is selected", () => {
+    const result = selectSteps(WATCHED, { mode: "full", changed: ["package.json"] });
+
+    expect(result.ok && result.scoped).toBe(true);
+  });
+
+  it("matches a dotfile and a path above the root", () => {
+    const table: readonly Step[] = [{ label: "lint", tail: 10, cmd: ["l"], watches: [".oxlintrc*"] }];
+
+    expect(selectSteps(table, { mode: "quality", changed: [".oxlintrc.json"] })).toMatchObject({ ok: true, steps: [{ label: "lint" }] });
+    expect(affected(["../other/x.ts"], { mode: "quality" })).toEqual(["ui", "docs", "everything"]);
   });
 });

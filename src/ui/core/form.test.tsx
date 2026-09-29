@@ -175,6 +175,43 @@ describe("Form — a verb htmx sends its fields in the URL for", () => {
     expect(attrOf(html, "hx-headers")).toBe("{&quot;X-App-Csrf&quot;:&quot;abc123&quot;}");
   });
 
+  for (const [prefix, method] of [
+    ["hx-", "delete"],
+    ["hx-", "get"],
+    ["data-hx-", "delete"],
+    ["data-hx-", "get"],
+    ["hx-", "DELETE"],
+    ["data-hx-", "GET"],
+  ] as const) {
+    it(`renders no hidden token on a ${prefix}method="${method}" form beside ${prefix}action, and still sends the token as a header`, async () => {
+      const html = await render(<Form csrfToken='abc123' {...{ [`${prefix}action`]: "/items/1", [`${prefix}method`]: method }} />);
+
+      expect(html).not.toContain(CSRF_FIELD);
+      expect(attrOf(html, "hx-headers")).toBe("{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}");
+    });
+  }
+
+  it("renders no hidden token on a method=get form the browser submits, and still sends the token as a header", async () => {
+    const html = await render(<Form method='get' csrfToken='abc123' />);
+
+    expect(html).not.toContain(CSRF_FIELD);
+    expect(attrOf(html, "hx-headers")).toBe("{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}");
+  });
+
+  it("keeps the hidden token when hx-post sits beside hx-method=delete without hx-action, because the verb attribute wins", async () => {
+    const html = await render(<Form csrfToken='abc123' hx-post='/items/1' {...{ "hx-method": "delete" }} />);
+    expect(attrOf(html, "value", CSRF_FIELD)).toBe("abc123");
+  });
+
+  it("keeps the hidden token when hx-action sets hx-delete aside and the form's own method is post", async () => {
+    const html = await render(<Form csrfToken='abc123' method='post' hx-delete='/items/1' {...{ "hx-action": "/items/1" }} />);
+    expect(attrOf(html, "value", CSRF_FIELD)).toBe("abc123");
+  });
+
+  it("keeps the hidden token on an hx-query form, whose fields travel in the body", async () => {
+    expect(attrOf(await render(<Form csrfToken='abc123' {...{ "hx-query": "/items" }} />), "value", CSRF_FIELD)).toBe("abc123");
+  });
+
   for (const verb of ["hx-post", "hx-patch"] as const) {
     it(`keeps the hidden token on an ${verb} form, whose fields travel in the body`, async () => {
       expect(attrOf(await render(<Form csrfToken='abc123' {...{ [verb]: "/items/1" }} />), "value", CSRF_FIELD)).toBe("abc123");

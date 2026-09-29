@@ -1,6 +1,6 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { exit } from "node:process";
 
 import { createCommand } from "../cli/command";
@@ -9,6 +9,7 @@ import { capture, hasTool, insertPath } from "../cli/proc";
 import type { Command } from "../cli/types";
 import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
+import { clearReceipt, readReceipt, receiptCovers, recordReceipt } from "./receipt";
 import {
   formatFailureExcerpt,
   formatFindingBlock,
@@ -16,6 +17,10 @@ import {
   formatFullLogPath,
   formatList,
   formatMissingRequirement,
+  formatNothingAffected,
+  formatReceiptWithheld,
+  formatReused,
+  formatReuseMiss,
   formatStepLine,
   listLabel,
   formatSummary,
@@ -23,6 +28,7 @@ import {
 import { GATE_MODES, isCheckStep, selectSteps } from "./steps";
 import type { CheckStep, GateMode, Step, StepRequirement } from "./types";
 import type { GateCommandConfig } from "./types";
+import { worktreeChanges, worktreeHash } from "./worktree";
 
 /** Where `forge verify` looks for a step table when `--config` names none. @public */
 export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
@@ -37,6 +43,8 @@ const gateFlags = {
   },
   list: { type: "boolean" as const, description: "Print the selected steps and exit, running none" },
   fix: { type: "boolean" as const, description: "Run each selected step's fixer instead of the step" },
+  reuse: { type: "boolean" as const, description: "Exit green at once when a passing run of this exact tree is on record at this mode or above" },
+  affected: { type: "boolean" as const, description: "Run only the steps whose watched paths the working tree's changes touch (a scoped run)" },
 };
 
 const binFlags = {
@@ -101,7 +109,7 @@ async function runCheck(step: CheckStep, mode: GateMode, style: Colorize): Promi
 
 /** Builds the `verify` command over a project's step table. @public */
 export function createGateCommand(config: GateCommandConfig): Command<typeof gateFlags> {
-  const { cwd, steps: table, binDir = `${cwd}/node_modules/.bin` } = config;
+  const { cwd, steps: table, binDir = `${cwd}/node_modules/.bin`, gateInputs } = config;
 
   return createCommand({
     name: "verify",
@@ -120,27 +128,56 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         quit(1);
       }
       const { mode } = resolved;
+      if (flags.reuse === true) {
+        const clash = [
+          (flags.only?.length ?? 0) > 0 && "only",
+          flags.fix === true && "fix",
+          flags.list === true && "list",
+          flags.affected === true && "affected",
+        ].find((name) => name !== false);
+        if (clash !== undefined) {
+          console.error(`--reuse stands in for a whole gate run, so it takes no --${clash}.`);
+          quit(1);
+        }
+      }
       // The mode belongs in the verdict: `✓ verify` and `✓ verify --mode full` are different
       // assurances. Named canonically — `--full` is an input spelling, not an output one.
-      const banner = mode === "standard" ? "verify" : `verify --mode ${mode}`;
+      const affected = flags.affected === true;
+      const banner = ["verify", ...(mode === "standard" ? [] : ["--mode", mode]), ...(affected ? ["--affected"] : [])].join(" ");
 
-      const selection = selectSteps(table, { mode, ...(flags.only === undefined ? {} : { only: flags.only }) });
+      const changed = affected ? worktreeChanges(cwd) : undefined;
+      if (affected && changed === undefined) {
+        console.error("--affected reads its changes from git, and this is not a git work tree.");
+        quit(1);
+      }
+
+      const selection = selectSteps(table, {
+        mode,
+        ...(flags.only === undefined ? {} : { only: flags.only }),
+        ...(changed === undefined ? {} : { changed }),
+        ...(gateInputs === undefined ? {} : { gateInputs }),
+      });
       if (!selection.ok) {
         console.error(selection.error);
         quit(1);
       }
 
-      const { steps, total } = selection;
+      const { steps, total, scoped } = selection;
 
       if (flags.list) {
         console.log(
           formatList(
             banner,
             steps.map((step) => listLabel(step, mode)),
-            total,
+            { total, scoped },
             style,
           ),
         );
+        return;
+      }
+
+      if (steps.length === 0) {
+        console.log(formatNothingAffected(banner, { changed: changed?.length ?? 0, total }, style));
         return;
       }
 
@@ -200,6 +237,18 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         return;
       }
 
+      const unscoped = (flags.only?.length ?? 0) === 0 && !affected;
+      const tree = unscoped ? worktreeHash(cwd) : undefined;
+      const labels = steps.map((step) => step.label);
+      if (flags.reuse === true) {
+        const receipt = tree === undefined ? undefined : readReceipt(cwd);
+        if (receipt !== undefined && tree !== undefined && receiptCovers(receipt, { tree, mode, labels })) {
+          console.log(formatReused(banner, receipt, style));
+          return;
+        }
+        console.log(formatReuseMiss({ tree, mode }, style));
+      }
+
       const started = Date.now();
       let passed = 0;
       let skipped = 0;
@@ -250,12 +299,20 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             skipped,
             selected: steps.length,
             total,
+            scoped,
             ms: Date.now() - started,
             ...(failedAt !== undefined ? { failedAt } : {}),
           },
           style,
         ),
       );
+
+      const green = failedAt === undefined && passed > 0 && skipped === 0;
+      if (unscoped && tree !== undefined) {
+        if (!green) clearReceipt(cwd);
+        else if (worktreeHash(cwd) === tree) recordReceipt(cwd, { tree, mode, labels });
+        else console.log(formatReceiptWithheld(style));
+      }
 
       if (failedAt !== undefined || passed === 0 || skipped > 0) quit(1);
     },
@@ -270,16 +327,24 @@ export function createGateBinCommand(): Command<typeof binFlags> {
     flags: binFlags,
     args: { kind: "none" },
     async run(args, flags, ctx) {
+      const quit: (code: number) => never = ctx?.io.exit ?? exit;
       const root = flags.root ?? process.cwd();
       const path = flags.config ?? DEFAULT_STEPS_CONFIG;
-      const steps = await loadConfigModule<readonly Step[]>({ root, path, explicit: flags.config !== undefined, what: "step table" });
+      const loaded = await loadConfigModule<readonly Step[]>({ root, path, explicit: flags.config !== undefined, what: "step table" });
 
-      if (steps === undefined) {
+      if (loaded === undefined) {
         console.error(`No step table at \`${path}\` — create it, or pass --config to name one elsewhere.`);
-        exit(1);
+        quit(1);
       }
 
-      await createGateCommand({ cwd: root, steps }).run?.(args, flags, ctx);
+      const declared = loaded.exports.GATE_INPUTS;
+      if (declared !== undefined && !(Array.isArray(declared) && declared.every((entry) => typeof entry === "string"))) {
+        console.error(`\`${path}\` exports GATE_INPUTS, which must be an array of glob strings.`);
+        quit(1);
+      }
+      const table = relative(root, resolve(root, path)).split(sep).join("/");
+
+      await createGateCommand({ cwd: root, steps: loaded.value, gateInputs: [...(declared ?? []), table] }).run?.(args, flags, ctx);
     },
   });
 }

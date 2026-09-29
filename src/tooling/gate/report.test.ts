@@ -10,6 +10,10 @@ import {
   formatFullLogPath,
   formatList,
   formatMissingRequirement,
+  formatNothingAffected,
+  formatReceiptWithheld,
+  formatReused,
+  formatReuseMiss,
   listLabel,
   formatScopedBanner,
   formatStepLine,
@@ -77,54 +81,72 @@ describe("formatFullLogPath()", () => {
 
 describe("formatSummary()", () => {
   it("names the failing step and its position, which is what makes a verdict machine-readable", () => {
-    expect(formatSummary({ gate: "check", passed: 2, skipped: 0, selected: 7, total: 7, failedAt: { label: "test", at: 3 }, ms: 4200 })).toBe(
-      "✗ check — failed at `test` (step 3 of 7, 4.2s)",
-    );
+    expect(
+      formatSummary({ gate: "check", passed: 2, skipped: 0, selected: 7, total: 7, scoped: false, failedAt: { label: "test", at: 3 }, ms: 4200 }),
+    ).toBe("✗ check — failed at `test` (step 3 of 7, 4.2s)");
   });
 
   it("counts the skipped steps in a failure line too, so the position is read against them", () => {
-    expect(formatSummary({ gate: "verify", passed: 2, skipped: 2, selected: 7, total: 7, failedAt: { label: "test", at: 5 }, ms: 4200 })).toBe(
-      "✗ verify — failed at `test` (step 5 of 7, 2 skipped, 4.2s)",
-    );
+    expect(
+      formatSummary({ gate: "verify", passed: 2, skipped: 2, selected: 7, total: 7, scoped: false, failedAt: { label: "test", at: 5 }, ms: 4200 }),
+    ).toBe("✗ verify — failed at `test` (step 5 of 7, 2 skipped, 4.2s)");
   });
 
   it("builds the green line from the steps that passed, pluralising one step correctly", () => {
-    expect(formatSummary({ gate: "check", passed: 7, skipped: 0, selected: 7, total: 7, ms: 4200 })).toBe("✓ check — 7 steps passed (4.2s)");
-    expect(formatSummary({ gate: "check", passed: 1, skipped: 0, selected: 1, total: 1, ms: 4200 })).toBe("✓ check — 1 step passed (4.2s)");
+    expect(formatSummary({ gate: "check", passed: 7, skipped: 0, selected: 7, total: 7, scoped: false, ms: 4200 })).toBe(
+      "✓ check — 7 steps passed (4.2s)",
+    );
+    expect(formatSummary({ gate: "check", passed: 1, skipped: 0, selected: 1, total: 1, scoped: false, ms: 4200 })).toBe(
+      "✓ check — 1 step passed (4.2s)",
+    );
   });
 
   it("refuses a green for a run that skipped a step, since a skip is work the gate did not do", () => {
-    expect(formatSummary({ gate: "verify", passed: 5, skipped: 2, selected: 7, total: 7, ms: 4200 })).toBe(
+    expect(formatSummary({ gate: "verify", passed: 5, skipped: 2, selected: 7, total: 7, scoped: false, ms: 4200 })).toBe(
       "○ verify — 5 steps passed, 2 steps skipped (4.2s) — not green: 2 steps never ran; install what each skip line above names",
     );
   });
 
   it("says the same of a single skip, in the singular", () => {
-    expect(formatSummary({ gate: "verify", passed: 5, skipped: 1, selected: 6, total: 6, ms: 4200 })).toBe(
+    expect(formatSummary({ gate: "verify", passed: 5, skipped: 1, selected: 6, total: 6, scoped: false, ms: 4200 })).toBe(
       "○ verify — 5 steps passed, 1 step skipped (4.2s) — not green: 1 step never ran; install what each skip line above names",
     );
   });
 
   it("refuses a green when every selected step was skipped, as the selection refuses an empty run", () => {
-    expect(formatSummary({ gate: "verify", passed: 0, skipped: 3, selected: 3, total: 3, ms: 400 })).toBe(
+    expect(formatSummary({ gate: "verify", passed: 0, skipped: 3, selected: 3, total: 3, scoped: false, ms: 400 })).toBe(
       "✗ verify — every step skipped (0 of 3 ran, 0.4s) — refusing to report a green gate that ran nothing",
     );
   });
 
   it("appends the scoped banner to a green, so a scoped line never passes for a gate green", () => {
-    expect(formatSummary({ gate: "check", passed: 2, skipped: 0, selected: 2, total: 7, ms: 4200 })).toBe(
+    expect(formatSummary({ gate: "check", passed: 2, skipped: 0, selected: 2, total: 7, scoped: true, ms: 4200 })).toBe(
       "✓ check — 2 steps passed (4.2s) ⚠ scoped run (2 of 7 steps) — not the gate",
     );
   });
 
   it("appends the scoped banner to a failure too", () => {
-    expect(formatSummary({ gate: "check", passed: 0, skipped: 0, selected: 2, total: 7, failedAt: { label: "lint", at: 1 }, ms: 4200 })).toBe(
-      "✗ check — failed at `lint` (step 1 of 2, 4.2s) ⚠ scoped run (2 of 7 steps) — not the gate",
+    expect(
+      formatSummary({ gate: "check", passed: 0, skipped: 0, selected: 2, total: 7, scoped: true, failedAt: { label: "lint", at: 1 }, ms: 4200 }),
+    ).toBe("✗ check — failed at `lint` (step 1 of 2, 4.2s) ⚠ scoped run (2 of 7 steps) — not the gate");
+  });
+
+  it("appends the banner when the run was scoped, even with every step selected", () => {
+    expect(formatSummary({ gate: "verify --affected", passed: 3, skipped: 0, selected: 3, total: 3, scoped: true, ms: 4200 })).toBe(
+      "✓ verify --affected — 3 steps passed (4.2s) ⚠ scoped run (3 of 3 steps) — not the gate",
+    );
+  });
+
+  it("appends no banner when the run was not scoped", () => {
+    expect(formatSummary({ gate: "verify", passed: 3, skipped: 0, selected: 3, total: 3, scoped: false, ms: 4200 })).toBe(
+      "✓ verify — 3 steps passed (4.2s)",
     );
   });
 
   it("uses the gate verb verbatim, so `check` and `verify` stay distinguishable", () => {
-    expect(formatSummary({ gate: "verify", passed: 8, skipped: 0, selected: 8, total: 8, ms: 4200 })).toBe("✓ verify — 8 steps passed (4.2s)");
+    expect(formatSummary({ gate: "verify", passed: 8, skipped: 0, selected: 8, total: 8, scoped: false, ms: 4200 })).toBe(
+      "✓ verify — 8 steps passed (4.2s)",
+    );
   });
 });
 
@@ -151,11 +173,17 @@ describe("listLabel()", () => {
 
 describe("formatList()", () => {
   it("prints one label per line under a count header", () => {
-    expect(formatList("check", ["typecheck", "lint"], 2)).toBe("check — 2 steps\n  typecheck\n  lint");
+    expect(formatList("check", ["typecheck", "lint"], { total: 2, scoped: false })).toBe("check — 2 steps\n  typecheck\n  lint");
   });
 
-  it("appends the scoped banner on its own line when the selection is narrower than the gate", () => {
-    expect(formatList("check", ["lint"], 7)).toBe("check — 1 step\n  lint\n⚠ scoped run (1 of 7 steps) — not the gate");
+  it("appends the scoped banner on its own line when the selection is scoped", () => {
+    expect(formatList("check", ["lint"], { total: 7, scoped: true })).toBe("check — 1 step\n  lint\n⚠ scoped run (1 of 7 steps) — not the gate");
+  });
+
+  it("brands a selection scoped even when it holds every step, as an --affected one does", () => {
+    expect(formatList("verify --affected", ["lint"], { total: 1, scoped: true })).toBe(
+      "verify --affected — 1 step\n  lint\n⚠ scoped run (1 of 1 steps) — not the gate",
+    );
   });
 });
 
@@ -224,6 +252,54 @@ describe("formatFindingBlock()", () => {
   });
 });
 
+describe("formatReused()", () => {
+  const tree = "0123456789abcdef0123456789abcdef01234567";
+
+  it("names the mode and the full hash of the run it stands on, and says no step ran", () => {
+    expect(formatReused("verify", { tree, mode: "full", labels: ["lint"] })).toBe(
+      `✓ verify — reused the passing full run of tree ${tree}; no step ran`,
+    );
+  });
+});
+
+describe("formatReuseMiss()", () => {
+  it("says the tree has no passing run on record at the requested mode", () => {
+    expect(formatReuseMiss({ tree: "abc123", mode: "standard" })).toBe(
+      "○ no passing run of tree abc123 on record at standard or above; running the gate",
+    );
+  });
+
+  it("says there is no work tree when the hash is undefined", () => {
+    expect(formatReuseMiss({ tree: undefined, mode: "standard" })).toBe("○ not a git work tree — no receipt to reuse; running the gate");
+  });
+});
+
+describe("formatReceiptWithheld()", () => {
+  it("says the tree moved under the run, so nothing was recorded", () => {
+    expect(formatReceiptWithheld()).toBe("○ the tree changed during the run — no receipt written");
+  });
+});
+
+describe("formatNothingAffected()", () => {
+  it("says a tree with no change ran nothing, under the scoped banner", () => {
+    expect(formatNothingAffected("verify --affected", { changed: 0, total: 36 })).toBe(
+      "○ verify --affected — no change against HEAD; nothing ran ⚠ scoped run (0 of 36 steps) — not the gate",
+    );
+  });
+
+  it("says one changed path touches no step, in the singular", () => {
+    expect(formatNothingAffected("verify --affected", { changed: 1, total: 36 })).toBe(
+      "○ verify --affected — 1 changed path touches no step; nothing ran ⚠ scoped run (0 of 36 steps) — not the gate",
+    );
+  });
+
+  it("says several changed paths touch no step, in the plural", () => {
+    expect(formatNothingAffected("verify --mode full --affected", { changed: 3, total: 40 })).toBe(
+      "○ verify --mode full --affected — 3 changed paths touch no step; nothing ran ⚠ scoped run (0 of 40 steps) — not the gate",
+    );
+  });
+});
+
 describe("report colour", () => {
   const style = createColorize(1);
 
@@ -240,7 +316,7 @@ describe("report colour", () => {
   });
 
   it("carries the styler into the banner a summary appends", () => {
-    expect(formatSummary({ gate: "verify", passed: 1, skipped: 0, selected: 1, total: 15, ms: 100 }, style)).toBe(
+    expect(formatSummary({ gate: "verify", passed: 1, skipped: 0, selected: 1, total: 15, scoped: true, ms: 100 }, style)).toBe(
       `${style.green("✓")} verify — 1 step passed (0.1s) ${style.yellow("⚠")} scoped run (1 of 15 steps) — not the gate`,
     );
   });

@@ -226,6 +226,14 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   open under the key ring — the cue to put a dropped secret back. It reaches the logger `requestLogger` mounts.
 - **`resolveAuth` takes `stepUpMaxAgeMs`**, the window the verify page judges a step-up mark by, and refuses one below
   the floor the other guards hold. `createAuthGuards` passes its own.
+- **`forge verify --reuse` answers at once for a tree that already passed.** Every green unscoped run records a receipt
+  in the git directory against a hash of the working tree, untracked files included. `--reuse` on the same bytes, at
+  that mode or a lower one, prints the run it stands on and exits 0 without running a step; on any other tree it
+  runs the gate. `src/tooling/gate/README.md` covers what records, answers and clears a receipt.
+- **`forge verify --affected` runs only the steps a working-tree change touches.** A step declares the globs it reads
+  as `watches`; the builders derive one from their config, and a step without one runs on every change. A change to
+  a path in `DEFAULT_GATE_INPUTS`, or in the `GATE_INPUTS` a step-table module exports, runs every step. The run is
+  always branded scoped and records no receipt, so a task still closes on the unscoped gate.
 
 ### Changed
 
@@ -240,14 +248,19 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   flash cookies too), `whsec_` webhook secrets, `importKeyRing` and the auth key ring, hand-built or imported, all
   apply it. `CsrfConfigSchema` now requires at least 64 hex characters. No token, URL, cookie or key id format
   changed. The rule is `docs/SECURITY_HARDENING.md` §8.
-- **`<Form>` renders no hidden CSRF field on an `hx-delete` or `hx-get` form**, and sends the token in the header alone.
-  htmx puts those verbs' fields in the request URL, where any log that records URLs would keep the token.
+- **`<Form>` renders no hidden CSRF field on a form htmx or the browser submits by GET or DELETE**, and leaves the
+  token to its `hx-headers` copy. Those verbs put the form's fields in the request URL, where any log that records
+  URLs would keep the token.
+- **`requireAuth` returns an htmx request to the page the visitor was on.** Its `next` comes from `HX-Current-URL`, for
+  any method, when that URL is on the request's own origin, and is not set without one. It used to record the
+  request's own URL for a GET or HEAD, which under htmx is the fragment endpoint rather than a page.
 - **The auth views that update in place swap `outerHTML` over their own root**, whose id `@y-core/forge/auth/web` now
   exports: `AUTH_PASSKEY_LIST_ID`, `AUTH_PASSKEY_EDIT_ID`, `AUTH_TOTP_ID` and `AUTH_ADMIN_USER_EDIT_ID`. A passkey rename
   or removal, a TOTP removal and an admin account update used to nest the re-rendered view inside the form or row.
 - **`ui/client/htmx` announces a 4xx whose content type is not `text/html` instead of swapping it.** A plain-text
   `Forbidden`, `Not Found` or rate-limit refusal is spoken on the `failure` channel and leaves the target intact. An
   explicit `hx-status:` attribute still swaps it, and a rendered HTML 4xx still swaps.
+- **The review baseline in `CODE_REVIEW.md` §1a and the `warden-review` skill is `verify --reuse`.**
 
 ### Fixed
 
@@ -269,10 +282,11 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`forge cf sync zone` describes the rulesets it writes as managed by `forge cf sync zone`**, not by the retired
   `forge sync`. A deployed ruleset keeps the old description until a rule in it next changes, because only the rules
   are compared.
-- **An auth redirect under htmx navigates the page.** `requireAuth` and the auth actions answer an htmx request with a
-  204 and `HX-Redirect`, so an expired session or an admin remove loads the other page and updates the address bar.
-  They used to answer a 3xx, which `fetch` followed and htmx swapped into the card. A request without htmx still gets
-  the redirect.
+- **Every auth redirect under htmx navigates the page.** The guards `requireAuth`, `requireEnrolment`,
+  `requirePendingEnrolment` and `requireFreshStepUp`, the auth pages' redirects to sign-in, the verify page's detour and
+  the auth actions answer an htmx request with a 204 and `HX-Redirect`, so an expired session, an owed step-up or
+  enrolment, or an admin remove loads the other page and updates the address bar. They used to answer a 3xx, which
+  `fetch` followed and htmx swapped into the target. A request without htmx still gets the redirect.
 - **`startDevServer` recovers from a `wrangler dev` that never answers, and fails fast on one that exits.** A process
   that exited before it was ready was waited on for the whole 180s budget, and one that came up but held every request
   failed the start. Each attempt now gets 60s on a fresh port, up to the same 180s.

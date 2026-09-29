@@ -55,8 +55,8 @@ const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
 ```
 
 On `GET` the guard pre-mints a token for the current path; render it with `<Form csrfToken={…}>` from `@y-core/forge/ui/core`, which writes both the
-hidden `_csrf` input and the `hx-headers` entry htmx submits it on. An `hx-delete` or `hx-get` form gets the header alone, because htmx puts
-those verbs' fields in the URL. For a DELETE form that must also work without JavaScript, see
+hidden `_csrf` input and the `hx-headers` entry htmx submits it on. A form htmx or the browser submits by GET or DELETE gets the header
+alone, because those verbs put the form's fields in the URL. For a DELETE form that must also work without JavaScript, see
 [`ui/core`'s form section][ui-form].
 
 ```tsx

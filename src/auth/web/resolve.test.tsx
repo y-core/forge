@@ -40,7 +40,7 @@ import {
 import { AUTH_VIEWS } from "./render";
 import { AUTH_VIEW_GUARDS, authAfterStepUpTarget, resolveAuthView } from "./resolve";
 import { AUTH_ROUTE_GROUPS } from "./routes";
-import type { AuthIdentity } from "./types";
+import type { AuthGuardName, AuthIdentity } from "./types";
 import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
 import type { AuthViewName, AuthViewProps } from "./types";
 import type { AuthViewRequest } from "./types";
@@ -420,6 +420,20 @@ describe("resolveAuthView refusals", () => {
     expect(await refusalOf(loadAdminElevate, options, null)).toEqual(signin);
   });
 
+  it("navigates an anonymous htmx request to sign-in with HX-Redirect, and a plain one with 302", async () => {
+    const app = loaderApp(loadPasskeyList, optionsWith({ users: fakeAuthUserStore([viewer]) }), null);
+    const answers = await Promise.all(
+      [{ "HX-Request": "true" }, {}].map(async (headers) => {
+        const res = await app.request("/page", { headers });
+        return { status: res.status, location: res.headers.get("location"), redirect: res.headers.get("hx-redirect") };
+      }),
+    );
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/signin" },
+      { status: 302, location: "/auth/signin", redirect: null },
+    ]);
+  });
+
   // Swapped, an anonymous prober learns from the status whether this deployment offers passkeys.
   it("refuses an anonymous request before it reports that the passkey service is unconfigured", async () => {
     const options = optionsWith({ users: fakeAuthUserStore([viewer]) });
@@ -490,6 +504,43 @@ describe("resolveAuthView refusals", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/admin/users");
   });
+
+  it("navigates an htmx request with a malformed administrative query to the plain listing with HX-Redirect", async () => {
+    const options = optionsWith({ admin: fakeAdminUserStore(roster) });
+    const res = await loaderApp(loadAdminUsers, options, admin).request(`/page?after=${"x".repeat(500)}`, { headers: { "HX-Request": "true" } });
+    expect({ status: res.status, location: res.headers.get("location"), redirect: res.headers.get("hx-redirect") }).toEqual({
+      status: 204,
+      location: null,
+      redirect: "/admin/users",
+    });
+  });
+
+  const signedInOnly = (Object.keys(AUTH_VIEW_GUARDS) as AuthViewName[]).filter((name) =>
+    (AUTH_VIEW_GUARDS[name] as readonly AuthGuardName[]).includes("require-auth"),
+  );
+
+  for (const name of signedInOnly) {
+    it(`navigates an anonymous htmx request for ${name} to sign-in with HX-Redirect, and a plain one with 302`, async () => {
+      const app = guardedApp(
+        async (c) => {
+          const view = await resolveAuthView(c, fakeAuthWebOptions(), { name, guarded: AUTH_VIEW_GUARDS[name] });
+          return view.ok ? new Response("resolved") : view.error;
+        },
+        null,
+        "/page/:id",
+      );
+      const answers = await Promise.all(
+        [{ "HX-Request": "true" }, {}].map(async (headers) => {
+          const res = await app.request("/page/c1", { headers });
+          return { status: res.status, location: res.headers.get("location"), redirect: res.headers.get("hx-redirect") };
+        }),
+      );
+      expect(answers).toEqual([
+        { status: 204, location: null, redirect: "/auth/signin" },
+        { status: 302, location: "/auth/signin", redirect: null },
+      ]);
+    });
+  }
 });
 
 describe("no configuration makes a passkey start a sign-in", () => {
@@ -819,6 +870,22 @@ describe("the verify page's step-up picker", () => {
   });
 });
 
+describe("the verify page for a session that owes nothing", () => {
+  it("navigates an htmx request on to its return-to with HX-Redirect, and a plain one with 303", async () => {
+    const app = loaderApp(loadVerify, optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry([]) }), member);
+    const answers = await Promise.all(
+      [{ "HX-Request": "true" }, {}].map(async (headers) => {
+        const res = await app.request("/page?next=%2Fapp", { headers });
+        return { status: res.status, location: res.headers.get("location"), redirect: res.headers.get("hx-redirect") };
+      }),
+    );
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/app" },
+      { status: 303, location: "/app", redirect: null },
+    ]);
+  });
+});
+
 describe("the verify page for an owed enrolment beside a confirmed second factor", () => {
   const owing = optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(["recovery-code"], { totp: "mandatory" }) });
 
@@ -844,6 +911,21 @@ describe("the verify page for an owed enrolment beside a confirmed second factor
 
   it("sends a session whose mark holds on to the enrolment it still owes", async () => {
     expect(await verifyMarked(Date.now() - 5_000)).toEqual({ status: 303, location: "/auth/enrol/totp", prompt: "" });
+  });
+
+  it("navigates an htmx request on to the enrolment it still owes with HX-Redirect, and a plain one with 303", async () => {
+    const guard = resolveAuth({ users: () => fakeAuthUserStore([viewer]), stepUpMaxAgeMs: 30_000 });
+    const app = guardedApp((c) => loadVerify(c as never, owing), { ...member, stepUpAt: Date.now() - 5_000 }, "/page", [guard]);
+    const answers = await Promise.all(
+      [{ "HX-Request": "true" }, {}].map(async (headers) => {
+        const res = await app.request("/page", { headers });
+        return { status: res.status, location: res.headers.get("location"), redirect: res.headers.get("hx-redirect") };
+      }),
+    );
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/enrol/totp" },
+      { status: 303, location: "/auth/enrol/totp", redirect: null },
+    ]);
   });
 
   it("asks for the held factor whatever the mark when no guard established the window to measure it by", async () => {

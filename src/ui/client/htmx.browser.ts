@@ -318,3 +318,29 @@ test.describe("htmx — a no-JS DELETE form whose button carries the verb", () =
     expect(JSON.parse((await page.locator("form").getAttribute("hx-headers")) ?? "{}")).toEqual({ [CSRF_HEADER_DEFAULT]: token });
   });
 });
+
+test.describe("htmx — a <Form> htmx submits by hx-method", () => {
+  const token = "csrf-token-9c1e";
+
+  test("sends a DELETE whose URL carries the form's fields but no CSRF field, with the token as a header", async ({ page }) => {
+    const html = await render(
+      Form({
+        csrfToken: token,
+        ...{ "hx-action": "/items/1", "hx-method": "delete" },
+        children: [jsx("input", { name: "title", value: "Old" }), Button({ id: "load", type: "submit", children: "Remove" })],
+      }),
+    );
+    await mount(page, html, EXPOSE);
+    await page.evaluate(() => window.forgeHtmx.htmx.process(document.body));
+    let sent: { method: string; url: string; csrfHeader: string | null } | undefined;
+    await page.route("http://forge.test/items/1**", async (route) => {
+      const request = route.request();
+      sent = { method: request.method(), url: request.url(), csrfHeader: await request.headerValue(CSRF_HEADER_DEFAULT) };
+      await route.fulfill({ contentType: "text/html", body: "" });
+    });
+
+    await requestAndFinish(page);
+
+    expect(sent).toEqual({ method: "DELETE", url: "http://forge.test/items/1?title=Old", csrfHeader: token });
+  });
+});

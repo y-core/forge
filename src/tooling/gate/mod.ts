@@ -219,4 +219,4 @@ export { checkResult, fail, formatCheckResult, formatFinding, reportCheck, scann
 export type { CloudflareWorkerDesignOptions, CloudflareWorkerStepOptions, GatePackage, LibraryStepOptions } from "./types";
 export { cloudflareWorkerSteps, forgeChecks } from "./presets";
 export type { CheckStep, CommandStep, GateMode, Selection, Step, StepBase, StepRequirement } from "./types";
-export { GATE_MODES, isCheckStep, selectSteps } from "./steps";
+export { DEFAULT_GATE_INPUTS, GATE_MODES, isCheckStep, selectSteps } from "./steps";

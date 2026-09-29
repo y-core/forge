@@ -178,9 +178,9 @@ Render trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) 
 **Pass `csrfToken` to `Form` and it does both halves**: the hidden field, and the token merged into `hx-headers`. Pass `csrfHeader` as well when
 `csrfProtection` renamed the header, because on some forms the header is the only copy that arrives.
 
-**An `hx-delete` or `hx-get` form gets no hidden field**, only the header. htmx sends those two verbs' fields in the URL, and a token in a URL
-reaches every log that records one. A DELETE form that must also work without JavaScript keeps the plain form and moves the verb onto its button.
-A button reads no `hx-headers` from its form, so give it the header too:
+**A form htmx or the browser submits by GET or DELETE gets no hidden field**, only the header. Those verbs send the form's fields in the URL,
+and a token in a URL reaches every log that records one. A DELETE form that must also work without JavaScript keeps the plain form and moves the
+verb onto its button. A button reads no `hx-headers` from its form, so give it the header too:
 
 ```tsx
 <Form csrfToken={token} action='/items/1'>

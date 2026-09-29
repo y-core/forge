@@ -285,7 +285,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       // The demand is resolved first: the schema's width is the presented factor's own, so a
       // deployment configuring a wider code cannot have its page refuse every correct one.
-      const demand = await resolveAuthVerifyDemand(c, services);
+      const demand = await resolveAuthVerifyDemand(c, services, resolveAuthViewer(c));
       // Before the body is even read: a session owing an enrolment cannot step up, so accepting a
       // code here would spend an attempt on a comparison `signin.stepUp` refuses to make.
       const detour = authVerifyDetour(c, options, demand);
@@ -339,7 +339,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       // be inside the reissue window, so reporting it would bin an address list.
       const verifyPath = authReturnQuery(c, options, options.paths.auth.verify.show());
       const resent = `${verifyPath}${verifyPath.includes("?") ? "&" : "?"}${AUTH_RESENT_PARAM}`;
-      const demand = await resolveAuthVerifyDemand(c, services);
+      const demand = await resolveAuthVerifyDemand(c, services, resolveAuthViewer(c));
       const detour = authVerifyDetour(c, options, demand);
       if (detour !== null) return detour;
 

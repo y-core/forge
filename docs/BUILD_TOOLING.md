@@ -288,9 +288,13 @@ across every repository that runs it, and would hand the next one the parts to b
 forge's `steps.test.ts` worth having.
 
 **Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent.** The published surface is exactly `--only`,
-`--list`, `--fix`, fail-fast, the `requires` probe with its mode-decided verdict — skip below the `full` tier, failure in a full run, and a red
-summary when every selected step was skipped — and the full-log file. Narrowing a run means enumerating labels; a streamed run is `--list` and then
-the step's own command.
+`--list`, `--fix`, `--reuse`, `--affected` with each step's `watches`, fail-fast, the `requires` probe with its mode-decided verdict — skip below
+the `full` tier, failure in a full run, and a red summary when every selected step was skipped — and the full-log file. Narrowing a run means
+enumerating labels or letting `--affected` read the change; a streamed run is `--list` and then the step's own command.
+
+**The `--reuse` receipt lives in the git directory, not in the working tree.** A working-tree path would need every consumer's `.gitignore` to
+name it, and until one did, the receipt would sit inside the tree hash it records — so writing it would invalidate it. Resolving the path with
+`git rev-parse --git-path` keeps it out of both, and gives a linked worktree a receipt of its own.
 
 ### 2g. cloudflareWorkerSteps — the Fleet Preset
 

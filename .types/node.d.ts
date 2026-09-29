@@ -80,6 +80,7 @@ declare module "node:path" {
   export function basename(path: string, ext?: string): string;
   export function extname(path: string): string;
   export function relative(from: string, to: string): string;
+  export function matchesGlob(path: string, pattern: string): boolean;
   /** POSIX-semantics variants, for a path that must resolve the same way on every host. */
   export const posix: PathApi;
 }

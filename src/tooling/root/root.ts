@@ -28,7 +28,7 @@ export async function createRootCommand(cwd: string = process.cwd()): Promise<Co
     explicit: false,
     what: "command table",
   });
-  for (const command of commands ?? []) addCommand(root, command);
+  for (const command of commands?.value ?? []) addCommand(root, command);
 
   return root;
 }

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
+import type { CliContext } from "../cli/types";
 import { createReleaseBinCommand } from "../release/release";
+import { PLAIN } from "../term/color";
 import { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
+import { worktreeFixture } from "./worktree.fixture";
 
 const GATE = createGateBinCommand();
 const RELEASE = createReleaseBinCommand();
@@ -67,5 +72,73 @@ describe("the two bins agree on how a config module is named", () => {
 
   it("defaults both config paths into the same directory", () => {
     expect(DEFAULT_STEPS_CONFIG.startsWith("config/")).toBe(true);
+  });
+});
+
+describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
+  function table(gateInputs: string): string {
+    return [
+      `export const GATE_INPUTS = ${gateInputs};`,
+      'const ok = { ok: true, findings: [], summary: "" };',
+      'export default [{ label: "src-only", run: () => ok, watches: ["src/**"] }];',
+      "",
+    ].join("\n");
+  }
+
+  async function runBin(root: string): Promise<{ logs: string[]; code: number | undefined }> {
+    const logs: string[] = [];
+    let code: number | undefined;
+    const ctx: CliContext = {
+      io: {
+        stdout: (msg: string) => logs.push(msg),
+        stderr: (msg: string) => logs.push(msg),
+        exit: (exitCode: number): never => {
+          code = exitCode;
+          throw new Error("exit");
+        },
+      },
+      out: PLAIN,
+      err: PLAIN,
+      width: 80,
+    };
+    const original = console.log;
+    const originalError = console.error;
+    console.log = (msg: string) => logs.push(msg);
+    console.error = (msg: string) => logs.push(msg);
+    try {
+      await GATE.run?.([], { root, config: "gate/steps.ts", affected: true, full: false, list: false, fix: false, only: [] } as never, ctx);
+    } catch (error) {
+      if (code === undefined) throw error;
+    } finally {
+      console.log = original;
+      console.error = originalError;
+    }
+    return { logs, code };
+  }
+
+  it("runs every step when a change matches a glob the table module adds", async () => {
+    const root = worktreeFixture({ "gate/steps.ts": table('["assets/**"]'), "src/a.ts": "a\n", "assets/logo.svg": "<svg/>\n" });
+    writeFileSync(join(root, "assets/logo.svg"), "<svg></svg>\n");
+    const { logs, code } = await runBin(root);
+
+    expect(code).toBeUndefined();
+    expect(logs.some((line) => line.startsWith("✓ src-only"))).toBe(true);
+  });
+
+  it("treats the table module itself as a gate-wide input", async () => {
+    const root = worktreeFixture({ "gate/steps.ts": table("[]"), "src/a.ts": "a\n" });
+    mkdirSync(join(root, "gate"), { recursive: true });
+    writeFileSync(join(root, "gate/steps.ts"), table("[]") + "\n");
+    const { logs } = await runBin(root);
+
+    expect(logs.some((line) => line.startsWith("✓ src-only"))).toBe(true);
+  });
+
+  it("refuses a GATE_INPUTS that is not an array of glob strings", async () => {
+    const root = worktreeFixture({ "gate/steps.ts": table('"assets/**"'), "src/a.ts": "a\n" });
+    const { logs, code } = await runBin(root);
+
+    expect(code).toBe(1);
+    expect(logs).toContain("`gate/steps.ts` exports GATE_INPUTS, which must be an array of glob strings.");
   });
 });

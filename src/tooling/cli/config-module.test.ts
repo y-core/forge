@@ -22,13 +22,19 @@ describe("loadConfigModule()", () => {
   it("returns the default export of a module at a relative path", async () => {
     const path = write("present.ts", "export default [{ label: 'typecheck' }];");
 
-    expect(await loadConfigModule({ ...REQUEST, path })).toEqual([{ label: "typecheck" }]);
+    expect((await loadConfigModule({ ...REQUEST, path }))?.value).toEqual([{ label: "typecheck" }]);
+  });
+
+  it("carries the module's named exports beside its default, so a bin reads both through one import", async () => {
+    const path = write("named.ts", "export const GATE_INPUTS = ['src/**']; export default [];");
+
+    expect((await loadConfigModule({ ...REQUEST, path }))?.exports.GATE_INPUTS).toEqual(["src/**"]);
   });
 
   it("accepts an absolute path as readily as a relative one", async () => {
     write("absolute.ts", "export default 'reached';");
 
-    expect(await loadConfigModule({ ...REQUEST, path: join(ROOT, "absolute.ts") })).toBe("reached");
+    expect((await loadConfigModule({ ...REQUEST, path: join(ROOT, "absolute.ts") }))?.value).toBe("reached");
   });
 
   it("returns undefined for an absent default path, so an optional config stays optional", async () => {

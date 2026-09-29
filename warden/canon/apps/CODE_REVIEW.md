@@ -33,8 +33,8 @@ description: "How to review an application: the blocking invariants, tiered dete
 
 ### 1a. Pre-Review Preparation
 
-1. **Establish a green baseline** — run the gate before reviewing, so pre-existing failures are not attributed to the change
-   ([`TESTING.md`][testing-6] §6).
+1. **Establish a green baseline** — run the gate with `--reuse` before reviewing, so pre-existing failures are not attributed to the change
+   ([`TESTING.md`][testing-6] §6). A passing run the gate recorded for these exact bytes answers at once; on any other tree the full gate runs.
 2. **Read the route map, then the controller binding.** Together they answer "which routes exist and what guards each one" — the single question
    most review findings turn on.
 3. **Read each changed handler end to end** before judging any line in it.

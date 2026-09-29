@@ -192,6 +192,53 @@
       "rules": { "forge/optional-prop-undefined": "error" }
     },
     {
+      // `createAuthRedirect` is the one redirect in `auth/web`: a bare 3xx is followed by htmx's fetch into the swap.
+      "files": ["src/auth/web/**"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+              },
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              },
+              {
+                "group": ["**/http/response"],
+                "importNames": ["createRedirectResponse"],
+                "message": "Redirect through `createAuthRedirect` (./redirect), which answers an htmx request with `HX-Redirect` instead of a 3xx."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The helper itself is the one file that builds the 3xx.
+      "files": ["src/auth/web/redirect.ts"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+              },
+              {
+                "group": ["valibot"],
+                "message": "Import `v` from the validation facade (@y-core/forge/validation, or ../validation/mod inside forge source) — never valibot directly."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       // a test's job is to feed adversarial markup — see warden/canon/libs/TESTING.md
       "rules": {

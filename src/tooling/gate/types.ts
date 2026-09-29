@@ -18,6 +18,8 @@ export interface StepOptions {
   tier?: GateMode;
   /** Replaces the step's default dependency; `null` drops it, so a project that vendors one is not gated on probing it. */
   requires?: StepRequirement | null;
+  /** Replaces the step's derived `watches`; `null` drops it, so the step runs on every change. */
+  watches?: readonly string[] | null;
 }
 
 /** Sources a tool step is pointed at. @public */
@@ -80,6 +82,8 @@ export interface GateCommandConfig {
   steps: readonly Step[];
   /** Prepended to `PATH` so bare tool names resolve. Defaults to `${cwd}/node_modules/.bin`. */
   binDir?: string;
+  /** Globs whose change selects every step under `--affected`, appended to `DEFAULT_GATE_INPUTS`. */
+  gateInputs?: readonly string[];
 }
 
 /** The severity of a finding: `fail` fails the check, `warn` is reported and does not. */
@@ -199,10 +203,21 @@ export interface SummaryInput {
   selected: number;
   /** Steps the gate holds in total. */
   total: number;
+  /** True when the selection was narrowed, so a green here is not the gate's. */
+  scoped: boolean;
   /** The failing step and its position in the selection; absent when nothing failed. */
   failedAt?: { label: string; at: number };
   /** Wall-clock duration of the whole run. */
   ms: number;
+}
+
+/** A passing unscoped run, recorded against the tree it judged. */
+export interface GateReceipt {
+  /** `git write-tree` over the working tree, untracked files in and ignored ones out. */
+  tree: string;
+  mode: GateMode;
+  /** Every step the run executed. */
+  labels: readonly string[];
 }
 
 /** A parsed `major.minor.patch` version. @public */
@@ -236,6 +251,8 @@ export interface StepBase {
   tier?: GateMode;
   /** Dependency probed before the step runs: absent, only a full run fails; the lower modes skip. */
   requires?: StepRequirement;
+  /** Globs, relative to the runner's `cwd`, of every path the step reads; omitted, `--affected` runs it on any change. */
+  watches?: readonly string[];
 }
 
 /** A step run as an external process, reported from the tail of its captured output. @public */
@@ -268,7 +285,7 @@ export type Selection =
       steps: readonly Step[];
       /** How many steps the mode holds in total — the denominator of the scoped banner. */
       total: number;
-      /** True when fewer steps were selected than the mode holds, i.e. a green is not a gate green. */
+      /** True when fewer steps were selected than the mode holds or `changed` narrowed the run, so a green is not a gate green. */
       scoped: boolean;
     }
   | { ok: false; error: string };

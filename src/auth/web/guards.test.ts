@@ -136,6 +136,8 @@ function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: Sessio
 
 const locationOf = (res: Response) => ({ status: res.status, location: res.headers.get("location") });
 
+const hxAnswerOf = (res: Response) => ({ ...locationOf(res), redirect: res.headers.get("hx-redirect") });
+
 /** The session values the response's own `Set-Cookie` carries, read back through the cookie that signed them. */
 async function sessionOf(res: Response): Promise<Record<string, unknown>> {
   const pair =
@@ -166,6 +168,35 @@ describe("requireAuth", () => {
     const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
     const res = await app.request("/account/passkeys", { method: "DELETE", headers: { "HX-Request": "true" } });
     expect({ ...locationOf(res), redirect: res.headers.get("hx-redirect") }).toEqual({ status: 204, location: null, redirect: "/auth/signin" });
+  });
+
+  it("records the page an htmx GET was sent from as the return-to, not the fragment endpoint it asked", async () => {
+    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const res = await app.request("/admin/users", {
+      headers: { "HX-Request": "true", "HX-Current-URL": "http://localhost/account/passkeys?tab=all" },
+    });
+    expect(hxAnswerOf(res)).toEqual({ status: 204, location: null, redirect: "/auth/signin?next=%2Faccount%2Fpasskeys%3Ftab%3Dall" });
+  });
+
+  it("records the page an htmx mutation was sent from, which the visitor can arrive back at by GET", async () => {
+    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const res = await app.request("/account/passkeys", {
+      method: "POST",
+      headers: { "HX-Request": "true", "HX-Current-URL": "http://localhost/admin/users" },
+    });
+    expect(hxAnswerOf(res)).toEqual({ status: 204, location: null, redirect: "/auth/signin?next=%2Fadmin%2Fusers" });
+  });
+
+  it("records no return-to off an htmx request whose current URL is missing, cross-origin or unparseable", async () => {
+    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const currents = [undefined, "https://evil.example/account/passkeys", "not a url"];
+    const redirects = await Promise.all(
+      currents.map(async (current) => {
+        const headers: Record<string, string> = { "HX-Request": "true", ...(current === undefined ? {} : { "HX-Current-URL": current }) };
+        return (await app.request("/account/passkeys", { headers })).headers.get("hx-redirect");
+      }),
+    );
+    expect(redirects).toEqual(["/auth/signin", "/auth/signin", "/auth/signin"]);
   });
 
   it("refuses a `json` group with a body rather than a sign-in redirect a controller cannot read", async () => {
@@ -266,6 +297,18 @@ describe("requireAuth — the second factor a session still owes", () => {
     const res = await guardedApp([requireAuth(guardOptions(users, enrolmentBesideHeld))], { userId: "u1" }).request("/account/passkeys");
 
     expect(locationOf(res)).toEqual({ status: 303, location: "/auth/verify" });
+  });
+
+  it("navigates an htmx request owing a step-up to verify with HX-Redirect, and a plain one with 303", async () => {
+    const app = guardedApp([requireAuth(guardOptions(users, stepUpOwed))], { userId: "u1" });
+    const answers = [
+      hxAnswerOf(await app.request("/account/passkeys", { headers: { "HX-Request": "true" } })),
+      hxAnswerOf(await app.request("/account/passkeys")),
+    ];
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/verify" },
+      { status: 303, location: "/auth/verify", redirect: null },
+    ]);
   });
 
   it("admits that session once its step-up mark holds", async () => {
@@ -767,6 +810,80 @@ describe("requireFreshStepUp", () => {
     expect(() => requireFreshStepUp({ factors: satisfied, ...enrolment, freshStepUpMaxAgeMs: 999 })).toThrow(
       "requireFreshStepUp: freshStepUpMaxAgeMs is 999, below the 1000-millisecond floor",
     );
+  });
+});
+
+describe("the enrolment guards' redirects to an htmx request", () => {
+  const HX = { "HX-Request": "true" };
+  const stepUp: AuthFactorResolution = { status: "step-up-required", kinds: ["totp-app"] };
+
+  /** `requireAuth` clearing the step-up, so the guard under test answers the demand itself. */
+  function behindAuth(guard: Parameters<Forge["use"]>[1], factors: () => FakeRegistry, seed: SessionSeed = { userId: "u1" }): Forge {
+    return guardedApp([requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }), guard], seed);
+  }
+
+  it("navigates a stale `requireFreshStepUp` POST to verify with HX-Redirect, and a plain one with 303", async () => {
+    const factors = perRequest(fakeFactors(stepUp));
+    const app = behindAuth(requireFreshStepUp({ factors, ...enrolment, freshStepUpMaxAgeMs: 60_000 }), factors, {
+      userId: "u1",
+      stepUpAt: Date.now() - 120_000,
+    });
+    const answers = [
+      hxAnswerOf(await app.request("/account/passkeys", { method: "POST", headers: HX })),
+      hxAnswerOf(await app.request("/account/passkeys", { method: "POST" })),
+    ];
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/verify" },
+      { status: 303, location: "/auth/verify", redirect: null },
+    ]);
+  });
+
+  it("navigates a `requireEnrolment` owed enrolment to its enrol page with HX-Redirect, and a plain one with 303", async () => {
+    const factors = perRequest(fakeFactors({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }));
+    const app = behindAuth(requireEnrolment({ factors, ...enrolment }), factors);
+    const answers = [hxAnswerOf(await app.request("/account/passkeys", { headers: HX })), hxAnswerOf(await app.request("/account/passkeys"))];
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/enrol/totp" },
+      { status: 303, location: "/auth/enrol/totp", redirect: null },
+    ]);
+  });
+
+  it("navigates a `requireEnrolment` owed step-up to verify with HX-Redirect, and a plain one with 303", async () => {
+    const factors = perRequest(fakeFactors(stepUp));
+    const app = behindAuth(requireEnrolment({ factors, ...enrolment }), factors);
+    const answers = [hxAnswerOf(await app.request("/account/passkeys", { headers: HX })), hxAnswerOf(await app.request("/account/passkeys"))];
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/verify" },
+      { status: 303, location: "/auth/verify", redirect: null },
+    ]);
+  });
+
+  it("navigates a settled user off `requirePendingEnrolment` with HX-Redirect, and a plain one with 303", async () => {
+    const factors = satisfied;
+    const app = behindAuth(requirePendingEnrolment({ factors, ...enrolment }), factors);
+    const answers = [hxAnswerOf(await app.request("/auth/enrol/passkey", { headers: HX })), hxAnswerOf(await app.request("/auth/enrol/passkey"))];
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/account/passkeys" },
+      { status: 303, location: "/account/passkeys", redirect: null },
+    ]);
+  });
+
+  it("navigates a `requirePendingEnrolment` owed step-up to verify with HX-Redirect, and a plain one with 303", async () => {
+    const factors = perRequest(fakeFactors(stepUp));
+    const app = behindAuth(requirePendingEnrolment({ factors, ...enrolment }), factors);
+    const answers = [hxAnswerOf(await app.request("/auth/enrol/passkey", { headers: HX })), hxAnswerOf(await app.request("/auth/enrol/passkey"))];
+    expect(answers).toEqual([
+      { status: 204, location: null, redirect: "/auth/verify" },
+      { status: 303, location: "/auth/verify", redirect: null },
+    ]);
+  });
+
+  it("still refuses an htmx request to a `json` group with a JSON 403 rather than HX-Redirect", async () => {
+    const factors = perRequest(fakeFactors(stepUp));
+    const app = behindAuth(requireEnrolment({ factors, ...enrolment, medium: "json" }), factors);
+    const res = await app.request("/account/passkeys", { headers: HX });
+    expect(hxAnswerOf(res)).toEqual({ status: 403, location: null, redirect: null });
+    expect(await res.json()).toEqual({ error: "This account owes a step-up verification." });
   });
 });
 

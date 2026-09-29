@@ -20,6 +20,7 @@ import {
   lintStep,
   markdownStep,
   modernCssStep,
+  sourceWatches,
   ssrBoundaryStep,
   featuresStep,
   testStep,
@@ -90,7 +91,13 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // Opt-in: the step runs `warden`, which an app that does not clone the `.claude/` trees has no
   // reason to run even though forge ships it.
   if (options.warden) {
-    steps.push({ label: "warden", tail: 20, cmd: ["warden", "sync", "--check"], fix: ["warden", "sync"] });
+    steps.push({
+      label: "warden",
+      tail: 20,
+      cmd: ["warden", "sync", "--check"],
+      fix: ["warden", "sync"],
+      watches: [".claude/**", "CLAUDE.md", "AGENTS.md"],
+    });
   }
 
   // Opt-in: an app using forge for routing but not `ui/*` needs no `tailwindcss` peer. `sources` is the
@@ -137,7 +144,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
             return checkResult([fail(error.message)], "");
           }
         },
-        {},
+        { watches: sourceWatches([...(importBoundary.sources ?? ["src"]), ...importBoundary.guarded]) },
       ),
     );
   } else if (importBoundary !== undefined) {

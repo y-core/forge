@@ -3,7 +3,6 @@
 
 import type { AppContext } from "../../context/types";
 import { mintCsrf } from "../../form/csrf";
-import { createRedirectResponse } from "../../http/response";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import type { OtpLength } from "../../ui/core/types";
@@ -24,6 +23,7 @@ import {
   authSettledPath,
 } from "./options";
 import { AUTH_FACTOR_PARAM, AUTH_RECOVERED_PARAM, AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
+import { createAuthRedirect } from "./redirect";
 import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
 import type { AuthIdentity } from "./types";
@@ -45,9 +45,6 @@ const UNAVAILABLE = "Service Unavailable";
 const NOT_FOUND = "Not Found";
 
 const FORBIDDEN = "Forbidden";
-
-/** 303 for the same reason every auth redirect is: the detour may follow a POST, which must not replay. */
-const VERIFY_DETOUR_STATUS = 303;
 
 /** The refusal every resolver gives when the store behind the page it is reading is down. @internal */
 export function unavailable(): Response {
@@ -101,8 +98,11 @@ function stepUpDemand<Bindings>(
 }
 
 /** What the verify page is presenting: the resolution's demand, and whichever of its step-up kinds the URL chose. @internal */
-export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>, services: AuthRequestSurface): Promise<AuthVerifyDemand> {
-  const identity = resolveAuthViewer(c);
+export async function resolveAuthVerifyDemand<Bindings>(
+  c: AppContext<Bindings>,
+  services: AuthRequestSurface,
+  identity: AuthIdentity | null,
+): Promise<AuthVerifyDemand> {
   const primary = services.factors.primary;
   if (identity === null) return { factor: primary.kind, digits: primary.codeDigits, identity: null, owed: null, kinds: [] };
 
@@ -201,9 +201,9 @@ export function authAfterEnrolTarget<Bindings>(
 export function authVerifyDetour<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, demand: AuthVerifyDemand): Response | null {
   if (demand.owed === null || demand.owed === "step-up") return null;
   if (demand.owed === "unknown") return unavailable();
-  if (demand.owed === "none") return createRedirectResponse(authReturnPath(c, options), VERIFY_DETOUR_STATUS);
+  if (demand.owed === "none") return createAuthRedirect(c, authReturnPath(c, options));
   const enrolment = authEnrolTarget(authEnrolmentPaths(options.paths.auth), demand.kinds) ?? authSettledPath(options);
-  return createRedirectResponse(enrolment, VERIFY_DETOUR_STATUS);
+  return createAuthRedirect(c, enrolment);
 }
 
 // Both code factors are bounded 6–8 at construction, so this narrows rather than clamps: a width the
@@ -216,16 +216,23 @@ function codeWidth(digits: number | null): OtpLength | undefined {
   return FIELD_WIDTHS.find((width) => width === digits);
 }
 
+/** Who a page reads its data for: signed in wherever its guards include `require-auth`. */
+type AuthViewViewer<Name extends AuthViewName> = "require-auth" extends (typeof AUTH_VIEW_GUARDS)[Name][number]
+  ? AuthIdentity
+  : AuthIdentity | null;
+
 /** One page's props, or the refusal its data answered with. */
 type AuthViewResolver<Name extends AuthViewName> = <Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  viewer: AuthViewViewer<Name>,
   state: AuthPageState,
 ) => Promise<Result<AuthViewProps[Name], Response>>;
 
 async function resolveSignin<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  _viewer: AuthIdentity | null,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["signin"], Response>> {
   const { auth } = options.paths;
@@ -254,6 +261,7 @@ function signupEnrols(services: AuthRequestSurface): AuthFactorKind | undefined 
 async function resolveSignup<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  _viewer: AuthIdentity | null,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["signup"], Response>> {
   const services = await authServices(c, options);
@@ -277,12 +285,13 @@ async function resolveSignup<Bindings>(
 async function resolveVerify<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  viewer: AuthIdentity | null,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["verify"], Response>> {
   const services = await authServices(c, options);
   const { auth } = options.paths;
   const submitPath = auth.verify.submit();
-  const demand = await resolveAuthVerifyDemand(c, services);
+  const demand = await resolveAuthVerifyDemand(c, services, viewer);
   const detour = authVerifyDetour(c, options, demand);
   if (detour !== null) return err(detour);
   const usesPasskey = demand.factor === "passkey";
@@ -325,12 +334,11 @@ async function resolveVerify<Bindings>(
 async function resolveEnrolPasskey<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["enrolPasskey"], Response>> {
   const services = await authServices(c, options);
   const { auth } = options.paths;
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(auth.signin()));
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
 
@@ -350,12 +358,11 @@ async function resolveEnrolPasskey<Bindings>(
 async function passkeyPage<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   only: string | undefined,
 ): Promise<Result<PasskeyListViewProps, Response>> {
   const services = await authServices(c, options);
   const { auth, account } = options.paths;
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(auth.signin()));
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
 
@@ -384,27 +391,28 @@ async function passkeyPage<Bindings>(
 function resolvePasskeyList<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
 ): Promise<Result<AuthViewProps["accountPasskeys"], Response>> {
-  return passkeyPage(c, options, undefined);
+  return passkeyPage(c, options, identity, undefined);
 }
 
 function resolvePasskey<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
 ): Promise<Result<AuthViewProps["accountPasskey"], Response>> {
   const id = c.params.id;
-  return id === undefined ? Promise.resolve(err(notFound())) : passkeyPage(c, options, id);
+  return id === undefined ? Promise.resolve(err(notFound())) : passkeyPage(c, options, identity, id);
 }
 
 async function resolvePasskeyEdit<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountPasskeyEdit"], Response>> {
   const services = await authServices(c, options);
-  const { auth, account } = options.paths;
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(auth.signin()));
+  const { account } = options.paths;
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
   const id = c.params.id;
@@ -435,14 +443,11 @@ interface TotpPageTargets {
 async function totpPage<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
   targets: TotpPageTargets,
 ): Promise<Result<TotpEnrolViewProps, Response>> {
   const services = await authServices(c, options);
-  const { auth } = options.paths;
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(auth.signin()));
-
   const offered = authEnrollable(services, "totp-app");
   if (!offered.ok) return err(offered.error);
   const service = offered.data;
@@ -479,10 +484,11 @@ async function totpPage<Bindings>(
 function resolveTotpEnrol<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountTotp"], Response>> {
   const { account } = options.paths;
-  return totpPage(c, options, state, { enrolPath: account.totpEnrol(), removePath: account.totpRemove() });
+  return totpPage(c, options, identity, state, { enrolPath: account.totpEnrol(), removePath: account.totpRemove() });
 }
 
 // The same page outside the `account` group, which `require-enrolment` refuses precisely while the
@@ -490,19 +496,19 @@ function resolveTotpEnrol<Bindings>(
 function resolveEnrolTotp<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["enrolTotp"], Response>> {
-  return totpPage(c, options, state, { enrolPath: options.paths.auth.enrol.totpEnrol() });
+  return totpPage(c, options, identity, state, { enrolPath: options.paths.auth.enrol.totpEnrol() });
 }
 
 async function resolveEmailChange<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountEmailChange"], Response>> {
-  const { auth, account } = options.paths;
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(auth.signin()));
+  const { account } = options.paths;
   const submitPath = account.emailChangeSubmit();
 
   return ok({
@@ -562,9 +568,8 @@ async function factorsPanel<Bindings>(
 async function resolveAccountFactors<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
 ): Promise<Result<AuthViewProps["accountFactors"], Response>> {
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(options.paths.auth.signin()));
   if (!c.url.searchParams.has(AUTH_RECOVERED_PARAM)) return factorsPanel(c, options, identity.userId, { manage: options.paths.account });
 
   const standing = await resolveRecoveryStanding(await authServices(c, options), identity.userId);
@@ -577,6 +582,7 @@ async function resolveAccountFactors<Bindings>(
 async function resolveAdminUserFactors<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  viewer: AuthIdentity,
 ): Promise<Result<AuthViewProps["adminUserFactors"], Response>> {
   const services = await authServices(c, options);
   const id = c.params.id;
@@ -584,7 +590,7 @@ async function resolveAdminUserFactors<Bindings>(
   const found = await services.admin.view(id);
   if (!found.ok) return err(unavailable());
   if (found.data === null) return err(notFound());
-  if (resolveAuthViewer(c)?.userId === found.data.id) return factorsPanel(c, options, found.data.id, {});
+  if (viewer.userId === found.data.id) return factorsPanel(c, options, found.data.id, {});
 
   const path = options.paths.admin.users.resetFactors({ id: found.data.id });
   return factorsPanel(c, options, found.data.id, { reset: { path, csrfToken: await mintCsrf(c, path), ...authCsrfHeader(c) } });
@@ -593,12 +599,11 @@ async function resolveAdminUserFactors<Bindings>(
 async function resolveRecoveryCodes<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountRecoveryCodes"], Response>> {
   const services = await authServices(c, options);
-  const { auth, account } = options.paths;
-  const identity = resolveAuthViewer(c);
-  if (identity === null) return err(createRedirectResponse(auth.signin()));
+  const { account } = options.paths;
   const offered = authEnrollable(services, "recovery-code");
   if (!offered.ok) return err(offered.error);
   const standing = await resolveRecoveryStanding(services, identity.userId);
@@ -632,7 +637,7 @@ async function resolveAdminUsers<Bindings>(
     { ...(asked.has("q") ? { q: asked.get("q") } : {}), ...(asked.has("after") ? { after: asked.get("after") } : {}) },
     { abortEarly: true },
   );
-  if (!parsed.success) return err(createRedirectResponse(admin.users.list()));
+  if (!parsed.success) return err(createAuthRedirect(c, admin.users.list(), 302));
   const query = parsed.output.q ?? "";
   const after = parsed.output.after;
 
@@ -653,6 +658,7 @@ async function resolveAdminUsers<Bindings>(
 async function adminUserPage<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  viewer: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["adminUser"], Response>> {
   const services = await authServices(c, options);
@@ -671,7 +677,7 @@ async function adminUserPage<Bindings>(
     lastAdmin: found.data.isAdmin && found.data.deactivatedAt === null && counted.data <= 1,
     // The controls that would lock this administrator out of the console they are standing in.
     // The action refuses them; this is what stops the page offering them in the first place.
-    self: resolveAuthViewer(c)?.userId === found.data.id,
+    self: viewer.userId === found.data.id,
     outcome: state.outcome ?? null,
     paths: admin,
     csrfToken: await mintCsrf(c, admin.users.update({ id })),
@@ -683,6 +689,7 @@ async function adminUserPage<Bindings>(
 async function resolveAdminElevate<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
+  _viewer: AuthIdentity | null,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["adminElevate"], Response>> {
   // The same 404 `admin.elevate.submit` gives: a deployment with no configured secret has no claim
@@ -707,8 +714,8 @@ async function resolveAdminElevate<Bindings>(
 
 // A mapped table rather than a `switch`: TypeScript does not narrow a generic return type from a
 // parameter discriminant, so every branch of a switch would need an unchecked cast.
-/** The props-builder behind each page name. @internal */
-export const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<Name> } = {
+/** The props-builder behind each page name. */
+const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<Name> } = {
   signin: resolveSignin,
   signup: resolveSignup,
   verify: resolveVerify,
@@ -753,13 +760,17 @@ export const AUTH_VIEW_GUARDS = {
 
 // `require-auth` and `require-admin` are observable here and re-checked rather than trusted; the enrolment
 // pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.
-/** The refusal an unguarded or under-privileged request gets, or `null` when it may read the page. */
-function refuseUnguarded<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, guards: readonly AuthGuardName[]): Response | null {
-  if (!guards.includes("require-auth")) return null;
-  const identity = authCtx.getOptional(c);
-  if (identity === undefined) return createRedirectResponse(options.paths.auth.signin());
-  if (guards.includes("require-admin") && !identity.isAdmin) return forbidden();
-  return null;
+/** Who may read the page, or the refusal an unguarded or under-privileged request gets. */
+function refuseUnguarded<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  guards: readonly AuthGuardName[],
+): Result<AuthIdentity | null, Response> {
+  const viewer = resolveAuthViewer(c);
+  if (!guards.includes("require-auth")) return ok(viewer);
+  if (viewer === null) return err(createAuthRedirect(c, options.paths.auth.signin(), 302));
+  if (guards.includes("require-admin") && !viewer.isAdmin) return err(forbidden());
+  return ok(viewer);
 }
 
 /** Resolves one auth view, or the refusal forge's own loader would have answered with. @public */
@@ -779,10 +790,11 @@ export async function resolveAuthView<Name extends AuthViewName, Bindings>(
     );
   }
 
-  const refused = refuseUnguarded(c, options, guards);
-  if (refused !== null) return err(refused);
+  const admitted = refuseUnguarded(c, options, guards);
+  if (!admitted.ok) return err(admitted.error);
 
-  const resolved = await AUTH_VIEW_RESOLVERS[name](c, options, request.state ?? {});
+  const viewer = admitted.data as AuthViewViewer<Name>;
+  const resolved = await AUTH_VIEW_RESOLVERS[name](c, options, viewer, request.state ?? {});
   if (!resolved.ok) return err(resolved.error);
 
   const View = options.views?.[name] ?? AUTH_VIEWS[name];

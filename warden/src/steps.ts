@@ -21,7 +21,10 @@ export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): Ch
 
 /** Checks the changelog's headings against the current package version, on the `full` tier. @public */
 export function changelogStep(config: ChangelogCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-changelog", () => checkChangelog(config), options, { tier: "full" });
+  return checkStep("validate-changelog", () => checkChangelog(config), options, {
+    tier: "full",
+    watches: [config.file ?? "CHANGELOG.md", config.sectionsFile ?? "config/changelog-sections.json"],
+  });
 }
 
 /** Checks the design corpus against the tree it governs. @public */

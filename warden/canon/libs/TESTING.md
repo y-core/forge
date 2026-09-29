@@ -379,6 +379,8 @@ of it too** — a green that skipped a step is not the green that ran it.
 | `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
 | `--list` | Print the resolved selection and exit, running nothing |
 | `--fix` | Run each selected step's fixer, then re-run to confirm |
+| `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this mode or higher; otherwise run the gate |
+| `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
 
 ### 6b. What Each Tool Catches
 
@@ -427,6 +429,10 @@ after the fact.
 
 A narrowed selection brands every summary line as scoped and not the gate, so a scoped green can never be read as a green gate. **A selection
 resolving to zero steps is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
+
+**A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
+and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
+step says so, exits 0 and carries the scoped brand, so it is never a green gate.
 
 [boundaries]: ./BOUNDARIES.md
 [cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt

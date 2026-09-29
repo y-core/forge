@@ -29,12 +29,23 @@ function parseHxHeaders(value: string): Record<string, unknown> | null {
   }
 }
 
-const QUERY_VERB_ATTRIBUTES = ["hx-get", "hx-delete", "data-hx-get", "data-hx-delete"] as const;
+const HX_VERBS = ["get", "post", "put", "patch", "delete", "query"] as const;
 
-// htmx serialises a GET or DELETE form's fields into the query string, so a hidden token there would
-// reach every log that records URLs; the `hx-headers` copy is the one `csrfProtection` reads.
-function sendsFieldsInUrl(props: Record<string, unknown>): boolean {
-  return QUERY_VERB_ATTRIBUTES.some((name) => props[name] !== undefined);
+const URL_FIELD_METHODS = new Set(["GET", "DELETE"]);
+
+function hxAttribute(props: Record<string, unknown>, name: string): unknown {
+  return props[name] ?? props[`data-${name}`];
+}
+
+function submitMethod(props: Record<string, unknown>, method: string): string {
+  const verb = hxAttribute(props, "hx-action") ? undefined : HX_VERBS.find((name) => hxAttribute(props, `hx-${name}`) !== undefined);
+  return String(verb ?? (hxAttribute(props, "hx-method") || method)).toUpperCase();
+}
+
+// htmx and the browser serialise a GET or DELETE form's fields into the query string, so a hidden token
+// there would reach every log that records URLs; the `hx-headers` copy is the one `csrfProtection` reads.
+function sendsFieldsInUrl(props: Record<string, unknown>, method: string): boolean {
+  return URL_FIELD_METHODS.has(submitMethod(props, method));
 }
 
 function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfHeader: string, csrfToken?: string): string | undefined {
@@ -65,7 +76,7 @@ function resolveHxHeaders(hxHeaders: FormProps["hx-headers"], csrfHeader: string
   return JSON.stringify({ [csrfHeader]: csrfToken });
 }
 
-/** A `<form>` that wires CSRF; `hx-get`/`hx-delete` forms send it as a header only, so a no-JS DELETE puts `hx-delete` and its own `hx-headers` on its button. @public */
+/** A `<form>` that wires CSRF; a form htmx or the browser submits by GET or DELETE sends it as a header only, so a no-JS DELETE puts `hx-delete` and its own `hx-headers` on its button. @public */
 export const Form: FC<PropsWithChildren<FormProps>> = ({
   csrfToken,
   csrfField = CSRF_FIELD_DEFAULT,
@@ -84,7 +95,7 @@ export const Form: FC<PropsWithChildren<FormProps>> = ({
 
   return (
     <form data-slot={slotToken("form", inherited)} method={method} hx-headers={resolvedHxHeaders} {...classAttribute} {...formProps}>
-      {csrfToken && !sendsFieldsInUrl(formProps) && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
+      {csrfToken && !sendsFieldsInUrl(formProps, method) && <input data-slot='form-csrf' type='hidden' name={csrfField} value={csrfToken} />}
       {children}
     </form>
   );

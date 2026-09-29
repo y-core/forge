@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { declaredByName } from "../src/tooling/gate/checks/co-location";
@@ -8,7 +8,7 @@ import { isBrowserSubpath } from "../src/tooling/gate/checks/exports";
 import { resolveSources } from "../src/tooling/gate/checks/source-scan";
 import { type GateMode, selectSteps } from "../src/tooling/gate/mod";
 import { BROWSER_ONLY, CO_LOCATION_EXEMPT } from "./exemptions";
-import { COMMENT_BUDGET_SOURCES, STEPS } from "./steps";
+import { COMMENT_BUDGET_SOURCES, GATE_INPUTS, STEPS } from "./steps";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -57,6 +57,57 @@ describe("the gate's step table", () => {
 
     expect(tracked).toContain("playwright.config.ts");
     expect(tracked.filter((file) => !scanned.has(file))).toEqual([]);
+  });
+});
+
+describe("the gate's watches", () => {
+  const tracked = Bun.spawnSync(["git", "ls-files"], { cwd: ROOT })
+    .stdout.toString()
+    .split("\n")
+    .filter((file) => file !== "");
+
+  const affected = (changed: readonly string[]): string[] => {
+    const selection = selectSteps(STEPS, { mode: "full", changed, gateInputs: GATE_INPUTS });
+    return selection.ok ? selection.steps.map((step) => step.label) : [`refused: ${selection.error}`];
+  };
+
+  it("leaves undeclared exactly the rows whose inputs no path list bounds", () => {
+    expect(STEPS.filter((step) => step.watches === undefined).map((step) => step.label)).toEqual([
+      "typecheck",
+      "typecheck:workers-consumer",
+      "lint:types",
+      "test",
+      "validate-exports",
+      "validate-namespace-graph",
+      "validate-packaging",
+      "validate-docs",
+      "validate-design",
+    ]);
+  });
+
+  it("declares no row whose watches match no tracked file", () => {
+    const blind = STEPS.filter(
+      (step) => step.watches !== undefined && !tracked.some((file) => step.watches?.some((glob) => matchesGlob(file, glob))),
+    );
+
+    expect(blind.map((step) => step.label)).toEqual([]);
+  });
+
+  it("holds no gate input that matches no tracked file", () => {
+    expect(GATE_INPUTS.filter((glob) => !tracked.some((file) => matchesGlob(file, glob)))).toEqual([]);
+  });
+
+  it("selects every step when the gate runner changes", () => {
+    expect(affected(["src/tooling/gate/command.ts"])).toEqual(labels("full"));
+  });
+
+  it("runs none of the slow or narrow rows for a documentation edit", () => {
+    const selected = affected(["docs/TEST_RUNNERS.md"]);
+
+    expect(selected).toContain("validate-markdown");
+    expect(
+      selected.filter((label) => ["test:browser", "test:workerd", "db:schema", "validate-contrast", "validate-icc-profile"].includes(label)),
+    ).toEqual([]);
   });
 });
 

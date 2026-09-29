@@ -399,6 +399,20 @@ The table is not the running order: the selector sorts by tier after filtering, 
 with declared order preserved inside each tier. This is what makes a wrap or comment-budget failure surface in seconds rather than after the suite —
 and `browserStep` sitting above `dbSchemaStep` in the file does not put Chromium ahead of the digest check.
 
+**The reviewer's baseline is a reuse run, and the developer's closing run is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the reviewer run
+the gate with `--reuse`. `cc-tester` closes a task on `verify:full`, which records a receipt for the tree it judged, so a reviewer who reaches the
+same bytes gets a one-line verdict rather than a second full run; a tree that moved in between runs the gate. That holds only while forge's own
+suite leaves the working tree as it found it: a test that writes into the tree withholds the receipt, and every baseline after it pays for a full
+run.
+
+**`GATE_INPUTS` in `config/steps.ts` holds the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and the
+`result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can
+change any row's verdict — so under `--affected` a change to one runs every step. **Some rows stay undeclared and run on every change**, because no
+path list bounds what they read: both typechecks and `lint:types` read the whole type program, `test` runs code whose import graph is unbounded,
+`validate-packaging` follows imports from each `bin` entry, `validate-docs` fails on any path or link target a document names, and `validate-design`
+reads every barrel the exports map points at. `validate-exports` and `validate-namespace-graph` judge the whole surface the exports map declares.
+`config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.
+
 ---
 
 ## 7. Testing Namespace Utilities (`@y-core/forge/testing`)
@@ -559,6 +573,7 @@ a fake store should not pay for the whole component library. It needs no node mo
 not. `key` is `barrel/component`, the spelling a coverage manifest's own keys use, because `Input` names a component in both `core` and
 `controls`. The array and each entry are frozen and ordered by `key`, so a failure names the same component first on every run.
 
+[cr-1a]: ../warden/canon/libs/CODE_REVIEW.md#1a-pre-review-preparation
 [errors-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [namespaces-3c]: NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt

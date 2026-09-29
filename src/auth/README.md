@@ -288,9 +288,18 @@ is not locked out of its own admin pages.
 **A guard refuses in the medium its group answers in.** Pass `medium: "json"` and `requireAuth` answers `401 {"error": …}` and the enrolment
 guards `403 {"error": …}` instead of redirecting — which is what a browser controller posting a ceremony step can actually read.
 
-**An htmx request is redirected by navigation, not by a 3xx.** Where `requireAuth` or an auth action sends the visitor elsewhere — to sign-in
-on an expired session, or to the users list after an admin remove — it answers an htmx request with a 204 carrying `HX-Redirect`. htmx then
-loads that page and updates the address bar, instead of swapping the page into the form. A request without htmx still gets the redirect.
+**An htmx request is redirected by navigation, not by a 3xx.** Every redirect auth sends answers an htmx request with a 204 carrying
+`HX-Redirect`: a refusal from `requireAuth`, `requireEnrolment`, `requirePendingEnrolment` or `requireFreshStepUp`, an auth page sending an
+anonymous visitor to sign-in, the verify page sending on a visitor who owes no step-up, and an auth action's redirect such as the users list
+after an admin remove. htmx then loads that page and updates the address bar, instead of swapping the page into the target. A request without
+htmx still gets its 3xx, so your htmx forms and links need nothing extra.
+
+**After sign-in, `requireAuth` returns the visitor to the page they were on.** It records that page in the sign-in URL's `next` parameter, or
+the name you pass as `returnParam`:
+
+- An htmx request records the page named by its `HX-Current-URL` header, whatever its method, so a visitor whose session expired mid-save lands
+  back on the page holding the form. A header on another origin, or no header, records nothing.
+- A request without htmx records its own URL when it is a GET or HEAD, and nothing otherwise, because a POST's URL has no page to return to.
 
 Between requests, the session is written in one place per fact: `establishAuthSession`, `renewAuthSession`, `markAuthStepUp`,
 `markAuthSigninPending` / `resolveAuthSigninPending`, and `clearAuthSession`. Reach for the `AUTH_*_SESSION_KEY` constants only to read the

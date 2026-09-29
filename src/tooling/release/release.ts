@@ -286,7 +286,7 @@ export function createReleaseBinCommand(): Command<typeof releaseBinFlags> {
         what: "release config",
       });
 
-      await createReleaseCommand({ cwd, ...loaded }).run?.(args, flags, ctx);
+      await createReleaseCommand({ cwd, ...loaded?.value }).run?.(args, flags, ctx);
     },
   });
 }

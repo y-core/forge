@@ -32,9 +32,10 @@ Take the scope from the request. Default to the **uncommitted working tree** whe
 1. **Reach the rules.** `knowledge_search` for the review standards, then `knowledge_read` on the
    chunk id it returns (`AGENT_GUIDE.md` §1). Do not name a path: the canon is not on disk in a
    consuming repository, and the section numbers below are that document's own.
-2. **Establish a green baseline first** (§1a). Run the gate before reading anything, so a
-   pre-existing failure is not attributed to the change under review. Delegate the full gate to the
-   verification runner (`AGENT_WORKFLOW.md` §4).
+2. **Establish a green baseline first** (§1a). Before reading anything, have the verification
+   runner run the gate with `--reuse` (`AGENT_WORKFLOW.md` §4), so a pre-existing failure is not
+   attributed to the change under review. A passing run recorded for this exact tree answers in one
+   line; on any other tree the runner runs the full gate.
 3. **Work the tiers in order** — §3a gated, §3b ripgrep with the triage class each command states,
    §3c judgement. A tier-1 rule the gate already proves is not re-inspected by hand.
 4. **Verify before reporting** (§5): try to disprove each finding, and keep it only if that fails.

@@ -5,8 +5,10 @@ import type { RouteMap } from "@remix-run/fetch-router/routes";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import { contextVar } from "../../context/accessor";
 import { getAppContext } from "../../context/types";
+import { hxCurrentUrl } from "../../html/htmx/htmx-headers";
+import { isHxRequest } from "../../html/htmx/hx-request";
 import { safeRedirectPath } from "../../http/redirect-path";
-import { createRedirectResponse, jsonResponse } from "../../http/response";
+import { jsonResponse } from "../../http/response";
 import { sessionCtx } from "../../session/session";
 import { AUTH_FRESH_STEP_UP_MS } from "../config";
 import { authFactorContext } from "../factors/registry";
@@ -60,6 +62,26 @@ async function establishIdentity<Bindings>(
   return resolveAuthIdentity(session, users, guardNow(options));
 }
 
+/** Whether the visitor can arrive back at this request's own URL by GET. */
+function replayableMethod(context: Parameters<Middleware>[0]): boolean {
+  const method = context.method.toUpperCase();
+  return method === "GET" || method === "HEAD";
+}
+
+// An htmx request's own URL is a fragment endpoint, not a page, so the return-to is the page it was
+// sent from; a mutation's URL has no GET handler to arrive back at.
+/** The same-origin path sign-in returns this request to, or `null` when it names none. */
+function signinReturnPath(context: Parameters<Middleware>[0]): string | null {
+  if (!isHxRequest(context)) {
+    return replayableMethod(context) ? safeRedirectPath(`${context.url.pathname}${context.url.search}`, "/") : null;
+  }
+  const current = hxCurrentUrl(context);
+  if (!URL.canParse(current)) return null;
+  const page = new URL(current);
+  if (page.origin !== context.url.origin) return null;
+  return safeRedirectPath(`${page.pathname}${page.search}`, "/");
+}
+
 /** Establishes the request's identity from the session, sending an anonymous request to sign-in. @public */
 export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGuardOptions<Bindings>): Middleware {
   assertStepUpMaxAge("requireAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
@@ -68,13 +90,10 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
     const identity = await establishIdentity<Bindings>(context, options);
     if (identity === null) {
       return refuse(options.medium, NOT_SIGNED_IN, 401, () => {
-        // Only a replayable method may be recorded as a return-to: the visitor arrives back by GET,
-        // and a mutation's URL has no GET handler to arrive at.
-        const method = context.method.toUpperCase();
-        const replayable = method === "GET" || method === "HEAD";
         const target = new URL(options.signinPath, context.url);
-        if (replayable) target.searchParams.set(returnParam, safeRedirectPath(`${context.url.pathname}${context.url.search}`, "/"));
-        return createAuthRedirect(context, `${target.pathname}${target.search}`, replayable ? 302 : 303);
+        const returnTo = signinReturnPath(context);
+        if (returnTo !== null) target.searchParams.set(returnParam, returnTo);
+        return createAuthRedirect(context, `${target.pathname}${target.search}`, replayableMethod(context) ? 302 : 303);
       });
     }
 
@@ -86,7 +105,7 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
       const resolved = await resolveFactorDemand(context, identity, options);
       if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
       if (authStepUpOwed(resolved, identity.stepUpAt, stepUpWindow(options))) {
-        return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
+        return refuse(options.medium, STEP_UP_OWED, 403, () => createAuthRedirect(context, options.stepUpPath));
       }
     }
 
@@ -286,9 +305,9 @@ export function requireEnrolment<Bindings = Record<string, unknown>>(options: Au
     const demand = await resolveAuthDemand(context, identity, options);
     if (demand.status === "enrolment") {
       const target = enrolmentTarget(options, demand.kinds);
-      return refuse(options.medium, ENROLMENT_OWED, 403, () => createRedirectResponse(target, 303));
+      return refuse(options.medium, ENROLMENT_OWED, 403, () => createAuthRedirect(context, target));
     }
-    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
+    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createAuthRedirect(context, options.stepUpPath));
     // Refused rather than redirected: an unknown demand cannot pick a remedy, and every remedy page
     // asks the same unavailable store, so a redirect here is a loop.
     if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
@@ -308,9 +327,9 @@ export function requirePendingEnrolment<Bindings = Record<string, unknown>>(opti
     if (demand.status === "enrolment") return next();
     // The whole point of this guard: a session owing a step-up may not mint the second factor that
     // would satisfy it, so it is sent to verify rather than admitted to enrol.
-    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
+    if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createAuthRedirect(context, options.stepUpPath));
     if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
-    return refuse(options.medium, NOTHING_OWED, 403, () => createRedirectResponse(options.settledPath, 303));
+    return refuse(options.medium, NOTHING_OWED, 403, () => createAuthRedirect(context, options.settledPath));
   };
 }
 
@@ -332,7 +351,7 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
     if (stepUpHolds(identity.stepUpAt, maxAgeMs, guardNow(options))) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
-    return refuse(options.medium, STEP_UP_STALE, 403, () => createRedirectResponse(options.stepUpPath, 303));
+    return refuse(options.medium, STEP_UP_STALE, 403, () => createAuthRedirect(context, options.stepUpPath));
   };
 }
 

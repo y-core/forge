@@ -56,6 +56,18 @@ const EXPORTS = pkg.exports as ExportsMap;
 
 const GEN = "bun run gen:bundles";
 
+const CORPUS_WATCHES = ["**/*.md", "warden/**"];
+
+/** Globs whose change selects every step under `--affected`: the gate runner and the check code it runs. */
+export const GATE_INPUTS: readonly string[] = [
+  "src/tooling/gate/**",
+  "src/tooling/cli/**",
+  "src/tooling/term/**",
+  "src/tooling/lint/**",
+  "src/result/**",
+  "warden/src/**",
+];
+
 /** Every tree the comment budget holds, with the generated bundles a local `wrangler dev` leaves in any `.wrangler` excluded. */
 export const COMMENT_BUDGET_SOURCES = ["src", "config", "warden/src", "tests", ".types", "playwright.config.ts", "!**/.wrangler"];
 
@@ -120,7 +132,13 @@ export const STEPS: readonly Step[] = [
     shared: ["Bun", "Buffer", "ExecutionContext", "ImportMeta", "SubtleCrypto", "process"],
     sources: ["src", "warden/src", "!src/tooling/dev"],
   }),
-  { label: "warden", tail: 20, cmd: ["bun", "warden/src/bin.ts", "sync", "--check"], fix: ["bun", "warden/src/bin.ts", "sync"] },
+  {
+    label: "warden",
+    tail: 20,
+    cmd: ["bun", "warden/src/bin.ts", "sync", "--check"],
+    fix: ["bun", "warden/src/bin.ts", "sync"],
+    watches: [".claude/**", "warden/**", "CLAUDE.md", "AGENTS.md"],
+  },
   docsStep({
     root: ROOT,
     packageName: pkg.name,
@@ -165,19 +183,28 @@ export const STEPS: readonly Step[] = [
   designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
   // node refuses to strip types under `node_modules`, so a consumer loads a prebuilt copy of each surface a node process imports.
   iccProfileStep({ root: ROOT, profile: "src/output/pdf/sRGB2014.icc", module: "src/output/pdf/icc.ts" }),
-  lintPluginStep({ root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN }),
-  chromiumBundleStep({ root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN }),
-  contrastStep({
-    root: ROOT,
-    cssDir: "src/ui/assets/css",
-    tokenFiles: ["src/ui/assets/css/theme-neutral.css", "src/ui/assets/css/theme-colors.css", "src/ui/assets/css/theme-base.css"],
-    mappingFile: "src/ui/assets/css/theme-base.css",
-    pairs: CONTRAST_PAIRS,
-    criteria: CRITERION,
-    // Deferred: resolving at import time would throw before the runner exists to report the step skipped.
-    palettePath: () => fileURLToPath(import.meta.resolve("tailwindcss/theme.css")),
-    accepted: ACCEPTED_CONTRAST,
-  }),
+  lintPluginStep(
+    { root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN },
+    { watches: ["src/tooling/lint/**"] },
+  ),
+  chromiumBundleStep(
+    { root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN },
+    { watches: ["src/tooling/gate/checks/chromium.ts", "src/tooling/gate/chromium.mjs"] },
+  ),
+  contrastStep(
+    {
+      root: ROOT,
+      cssDir: "src/ui/assets/css",
+      tokenFiles: ["src/ui/assets/css/theme-neutral.css", "src/ui/assets/css/theme-colors.css", "src/ui/assets/css/theme-base.css"],
+      mappingFile: "src/ui/assets/css/theme-base.css",
+      pairs: CONTRAST_PAIRS,
+      criteria: CRITERION,
+      // Deferred: resolving at import time would throw before the runner exists to report the step skipped.
+      palettePath: () => fileURLToPath(import.meta.resolve("tailwindcss/theme.css")),
+      accepted: ACCEPTED_CONTRAST,
+    },
+    { watches: ["src/ui/assets/css/**", "src/ui/contracts/theme/**"] },
+  ),
   cssSourcesStep({
     root: ROOT,
     uiDir: "src/ui",
@@ -192,12 +219,16 @@ export const STEPS: readonly Step[] = [
     ]),
   }),
   cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }),
-  wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }),
-  wardenQueriesStep({ root: ROOT, kind: "libs" }),
-  duplicatesStep({ root: ROOT, kind: "libs" }),
-  browserStep({ tier: "full" }),
-  workerdStep({ tier: "full" }),
-  ...dbSchemaStep({ root: "tests/fixtures/db-schema", forge: ["bun", "run", "src/tooling/root/bin.ts"] }),
+  wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { watches: CORPUS_WATCHES }),
+  wardenQueriesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
+  duplicatesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
+  browserStep({ tier: "full", watches: ["src/**", "playwright.config.ts"] }),
+  workerdStep({ tier: "full", watches: ["src/**", "tests/**"] }),
+  ...dbSchemaStep({
+    root: "tests/fixtures/db-schema",
+    forge: ["bun", "run", "src/tooling/root/bin.ts"],
+    watches: ["src/**", "tests/fixtures/db-schema/**"],
+  }),
 ];
 
 export default STEPS;

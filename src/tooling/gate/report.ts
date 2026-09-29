@@ -2,7 +2,7 @@ import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
 import { formatFinding } from "./finding";
 import type { Finding } from "./types";
-import type { GateMode, Step } from "./types";
+import type { GateMode, GateReceipt, Step } from "./types";
 import type { SummaryInput } from "./types";
 
 /** Formats a duration for a step line, rendering sub-50ms as `<0.1s`. */
@@ -41,7 +41,7 @@ export function formatScopedBanner(selected: number, total: number, style: Color
 
 /** Formats the single closing line, naming the failing step when there is one. */
 export function formatSummary(input: SummaryInput, style: Colorize = PLAIN): string {
-  const scoped = input.selected < input.total ? ` ${formatScopedBanner(input.selected, input.total, style)}` : "";
+  const scoped = input.scoped ? ` ${formatScopedBanner(input.selected, input.total, style)}` : "";
   const skipped = input.skipped === 0 ? "" : `, ${input.skipped} skipped`;
   if (input.failedAt !== undefined) {
     const progress = `step ${input.failedAt.at} of ${input.selected}${skipped}`;
@@ -61,8 +61,13 @@ export function formatSummary(input: SummaryInput, style: Colorize = PLAIN): str
 }
 
 /** Formats the `--list` output: the resolved selection, one label per line. */
-export function formatList(gate: string, labels: readonly string[], total: number, style: Colorize = PLAIN): string {
-  const scoped = labels.length < total ? `\n${formatScopedBanner(labels.length, total, style)}` : "";
+export function formatList(
+  gate: string,
+  labels: readonly string[],
+  selection: { total: number; scoped: boolean },
+  style: Colorize = PLAIN,
+): string {
+  const scoped = selection.scoped ? `\n${formatScopedBanner(labels.length, selection.total, style)}` : "";
   const plural = labels.length === 1 ? "step" : "steps";
   return [`${gate} — ${labels.length} ${plural}`, ...labels.map((label) => `  ${label}`)].join("\n") + scoped;
 }
@@ -92,4 +97,28 @@ export function formatMissingRequirement(label: string, tool: string, hint: stri
 /** Formats the pointer to a failing step's untruncated output, indented to match the excerpt. */
 export function formatFullLogPath(path: string): string {
   return `    full log at ${path}`;
+}
+
+/** Formats the verdict of a `--reuse` run answered by a recorded receipt, naming the mode and tree it stands on. */
+export function formatReused(gate: string, receipt: GateReceipt, style: Colorize = PLAIN): string {
+  return `${style.green("✓")} ${gate} — reused the passing ${receipt.mode} run of tree ${receipt.tree}; no step ran`;
+}
+
+/** Formats the line a `--reuse` run prints before running the gate, saying why no receipt answered it. */
+export function formatReuseMiss(miss: { tree: string | undefined; mode: GateMode }, style: Colorize = PLAIN): string {
+  if (miss.tree === undefined) return `${style.yellow("○")} not a git work tree — no receipt to reuse; running the gate`;
+  return `${style.yellow("○")} no passing run of tree ${miss.tree} on record at ${miss.mode} or above; running the gate`;
+}
+
+/** Formats the line shown when the tree changed during a green run, so no receipt was written. */
+export function formatReceiptWithheld(style: Colorize = PLAIN): string {
+  return `${style.yellow("○")} the tree changed during the run — no receipt written`;
+}
+
+/** Formats the line an `--affected` run prints when its changes touch no step, which is neither green nor the gate. */
+export function formatNothingAffected(gate: string, input: { changed: number; total: number }, style: Colorize = PLAIN): string {
+  const banner = formatScopedBanner(0, input.total, style);
+  if (input.changed === 0) return `${style.yellow("○")} ${gate} — no change against HEAD; nothing ran ${banner}`;
+  const one = input.changed === 1;
+  return `${style.yellow("○")} ${gate} — ${input.changed} changed path${one ? "" : "s"} touch${one ? "es" : ""} no step; nothing ran ${banner}`;
 }

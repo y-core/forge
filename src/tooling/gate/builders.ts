@@ -71,12 +71,40 @@ function prerequisite(
   return resolved === undefined ? {} : { requires: resolved };
 }
 
+function watching(
+  override: readonly string[] | null | undefined,
+  fallback?: readonly string[],
+): { watches: readonly string[] } | Record<string, never> {
+  const resolved = override === undefined ? fallback : (override ?? undefined);
+  return resolved === undefined ? {} : { watches: resolved };
+}
+
+function trimEntries(entries: readonly string[]): string[] {
+  return entries.filter((entry) => !entry.startsWith("!")).map((entry) => entry.replace(/^\.\//, "").replace(/\/+$/, ""));
+}
+
+/** Globs covering each source entry and everything beneath it, `!` exclusions dropped so the list stays a superset. */
+export function sourceWatches(entries: readonly string[]): string[] {
+  const globs = trimEntries(entries).flatMap((entry) => (entry === "." || entry === "" ? ["**"] : [entry, `${entry}/**`]));
+  return [...new Set(globs)];
+}
+
+function markdownWatches(entries: readonly string[]): string[] {
+  const globs = trimEntries(entries).map((entry) => {
+    if (entry === "." || entry === "") return "**/*.md";
+    return entry.endsWith(".md") ? entry : `${entry}/**/*.md`;
+  });
+  return [...new Set(globs)];
+}
+
+const STYLESHEET_WATCHES = "**/*.css";
+
 /** Wraps a check function as a step, applying the tier and prerequisite an option table overrides. @public */
 export function checkStep(
   label: string,
   run: CheckStep["run"],
   options: StepOptions,
-  defaults: { tier?: GateMode; requires?: StepRequirement; fix?: CheckStep["fix"] } = {},
+  defaults: { tier?: GateMode; requires?: StepRequirement; fix?: CheckStep["fix"]; watches?: readonly string[] } = {},
 ): CheckStep {
   return {
     label,
@@ -84,12 +112,13 @@ export function checkStep(
     ...(defaults.fix === undefined ? {} : { fix: defaults.fix }),
     ...tier(options.tier, defaults.tier),
     ...prerequisite(options.requires, defaults.requires),
+    ...watching(options.watches, defaults.watches),
   };
 }
 
 /** `tsc --noEmit`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
 export function typecheckStep(options: StepOptions = {}): CommandStep {
-  return { label: "typecheck", tail: 20, cmd: ["tsc", "--noEmit"], ...tier(options.tier) };
+  return { label: "typecheck", tail: 20, cmd: ["tsc", "--noEmit"], ...tier(options.tier), ...watching(options.watches) };
 }
 
 /** `oxlint` over `sources` (default `src/`), with `--fix` as its fixer. @public */
@@ -102,13 +131,21 @@ export function lintStep(options: SourceStepOptions = {}): CommandStep {
     cmd: ["oxlint", "--deny-warnings", ...sources],
     fix: ["oxlint", "--fix", ...sources],
     ...tier(options.tier),
+    ...watching(options.watches, [...sourceWatches(sources), ".oxlintrc*", ".oxlintignore", ".gitignore"]),
   };
 }
 
 /** `oxfmt --check` over `sources` (default `src/`), with a bare `oxfmt` run as its fixer. Ordered after `lintStep` so the formatter owns the final byte layout. @public */
 export function formatStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
-  return { label: "format", tail: 20, cmd: ["oxfmt", "--check", ...sources], fix: ["oxfmt", ...sources], ...tier(options.tier) };
+  return {
+    label: "format",
+    tail: 20,
+    cmd: ["oxfmt", "--check", ...sources],
+    fix: ["oxfmt", ...sources],
+    ...tier(options.tier),
+    ...watching(options.watches, [...sourceWatches(sources), ".oxfmtrc*", ".prettierignore", ".gitignore"]),
+  };
 }
 
 /** `oxlint --type-aware` over `sources` (default `src/`), the slowest row of the `quality` tier at a few seconds. @public */
@@ -121,6 +158,7 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
     // one that can tell a stale directive from one that only a type-aware rule redeems.
     cmd: ["oxlint", "--type-aware", "--deny-warnings", "--report-unused-disable-directives-severity", "error", ...sources],
     ...tier(options.tier),
+    ...watching(options.watches),
   };
 }
 
@@ -128,7 +166,13 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
 export function testStep(options: SourceStepOptions & { label?: string } = {}): CommandStep {
   // `label` is a parameter because a suite split by the question each set answers needs one row per
   // set, and `selectSteps` refuses a duplicate label.
-  return { label: options.label ?? "test", tail: 120, cmd: ["bun", "test", ...(options.sources ?? [])], ...tier(options.tier, "standard") };
+  return {
+    label: options.label ?? "test",
+    tail: 120,
+    cmd: ["bun", "test", ...(options.sources ?? [])],
+    ...tier(options.tier, "standard"),
+    ...watching(options.watches),
+  };
 }
 
 /** `playwright test` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
@@ -150,6 +194,7 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
       // Unreachable wherever `CHROME_PATH` names a browser: it addresses a machine that has none.
       hint: options.hint ?? "run `bunx playwright install chromium`",
     }),
+    ...watching(options.watches),
   };
 }
 
@@ -170,6 +215,7 @@ export function workerdStep(options: { hint?: string; parallel?: number } & Sour
       probe: hasWorkerd,
       hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
     }),
+    ...watching(options.watches),
   };
 }
 
@@ -179,17 +225,21 @@ export function featuresStep(config: FeaturesCheckConfig, options: Omit<StepOpti
 }
 
 /** The two `forge db schema check` rows: digests in `quality`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
-export function dbSchemaStep(options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string } = {}): [CommandStep, CommandStep] {
+export function dbSchemaStep(
+  options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string; watches?: readonly string[] } = {},
+): [CommandStep, CommandStep] {
   const forge = options.forge ?? ["forge"];
   const root = options.root === undefined ? [] : ["--root", options.root];
+  const watches = watching(options.watches);
   return [
-    { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root] },
+    { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root], ...watches },
     {
       label: "db:schema",
       tier: "full",
       tail: 60,
       cmd: [...forge, "db", "schema", "check", "--replay", ...root],
       requires: { tool: "workerd", probe: hasWorkerd, hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it" },
+      ...watches,
     },
   ];
 }
@@ -211,12 +261,12 @@ export function assetRootStep(config: AssetRootCheckConfig, options: StepOptions
 
 /** Fails on any Worker config key whose default runs toward exposure being unstated, in the top level and every `env.*` block; requiring a *value* rather than statedness is opt-in via `require`. @public */
 export function exposureStep(config: ExposureCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-exposure", () => checkExposure(config), options);
+  return checkStep("validate-exposure", () => checkExposure(config), options, { watches: [config.workerConfig ?? "wrangler.jsonc"] });
 }
 
 /** Fails a Worker config whose `compatibility_flags` omits or contradicts the runtime posture, in the top level and every `env.*` block that states a set of its own. @public */
 export function compatibilityStep(config: CompatibilityCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-compatibility", () => checkCompatibility(config), options);
+  return checkStep("validate-compatibility", () => checkCompatibility(config), options, { watches: [config.workerConfig ?? "wrangler.jsonc"] });
 }
 
 /** Checks every path the emitted assets manifest maps to exists under the served asset directory. @public */
@@ -226,12 +276,12 @@ export function assetManifestStep(config: AssetManifestCheckConfig, options: Ste
 
 /** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */
 export function coLocationStep(config: CoLocationCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-co-location", () => checkCoLocation(config), options);
+  return checkStep("validate-co-location", () => checkCoLocation(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Checks every comment against the budget, so prose the code already states cannot accumulate unseen. @public */
 export function commentBudgetStep(config: CommentBudgetCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-comment-budget", () => checkCommentBudget(config), options);
+  return checkStep("validate-comment-budget", () => checkCommentBudget(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Checks that the published tarball carries no module only a test imports. @public */
@@ -241,37 +291,47 @@ export function packagingStep(config: PackagingCheckConfig, options: StepOptions
 
 /** Checks that no server-rendered file imports the browser-only runtime. @public */
 export function ssrBoundaryStep(config: SsrBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-ssr-boundary", () => checkSsrBoundary(config), options);
+  return checkStep("validate-ssr-boundary", () => checkSsrBoundary(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Checks that nothing outside a guarded tree, save a named crossing, imports it at value. @public */
 export function importBoundaryStep(config: ImportBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-import-boundary", () => checkImportBoundary(config), options);
+  return checkStep("validate-import-boundary", () => checkImportBoundary(config), options, {
+    watches: sourceWatches([...(config.sources ?? ["src"]), ...config.guarded]),
+  });
 }
 
 /** Checks that no deployable module names a development entry or a dev-only module. @public */
 export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-dev-boundary", () => checkDevBoundary(config), options);
+  const workerConfig = config.workerConfig === undefined ? ["wrangler.jsonc"] : config.workerConfig === null ? [] : [config.workerConfig];
+  return checkStep("validate-dev-boundary", () => checkDevBoundary(config), options, {
+    watches: [...sourceWatches(config.sources ?? ["src"]), ...workerConfig],
+  });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */
 export function markdownStep(config: MarkdownCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-markdown", () => checkMarkdown(config), options, { fix: () => fixMarkdown(config) });
+  return checkStep("validate-markdown", () => checkMarkdown(config), options, {
+    fix: () => fixMarkdown(config),
+    watches: markdownWatches(config.sources ?? ["src"]),
+  });
 }
 
 /** Checks every shipped `.tsx` file carries the runtime pragmas. @public */
 export function jsxStep(config: JsxCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-jsx", () => checkJsx(config), options);
+  return checkStep("validate-jsx", () => checkJsx(config), options, { watches: sourceWatches(config.sources ?? ["src"]) });
 }
 
 /** Checks every `triggered` menu popup is paired with the trigger it takes its name from. @public */
 export function menuNamingStep(config: MenuNamingCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-menu-naming", () => checkMenuNaming(config), options);
+  return checkStep("validate-menu-naming", () => checkMenuNaming(config), options, { watches: sourceWatches(config.sources ?? ["src"]) });
 }
 
 /** Checks that no shipped module names a global only the repository's private type stubs declare. @public */
 export function stubGlobalsStep(config: StubGlobalsCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-stub-globals", () => checkStubGlobals(config), options);
+  return checkStep("validate-stub-globals", () => checkStubGlobals(config), options, {
+    watches: sourceWatches([...config.stubs, ...config.sources]),
+  });
 }
 
 /** The dependency every design-system step shares — `tailwindcss` is an optional peer. */
@@ -289,17 +349,23 @@ export function contrastStep(config: ContrastCheckConfig, options: StepOptions =
 
 /** Regenerates `cn`'s conflict table from the design system and fails on any drift from the committed copy. @public */
 export function classGroupsStep(config: ClassGroupsCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-class-groups", () => checkClassGroups(config), options, { requires: tailwindRequired() });
+  return checkStep("validate-class-groups", () => checkClassGroups(config), options, {
+    requires: tailwindRequired(),
+    watches: [STYLESHEET_WATCHES, config.table],
+  });
 }
 
 /** Regenerates the design-scale data forge's oxlint plugin reads and fails on any drift from the committed copy. @public */
 export function designScaleStep(config: DesignScaleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-design-scale", () => checkDesignScale(config), options, { requires: tailwindRequired() });
+  return checkStep("validate-design-scale", () => checkDesignScale(config), options, {
+    requires: tailwindRequired(),
+    watches: [STYLESHEET_WATCHES, config.table],
+  });
 }
 
 /** Re-encodes the committed ICC module from the profile beside it and fails on any drift. @public */
 export function iccProfileStep(config: IccProfileCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-icc-profile", () => checkIccProfile(config), options);
+  return checkStep("validate-icc-profile", () => checkIccProfile(config), options, { watches: [config.profile, config.module] });
 }
 
 /** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source. @public */
@@ -314,25 +380,30 @@ export function chromiumBundleStep(config: BundleCheckConfig, options: StepOptio
 
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */
 export function classOrderStep(config: ClassOrderCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-class-order", () => checkClassOrder(config), options);
+  return checkStep("validate-class-order", () => checkClassOrder(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Checks every class token resolves to CSS, so a misspelled utility fails rather than rendering nothing. @public */
 export function classTokensStep(config: ClassTokensCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-class-tokens", () => checkClassTokens(config), options, { requires: tailwindRequired() });
+  return checkStep("validate-class-tokens", () => checkClassTokens(config), options, {
+    requires: tailwindRequired(),
+    watches: [...sourceWatches(config.sources), STYLESHEET_WATCHES],
+  });
 }
 
 /** Checks stylesheets and class literals for patterns the platform now expresses directly. @public */
 export function modernCssStep(config: ModernCssCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-modern-css", () => checkModernCss(config), options);
+  return checkStep("validate-modern-css", () => checkModernCss(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Checks every class-bearing directory is reached by an `@source` directive. @public */
 export function cssSourcesStep(config: CssSourcesCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-css-sources", () => checkCssSources(config), options);
+  return checkStep("validate-css-sources", () => checkCssSources(config), options, {
+    watches: sourceWatches([config.uiDir, config.cssDir, config.sourceDir, config.readme]),
+  });
 }
 
 /** Checks no `@theme` token is declared in a namespace the utility vocabulary overloads. @public */
 export function cssTokensStep(config: CssTokensCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-css-tokens", () => checkCssTokens(config), options, { requires: tailwindRequired() });
+  return checkStep("validate-css-tokens", () => checkCssTokens(config), options, { requires: tailwindRequired(), watches: [STYLESHEET_WATCHES] });
 }

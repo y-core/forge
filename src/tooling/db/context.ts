@@ -33,7 +33,7 @@ export const sharedDbFlags = {
 
 /** The host config `config/db.ts` exports, held to `DbHostConfigSchema` and refused by field. */
 async function loadHostConfig(root: string): Promise<DbHostConfig> {
-  const loaded = (await loadConfigModule<unknown>({ root, path: DEFAULT_DB_CONFIG, explicit: false, what: "db host config" })) ?? {};
+  const loaded = (await loadConfigModule<unknown>({ root, path: DEFAULT_DB_CONFIG, explicit: false, what: "db host config" }))?.value ?? {};
   const result = v.safeParse(DbHostConfigSchema, loaded);
   if (result.success) return loaded as DbHostConfig;
   const detail = result.issues.map((issue) => `${v.getDotPath(issue) ?? "(root)"}: ${issue.message}`).join("; ");

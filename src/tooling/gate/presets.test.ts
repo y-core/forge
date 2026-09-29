@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "../curate/curate.fixture";
+import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
@@ -689,6 +690,75 @@ describe("cloudflareWorkerSteps() — fixers", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — watches", () => {
+  const EVERY = {
+    assetConfig: "src/assets/config.ts",
+    workerConfig: "wrangler.jsonc",
+    warden: true,
+    jsx: {},
+    markdown: {},
+    design: DESIGN,
+    ssrBoundary: { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"] },
+    importBoundary: { guarded: ["src/showcase"] },
+    contrast: { cssDir: "src/assets", tokenFiles: [], mappingFile: "src/assets/theme.css", pairs: [], criteria: {} },
+    db: true,
+    browser: true,
+    workerd: true,
+    features: {},
+  };
+
+  const watchesOf = (steps: readonly Step[]): Record<string, readonly string[] | undefined> =>
+    Object.fromEntries(steps.map((step) => [step.label, step.watches]));
+
+  it("declares the warden row's synced trees, and derives the path-bounded rows", () => {
+    const watches = watchesOf(cloudflareWorkerSteps(EVERY));
+
+    expect(watches["warden"]).toEqual([".claude/**", "CLAUDE.md", "AGENTS.md"]);
+    expect(watches["lint"]).toEqual(["src", "src/**", "tests", "tests/**", ".oxlintrc*", ".oxlintignore", ".gitignore"]);
+    expect(watches["format"]).toEqual(["src", "src/**", "tests", "tests/**", ".oxfmtrc*", ".prettierignore", ".gitignore"]);
+    expect(watches["validate-jsx"]).toEqual(["src", "src/**"]);
+    expect(watches["validate-markdown"]).toEqual(["src/**/*.md"]);
+    expect(watches["validate-modern-css"]).toEqual(["src", "src/**"]);
+    expect(watches["validate-class-order"]).toEqual(["src", "src/**"]);
+    expect(watches["validate-class-tokens"]).toEqual(["src", "src/**", "**/*.css"]);
+    expect(watches["validate-css-tokens"]).toEqual(["**/*.css"]);
+    expect(watches["validate-ssr-boundary"]).toEqual(["src", "src/**"]);
+    expect(watches["validate-exposure"]).toEqual(["wrangler.jsonc"]);
+    expect(watches["validate-compatibility"]).toEqual(["wrangler.jsonc"]);
+    expect(watches["validate-dev-boundary"]).toEqual(["src", "src/**", "wrangler.jsonc"]);
+  });
+
+  it("leaves undeclared every row whose inputs no path list bounds", () => {
+    const steps = cloudflareWorkerSteps(EVERY);
+    const undeclared = steps.filter((step) => step.watches === undefined).map((step) => step.label);
+
+    expect(undeclared).toEqual([
+      "types:cf-runtime",
+      "types:cf-bindings",
+      "types:assets",
+      "validate-asset-manifest",
+      "typecheck",
+      "lint:types",
+      "test",
+      "validate-contrast",
+      "validate-asset-root",
+      "db:schema:digests",
+      "db:schema",
+      "test:browser",
+      "test:workerd",
+      "validate-features",
+    ]);
+  });
+
+  it("gives the features import-boundary row the watches the plain row derives for the same config", () => {
+    const featured = cloudflareWorkerSteps({ importBoundary: { guarded: ["src/showcase"] }, features: {} });
+    const plain = importBoundaryStep({ root: "/nowhere", guarded: ["src/showcase"] });
+
+    expect(featured.find((step) => step.label === "validate-import-boundary")?.watches).toEqual(plain.watches);
+    expect(watchesOf(cloudflareWorkerSteps({ importBoundary: { guarded: ["src/showcase"] } }))["validate-import-boundary"]).toEqual(plain.watches);
+  });
+});
+
 const PKG = { name: "@scope/pkg", version: "1.2.3", exports: { ".": "./src/mod.ts" }, files: ["src"] };
 
 describe("forgeChecks() — shape", () => {
@@ -721,6 +791,15 @@ describe("forgeChecks() — shape", () => {
 
   it("carries no machine prerequisite, so the whole preset is legal in a quality run", () => {
     expect(forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.requires !== undefined)).toEqual([]);
+  });
+});
+
+describe("forgeChecks() — watches", () => {
+  it("derives the path-bounded rows and leaves typecheck, test and exports undeclared", () => {
+    const steps = forgeChecks({ root: "/nowhere", pkg: PKG });
+
+    expect(steps.filter((step) => step.watches === undefined).map((step) => step.label)).toEqual(["typecheck", "test", "validate-exports"]);
+    expect(steps.find((step) => step.label === "validate-class-order")?.watches).toEqual(["src", "src/**"]);
   });
 });
 

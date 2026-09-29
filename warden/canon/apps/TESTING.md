@@ -417,6 +417,10 @@ a fail-fast run stops there without being told to.
 A narrowed selection brands every summary line as scoped, so a scoped green can never be read as a green gate. **A selection resolving to zero steps
 is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
 
+**A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
+and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
+step says so, exits 0 and carries the scoped brand, so it is never a green gate.
+
 ### 6d. Local Ports Are Slots, and a Slot Is a Port and a Bind Address
 
 **Each slot declares both halves:**

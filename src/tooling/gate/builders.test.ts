@@ -2,19 +2,37 @@ import { describe, expect, it } from "bun:test";
 
 import {
   assetManifestStep,
+  assetRootStep,
   browserStep,
+  chromiumBundleStep,
   classGroupsStep,
+  classOrderStep,
   classTokensStep,
+  coLocationStep,
+  commentBudgetStep,
+  compatibilityStep,
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
+  dbSchemaStep,
   designScaleStep,
+  devBoundaryStep,
   exportsStep,
+  exposureStep,
   formatStep,
+  iccProfileStep,
+  importBoundaryStep,
   jsxStep,
+  lintPluginStep,
   lintStep,
   markdownStep,
+  menuNamingStep,
+  modernCssStep,
   namespaceGraphStep,
+  packagingStep,
+  sourceWatches,
+  ssrBoundaryStep,
+  stubGlobalsStep,
   featuresStep,
   testStep,
   typeAwareLintStep,
@@ -342,5 +360,107 @@ describe("builders — config threading", () => {
       });
 
     expect(build).not.toThrow();
+  });
+});
+
+describe("sourceWatches()", () => {
+  it("covers each entry and everything beneath it, whatever slashes the entry carries", () => {
+    expect(sourceWatches(["src/", "./tests", "README.md"])).toEqual(["src", "src/**", "tests", "tests/**", "README.md", "README.md/**"]);
+  });
+
+  it("widens the repository root to every path", () => {
+    expect(sourceWatches(["."])).toEqual(["**"]);
+    expect(sourceWatches(["./"])).toEqual(["**"]);
+  });
+
+  it("drops a `!` exclusion, so the list stays a superset of what the walk reads", () => {
+    expect(sourceWatches(["src", "!src/gen"])).toEqual(["src", "src/**"]);
+  });
+
+  it("names each glob once", () => {
+    expect(sourceWatches(["src", "src/"])).toEqual(["src", "src/**"]);
+  });
+});
+
+describe("builders — derived watches", () => {
+  const BUNDLE = { root: "/nowhere", entry: "src/lint/mod.ts", bundle: "src/lint/plugin.mjs", fixer: "gen" };
+  const CONTRAST = { root: "/nowhere", cssDir: "css", tokenFiles: [], mappingFile: "css/theme.css", pairs: [], criteria: {} };
+
+  it("derives each builder's default from its sources and config files", () => {
+    const cases: [Step, readonly string[] | undefined][] = [
+      [typecheckStep(), undefined],
+      [typeAwareLintStep(), undefined],
+      [testStep(), undefined],
+      [browserStep(), undefined],
+      [workerdStep(), undefined],
+      [featuresStep({ root: "/nowhere" }), undefined],
+      [exportsStep({ root: "/nowhere", packageName: "p", exports: EXPORTS, files: [] }), undefined],
+      [namespaceGraphStep({ root: "/nowhere", exports: EXPORTS, graph: { primitives: [], leaf: [], edges: {} } }), undefined],
+      [packagingStep({ root: "/nowhere", files: [], exports: EXPORTS, entries: [], required: [] }), undefined],
+      [assetRootStep({ root: "/nowhere", assetConfig: "assets.ts" }), undefined],
+      [assetManifestStep({ root: "/nowhere", assetConfig: "assets.ts" }), undefined],
+      [contrastStep(CONTRAST), undefined],
+      [lintPluginStep(BUNDLE), undefined],
+      [chromiumBundleStep(BUNDLE), undefined],
+      [lintStep(), ["src", "src/**", ".oxlintrc*", ".oxlintignore", ".gitignore"]],
+      [formatStep({ sources: ["."] }), ["**", ".oxfmtrc*", ".prettierignore", ".gitignore"]],
+      [jsxStep({ root: "/nowhere" }), ["src", "src/**"]],
+      [menuNamingStep({ root: "/nowhere", sources: ["app/"] }), ["app", "app/**"]],
+      [coLocationStep({ root: "/nowhere", sources: ["src", "warden"] }), ["src", "src/**", "warden", "warden/**"]],
+      [commentBudgetStep({ root: "/nowhere", sources: ["src", "!**/.wrangler"] }), ["src", "src/**"]],
+      [ssrBoundaryStep({ root: "/nowhere", clientDirs: [], sources: ["src/ui"], entryPoints: [] }), ["src/ui", "src/ui/**"]],
+      [classOrderStep({ root: "/nowhere", sources: ["src"] }), ["src", "src/**"]],
+      [modernCssStep({ root: "/nowhere", sources: ["src/ui"] }), ["src/ui", "src/ui/**"]],
+      [importBoundaryStep({ root: "/nowhere", guarded: ["src/tooling"] }), ["src", "src/**", "src/tooling", "src/tooling/**"]],
+      [devBoundaryStep({ root: "/nowhere" }), ["src", "src/**", "wrangler.jsonc"]],
+      [devBoundaryStep({ root: "/nowhere", workerConfig: "app/wrangler.jsonc" }), ["src", "src/**", "app/wrangler.jsonc"]],
+      [devBoundaryStep({ root: "/nowhere", workerConfig: null }), ["src", "src/**"]],
+      [
+        stubGlobalsStep({ root: "/nowhere", stubs: [".types"], shared: [], sources: ["src", "!src/dev"] }),
+        [".types", ".types/**", "src", "src/**"],
+      ],
+      [classTokensStep({ root: "/nowhere", sources: ["src/ui"], stylesheet: "css/t.css" }), ["src/ui", "src/ui/**", "**/*.css"]],
+      [classGroupsStep({ root: "/nowhere", stylesheet: "css/t.css", table: "src/groups.ts" }), ["**/*.css", "src/groups.ts"]],
+      [designScaleStep({ root: "/nowhere", stylesheet: "css/t.css", table: "src/scale.ts" }), ["**/*.css", "src/scale.ts"]],
+      [cssTokensStep({ root: "/nowhere", stylesheet: "css/t.css", cssDir: "css" }), ["**/*.css"]],
+      [iccProfileStep({ root: "/nowhere", profile: "pdf/p.icc", module: "pdf/icc.ts" }), ["pdf/p.icc", "pdf/icc.ts"]],
+      [
+        cssSourcesStep({ root: "/nowhere", uiDir: "src/ui", cssDir: "src/ui/css", sourceDir: "src", readme: "src/ui/README.md" }),
+        ["src/ui", "src/ui/**", "src/ui/css", "src/ui/css/**", "src", "src/**", "src/ui/README.md", "src/ui/README.md/**"],
+      ],
+      [exposureStep({ root: "/nowhere" }), ["wrangler.jsonc"]],
+      [compatibilityStep({ root: "/nowhere", workerConfig: "app.jsonc" }), ["app.jsonc"]],
+    ];
+
+    for (const [step, watches] of cases) {
+      expect([step.label, step.watches]).toEqual([step.label, watches]);
+    }
+  });
+
+  it("reads only markdown for the markdown row, in each shape an entry takes", () => {
+    expect(markdownStep({ root: "/nowhere" }).watches).toEqual(["src/**/*.md"]);
+    expect(markdownStep({ root: "/nowhere", sources: [".", "./docs/", "README.md", "!docs/gen"] }).watches).toEqual([
+      "**/*.md",
+      "docs/**/*.md",
+      "README.md",
+    ]);
+  });
+
+  it("replaces a derived default with the caller's, and drops it on null", () => {
+    expect(jsxStep({ root: "/nowhere" }, { watches: ["app/**"] }).watches).toEqual(["app/**"]);
+    expect(lintStep({ watches: ["x/**"] }).watches).toEqual(["x/**"]);
+    expect(Object.hasOwn(jsxStep({ root: "/nowhere" }, { watches: null }), "watches")).toBe(false);
+    expect(Object.hasOwn(formatStep({ watches: null }), "watches")).toBe(false);
+  });
+
+  it("declares watches on a builder that derives none", () => {
+    expect(typecheckStep({ watches: ["src/**"] }).watches).toEqual(["src/**"]);
+    expect(browserStep({ watches: ["src/**"] }).watches).toEqual(["src/**"]);
+    expect(contrastStep(CONTRAST, { watches: ["css/**"] }).watches).toEqual(["css/**"]);
+  });
+
+  it("applies dbSchemaStep's watches to both rows, and none by default", () => {
+    expect(dbSchemaStep({ watches: ["db/**"] }).map((step) => step.watches)).toEqual([["db/**"], ["db/**"]]);
+    expect(dbSchemaStep().map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false]);
   });
 });
