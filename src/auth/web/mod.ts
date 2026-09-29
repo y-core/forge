@@ -2,6 +2,7 @@ export {
   createAdminElevateActions,
   createAdminUserActions,
   createEmailChangeActions,
+  createPasskeyAccountEnrolActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
   createPasskeyStepUpActions,
@@ -46,6 +47,7 @@ export {
 } from "./identity";
 export {
   loadAccountFactors,
+  loadAccountPasskeyEnrol,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,

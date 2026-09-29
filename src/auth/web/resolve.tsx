@@ -10,7 +10,7 @@ import { v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
 import type { AuthFactorService, RecoveryCodeFactorService, TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
-import { authStepUpOwed, authStepUpWindow } from "./guards";
+import { authFreshStepUpWindow, authStepUpOwed, authStepUpWindow } from "./guards";
 import { authCtx } from "./identity";
 import {
   authNow,
@@ -334,8 +334,36 @@ async function resolveEnrolPasskey<Bindings>(
   const redirect = await authAfterEnrolTarget(c, options, identity, "passkey", authSettledPath(options));
   return ok({
     contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), redirect),
-    signoutPath: auth.signout(),
-    signoutCsrfToken: await mintCsrf(c, auth.signout()),
+    exit: { kind: "signout", path: auth.signout(), csrfToken: await mintCsrf(c, auth.signout()) },
+    ...authCsrfHeader(c),
+    email: identity.email,
+    error: state.error,
+    icon: options.icon,
+  });
+}
+
+async function resolveAccountEnrolPasskey<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
+  state: AuthPageState,
+): Promise<Result<AuthViewProps["accountPasskeyEnrol"], Response>> {
+  const services = await authServices(c, options);
+  const { auth, account } = options.paths;
+  const offered = authEnrollable(services, "passkey");
+  if (!offered.ok) return err(offered.error);
+  const fresh = authFreshStepUpWindow(c);
+  if (fresh !== undefined) {
+    const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
+    if (!resolved.ok) return err(unavailable());
+    if (authStepUpOwed(resolved.data, identity.stepUpAt, fresh))
+      return err(createAuthRedirect(c, authWithQuery(auth.verify.show(), options.returnParam ?? "next", account.passkeyEnrol()), 302));
+  }
+
+  const redirect = await authAfterEnrolTarget(c, options, identity, "passkey", account.passkeys());
+  return ok({
+    contract: await authPasskeyContract(c, "registration", account.passkeyCeremony.begin(), account.passkeyCeremony.finish(), redirect),
+    exit: { kind: "back", path: account.passkeys() },
     ...authCsrfHeader(c),
     email: identity.email,
     error: state.error,
@@ -350,7 +378,7 @@ async function passkeyPage<Bindings>(
   only: string | undefined,
 ): Promise<Result<PasskeyListViewProps, Response>> {
   const services = await authServices(c, options);
-  const { auth, account } = options.paths;
+  const { account } = options.paths;
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
 
@@ -370,7 +398,7 @@ async function passkeyPage<Bindings>(
     ),
     fallbackFactors: await resolveFallbackFactors(services, identity.userId),
     paths: account,
-    enrolPath: auth.enrol.passkey(),
+    enrolPath: account.passkeyEnrol(),
     ...authCsrfHeader(c),
     icon: options.icon,
   });
@@ -703,6 +731,7 @@ const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<N
   enrolPasskey: resolveEnrolPasskey,
   enrolTotp: resolveEnrolTotp,
   accountPasskeys: resolvePasskeyList,
+  accountPasskeyEnrol: resolveAccountEnrolPasskey,
   accountPasskey: resolvePasskey,
   accountPasskeyEdit: resolvePasskeyEdit,
   accountTotp: resolveTotpEnrol,
@@ -726,6 +755,7 @@ export const AUTH_VIEW_GUARDS = {
   enrolPasskey: ["require-auth", "require-pending-enrolment"],
   enrolTotp: ["require-auth", "require-pending-enrolment"],
   accountPasskeys: ["require-auth", "require-enrolment", "require-fresh-step-up"],
+  accountPasskeyEnrol: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountPasskey: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountPasskeyEdit: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountTotp: ["require-auth", "require-enrolment", "require-fresh-step-up"],

@@ -229,6 +229,7 @@ export interface AuthViewProps {
   readonly enrolPasskey: PasskeyEnrolViewProps;
   readonly enrolTotp: TotpEnrolViewProps;
   readonly accountPasskeys: PasskeyListViewProps;
+  readonly accountPasskeyEnrol: PasskeyEnrolViewProps;
   readonly accountPasskey: PasskeyListViewProps;
   readonly accountPasskeyEdit: PasskeyEditViewProps;
   readonly accountTotp: TotpEnrolViewProps;

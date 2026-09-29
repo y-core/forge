@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Middleware } from "@remix-run/fetch-router";
+import { createController } from "@remix-run/fetch-router";
+import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { setPendingHeader } from "../context/pending-headers";
+import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
 import type { LogChannel, LogRecord, Logger } from "../logging/types";
@@ -671,5 +674,68 @@ describe("Forge — a cookie-setting response is never shared-cacheable", () => 
     mapHandler(app, "GET", "/", () => new Response("ok", { headers: { "cache-control": "public, max-age=300", "set-cookie": "a=1" } }));
     const res = await app.request("/");
     expect(res.headers.get("cache-control")).toBe("private, max-age=300");
+  });
+});
+
+describe("Forge — the matched route pattern", () => {
+  it("stamps the full source of a route declared under a base", async () => {
+    const app = new Forge();
+    const routes = createRoutes("/n", { show: new Route("GET", "/:nb") });
+    app.map(routes, createController(routes, { actions: { show: (c) => new Response(matchedRoutePattern.getOptional(c) ?? "unstamped") } }));
+
+    const res = await app.fetch(new Request("http://test/n/abc"), {}, ctx());
+
+    expect(await res.text()).toBe("/n/:nb");
+  });
+
+  it("stamps each action's own pattern when a controller's middleware is shared by every action", async () => {
+    const app = new Forge();
+    const routes = createRoutes({ show: new Route("GET", "/n/:nb"), edit: new Route("GET", "/n/:nb/edit") });
+    const shared: Middleware = (_c, next) => next();
+    const echoPattern = (c: Parameters<typeof matchedRoutePattern.getOptional>[0]) =>
+      new Response(matchedRoutePattern.getOptional(c) ?? "unstamped");
+    app.map(routes, createController(routes, { middleware: [shared], actions: { show: echoPattern, edit: echoPattern } }));
+
+    const show = await app.fetch(new Request("http://test/n/abc"), {}, ctx());
+    const edit = await app.fetch(new Request("http://test/n/abc/edit"), {}, ctx());
+
+    expect([await show.text(), await edit.text()]).toStrictEqual(["/n/:nb", "/n/:nb/edit"]);
+  });
+
+  it("still answers 499 when the client disconnects while a stamped route's handler runs", async () => {
+    const records: Partial<LogRecord>[] = [];
+    const app = new Forge(capturingLogger(records));
+    const controller = new AbortController();
+    let stamped: string | undefined;
+    let entered!: () => void;
+    const handlerEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    mapHandler(app, "GET", "/n/:nb", (c) => {
+      stamped = matchedRoutePattern.getOptional(c);
+      entered();
+      return new Promise<Response>(() => {});
+    });
+
+    const pending = app.fetch(new Request("http://test/n/abc", { signal: controller.signal }), {}, ctx());
+    await handlerEntered;
+    controller.abort();
+    const res = await pending;
+
+    expect(stamped).toBe("/n/:nb");
+    expect(res.status).toBe(499);
+    expect(res.body).toBe(null);
+    expect(records).toEqual([]);
+  });
+
+  it("leaves the route's response as the handler built it", async () => {
+    const app = new Forge();
+    mapHandler(app, "GET", "/n/:nb", () => new Response("made", { status: 201, headers: { "x-probe": "kept" } }));
+
+    const res = await app.fetch(new Request("http://test/n/abc"), {}, ctx());
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get("x-probe")).toBe("kept");
+    expect(await res.text()).toBe("made");
   });
 });

@@ -32,13 +32,24 @@ import { createChallengeStore } from "../stores/challenges";
 import { createCredentialStore } from "../stores/credentials";
 import { createFactorStore } from "../stores/factors";
 import { createUserStore } from "../stores/users";
-import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
+import type { AuthCredential, AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
 import { createAuthGuards, requireAuth } from "./guards";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
-import { attrsOf, fakeAuthIcon, fakeAuthServices, fakeFactorService, recoveryOffer } from "./web.fixture";
+import {
+  attrOf,
+  attrsOf,
+  elementsOf,
+  fakeAuthCredential,
+  fakeAuthCredentialStore,
+  fakeAuthIcon,
+  fakeAuthServices,
+  fakeFactorService,
+  recoveryOffer,
+  textOf,
+} from "./web.fixture";
 
 // This file is the mount AUTH_MOUNTING.md §1 points to, written out with no ellipsis and no free
 // variable, so the one copy of the wiring is held to the real signatures by the compiler.
@@ -295,8 +306,8 @@ function memoryFactors(): FactorStore {
 
 // The ceremonies are stubbed and the mount is not: what this file is evidence about is the wiring
 // between the guard chain, the routes and the actions, never the cryptography under a factor.
-/** A factor service that accepts `CODE` and records its enrolment in `store`. */
-function driveableFactor<kind extends AuthFactorKind>(kind: kind, store: FactorStore): AuthFactorService<kind> {
+/** A factor service that accepts `CODE` and records its enrolment in `store`, and a passkey's in `credentials` under the name it carried. */
+function driveableFactor<kind extends AuthFactorKind>(kind: kind, store: FactorStore, credentials: AuthCredential[] = []): AuthFactorService<kind> {
   const base = {
     kind,
     capabilities: { stepUp: true },
@@ -333,22 +344,35 @@ function driveableFactor<kind extends AuthFactorKind>(kind: kind, store: FactorS
         row = created.data;
       }
       await store.confirm(row.id, userId, at);
+      if (kind === "passkey") {
+        const { nickname } = JSON.parse(presented) as { nickname: string | null };
+        credentials.push(fakeAuthCredential({ id: `c${credentials.length + 1}`, userId, label: nickname, createdAt: at, updatedAt: at }));
+      }
       return ok({ ...row, confirmedAt: at });
     },
   };
 }
 
-/** The whole mount again, this time over stores a drive-through can change. */
-function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; readonly settle: () => Promise<void> } {
+/** The whole mount again, this time over stores a drive-through can change and a clock it can move; `optionalPasskey` offers a passkey beside `stepUp`. */
+function flowMount(
+  stepUp: AuthFactorKind,
+  { optionalPasskey = false }: { readonly optionalPasskey?: boolean } = {},
+): { readonly app: Forge<MountEnv>; readonly settle: () => Promise<void>; readonly advance: (ms: number) => void } {
   const users = memoryUsers();
   const enrolments = memoryFactors();
+  const credentials: AuthCredential[] = [];
+  let clock = 1_750_000_000_000;
+  const now = () => clock;
   const pending: Promise<unknown>[] = [];
   const defer = (work: Promise<unknown>) => void pending.push(work.catch(() => undefined));
 
   const factors = createFactorRegistry(enrolments, {
     offered: [
       { service: driveableFactor("email-otp", enrolments), role: "primary" },
-      { service: driveableFactor(stepUp, enrolments), role: "second", requirement: "mandatory" },
+      { service: driveableFactor(stepUp, enrolments, credentials), role: "second", requirement: "mandatory" },
+      ...(optionalPasskey
+        ? [{ service: driveableFactor("passkey", enrolments, credentials), role: "second", requirement: "optional" } as const]
+        : []),
       recoveryOffer(),
     ],
   });
@@ -366,10 +390,12 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
 
   const flowOptions: AuthWebOptions<MountEnv> = {
     ...options,
+    now,
     resolveServices: async () => {
       const ring = await importAuthKeyRing(["d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65"]);
       return fakeAuthServices({
         users,
+        credentials: fakeAuthCredentialStore(credentials),
         enrolments,
         factors,
         signin: createSigninFlow({ keys: ring, users, state: otpState, nonces, factors, defer }),
@@ -387,12 +413,13 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
     ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
-      auth: { users: () => users, signinPath: paths.auth.signin() },
+      auth: { users: () => users, signinPath: paths.auth.signin(), now },
       enrolment: {
         factors: () => factors,
         enrolmentPaths: authEnrolmentPaths(paths.auth),
         stepUpPath: paths.auth.verify.show(),
         settledPath: paths.account.passkeys(),
+        now,
       },
       origin: { allowedOrigins: ["http://localhost"] },
     }),
@@ -406,7 +433,13 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
   // guard beside it, so this is the only place the guard's own step-up enforcement is observable.
   app.use(
     "/app/*",
-    requireAuth<MountEnv>({ users: () => users, signinPath: paths.auth.signin(), factors: () => factors, stepUpPath: paths.auth.verify.show() }),
+    requireAuth<MountEnv>({
+      users: () => users,
+      signinPath: paths.auth.signin(),
+      factors: () => factors,
+      stepUpPath: paths.auth.verify.show(),
+      now,
+    }),
   );
   mapHandler(app, "GET", "/app/dashboard", () => new Response("dashboard"));
 
@@ -414,6 +447,9 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
     app,
     settle: async () => {
       await Promise.all(pending.splice(0));
+    },
+    advance: (ms) => {
+      clock += ms;
     },
   };
 }
@@ -462,32 +498,43 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
     return res;
   }
 
-  /** The ceremony pair a browser controller would drive, read off the page's own contract attributes. */
-  async function ceremony(page: string): Promise<Response> {
+  /** Posts `payload` as JSON with `token` in the header, as the browser controller does. */
+  async function json(path: string, token: string, payload: unknown): Promise<Response> {
+    return keep(
+      await mounted.app.request(
+        path,
+        {
+          method: "POST",
+          headers: { origin: "http://localhost", "content-type": "application/json", "x-csrf-token": token, cookie },
+          body: JSON.stringify(payload),
+        },
+        bindings,
+      ),
+    );
+  }
+
+  /** The two ceremony calls a page's contract attributes promise, each ready to post whenever the visitor gets to it. */
+  async function contract(page: string) {
     const html = await (await get(page)).text();
     const attr = (name: string) => new RegExp(`${name}="([^"]*)"`).exec(html)?.[1] ?? "";
-    const post = async (path: string, token: string, payload: unknown) =>
-      keep(
-        await mounted.app.request(
-          path,
-          {
-            method: "POST",
-            headers: { origin: "http://localhost", "content-type": "application/json", "x-csrf-token": token, cookie },
-            body: JSON.stringify(payload),
-          },
-          bindings,
-        ),
-      );
+    const [beginPath, beginToken, mode] = [attr(PASSKEY_OPTIONS_PATH_ATTR), attr(PASSKEY_OPTIONS_TOKEN_ATTR), attr(PASSKEY_MODE_ATTR)];
+    const [finishPath, finishToken] = [attr(PASSKEY_VERIFY_PATH_ATTR), attr(PASSKEY_VERIFY_TOKEN_ATTR)];
+    return {
+      begin: () => json(beginPath, beginToken, { mode }),
+      finish: (nickname?: string) => json(finishPath, finishToken, { credential: { id: CODE, response: { clientDataJSON: CODE } }, nickname }),
+    };
+  }
 
-    await post(attr(PASSKEY_OPTIONS_PATH_ATTR), attr(PASSKEY_OPTIONS_TOKEN_ATTR), { mode: attr(PASSKEY_MODE_ATTR) });
-    const res = await post(attr(PASSKEY_VERIFY_PATH_ATTR), attr(PASSKEY_VERIFY_TOKEN_ATTR), {
-      credential: { id: CODE, response: { clientDataJSON: CODE } },
-    });
+  /** The ceremony pair a browser controller would drive, read off the page's own contract attributes. */
+  async function ceremony(page: string, nickname?: string): Promise<Response> {
+    const held = await contract(page);
+    await held.begin();
+    const res = await held.finish(nickname);
     await mounted.settle();
     return res;
   }
 
-  return { get, form, ceremony };
+  return { get, form, contract, ceremony };
 }
 
 describe("a second factor, driven through the mount", () => {
@@ -611,5 +658,75 @@ describe("a second factor, driven through the mount", () => {
     // the request: the sign-in branch could only ever have offered `email-otp`.
     const page = await (await ada.get("/auth/verify")).text();
     expect(page).toContain("Enter the current code from your authenticator app.");
+  });
+});
+
+describe("adding a passkey from the account pages, driven through the mount", () => {
+  const FRESH_STEP_UP_MS = 15 * 60_000;
+  const STALE = { status: 403, body: { error: "This change needs a fresh verification." } };
+
+  /** A visitor who signed up, enrolled the mandatory authenticator app and proved it, so they owe nothing. */
+  async function settled(mounted: ReturnType<typeof flowMount>) {
+    const ada = visitor(mounted, env());
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    await ada.form("/auth/enrol/totp", { code: CODE });
+    await ada.form("/auth/verify", { code: CODE });
+    expect((await ada.get("/account/factors")).status).toBe(200);
+    return ada;
+  }
+
+  const labelsOn = async (ada: ReturnType<typeof visitor>) => {
+    const html = await (await ada.get("/account/passkeys")).text();
+    return elementsOf(html, "span", 'data-ref="credential-label"').map((span) => textOf(span, "span", 'data-ref="credential-label"'));
+  };
+
+  it("lets a settled visitor with a fresh step-up follow the list's enrol link, finish the ceremony, and see the passkey listed", async () => {
+    const ada = await settled(flowMount("totp-app", { optionalPasskey: true }));
+
+    const enrolAt = attrOf(await (await ada.get("/account/passkeys")).text(), 'data-ref="passkey-enrol"', "href");
+    expect(enrolAt).toBe("/account/passkeys/new");
+    expect((await ada.get(enrolAt)).status).toBe(200);
+
+    const finished = await ada.ceremony(enrolAt, "Work laptop");
+    expect({ status: finished.status, body: await finished.json() }).toEqual({ status: 200, body: { redirect: "/account/recovery-codes" } });
+    expect(await labelsOn(ada)).toEqual(["Work laptop"]);
+  });
+
+  it("sends a stale step-up from the enrolment page to verify, and serves the page once it is proved again", async () => {
+    const mounted = flowMount("totp-app", { optionalPasskey: true });
+    const ada = await settled(mounted);
+    mounted.advance(FRESH_STEP_UP_MS);
+
+    const refused = await ada.get("/account/passkeys/new");
+    expect({ status: refused.status, location: refused.headers.get("location") }).toEqual({
+      status: 302,
+      location: "/auth/verify?next=%2Faccount%2Fpasskeys%2Fnew",
+    });
+
+    await ada.form(refused.headers.get("location") ?? "", { code: CODE });
+    expect((await ada.get("/account/passkeys/new")).status).toBe(200);
+  });
+
+  it("refuses both ceremony calls once the step-up goes stale after the page was opened, and lists no passkey", async () => {
+    const mounted = flowMount("totp-app", { optionalPasskey: true });
+    const ada = await settled(mounted);
+    const held = await ada.contract("/account/passkeys/new");
+    mounted.advance(FRESH_STEP_UP_MS);
+
+    const begun = await held.begin();
+    expect({ status: begun.status, body: await begun.json() }).toEqual(STALE);
+    const finished = await held.finish("Work laptop");
+    expect({ status: finished.status, body: await finished.json() }).toEqual(STALE);
+    expect(await labelsOn(ada)).toEqual([]);
+  });
+
+  it("still sends a visitor who owes a passkey enrolment to the pending route, not the account page", async () => {
+    const ada = visitor(flowMount("passkey"), env());
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+
+    const refused = await ada.get("/account/passkeys/new");
+    expect({ status: refused.status, location: refused.headers.get("location") }).toEqual({ status: 303, location: "/auth/enrol/passkey" });
   });
 });

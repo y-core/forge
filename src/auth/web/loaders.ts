@@ -42,6 +42,15 @@ export function loadPasskeyEnrol<Bindings>(
   return authPage(c, options, { name: "enrolPasskey", state, guarded: AUTH_VIEW_GUARDS.enrolPasskey });
 }
 
+/** The passkey enrolment page a settled visitor reaches from their account, outside the pending-enrolment group. @public */
+export function loadAccountPasskeyEnrol<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "accountPasskeyEnrol", state, guarded: AUTH_VIEW_GUARDS.accountPasskeyEnrol });
+}
+
 /** The authenticator-app page a visitor owing that enrolment lands on, outside the account group the enrolment guard closes. @public */
 export function loadEnrolTotp<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, state: AuthPageState = {}): Promise<Response> {
   return authPage(c, options, { name: "enrolTotp", state, guarded: AUTH_VIEW_GUARDS.enrolTotp });

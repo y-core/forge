@@ -161,11 +161,11 @@ app.use(
   "*",
   createSecurityHeaders({
     scriptSrc: ["'self'", NONCE],
-    reporting: { endpoint: "https://example.com/csp-reports" },
+    reporting: { endpoint: "/csp-reports" },
     reportOnly: { trustedTypes: { policies: ["app"] } },
   }),
 );
-// reporting-endpoints: csp-endpoint="https://example.com/csp-reports"
+// reporting-endpoints: csp-endpoint="/csp-reports"
 // content-security-policy-report-only: … require-trusted-types-for 'script'; trusted-types app; report-uri …; report-to csp-endpoint
 ```
 
@@ -174,16 +174,20 @@ each field you leave out is inherited. So the candidate above reports under the 
 Stating `scriptSrc` in `reportOnly` replaces the list outright, so name `'self'` and `NONCE` again there as you would at the top level. Both
 policies share the request's nonce.
 
-**Read the reports at `endpoint`.** It must be an absolute `https` URL, and it throws at construction otherwise. The browser posts a violation
-there by one of two routes: `report-to` names the `Reporting-Endpoints` group (`csp-endpoint` unless you set `group`), and a `report-uri` fallback
-carrying the same URL covers browsers that do not support `report-to` yet. Both go on the enforced policy too, so a real block is reported as well.
+**Read the reports at `endpoint`.** Give it a root-relative path, such as `/csp-reports`, and serve that route in the same app: the browser
+resolves the path against the page, so every deployment reports to its own origin. An absolute `https` URL also works but names one origin, and
+reports from any other deployment are then lost cross-origin. Anything else, `//host/path` and `csp-reports` included, throws at construction.
+
+The browser posts a violation there by one of two routes: `report-to` names the `Reporting-Endpoints` group (`csp-endpoint` unless you set
+`group`), and a `report-uri` fallback carrying the same value covers browsers that do not support `report-to` yet. Both go on the enforced
+policy too, so a real block is reported as well.
 
 **Promote the candidate once the reports go quiet.** Move `trustedTypes` to the top level and delete `reportOnly`:
 
 ```ts
 createSecurityHeaders({
   scriptSrc: ["'self'", NONCE],
-  reporting: { endpoint: "https://example.com/csp-reports" },
+  reporting: { endpoint: "/csp-reports" },
   trustedTypes: { policies: ["app"] },
 });
 ```
@@ -205,8 +209,8 @@ app.use("/workers/*", createRouteSecurityHeaders({ scriptSrc: [WASM_UNSAFE_EVAL]
 ```
 
 The route's options are laid over the app's by the same rules as `mergeSecurityHeaders`: each source list is added to the app's, not substituted
-for it, and the route shares the request's nonce. It takes CSP options only, so `trustedTypes`, `reporting` and `reportOnly` are welcome but `hsts`
-and the cross-origin policies are not.
+for it, and the route shares the request's nonce. It takes CSP options only, so `trustedTypes`, `reporting` and `reportOnly` are welcome but
+`hsts`, `referrerPolicy` and the cross-origin policies are not.
 
 **It must run after `createSecurityHeaders` on the same request.** Otherwise it throws, because it has no app policy to widen. A combination the
 validator refuses, such as `UNSAFE_INLINE` merged onto the default nonce, throws on the route's first request rather than at startup, so request
@@ -242,6 +246,21 @@ app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE], hsts: { maxAg
 **Turn `preload` off unless you mean to submit the domain to the browsers' preload list** — a listing takes months to undo. Why that is, and which
 hostname to reach development at so the policy does not follow you to every local project, are [`SECURITY_HARDENING.md`][sh-2e] §2e's and
 [§3f][sh-3f]'s.
+
+---
+
+## Keeping your URLs out of other sites' Referer
+
+By default a link to another site sends your origin, never the path. When a path itself is private, such as a document id in the URL, send no
+Referer to other sites at all:
+
+```ts
+// referrer-policy: same-origin
+app.use("*", createSecurityHeaders({ scriptSrc: ["'self'", NONCE], referrerPolicy: "same-origin" }));
+```
+
+The option only tightens the default, so a value that would leak more is a type error. `no-referrer` is refused too, and why is
+[`SECURITY_HARDENING.md`][sh-2e] §2e's. Set it at app level, beside the cross-origin policies; a route cannot change it.
 
 ---
 

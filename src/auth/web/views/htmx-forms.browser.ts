@@ -64,7 +64,7 @@ const passkeyList = (chrome: Chrome, fallbackFactors: readonly ["email-otp"] | r
     rows: [{ credential: CREDENTIAL, csrfToken: TOKEN }],
     fallbackFactors,
     paths: PATHS.account,
-    enrolPath: PATHS.auth.enrol.passkey(),
+    enrolPath: PATHS.account.passkeyEnrol(),
     icon: fakeAuthIcon,
     ...chrome,
   });

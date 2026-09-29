@@ -18,7 +18,48 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Upgrading
+
+1. **If you override `PasskeyEnrolView`, replace its `signoutPath` and `signoutCsrfToken` props with `exit`.** It is
+   `{ kind: "signout", path, csrfToken }` on an owed enrolment and `{ kind: "back", path }` on one made from the
+   account pages, and the view renders a sign-out form or a link back to match.
+
+### Breaking Changes
+
+- **`PasskeyEnrolViewProps` takes `exit` in place of `signoutPath` and `signoutCsrfToken`**, because the view now also
+  serves an enrolment the visitor chose, which has nothing to sign out of.
+
+### Added
+
+- **A settled user can add a passkey from their account.** `accountRoutes` gains `passkeyEnrol` (`/passkeys/new`) and
+  the `passkeyCeremony` begin and finish endpoints, guarded by a fresh step-up, and the mount wires them. The page
+  sends a stale step-up to verify and back, and the ceremony lands on the passkey list, or on recovery codes first
+  when this is the user's first recoverable factor. `loadAccountPasskeyEnrol` and `createPasskeyAccountEnrolActions`
+  are exported from `@y-core/forge/auth/web`.
+- **`matchedRoutePattern` in `@y-core/forge/context` holds the source of the route pattern a request dispatched to**,
+  such as `/account/passkeys/:id`, and is unset when no route matched.
+- **`requestLogger` records `routePattern` on `request.completed` and `request.failed`**, beside the concrete `path`,
+  so requests group by route and an app that redacts `path` still logs which route ran. It is `null` when no route
+  matched, on an advertised 405, and when a guard throws before dispatch.
+- **`createSecurityHeaders` takes `referrerPolicy`**, to tighten `Referrer-Policy` to `same-origin` or `strict-origin`.
+  It defaults to `strict-origin-when-cross-origin`, `no-referrer` is refused at the type level because origin checks
+  fall back to the `Referer`, and `mergeSecurityHeaders` merges it.
+- **A CSP `reporting` endpoint may be a root-relative path**, such as `/csp-reports`, emitted verbatim in both
+  `Reporting-Endpoints` and `report-uri`.
+- **The import-boundary gate check's `guarded` list may name a single source file** as well as a directory.
+
+### Fixed
+
+- **The passkey list's enrolment links reach a page a settled user can open.** The header action and the empty state
+  pointed at the pending-enrolment route, which refuses anyone who owes nothing.
+- **A popover placed by `openPopoverAt` drops its coordinates when it closes.** The leftover `--anchor-x` and
+  `--anchor-y` kept a `style` attribute on the element, which htmx's settle copied onto the swapped-in element and
+  forge's own CSP blocked as a `style-src-attr` violation. A superseded call's disposer no longer releases the newer
+  call's clear, or its pending `afterPointerUp` show.
+- **The import-boundary check no longer flags an import of a sibling `x.ts` as one inside a guarded `x/` directory.**
+  A specifier is now resolved to its file before it is judged.
+- **Every file in a `forge db backup` artifact is readable by its owner alone.** `schema.sql` kept the 0644 mode
+  `wrangler d1 export` created it with.
 
 ---
 

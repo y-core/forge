@@ -51,7 +51,7 @@ function passkeys(props: Partial<PasskeyListViewProps> = {}) {
       rows={[row(credential())]}
       fallbackFactors={["email-otp"]}
       paths={ACCOUNT}
-      enrolPath='/auth/enrol/passkey'
+      enrolPath={ACCOUNT.passkeyEnrol()}
       icon={AppIcon}
       {...props}
     />,
@@ -103,7 +103,15 @@ describe("PasskeyListView", () => {
     const html = await passkeys({ rows: [] });
     expect(tagOf(html, 'data-ref="credential-list"')).toBe("");
     expect(textOf(html, "h2", 'data-slot="empty-state-title"')).toBe("No passkeys yet");
-    expect(attrOf(html, 'data-ref="passkey-enrol-empty"', "href")).toBe("/auth/enrol/passkey");
+    expect(attrOf(html, 'data-ref="passkey-enrol-empty"', "href")).toBe("/account/passkeys/new");
+  });
+
+  it("points the header action and the empty state's action at the one enrolment path it was handed", async () => {
+    const html = await passkeys({ rows: [], enrolPath: "/settings/keys/add" });
+    expect([attrOf(html, 'data-ref="passkey-enrol"', "href"), attrOf(html, 'data-ref="passkey-enrol-empty"', "href")]).toEqual([
+      "/settings/keys/add",
+      "/settings/keys/add",
+    ]);
   });
 });
 

@@ -120,10 +120,15 @@ leaves the thrown value's type and text, which is the only place either survives
 **The rule covers the fields forge invents, not the request shape it reports.** `requestLogger` writes `method`, `path`, `status` and `duration`
 (`src/logging/request-logger.ts`), and those spellings are the request's own — renaming them to dodge a stem would cost every reader of a log the
 words the HTTP request is described in, which is a worse trade than the collision. So the rule binds a field forge names for itself, including
-`serializeError`'s three: if an application might plausibly log a field of that name, forge picks another spelling. **`path` is the accepted cost of
-the exception.** A URL carries ids and occasionally a token, so `also: ["path"]` is a stem an application may genuinely want — and it masks `path`
-on `request.completed` and `request.failed` too. `allow` cannot separate them, so an application needing both writes its own path field under a
-name of its own and leaves the stem off.
+`serializeError`'s three and the summary's `routePattern`: if an application might plausibly log a field of that name, forge picks another
+spelling. `routePattern` is not `route` for exactly that reason — applications log a `route` of their own.
+
+**`path` is the accepted cost of the exception.** A URL carries ids and occasionally a token, so `also: ["path"]` is a stem an application may
+genuinely want — and it masks `path` on `request.completed` and `request.failed` too. **That is the id-free recipe:** `also: ["path"]` plus
+`routePattern`, the matched route's pattern source (`"/n/:nb"`, never `"/n/3f2a…"`), which still names the endpoint a request hit. `routePattern`
+is `null` when no route matched — a 404, a 405, or a throw before dispatch — so those records name no endpoint once `path` is masked. `allow`
+cannot separate forge's `path` from an application's own, so an application that must keep the first while masking the second writes its own under
+a different name and leaves the stem off.
 
 **A redaction that cannot run costs the payload, never the request.** Both halves of the pass execute caller-supplied code — the bindings merge
 invokes a getter, the walk invokes a `toJSON` — and either can throw, as a deep enough structure can exhaust the walk's recursion. All of it is

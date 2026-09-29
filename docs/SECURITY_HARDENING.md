@@ -160,6 +160,10 @@ Trusted Types is enforced, htmx's own writes go through the `forge-htmx` policy 
 - **`Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` each have a named override** (`crossOriginOpenerPolicy`,
   `crossOriginResourcePolicy`), because a popup-based OAuth or payment flow and an intentionally embeddable resource each need a looser value than
   the default.
+- **`Referrer-Policy` has an override, `referrerPolicy`, that can tighten the default and never loosen it.** Its type admits only values at least
+  as strict as the default, and it is app-level only, like the cross-origin policies. `no-referrer` is stricter still and is excluded all the same:
+  `verifyOrigin` in `src/security/origin.ts` falls back to `Referer` when a request carries no `Origin`, and `no-referrer` strips the same-origin
+  `Referer` too, so that fallback would become a 403.
 - **`Cross-Origin-Embedder-Policy` is not emitted, and opting in is the caller's decision** (`crossOriginEmbedderPolicy`): `require-corp` breaks
   every subresource lacking a CORP or CORS opt-in, which is a site-wide behavioural change rather than a header default.
 - **`style-src` and `font-src` default to `'self'` and are configurable** (`styleSrc`, `fontSrc`), so a route that loads a web font from a CDN can
@@ -192,8 +196,14 @@ Trusted Types is enforced, htmx's own writes go through the `forge-htmx` policy 
   no htmx swap succeeds (§2g).
 
   `reporting` emits `Reporting-Endpoints` and adds `report-to` to every CSP, with a `report-uri` fallback beside it because browser support for
-  `report-to` still varies. The endpoint must be an absolute https URL and throws otherwise. Merging replaces `reporting` outright: an app has one
-  place its reports go, not a list.
+  `report-to` still varies. The endpoint must be an absolute https URL or a root-relative path (`/…`, never `//…`), and throws otherwise; either is
+  emitted verbatim. Merging replaces `reporting` outright: an app has one place its reports go, not a list.
+
+  **A root-relative path is the per-deployment answer.** The browser resolves it against the page it is reporting from — the Reporting API
+  parses a `Reporting-Endpoints` value against the response URL, and CSP resolves `report-uri` against the document — so one configuration
+  reports to whichever origin served the page. An absolute URL names one deployment's origin, and every other deployment's reports then go
+  cross-origin, where the Reporting API's CORS-mode upload goes unanswered and the reports are lost. A scheme-relative or bare relative value
+  still throws: the first can name another host, and the second resolves differently on every page path.
 
   `reportOnly` emits `Content-Security-Policy-Report-Only` from the same builder and under the same nonce as the enforced policy. A field it states
   replaces the enforced field, and a field it leaves out is inherited, so a candidate is written as its difference from the enforced policy. It

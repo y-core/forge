@@ -1154,10 +1154,10 @@ describe("createAuthGuards", () => {
 
   // The count is written out rather than derived from `AUTH_ROUTE_GROUPS`: a count read off the same
   // table cannot tell a group that was dropped from a group that was never declared.
-  it("wires a stack for each of the eight groups the shipped table mounts a route for", () => {
+  it("wires a stack for each of the nine groups the shipped table mounts a route for", () => {
     const groups = createAuthGuards(chain);
 
-    expect(groups).toHaveLength(8);
+    expect(groups).toHaveLength(9);
     expect(groups.flatMap((group) => group.paths)).toContain("/admin/users/:id");
     expect(groups.flatMap((group) => group.paths)).toContain("/admin/elevate");
     expect(groups.flatMap((group) => group.paths)).toContain("/auth/verify/passkey/finish");

@@ -12,6 +12,7 @@ export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [
   { path: ["auth", "enrol"], guards: ["require-auth", "require-pending-enrolment"], medium: "html" },
   { path: ["auth", "enrol", "ceremony"], guards: ["require-auth", "require-pending-enrolment"], medium: "json" },
   { path: ["account"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "html" },
+  { path: ["account", "passkeyCeremony"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "json" },
   { path: ["admin"], guards: [], medium: "html" },
   { path: ["admin", "users"], guards: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"], medium: "html" },
   { path: ["admin", "elevate"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "html" },
@@ -44,6 +45,8 @@ export function authRoutes<base extends string>(basePath: base) {
 export function accountRoutes<base extends string>(basePath: base) {
   return route(basePath, {
     passkeys: get("/passkeys"),
+    passkeyEnrol: get("/passkeys/new"),
+    passkeyCeremony: { begin: post("/passkeys/register/begin"), finish: post("/passkeys/register/finish") },
     passkey: get("/passkeys/:id"),
     passkeyEdit: get("/passkeys/:id/edit"),
     passkeyRename: patch("/passkeys/:id"),

@@ -172,12 +172,11 @@ async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<Ba
     throw new CliError("invalid-args", `${directory} already exists — a backup a second ago took this name; wait a second and take it again`);
   }
   io.mkdir(directory);
-  // Exported to a temporary name and renamed, like every other file here: route `full` loads this one,
-  // so a torn export must not be left under the name the manifest declares.
-  const schemaPath = join(directory, "schema.sql");
-  await exportSql(io, home, `${schemaPath}.tmp`, ["--no-data"]);
-  const schemaSql = io.readText(`${schemaPath}.tmp`);
-  io.rename(`${schemaPath}.tmp`, schemaPath);
+  const schemaExport = join(directory, "schema.export.sql");
+  await exportSql(io, home, schemaExport, ["--no-data"]);
+  const schemaSql = io.readText(schemaExport);
+  writeArtifactFile(io, join(directory, "schema.sql"), schemaSql);
+  io.remove(schemaExport);
 
   const rows = [...sources.flatMap(tableInserts), ...companions.flatMap(tableInserts)];
   const dataSql = `${DATA_PREAMBLE}\n${rows.join("\n")}\n`;

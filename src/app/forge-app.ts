@@ -6,6 +6,7 @@ import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/matc
 import type { Config } from "../config/config";
 import { resolveConfig } from "../config/config";
 import { applyPendingHeaders } from "../context/pending-headers";
+import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
 import { escapeHtml } from "../http/escape";
@@ -75,6 +76,24 @@ function compileGuardMatcher(paths: readonly string[]): Matcher<string> | MultiM
   return multi;
 }
 
+/** Wraps a matcher so every route it registers first stamps its pattern source on the context. */
+function stampingMatcher(inner: MultiMatcher<MatchData>): MultiMatcher<MatchData> {
+  return {
+    ignoreCase: inner.ignoreCase,
+    add(pattern, data) {
+      const source = data.pattern.source;
+      const stamp: Middleware = (context, next) => {
+        matchedRoutePattern.set(context, source);
+        return next();
+      };
+      data.middleware = [stamp, ...(data.middleware ?? [])];
+      inner.add(pattern, data);
+    },
+    match: (url, options) => inner.match(url, options),
+    matchAll: (url, options) => inner.matchAll(url, options),
+  };
+}
+
 function makeErrorContext<Bindings>(request: Request, env: Bindings, executionCtx: ExecutionContext): AppContext<Bindings> {
   const ctx = new RequestContext(request);
   ctx.set(EnvKey, env, { property: "env" });
@@ -101,7 +120,7 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   constructor(logger?: Logger) {
     this._logger = logger ?? createLogger("app");
     this._matcher = createMultiMatcher<MatchData>({ limits: MATCHER_LIMITS });
-    this._setup = createRouter({ matcher: this._matcher });
+    this._setup = createRouter({ matcher: stampingMatcher(this._matcher) });
   }
 
   setOnError(fn: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>): void {

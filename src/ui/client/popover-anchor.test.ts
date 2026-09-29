@@ -85,4 +85,15 @@ describe("openPopoverAt — the deferred arm", () => {
     second();
     expect(armed(doc)).toBe(0);
   });
+
+  it("keeps a newer arm cancellable after a superseded call's disposer runs", () => {
+    const { doc, popup } = panel();
+
+    const first = openPopoverAt(popup as never, 10, 20, { afterPointerUp: true });
+    openPopoverAt(popup as never, 30, 40, { afterPointerUp: true });
+    first();
+    openPopoverAt(popup as never, 50, 60, { afterPointerUp: true });
+
+    expect(armed(doc)).toBe(1);
+  });
 });

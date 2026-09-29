@@ -13,6 +13,7 @@ import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
 import { AUTH_SESSION_KEY, authCtx } from "./identity";
 import {
+  loadAccountPasskeyEnrol,
   loadAdminElevate,
   loadAdminUserEdit,
   loadAdminUsers,
@@ -208,6 +209,39 @@ describe("loadPasskeyEnrol", () => {
   it("answers 404 for a deployment that offers no passkey at all", async () => {
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]) });
     const res = await loaderApp(loadPasskeyEnrol, options, "/page", "u9").request("/page");
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("loadAccountPasskeyEnrol", () => {
+  it("sends an anonymous request to the sign-in page", async () => {
+    const res = await loaderApp(loadAccountPasskeyEnrol, fakeAuthWebOptions()).request("/page");
+
+    expect({ status: res.status, location: res.headers.get("location") }).toEqual({ status: 302, location: "/auth/signin" });
+  });
+
+  it("carries the account ceremony's own paths and tokens on the scope root, not the pending enrolment's", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
+    const html = await page(loaderApp(loadAccountPasskeyEnrol, options, "/page", "u9"));
+
+    expect(attrOf(html, 'data-scope="passkey"', "data-passkey-options-path")).toBe("/account/passkeys/register/begin");
+    expect(attrOf(html, 'data-scope="passkey"', "data-passkey-verify-path")).toBe("/account/passkeys/register/finish");
+    expect(attrOf(html, 'data-scope="passkey"', "data-passkey-options-token")).toBe("csrf-for:/account/passkeys/register/begin");
+    expect(attrOf(html, 'data-scope="passkey"', "data-passkey-verify-token")).toBe("csrf-for:/account/passkeys/register/finish");
+  });
+
+  it("offers a link back to the passkey list and no sign-out", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
+    const html = await page(loaderApp(loadAccountPasskeyEnrol, options, "/page", "u9"));
+
+    expect(attrOf(html, 'data-slot="link"', "href")).toBe("/account/passkeys");
+    expect(valuesOf(html, "action")).toEqual([]);
+  });
+
+  it("answers 404 for a deployment that offers no passkey at all", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]) });
+    const res = await loaderApp(loadAccountPasskeyEnrol, options, "/page", "u9").request("/page");
 
     expect(res.status).toBe(404);
   });
@@ -453,6 +487,14 @@ describe("every token a page renders is bound to the path its own control submit
 
     await boundTo(html, 'data-scope="passkey"', "data-passkey-options-token", "/auth/enrol/passkey/register/begin");
     await boundTo(html, 'data-scope="passkey"', "data-passkey-verify-token", "/auth/enrol/passkey/register/finish");
+  });
+
+  it("binds the two account enrolment ceremony tokens to their own two endpoints", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey"]) });
+    const html = await page(loaderApp(loadAccountPasskeyEnrol, options, "/page", "u9", realMinter));
+
+    await boundTo(html, 'data-scope="passkey"', "data-passkey-options-token", "/account/passkeys/register/begin");
+    await boundTo(html, 'data-scope="passkey"', "data-passkey-verify-token", "/account/passkeys/register/finish");
   });
 
   it("binds the rename form's token to the credential's own path", async () => {

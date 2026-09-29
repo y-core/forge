@@ -380,7 +380,7 @@ describe("checkImportBoundary — a one-way slice with a named crossing", () => 
         level: "fail",
         message: "crossing `src/router.tsx` names no source the walk judges",
         detail: [
-          "a crossing must be a scanned file outside every guarded directory, spelled as the walk reports it — root-relative, with its extension",
+          "a crossing must be a scanned file outside every guarded path, spelled as the walk reports it — root-relative, with its extension",
         ],
       },
     ]);
@@ -446,7 +446,7 @@ describe("checkImportBoundary — a guarded entry that would guard nothing", () 
     return { root: gateFixtureRoot(VIEW_IMPORTS_SHOWCASE, "forge-ib-guard-"), guarded };
   }
 
-  const SPELLING = ["a guarded directory must be root-relative, spelled as the walk reports it — no leading `./`, no trailing `/`, no `..`"];
+  const SPELLING = ["a guarded path must be root-relative, spelled as the walk reports it — no leading `./`, no trailing `/`, no `..`"];
 
   it("fails the outside import under the canonical spelling", () => {
     const result = checkImportBoundary(guarding(["src/showcase"]));
@@ -506,8 +506,8 @@ describe("checkImportBoundary — a guarded entry that would guard nothing", () 
     expect(result.findings).toEqual([
       {
         level: "fail",
-        message: "guarded `src/showcas` names no directory under the root",
-        detail: ["a guarded directory must exist, or the boundary it declares holds nothing"],
+        message: "guarded `src/showcas` names no directory or source file under the root",
+        detail: ["a guarded directory or source file must exist, or the boundary it declares holds nothing"],
       },
     ]);
   });
@@ -519,16 +519,83 @@ describe("checkImportBoundary — a guarded entry that would guard nothing", () 
     expect(result.findings).toEqual([
       {
         level: "fail",
-        message: "`guarded` names no directory",
+        message: "`guarded` names no path",
         detail: ["an import boundary that guards nothing holds nothing, so an empty list fails rather than passing"],
       },
     ]);
   });
 
-  it("fails a guarded entry naming a file rather than a directory", () => {
+  it("fails the outside import of a guarded source file", () => {
     const result = checkImportBoundary(guarding(["src/showcase/mod.ts"]));
 
-    expect(result.findings.map((finding) => finding.message)).toEqual(["guarded `src/showcase/mod.ts` names no directory under the root"]);
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "import boundary crossed — `../showcase/mod` resolves to `src/showcase/mod.ts`",
+    ]);
+  });
+});
+
+describe("checkImportBoundary — a guarded top-level source file", () => {
+  const LAYOUT = { "src/views/layout.tsx": "export const layout = 1;\n" };
+  const ROUTER = { "src/router.tsx": 'import { layout } from "./views/layout";\nexport const router = layout;\n' };
+
+  function guardingRouter(files: Record<string, string>): ImportBoundaryCheckConfig {
+    return { root: gateFixtureRoot(files, "forge-ib-file-"), guarded: ["src/router.tsx"] };
+  }
+
+  it("accepts an existing source file as a guarded entry, naming it in the summary", () => {
+    const result = checkImportBoundary(guardingRouter({ ...LAYOUT, "src/router.tsx": "export const router = 1;\n" }));
+
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toBe("1 sources outside `src/router.tsx` import nothing inside them");
+  });
+
+  const NOT_A_SOURCE_FILE = [
+    { name: "a markdown file", guarded: "src/README.md", files: { ...LAYOUT, "src/README.md": "# router\n" } },
+    { name: "a test file", guarded: "src/router.test.tsx", files: { ...LAYOUT, ...ROUTER, "src/router.test.tsx": "export const t = 1;\n" } },
+    { name: "a missing file", guarded: "src/router.tsx", files: LAYOUT },
+  ];
+
+  for (const { name, guarded, files } of NOT_A_SOURCE_FILE) {
+    it(`fails a guarded entry naming ${name}`, () => {
+      const result = checkImportBoundary({ root: gateFixtureRoot(files, "forge-ib-file-"), guarded: [guarded] });
+
+      expect(result.ok).toBe(false);
+      expect(result.findings).toEqual([
+        {
+          level: "fail",
+          message: `guarded \`${guarded}\` names no directory or source file under the root`,
+          detail: ["a guarded directory or source file must exist, or the boundary it declares holds nothing"],
+        },
+      ]);
+    });
+  }
+
+  it("reports an outside value import of the guarded file through its extensionless specifier", () => {
+    const result = checkImportBoundary(
+      guardingRouter({ ...LAYOUT, ...ROUTER, "src/worker.ts": 'import { router } from "./router";\nexport default router;\n' }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
+      ["src/worker.ts", 1, "import boundary crossed — `./router` resolves to `src/router.tsx`"],
+    ]);
+  });
+
+  it("passes the guarded file importing from outside it, because the boundary runs one way", () => {
+    const result = checkImportBoundary(guardingRouter({ ...LAYOUT, ...ROUTER }));
+
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("passes an outside module importing only a type from the guarded file", () => {
+    const result = checkImportBoundary(
+      guardingRouter({ ...LAYOUT, ...ROUTER, "src/worker.ts": 'import type { router } from "./router";\nexport type R = typeof router;\n' }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
   });
 });
 

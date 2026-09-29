@@ -84,7 +84,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `jsxStep` → `validate-jsx` | Every shipped `.tsx` carries its runtime pragmas |
 | `menuNamingStep` → `validate-menu-naming` | Every **shipped** `triggered` `Menu.Popup` has the trigger it takes its accessible name from; a file naming a popup or a trigger through a value goes unjudged |
 | `ssrBoundaryStep` → `validate-ssr-boundary` | No Worker-executed module reaches the browser-only tier |
-| `importBoundaryStep` → `validate-import-boundary` | No module outside a guarded directory imports one at value, save the files named as `crossings`; a crossing naming no scanned file fails; given `features`, each feature's directory is guarded too, and imports only the features it requires |
+| `importBoundaryStep` → `validate-import-boundary` | No module outside a guarded directory or source file imports it at value, save the files named as `crossings`; a guarded path naming no existing directory or non-test source file fails, as does a crossing naming no scanned file; given `features`, each feature's directory is guarded too, and imports only the features it requires |
 | `devBoundaryStep` → `validate-dev-boundary` | The Worker's `main` is not a `*.dev.ts` entry, nothing imports one, and only such an entry imports a dev-only module at value |
 | `stubGlobalsStep` → `validate-stub-globals` | No shipped module names a global only your private `.d.ts` stubs declare, which a consumer's real types cannot resolve; `shared` lists the globals the real types declare too, and an entry no stub declares fails |
 | `exposureStep` → `validate-exposure` | Every deployment the Worker config describes states `workers_dev`, `preview_urls` and its routing key; `require: "unroutable"` demands the values that keep it off the public internet |
@@ -131,7 +131,7 @@ Most rows are opt-in, and each option is a question about your repository rather
 | `ui/*` components and a Tailwind stylesheet | `design` | The platform-CSS and class rows; `design.cssDir` adds `validate-css-tokens` |
 | Contrast pairs this repository actually draws | `contrast` | `validate-contrast` — the audit fails a run that measured no pairs |
 | A browser-only directory tier of your own | `ssrBoundary` | `validate-ssr-boundary` |
-| A tree the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; beside `features`, it also reads the feature manifest |
+| A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; beside `features`, it also reads the feature manifest |
 | Markdown oxfmt has been told to ignore | `markdown` | `validate-markdown` |
 | A library's `.tsx` compiled under a consumer's tsconfig | `jsx` | `validate-jsx`; an application states `jsxImportSource` once instead |
 | Cloned `.claude/` trees | `warden: true` | The `warden sync --check` row |

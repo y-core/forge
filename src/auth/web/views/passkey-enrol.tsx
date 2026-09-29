@@ -7,6 +7,7 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { FormField } from "../../../ui/core/field-layout";
 import { Input } from "../../../ui/core/input";
+import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
 import {
   PASSKEY,
@@ -51,20 +52,10 @@ export const AuthPasskeyStatus: FC<{ unsupported: string }> = ({ unsupported }) 
   </>
 );
 
-// Design Read: a signed-in visitor who owes a second factor; the one action is creating a passkey;
+// Design Read: a signed-in visitor who owes a second factor or is adding another; the one action is creating a passkey;
 // failure is a declined or unsupported ceremony — `destructive` Alert above, trigger stays put.
-/** The page a visitor lands on when the factor policy says they still owe an enrolment. @public */
-export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({
-  contract,
-  signoutPath,
-  signoutCsrfToken,
-  csrfHeader,
-  email,
-  error,
-  icon: AppIcon,
-  class: cls,
-  level,
-}) => {
+/** The passkey enrolment page, whether the factor policy owes one or the visitor chose to add another. @public */
+export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({ contract, exit, csrfHeader, email, error, icon: AppIcon, class: cls, level }) => {
   const Heading = `h${level ?? 1}` as "h1";
   return (
     <Card class={cn("mx-auto w-full max-w-md", cls)}>
@@ -72,7 +63,12 @@ export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({
         <Card.Title>
           <Heading class='text-xl'>Add a passkey</Heading>
         </Card.Title>
-        <Card.Description>Your account needs a second factor before you can continue. Signed in as {email}.</Card.Description>
+        <Card.Description>
+          {exit.kind === "signout"
+            ? "Your account needs a second factor before you can continue."
+            : "Sign in with this device's screen lock or a security key."}{" "}
+          Signed in as {email}.
+        </Card.Description>
       </Card.Header>
       <Card.Content class='flex flex-col gap-6'>
         {error === undefined ? null : (
@@ -96,11 +92,17 @@ export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({
         </AuthPasskeyScope>
       </Card.Content>
       <Card.Footer>
-        <div class='flex max-w-prose flex-wrap items-baseline gap-1 text-sm text-pretty text-muted-foreground'>
-          <span>Not now?</span>
-          <AuthSignout action={signoutPath} csrfToken={signoutCsrfToken} csrfHeader={csrfHeader} appearance='ghost' size='sm' />
-          <span>and finish on a device you have to hand.</span>
-        </div>
+        {exit.kind === "signout" ? (
+          <div class='flex max-w-prose flex-wrap items-baseline gap-1 text-sm text-pretty text-muted-foreground'>
+            <span>Not now?</span>
+            <AuthSignout action={exit.path} csrfToken={exit.csrfToken} csrfHeader={csrfHeader} appearance='ghost' size='sm' />
+            <span>and finish on a device you have to hand.</span>
+          </div>
+        ) : (
+          <p class='max-w-prose text-sm text-pretty text-muted-foreground'>
+            <Link href={exit.path}>Back to your passkeys</Link>
+          </p>
+        )}
       </Card.Footer>
     </Card>
   );

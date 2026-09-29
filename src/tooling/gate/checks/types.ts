@@ -48,7 +48,7 @@ export interface CompatibilityCheckConfig {
 export interface ImportBoundaryCheckConfig {
   /** Repository root; every reported path is relative to it. */
   root: string;
-  /** Directories nothing outside them may import at value, relative to `root`. */
+  /** Directories or source files nothing outside them may import at value, relative to `root`. */
   guarded: readonly string[];
   /** Directories walked for source files, relative to `root`. Defaults to `["src"]`. */
   sources?: readonly string[];

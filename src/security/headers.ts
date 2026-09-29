@@ -50,6 +50,8 @@ const CSP_REPORTING_GROUP_DEFAULT = "csp-endpoint";
 
 const CSP_REPORTING_ENDPOINT_FORBIDDEN = [";", ",", '"', "\\"] as const;
 
+const ROOT_RELATIVE_PARSE_BASE = "https://h.invalid";
+
 const PERMISSIONS_POLICY_FEATURES = ["camera", "microphone", "geolocation", "payment"] as const;
 
 function renderAllowlist(sources?: string[]): string {
@@ -119,6 +121,7 @@ function assertValidTrustedTypes(prefix: string, trustedTypes?: TrustedTypesOpti
 function isValidCspReportingEndpoint(endpoint: string): boolean {
   if (!CSP_SOURCE_TOKEN.test(endpoint)) return false;
   if (CSP_REPORTING_ENDPOINT_FORBIDDEN.some((c) => endpoint.includes(c))) return false;
+  if (endpoint.startsWith("/") && !endpoint.startsWith("//")) return URL.canParse(endpoint, ROOT_RELATIVE_PARSE_BASE);
   return URL.canParse(endpoint) && new URL(endpoint).protocol === "https:";
 }
 
@@ -127,7 +130,7 @@ function assertValidCspReporting(reporting?: CspReportingOptions): void {
   const { endpoint, group } = reporting;
   if (!isValidCspReportingEndpoint(endpoint)) {
     throw new Error(
-      `Invalid CSP reporting endpoint ${JSON.stringify(endpoint)}: must be an absolute https URL with no whitespace, ';', ',', '"' or '\\'`,
+      `Invalid CSP reporting endpoint ${JSON.stringify(endpoint)}: must be an absolute https URL or a root-relative path with no whitespace, ';', ',', '"' or '\\'`,
     );
   }
   if (group !== undefined && !CSP_REPORTING_GROUP.test(group)) {
@@ -211,6 +214,7 @@ export function mergeSecurityHeaders(base: SecurityHeadersOptions, extra: Partia
   if (extra.crossOriginOpenerPolicy !== undefined) merged.crossOriginOpenerPolicy = extra.crossOriginOpenerPolicy;
   if (extra.crossOriginResourcePolicy !== undefined) merged.crossOriginResourcePolicy = extra.crossOriginResourcePolicy;
   if (extra.crossOriginEmbedderPolicy !== undefined) merged.crossOriginEmbedderPolicy = extra.crossOriginEmbedderPolicy;
+  if (extra.referrerPolicy !== undefined) merged.referrerPolicy = extra.referrerPolicy;
   return merged;
 }
 
@@ -296,7 +300,7 @@ function precomputeSecurityHeaders(options: SecurityHeadersOptions = {}): Precom
   const hsts = options.hsts ?? {};
   const entries: [string, string][] = [
     ...(hsts === false ? [] : [["strict-transport-security", buildHsts(hsts)] as [string, string]]),
-    ["referrer-policy", "strict-origin-when-cross-origin"],
+    ["referrer-policy", options.referrerPolicy ?? "strict-origin-when-cross-origin"],
     ["x-content-type-options", "nosniff"],
     ["permissions-policy", buildPermissionsPolicy(options.permissionsPolicy)],
     ["x-frame-options", "DENY"],

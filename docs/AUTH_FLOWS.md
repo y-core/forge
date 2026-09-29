@@ -24,7 +24,7 @@ audience: consumer
 - §2b What the Visitor Is Told: the closed set of notices, and the reasons folded into them
 - §2c Where a Resolution Sends the Visitor: enrolment, step-up, or the return path
 - §3 Passkeys: the two-endpoint ceremony both halves share
-- §3a Enrolment: the registration ceremony and the pending-enrolment gate
+- §3a Enrolment: the registration ceremony, the pending-enrolment gate, and the account's own ceremony
 - §3b Sign-in: why a passkey never starts one
 - §3c Management: what the shipped pages do, and the limits they carry
 - §3d PRF Output Stays in the Page: never posted, judged by a real result, salted per credential
@@ -94,11 +94,10 @@ offering requires (§8c). Both offerings work and both are driven through the mo
 the passkey step-up is the alternative. With two second factors confirmed the verify page presents **the first in `offered` order** and links the
 others, so the user can choose (§8a).
 
-**Offering nothing mandatory makes the enrolment pages unreachable, and nothing says so at the option.** `requirePendingEnrolment` admits only a
-visitor who owes an enrolment, and nobody ever owes an `"optional"` factor — so every visitor goes to `settledPath` and no enrolment page can be
-opened. The consequence is what matters: **an all-optional offering silently hides the passkey feature.** If you want passkeys enrollable but not
-demanded, route your own enrolment page behind `requireAuth` alone. That guard exists to stop an owed step-up being enrolled around, and has nothing
-to do on a page nobody is sent to.
+**An all-optional offering sends nobody to the enrolment pages, so its factors are enrolled from the account pages.** `requirePendingEnrolment`
+admits only a visitor who owes an enrolment, and nobody ever owes an `"optional"` factor — so every visitor goes to `settledPath`, and `authRoutes`'
+`enrol` pages never open. A settled user adds a passkey from `accountRoutes`' `passkeys` page, whose enrol link opens the account's own ceremony
+(§3a), and an authenticator app from its `totp` page (§4). Without `accountRoutes` mounted, an optional factor has no page to be enrolled from.
 
 ### 2b. What the Visitor Is Told
 
@@ -151,6 +150,13 @@ The ceremony posts to `enrol.ceremony.begin` for options and `enrol.ceremony.fin
 user already has, so re-enrolling one authenticator is refused by the browser rather than by a database conflict later. `finish` writes no session
 state: enrolment does not sign anyone in.
 
+**A settled user adds a passkey through the account, never through `enrol.passkey`.** `accountRoutes`' `passkeyEnrol` page runs the same
+ceremony against `passkeyCeremony.begin` and `passkeyCeremony.finish`, behind the `account` guards instead of the pending-enrolment one
+([`AUTH_MOUNTING.md`][am-2] §2). When the user is subject to a step-up and the last one has fallen outside the fresh window, the page sends them to
+verify and back before it renders, because `require-fresh-step-up` admits every `GET`; the ceremony's own 403 is the backstop. `finish` lands on the
+`passkeys` list, or on the recovery-codes page when the user holds no unused codes (§8c). A user who still owes an enrolment is sent to
+`enrol.passkey`, because `require-enrolment` refuses them the whole `account` group.
+
 ### 3b. Sign-in
 
 **A primary factor must identify the visitor, and a passkey identifies nobody — so no configuration makes one start a sign-in.** The primary variant
@@ -165,7 +171,7 @@ The second half of a sign-in runs the same step-up pair as any other step-up —
 
 `accountRoutes`' `passkeys` page lists the visitor's credentials with their labels, creation and last-use times, a rename link and a remove control,
 and warns when removing the last credential would leave nothing to sign in with. Removing a passkey is scoped to its owner in the statement's own
-`WHERE`, so ownership is not a check a caller can forget.
+`WHERE`, so ownership is not a check a caller can forget. Its enrol link, and the one in its empty state, open the account ceremony (§3a).
 
 **Removing one signs every other session out.** The removal raises the account's revocation barrier, and every session established at or before it —
 including the ones on devices this request cannot see — is refused on its own next request. The acting session is carried past the barrier, so the

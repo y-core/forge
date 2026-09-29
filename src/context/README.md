@@ -77,6 +77,28 @@ one-accessor-per-slot rule in §4b. `createContextKey<T>()` is re-exported for t
 
 ---
 
+## Reading which route a request matched
+
+`matchedRoutePattern` holds the pattern source of the route a request dispatched to — `"/orders/:id"`, not the `/orders/8c1e…` in the URL — for a
+metric label or a log field that must not carry ids.
+
+```ts
+import { matchedRoutePattern } from "@y-core/forge/context";
+
+app.use("*", async (context, next) => {
+  const res = await next();
+  const pattern = matchedRoutePattern.getOptional(context) ?? "unmatched";
+  // record `pattern` against res.status
+  return res;
+});
+```
+
+**Read it after `await next()` in an `app.use` middleware.** Forge sets it as the matched route starts, ahead of that route's own middleware, so a
+global middleware sees nothing before `next()`. It stays unset when no route matched — a 404, a 405, or a throw before dispatch — so reach for
+`getOptional`. `requestLogger` already records it as `routePattern` ([`src/logging/README.md`][logging-readme]).
+
+---
+
 ## Refusing to serve a request against a broken binding
 
 `validateBindings` builds a middleware that checks `env` against a valibot schema on the first request and again whenever the env reference changes,
@@ -131,6 +153,7 @@ rejected value.
 [app-readme]: ../app/README.md
 [config-readme]: ../config/README.md
 [fe-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
+[logging-readme]: ../logging/README.md
 [ram-4]: ../../docs/ROUTING_AND_MIDDLEWARE.md#4-context-namespace
 [ram-4a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#4a-contextvar-typed-accessor
 [ram-5d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#5d-the-appcontext-surface

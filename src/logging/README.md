@@ -139,6 +139,7 @@ Register `requestId()` **before** it, or the `bindings` callback has no id to re
 
 ```ts
 import { consoleChannel, kvLogChannel, parseLogLevel, requestLog, requestLogger } from "@y-core/forge/logging";
+import { createController, get, route } from "@y-core/forge/router";
 import { requestId, requestIdCtx } from "@y-core/forge/security";
 
 app.use("*", requestId());
@@ -151,22 +152,42 @@ app.use(
   }),
 );
 
-app.get("/orders", (c) => {
-  const log = requestLog.get(c);
-  log.info("listing orders", { count: 12 });
-  return Response.json([]);
-});
+const routes = route({ orders: get("/orders") });
+app.map(
+  routes,
+  createController(routes, {
+    actions: {
+      orders: (c) => {
+        const log = requestLog.get(c);
+        log.info("listing orders", { count: 12 });
+        return Response.json([]);
+      },
+    },
+  }),
+);
 ```
 
 The summary record's message is the static label `request.completed`, or `request.failed` when a throw escaped `next()`. It carries `method`, `path`
-(no query string), `status` and `duration` in milliseconds, plus your `bindings`. Its level comes from the response status, so 404s and 422s do not
-page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4a's.
+(no query string), `routePattern`, `status` and `duration` in milliseconds, plus your `bindings`. Its level comes from the response status, so 404s
+and 422s do not page anyone; the mapping is [`STRUCTURED_LOGGING.md`][sl-4a] §4a's.
 
 `prefix` defaults to `"request"` if you do not set one, and `minLevel` may be a level or a per-request function of the context.
 
 **A 500 persists as two correlated records.** The summary shows `status: 500` and no error detail; the app's error boundary publishes the detail
 separately on the same per-request logger, as an `error` record with the message `unhandled error` carrying the serialized error under `data.error`.
 Nothing deduplicates the pair — `message === "unhandled error"` tells them apart.
+
+**To log requests without the ids in their URLs, mask `path` and read `routePattern`.** `routePattern` is the pattern of the route that answered —
+`"/orders/:id"` where `path` is `/orders/8c1e…` — and `null` when no route matched: a 404, a 405, or a throw before any route ran.
+
+```ts
+requestLogger<AppEnv>({
+  channels: () => [consoleChannel()],
+  redact: defineLogRedaction({ also: ["path"] }),
+});
+```
+
+Why forge keeps `path` and spells the pattern field that way is [`STRUCTURED_LOGGING.md`][sl-2e] §2e's.
 
 ---
 

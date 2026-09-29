@@ -14,7 +14,7 @@ const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
 const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !isTestSource(name);
 
-/** Whether `file` lives under one of the guarded directories. @public */
+/** Whether `file` is, or lives under, one of the guarded paths. @public */
 export function isGuarded(file: string, guarded: readonly string[]): boolean {
   return guarded.some((dir) => file === dir || file.startsWith(`${dir}/`));
 }
@@ -44,23 +44,27 @@ function isCanonicalDir(dir: string): boolean {
   return dir !== "." && !isAbsolute(dir) && !dir.endsWith("/") && posix.normalize(dir) === dir && !dir.split("/").includes("..");
 }
 
-function checkGuardedDir(root: string, dir: string): Finding | null {
-  if (!isCanonicalDir(dir)) {
-    return fail(`guarded \`${dir}\` is not spelled as the walk reports it`, {
-      detail: ["a guarded directory must be root-relative, spelled as the walk reports it — no leading `./`, no trailing `/`, no `..`"],
+function checkGuardedEntry(root: string, entry: string): Finding | null {
+  if (!isCanonicalDir(entry)) {
+    return fail(`guarded \`${entry}\` is not spelled as the walk reports it`, {
+      detail: ["a guarded path must be root-relative, spelled as the walk reports it — no leading `./`, no trailing `/`, no `..`"],
     });
   }
-  const full = resolve(root, dir);
-  if (existsSync(full) && statSync(full).isDirectory()) return null;
-  return fail(`guarded \`${dir}\` names no directory under the root`, {
-    detail: ["a guarded directory must exist, or the boundary it declares holds nothing"],
+  const full = resolve(root, entry);
+  const stat = existsSync(full) ? statSync(full) : null;
+  if (stat?.isDirectory() || (stat?.isFile() && SCANNED(entry))) return null;
+  return fail(`guarded \`${entry}\` names no directory or source file under the root`, {
+    detail: ["a guarded directory or source file must exist, or the boundary it declares holds nothing"],
   });
 }
 
 /** What a guarded module a source names resolves to, or `null` when the specifier stays outside every guarded tree. */
 function crossingTarget(root: string, guarded: readonly string[], file: string, specifier: string, published: Map<string, string>): string | null {
   const module = resolveSpecifier(file, specifier);
-  if (module !== null) return isGuarded(module, guarded) ? (resolveModuleFile(root, module) ?? module) : null;
+  if (module !== null) {
+    const target = resolveModuleFile(root, module) ?? module;
+    return isGuarded(target, guarded) ? target : null;
+  }
   // A self-import by package name resolves to nothing relative, so it would otherwise walk straight
   // past both the graph check and this one.
   return published.get(specifier) ?? null;
@@ -113,7 +117,7 @@ function judgeSliceSource(
   });
 }
 
-/** Fails when a source outside the guarded directories, save a named crossing, imports one of their modules at value, or a feature's source imports a feature it does not require. @public */
+/** Fails when a source outside the guarded paths, save a named crossing, imports one of their modules at value, or a feature's source imports a feature it does not require. @public */
 export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const crossings = config.crossings ?? [];
@@ -135,11 +139,11 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
   const misconfigured =
     guarded.length === 0
       ? [
-          fail("`guarded` names no directory", {
+          fail("`guarded` names no path", {
             detail: ["an import boundary that guards nothing holds nothing, so an empty list fails rather than passing"],
           }),
         ]
-      : guarded.flatMap((dir) => checkGuardedDir(config.root, dir) ?? []);
+      : guarded.flatMap((entry) => checkGuardedEntry(config.root, entry) ?? []);
   if (misconfigured.length > 0) return checkResult(misconfigured, "");
 
   const published = guardedSubpaths({ ...config, guarded });
@@ -183,7 +187,7 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
     findings.push(
       fail(`crossing \`${crossing}\` names no source the walk judges`, {
         detail: [
-          "a crossing must be a scanned file outside every guarded directory, spelled as the walk reports it — root-relative, with its extension",
+          "a crossing must be a scanned file outside every guarded path, spelled as the walk reports it — root-relative, with its extension",
         ],
       }),
     );

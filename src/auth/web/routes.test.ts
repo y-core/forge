@@ -128,6 +128,9 @@ describe("accountRoutes", () => {
     expect(routePaths(accountRoutes("/account")).sort()).toEqual(
       [
         "/account/passkeys",
+        "/account/passkeys/new",
+        "/account/passkeys/register/begin",
+        "/account/passkeys/register/finish",
         "/account/passkeys/:id",
         "/account/passkeys/:id/edit",
         "/account/passkeys/:id",

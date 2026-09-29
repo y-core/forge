@@ -210,7 +210,7 @@ describe("requestLogger — per-request summary record", () => {
 
     expect(records).toHaveLength(1);
     expect(records[0]!.level).toBe("info");
-    expect(Object.keys(records[0]!.data ?? {}).sort()).toStrictEqual(["duration", "method", "path", "status"]);
+    expect(Object.keys(records[0]!.data ?? {}).sort()).toStrictEqual(["duration", "method", "path", "routePattern", "status"]);
   });
 
   it("a throwing handler yields the boundary's serialized-error record and an error-level 500 summary", async () => {
@@ -692,6 +692,121 @@ describe("requestLogger — redaction threading", () => {
     await app.request("/t");
     const summary = records[1]!;
     expect(summary.message).toBe("request.completed");
-    expect(summary.data).toStrictEqual({ method: "GET", path: "/t", status: 200, duration: summary.data!.duration as number });
+    expect(summary.data).toStrictEqual({ method: "GET", path: "/t", routePattern: "/t", status: 200, duration: summary.data!.duration as number });
+  });
+});
+
+describe("requestLogger — routePattern", () => {
+  function patternApp(options: Partial<RequestLoggerOptions> = {}) {
+    const { records, channel } = makeCapture();
+    const app = new Forge();
+    app.use("*", requestLogger({ channels: () => [channel], ...options }));
+    return { records, app };
+  }
+
+  function summaryFields(record: LogRecord | undefined) {
+    const data = record?.data ?? {};
+    return { message: record?.message, method: data.method, path: data.path, routePattern: data.routePattern, status: data.status };
+  }
+
+  it("records the matched pattern source beside the concrete path", async () => {
+    const { records, app } = patternApp();
+    mapHandler(app, "GET", "/n/:nb", () => new Response("ok"));
+
+    await app.request("/n/abc");
+
+    expect(records.map(summaryFields)).toStrictEqual([
+      { message: "request.completed", method: "GET", path: "/n/abc", routePattern: "/n/:nb", status: 200 },
+    ]);
+  });
+
+  it("records null when no route matches", async () => {
+    const { records, app } = patternApp();
+    mapHandler(app, "GET", "/n/:nb", () => new Response("ok"));
+
+    await app.request("/elsewhere");
+
+    expect(records.map(summaryFields)).toStrictEqual([
+      { message: "request.completed", method: "GET", path: "/elsewhere", routePattern: null, status: 404 },
+    ]);
+  });
+
+  it("records null on an advertised 405, where a route matched the path but not the method", async () => {
+    const { records, app } = patternApp();
+    app.setMethodMismatch("advertise");
+    mapHandler(app, "GET", "/n/:nb", () => new Response("ok"));
+
+    await app.request("/n/abc", { method: "POST" });
+
+    expect(records.map(summaryFields)).toStrictEqual([
+      { message: "request.completed", method: "POST", path: "/n/abc", routePattern: null, status: 405 },
+    ]);
+  });
+
+  it("keeps the pattern on the 500 summary when the handler throws", async () => {
+    const { records, app } = patternApp();
+    mapHandler(app, "GET", "/n/:nb", () => {
+      throw new Error("handler exploded");
+    });
+
+    const res = await app.request("/n/abc");
+
+    expect(res.status).toBe(500);
+    expect(summaryFields(records.find((r) => r.message === "request.completed"))).toStrictEqual({
+      message: "request.completed",
+      method: "GET",
+      path: "/n/abc",
+      routePattern: "/n/:nb",
+      status: 500,
+    });
+  });
+
+  it("puts the pattern on request.failed when a later guard throws after dispatch", async () => {
+    const { records, app } = patternApp();
+    app.use("*", async (_c, next) => {
+      await next();
+      throw new Error("guard exploded after dispatch");
+    });
+    mapHandler(app, "GET", "/n/:nb", () => new Response("ok"));
+
+    await app.request("/n/abc");
+
+    expect(summaryFields(records.find((r) => r.message === "request.failed"))).toStrictEqual({
+      message: "request.failed",
+      method: "GET",
+      path: "/n/abc",
+      routePattern: "/n/:nb",
+      status: undefined,
+    });
+  });
+
+  it("puts null on request.failed when a guard throws before dispatch", async () => {
+    const { records, app } = patternApp();
+    app.use("*", () => {
+      throw new Error("guard exploded before dispatch");
+    });
+    mapHandler(app, "GET", "/n/:nb", () => new Response("unreached"));
+
+    await app.request("/n/abc");
+
+    expect(summaryFields(records.find((r) => r.message === "request.failed"))).toStrictEqual({
+      message: "request.failed",
+      method: "GET",
+      path: "/n/abc",
+      routePattern: null,
+      status: undefined,
+    });
+  });
+
+  it("an app redacting path still logs the pattern, so the record carries no id", async () => {
+    const { records, app } = patternApp({ redact: defineLogRedaction({ also: ["path"] }) });
+    mapHandler(app, "GET", "/n/:nb", () => new Response("ok"));
+
+    await app.request("/n/3f2c9a1e-0000-4000-8000-000000000001");
+
+    expect(records.map(summaryFields)).toStrictEqual([
+      { message: "request.completed", method: "GET", path: "[redacted]", routePattern: "/n/:nb", status: 200 },
+    ]);
+    expect(JSON.stringify(records)).not.toContain("3f2c9a1e");
   });
 });

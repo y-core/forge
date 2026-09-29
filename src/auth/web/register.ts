@@ -5,6 +5,7 @@ import {
   createAdminElevateActions,
   createAdminUserActions,
   createEmailChangeActions,
+  createPasskeyAccountEnrolActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
   createPasskeyStepUpActions,
@@ -18,6 +19,7 @@ import {
 } from "./actions";
 import {
   loadAccountFactors,
+  loadAccountPasskeyEnrol,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,
@@ -80,6 +82,7 @@ export function registerAccount<Bindings extends object>(
   app.map(routes, {
     actions: {
       passkeys: authPage(loadPasskeyList, options),
+      passkeyEnrol: authPage(loadAccountPasskeyEnrol, options),
       passkey: authPage(loadPasskey, options),
       passkeyEdit: authPage(loadPasskeyEdit, options),
       totp: authPage(loadTotpEnrol, options),
@@ -92,6 +95,7 @@ export function registerAccount<Bindings extends object>(
       ...createEmailChangeActions(options),
     },
   });
+  app.map(routes.passkeyCeremony, { actions: { ...createPasskeyAccountEnrolActions(options) } });
 }
 
 /** Mounts the administrative user routes and the deliberately not admin-gated elevation routes on `app`. @public */

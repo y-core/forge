@@ -52,7 +52,7 @@ export interface TrustedTypesOptions {
 
 /** Where the browser reports CSP violations. @public */
 export interface CspReportingOptions {
-  /** An absolute https URL, emitted in both `Reporting-Endpoints` and the `report-uri` fallback. */
+  /** An absolute https URL or a root-relative path, emitted verbatim in both `Reporting-Endpoints` and the `report-uri` fallback. */
   endpoint: string;
   /** Defaults to `csp-endpoint`. */
   group?: string | undefined;
@@ -86,6 +86,8 @@ export interface SecurityHeadersOptions extends CspOptions {
   crossOriginOpenerPolicy?: "same-origin" | "same-origin-allow-popups" | "unsafe-none";
   crossOriginResourcePolicy?: "same-origin" | "same-site" | "cross-origin";
   crossOriginEmbedderPolicy?: "require-corp" | "credentialless";
+  /** Defaults to `strict-origin-when-cross-origin`; `no-referrer` is excluded, as it would empty the Referer fallback of origin checks. */
+  referrerPolicy?: "strict-origin-when-cross-origin" | "same-origin" | "strict-origin";
 }
 
 /** `SecurityHeadersOptions` plus an explicit CSP nonce for `applySecurityHeaders`. @public */

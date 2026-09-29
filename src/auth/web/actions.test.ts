@@ -23,6 +23,7 @@ import {
   createAdminElevateActions,
   createAdminUserActions,
   createEmailChangeActions,
+  createPasskeyAccountEnrolActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
   createPasskeyStepUpActions,
@@ -882,6 +883,84 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
   });
 });
 
+describe("where a passkey enrolment's finish lands", () => {
+  const FINISH = "/account/passkeys/register/finish";
+
+  const confirmedRow = (kind: AuthFactorKind): AuthFactor => ({
+    id: `f-${kind}`,
+    userId: "u9",
+    kind,
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+
+  /** Options whose offered factors report `held` as confirmed, the recovery-code one counting `remaining` unused codes, and whose settled page is not the passkey list. */
+  function standing(held: readonly AuthFactorKind[], remaining: number): AuthWebOptions {
+    const listed = (kind: AuthFactorKind) => ({
+      ...fakeFactorService(kind),
+      listEnrolments: async () => ok(held.includes(kind) ? [confirmedRow(kind)] : []),
+    });
+    const passkey = { ...listed("passkey"), completeEnrolment: async () => ok(confirmedRow("passkey")) } as AuthFactorService;
+    const codes = Object.assign(listed("recovery-code"), { remaining: async () => ok(remaining) }) as AuthFactorService;
+    const services = fakeAuthServices({
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(held), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: listed("totp-app") as AuthFactorService, role: "second", requirement: "optional" },
+          { service: passkey, role: "second", requirement: "optional" },
+          { service: codes, role: "second", requirement: "optional" },
+        ],
+      }),
+    });
+    return fakeAuthWebOptions({ resolveServices: () => services, settledPath: "/app/home" });
+  }
+
+  const LANDINGS = [
+    {
+      label: "sends an account enrolment of the first recoverable factor on to generate recovery codes",
+      build: createPasskeyAccountEnrolActions,
+      held: [],
+      remaining: 0,
+      expected: "/account/recovery-codes",
+    },
+    {
+      label: "returns an account enrolment to the passkey list once the account holds unspent codes",
+      build: createPasskeyAccountEnrolActions,
+      held: ["totp-app", "recovery-code"],
+      remaining: 10,
+      expected: "/account/passkeys",
+    },
+    {
+      label: "sends an account enrolment on to recovery codes when every code is spent",
+      build: createPasskeyAccountEnrolActions,
+      held: ["totp-app", "recovery-code"],
+      remaining: 0,
+      expected: "/account/recovery-codes",
+    },
+    {
+      label: "lands an owed enrolment on the settled page, not the passkey list the account variant returns to",
+      build: createPasskeyEnrolActions,
+      held: ["totp-app", "recovery-code"],
+      remaining: 10,
+      expected: "/app/home",
+    },
+  ] as const;
+
+  for (const { label, build, held, remaining, expected } of LANDINGS) {
+    it(label, async () => {
+      const app = mounted(actionApp({ userId: "u9" }), "POST", FINISH, build(standing(held, remaining)).finish);
+      const res = await app.request(FINISH, jsonBody({ credential: { id: "cred-1" }, nickname: "Laptop" }));
+      expect({ status: res.status, body: await res.json() }).toEqual({ status: 200, body: { redirect: expected } });
+    });
+  }
+});
+
 describe("the passkey begin endpoints", () => {
   const offered = {
     challenge: "c",
@@ -923,6 +1002,21 @@ describe("the passkey begin endpoints", () => {
     const res = await app.request("/auth/enrol/passkey/register/begin", jsonBody({}));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(offered);
+  });
+
+  it("answers the account enrolment begin with the factor's options verbatim, extensions included", async () => {
+    const actions = createPasskeyAccountEnrolActions(optionsWith(passkeyServices()));
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/account/passkeys/register/begin", actions.begin);
+
+    const res = await app.request("/account/passkeys/register/begin", jsonBody({}));
+    expect({ status: res.status, body: await res.json() }).toEqual({ status: 200, body: offered });
+  });
+
+  it("refuses the account enrolment begin to a request no guard established an identity on", async () => {
+    const actions = createPasskeyAccountEnrolActions(optionsWith(passkeyServices()));
+    const app = mounted(actionApp(), "POST", "/account/passkeys/register/begin", actions.begin);
+
+    expect((await app.request("/account/passkeys/register/begin", jsonBody({}))).status).toBe(401);
   });
 });
 

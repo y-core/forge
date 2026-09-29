@@ -397,11 +397,11 @@ export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bin
   };
 }
 
-/** The two JSON endpoints of the passkey enrolment ceremony. @public */
-export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bindings>): {
-  readonly begin: RequestHandler;
-  readonly finish: RequestHandler;
-} {
+/** The begin and finish endpoints of a passkey enrolment, whose finish lands on `otherwise` once nothing else is owed. */
+function passkeyEnrolCeremony<Bindings>(
+  options: AuthWebOptions<Bindings>,
+  otherwise: string,
+): { readonly begin: RequestHandler; readonly finish: RequestHandler } {
   async function enrolmentService(c: AppContext<Bindings>, services: AuthRequestSurface) {
     const identity = resolveAuthViewer(c);
     const offered = authEnrollable(services, "passkey");
@@ -440,9 +440,25 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
       const envelope = JSON.stringify({ credential, nickname: nickname.data });
       const completed = await held.service.completeEnrolment(held.identity.userId, envelope, authNow(options));
       if (!completed.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
-      return jsonResponse({ redirect: await authAfterEnrolTarget(c, options, held.identity, "passkey", authSettledPath(options)) });
+      return jsonResponse({ redirect: await authAfterEnrolTarget(c, options, held.identity, "passkey", otherwise) });
     },
   };
+}
+
+/** The two JSON endpoints of the passkey enrolment a sign-in still owes. @public */
+export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bindings>): {
+  readonly begin: RequestHandler;
+  readonly finish: RequestHandler;
+} {
+  return passkeyEnrolCeremony(options, authSettledPath(options));
+}
+
+/** The two JSON endpoints of a passkey enrolment made from the account pages, landing back on the passkey list. @public */
+export function createPasskeyAccountEnrolActions<Bindings>(options: AuthWebOptions<Bindings>): {
+  readonly begin: RequestHandler;
+  readonly finish: RequestHandler;
+} {
+  return passkeyEnrolCeremony(options, options.paths.account.passkeys());
 }
 
 /** The rename and remove writes of one registered passkey. @public */

@@ -25,8 +25,7 @@ async function enrolled(contract: AuthPasskeyContract): Promise<{ html: string; 
   const html = await render(
     <PasskeyEnrolView
       contract={contract}
-      signoutPath='/auth/signout'
-      signoutCsrfToken='csrf-signout'
+      exit={{ kind: "signout", path: "/auth/signout", csrfToken: "csrf-signout" }}
       email='ada@example.com'
       icon={fakeAuthIcon}
     />,

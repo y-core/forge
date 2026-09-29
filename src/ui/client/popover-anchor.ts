@@ -24,6 +24,21 @@ function place(el: HTMLElement, win: Window, x: number, y: number, margin: numbe
 /** The pending deferred show per element, so a second call cancels the first. */
 const pendingArms = new WeakMap<HTMLElement, () => void>();
 
+/** The latest call per element, so a superseded call's disposer leaves the newer placement's close-time clear armed. */
+const latestCalls = new WeakMap<HTMLElement, object>();
+
+// htmx 4's settle copies a leftover `style` attribute onto the swapped-in element through
+// `setAttribute`, which the CSP's `style-src-attr` blocks.
+function clearPlacementOnClose(event: Event): void {
+  if ((event as Event & { newState?: string }).newState !== "closed") return;
+  const el = event.currentTarget as HTMLElement;
+  el.style.removeProperty(ANCHOR_X_PROPERTY);
+  el.style.removeProperty(ANCHOR_Y_PROPERTY);
+  // Chrome writes a pending CSSOM change back as `style=""` after removal unless the attribute is read first.
+  if (el.getAttribute("style") === "") el.removeAttribute("style");
+  el.removeEventListener("toggle", clearPlacementOnClose);
+}
+
 /** Shows a native popover with its top-left corner at viewport coordinates `x`, `y`, clamped to keep the panel on screen, and returns a disposer. @public */
 export function openPopoverAt(el: HTMLElement, x: number, y: number, options: OpenPopoverAtOptions = {}): () => void {
   const win = ownerWindow(el);
@@ -33,6 +48,12 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
   // A second call supersedes the first: leaving the earlier listener armed would show the panel at
   // the stale coordinates on the next pointer release.
   pendingArms.get(el)?.();
+
+  const call = {};
+  latestCalls.set(el, call);
+  const releaseClear = () => {
+    if (latestCalls.get(el) === call) el.removeEventListener("toggle", clearPlacementOnClose);
+  };
 
   const show = () => {
     pendingArms.delete(el);
@@ -48,11 +69,12 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
     // Placed a second time in the same task: before showing, the popup is `display: none` and
     // measures zero, so neither the flip nor the clamp had a box to reason about.
     place(el, win, x, y, margin, flip);
+    el.addEventListener("toggle", clearPlacementOnClose);
   };
 
   if (!options.afterPointerUp) {
     show();
-    return () => {};
+    return releaseClear;
   }
 
   // The platform's light-dismiss pass runs on the `pointerup` that ends the opening right-click, so
@@ -62,8 +84,11 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
 
   const cancel = () => {
     doc.removeEventListener("pointerup", show, { capture: true });
-    pendingArms.delete(el);
+    if (pendingArms.get(el) === cancel) pendingArms.delete(el);
   };
   pendingArms.set(el, cancel);
-  return cancel;
+  return () => {
+    cancel();
+    releaseClear();
+  };
 }

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
 import {
   argvHas,
+  composed,
   fakeDbIo,
   keyProbeAsked,
   keyProbeReply,
@@ -19,10 +20,11 @@ import {
   tableSqlReply,
 } from "../db.fixture";
 import { sha256 } from "../digest";
+import { realDbIo } from "../io";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { schemaFingerprint } from "../migrate/fingerprint";
 import { toSchemaObjects } from "../sql";
-import type { DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
+import type { DbHostConfig, DbIo, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
 import { resolveBackupsDir, runBackup } from "./backup";
 
@@ -196,6 +198,51 @@ describe("runBackup", () => {
     expect(JSON.parse(io.files.get(join(directory, "manifest.json")) ?? "{}")).toEqual(outcome.manifest);
   });
 
+  it("leaves only schema.sql, data.sql, manifest.json and migrations/ in the artifact, with the exported schema under schema.sql", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    await runBackup(await context(root, io), { out: null, verify: false, label: null });
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+
+    expect(io.readDir(directory)).toEqual(["data.sql", "manifest.json", "migrations", "schema.sql"]);
+    expect(io.files.get(join(directory, "schema.sql"))).toBe(SCHEMA_SQL);
+  });
+
+  it("writes every artifact file readable by the owner alone, even the export wrangler created 0644", async () => {
+    const root = appRoot();
+    mkdirSync(join(root, "migrations"));
+    writeFileSync(join(root, "migrations", "0001_init.sql"), composed("CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);"));
+    const fake = fakeWrangler();
+    const io: DbIo = {
+      ...realDbIo(root, () => {}),
+      spawn: (cmd, args, opts) => {
+        if (!argvHas(args, "export", "--output")) return fake.spawn(cmd, args, opts);
+        const output = args[args.indexOf("--output") + 1] ?? "";
+        writeFileSync(output, SCHEMA_SQL);
+        chmodSync(output, 0o644);
+        return OK;
+      },
+      d1: fake.d1,
+      closeD1: fake.closeD1,
+    };
+    const outcome = await runBackup(await resolveDbContext(flags(root), undefined, { io, host: {} }), { out: null, verify: false, label: null });
+    const modes: Record<string, number> = {};
+    const walk = (path: string): void => {
+      modes[relative(outcome.directory, path) || "."] = statSync(path).mode & 0o777;
+      if (statSync(path).isDirectory()) for (const entry of readdirSync(path)) walk(join(path, entry));
+    };
+    walk(outcome.directory);
+
+    expect(modes).toEqual({
+      ".": 0o700,
+      "schema.sql": 0o600,
+      "data.sql": 0o600,
+      "manifest.json": 0o600,
+      migrations: 0o700,
+      "migrations/0001_init.sql": 0o600,
+    });
+  });
+
   it("says so and records it when the source schema is not the one its last apply certified", async () => {
     const root = appRoot();
     const io = fakeWrangler();
@@ -251,7 +298,7 @@ describe("runBackup", () => {
       join(root, "wrangler.jsonc"),
       "--remote",
       "--output",
-      `${join(directory, "schema.sql")}.tmp`,
+      join(directory, "schema.export.sql"),
       "--no-data",
     ]);
     expect(outcome.manifest.database).toEqual({ name: "app-db", id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", target: "remote", persistPath: null });
@@ -291,7 +338,7 @@ describe("runBackup", () => {
       "--remote",
       "--preview",
       "--output",
-      `${join(directory, "schema.sql")}.tmp`,
+      join(directory, "schema.export.sql"),
       "--no-data",
     ]);
     expect(outcome.manifest.database.target).toBe("preview");
@@ -454,6 +501,23 @@ describe("runBackup", () => {
       "schema.sql is not what a schema-only artifact must be:\n  line 5: an INSERT into tasks — a schema artifact declares tables and carries no row, because route full loads data.sql after it",
     );
     expect(io.files.has(join(root, ".forge/backups", DIRECTORY_NAME, "manifest.json"))).toBe(false);
+  });
+
+  it("leaves no schema.sql behind when the export fails after writing part of its output", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    io.rules.unshift({
+      match: (args) => argvHas(args, "export", "--output"),
+      reply: (args) => {
+        io.writeText(args[args.indexOf("--output") + 1] ?? "", SCHEMA_SQL.slice(0, SCHEMA_SQL.indexOf("lane")));
+        return { code: 1, stdout: "", stderr: "connection reset mid-export" };
+      },
+    });
+    const run = await context(root, io);
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+
+    expect((await refusal(() => runBackup(run, { out: null, verify: false, label: null }))).kind).toBe("external");
+    expect(io.readDir(directory).includes("schema.sql")).toBe(false);
   });
 
   it("refuses while another run holds the lock, naming backup rather than apply", async () => {

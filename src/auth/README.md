@@ -122,7 +122,8 @@ authenticator app as primary is a type error, and `createFactorRegistry` refuses
 The choice you are actually making is the `requirement` on each second factor, and [`AUTH_FLOWS.md`][af-2a] §2a is the table of what each one
 demands. Consequences worth knowing before you pick:
 
-- **An all-optional offering makes the enrolment pages unreachable** — §2a says what to do instead.
+- **An all-optional offering sends nobody to the enrolment pages** — its factors are enrolled from the account pages, so mount `accountRoutes`
+  (§2a).
 - **A primary factor is not available as a second factor.**
 - **An authenticator app or a passkey needs recovery codes beside it**, offered `"optional"`; `createFactorRegistry` throws without them, or on
   any other requirement ([`AUTH_FLOWS.md`][af-8c] §8c).
@@ -431,7 +432,7 @@ that resolves a name against your override.
 To put one page inside a page of your own rather than replacing it, use `resolveAuthView` — the recipe, the `guarded` claim it takes, and the
 CSRF configuration your route must share are [`AUTH_MOUNTING.md`][am-6] §6.
 
-Some shipped views take props an override has to supply as well: `PasskeyEnrolView` needs `signoutCsrfToken` and `csrfHeader`,
+Some shipped views take props an override has to supply as well: `PasskeyEnrolView` needs `exit` and `csrfHeader`,
 `AdminUserEditView` needs `self`, and `TotpEnrolView` needs `codeDigits` and `codePeriodSeconds` — read off the factor, never hard-coded.
 
 **Some views update themselves in place.** Their htmx forms swap the action's answer, which is the whole view re-rendered, over the view's root

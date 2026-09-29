@@ -69,8 +69,7 @@ without being un-`@public` is what [`NAMESPACE_DESIGN.md`][nd-1c] §1c permits �
 
 ### 2a. State-Only Islands versus Contract-Bearing Scopes
 
-**`Resumable` is for a state-only island; a scope root that carries a wiring contract is hand-rendered.** That is the rule, not a gap in
-`Resumable`.
+**`Resumable` is for a state-only island; a contract-bearing scope root is hand-rendered.** That is the rule, not a gap in `Resumable`.
 
 `ResumableProps` is `{ name, id, state, ref, class }` with no rest spread, and the closed shape is the job: the component resumes _state_, stamping
 `data-scope` and serialising `state` for the signals to rehydrate from. A wiring contract is a different mechanism — named attributes a controller
@@ -287,16 +286,18 @@ scope exists solely to call `showModal()` on resume, the one opening markup cann
 
 ### 2i. `openPopoverAt` — Coordinate Placement
 
-**Every other popup in forge is placed by CSS, against its trigger.** Every _invoker-opened_ popup has an **implicit anchor** — its invoker — which
-`position-anchor`'s initial `auto` resolves to; `src/ui/core/menu-anchor.browser.ts` measures that and pins the boundary this section depends on: a
-popup shown by `showPopover()` rather than by an invoker has no implicit anchor at all. That is the one case no anchor can serve — a **context menu
-has no trigger**. Nothing carries the anchor name, every anchored rule resolves to nothing, and the UA's `[popover]` default centres the panel, the
-one place a context menu must never be.
+**Every other popup in forge is placed by CSS, against its trigger.** An _invoker-opened_ popup's **implicit anchor** is its invoker, which
+`position-anchor`'s initial `auto` resolves to; `src/ui/core/menu-anchor.browser.ts` pins the boundary this section depends on: a popup shown by
+`showPopover()` has no implicit anchor at all. A **context menu has no trigger**, so nothing carries the anchor name, every anchored rule resolves
+to nothing, and the UA's `[popover]` default centres the panel — the one place a context menu must never be.
 
 `openPopoverAt` shows the popup with its top-left corner on the point, clamped so the whole box stays on screen. These properties are load-bearing:
 
 - **The coordinates go through CSSOM** (`el.style.setProperty`), never a generated `style` attribute — for the CSP-and-dropped-`style` pair owned by
   [`UI_SSR_COMPONENTS.md`][usc-1a] §1a.
+- **The placement is cleared when the popup closes**, because a CSSOM write still leaves a `style` attribute. htmx 4's settle copies an old id'd
+  element's attributes onto its same-id replacement with `setAttribute`, which forge's CSP blocks: `style-src-attr` falls back to a `style-src`
+  with no `'unsafe-inline'`. Only the anchor properties are removed, and the attribute only once empty, so a caller's own inline styles survive.
 - **The matching CSS rule must reset `inset` and `margin` explicitly.** Without that the UA default survives, the panel centres itself, and the
   custom properties hold perfectly correct values while nothing moves. That failure looks like a bug in the TypeScript and is not.
 - **Clamping needs the box, not the point**, so the coordinates are written twice: once before the popup is shown, while it still measures zero, and
@@ -310,10 +311,10 @@ one place a context menu must never be.
 The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the coordinate rule; `openPopoverAt` stamps it too, so a
 popup that opens both ways needs no second markup variant. Calling it again **repositions** an open popup.
 
-**It returns a disposer, because the deferred path arms a listener.** The disposer cancels a pending arm, and a second call on the same element
-cancels the first rather than arming a second — otherwise the earlier one would show the panel at stale coordinates on the next release. The
-deferred show bails when the element has left the document, since an htmx swap between the arm and the release would otherwise call `showPopover()`
-on a detached node.
+**It returns a disposer, because the deferred path arms a listener.** It cancels a pending arm, and a second call on the same element cancels the
+first, which would show at stale coordinates on the next release. The deferred show bails once the element has left the document, so an htmx swap
+between arm and release never reaches `showPopover()`. A popup open when its region swaps keeps its placement into the settle, so the caller closes
+it first.
 
 ### 2j. `mountCarouselDots` — Strip-Driven Dot Marker
 
@@ -326,8 +327,7 @@ ratio — against the viewport every slide of a visible strip intersects at once
 
 **It lifts both class spellings off the server-rendered row rather than restating them.** Unlike `mountScrollSpy`'s nav, a dot's selected look is
 baked into utility classes by `Pagination.Item`'s variants, so there is no attribute for a stylesheet to select on. Reading the `on` and `off`
-spellings off the rendered dots keeps the theme, the size and any caller class in the component rather than making the controller a second home for
-them.
+spellings off the rendered dots keeps the theme, the size and any caller class in the component alone, never in the controller.
 
 **It keeps the last marking while nothing is visible**, where §2k blanks the row. Mid-flick every slide can fall below the first threshold, and a
 highlight that blinks off on every scroll is worse than one that is briefly stale; a strip, unlike a page, always has a current slide.

@@ -46,8 +46,7 @@ function enrol(props: Partial<PasskeyEnrolViewProps> = {}) {
   return render(
     <PasskeyEnrolView
       contract={CONTRACT}
-      signoutPath='/auth/signout'
-      signoutCsrfToken='csrf-signout'
+      exit={{ kind: "signout", path: "/auth/signout", csrfToken: "csrf-signout" }}
       email='ada@example.com'
       icon={AppIcon}
       {...props}
@@ -156,5 +155,42 @@ describe("PasskeyEnrolView sign-out", () => {
     expect(attrOf(html, 'data-slot="form"', "method")).toBe("post");
     expect(attrOf(html, 'data-slot="form"', "action")).toBe("/auth/signout");
     expect(attrOf(html, 'data-slot="form-csrf"', "value")).toBe("csrf-signout");
+  });
+});
+
+describe("PasskeyEnrolView exit", () => {
+  const back = { kind: "back", path: "/account/passkeys" } as const;
+
+  it("tells a visitor owing the factor that the account needs it, and offers a sign-out form as the way off the page", async () => {
+    const html = await enrol();
+    expect(textOf(html, "div", 'data-slot="card-description"')).toBe(
+      "Your account needs a second factor before you can continue. Signed in as ada@example.com.",
+    );
+    expect(attrOf(html, 'data-slot="form"', "action")).toBe("/auth/signout");
+    expect(tagOf(html, 'data-slot="link"')).toBe("");
+  });
+
+  it("tells a visitor adding another passkey what one is, with no claim that anything is owed", async () => {
+    expect(textOf(await enrol({ exit: back }), "div", 'data-slot="card-description"')).toBe(
+      "Sign in with this device&#39;s screen lock or a security key. Signed in as ada@example.com.",
+    );
+  });
+
+  it("links a visitor adding another passkey back to the list, and renders no sign-out form that would end their session", async () => {
+    const html = await enrol({ exit: back });
+    expect(attrOf(html, 'data-slot="link"', "href")).toBe("/account/passkeys");
+    expect(textOf(html, "a", 'data-slot="link"')).toBe("Back to your passkeys");
+    expect(tagOf(html, 'data-slot="form"')).toBe("");
+    expect(tagOf(html, 'data-ref="signout"')).toBe("");
+  });
+
+  it("keeps the heading and the registration ceremony whichever way off the page it offers", async () => {
+    for (const exit of [undefined, back]) {
+      const html = await enrol(exit === undefined ? {} : { exit });
+      expect([textOf(html, "h1", 'class="text-xl"'), attrsOf(html, `data-scope="${PASSKEY_SCOPE}"`)[PASSKEY_MODE_ATTR]]).toEqual([
+        "Add a passkey",
+        "registration",
+      ]);
+    }
   });
 });

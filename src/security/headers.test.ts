@@ -182,6 +182,18 @@ describe("createSecurityHeaders — custom options", () => {
     expect(headers.get("cross-origin-resource-policy")).toBe("cross-origin");
   });
 
+  it("tightens referrer-policy to same-origin", async () => {
+    const headers = await headersFor(createSecurityHeaders({ referrerPolicy: "same-origin" }));
+    expect(headers.get("referrer-policy")).toBe("same-origin");
+  });
+
+  it("refuses a referrer policy looser than the default at the type level", () => {
+    // @ts-expect-error -- `no-referrer` strips the same-origin Referer that origin checks fall back to
+    expect(hardenedWith({ referrerPolicy: "no-referrer" }).get("referrer-policy")).toBe("no-referrer");
+    // @ts-expect-error -- `unsafe-url` sends the full URL cross-origin
+    expect(hardenedWith({ referrerPolicy: "unsafe-url" }).get("referrer-policy")).toBe("unsafe-url");
+  });
+
   it("emits cross-origin-embedder-policy only when opted in", async () => {
     const headers = await headersFor(createSecurityHeaders({ crossOriginEmbedderPolicy: "require-corp" }));
     expect(headers.get("cross-origin-embedder-policy")).toBe("require-corp");
@@ -585,6 +597,11 @@ describe("mergeSecurityHeaders", () => {
     expect(merged.crossOriginEmbedderPolicy).toBe("credentialless");
     expect(merged.crossOriginResourcePolicy).toBeUndefined();
   });
+
+  it("overrides referrerPolicy when provided, preserving the base's when omitted", () => {
+    expect(mergeSecurityHeaders({ referrerPolicy: "strict-origin" }, { referrerPolicy: "same-origin" }).referrerPolicy).toBe("same-origin");
+    expect(mergeSecurityHeaders({ referrerPolicy: "strict-origin" }, {}).referrerPolicy).toBe("strict-origin");
+  });
 });
 
 describe("createSecurityHeaders — pending-header precedence", () => {
@@ -730,17 +747,21 @@ describe("createSecurityHeaders — Trusted Types and reporting validation", () 
 
   const BAD_ENDPOINTS = [
     "http://r.example/csp",
-    "/csp",
+    "csp",
     "https://r.example/a,b",
     "https://r.example/a;b",
     'https://r.example/a"b',
     "https://r.example/a\\b",
     "https://r.example/a b",
+    "//evil.example/r",
+    "r/x",
+    "./r",
+    "/r;x",
   ];
   for (const endpoint of BAD_ENDPOINTS) {
     it(`rejects the reporting endpoint ${JSON.stringify(endpoint)}`, () => {
       expect(() => createSecurityHeaders({ reporting: { endpoint } })).toThrow(
-        `Invalid CSP reporting endpoint ${JSON.stringify(endpoint)}: must be an absolute https URL with no whitespace, ';', ',', '"' or '\\'`,
+        `Invalid CSP reporting endpoint ${JSON.stringify(endpoint)}: must be an absolute https URL or a root-relative path with no whitespace, ';', ',', '"' or '\\'`,
       );
     });
   }
@@ -767,7 +788,7 @@ describe("createSecurityHeaders — Trusted Types and reporting validation", () 
 
   it("validates Trusted Types and reporting on every applySecurityHeaders call", () => {
     expect(() => applySecurityHeaders(new Response("ok"), { trustedTypes: { policies: ["*"] } })).toThrow("Invalid Trusted Types policy name");
-    expect(() => applySecurityHeaders(new Response("ok"), { reporting: { endpoint: "/csp" } })).toThrow("Invalid CSP reporting endpoint");
+    expect(() => applySecurityHeaders(new Response("ok"), { reporting: { endpoint: "csp" } })).toThrow("Invalid CSP reporting endpoint");
   });
 });
 
@@ -784,6 +805,12 @@ describe("createSecurityHeaders — reporting", () => {
     const headers = hardenedWith({ reporting: { endpoint: R, group: "notes-csp" } });
     expect(headers.get("content-security-policy")).toBe(`${D}; report-uri ${R}; report-to notes-csp`);
     expect(headers.get("reporting-endpoints")).toBe(`notes-csp="${R}"`);
+  });
+
+  it("emits a root-relative endpoint verbatim in both headers", () => {
+    const headers = hardenedWith({ reporting: { endpoint: "/_csp-report" } });
+    expect(headers.get("content-security-policy")).toBe(`${D}; report-uri /_csp-report; report-to csp-endpoint`);
+    expect(headers.get("reporting-endpoints")).toBe('csp-endpoint="/_csp-report"');
   });
 
   it("emits neither the header nor the directives without reporting", () => {
@@ -923,6 +950,12 @@ describe("createRouteSecurityHeaders", () => {
   it("merges over the app's options rather than the defaults", async () => {
     const { res, nonce } = await routeHeaders("/workers/x.js", { scriptSrc: [WASM_UNSAFE_EVAL] }, { scriptSrc: ["'self'", NONCE, TURNSTILE_CSP] });
     expect(res.headers.get("content-security-policy")).toContain(`script-src 'self' 'nonce-${nonce}' ${TURNSTILE_CSP} 'wasm-unsafe-eval';`);
+  });
+
+  it("replaces the app's reporting outright with a root-relative endpoint on its route", async () => {
+    const { res } = await routeHeaders("/workers/x.js", { reporting: { endpoint: "/_csp-report" } }, { reporting: { endpoint: R, group: "old" } });
+    expect(res.headers.get("content-security-policy")).toEndWith("; report-uri /_csp-report; report-to csp-endpoint");
+    expect(res.headers.get("reporting-endpoints")).toBe('csp-endpoint="/_csp-report"');
   });
 
   it("re-queues the Report-Only policy, inheriting the merged enforced list", async () => {

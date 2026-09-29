@@ -1,6 +1,7 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
+import { matchedRoutePattern } from "../context/route-pattern";
 import { getAppContext } from "../context/types";
 import { createLogger } from "./logger";
 import { serializeError } from "./serialize-error";
@@ -34,11 +35,13 @@ export function requestLogger<Bindings = Record<string, unknown>>(options: Reque
     let res: Response | undefined;
     try {
       res = await next();
-      log[levelForStatus(res.status)]("request.completed", { method, path, status: res.status, duration: Date.now() - start });
+      const routePattern = matchedRoutePattern.getOptional(context) ?? null;
+      log[levelForStatus(res.status)]("request.completed", { method, path, routePattern, status: res.status, duration: Date.now() - start });
     } catch (err) {
       // A client that disconnected mid-request is cancellation, not an error worth a record.
       if (!c.request.signal.aborted) {
-        log.error("request.failed", { method, path, duration: Date.now() - start, error: serializeError(err) });
+        const routePattern = matchedRoutePattern.getOptional(context) ?? null;
+        log.error("request.failed", { method, path, routePattern, duration: Date.now() - start, error: serializeError(err) });
       }
       throw err;
     } finally {

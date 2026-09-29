@@ -146,10 +146,8 @@ export type AuthPasskeyContract = {
 /** What the passkey enrolment page renders. @public */
 export type PasskeyEnrolViewProps = AuthViewChrome & {
   readonly contract: AuthPasskeyContract;
-  /** Where a visitor who cannot enrol now is sent instead. A POST-only route, so it is submitted rather than linked. */
-  readonly signoutPath: string;
-  /** The token authorising that sign-out; without one the POST is refused by `csrfProtection`. */
-  readonly signoutCsrfToken: string;
+  /** The way off the page: a sign-out form for an owed enrolment, whose POST needs its own token, or a link back for an optional one. */
+  readonly exit: { readonly kind: "signout"; readonly path: string; readonly csrfToken: string } | { readonly kind: "back"; readonly path: string };
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** The address the enrolment is being made for, shown so the visitor can tell whose account it is. */

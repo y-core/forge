@@ -32,8 +32,9 @@ audience: consumer
 
 ## 1. The Mount, in Order
 
-Every builder is optional: omit a capability by not calling its builder. `authRoutes` carries sign-in, sign-up, verification and passkey
-enrolment; `accountRoutes` carries the signed-in self-service pages; `adminRoutes` carries user management and the elevation bootstrap.
+Every builder is optional: omit a capability by not calling its builder. `authRoutes` carries sign-in, sign-up, verification and the enrolment a
+sign-in owes; `accountRoutes` carries the signed-in self-service pages, adding a passkey among them; `adminRoutes` carries user management and the
+elevation bootstrap.
 `authPaths` turns a built map into href builders, so no path literal is written twice — every loader, action and view reads its targets off that
 map.
 
@@ -121,6 +122,11 @@ factor loops between the enrolment guard and the page meant to satisfy it.
 **`auth.verify.ceremony` runs every passkey step-up, including the second half of a sign-in** — no passkey ceremony establishes a session, so none
 clears the mark a step-up writes. **`auth.enrol` carries a page per enrollable kind**, because `enrolmentPaths` sends an owed enrolment to the kind
 it actually owes and `require-enrolment` refuses the `account` group while that enrolment is outstanding.
+
+**`account.passkeyCeremony` is the settled user's passkey enrolment, nested under `account` for its JSON medium alone.** A nested group inherits
+nothing from its parent, so it names all three `account` guards again, and its POSTs get the origin check like every mutating leaf. Its
+rate-limit key is `account.passkeyCeremony`, apart from `account`'s, so a limit set for the account pages does not reach the ceremony. Where its
+`require-fresh-step-up` refusal sits in the flow is [`AUTH_FLOWS.md`][af-3a] §3a.
 
 **`require-fresh-step-up` gates only what changes something, and it is on unless you turn it off.** Every `POST`, `PATCH` or `DELETE` in a group
 that carries it needs a step-up inside the window — what stands between a long-lived session and stripping the second factor, removing a passkey,
@@ -298,6 +304,7 @@ much budget is left is worse than none at all. A deployment that wants the bound
 survives.
 
 [af]: ./AUTH_FLOWS.md
+[af-3a]: ./AUTH_FLOWS.md#3a-enrolment
 [af-5]: ./AUTH_FLOWS.md#5-email-change
 [af-8]: ./AUTH_FLOWS.md#8-recovery--no-lost-value-locks-an-account-out-or-lets-it-in-on-less
 [af-8b]: ./AUTH_FLOWS.md#8b-a-confirmed-second-factor-comes-before-any-enrolment

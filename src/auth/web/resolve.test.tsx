@@ -15,12 +15,13 @@ import { err, ok } from "../../result/result";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
-import { PASSKEY_REDIRECT_ATTR, PASSKEY_SCOPE } from "../passkey-contract";
+import { PASSKEY_OPTIONS_PATH_ATTR, PASSKEY_REDIRECT_ATTR, PASSKEY_SCOPE, PASSKEY_VERIFY_PATH_ATTR } from "../passkey-contract";
 import type { AuthFactor, AuthFactorKind } from "../types";
-import { resolveAuth } from "./guards";
+import { requireFreshStepUp, resolveAuth } from "./guards";
 import { authCtx } from "./identity";
 import {
   loadAccountFactors,
+  loadAccountPasskeyEnrol,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,
@@ -168,6 +169,13 @@ const CASES: readonly Case[] = [
     label: "enrolPasskey",
     name: "enrolPasskey",
     load: loadPasskeyEnrol,
+    options: optionsWith({ users: fakeAuthUserStore([viewer]), factors: fakeFactorRegistry(["passkey"]) }),
+    identity: admin,
+  },
+  {
+    label: "accountPasskeyEnrol",
+    name: "accountPasskeyEnrol",
+    load: loadAccountPasskeyEnrol,
     options: optionsWith({ users: fakeAuthUserStore([viewer]), factors: fakeFactorRegistry(["passkey"]) }),
     identity: admin,
   },
@@ -325,6 +333,7 @@ const VIEW_GROUP: Readonly<Record<AuthViewName, readonly string[]>> = {
   enrolPasskey: ["auth", "enrol"],
   enrolTotp: ["auth", "enrol"],
   accountPasskeys: ["account"],
+  accountPasskeyEnrol: ["account"],
   accountPasskey: ["account"],
   accountPasskeyEdit: ["account"],
   accountTotp: ["account"],
@@ -986,6 +995,107 @@ describe("the verify page for an owed enrolment beside a confirmed second factor
       status: 200,
       prompt: "Enter one of your recovery codes.",
     });
+  });
+});
+
+describe("the account passkey enrolment page's step-up check", () => {
+  const NOW = 10_000_000;
+  const WINDOW_MS = 60_000;
+  const TO_VERIFY = { status: 302, location: "/auth/verify?next=%2Faccount%2Fpasskeys%2Fnew" };
+  const RENDERED = { status: 200, location: null };
+
+  const holding = (held: readonly AuthFactorKind[]) =>
+    optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(held, { passkey: "optional" }) });
+
+  /** The page behind the `require-fresh-step-up` its group mounts, with a one-minute window at `NOW`, for a session marked `stepUpAt`. */
+  function enrolApp(options: AuthWebOptions, stepUpAt: number | null, guarded = true): Forge {
+    const guard = requireFreshStepUp({
+      factors: () => holdingRegistry([]),
+      enrolmentPaths: {},
+      stepUpPath: "/auth/verify",
+      settledPath: "/account/passkeys",
+      freshStepUpMaxAgeMs: WINDOW_MS,
+      now: () => NOW,
+    });
+    return guardedApp((c) => loadAccountPasskeyEnrol(c as never, options), { ...member, stepUpAt }, "/page", guarded ? [guard] : []);
+  }
+
+  const answerOf = async (app: Forge) => {
+    const res = await app.request("/page");
+    return { status: res.status, location: res.headers.get("location") };
+  };
+
+  const STEP_UP_HELD = ["totp-app", "recovery-code"] as const;
+
+  const MARKS = [
+    { label: "sends a stale step-up to verify, returning here", held: STEP_UP_HELD, stepUpAt: NOW - WINDOW_MS, expected: TO_VERIFY },
+    { label: "sends a session that never stepped up to verify", held: STEP_UP_HELD, stepUpAt: null, expected: TO_VERIFY },
+    { label: "sends a mark dated into the future to verify", held: STEP_UP_HELD, stepUpAt: NOW + 1, expected: TO_VERIFY },
+    { label: "renders for a step-up inside the window", held: STEP_UP_HELD, stepUpAt: NOW - WINDOW_MS + 1, expected: RENDERED },
+    { label: "renders for an account holding no second factor, which no step-up is demanded of", held: [], stepUpAt: null, expected: RENDERED },
+  ] as const;
+
+  for (const { label, held, stepUpAt, expected } of MARKS) {
+    it(label, async () => {
+      expect(await answerOf(enrolApp(holding(held), stepUpAt))).toEqual(expected);
+    });
+  }
+
+  it("renders a stale step-up when no guard established the window, leaving the ceremony's own guard to refuse it", async () => {
+    expect(await answerOf(enrolApp(holding(STEP_UP_HELD), NOW - WINDOW_MS, false))).toEqual(RENDERED);
+  });
+
+  it("carries the return-to under the parameter the mount renamed it to", async () => {
+    const services = fakeAuthServices({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(STEP_UP_HELD, { passkey: "optional" }) });
+    const options = fakeAuthWebOptions({ resolveServices: () => services, returnParam: "back" });
+    expect(await answerOf(enrolApp(options, null))).toEqual({ status: 302, location: "/auth/verify?back=%2Faccount%2Fpasskeys%2Fnew" });
+  });
+
+  it("navigates an htmx request to verify with HX-Redirect", async () => {
+    const res = await enrolApp(holding(STEP_UP_HELD), null).request("/page", { headers: { "HX-Request": "true" } });
+    expect({ status: res.status, redirect: res.headers.get("hx-redirect") }).toEqual({
+      status: 204,
+      redirect: "/auth/verify?next=%2Faccount%2Fpasskeys%2Fnew",
+    });
+  });
+
+  it("answers 503 rather than rendering when the factor demand cannot be read", async () => {
+    const registry = holdingRegistry(STEP_UP_HELD, { passkey: "optional" });
+    const down = { ...registry, resolve: async () => err(new Error("store down") as never) };
+    expect((await enrolApp(optionsWith({ users: fakeAuthUserStore([viewer]), factors: down }), NOW).request("/page")).status).toBe(503);
+  });
+
+  const contractOf = async (held: readonly AuthFactorKind[]) => {
+    const html = await (await enrolApp(holding(held), NOW).request("/page")).text();
+    const scope = `data-scope="${PASSKEY_SCOPE}"`;
+    return [
+      attrOf(html, scope, PASSKEY_OPTIONS_PATH_ATTR),
+      attrOf(html, scope, PASSKEY_VERIFY_PATH_ATTR),
+      attrOf(html, scope, PASSKEY_REDIRECT_ATTR),
+    ];
+  };
+
+  it("runs its ceremony on the account endpoints and renders a return to the passkey list once codes are in hand", async () => {
+    expect(await contractOf(STEP_UP_HELD)).toEqual(["/account/passkeys/register/begin", "/account/passkeys/register/finish", "/account/passkeys"]);
+  });
+
+  it("renders a first recoverable passkey's redirect on to generate recovery codes", async () => {
+    expect((await contractOf([]))[2]).toBe("/account/recovery-codes");
+  });
+});
+
+describe("the passkey list's enrolment links", () => {
+  it("point both the header action and the empty state at the account enrolment page, which a settled visitor can reach", async () => {
+    const options = optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore([]),
+      factors: fakeFactorRegistry(["passkey"]),
+    });
+    const html = await (await loaderApp(loadPasskeyList, options, admin).request("/page")).text();
+    expect([attrOf(html, 'data-ref="passkey-enrol"', "href"), attrOf(html, 'data-ref="passkey-enrol-empty"', "href")]).toEqual([
+      "/account/passkeys/new",
+      "/account/passkeys/new",
+    ]);
   });
 });
 
