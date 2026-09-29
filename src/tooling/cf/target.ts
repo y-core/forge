@@ -1,18 +1,19 @@
+import { CliError } from "../cli/errors";
 import type { WranglerConfig } from "./types";
-import type { DeploymentTarget } from "./types";
 
-/** Pages iff the config declares a build output directory and no Worker entry point. */
-export function detectTarget(config: WranglerConfig, scriptName: string): DeploymentTarget {
-  const isPages = config.pages_build_output_dir != null && config.main == null;
-  return { kind: isPages ? "pages" : "worker", name: scriptName };
-}
+/** The surface every Cloudflare row is read from, as it prefixes a result detail. */
+export const WORKER_SURFACE = "worker script";
 
-/** Human-readable surface name, used verbatim in result details. */
-export function describeTarget(target: DeploymentTarget): string {
-  return target.kind === "pages" ? "pages project" : "worker script";
+/** Refuses a config declaring a Cloudflare Pages project, before any request is made. */
+export function refusePagesConfig(config: WranglerConfig, scriptName: string): void {
+  if (config["pages_build_output_dir"] === undefined) return;
+  throw new CliError(
+    "invalid-args",
+    `${scriptName} declares \`pages_build_output_dir\`, a Cloudflare Pages project — forge supports Workers only. Remove it and deploy ${scriptName} as a Worker.`,
+  );
 }
 
 /** A detail string beginning with the surface it queried, so a reader can tell which API a row came from. */
-export function surfaceDetail(target: DeploymentTarget, ...parts: (string | undefined)[]): string {
-  return [describeTarget(target), ...parts.filter((p): p is string => Boolean(p))].join(" · ");
+export function surfaceDetail(...parts: (string | undefined)[]): string {
+  return [WORKER_SURFACE, ...parts.filter((p): p is string => Boolean(p))].join(" · ");
 }

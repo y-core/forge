@@ -9,8 +9,9 @@ import type { Result } from "../../result/types";
 import type { OtpLength } from "../../ui/core/types";
 import { v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
-import type { TotpAppEnrolment } from "../factors/types";
+import type { AuthFactorService, RecoveryCodeFactorService, TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
+import { authStepUpOwed, authStepUpWindow } from "./guards";
 import { authCtx } from "./identity";
 import {
   authNow,
@@ -22,7 +23,7 @@ import {
   authServices,
   authSettledPath,
 } from "./options";
-import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths } from "./paths";
+import { AUTH_FACTOR_PARAM, AUTH_RECOVERED_PARAM, AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
 import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
 import type { AuthIdentity } from "./types";
@@ -30,8 +31,9 @@ import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types"
 import type { AuthViewName, AuthViewProps } from "./types";
 import type { AuthGuardName } from "./types";
 import type { AuthVerifyDemand, AuthViewRequest, AuthViewResolved } from "./types";
-import type { AuthAccountPaths } from "./types";
+import type { AuthRecoveryStanding } from "./types";
 import type { AuthFactorRow, AuthFactorsViewProps } from "./views/types";
+import type { VerifyChoice } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
 import type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 
@@ -69,11 +71,11 @@ export function resolveAuthViewer<Bindings>(c: AppContext<Bindings>): AuthIdenti
   return authCtx.getOptional(c) ?? null;
 }
 
-/** Factors other than the passkey that would still admit `userId` once every passkey is gone. */
+/** Factors other than the passkey and recovery codes that would still admit `userId` once every passkey is gone. */
 async function resolveFallbackFactors(services: AuthRequestSurface, userId: string): Promise<AuthFactorKind[]> {
   const kinds: AuthFactorKind[] = [];
   for (const service of services.factors.offered) {
-    if (service.kind === "passkey") continue;
+    if (service.kind === "passkey" || service.kind === "recovery-code") continue;
     // An implicit factor has no enrolment row to read: offering it is the enrolment.
     if (service.enrolment === "implicit") {
       kinds.push(service.kind);
@@ -85,7 +87,20 @@ async function resolveFallbackFactors(services: AuthRequestSurface, userId: stri
   return kinds;
 }
 
-/** What the verify page is presenting, read off the request rather than off a query parameter. @internal */
+/** A step-up over `kinds`, presenting the one the request's `factor` parameter names when it is among them. */
+function stepUpDemand<Bindings>(
+  c: AppContext<Bindings>,
+  services: AuthRequestSurface,
+  identity: AuthIdentity,
+  kinds: readonly AuthFactorKind[],
+): AuthVerifyDemand {
+  const asked = c.url.searchParams.get(AUTH_FACTOR_PARAM);
+  const kind = kinds.find((held) => held === asked) ?? kinds[0];
+  const service = kind === undefined ? services.factors.primary : (services.factors.find(kind) ?? services.factors.primary);
+  return { factor: service.kind, digits: service.codeDigits, identity, owed: "step-up", kinds };
+}
+
+/** What the verify page is presenting: the resolution's demand, and whichever of its step-up kinds the URL chose. @internal */
 export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>, services: AuthRequestSurface): Promise<AuthVerifyDemand> {
   const identity = resolveAuthViewer(c);
   const primary = services.factors.primary;
@@ -94,15 +109,90 @@ export async function resolveAuthVerifyDemand<Bindings>(c: AppContext<Bindings>,
   const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
   if (!resolved.ok) return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "unknown", kinds: [] };
   if (resolved.data.status === "enrolment-required") {
+    if (authStepUpOwed(resolved.data, identity.stepUpAt, authStepUpWindow(c)))
+      return stepUpDemand(c, services, identity, resolved.data.stepUpKinds);
     return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "enrolment", kinds: resolved.data.kinds };
   }
   if (resolved.data.status !== "step-up-required") {
     return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "none", kinds: [] };
   }
+  return stepUpDemand(c, services, identity, resolved.data.kinds);
+}
 
-  const kind = resolved.data.kinds[0];
-  const service = kind === undefined ? primary : (services.factors.find(kind) ?? primary);
-  return { factor: service.kind, digits: service.codeDigits, identity, owed: "step-up", kinds: [] };
+const RECOVERABLE_KINDS: readonly AuthFactorKind[] = ["totp-app", "passkey"];
+
+/** Whether `service` can count a user's unused codes, which forge's own recovery-code factor does. */
+function countsRecoveryCodes(service: AuthFactorService): service is RecoveryCodeFactorService {
+  return service.kind === "recovery-code" && "remaining" in service && typeof service.remaining === "function";
+}
+
+/** Whether `service` holds a confirmed enrolment for `userId`, or `null` when its store is down. */
+async function holdsConfirmed(service: AuthFactorService | undefined, userId: string): Promise<boolean | null> {
+  if (service === undefined) return false;
+  const enrolled = await service.listEnrolments(userId);
+  if (!enrolled.ok) return null;
+  return enrolled.data.some((factor) => factor.confirmedAt !== null);
+}
+
+/** Where `userId` stands on recovery codes, or `null` when a store behind the answer is down. @internal */
+export async function resolveRecoveryStanding(services: AuthRequestSurface, userId: string): Promise<AuthRecoveryStanding | null> {
+  let recoverable = false;
+  for (const kind of RECOVERABLE_KINDS) {
+    const held = await holdsConfirmed(services.factors.find(kind), userId);
+    if (held === null) return null;
+    recoverable ||= held;
+  }
+  const service = services.factors.find("recovery-code");
+  const confirmed = await holdsConfirmed(service, userId);
+  if (confirmed === null) return null;
+  if (!confirmed || service === undefined || !countsRecoveryCodes(service)) return { recoverable, confirmed, remaining: null };
+  const remaining = await service.remaining(userId);
+  if (!remaining.ok) return null;
+  return { recoverable, confirmed, remaining: remaining.data };
+}
+
+/** Where the visitor goes once `enrolled` is confirmed, or `null` for no enrolment: an enrolment still owed, codes still owed, or `otherwise`. */
+async function afterFactorTarget<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: Pick<AuthIdentity, "userId" | "isAdmin">,
+  enrolled: AuthFactorKind | null,
+  otherwise: string,
+): Promise<string> {
+  const services = await authServices(c, options);
+  const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
+  if (resolved.ok && resolved.data.status === "enrolment-required") {
+    const owed = resolved.data.kinds.filter((kind) => kind !== enrolled);
+    if (owed.length > 0) return authEnrolTarget(authEnrolmentPaths(options.paths.auth), owed) ?? authSettledPath(options);
+  }
+  const standing = await resolveRecoveryStanding(services, identity.userId);
+  if (standing === null) return otherwise;
+  const recoverable = standing.recoverable || (enrolled !== null && RECOVERABLE_KINDS.includes(enrolled));
+  const owesCodes = recoverable && (!standing.confirmed || standing.remaining === 0);
+  return owesCodes ? authReturnQuery(c, options, options.paths.account.recoveryCodes()) : otherwise;
+}
+
+/** Where a completed step-up sends the visitor: to repair, to an enrolment still owed, to codes still owed, or `otherwise`. @internal */
+export function authAfterStepUpTarget<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: Pick<AuthIdentity, "userId" | "isAdmin">,
+  verified: AuthFactorKind,
+  otherwise: string,
+): Promise<string> {
+  if (verified === "recovery-code") return Promise.resolve(authWithQuery(options.paths.account.factors(), AUTH_RECOVERED_PARAM, "1"));
+  return afterFactorTarget(c, options, identity, null, otherwise);
+}
+
+/** Where enrolling `enrolled` sends the visitor, judged as though it were already confirmed, so a page can render it beforehand. @internal */
+export function authAfterEnrolTarget<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: Pick<AuthIdentity, "userId" | "isAdmin">,
+  enrolled: AuthFactorKind,
+  otherwise: string,
+): Promise<string> {
+  return afterFactorTarget(c, options, identity, enrolled, otherwise);
 }
 
 // `signin.stepUp` excludes the primary factor, so rendering the code field for anything but an owed
@@ -201,12 +291,19 @@ async function resolveVerify<Bindings>(
   // Always the step-up pair, including for the second half of a sign-in: a passkey never starts one.
   const ceremony = auth.verify.ceremony.begin();
   const ceremonyFinish = auth.verify.ceremony.finish();
+  const stepUp = demand.owed === "step-up" && demand.identity !== null ? demand.identity : null;
+  const asking = (path: string, kind: AuthFactorKind) => authWithQuery(authReturnQuery(c, options, path), AUTH_FACTOR_PARAM, kind);
+  const choices: VerifyChoice[] = demand.kinds.map((kind) => ({ kind, href: asking(auth.verify.show(), kind) }));
+  // The rendered target is the one the controller follows: a step-up changes nothing the next page is chosen by.
+  const passkeyRedirect =
+    stepUp === null ? authReturnPath(c, options) : await authAfterStepUpTarget(c, options, stepUp, "passkey", authReturnPath(c, options));
 
   return ok({
     factor: demand.factor,
     ...(codeWidth(demand.digits) === undefined ? {} : { codeDigits: codeWidth(demand.digits) }),
-    passkey: usesPasskey ? await authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, authReturnPath(c, options)) : undefined,
-    submitPath: authReturnQuery(c, options, submitPath),
+    passkey: usesPasskey ? await authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, passkeyRedirect) : undefined,
+    ...(stepUp === null || choices.length < 2 ? {} : { choices }),
+    submitPath: stepUp === null ? authReturnQuery(c, options, submitPath) : asking(submitPath, demand.factor),
     // Carried like the submit path, and minted on the bare one for the same reason.
     ...(resendPath === undefined ? {} : { resendPath: authReturnQuery(c, options, resendPath) }),
     signinPath: auth.signin(),
@@ -237,8 +334,9 @@ async function resolveEnrolPasskey<Bindings>(
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
 
+  const redirect = await authAfterEnrolTarget(c, options, identity, "passkey", authSettledPath(options));
   return ok({
-    contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), authSettledPath(options)),
+    contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), redirect),
     signoutPath: auth.signout(),
     signoutCsrfToken: await mintCsrf(c, auth.signout()),
     ...authCsrfHeader(c),
@@ -445,12 +543,12 @@ async function resolveFactorRows(services: AuthRequestSurface, userId: string): 
   return rows;
 }
 
-/** The factors panel for one account, whoever the route let through — `manage` is what tells the two apart. */
+/** The factors panel for one account, whoever the route let through — `extra` carries what only one reader is offered. */
 async function factorsPanel<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   userId: string,
-  manage: AuthAccountPaths | undefined,
+  extra: Pick<AuthFactorsViewProps, "manage" | "recovered" | "reset">,
 ): Promise<Result<AuthFactorsViewProps, Response>> {
   const services = await authServices(c, options);
   const rows = await resolveFactorRows(services, userId);
@@ -458,7 +556,7 @@ async function factorsPanel<Bindings>(
   const listed = await services.credentials.listByUser(userId);
   if (!listed.ok) return err(unavailable());
 
-  return ok({ factors: rows, passkeys: listed.data, ...(manage === undefined ? {} : { manage }), icon: options.icon });
+  return ok({ factors: rows, passkeys: listed.data, ...extra, icon: options.icon });
 }
 
 async function resolveAccountFactors<Bindings>(
@@ -467,7 +565,11 @@ async function resolveAccountFactors<Bindings>(
 ): Promise<Result<AuthViewProps["accountFactors"], Response>> {
   const identity = resolveAuthViewer(c);
   if (identity === null) return err(createRedirectResponse(options.paths.auth.signin()));
-  return factorsPanel(c, options, identity.userId, options.paths.account);
+  if (!c.url.searchParams.has(AUTH_RECOVERED_PARAM)) return factorsPanel(c, options, identity.userId, { manage: options.paths.account });
+
+  const standing = await resolveRecoveryStanding(await authServices(c, options), identity.userId);
+  if (standing === null) return err(unavailable());
+  return factorsPanel(c, options, identity.userId, { manage: options.paths.account, recovered: standing.remaining ?? 0 });
 }
 
 // No `manage` here, deliberately: those pages act on whoever is signed in, so offering an
@@ -482,7 +584,39 @@ async function resolveAdminUserFactors<Bindings>(
   const found = await services.admin.view(id);
   if (!found.ok) return err(unavailable());
   if (found.data === null) return err(notFound());
-  return factorsPanel(c, options, found.data.id, undefined);
+  if (resolveAuthViewer(c)?.userId === found.data.id) return factorsPanel(c, options, found.data.id, {});
+
+  const path = options.paths.admin.users.resetFactors({ id: found.data.id });
+  return factorsPanel(c, options, found.data.id, { reset: { path, csrfToken: await mintCsrf(c, path), ...authCsrfHeader(c) } });
+}
+
+async function resolveRecoveryCodes<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState,
+): Promise<Result<AuthViewProps["accountRecoveryCodes"], Response>> {
+  const services = await authServices(c, options);
+  const { auth, account } = options.paths;
+  const identity = resolveAuthViewer(c);
+  if (identity === null) return err(createRedirectResponse(auth.signin()));
+  const offered = authEnrollable(services, "recovery-code");
+  if (!offered.ok) return err(offered.error);
+  const standing = await resolveRecoveryStanding(services, identity.userId);
+  if (standing === null) return err(unavailable());
+
+  const generatePath = account.recoveryCodesGenerate();
+  const confirmPath = account.recoveryCodesConfirm();
+  return ok({
+    remaining: standing.confirmed ? (standing.remaining ?? 0) : null,
+    generatePath: authReturnQuery(c, options, generatePath),
+    generateToken: await mintCsrf(c, generatePath),
+    ...(state.issuedCodes === undefined ? {} : { issued: state.issuedCodes }),
+    confirmPath: authReturnQuery(c, options, confirmPath),
+    confirmToken: await mintCsrf(c, confirmPath),
+    ...authCsrfHeader(c),
+    fieldError: state.fieldError,
+    icon: options.icon,
+  });
 }
 
 async function resolveAdminUsers<Bindings>(
@@ -586,6 +720,7 @@ export const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewRes
   accountTotp: resolveTotpEnrol,
   accountEmailChange: resolveEmailChange,
   accountFactors: resolveAccountFactors,
+  accountRecoveryCodes: resolveRecoveryCodes,
   adminUsers: resolveAdminUsers,
   adminUser: adminUserPage,
   adminUserEdit: adminUserPage,
@@ -608,6 +743,7 @@ export const AUTH_VIEW_GUARDS = {
   accountTotp: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountEmailChange: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountFactors: ["require-auth", "require-enrolment", "require-fresh-step-up"],
+  accountRecoveryCodes: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   adminUsers: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminUser: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminUserEdit: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],

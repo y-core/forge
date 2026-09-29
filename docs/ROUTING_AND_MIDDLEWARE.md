@@ -423,6 +423,9 @@ createApp({ shell: async (c, content, slot) => <Layout ctx={await renderContext(
 **`pageShell({ stylesheet, script, lang })` is the form for a deployment whose whole chrome is a stylesheet**, so reaching for the shell does not
 mean writing a layout component. Titles come from `slot.title` either way.
 
+**`pageShell` loads each `script` as a module in `<head>`, never in `<body>`**, because a `<script src>` in a body that a boosted navigation swaps
+in breaks that navigation under Trusted Types ([`SECURITY_HARDENING.md`][sh-2g] §2g).
+
 **An app that registers no shell renders a bare document** — doctype, `<head>`, the slot's title, content in `<body>`. That is the floor rather than
 a placeholder: handing a mount's content straight to `renderPage` puts a doctype in front of a `<div>`, leaving the page no `<head>` and so no title
 and no stylesheet.
@@ -487,3 +490,4 @@ What the descriptor deliberately does not do:
 [iv-2c]: ./INPUT_VALIDATION.md#2c-parseformdata--body-read-with-size-limit
 [sh]: ./SECURITY_HARDENING.md
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization
+[sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy

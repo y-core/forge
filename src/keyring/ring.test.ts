@@ -46,7 +46,7 @@ describe("importKeyRing — refusals", () => {
   });
 
   it("refuses a secret under 32 bytes", async () => {
-    await expect(ringOf("a1".repeat(16))).rejects.toThrow("importKeyRing: each secret must be at least 32 bytes (64 hex characters)");
+    await expect(ringOf("a1".repeat(16))).rejects.toThrow("importKeyRing: each secret must be at least 32 bytes (got 16)");
   });
 
   it("refuses a secret whose bytes are all the same value", async () => {

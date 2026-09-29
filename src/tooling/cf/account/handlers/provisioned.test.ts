@@ -24,7 +24,6 @@ const ctx = (overrides: Partial<HandlerContext> = {}): HandlerContext => ({
   dryRun: false,
   rotate: new Set<string>(),
   fetch: () => Promise.reject(new Error("the spec owns every request; the ladder must make none of its own")),
-  target: { kind: "worker", name: "my-worker" },
   ...overrides,
 });
 

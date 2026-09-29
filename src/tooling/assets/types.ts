@@ -34,6 +34,7 @@ const JsBundleSchema = v.object({
   format: v.optional(v.picklist(["esm", "cjs", "iife"] as const)),
   minify: v.optional(v.boolean()),
   define: v.optional(v.record(v.string(), DefineValueSchema)),
+  conditions: v.optional(v.array(v.pipe(v.string(), v.minLength(1)))),
 });
 
 // `root: true` pins an output to the asset root, where a browser with no HTML head to read probes

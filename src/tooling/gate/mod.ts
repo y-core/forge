@@ -192,15 +192,7 @@ export type {
   ObservedEdge,
 } from "./checks/types";
 export type { SourceFile } from "./checks/types";
-export {
-  buildGraph,
-  diffGraph,
-  findEnumerations,
-  namespaceOf,
-  parseImports,
-  resolveSpecifier,
-  sectionWindow,
-} from "./checks/namespace-graph-parse";
+export { buildGraph, diffGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier } from "./checks/namespace-graph-parse";
 export {
   balancedSpan,
   blankComments,

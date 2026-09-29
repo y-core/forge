@@ -7,16 +7,7 @@ import type { HandlerContext } from "./types";
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
 function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-  return {
-    auth: AUTH,
-    scriptName: "my-worker",
-    prefix: "",
-    dryRun: false,
-    rotate: new Set<string>(),
-    fetch: globalThis.fetch,
-    target: { kind: "worker", name: "my-worker" },
-    ...overrides,
-  };
+  return { auth: AUTH, scriptName: "my-worker", prefix: "", dryRun: false, rotate: new Set<string>(), fetch: globalThis.fetch, ...overrides };
 }
 
 function makeFetch(namespaces: unknown[], createResult?: unknown): typeof globalThis.fetch {

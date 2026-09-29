@@ -3,7 +3,7 @@
 
 import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
-import { isHxRequest } from "../../html/htmx/hx-request";
+import { isPartial } from "../../html/htmx/htmx-headers";
 import { fragmentResponse } from "../../http/response";
 import { renderToString } from "../../jsx/render-to-string";
 import { v } from "../../validation/mod";
@@ -68,7 +68,7 @@ export async function loadLogViewer<Bindings = Record<string, unknown>>(
     }
   }
 
-  if (isHxRequest(c)) {
+  if (isPartial(c)) {
     return cursor === undefined ? renderLogFragment(data) : renderLogAppendFragment(data);
   }
   return renderShell(c, <LogViewerContent data={data} icon={options.icon} />, {

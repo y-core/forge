@@ -237,6 +237,15 @@ so an untrusted key goes to the store, never straight to the backend.
 for the extensions a browser would execute**: `html`, `htm`, `svg`, `xml`, `js` and `mjs` all infer `application/octet-stream`, because a key is
 routinely a filename someone else chose. Pass an explicit `contentType` for an asset you trust, and it is used unchanged.
 
+**Pass `sha256` to have R2 check the body before it stores it.** Give the digest you expect, as a hex string or as raw bytes; a body that does
+not match is refused, nothing is written, and `put` returns `{ ok: false, error }`:
+
+```ts
+const put = await assets.put("reports/q3.pdf", pdfBytes, { contentType: "application/pdf", sha256: expectedDigestHex });
+```
+
+This covers a single `put` only. R2's multipart upload accepts no checksum for a part, and a completed multipart object carries no SHA-256.
+
 **A stored active type is neutralised on the way out too.** `serveObject` serves any object whose stored `Content-Type` is active as
 `Content-Disposition: attachment` under `Content-Security-Policy: sandbox`, unless you passed a `contentDisposition` of your own — so an app that
 deliberately stored `image/svg+xml` still cannot have it rendered as a document on its own origin by a direct navigation. The rest of that posture,

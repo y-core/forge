@@ -68,6 +68,7 @@ A fact that is stable and short — a naming convention, a posture, a boundary �
 | Verification gate steps, and every check's configuration | `config/steps.ts` |
 | `lib` and `types` configuration | `tsconfig.json` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
+| What a namespace is and how to use it | The namespace's README, or the nearest containing one below `src/` ([`NAMESPACES.md`][namespaces-3a] §3a) |
 | The generated assets module's exports — the manifest, the per-group `viewBox` consts, the bound icon components, and the glyph-name unions | `src/tooling/assets/pipeline.ts` |
 | Declared cross-namespace dependency graph | `config/namespaces.ts` |
 | CSRF and Turnstile field names | `src/form/constants.ts` |
@@ -117,7 +118,7 @@ restates a naming rule or a handler's plan.
 | --- | --- |
 | The Cloudflare resource types `forge cf sync` reconciles | `RESOURCE_TYPES` in `src/tooling/cf/types.ts` |
 | Which handler serves a given resource type | `buildHandlers` and `defaultHandlers` in `src/tooling/cf/account/handlers/registry.ts` |
-| Whether a config is a Pages project or a Worker script | `detectTarget` in `src/tooling/cf/target.ts` |
+| Which wrangler configs `forge cf sync` refuses before any request | `refusePagesConfig` in `src/tooling/cf/target.ts` |
 | The naming strategy for a created remote resource | the per-type handler in `src/tooling/cf/account/handlers/` |
 | What a reconciliation run decides to create, write, or leave | `syncBindings` in `src/tooling/cf/account/engine.ts` |
 | The JSONC round-trip contract — what survives a write | `src/tooling/cf/config/parse.ts` + `src/tooling/cli/jsonc-edit.ts` |
@@ -165,6 +166,7 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `site` namespace's rulings — what a site descriptor carries and what reads it | `src/site/README.md` |
 | The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
+| The `tooling/curate` rulings — markers matched on a comment, the closure directions, refusal before any write, the gate row's tier | `src/tooling/curate/README.md` |
 | The `output/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/output/pdf/README.md` |
 | The `keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/keyring/README.md` |
 | The AES-GCM seal budget — the random-nonce bound per `(kid, purpose)` subkey, what crossing it costs, the rotation cadence it sets | [`AUTH_MOUNTING.md`][am-7] §7 |
@@ -224,4 +226,5 @@ stylesheet that was never written would satisfy the shape and send a reader to a
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [am-7]: ./AUTH_MOUNTING.md#7-rotating-the-key-ring
 [cr-5]: ../warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
+[namespaces-3a]: ./NAMESPACES.md#3a-a-namespace-is-described-by-its-own-readme
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification

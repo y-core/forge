@@ -89,8 +89,8 @@ command's exit status is stated with the one permitted suffix and no variant of 
 **Leaf vs integration:** every namespace is either a **leaf** (zero cross-namespace imports) or an **integration** namespace (declared composition).
 Classify before adding code; never introduce an undeclared cross-namespace dependency.
 
-For the namespace catalog, the subpath list, and the concrete growth rulings, search for the governing `docs/` document rather than restating any of
-it here.
+For the concrete growth rulings, search for the governing `docs/` document rather than restating any of it here; what a namespace is and how to use
+it is its own `README.md`.
 
 ---
 

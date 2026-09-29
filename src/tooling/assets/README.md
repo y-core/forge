@@ -104,6 +104,33 @@ export default defineAssetsConfig({
 
 An unset `env()` variable substitutes `undefined` rather than failing, so a bundle can branch on its absence.
 
+A bundle's own `minify` overrides `--minify` for that bundle's code; content hashing still follows the build-wide flag.
+
+---
+
+## Building a service-worker bundle
+
+A bundle resolves package exports with esbuild's browser conditions, and some packages point their `browser` export at code that touches
+`document` when the module loads. A service worker has no `document`, so it fails to install. Give that bundle `conditions: ["worker"]` so those
+packages resolve to their worker entry instead:
+
+```ts
+import { defineAssetsConfig } from "@y-core/forge/tooling/assets";
+
+export default defineAssetsConfig({
+  js: {
+    bundles: [
+      { entry: "src/client/main.ts", outdir: "js" },
+      { entry: "src/client/sw.ts", outdir: "js", conditions: ["worker"] },
+    ],
+  },
+});
+```
+
+The `browser` condition stays active alongside yours, so a package's own export order decides between them: one that lists `worker` ahead of
+`browser` resolves to its worker entry. Declaring `conditions` also replaces esbuild's default `module` condition for that bundle, so list
+`module` too if a dependency needs it. A bundle without `conditions` is unaffected.
+
 ---
 
 ## Running the build

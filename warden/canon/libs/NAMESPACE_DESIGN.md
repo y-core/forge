@@ -6,7 +6,7 @@ description: "Barrel discipline and the export-star ban, the no-sibling-barrel r
 # Namespace Design
 
 > Owns barrel discipline, the import guard that prevents cycles, the leaf/integration classification, the exported-symbol naming convention, and the
-> criteria for adding a namespace. The repository's own catalog of namespaces lives in `docs/`.
+> criteria for adding a namespace. Each namespace's README, beside its barrel, says what it does, and no document restates it.
 >
 > Defers to: [`LIBRARY_ARCHITECTURE.md`][la] for the facade and runtime-only principles these rules serve; [`CODE_RULES.md`][cr] for the coding
 > rules inside a namespace; `package.json` `exports` for the subpath names themselves.

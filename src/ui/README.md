@@ -176,7 +176,22 @@ Render trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) 
 (`@y-core/forge/http`).
 
 **Pass `csrfToken` to `Form` and it does both halves**: the hidden field, and the token merged into `hx-headers`. Pass `csrfHeader` as well when
-`csrfProtection` renamed the header — an `hx-delete` sends no body for the field to be read from, so the header is the only copy that arrives.
+`csrfProtection` renamed the header, because on some forms the header is the only copy that arrives.
+
+**An `hx-delete` or `hx-get` form gets no hidden field**, only the header. htmx sends those two verbs' fields in the URL, and a token in a URL
+reaches every log that records one. A DELETE form that must also work without JavaScript keeps the plain form and moves the verb onto its button.
+A button reads no `hx-headers` from its form, so give it the header too:
+
+```tsx
+<Form csrfToken={token} action='/items/1'>
+  <Button type='submit' hx-delete='/items/1' hx-headers={JSON.stringify({ "X-CSRF-Token": token })}>
+    Remove
+  </Button>
+</Form>;
+```
+
+Without JavaScript the form POSTs the hidden field to `action`, so that route needs a POST handler as well as the DELETE one. With htmx the button
+sends the DELETE, which carries none of the form's fields. Both requests go to one path, so one token covers them.
 
 ### Wire a label, a description and an error to one control
 
@@ -368,23 +383,25 @@ The choices below are worth making deliberately; everything else has a default t
   `focusin` inside it.
 - **When the challenge runs.** `challenge` is `"render"` by default. Choose `"submit"` for a form that takes longer to fill than the 300-second
   token lives, and exactly one challenge runs at the press. It needs an htmx submission on the form or a descendant; without one the controller
-  reports it and falls back to `"render"`. Cloudflare's documented pairing for it is `appearance="interaction-only"`, which is an independent axis.
+  reports it and falls back to `"render"`. A form whose own `hx-trigger` fires on anything but `submit` is not supported in this mode — its press is
+  held and never sent ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c). Cloudflare's documented pairing for it is `appearance="interaction-only"`, which is an
+  independent axis.
 - **What the token is scoped to.** `action` and `cData` are what make `verifyTurnstile({ expectedAction })` and `{ expectedCData }` usable on the
   server, and `cData` is the only way to tie a challenge to an app-side record. Each has a Cloudflare charset; a value outside it is reported and
   **still forwarded**, leaving the server the one enforcement point.
 - **More than one widget in one form.** `responseFieldName` renames the hidden token input, and pairs with the server's `tokenField` option.
 
 Under `challenge="submit"` the press is held while the challenge runs — the controller marks the submitter `disabled` and `aria-busy`, because
-htmx's own indicators have not started yet. **The window always ends**: on the token the request is issued, and on a challenge error or the load
-budget the fallback alert is revealed, the request is dropped rather than sent tokenless, and the button is pressable again for a retry. An
-interactive challenge swaps that budget for a longer one while the visitor is being asked to act, so an abandoned one still ends. A widget that has
-already errored lets the press through unheld rather than holding it for a token that will never arrive, and the fallback is taken back down if a
-retried challenge then succeeds.
+htmx's own indicators have not started yet. **The window always ends**: on the token the press is replayed and the request goes out, and on a
+challenge error or the load budget the fallback alert is revealed, the request is dropped rather than sent tokenless, and the button is pressable
+again for a retry. An interactive challenge swaps that budget for a longer one while the visitor is being asked to act, so an abandoned one still
+ends. A widget that has already errored lets the press through unheld rather than holding it for a token that will never arrive, and the fallback is
+taken back down if a retried challenge then succeeds.
 
-**A press is only refused for an invalid form where htmx itself would have halted it** — `novalidate`, a button-issued submission, or
-`formnovalidate` on the press all mean htmx sends the request either way, so the press spends a challenge and the server stays the enforcement
-point. **The last press wins**: a second press displaces the first, re-arms the window and rides the challenge already in flight, so a token can
-never answer a different control's request.
+**An invalid form spends no challenge**: htmx validates it before the controller sees the press, and stops there. `novalidate`, a button-issued
+submission, or `formnovalidate` on the press all mean htmx sends the request either way, so the press spends a challenge and the server stays the
+enforcement point. **The last press wins**: a second press displaces the first, re-arms the window and rides the challenge already in flight, so a
+token can never answer a different control's request.
 
 **Every hold that ends without a request tells the page.** Listen for it when the page should react — refocusing the submitter, or surfacing your
 own message:
@@ -677,8 +694,8 @@ resumed. Call it after every `registerScope` and after every scope-registering s
 registered by then.
 
 Narrower calls exist for markup that arrives later: `resumeScope(root)` resumes one scope element now and answers with its signal state, and
-`disposeScopesIn(el)` disposes the scope at an element and every scope below it **before** the DOM removes them — which is what an htmx swap that
-replaces scoped markup needs.
+`disposeScopesIn(el)` disposes the scope at an element and every scope below it — call it **before** you remove scoped markup yourself. An htmx swap
+needs no call: [`ui/client/htmx`](#y-coreforgeuiclienthtmx) disposes every scope a swap removed ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
 
 Theme is **not** a controller here — it is a resumable scope registered by [`ui/chrome/client`](#y-coreforgeuichromeclient).
 
@@ -863,10 +880,42 @@ It retries a rejected `load()` a bounded number of times, and a rejection with n
 import "@y-core/forge/ui/client/htmx"; // side-effect only — no exports used
 ```
 
-It imports the htmx bundle, attaches it to `window`, and disables htmx's built-in indicator styles, so forge's own busy states are the only ones
-painted. It re-exports `htmx` for the rare call site that needs the instance directly, but the bare side-effect import is the canonical usage. Mark
-the import so esbuild does not tree-shake it, and **never load htmx from a CDN** — this entry pins the version through forge
+It loads htmx onto `window`, removes htmx's built-in indicator stylesheet so forge's own busy states are the only ones painted, and wires scopes and
+the announcer to every swap. It re-exports `htmx` for the rare call site that needs the instance directly, but the bare side-effect import is the
+canonical usage. Mark the import so esbuild does not tree-shake it, and **never load htmx from a CDN** — this entry pins the version through forge
 ([`UI_CLIENT_RUNTIME.md`][ucr-4] §4).
+
+### Enforce Trusted Types on an htmx page
+
+The entry creates a Trusted Types policy for htmx under the name `HTMX_TRUSTED_TYPES_POLICY`, and `<Turnstile>` creates one under
+`TURNSTILE_TRUSTED_TYPES_POLICY` that admits only Cloudflare's script URL. List both names in your CSP:
+
+```ts
+import { createSecurityHeaders, NONCE } from "@y-core/forge/security";
+import { HTMX_TRUSTED_TYPES_POLICY, TURNSTILE_TRUSTED_TYPES_POLICY } from "@y-core/forge/ui/contracts";
+
+app.use(
+  "*",
+  createSecurityHeaders({
+    scriptSrc: ["'self'", NONCE],
+    trustedTypes: { policies: [HTMX_TRUSTED_TYPES_POLICY, TURNSTILE_TRUSTED_TYPES_POLICY] },
+  }),
+);
+```
+
+Under enforcement, keep your `<script src>` tags in `<head>` — `pageShell` already does — and write no `hx-on:*` handler and no `js:` value.
+If you set htmx's `extensions` config, it must name the policy too. What each constraint protects is
+[`SECURITY_HARDENING.md`][sh-2g] §2g.
+
+### Answer a request that failed
+
+A 4xx `text/html` response swaps into the request's target and a 5xx leaves the target as it was. So answer a refused submission with the fragment
+the reader should see — the form re-rendered with its errors, at 422 — and let a server error fall through to your own error handling
+([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a).
+
+**A 4xx in any other content type leaves the target alone and is announced instead**, so a CSRF refusal's plain-text `Forbidden` is spoken
+rather than replacing the form. The page needs `<Announcer />` for the reader to hear it. To swap such a response anyway, name its status on
+the element that sends the request, as in `hx-status:403='swap:innerHTML'`. An explicit `hx-status:` wins over this rule.
 
 ---
 
@@ -1068,6 +1117,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [htmx-7a]: ../../docs/HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [navigation]: ./design/reference/08-navigation.md
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value
+[sh-2g]: ../../docs/SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [tg]: ../../docs/THEME_GENERATION.md
 [tg-1d]: ../../docs/THEME_GENERATION.md#1d-shape-tokens-are-not-a-scheme
 [tg-4]: ../../docs/THEME_GENERATION.md#4-a-status-hue-holds-its-fill
@@ -1091,6 +1141,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ucr-3b]: ../../docs/UI_CLIENT_RUNTIME.md#3b-lazy-loading
 [ucr-3c]: ../../docs/UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ucr-4]: ../../docs/UI_CLIENT_RUNTIME.md#4-htmx-bundle-import
+[ucr-4a]: ../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
 [udg]: ../../docs/UI_DESIGN_GUIDANCE.md
 [udg-2]: ../../docs/UI_DESIGN_GUIDANCE.md#2-two-rule-tiers--floor-and-defaults
 [usc]: ../../docs/UI_SSR_COMPONENTS.md

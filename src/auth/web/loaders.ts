@@ -93,6 +93,15 @@ export function loadAccountFactors<Bindings>(
   return authPage(c, options, { name: "accountFactors", state, guarded: AUTH_VIEW_GUARDS.accountFactors });
 }
 
+/** The recovery-code page: the codes left, and a freshly staged set when `state` carries one. @public */
+export function loadRecoveryCodes<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "accountRecoveryCodes", state, guarded: AUTH_VIEW_GUARDS.accountRecoveryCodes });
+}
+
 /** One named account's sign-in methods, as an administrator reads them — the same panel, minus the management links. @public */
 export function loadAdminUserFactors<Bindings>(
   c: AppContext<Bindings>,

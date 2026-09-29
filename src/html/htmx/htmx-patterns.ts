@@ -148,7 +148,7 @@ interface FormSubmitProps {
   post: string;
   target: string;
   swap?: string;
-  disabledElt?: string;
+  disable?: string;
   encoding?: string;
   pushUrl?: string;
 }
@@ -159,7 +159,7 @@ export function formSubmit(p: FormSubmitProps): HxAttrs {
     post: p.post,
     target: p.target,
     swap: p.swap ?? SWAP.outerHtml,
-    disabledElt: p.disabledElt ?? "this",
+    disable: p.disable ?? "this",
     ...(p.encoding !== undefined ? { encoding: p.encoding } : {}),
     ...(p.pushUrl !== undefined ? { pushUrl: p.pushUrl } : {}),
   });

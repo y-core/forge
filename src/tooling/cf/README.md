@@ -65,13 +65,12 @@ says so when a zone config exists that it did not touch.
 | `updated` | a write happened — it existed and its value was changed |
 | `rotated` | a write happened — a freshly generated value replaced the remote one |
 | `remote-only` | present remotely and declared nowhere locally |
-| `unavailable` | the remote target does not exist, or the surface cannot carry this binding |
+| `unavailable` | the remote target does not exist |
 | `error` | the operation failed; the detail carries the cause |
 
 What the vocabulary is precise about, because each has been misread:
 
-- **`unavailable` means a missing remote _target_** — a Pages project or Worker script that is not there. A binding a `--commit` would create is
-  `would-create`.
+- **`unavailable` means a missing remote _target_** — a Worker script that is not there. A binding a `--commit` would create is `would-create`.
 - **A row saying `in-sync` has either queried the remote or explains why there was nothing to query.** No handler claims a remote resource is
   present without having looked.
 - **`created` and `updated` are per-row claims about that row.** A `sync zone` phase the commit loop skipped because it was already in step reads
@@ -132,8 +131,8 @@ STRIPE_API_KEY=sk_live_…   # unmarked — never rotated
 ```
 
 ```bash
-forge sync --commit --rotate SESSION_SECRET           # new value on Cloudflare
-forge sync --commit --local --rotate SESSION_SECRET   # new value in .dev.vars
+forge cf sync --commit --rotate SESSION_SECRET           # new value on Cloudflare
+forge cf sync --commit --local --rotate SESSION_SECRET   # new value in .dev.vars
 ```
 
 The two are separate acts because **a remote secret is never kept on this machine**. `--rotate` generates a value, pushes it, and does not print it
@@ -141,6 +140,35 @@ or write it to `.dev.vars`; `--local --rotate` replaces the development value an
 values of one name are expected to differ. A rotation rewrites the value and leaves the comment in place.
 
 Naming an unmarked or unknown key refuses the whole run before any request is made. Both are writes, so both need `--commit`.
+
+### Rotating a key ring
+
+A key ring is one variable of comma-joined hex secrets, newest first. Replacing it would make everything sealed under the old keys unopenable, so
+**a ring rotates by prepending**. Mark it `# forge:ring`, never `# forge:generate` — a key carrying both is refused:
+
+```bash
+# .dev.vars
+
+# forge:ring
+APP_SEAL_KEY_RING=9c1e…,ab3f…
+```
+
+```bash
+forge cf sync --commit --local --rotate APP_SEAL_KEY_RING   # prepend a new key in .dev.vars
+```
+
+`--local --rotate` on a ring with no value yet seeds it with one key, and `--local --rotate all` includes every ring. **A plain `--commit` creates a
+ring that is missing remotely from `.dev.vars`, and never overwrites one that exists.** Cloudflare's copy cannot be read, so forge cannot prove a
+push keeps the keys every sealed row still needs: `--commit --rotate` on a ring is refused, and `--rotate all` without `--local` leaves rings out.
+
+Rotate the deployed ring by hand. Take the current production ring from wherever you keep it, prepend a fresh key, and put the result:
+
+```bash
+openssl rand -hex 32                           # the fresh key
+wrangler secret put APP_SEAL_KEY_RING          # paste <fresh key>,<current production ring>
+```
+
+Keep every old key in the value you paste. Split the variable in the Worker with `keyRingSecrets` from [`src/keyring/README.md`][keyring-readme].
 
 ---
 
@@ -151,14 +179,11 @@ touches — **Read** for a status run, **Edit** for `--commit`:
 
 | touching | permission |
 | --- | --- |
-| a Pages project's vars and secrets | Cloudflare Pages |
 | a Worker's settings, secrets, rate limits | Workers Scripts |
 | KV namespaces | Workers KV Storage |
 | D1 databases | D1 |
 | R2 buckets | Workers R2 Storage |
 | queues | Queues |
-
-The Workers token templates do **not** grant Cloudflare Pages, so a token that reads a Worker's settings fails on a Pages project.
 
 **An auth failure does not tell you which.** Cloudflare returns one code for a token it rejects and for a valid token missing a permission, so the
 row names both and prints Cloudflare's own message beneath the table. To separate them without guessing, ask Cloudflare about the token itself:
@@ -178,9 +203,9 @@ Cloudflare, and a token with edit rights is the last thing that should sit in a 
 ## Reconciling zone rules
 
 ```bash
-forge sync zone --config config/site.ts   # read-only report, the default
-forge sync zone --commit                  # writes the entry point rulesets
-forge sync zone --check                   # exit non-zero on drift, for the gate
+forge cf sync zone --config config/site.ts   # read-only report, the default
+forge cf sync zone --commit                  # writes the entry point rulesets
+forge cf sync zone --check                   # exit non-zero on drift, for the gate
 ```
 
 It reads the `zone` block of a [`@y-core/forge/site`][site-readme] config and reconciles two phase entry point rulesets:
@@ -189,7 +214,7 @@ It reads the `zone` block of a [`@y-core/forge/site`][site-readme] config and re
 **A `PUT` replaces the phase's whole rule list.** A rule this config does not describe does not survive a `--commit` — including one authored by
 hand in the dashboard. That is the point of one source of truth, and it is the thing to know before the first commit.
 
-**Sync before you push.** The order is always `forge sync zone --commit` → push → deploy; the asymmetry that makes it one-directional is
+**Sync before you push.** The order is always `forge cf sync zone --commit` → push → deploy; the asymmetry that makes it one-directional is
 [`@y-core/forge/site`][site-readme]'s. `--check` in the gate turns "you forgot" into a local failure, which is the only place it is cheap to catch.
 
 Credentials are `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN`, read from the environment; either missing is refused before any call is made.
@@ -268,17 +293,17 @@ way to assemble a schema from the internal pieces.
 **A rate limiter has no account-level API** — nothing to list, and nothing to create. `namespace_id` is not the id of a remote resource: it is a
 positive-integer string you pick to identify the namespace within the account, and wrangler only type-checks it. (`/zones/{zone_id}/rate_limits`
 exists but is the deprecated _zone_ WAF product, unrelated to the Workers `ratelimits` binding.) A rate limiter is observable on a **deployed
-Worker**, as a `ratelimit` entry in its settings, and on Worker targets only — a Pages config declaring one is rejected outright and binds nothing.
+Worker**, as a `ratelimit` entry in its settings.
 
 **Vars are reported, never written.** A var lives in the wrangler config and `wrangler deploy` is what puts it on the remote, so `sync` compares and
 stops there, `--commit` included. A var that is absent is reported as `deploy-pushes` and one that has drifted as `drift`, with both values in the
 detail, and the next deploy pushes it.
 
-**A secret's value is not readable on either target.** Cloudflare returns a secret's name and type and never its value, so a secret is compared by
+**A secret's value is not readable.** Cloudflare returns a secret's name and type and never its value, so a secret is compared by
 name and nothing more, and the row says so rather than implying the values match.
 
-**Worker or Pages is detected from the config, never from a flag.** `main` and `pages_build_output_dir` are mutually exclusive and neither wins:
-wrangler rejects a config carrying both, so such a config is already invalid. `detectTarget` treats it as a Worker, matching wrangler's own advice.
+**A Cloudflare Pages config is refused.** A wrangler config declaring `pages_build_output_dir` stops the run before any request, because forge
+supports Workers only.
 
 **A config write-back is a surgical splice.** Comments, blank lines, key order, indentation and line endings survive byte-for-byte, so a `git diff`
 after a successful `sync --commit` shows inserted `"id"` lines and nothing else. An **inexpressible edit refuses** (an added array, a removed key, a
@@ -296,5 +321,6 @@ destroyed. A splice that fails its own verification writes nothing, `--force` in
 
 [app-readme]: ../../app/README.md
 [config-readme]: ../../config/README.md
+[keyring-readme]: ../../keyring/README.md#rotating-the-root-secret
 [site-readme]: ../../site/README.md
 [sot-2f]: ../../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows

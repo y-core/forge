@@ -16,6 +16,11 @@ import { AuthFactorsTrigger } from "./factors";
 import { AuthTimestamp } from "./timestamp";
 import type { AdminUserEditViewProps } from "./types";
 
+/** The id on the admin account view's root, which each of its forms swaps the re-rendered view into. @public */
+export const AUTH_ADMIN_USER_EDIT_ID = "auth-admin-user-edit";
+
+const ROOT_SWAP = { target: `#${AUTH_ADMIN_USER_EDIT_ID}`, swap: "outerHTML" } as const;
+
 const DEMOTE_REASON = "This is the last admin who can still sign in — promote another admin before removing this role.";
 
 const DEACTIVATE_REASON = "This is the last admin who can still sign in — promote another admin before deactivating this account.";
@@ -71,7 +76,7 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
   const updatePath = paths.users.update({ id: user.id });
 
   return (
-    <Card class={cn("mx-auto w-full max-w-2xl", cls)}>
+    <Card id={AUTH_ADMIN_USER_EDIT_ID} class={cn("mx-auto w-full max-w-2xl", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl' data-ref='admin-user-email'>
@@ -109,7 +114,7 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
         )}
         <AuthFactorsTrigger loadPath={paths.users.factors({ id: user.id })} label='Show sign-in methods' />
         <Separator />
-        <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: updatePath })} class='flex flex-col gap-2'>
+        <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: updatePath, ...ROOT_SWAP })} class='flex flex-col gap-2'>
           <input type='hidden' name='role' value={user.isAdmin ? "member" : "admin"} />
           <input type='hidden' name='status' value={active ? "active" : "deactivated"} />
           {demoteGuarded ? (
@@ -127,7 +132,7 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
           </Button>
         </Form>
         <Separator />
-        <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: updatePath })} class='flex flex-col gap-2'>
+        <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: updatePath, ...ROOT_SWAP })} class='flex flex-col gap-2'>
           <input type='hidden' name='role' value={user.isAdmin ? "admin" : "member"} />
           <input type='hidden' name='status' value={active ? "deactivated" : "active"} />
           {deactivateGuarded ? (
@@ -150,7 +155,7 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
         <Form
           csrfToken={csrfToken}
           csrfHeader={csrfHeader}
-          {...hxAttrs({ delete: paths.users.remove({ id: user.id }) })}
+          {...hxAttrs({ delete: paths.users.remove({ id: user.id }), ...ROOT_SWAP })}
           class='flex flex-col gap-2'>
           {deleteGuarded ? (
             <p id={DELETE_REASON_ID} data-ref='admin-delete-reason' class='text-sm text-muted-foreground'>

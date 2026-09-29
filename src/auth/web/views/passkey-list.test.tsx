@@ -10,7 +10,7 @@ import type { AuthCredential } from "../../types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
 import { attrOf, attrsOf, elementOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../web.fixture";
-import { PasskeyListView } from "./passkey-list";
+import { AUTH_PASSKEY_LIST_ID, PasskeyListView } from "./passkey-list";
 import type { PasskeyListViewProps, PasskeyRow } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
@@ -155,6 +155,17 @@ describe("PasskeyListView paths", () => {
 
   it("carries the CSRF token into the header htmx sends the delete on", async () => {
     expect(attrOf(await passkeys(), 'data-slot="form"', "hx-headers")).toBe("{&quot;X-CSRF-Token&quot;:&quot;csrf-1&quot;}");
+  });
+
+  it("renders no hidden token field, which htmx would serialise into the DELETE's URL", async () => {
+    expect(await passkeys()).not.toContain('name="_csrf"');
+  });
+
+  it("marks its root with the id every row's remove form swaps the re-rendered list over", async () => {
+    const html = await passkeys({ rows: [row(credential()), row(credential({ id: "c2" }), "csrf-2")] });
+    expect(attrOf(html, 'data-slot="card"', "id")).toBe(AUTH_PASSKEY_LIST_ID);
+    expect(valuesOf(html, "hx-target")).toEqual([`#${AUTH_PASSKEY_LIST_ID}`, `#${AUTH_PASSKEY_LIST_ID}`]);
+    expect(valuesOf(html, "hx-swap")).toEqual(["outerHTML", "outerHTML"]);
   });
 });
 

@@ -141,13 +141,8 @@ export const STEPS: readonly Step[] = [
     citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
     agreementDirs: ["warden/canon", "src/ui/design"],
     requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
-    documentedNonExports: ["./handler", "./all", "./crypto"],
-    tableExemptSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"],
-    catalogs: [
-      { doc: "README.md", exempt: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime", "./jsx/register"] },
-      { doc: "docs/NAMESPACES.md", exempt: ["./warden", "./warden/checks", "./warden/knowledge", "./warden/mcp", "./warden/steps"] },
-    ],
-    listedOnlySubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime"],
+    documentedNonExports: ["./crypto"],
+    unboundSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime"],
   }),
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { tier: "full" }),
   designStep({

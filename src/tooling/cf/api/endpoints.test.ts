@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { CF_ERROR_CODES, pagesProject, SURFACE_PERMISSIONS, workerSecrets, workerSettings, ZONE_PHASES, zoneRulesetEntrypoint } from "./endpoints";
+import { CF_ERROR_CODES, WORKER_PERMISSION, workerSecrets, workerSettings, ZONE_PHASES, zoneRulesetEntrypoint } from "./endpoints";
 
 describe("workerSettings", () => {
   it("builds the settings path", () => {
@@ -42,16 +42,6 @@ describe("workerSecrets", () => {
   });
 });
 
-describe("pagesProject", () => {
-  it("builds the project path", () => {
-    expect(pagesProject("acc-1", "site")).toBe("/accounts/acc-1/pages/projects/site");
-  });
-
-  it("encodes both interpolated segments", () => {
-    expect(pagesProject("acc/1", "my site")).toBe("/accounts/acc%2F1/pages/projects/my%20site");
-  });
-});
-
 describe("zoneRulesetEntrypoint", () => {
   it("builds the entrypoint path for a phase", () => {
     expect(zoneRulesetEntrypoint("zone-1", ZONE_PHASES.redirect)).toBe("/zones/zone-1/rulesets/phases/http_request_dynamic_redirect/entrypoint");
@@ -75,8 +65,8 @@ describe("the constant tables", () => {
     expect(CF_ERROR_CODES).toEqual({ notFound: [7000, 7003, 10009], auth: [9106, 9107, 9109, 10000] });
   });
 
-  it("names the permission each deployment surface needs", () => {
-    expect(SURFACE_PERMISSIONS).toEqual({ worker: "Workers Scripts", pages: "Cloudflare Pages" });
+  it("names the permission the Worker surface needs", () => {
+    expect(WORKER_PERMISSION).toBe("Workers Scripts");
   });
 
   it("keeps the two failure classes disjoint, so classification cannot depend on which is tested first", () => {

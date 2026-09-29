@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 
 import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
 import { FakeEvent, fakeTree } from "../../ui/client/dom.fixture";
@@ -17,8 +17,8 @@ import {
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
 import type { PasskeyOutcomeDetail } from "../types";
-import { ceremonyReason, encodeCredential, mountPasskey, readPasskeyContract, runPasskeyCeremony } from "./passkey";
-import type { PasskeyContract, PasskeyRealm } from "./types";
+import { ceremonyReason, encodeCredential, mountPasskey, onPasskeyPrf, passkeyPrfOutput, readPasskeyContract, runPasskeyCeremony } from "./passkey";
+import type { PasskeyContract, PasskeyPrfHandler, PasskeyPrfResult, PasskeyRealm } from "./types";
 
 const OPTIONS_PATH = "/auth/passkey/options";
 const VERIFY_PATH = "/auth/passkey/verify";
@@ -496,5 +496,298 @@ describe("mountPasskey — the outcome is spoken through the page's announcer", 
     expect(spoken(polite)).toEqual([]);
     expect(root.querySelector(`[data-ref='${PASSKEY.status}']`)?.textContent).toBe(refused);
     dispose();
+  });
+});
+
+const PRF_SALT = [7, 8, 9];
+const OTHER_PRF_SALT = [4, 5];
+const PRF_OUTPUT = Array.from({ length: 32 }, (_, index) => index + 0xc0);
+
+const withPrf = <T extends object>(credential: T, results: unknown): T => ({ ...credential, getClientExtensionResults: () => results }) as T;
+
+const PRF_REQUEST_OPTIONS = {
+  ...REQUEST_OPTIONS,
+  extensions: {
+    prf: {
+      evalByCredential: {
+        [REQUEST_OPTIONS.allowCredentials[0]?.id ?? ""]: { first: base64urlEncode(new Uint8Array(PRF_SALT)) },
+        "second-credential": { first: base64urlEncode(new Uint8Array(OTHER_PRF_SALT)) },
+      },
+    },
+  },
+};
+
+const PRF_CREATION_OPTIONS = { ...CREATION_OPTIONS, extensions: { prf: { eval: { first: base64urlEncode(new Uint8Array(PRF_SALT)) } } } };
+
+const REGISTRATION: PasskeyContract = { ...CEREMONY, mode: "registration", redirect: "/account/passkeys" };
+
+const prfDisposers: Array<() => void> = [];
+
+function handlePrf(handler: PasskeyPrfHandler): () => void {
+  const dispose = onPasskeyPrf(handler);
+  prfDisposers.push(dispose);
+  return dispose;
+}
+
+afterEach(() => {
+  for (const dispose of prfDisposers.splice(0)) dispose();
+});
+
+/** A ceremony whose options and verification both answer, with `answer` as the credential. */
+function answering(options: unknown, answer: unknown, verifyStatus = 200) {
+  return fakeRealm({ replies: { [OPTIONS_PATH]: { body: options }, [VERIFY_PATH]: { status: verifyStatus, body: { ok: true } } }, answer });
+}
+
+describe("runPasskeyCeremony — PRF salts reach the authenticator as bytes", () => {
+  it("hands `create` the registration salt decoded to bytes", async () => {
+    const { realm, calls } = answering(PRF_CREATION_OPTIONS, ATTESTATION);
+
+    await runPasskeyCeremony(REGISTRATION, realm);
+
+    const publicKey = calls[0]?.options as PublicKeyCredentialCreationOptions;
+    expect(new Uint8Array(publicKey.extensions?.prf?.eval?.first as ArrayBuffer)).toEqual(new Uint8Array(PRF_SALT));
+  });
+
+  it("hands `get` each step-up salt as bytes, keyed by the credential id string the allow-list is matched on", async () => {
+    const { realm, calls } = answering(PRF_REQUEST_OPTIONS, ASSERTION);
+
+    await runPasskeyCeremony(CEREMONY, realm);
+
+    const byCredential = (calls[0]?.options as PublicKeyCredentialRequestOptions | undefined)?.extensions?.prf?.evalByCredential ?? {};
+    expect(Object.entries(byCredential).map(([id, salt]) => [id, [...new Uint8Array(salt.first as ArrayBuffer)]])).toEqual([
+      ["yMk", PRF_SALT],
+      ["second-credential", OTHER_PRF_SALT],
+    ]);
+  });
+
+  it("gives neither ceremony an `extensions` key, nor calls the handler, when the server named no PRF salt", async () => {
+    for (const extensions of [undefined, { prf: {} }]) {
+      const registration = answering({ ...CREATION_OPTIONS, extensions }, ATTESTATION);
+      const authentication = answering({ ...REQUEST_OPTIONS, extensions }, ASSERTION);
+      const results: PasskeyPrfResult[] = [];
+      const dispose = handlePrf((result) => {
+        results.push(result);
+      });
+
+      await runPasskeyCeremony(REGISTRATION, registration.realm);
+      await runPasskeyCeremony(CEREMONY, authentication.realm);
+      dispose();
+
+      expect({
+        extensions,
+        keyed: [registration.calls[0]?.options, authentication.calls[0]?.options].map((o) => Object.hasOwn(o as object, "extensions")),
+        results,
+      }).toEqual({ extensions, keyed: [false, false], results: [] });
+    }
+  });
+});
+
+describe("onPasskeyPrf — the page receives the output before it navigates", () => {
+  it("hands the handler the mode, the credential id and the 32-byte output after verification and before navigation", async () => {
+    const { realm, requests, navigations } = answering(
+      PRF_REQUEST_OPTIONS,
+      withPrf(ASSERTION, { prf: { results: { first: new Uint8Array(PRF_OUTPUT).buffer } } }),
+    );
+    const seen: Array<{ result: PasskeyPrfResult; posted: string[]; navigated: string[] }> = [];
+    handlePrf((result) => {
+      seen.push({ result, posted: requests.map((r) => r.url), navigated: [...navigations] });
+    });
+
+    expect(await runPasskeyCeremony(CEREMONY, realm)).toEqual({ mode: "authentication" });
+
+    expect(seen).toEqual([
+      {
+        result: { mode: "authentication", credentialId: "credential-id", output: new Uint8Array(PRF_OUTPUT) },
+        posted: [OPTIONS_PATH, VERIFY_PATH],
+        navigated: [],
+      },
+    ]);
+    expect(navigations).toEqual(["/account"]);
+  });
+
+  it("awaits an async handler before it navigates", async () => {
+    const { realm, navigations } = answering(
+      PRF_CREATION_OPTIONS,
+      withPrf(ATTESTATION, { prf: { enabled: true, results: { first: new Uint8Array(PRF_OUTPUT).buffer } } }),
+    );
+    const navigatedWhenSettled: string[][] = [];
+    handlePrf(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      navigatedWhenSettled.push([...navigations]);
+    });
+
+    await runPasskeyCeremony(REGISTRATION, realm);
+
+    expect({ navigatedWhenSettled, navigations }).toEqual({ navigatedWhenSettled: [[]], navigations: ["/account/passkeys"] });
+  });
+
+  it("hands `output: null` when PRF was asked for but no real 32-byte result came back", async () => {
+    const cases = [
+      { label: "enabled only", results: { prf: { enabled: true } } },
+      { label: "16 bytes", results: { prf: { results: { first: new Uint8Array(16).fill(1).buffer } } } },
+      { label: "no prf at all", results: {} },
+    ];
+    for (const { label, results } of cases) {
+      const { realm } = answering(PRF_CREATION_OPTIONS, withPrf(ATTESTATION, results));
+      const outputs: Array<Uint8Array | null> = [];
+      const dispose = handlePrf((result) => {
+        outputs.push(result.output);
+      });
+
+      await runPasskeyCeremony(REGISTRATION, realm);
+      dispose();
+
+      expect({ label, outputs }).toEqual({ label, outputs: [null] });
+    }
+  });
+
+  it("does not call the handler when the options asked for no PRF, whatever the credential carries", async () => {
+    const { realm, navigations } = answering(
+      REQUEST_OPTIONS,
+      withPrf(ASSERTION, { prf: { results: { first: new Uint8Array(PRF_OUTPUT).buffer } } }),
+    );
+    const results: PasskeyPrfResult[] = [];
+    handlePrf((result) => {
+      results.push(result);
+    });
+
+    await runPasskeyCeremony(CEREMONY, realm);
+
+    expect({ results, navigations }).toEqual({ results: [], navigations: ["/account"] });
+  });
+
+  it("does not call the handler when the server refused the verification", async () => {
+    const { realm } = answering(PRF_REQUEST_OPTIONS, withPrf(ASSERTION, { prf: { results: { first: new Uint8Array(PRF_OUTPUT).buffer } } }), 403);
+    const results: PasskeyPrfResult[] = [];
+    handlePrf((result) => {
+      results.push(result);
+    });
+
+    expect(await runPasskeyCeremony(CEREMONY, realm)).toEqual({ mode: "authentication", reason: "verification-failed" });
+    expect(results).toEqual([]);
+  });
+
+  it("still succeeds and navigates when the handler throws or rejects, and warns once", async () => {
+    const failing: Array<{ label: string; handler: PasskeyPrfHandler }> = [
+      {
+        label: "throws",
+        handler: () => {
+          throw new Error("unwrap failed");
+        },
+      },
+      { label: "rejects", handler: () => Promise.reject(new Error("unwrap failed")) },
+    ];
+    for (const { label, handler } of failing) {
+      const warn = spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const { realm, navigations } = answering(
+          PRF_REQUEST_OPTIONS,
+          withPrf(ASSERTION, { prf: { results: { first: new Uint8Array(PRF_OUTPUT).buffer } } }),
+        );
+        const dispose = handlePrf(handler);
+
+        const outcome = await runPasskeyCeremony(CEREMONY, realm);
+        dispose();
+
+        expect({ label, outcome, navigations, warned: warn.mock.calls.length }).toEqual({
+          label,
+          outcome: { mode: "authentication" },
+          navigations: ["/account"],
+          warned: 1,
+        });
+      } finally {
+        warn.mockRestore();
+      }
+    }
+  });
+
+  it("stops calling a handler once it is disposed", async () => {
+    const { realm } = answering(PRF_REQUEST_OPTIONS, ASSERTION);
+    const results: PasskeyPrfResult[] = [];
+    handlePrf((result) => {
+      results.push(result);
+    })();
+
+    await runPasskeyCeremony(CEREMONY, realm);
+
+    expect(results).toEqual([]);
+  });
+
+  it("lets the last handler registered win, and a stale disposer leave the newer one in place", async () => {
+    const calls: string[] = [];
+    const disposeFirst = handlePrf(() => {
+      calls.push("first");
+    });
+    handlePrf(() => {
+      calls.push("second");
+    });
+    disposeFirst();
+
+    await runPasskeyCeremony(CEREMONY, answering(PRF_REQUEST_OPTIONS, ASSERTION).realm);
+
+    expect(calls).toEqual(["second"]);
+  });
+});
+
+describe("passkeyPrfOutput", () => {
+  const carrying = (first: unknown) => withPrf(ASSERTION, { prf: { results: { first } } });
+
+  it("copies a 32-byte ArrayBuffer, so a later write to the source does not reach the result", () => {
+    const source = new Uint8Array(PRF_OUTPUT);
+
+    const output = passkeyPrfOutput(carrying(source.buffer));
+    source.fill(0);
+
+    expect(output).toEqual(new Uint8Array(PRF_OUTPUT));
+  });
+
+  it("reads a view at a non-zero offset as exactly its own 32 bytes", () => {
+    const backing = new Uint8Array(40).fill(0xee);
+    backing.set(PRF_OUTPUT, 4);
+
+    const output = passkeyPrfOutput(carrying(new Uint8Array(backing.buffer, 4, 32)));
+
+    expect({ output, backing: output?.buffer.byteLength }).toEqual({ output: new Uint8Array(PRF_OUTPUT), backing: 32 });
+  });
+
+  it("answers null for any length but 32", () => {
+    for (const length of [0, 31, 33, 64]) {
+      expect(`${length}: ${passkeyPrfOutput(carrying(new Uint8Array(length).buffer))}`).toBe(`${length}: null`);
+    }
+  });
+
+  it("answers null for a credential with no `getClientExtensionResults` at all", () => {
+    const { getClientExtensionResults: _dropped, ...bare } = ASSERTION as unknown as Record<string, unknown>;
+
+    expect(passkeyPrfOutput(bare as unknown as PublicKeyCredential)).toBeNull();
+  });
+});
+
+describe("mountPasskey — the PRF output stays in the page", () => {
+  it("posts none of the output and puts none of it on the outcome event, while the handler still receives it", async () => {
+    const secret = new Uint8Array(32).fill(0xab);
+    const { root, win, trigger } = fixture();
+    win.credentials.answer = withPrf(ASSERTION, { prf: { enabled: true, results: { first: secret.buffer } } });
+    win.replies.set(OPTIONS_PATH, { body: PRF_REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { body: { ok: true } });
+    const outputs: Array<Uint8Array | null> = [];
+    handlePrf((result) => {
+      outputs.push(result.output);
+    });
+    const seen: PasskeyOutcomeDetail[] = [];
+    root.addEventListener(PASSKEY_OUTCOME_EVENT, (event) => seen.push((event as unknown as CustomEvent<PasskeyOutcomeDetail>).detail));
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    dispose();
+
+    const posted = JSON.stringify(win.requests.find((r) => r.url === VERIFY_PATH)?.body);
+    expect(outputs).toEqual([secret]);
+    expect(seen).toEqual([{ mode: "authentication" }]);
+    expect(posted).not.toContain("prf");
+    expect(posted).not.toContain(base64urlEncode(secret));
+    expect(posted).not.toContain("ab".repeat(32));
+    expect(posted).not.toContain(JSON.stringify(Array.from(secret)).slice(1, -1));
   });
 });

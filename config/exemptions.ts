@@ -33,6 +33,7 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/announcer-contract.ts", "declared contract constants — the markup and the controller that use them are tested"],
   ["src/ui/contracts/composite-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/dialog-contract.ts", "declared contract constants — the markup that uses them is tested"],
+  ["src/ui/contracts/htmx-contract.ts", "declared contract constants — the extension and the browser spec that use them are tested"],
   ["src/ui/contracts/island-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/navbar-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/number-field-contract.ts", "declared contract constants — the markup that uses them is tested"],
@@ -53,5 +54,5 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
   ["warden/src/cli/flags.ts", "declared flag tables — the command tree that shares them is dispatched in `commands.test.ts`"],
   ["src/testing/workerd.ts", "test infrastructure — `tests/workerd/`'s specs are what exercise it, in the `full` tier"],
-  ["src/testing/node.d.ts", "a declaration file — it defines nothing to run, and `typecheck` is what holds it against `workerd.ts`"],
+  ["src/testing/node.d.ts", "a declaration file — it defines nothing to run, and `typecheck` is what holds it against `dev-server-start.ts`"],
 ]);

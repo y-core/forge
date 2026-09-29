@@ -52,6 +52,9 @@ export function accountRoutes<base extends string>(basePath: base) {
     totpEnrol: post("/totp"),
     totpRemove: del("/totp"),
     factors: get("/factors"),
+    recoveryCodes: get("/recovery-codes"),
+    recoveryCodesGenerate: post("/recovery-codes"),
+    recoveryCodesConfirm: post("/recovery-codes/confirm"),
     emailChange: get("/email-change"),
     emailChangeSubmit: post("/email-change"),
   });
@@ -65,6 +68,7 @@ export function adminRoutes<base extends string>(basePath: base) {
       show: get("/users/:id"),
       edit: get("/users/:id/edit"),
       factors: get("/users/:id/factors"),
+      resetFactors: post("/users/:id/factors/reset"),
       update: patch("/users/:id"),
       remove: del("/users/:id"),
     },

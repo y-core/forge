@@ -8,6 +8,7 @@ import {
   createPasskeyEnrolActions,
   createPasskeyManageActions,
   createPasskeyStepUpActions,
+  createRecoveryCodeActions,
   createSigninActions,
   createSignoutActions,
   createSignupActions,
@@ -28,6 +29,7 @@ import {
   loadPasskeyEdit,
   loadPasskeyEnrol,
   loadPasskeyList,
+  loadRecoveryCodes,
   loadSignin,
   loadSignup,
   loadTotpEnrol,
@@ -69,7 +71,7 @@ export function registerAuth<Bindings extends object>(
   app.map(routes.enrol.ceremony, { actions: { ...createPasskeyEnrolActions(options) } });
 }
 
-/** Mounts the signed-in self-service routes — passkeys, authenticator app and email change — on `app`. @public */
+/** Mounts the signed-in self-service routes — passkeys, authenticator app, recovery codes and email change — on `app`. @public */
 export function registerAccount<Bindings extends object>(
   app: Forge<Bindings>,
   routes: ReturnType<typeof accountRoutes<string>>,
@@ -83,7 +85,9 @@ export function registerAccount<Bindings extends object>(
       totp: authPage(loadTotpEnrol, options),
       emailChange: authPage(loadEmailChange, options),
       factors: authPage(loadAccountFactors, options),
+      recoveryCodes: authPage(loadRecoveryCodes, options),
       ...createPasskeyManageActions(options),
+      ...createRecoveryCodeActions(options),
       ...createTotpManageActions(options),
       ...createEmailChangeActions(options),
     },

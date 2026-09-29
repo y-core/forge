@@ -19,6 +19,6 @@ export function failureRows(
   options: FailureRowOptions = {},
 ): SyncResult[] {
   const action = classifyCfError(error) === "not-found" ? ("unavailable" as const) : ("error" as const);
-  const detail = surfaceDetail(ctx.target, describeCfFailure(error, ctx.target, options));
+  const detail = surfaceDetail(describeCfFailure(error, ctx.scriptName, options));
   return identities.map(({ binding, remoteName }) => ({ resourceType, binding, remoteName, action, detail }));
 }

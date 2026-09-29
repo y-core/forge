@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 
 import { createCfClient } from "../../api/client";
-import { pagesProject, workerSecrets } from "../../api/endpoints";
+import { workerSecrets } from "../../api/endpoints";
 import { describeCfFailure } from "../../api/errors";
-import type { CfPagesEnvVar, CfPagesProject, CfWorkerSecret } from "../../api/types";
+import type { CfWorkerSecret } from "../../api/types";
 import type { ResourceType, SyncResult } from "../../types";
 import { devVarsPath, readDevVars } from "./devvars";
 import { randomSecret } from "./rotate";
@@ -22,7 +22,7 @@ const identities = (entries: SecretEntry[]) => entries.map((e) => ({ binding: e.
 /** Every request these handlers make carries a secret, so no upstream text is ever quoted. */
 const REDACT = { redactMessage: true } as const;
 
-/** The detail an `in-sync` secret row carries, since neither surface returns a value to compare. */
+/** The detail an `in-sync` secret row carries, since the secrets listing returns no value to compare. */
 const NAME_ONLY_DETAIL = "name only (value not readable)";
 
 /** The detail a refused secret row carries. One name cannot be both a plain_text var and a secret_text secret. */
@@ -32,7 +32,7 @@ const VAR_CONFLICT_DETAIL = "also declared in `vars`; remove it from one side â€
 type Plan = { kind: "row"; result: SyncResult } | { kind: "write"; name: string; value: string; existed: boolean; rotated: boolean };
 
 /** Decides what this run will send for one secret, before any request is made. */
-function planSecret(entry: SecretEntry, kind: DevVarKind, remoteNames: ReadonlySet<string>, ctx: HandlerContext): Plan {
+function planSecret(entry: SecretEntry, kind: SecretsHandlerSpec["kind"], remoteNames: ReadonlySet<string>, ctx: HandlerContext): Plan {
   const type: ResourceType = kind === "rotatable" ? "rotatable_secrets" : "secrets";
   const existed = remoteNames.has(entry.name);
   const row = { resourceType: type, binding: entry.name, remoteName: entry.name, local: true, remote: existed };
@@ -115,7 +115,7 @@ function createHandler(configPath: string, spec: SecretsHandlerSpec): ResourceHa
     extract(config) {
       const vars = new Set(Object.keys(config.vars ?? {}));
       return readDevVars(path)
-        .filter((v) => v.kind === spec.kind)
+        .filter((v) => v.kind === spec.kind || (spec.kind === "secret" && v.kind === "ring"))
         .map((v) => ({ name: v.name, value: v.value, conflictsWithVar: vars.has(v.name) }));
     },
 
@@ -125,9 +125,7 @@ function createHandler(configPath: string, spec: SecretsHandlerSpec): ResourceHa
       if (entries.length === 0 && !existsSync(path)) return { entries, results: [], notes: [emptyNote(path)] };
 
       const declared = new Set(readDevVars(path).map((v) => v.name));
-      const args = { entries, ctx, spec, declared };
-      // Selected per-config, never by a flag.
-      const { results } = ctx.target.kind === "pages" ? await reconcilePages(args) : await reconcileWorker(args);
+      const { results } = await reconcileWorker({ entries, ctx, spec, declared });
 
       if (results.length === 0) return { entries, results, notes: [emptyNote(path)] };
       return { entries, results };
@@ -144,7 +142,7 @@ interface ReconcileArgs {
 
 async function reconcileWorker({ entries, ctx, spec, declared }: ReconcileArgs): Promise<ReconcileResult<SecretEntry>> {
   const client = createCfClient(ctx.auth, ctx.fetch);
-  const path = workerSecrets(ctx.auth.accountId, ctx.target.name);
+  const path = workerSecrets(ctx.auth.accountId, ctx.scriptName);
   const listResult = await client.get<CfWorkerSecret[]>(path);
 
   if (!listResult.ok) return { entries, results: failureRows(spec.type, identities(entries), listResult.error, ctx, REDACT) };
@@ -160,57 +158,14 @@ async function reconcileWorker({ entries, ctx, spec, declared }: ReconcileArgs):
     }
 
     const putResult = await client.put<unknown>(path, { name: plan.name, text: plan.value, type: "secret_text" });
-    results.push(writeRow(plan, spec.type, putResult.ok, putResult.ok ? "" : describeCfFailure(putResult.error, ctx.target, REDACT)));
+    results.push(writeRow(plan, spec.type, putResult.ok, putResult.ok ? "" : describeCfFailure(putResult.error, ctx.scriptName, REDACT)));
   }
 
   if (spec.reportsOrphans) results.push(...orphanRows(remoteNames, declared));
   return { entries, results };
 }
 
-async function reconcilePages({ entries, ctx, spec, declared }: ReconcileArgs): Promise<ReconcileResult<SecretEntry>> {
-  const client = createCfClient(ctx.auth, ctx.fetch);
-  const path = pagesProject(ctx.auth.accountId, ctx.target.name);
-  const getResult = await client.get<CfPagesProject>(path);
-
-  if (!getResult.ok) return { entries, results: failureRows(spec.type, identities(entries), getResult.error, ctx, REDACT) };
-
-  const production = getResult.data.deployment_configs?.production ?? {};
-  const remoteNames = new Set(
-    Object.entries(production.env_vars ?? {})
-      .filter(([, v]) => v?.type === "secret_text")
-      .map(([name]) => name),
-  );
-
-  const results: SyncResult[] = [];
-  const writes: Extract<Plan, { kind: "write" }>[] = [];
-
-  for (const entry of entries) {
-    const plan = planSecret(entry, spec.kind, remoteNames, ctx);
-    if (plan.kind === "row") results.push(plan.result);
-    else writes.push(plan);
-  }
-
-  if (spec.reportsOrphans) results.push(...orphanRows(remoteNames, declared));
-  if (writes.length === 0) return { entries, results };
-
-  // One PATCH upserts them all â€” the call merges, so unmanaged remote variables and
-  // every plain_text var are untouched.
-  const upsert: Record<string, CfPagesEnvVar> = {};
-  for (const write of writes) upsert[write.name] = { type: "secret_text", value: write.value };
-
-  const patchResult = await client.patch<unknown>(path, {
-    deployment_configs: {
-      production: { env_vars: upsert, ...(production.wrangler_config_hash ? { wrangler_config_hash: production.wrangler_config_hash } : {}) },
-    },
-  });
-
-  const detail = patchResult.ok ? "" : describeCfFailure(patchResult.error, ctx.target, REDACT);
-  for (const write of writes) results.push(writeRow(write, spec.type, patchResult.ok, detail));
-
-  return { entries, results };
-}
-
-/** Fixed secrets: the local value is the one that goes remote. */
+/** Fixed secrets and key rings: the local value is the one that goes remote, and only where the remote has none. */
 export function createSecretsHandler(configPath: string): ResourceHandler<SecretEntry> {
   return createHandler(configPath, { kind: "secret", type: "secrets", displayName: "Secrets", reportsOrphans: true });
 }

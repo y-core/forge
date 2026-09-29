@@ -43,22 +43,23 @@ describe("renderShell without a registered shell", () => {
 });
 
 describe("pageShell", () => {
-  it("links one stylesheet and loads one script from single values", async () => {
+  it("links one stylesheet and loads one module script in <head> from single values, leaving <body> to the content", async () => {
     const shell = pageShell({ stylesheet: "/app.css", script: "/app.js" });
     const res = await renderShell(context(shell), <p>hi</p>, SLOT);
     expect(await res.text()).toBe(
-      `<!DOCTYPE html><html lang="en"><head>${HEAD}<title>Sign in</title><link rel="stylesheet" href="/app.css"></head>` +
-        '<body><p>hi</p><script type="module" src="/app.js"></script></body></html>',
+      `<!DOCTYPE html><html lang="en"><head>${HEAD}<title>Sign in</title><link rel="stylesheet" href="/app.css">` +
+        '<script type="module" src="/app.js"></script></head><body><p>hi</p></body></html>',
     );
   });
 
-  it("keeps every stylesheet and script of a list, in the order it was given", async () => {
+  it("keeps every stylesheet and script of a list in <head>, scripts after stylesheets, in the order given", async () => {
     const shell = pageShell({ stylesheet: ["/a.css", "/b.css"], script: ["/a.js", "/b.js"], lang: "cy" });
     const body = await (await renderShell(context(shell), <p>hi</p>, SLOT)).text();
     expect(body).toBe(
       `<!DOCTYPE html><html lang="cy"><head>${HEAD}<title>Sign in</title>` +
-        '<link rel="stylesheet" href="/a.css"><link rel="stylesheet" href="/b.css"></head>' +
-        '<body><p>hi</p><script type="module" src="/a.js"></script><script type="module" src="/b.js"></script></body></html>',
+        '<link rel="stylesheet" href="/a.css"><link rel="stylesheet" href="/b.css">' +
+        '<script type="module" src="/a.js"></script><script type="module" src="/b.js"></script></head>' +
+        "<body><p>hi</p></body></html>",
     );
   });
 

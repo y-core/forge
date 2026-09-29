@@ -15,8 +15,8 @@ export { test };
 
 const bundles = new Map<string, Promise<string>>();
 
-/** Bundles every requested module into one IIFE, so they share a single copy of `signal.ts`. */
-function bundleModules(expose: Record<string, string>): Promise<string> {
+/** Bundles every requested module into one IIFE, so they share a single copy of `signal.ts`. @internal */
+export function bundleModules(expose: Record<string, string>): Promise<string> {
   const entries = Object.entries(expose).sort(([a], [b]) => a.localeCompare(b));
   const key = JSON.stringify(entries);
   const cached = bundles.get(key);

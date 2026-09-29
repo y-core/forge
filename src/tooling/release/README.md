@@ -123,7 +123,7 @@ Add a config module only when a release has to touch something beyond `package.j
 a version constant in source:
 
 ```ts
-// config/release.ts — optional; forge itself ships none
+// config/release.ts — optional
 import type { ReleaseCommandConfig } from "@y-core/forge/tooling/release";
 
 export default { stageFiles: ["package.json", "CHANGELOG.md", "bun.lock"] } satisfies Omit<ReleaseCommandConfig, "cwd">;

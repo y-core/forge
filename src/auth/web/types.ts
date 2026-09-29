@@ -37,6 +37,7 @@ import type { EmailChangeViewProps } from "./views/types";
 import type { PasskeyEditViewProps } from "./views/types";
 import type { PasskeyEnrolViewProps } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
+import type { RecoveryCodesViewProps } from "./views/types";
 import type { SigninViewProps } from "./views/types";
 import type { SignupViewProps } from "./views/types";
 import type { TotpEnrolViewProps } from "./views/types";
@@ -197,6 +198,8 @@ export interface AuthPageState {
   readonly sentTo?: string | undefined;
   /** What an administrative write last reported for the account being rendered. */
   readonly outcome?: AdminUserOutcome | undefined;
+  /** A recovery-code set just staged, shown on this render and never again. */
+  readonly issuedCodes?: readonly string[] | undefined;
   readonly status?: number | undefined;
 }
 
@@ -231,6 +234,7 @@ export interface AuthViewProps {
   readonly accountTotp: TotpEnrolViewProps;
   readonly accountEmailChange: EmailChangeViewProps;
   readonly accountFactors: AuthFactorsViewProps;
+  readonly accountRecoveryCodes: RecoveryCodesViewProps;
   readonly adminUsers: AdminUsersViewProps;
   readonly adminUser: AdminUserEditViewProps;
   readonly adminUserEdit: AdminUserEditViewProps;
@@ -266,8 +270,18 @@ export interface AuthVerifyDemand {
   readonly identity: AuthIdentity | null;
   /** What the resolution demanded of an established identity; `null` when there is no identity to demand of. */
   readonly owed: "step-up" | "enrolment" | "none" | "unknown" | null;
-  /** The kinds an owed enrolment may be completed with, empty unless `owed` is `enrolment`. */
+  /** The kinds an owed enrolment may be completed with, or an owed step-up's choices; empty for any other `owed`. */
   readonly kinds: readonly AuthFactorKind[];
+}
+
+/** Where one account stands on recovery codes, as the code pages and the step-up that follows read it. @internal */
+export interface AuthRecoveryStanding {
+  /** Whether a confirmed `totp-app` or `passkey` enrolment stands, which is what codes exist to recover. */
+  readonly recoverable: boolean;
+  /** Whether a set of codes has been typed back and so replaced any before it. */
+  readonly confirmed: boolean;
+  /** Unused codes of the confirmed set, or `null` where there is none or the factor cannot count them. */
+  readonly remaining: number | null;
 }
 
 /** One auth view resolved against this request. @public */

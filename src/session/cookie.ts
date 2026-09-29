@@ -2,7 +2,7 @@ import { Cookie as CookieHeader } from "@remix-run/headers/cookie";
 import { SetCookie } from "@remix-run/headers/set-cookie";
 import type { SetCookieInit } from "@remix-run/headers/set-cookie";
 
-import { base64DecodeOrNull, base64Encode, hmacSign, hmacVerify, importHmacKey, utf8Encode } from "../crypto/mod";
+import { assertSecretStrength, base64DecodeOrNull, base64Encode, hmacSign, hmacVerify, importHmacKey, utf8Encode } from "../crypto/mod";
 import type {
   CookieAttributes,
   SignedCookie,
@@ -151,11 +151,7 @@ export function createUnsignedCookie(name: string, options?: UnsignedCookieOptio
 /** Creates a cookie that is always httpOnly and HMAC-signed, verified against every secret so a rotation keeps existing cookies valid. @public */
 export function createSignedCookie(name: string, options: SignedCookieOptions): SignedCookie {
   if (name === "") throw new Error("createSignedCookie: name must not be empty");
-  for (const secret of options.secrets) {
-    if (secret.length < 32) {
-      throw new Error(`createSignedCookie: each secret must be at least 32 characters (got ${secret.length})`);
-    }
-  }
+  for (const secret of options.secrets) assertSecretStrength("createSignedCookie", utf8Encode(secret));
   const { secrets, sameSite, ...rest } = options;
   // `secure` is hardcoded, not an option: development is https at every hop, so it is correct there
   // by construction (`WORKERS_PLATFORM.md` §4e), and relaxing it ships a cookie readable in transit.

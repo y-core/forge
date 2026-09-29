@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import pkg from "../../../package.json" with { type: "json" };
-import { findSubpathCitations, type SubpathCitation, uncitedSubpaths } from "./docs-parse";
+import { findSubpathCitations } from "./docs-parse";
 
 const PKG = "@y-core/forge";
 
@@ -98,92 +97,5 @@ describe("findSubpathCitations() — what the citation is doing", () => {
     const source = ["| `@y-core/forge/http` | `src/http/mod.ts` |", "", "Every HTTP output concern goes to `@y-core/forge/http`."].join("\n");
 
     expect(kinds(source)).toEqual(["./http:table", "./http:prose"]);
-  });
-});
-
-function cite(...cited: string[]): SubpathCitation[] {
-  return cited.map((subpath, i) => ({ kind: "prose" as const, line: i + 1, raw: subpath.slice(1), subpath }));
-}
-
-describe("uncitedSubpaths() — the coverage direction", () => {
-  it("returns nothing when every published subpath is cited", () => {
-    expect(uncitedSubpaths(["./http", "./result"], cite("./http", "./result"), new Set())).toEqual([]);
-  });
-
-  it("returns an uncited subpath that no exemption licenses", () => {
-    expect(uncitedSubpaths(["./http", "./result"], cite("./http"), new Set())).toEqual(["./result"]);
-  });
-
-  it("returns nothing for a subpath that is uncited but exempt", () => {
-    expect(uncitedSubpaths(["./http", "./jsx/register"], cite("./http"), new Set(["./jsx/register"]))).toEqual([]);
-  });
-
-  it("sorts several uncited subpaths, so the failure order is stable", () => {
-    const published = ["./ui/core", "./app", "./storage/kv", "./result"];
-
-    expect(uncitedSubpaths(published, cite(), new Set())).toEqual(["./app", "./result", "./storage/kv", "./ui/core"]);
-  });
-
-  it("reports a subpath once when it is both cited and exempt, never twice", () => {
-    expect(uncitedSubpaths(["./jsx/register"], cite("./jsx/register"), new Set(["./jsx/register"]))).toEqual([]);
-  });
-
-  it("returns every non-exempt subpath when the document cites none", () => {
-    const published = ["./app", "./http", "./jsx/register"];
-
-    expect(uncitedSubpaths(published, [], new Set(["./jsx/register"]))).toEqual(["./app", "./http"]);
-  });
-
-  it("ignores an exemption for a subpath that is not published at all", () => {
-    expect(uncitedSubpaths(["./http"], cite(), new Set(["./retired", "./http"]))).toEqual([]);
-  });
-
-  it("composes with the scanner, reading citations out of a document as written", () => {
-    const readme = [
-      "# forge",
-      "",
-      "| Subpath | Purpose |",
-      "| `@y-core/forge/http` | Response builders |",
-      "",
-      "**[`@y-core/forge/result`](src/result/README.md)** — the one `Result` primitive.",
-    ].join("\n");
-    const citations = findSubpathCitations(readme, PKG, { strict: true });
-
-    expect(uncitedSubpaths(["./http", "./result", "./session"], citations, new Set())).toEqual(["./session"]);
-  });
-});
-
-describe("uncitedSubpaths() — the exemption guard, in both directions", () => {
-  const published = ["./http", "./jsx/jsx-runtime"];
-  const citations = cite("./http");
-
-  it("suppresses the row while the subpath is exempt", () => {
-    expect(uncitedSubpaths(published, citations, new Set(["./jsx/jsx-runtime"]))).toEqual([]);
-  });
-
-  it("reinstates the row the moment the subpath leaves the exemption set", () => {
-    expect(uncitedSubpaths(published, citations, new Set())).toEqual(["./jsx/jsx-runtime"]);
-  });
-});
-
-describe("uncitedSubpaths() — the boundary the caller owns", () => {
-  const exportKeys = Object.keys((pkg as { exports: Record<string, unknown> }).exports);
-  const exact = exportKeys.filter((key) => !key.includes("*"));
-
-  it("drops every starred key from the caller's set", () => {
-    expect(exact.filter((key) => key.includes("*"))).toEqual([]);
-  });
-
-  it("keeps every exact key, so the filter narrows nothing else", () => {
-    expect(exact).toEqual(exportKeys.filter((key) => !key.includes("*")));
-    expect(exportKeys.length - exact.length).toBe(exportKeys.filter((key) => key.includes("*")).length);
-  });
-
-  it("has at least one starred key to drop, so the case above cannot pass vacuously", () => {
-    expect(exportKeys.filter((key) => key.includes("*")).length).toBeGreaterThan(0);
-  });
-
-  it("never returns a pattern key, because none reaches the function", () => {
-    expect(uncitedSubpaths(exact, cite(), new Set()).filter((subpath) => subpath.includes("*"))).toEqual([]);
   });
 });

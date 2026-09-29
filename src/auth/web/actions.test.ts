@@ -6,8 +6,10 @@ import { Forge } from "../../app/forge-app";
 import { csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
-import { ok } from "../../result/result";
+import { requestLog } from "../../logging/request-logger";
+import { err, ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
+import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
 import type { TestAction } from "../../testing/types";
 import { createPasskeyFactor } from "../factors/passkey";
@@ -15,13 +17,15 @@ import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorService } from "../factors/types";
 import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/passkey.fixture";
 import type { PasskeyKeyPair } from "../passkey/types";
-import type { AuthChallenge, AuthCredential, CredentialStore, UserStore } from "../types";
+import type { AuthChallenge, AuthCredential, AuthFactor, AuthFactorKind, CredentialStore, UserStore } from "../types";
 import {
   createAdminElevateActions,
   createAdminUserActions,
   createEmailChangeActions,
   createPasskeyEnrolActions,
   createPasskeyManageActions,
+  createPasskeyStepUpActions,
+  createRecoveryCodeActions,
   AUTH_CEREMONY_MAX_BYTES,
   createSigninActions,
   createSignoutActions,
@@ -47,6 +51,8 @@ import {
   fakeFactorService,
   fakeFactorStore,
   fakeSessionCookie,
+  recoveryOffer,
+  textOf,
 } from "./web.fixture";
 
 interface Seed {
@@ -57,6 +63,8 @@ interface Seed {
   readonly admin?: boolean;
   readonly pendingEmail?: string;
   readonly stepUpWrites?: number[];
+  /** When the seeded identity last stepped up, as `requireAuth` would have read it off the session. */
+  readonly stepUpAt?: number;
 }
 
 /** A `Forge` app with a seeded session and a deterministic CSRF minter, but no CSRF verification. */
@@ -69,7 +77,12 @@ function actionApp(seed: Seed = {}): Forge {
     // and the session is what a sign-out clears and a step-up marks.
     if (seed.userId !== undefined) {
       session.set(AUTH_SESSION_KEY, seed.userId);
-      authCtx.set(context, { userId: seed.userId, email: seed.email ?? signedIn.email, isAdmin: seed.admin === true, stepUpAt: null });
+      authCtx.set(context, {
+        userId: seed.userId,
+        email: seed.email ?? signedIn.email,
+        isAdmin: seed.admin === true,
+        stepUpAt: seed.stepUpAt ?? null,
+      });
     }
     if (seed.pendingEmail !== undefined) session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, seed.pendingEmail);
     const marks = seed.stepUpWrites;
@@ -99,6 +112,8 @@ function formBody(fields: Record<string, string>, method = "POST"): RequestInit 
 function jsonBody(body: unknown): RequestInit {
   return { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } };
 }
+
+const HX_REQUEST = { "HX-Request": "true" };
 
 const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
 
@@ -219,7 +234,7 @@ describe("createVerifyActions on the second half of a sign-in", () => {
   }
 
   it("redirects an owed enrolment to the enrolment page rather than refusing the sign-in", async () => {
-    const options = completing({ status: "enrolment-required", kinds: ["passkey"] });
+    const options = completing({ status: "enrolment-required", kinds: ["passkey"], stepUpKinds: [] });
     const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
 
     const res = await app.request("/auth/verify", formBody({ code: "123456" }));
@@ -284,6 +299,7 @@ describe("createVerifyActions on a step-up", () => {
       offered: [
         { service: fakeFactorService("email-otp"), role: "primary" },
         { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+        recoveryOffer(),
       ],
     }),
   };
@@ -297,6 +313,7 @@ describe("createVerifyActions on a step-up", () => {
         offered: [
           { service: fakeFactorService("email-otp"), role: "primary" },
           { service: fakeFactorService("totp-app"), role: "second", requirement: "mandatory" },
+          recoveryOffer(),
         ],
       }),
     });
@@ -329,6 +346,105 @@ describe("createVerifyActions on a step-up", () => {
     const res = await app.request("/auth/verify", formBody({ code: "123456" }));
     expect(res.status).toBe(422);
     expect(stepUpWrites).toEqual([]);
+  });
+
+  it("refuses an unreadable recovery code in a recovery code's words, never the digit-worded copy", async () => {
+    const options = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+          recoveryOffer(),
+        ],
+      }),
+    });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+
+    const res = await app.request("/auth/verify?factor=recovery-code", formBody({ code: "A".repeat(65) }));
+    expect(res.status).toBe(422);
+    expect(textOf(await res.text(), "p", 'id="field-code-error"')).toBe("That is not a recovery code. Enter one exactly as you saved it.");
+  });
+
+  function loggedApp(seed: Seed, options: AuthWebOptions, warnings: unknown[]): Forge {
+    const app = actionApp(seed);
+    const logger = { ...nullLogger, warn: (message: string, data?: Record<string, unknown>) => void warnings.push([message, data]) };
+    app.use("*", (context, next) => {
+      requestLog.set(context, logger);
+      return next();
+    });
+    return mounted(app, "POST", "/auth/verify", createVerifyActions(options).submit);
+  }
+
+  const holdingBoth: Partial<AuthRequestServices> = {
+    users: fakeAuthUserStore([signedIn]),
+    factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
+      offered: [
+        { service: fakeFactorService("email-otp"), role: "primary" },
+        { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+        recoveryOffer(),
+      ],
+    }),
+  };
+
+  it("answers an unusable factor at 422 with a notice pointing at the others, and warns the operator which kind it was", async () => {
+    const warnings: unknown[] = [];
+    const stepUpWrites: number[] = [];
+    const options = optionsWith({ ...holdingBoth, signin: fakeAuthSigninFlow({ stepUp: async () => err("unusable" as const) }) });
+    const app = loggedApp({ userId: "u9", stepUpWrites }, options, warnings);
+
+    const res = await app.request("/auth/verify?factor=totp-app", formBody({ code: "123456" }));
+    const html = await res.text();
+    expect({
+      status: res.status,
+      notice: textOf(html, "div", 'data-slot="alert-description"'),
+      choice: attrOf(html, 'data-ref="verify-choice"', "href"),
+      warnings,
+      stepUpWrites,
+    }).toEqual({
+      status: 422,
+      notice: "This sign-in method can&#39;t be checked right now. Choose another method below.",
+      choice: "/auth/verify?factor=recovery-code",
+      warnings: [["auth.factor.unusable", { kind: "totp-app" }]],
+      stepUpWrites: [],
+    });
+  });
+
+  it("logs nothing for a code that simply did not match, which is the visitor's mistake and no operator's", async () => {
+    const warnings: unknown[] = [];
+    const options = optionsWith({ ...holdingBoth, signin: fakeAuthSigninFlow({ stepUp: async () => err("unrecognised" as const) }) });
+    const app = loggedApp({ userId: "u9" }, options, warnings);
+
+    const res = await app.request("/auth/verify?factor=totp-app", formBody({ code: "123456" }));
+    expect({ status: res.status, warnings }).toEqual({ status: 422, warnings: [] });
+  });
+
+  it("hands the presented kind to the flow, so a recovery code is never checked as an app code", async () => {
+    const presented: string[] = [];
+    const signin = fakeAuthSigninFlow({
+      stepUp: async (userId, kind, code, at) => {
+        presented.push(`${kind}:${code}`);
+        return ok({ kind, userId, verifiedAt: at });
+      },
+    });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(optionsWith({ ...holdingBoth, signin })).submit);
+
+    await app.request("/auth/verify?factor=recovery-code", formBody({ code: " abcd-efgh " }));
+    expect(presented).toEqual(["recovery-code:abcd-efgh"]);
+  });
+
+  it("lands a step-up by recovery code on the factors page flagged for repair, with the step-up marked", async () => {
+    const stepUpWrites: number[] = [];
+    const signin = fakeAuthSigninFlow({ stepUp: async (userId, kind, _code, at) => ok({ kind, userId, verifiedAt: at }) });
+    const options = optionsWith({ ...holdingBoth, signin });
+    const app = mounted(actionApp({ userId: "u9", stepUpWrites }), "POST", "/auth/verify", createVerifyActions(options).submit);
+
+    const res = await app.request("/auth/verify?factor=recovery-code&next=%2Fapp", formBody({ code: "ABCD-EFGH" }));
+    expect({ status: res.status, location: res.headers.get("location"), stepUpWrites }).toEqual({
+      status: 303,
+      location: "/account/factors?recovered=1",
+      stepUpWrites: [1_000],
+    });
   });
 
   it("asks for another code and comes back to the verification page", async () => {
@@ -450,6 +566,7 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
         offered: [
           { service: fakeFactorService("email-otp"), role: "primary" },
           { service: passkey, role: "second", requirement: "optional" },
+          recoveryOffer(),
         ],
       }),
     });
@@ -500,6 +617,50 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
     const scene = enrolling();
     expect((await scene.finish("n".repeat(64))).status).toBe(200);
     expect(scene.credentials.rows.map((row) => row.label)).toEqual(["n".repeat(64)]);
+  });
+});
+
+describe("the passkey begin endpoints", () => {
+  const offered = {
+    challenge: "c",
+    rpId: "example.com",
+    extensions: { prf: { eval: { first: "-_8" }, evalByCredential: { "cred-a": { first: "AQID" } } }, credProps: true },
+  };
+
+  function passkeyServices(): Partial<AuthRequestServices> {
+    const passkey = {
+      ...fakeFactorService("passkey"),
+      createChallenge: async () => ok({ kind: "passkey" as const, expiresAt: 1_000, options: offered }),
+      beginEnrolment: async () => ok({ kind: "passkey" as const, expiresAt: 1_000, options: offered }),
+    } as AuthFactorService;
+    return {
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore([]), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: passkey, role: "second", requirement: "optional" },
+          recoveryOffer(),
+        ],
+      }),
+    };
+  }
+
+  it("answers the step-up begin with the factor's options verbatim, extensions included", async () => {
+    const actions = createPasskeyStepUpActions(optionsWith(passkeyServices()));
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify/passkey/begin", actions.begin);
+
+    const res = await app.request("/auth/verify/passkey/begin", jsonBody({}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(offered);
+  });
+
+  it("answers the enrolment begin with the factor's options verbatim, extensions included", async () => {
+    const actions = createPasskeyEnrolActions(optionsWith(passkeyServices()));
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/enrol/passkey/register/begin", actions.begin);
+
+    const res = await app.request("/auth/enrol/passkey/register/begin", jsonBody({}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(offered);
   });
 });
 
@@ -697,6 +858,7 @@ describe("createTotpManageActions", () => {
       offered: [
         { service: fakeFactorService("email-otp"), role: "primary" },
         { service: totpService, role: "second", requirement: "optional" },
+        recoveryOffer(),
       ],
     }),
   };
@@ -717,6 +879,234 @@ describe("createTotpManageActions", () => {
     const res = await app.request("/account/totp", { method: "DELETE" });
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/account/totp");
+  });
+});
+
+describe("createRecoveryCodeActions", () => {
+  const NOW = 10_000_000;
+  const FRESH_MS = 900_000;
+  const ISSUED = ["AAAA-BBBB-CCCC-DDDD-EEEE-FFFF", "GGGG-HHHH-IIII-JJJJ-KKKK-LLLL"];
+
+  const confirmedRow = (kind: AuthFactorKind): AuthFactor => ({
+    id: `f-${kind}`,
+    userId: "u9",
+    kind,
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+
+  function codePages(holds: readonly AuthFactorKind[]) {
+    const calls: string[] = [];
+    const holding = (kind: "totp-app" | "passkey") =>
+      ({ ...fakeFactorService(kind), listEnrolments: async () => ok(holds.includes(kind) ? [confirmedRow(kind)] : []) }) as AuthFactorService;
+    const recovery = {
+      ...fakeFactorService("recovery-code"),
+      beginEnrolment: async (userId: string, at: number) => {
+        calls.push(`begin:${userId}`);
+        return ok({ kind: "recovery-code" as const, expiresAt: at, options: { codes: ISSUED } });
+      },
+      completeEnrolment: async (userId: string, presented: string) => {
+        calls.push(`complete:${userId}:${presented}`);
+        return presented === ISSUED[1] ? ok(confirmedRow("recovery-code")) : err("unrecognised" as const);
+      },
+    } as AuthFactorService;
+    const services = fakeAuthServices({
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(holds), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: holding("totp-app"), role: "second", requirement: "optional" },
+          { service: holding("passkey"), role: "second", requirement: "optional" },
+          { service: recovery, role: "second", requirement: "optional" },
+        ],
+      }),
+    });
+    const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
+    const actions = createRecoveryCodeActions(options);
+    const app = (seed: Seed) => {
+      const mountedApp = mounted(actionApp(seed), "POST", "/account/recovery-codes", actions.recoveryCodesGenerate);
+      return mounted(mountedApp, "POST", "/account/recovery-codes/confirm", actions.recoveryCodesConfirm);
+    };
+    return { calls, app };
+  }
+
+  it("shows a freshly staged set once, uncached, to a holder of an authenticator who has just stepped up", async () => {
+    const { calls, app } = codePages(["totp-app"]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes", formBody({}));
+    const html = await res.text();
+    expect({ status: res.status, cache: res.headers.get("cache-control"), codes: textOf(html, "pre", 'data-ref="recovery-codes"'), calls }).toEqual(
+      { status: 200, cache: "no-store", codes: "AAAA-BBBB-CCCC-DDDD-EEEE-FFFF\nGGGG-HHHH-IIII-JJJJ-KKKK-LLLL", calls: ["begin:u9"] },
+    );
+  });
+
+  it("issues codes to a passkey holder too, since a lost passkey needs recovering as much as a lost app", async () => {
+    const { calls, app } = codePages(["passkey"]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes", formBody({}));
+    expect({ status: res.status, calls }).toEqual({ status: 200, calls: ["begin:u9"] });
+  });
+
+  it("accepts a step-up one millisecond inside the freshness window", async () => {
+    const { calls, app } = codePages(["totp-app"]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - FRESH_MS + 1 }).request("/account/recovery-codes", formBody({}));
+    expect({ status: res.status, calls }).toEqual({ status: 200, calls: ["begin:u9"] });
+  });
+
+  const refusals: readonly {
+    label: string;
+    holds: readonly AuthFactorKind[];
+    seed: Seed;
+    expected: { status: number; location: string | null };
+  }[] = [
+    {
+      label: "an account holding no authenticator, whose mailbox alone must not mint a way past a second factor",
+      holds: [],
+      seed: { userId: "u9", stepUpAt: NOW - 1 },
+      expected: { status: 409, location: null },
+    },
+    {
+      label: "an account holding only codes, which recover nothing",
+      holds: ["recovery-code"],
+      seed: { userId: "u9", stepUpAt: NOW - 1 },
+      expected: { status: 409, location: null },
+    },
+    {
+      label: "a session that never stepped up",
+      holds: ["totp-app"],
+      seed: { userId: "u9" },
+      expected: { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" },
+    },
+    {
+      label: "a step-up exactly as old as the freshness window",
+      holds: ["totp-app"],
+      seed: { userId: "u9", stepUpAt: NOW - FRESH_MS },
+      expected: { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" },
+    },
+    {
+      label: "a step-up dated into the future",
+      holds: ["totp-app"],
+      seed: { userId: "u9", stepUpAt: NOW + 1 },
+      expected: { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" },
+    },
+    { label: "an anonymous request", holds: ["totp-app"], seed: {}, expected: { status: 303, location: "/auth/signin" } },
+  ];
+
+  for (const { label, holds, seed, expected } of refusals) {
+    it(`refuses both code POSTs to ${label}, staging and confirming nothing`, async () => {
+      const { calls, app } = codePages(holds);
+      const mountedApp = app(seed);
+      const answers = [];
+      for (const [path, fields] of [
+        ["/account/recovery-codes", {}],
+        ["/account/recovery-codes/confirm", { code: ISSUED[1] ?? "" }],
+      ] as const) {
+        const res = await mountedApp.request(path, formBody(fields));
+        answers.push({ status: res.status, location: res.headers.get("location") });
+      }
+      expect({ answers, calls }).toEqual({ answers: [expected, expected], calls: [] });
+    });
+  }
+
+  it("names why an account without an authenticator is refused codes", async () => {
+    const { app } = codePages([]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes", formBody({}));
+    expect(await res.text()).toBe("Recovery codes are issued only to an account holding an authenticator app or a passkey.");
+  });
+
+  it("confirms the staged set by one of its codes and follows the return-to", async () => {
+    const { calls, app } = codePages(["totp-app"]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request(
+      "/account/recovery-codes/confirm?next=%2Fapp",
+      formBody({ code: ISSUED[1] ?? "" }),
+    );
+    expect({ status: res.status, location: res.headers.get("location"), calls }).toEqual({
+      status: 303,
+      location: "/app",
+      calls: [`complete:u9:${ISSUED[1]}`],
+    });
+  });
+
+  it("re-renders the confirmation at 422 for a code outside the staged set, showing no code again", async () => {
+    const { app } = codePages(["totp-app"]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes/confirm", formBody({ code: "ZZZZ-ZZZZ" }));
+    const html = await res.text();
+    expect({
+      status: res.status,
+      error: textOf(html, "p", 'id="field-code-error"'),
+      codes: textOf(html, "pre", 'data-ref="recovery-codes"'),
+    }).toEqual({ status: 422, error: "That is not one of the new codes. Enter one exactly as it is shown.", codes: "" });
+  });
+
+  it("refuses an over-long confirmation at the schema, before the factor spends an attempt on it", async () => {
+    const { calls, app } = codePages(["totp-app"]);
+    const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes/confirm", formBody({ code: "A".repeat(65) }));
+    expect({ status: res.status, error: textOf(await res.text(), "p", 'id="field-code-error"'), calls }).toEqual({
+      status: 422,
+      error: "That is not one of the new codes. Enter one exactly as it is shown.",
+      calls: [],
+    });
+  });
+});
+
+describe("createAdminUserActions — resetFactors", () => {
+  const target = fakeAuthUser({ id: "u2", email: "member@example.com" });
+  const actor = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
+
+  function resetApp(seed: Seed, outcome: "changed" | "not-found" = "changed") {
+    const resets: string[] = [];
+    const admin = fakeAdminUserStore([target, actor], {
+      resetFactors: async (id, at) => {
+        resets.push(`${id}@${at}`);
+        return ok(outcome);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([target, actor]), admin });
+    const app = mounted(actionApp(seed), "POST", "/admin/users/:id/factors/reset", createAdminUserActions(options).resetFactors);
+    return { resets, app };
+  }
+
+  const answerOf = async (res: Response) => ({ status: res.status, location: res.headers.get("location") });
+
+  it("clears another account's factors and returns to its factors panel", async () => {
+    const { resets, app } = resetApp({ userId: "u9", admin: true });
+    const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
+    expect({ answer: await answerOf(res), resets }).toEqual({ answer: { status: 303, location: "/admin/users/u2/factors" }, resets: ["u2@1000"] });
+  });
+
+  it("refuses a signed-in non-administrator at 403 without resetting anything", async () => {
+    const { resets, app } = resetApp({ userId: "u9", admin: false });
+    const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
+    expect({ status: res.status, resets }).toEqual({ status: 403, resets: [] });
+  });
+
+  it("refuses an administrator resetting their own account at 409, whatever case the id is spelled in", async () => {
+    const { resets, app } = resetApp({ userId: "u9", admin: true });
+    const answers = [
+      (await app.request("/admin/users/u9/factors/reset", formBody({}))).status,
+      (await app.request("/admin/users/U9/factors/reset", formBody({}))).status,
+    ];
+    expect({ answers, resets }).toEqual({ answers: [409, 409], resets: [] });
+  });
+
+  it("answers 404 for an account that is not there, before any write", async () => {
+    const { resets, app } = resetApp({ userId: "u9", admin: true });
+    const res = await app.request("/admin/users/u404/factors/reset", formBody({}));
+    expect({ status: res.status, resets }).toEqual({ status: 404, resets: [] });
+  });
+
+  it("answers 404 when the account went between the read and the write", async () => {
+    const { app } = resetApp({ userId: "u9", admin: true }, "not-found");
+    expect((await app.request("/admin/users/u2/factors/reset", formBody({}))).status).toBe(404);
+  });
+
+  it("sends an anonymous request to sign-in", async () => {
+    const { resets, app } = resetApp({});
+    const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
+    expect({ answer: await answerOf(res), resets }).toEqual({ answer: { status: 303, location: "/auth/signin" }, resets: [] });
   });
 });
 
@@ -785,6 +1175,18 @@ describe("createAdminUserActions", () => {
     const res = await app.request("/admin/users/u2", { method: "DELETE" });
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/admin/users");
+  });
+
+  it("navigates an htmx delete to the listing with HX-Redirect, which fetch cannot follow into the card", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([member]) });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u2", { method: "DELETE", headers: HX_REQUEST });
+    expect({ status: res.status, redirect: res.headers.get("hx-redirect"), location: res.headers.get("location") }).toEqual({
+      status: 204,
+      redirect: "/admin/users",
+      location: null,
+    });
   });
 
   // No admin-service method takes the acting administrator's id, so with two admins the last-admin
@@ -910,6 +1312,25 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/signin");
     expect(removals).toBe(0);
+  });
+
+  it("navigates an anonymous htmx DELETE to sign-in with HX-Redirect, deleting nothing", async () => {
+    let removals = 0;
+    const admin = fakeAdminUserStore([member], {
+      remove: async () => {
+        removals += 1;
+        return ok("changed" as const);
+      },
+    });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
+    const app = mounted(actionApp(), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u2", { method: "DELETE", headers: HX_REQUEST });
+    expect({ status: res.status, redirect: res.headers.get("hx-redirect"), removals }).toEqual({
+      status: 204,
+      redirect: "/auth/signin",
+      removals: 0,
+    });
   });
 
   // Signed in is not administered: `require-admin` is a loader-side guard, so a member posting

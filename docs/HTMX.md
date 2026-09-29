@@ -6,20 +6,25 @@ audience: consumer
 
 # HTMX Integration
 
-> Owns the rulings behind forge's server-side HTMX surface — the trust posture on emitted attribute values, and the ruling that `isHxRequest` is
-> **not** a security boundary (§7). The exports, their signatures, and every usage example are owned by `src/html/README.md`.
+> Owns the rulings behind forge's server-side HTMX surface — the trust posture on emitted attribute values, the ruling that `isHxRequest` is
+> **not** a security boundary (§7), which attribute forge marks as inherited (§9), and how a handler tells a page request from a fragment request
+> (§10). The exports, their signatures, and every usage example are owned by `src/html/README.md`.
 >
 > Defers to: [`SECURITY_HARDENING.md`][sh-3e] §3e and §2d for the guards that must accompany it and for automatic URL sanitization;
-> [`UI_SSR_COMPONENTS.md`][usc] for the components these attributes land on.
+> [`SECURITY_HARDENING.md`][sh-2g] §2g for the `forge-htmx` Trusted Types policy; [`UI_SSR_COMPONENTS.md`][usc] for the components these attributes
+> land on.
 
 ---
 
 ## 0. Quick Reference
 
 - §7 Trust Posture: selector and JSON values must be developer-supplied
-- §7a URL-Valued hx Attributes Are Deliberately Unsanitized: why `"#"` is the wrong refusal here
-- §7b What htmx Evaluates: `hx-on:*` and a `js:`-prefixed `hx-vals`/`hx-headers` — the construction rule, and why `hx-on:*` stays untyped
+- §7a URL-Valued hx Attributes Are Deliberately Unsanitized: why `"#"` is the wrong refusal here, and the runtime layers beneath that reason
+- §7b What htmx Evaluates: `hx-on:*`, `js:`-prefixed values and trigger filters — the construction rule, the CSP and Trusted Types beneath it, and
+  why `hx-on:*` stays untyped
 - §8 The Form-Independent sync Default: why `closest form` is not a safe default
+- §9 Inheritance Is Explicit — hxAttrs Emits hx-boost:inherited: the one attribute forge marks as reaching descendants
+- §10 A Page or a Fragment — isPartial Reads HX-Request-Type: why a history restore must get a page, and what an absent value means
 
 ---
 
@@ -64,10 +69,13 @@ guard, because it also removes the pressure to supply a trustworthy value in the
 Further runtime layers sit **underneath** that reason. Neither is the control, and neither would justify the attributes being unsanitized on its
 own:
 
-- **htmx dispatches an XHR; it never navigates the value.** A `javascript:` pseudo-URL in an `hx-get` is a string handed to a request builder, not
-  an address the script engine evaluates — so the pseudo-URL that makes an `href` dangerous fails to execute here.
-- **The runtime and the CSP each refuse a cross-origin fetch.** `htmx.config.selfRequestsOnly` defaults to `true` in htmx 2, and a consumer's
-  `connect-src` directive ([`SECURITY_HARDENING.md`][sh-2a] §2a) bounds where a request may go at all.
+- **`forge-htmx` refuses a request URL that begins `js:` or `javascript:`.** htmx 4 evaluates such a URL as script instead of fetching it, so the
+  pseudo-URL that makes an `href` dangerous would execute from an `hx-get` too. The `forge-htmx` extension that `ui/client/htmx` registers
+  cancels the request before htmx reaches that step, and logs the element it refused. It applies the same prefix test htmx does, on every page,
+  whether or not Trusted Types is enforced ([`SECURITY_HARDENING.md`][sh-2g] §2g).
+- **The runtime and the CSP each refuse a cross-origin fetch.** htmx 4 passes `config.mode`, `"same-origin"` by default, to every `fetch`, and no
+  element's `hx-config` can override it. A consumer's `connect-src` directive ([`SECURITY_HARDENING.md`][sh-2a] §2a) bounds where a request may go
+  at all.
 
 The caller's obligation is therefore identical to §7's even though the argument differs. What changes is the remedy available when that obligation
 is broken — for a selector there is none, and for a URL the available one is rejected above rather than missing.
@@ -86,6 +94,10 @@ string: it is script, and the only thing that decides whether it is safe is who 
 - **`hx-vals` and `hx-headers` whose value begins `js:`** (`javascript:` is the accepted alias). The rest of the attribute is then an expression
   htmx evaluates per request rather than the JSON it otherwise parses. `src/jsx/types.ts` types both as a raw `string`, so nothing in the type
   surface tells the two forms apart.
+- **An `hx-trigger` filter in square brackets, and an `hx-confirm` whose value begins `js:`.** Each is an expression htmx evaluates when the
+  trigger fires.
+- **A verb attribute whose URL begins `js:` or `javascript:`.** `forge-htmx` refuses it before htmx evaluates it (§7a), so the rule below is not
+  the only thing standing in front of it.
 
 **Constructing any of these values from anything other than literal, developer-authored source is the defect this section names.** That is the one
 control, and it is the same for each. It is not a stronger version of §7's trust obligation but the same one at the point where it carries the most
@@ -114,10 +126,11 @@ does not own the trade — it owns that the trade be visible. So the layer is bo
 being emitted at all, since a route that never reaches `createSecurityHeaders` or `applySecurityHeaders` has no CSP from forge. The control above
 both — who wrote the attribute value — is the one that depends on neither.
 
-**Forge leaves htmx's `allowEval` and `allowScriptTags` at their default, on.** Turning off `allowEval` would silently cancel the `UNSAFE_EVAL`
-opt-in above, a second switch for one decision; turning off `allowScriptTags` would stop a page's own `<script type="module">` from running after an
-`hx-boost` navigation (`src/app/shell.tsx`); and the default CSP already blocks both paths for injected content, since it permits no eval and only
-nonced inline script.
+**htmx 4 has no switch of its own for either path, so the CSP and Trusted Types are the only layers beneath the construction rule.** htmx 2's
+`allowEval` and `allowScriptTags` are gone. Every evaluated form above compiles through the native `Function` constructor, which a policy without
+`'unsafe-eval'` refuses. Under enforced Trusted Types it is refused even when `UNSAFE_EVAL` admits eval, because `forge-htmx` gives htmx no policy
+for it ([`SECURITY_HARDENING.md`][sh-2g] §2g). A `<script>` inside swapped content is always rebuilt and run, with its text passed through the
+policy's `createScript`. The default CSP still refuses an injected one, because it permits only nonced inline script.
 
 **`hx-on:*` is deliberately absent from the JSX attribute types and stays absent.** Typing it means a template-pattern index signature — the suffix
 is an arbitrary event name, so no fixed set of keys covers it — added to the htmx attribute interface in `src/jsx/types.ts`. That interface is mixed
@@ -143,9 +156,49 @@ invisible at exactly the call site that got it wrong. A caller that _is_ inside 
 
 ---
 
+## 9. Inheritance Is Explicit — hxAttrs Emits hx-boost:inherited
+
+**htmx 4 applies an attribute only to the element that carries it, unless the name ends `:inherited`.** Its `implicitInheritance` setting defaults
+to off, and forge leaves it off. So an `hx-boost="true"` on `<body>` or `<nav>` boosts that element alone, and no link inside it — a silent loss
+of boosted navigation rather than an error.
+
+**`hxAttrs({ boost })` therefore emits `hx-boost:inherited`, and it is the only attribute forge marks this way.** Boost is the one htmx attribute
+whose ordinary home is a container reaching its descendants. On a link or a form the suffix costs nothing, because htmx reads the `:inherited`
+spelling on the element itself as well. Every other `hx-*` attribute forge renders sits on the element that issues the request — `<Form>` puts the
+verb and its `hx-headers` on the `<form>` — so none of them needs the suffix, and `hxAttrs` never adds it. An app that wants another attribute to
+reach descendants writes the suffix by hand.
+
+**`src/jsx/types.ts` types `hx-boost:inherited` and not a bare `hx-boost`**, so the container spelling htmx 4 does not honour is a type error at
+the JSX call site. `src/html/htmx/htmx-attrs.test.ts` pins the emitted name.
+
+---
+
+## 10. A Page or a Fragment — isPartial Reads HX-Request-Type
+
+**A handler that answers a page or a fragment from one route decides by `isPartial`, and `isPartial` is true only when `HX-Request-Type` is exactly
+`partial`.** htmx 4 sends `HX-Request: true` on every request it issues, including the two that must get a whole page:
+
+- **A boosted navigation**, which carries `HX-Boosted: true` and swaps the response into `<body>`.
+- **A history restore.** When the reader goes back or forward, htmx 4 fetches the page with an htmx GET carrying `HX-History-Restore-Request: true`
+  and no `HX-Boosted`, then replaces the whole body with the response.
+
+The htmx 2 test — `HX-Request` without `HX-Boosted` — answers a history restore with a fragment, and htmx then puts that fragment where the body
+was. `HX-Request-Type` is htmx's own statement of what it will do with the response: `full` when the target is `<body>` or an `hx-select` will pick
+from the response, and `partial` otherwise. An `hx-select` request is therefore answered with a page, which is what it selects from.
+
+**An absent or unrecognised `HX-Request-Type` reads as a page.** A request that did not say it wants a fragment — a hand-built `fetch` that sets
+`HX-Request`, a proxy that strips the header — gets the full document, which is the answer every client can use. `readHxRequest` exposes the value
+as `requestType`, which is `""` in that case.
+
+**`isPartial` is a rendering hint on the same terms as `isHxRequest`** (§7). `HX-Request-Type` is a header the client sets, so it decides how to
+render and never whether the caller is allowed. `src/html/htmx/htmx-headers.test.ts` pins each case above.
+
+---
+
 [boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
 [fr-6]: ./FORGE_REVIEW.md#6-valid-patterns--do-not-flag
 [sh-2a]: ./SECURITY_HARDENING.md#2a-createsecurityheaders-factory-pattern
 [sh-2e]: ./SECURITY_HARDENING.md#2e-default-header-set
+[sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [sh-3e]: ./SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
 [usc]: ./UI_SSR_COMPONENTS.md

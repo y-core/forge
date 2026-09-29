@@ -419,7 +419,8 @@ what `extraOrigins` may hold, and how the set reaches the guards, are [`SECURITY
 ## Signing and verifying webhooks
 
 Both sides follow [Standard Webhooks](https://www.standardwebhooks.com): three headers, an HMAC-SHA256 over `id.timestamp.body`, and
-`whsec_`-prefixed secrets of at least 32 bytes. Store each secret in a Worker secret, never in source.
+`whsec_`-prefixed secrets held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule — `whsec_$(openssl rand -base64 32)` gives one. Store each
+secret in a Worker secret, never in source.
 
 ### Sending
 
@@ -544,4 +545,5 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 [sh-3e]: ../../docs/SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
 [sh-3f]: ../../docs/SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
 [sh-5c]: ../../docs/SECURITY_HARDENING.md#5c-cloudflare-header-trust-boundary--trustcfheaders
+[sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [wp-4e]: ../../warden/canon/apps/WORKERS_PLATFORM.md#4e-development-transport-posture

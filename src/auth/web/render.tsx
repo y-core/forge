@@ -19,6 +19,7 @@ import { AuthFactorsView } from "./views/factors";
 import { PasskeyEditView } from "./views/passkey-edit";
 import { PasskeyEnrolView } from "./views/passkey-enrol";
 import { PasskeyListView } from "./views/passkey-list";
+import { RecoveryCodesView } from "./views/recovery-codes";
 import { SigninView } from "./views/signin";
 import { SignupView } from "./views/signup";
 import { TotpEnrolView } from "./views/totp-enrol";
@@ -39,6 +40,7 @@ export const AUTH_VIEWS: { readonly [Name in AuthViewName]: FC<AuthViewProps[Nam
   accountTotp: TotpEnrolView,
   accountEmailChange: EmailChangeView,
   accountFactors: AuthFactorsView,
+  accountRecoveryCodes: RecoveryCodesView,
   adminUsers: AdminUsersView,
   adminUser: AdminUserEditView,
   adminUserEdit: AdminUserEditView,
@@ -59,6 +61,7 @@ const AUTH_PAGE_TITLES: Readonly<Record<AuthViewName, string>> = {
   accountTotp: "Authenticator app",
   accountEmailChange: "Change email",
   accountFactors: "Sign-in methods",
+  accountRecoveryCodes: "Recovery codes",
   adminUsers: "Users",
   adminUser: "User",
   adminUserEdit: "Edit user",

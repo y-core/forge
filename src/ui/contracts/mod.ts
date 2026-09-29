@@ -24,6 +24,7 @@ export {
 } from "./bind-contract";
 export { ACTIVE_COMPOSITE_ITEM } from "./composite-contract";
 export { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "./dialog-contract";
+export { HTMX_TRUSTED_TYPES_POLICY } from "./htmx-contract";
 export { descriptionId, nameAttrs, tabId, titleId, triggerId } from "./naming";
 export type { ContainerNaming, DialogNaming, MenuPopupNaming } from "./types";
 export { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "./island-contract";
@@ -73,6 +74,7 @@ export {
   TURNSTILE_SCRIPT_SRC,
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
+  TURNSTILE_TRUSTED_TYPES_POLICY,
 } from "./turnstile-contract";
 export type { TurnstileAbandonedDetail } from "./types";
 export type { TurnstileAbandonReason } from "./types";

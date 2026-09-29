@@ -670,7 +670,7 @@ describe("definePage — the submission sequence's options are the page's own", 
 });
 
 describe("definePage — the CSRF field the guard consumed", () => {
-  const SECRET = "a".repeat(64);
+  const SECRET = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
   const KeysSchema = v.strictObject({ name: v.string() });
 
   function keysPage() {

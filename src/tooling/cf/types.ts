@@ -94,8 +94,8 @@ export interface SyncOutput {
   notes: SyncNote[];
   updatedConfig: WranglerConfig;
   configChanged: boolean;
-  /** The surface every row was compared against. */
-  target: DeploymentTarget;
+  /** The Worker script every row was compared against. */
+  scriptName: string;
   /** The resolved name prefix, so a report can state the naming convention it applied. */
   prefix: ResolvedPrefix;
 }
@@ -209,10 +209,7 @@ export interface PipelineConfig {
 
 export interface WranglerConfig {
   name: string;
-  /** Worker entry point. Mutually exclusive with `pages_build_output_dir`. */
   main?: string;
-  /** Pages build output directory. Its presence (without `main`) marks a Pages project. */
-  pages_build_output_dir?: string;
   vars?: Record<string, string>;
   kv_namespaces?: KvNamespaceConfig[];
   d1_databases?: D1DatabaseConfig[];
@@ -254,6 +251,3 @@ export interface TableSection {
   /** Lines printed under the grid — remarks about the section rather than about any binding in it. */
   footers?: string[];
 }
-
-/** Where this config deploys to, which decides the API surface a handler addresses. */
-export type DeploymentTarget = { kind: "worker" | "pages"; name: string };

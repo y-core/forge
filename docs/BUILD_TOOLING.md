@@ -6,9 +6,9 @@ audience: internal
 
 # Build Tooling
 
-> Owns forge's developer-facing command surface: the CLI framework (`tooling/cli`), the verification gate (`tooling/gate`), the release workflow
-> (`tooling/release`) and the working-tree curation (`tooling/curate`). Everything under `src/tooling/` runs on a developer's machine, never in a
-> Worker; membership in that container _is_ the exemption from the Web-APIs-only rule ([`NAMESPACES.md`][namespaces-4a] §4a).
+> Owns forge's developer-facing command surface: the CLI framework (`tooling/cli`), the verification gate (`tooling/gate`), and the release workflow
+> (`tooling/release`). Everything under `src/tooling/` runs on a developer's machine, never in a Worker; membership in that container _is_ the
+> exemption from the Web-APIs-only rule ([`NAMESPACES.md`][namespaces-4a] §4a).
 >
 > Defers to: [`ASSET_PIPELINE.md`][ap] for the asset build these commands drive and the generated module it writes;
 > [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d for that exemption; [`TESTING.md`][canon-testing-6] §6 for the gate's tiers and flags.
@@ -37,10 +37,6 @@ audience: internal
 - §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:full` alone, and where component coverage is checked
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
 - §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
-- §4 tooling/curate — Reducing a Demonstrator to Its Skeleton: features chosen at copy time, every refusal before a write
-- §4a The Manifest Names Features, and a Marker Names Its Feature: line, shared-line and region markers, and why each is matched on a comment
-- §4b The Gate Row Verifies the Skeleton It Produced: what `validate-features` runs, and why at `standard`
-- §4c Features Form a Graph: the two closure directions, why a cycle is refused, when a regeneration runs, and what the import boundary reads
 
 ---
 
@@ -109,17 +105,12 @@ value, which `validateNoMutualValuePairs` rejects.
 command factories stays out of `mod.ts` — the git and `package.json` helpers in `src/tooling/release/` (§2c), the gate's formatters (§2f). The
 test is the _caller_, not difficulty or stability: a helper is unpublished because nobody outside would reach for it.
 
-**The prebuilt-JavaScript subpaths each publish exactly the one thing a foreign loader needs.** `@y-core/forge/tooling/gate/chromium` is
-what a consumer's `playwright.config.ts` imports and `@y-core/forge/tooling/lint/plugin` is what a consumer's `.oxlintrc.json` names, because both
-are loaded by node rather than by the Worker runtime and node will not strip types from a file under `node_modules`. Neither may grow a symbol the
-source barrel does not already own: they are generated copies held against it by `validate-chromium-bundle` and `validate-lint-plugin`, so anything
-added to one by hand is drift the gate fails on. [`NAMESPACES.md`][namespaces-3c] §3c owns the rule.
+**A prebuilt-JavaScript subpath is a generated copy of its source, so nothing is ever added to it by hand** — its drift check fails on the
+difference ([`NAMESPACES.md`][namespaces-3c] §3c).
 
 ### 2a. createReleaseCommand — Automated Release Workflow
 
-**`createReleaseCommand(config, deps?)` takes a config object, not a program.** `cwd` is required; `tagPrefix` defaults to `"v"` and `stageFiles` to
-what the release wrote (see below). The second parameter is the injected dependency set, present so the command is testable — production callers
-pass one argument.
+**`createReleaseCommand` takes a config object, not a program**, and its dependencies are injected so the command is testable.
 
 It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the next version, reaches a verdict on the changelog and
 promotes it in memory (§2d), prints the previous and next versions with the tag and what the promotion would write, refuses to re-tag, refuses a
@@ -135,26 +126,12 @@ stays a deliberate act.
 prose commit. A project with no changelog stages `package.json` alone, because `commit` runs `git add` and naming a path that does not exist would
 fail the release outright.
 
-**`stageFiles` is an override, not an addition.** Naming it replaces the derived list. It exists for what a release touches _beyond_ its own writes
-— a lockfile, a monorepo's sibling manifests, a version constant in source — and those callers state the full list deliberately.
-
 **`sectionsFile` is the one exception, because it is not a project's choice.** The section manifest is forge's own write, and the gate's
 `checkChangelog` refuses a version with no recorded digest — so it is staged on every run that promotes a changelog, whether or not `stageFiles`
 names it. A run that promotes nothing neither writes it nor stages it, for the same reason the changelog is left out of that run's default.
 
-The refusals are guards, not conveniences:
-
-| Refusal | Why, and when it is reached | Override |
-| --- | --- | --- |
-| Dirty working tree | Checked before anything is resolved, so a half-finished change cannot ship | `--allow-dirty`, which defeats the guard's only purpose |
-| Tag already exists | Checked after the version is resolved, so a botched release cannot be re-cut over its own tag | none |
-| Nothing to release | No commits since the latest tag; reports "already at" and stops. `package.json` disagreeing with the tag there is an error, not a bump | none |
-| Empty `[Unreleased]`, with commits since the tag | Shipping a release nobody wrote a line for is the drift the changelog prevents | `--allow-empty-changelog` (§2d); a _malformed_ changelog is a separate refusal no flag reaches |
-| Public export surface shrank under an auto-patch | The bump is derived from subject prefixes alone; a removed symbol shipped as a patch breaks every consumer pinned to a `^` range (§2b) | `--allow-semver` |
-| HEAD is not on the branch the remote publishes from | The tag would publish commits the published branch does not carry. A remote naming no publishing branch is reported and released, never refused against a fabricated one | `--allow-branch` |
-| HEAD is detached | The release commit would sit on no branch, so the printed `git push` pushes nothing while the tag publishes a commit no branch carries. Asked before the remote, because it is answerable without one | `--allow-branch` |
-| The verification gate failed | The tag is the publish trigger, so CI's run happens after the tag is already fetchable; this is the last point a red tree can still be refused | `--allow-unverified` |
-| The gate could not be run at all | A missing script exits 1 exactly as a failing gate does, so the two are separated at the manifest and refused in different words | `gateCommand`, or `--allow-unverified` |
+**Every refusal is a guard, not a convenience.** [`src/tooling/release/README.md`][release-refusals] lists each with the flag that overrides it,
+where one does; an override defeats exactly one guard, and a malformed changelog has none (§2d).
 
 **The gate is `gateCommand`, defaulting to `bun run verify`.** `forge release` is a first-party verb on the shipped CLI with an optional config
 module, so a consumer whose verification script is named otherwise states it in that module rather than passing `--allow-unverified` on every
@@ -171,16 +148,6 @@ as dirty, and forcing past that promotes the changelog a second time under the s
 **A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error` as `Error: <message>` and exits 1 (§1c), so the
 operator sees the same output while the guard stays reachable from a test that mocks no process. **The changelog verdict is reached after the
 version is resolved** — it has to know whether commits exist — **and before `package.json` is written**, so no mutation can precede a refusal.
-
-**`--dry` prints the resolved version and what would be promoted, then stops before any write.** It is safe to run at any time — but it resolves
-from `<latest-tag>..HEAD`, so running it _before_ committing reports "nothing to release" rather than the version a release would produce. Commit
-first, then dry-run. **It skips the clean-tree check, the branch check and the gate** — every other refusal, the
-shrinking-surface guard included, fires under `--dry`, because a preview that hides the refusal it is previewing is worse than no preview.
-
-**An automatic bump prints the evidence for itself**, as a `because:` row beside `next:`: the short sha and subject of the commit whose prefix won,
-or — for a patch, which no commit asks for — `no major:/minor: subject in <n> commits since <tag>`. The row is printed in a real release too, not
-only under `--dry`. Only an `auto-*` reason carries evidence; an explicit version, a first release and an in-sync run print no row, because no
-commit derived their version.
 
 **The bump is the highest one any commit in `<latest-tag>..HEAD` asks for**: a `major:` subject prefix bumps major, a `minor:` prefix bumps minor, a
 range with neither is a patch. Scanning the whole range rather than the tip is the point — a cycle holding a `major:` commit followed by `fix typo`
@@ -292,12 +259,6 @@ forge's in `config/steps.ts` (see [`TESTING.md`][testing-6a] §6a).
 `createGateCommand`, so a project needs no binding file of its own. The factory stays published for the case the bin cannot serve — a table
 assembled at run time, or a gate embedded in a larger CLI.
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `cwd` | `string` | — | Repository root. Every step is spawned here, so a step's relative paths resolve. |
-| `steps` | `readonly Step[]` | — | The table to resolve against. |
-| `binDir` | `string` | `${cwd}/node_modules/.bin` | Prepended to `PATH` so bare tool names resolve. |
-
 **One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a task closes on; `verify --mode quality` is the
 writing loop — every row that judges the source without running it — and `verify --full` (sugar for `--mode full`) adds everything, including the
 steps needing a machine prerequisite. Verbs sharing every flag and differing only in a membership filter are a mode by definition, and modelling
@@ -385,15 +346,6 @@ into the forge checkout and every runtime resolves `import.meta.url` to the real
 `forge assets` command therefore carries `--root`, falling back to `FORGE_APP_ROOT`, with an empty value treated as absent so an exported-but-unset
 variable cannot resolve every path against `/`. This is the _stated_ branch, not a third one — reading through the symlink is the walk this section
 rules out, and it would answer for a `file:` dependency of a dependency exactly as confidently as for the app.
-
-**Tailwind's `@source` scanner is the opposite case, and does follow the symlink.** This section rules out _forge_ walking through a symlink to
-derive a root; it says nothing about a third-party scanner reading content. An `@source` line pointing into a `file:`-installed dependency resolves
-and its classes are generated — verified against an isolated `source(none)` stylesheet, which emitted 19 KB of auth utilities that were otherwise
-absent.
-
-**Do not A/B a `@source` line against your built stylesheet to decide whether it is needed.** Adding the auth directive to a forge app changes the
-output by nothing today, because every class forge's auth views use is already produced by the `ui/core` and `ui/chrome` scan set. That overlap is a
-coincidence of the current markup, not a contract — a diff of zero here means the sets happen to intersect, not that the line is redundant.
 
 ### 2i. Checks Are Functions, Not Scripts
 
@@ -542,117 +494,12 @@ different posture; forge itself ships the step rather than running it, having no
 
 ---
 
-## 4. tooling/curate — Reducing a Demonstrator to Its Skeleton
-
-**`forge curate <dir> --keep <features>` or `--drop <features>` copies the working tree into a fresh directory, minus the directories and marked
-lines of the features it drops.** The manifest is the module an application default-exports `defineFeatures({...})` from — `features.ts` in its
-`config/` unless `--config` names another — and `@y-core/forge/tooling/curate` publishes both the verb and that helper. Its use is a demonstrator
-application whose remainder, with some or all of its demonstrations removed, is the application a new project starts from. The manifest is the whole
-of forge's understanding of that split: forge knows nothing about what a feature means, only which directories, files, `package.json` scripts and
-seam files it names.
-
-The working tree is what `git ls-files --cached --others --exclude-standard` lists — tracked and untracked files alike, minus what `.gitignore`
-excludes and what has been deleted from disk — so a skeleton carries no `node_modules`, no build output and no local secret the demonstrator
-ignores.
-
-**Features are chosen when a copy is made, and never added to one afterwards.** Dropping nothing is a plain copy. The manifest is left out only
-when every feature is dropped, since nothing in that skeleton reads it; a partial copy keeps it, edited like any seam, so the features it kept
-can be curated in turn. A feature's entry in the manifest is therefore wrapped in that feature's region, and the gate row checks the kept
-manifest names exactly the features the copy kept.
-
-**Every refusal happens before anything is written, and the manifest's own are the same whichever features a copy drops.** The namespace's README
-lists them. A curation that quietly removes nothing is the worst outcome: the skeleton imports a directory that is gone, and fails far from the
-cause. A symbolic link is refused wherever an edit or a copy would follow it, since the write would land outside the target. Holding every drop
-set to the same refusals means the combination nobody ran is as sound as the one somebody did. A failed copy, or a failed regeneration (§4c),
-removes what it wrote and every parent it created.
-
-### 4a. The Manifest Names Features, and a Marker Names Its Feature
-
-**A line is removed when it ends with a comment naming its feature — `/* feature:showcase */` — and nothing else.** The comment may be `/* */`,
-`//`, `#` or `<!-- -->`, so the same marker works in TypeScript, JSONC, TOML, a dotenv file and Markdown. A match on a line's content stops
-matching the moment the line is reformatted, and then removes nothing. A marker survives any reformatting that keeps the comment on its line,
-and a listed seam holding no marker for its feature is an error rather than a no-op, so the drift is loud at the next curation. A line carrying the
-marker anywhere but at its end — inside a string, say — is kept.
-
-**A marker naming several features — `/* feature:showcase,contact */` — removes its line only when every one of them is dropped.** A line two
-features share survives as long as either is kept, which is the only reading under which dropping one feature cannot break the other.
-
-**A region, `feature:<features>:begin` to `feature:<features>:end`, removes every line between them, its own two included, under the same rule.**
-It is how a block that cannot be written one line per marker — a paragraph of prose, an object literal — is tailored. Regions do not nest, an end
-must name the features its begin named, and a region left open is refused; each would otherwise leave the extent of a removal to be guessed.
-
-**A marker in a file that is not one of its feature's seams is an error, and so is a marker naming a feature the manifest does not.** The curation
-reads every text file in the tree, and refuses either one: otherwise the line survives into the skeleton, and nothing reports it unless it happens
-to import something the curation removed. The manifest itself is the one file every feature may mark without listing it.
-
-Every other byte of the file is kept, its final newline included, so a skeleton differs from its demonstrator by exactly the marked lines, the
-removed directories and files, and the removed scripts.
-
-**A file a feature owns is left out whole, and it may not be a seam of a feature that could outlive its owner.** Some files cannot move into a
-feature's directory — a tool reads its config from a fixed path — so a feature names them in `files`. A kept feature marking a file the copy then
-leaves out would lose its lines without a word, so the file may be a seam only of its owner or of features that require the owner, which the
-graph (§4c) drops with it.
-
-**`package.json` takes no comment, so a feature names its scripts instead, and each is removed as its line.** The file is edited rather than
-re-serialised because a formatter owns its layout, and a rewrite would reflow every short array the formatter keeps on one line. The edit is then
-held against the parsed file with the scripts deleted, and a layout on which removing lines is not exactly that — entries sharing a line, a value
-continued onto the next — is refused rather than guessed at.
-
-### 4b. The Gate Row Verifies the Skeleton It Produced
-
-**`cloudflareWorkerSteps({ features: {} })` appends `validate-features`, a `full`-tier row that curates into a temporary directory once per profile
-and runs each skeleton's own gate there.** A profile is one `--drop` list, resolved through the graph (§4c) before anything runs; a profile
-resolving to a set an earlier one proved runs once, and its label names what the graph added. The default is each feature dropped alone and then
-every feature together, since a line two features share is exercised both ways only by that set; `profiles` names another. An empty `profiles`, or a
-profile that drops nothing, fails the row: either would pass having proved no skeleton. The row stops at the first profile that fails, and names it.
-A manifest can be satisfied and still produce a skeleton that does not build — a seam left unmarked beside a removed directory it imports — and only
-running the skeleton's gate finds that. The verb itself still stops at the tree; the row is what verifies it.
-
-**The row runs the skeleton's `standard` tier, never `full`.** The skeleton's step table still carries `validate-features` when the demonstrator's
-does, so a `full` run inside the skeleton would curate it again. `standard` holds every row that judges and runs the code, without the recursion.
-
-**The skeleton borrows the demonstrator's `node_modules` through a symlink, and the row unlinks it before removing the temporary tree.** Installing
-afresh would make the row a network operation; removing the tree with the link still in place would let the recursive removal follow it into the
-demonstrator's installed dependencies. Where the preset names an asset config, the row builds the skeleton's assets first, since its typecheck
-reads the generated manifest.
-
-**Every command runs with `FORGE_APP_ROOT` set to the temporary tree and `NODE_PRESERVE_SYMLINKS=1`**, so a verb that defaults its root from
-that variable resolves the skeleton, and a module resolved through the linked `node_modules` keeps its in-tree path rather than its real one.
-
-### 4c. Features Form a Graph
-
-**A feature names the features it cannot work without in `requires`, and a selection is closed over that graph before anything is copied.**
-Keeping a feature keeps what it requires, transitively; dropping one drops what requires it, transitively. Each is the only direction that leaves
-a skeleton whose imports resolve: a kept feature whose requirement is gone imports a directory that is not there, and a dropped requirement under
-a kept dependent is the same failure seen from the other side. Every addition is reported with the features that brought it in, because a copy
-larger or smaller than the one asked for has to say why.
-
-**A cycle is refused.** Two features that require one another can be neither kept nor dropped apart, so they are one feature under two names;
-the refusal says to merge them, or to move what they share into a feature both require. An unknown requirement and a feature requiring itself are
-refused with it, before any selection is read.
-
-**A regeneration runs only for a kept feature, and only when the copy drops something.** A feature may name paths the copy leaves out and a command
-that writes them afresh inside it — a migration history composed from the schemas the demonstrator holds is the case it exists for. A dropped
-feature's regeneration would rebuild what the copy does not hold, and a plain copy changed nothing its history describes, so in both the
-demonstrator's own files are still true. The command runs with the root's `node_modules` linked in for its duration, and a failure removes the copy
-as a failed copy does.
-
-**The import boundary reads the same graph.** With `features` in the preset, each feature's directory under the scanned sources is guarded
-against the core, and a feature's source may import another feature only when it requires it, directly or through another. The manifest is then
-the one statement of which slice may reach which: an undeclared import is exactly the edge a curation would cut without knowing, so the boundary
-refuses it at the import rather than at the skeleton's gate.
-
-**A marker naming several features usually marks a capability nobody named.** A shared line survives while either feature is kept (§4a), which is
-correct and opaque. Once shared lines accumulate — a CSP source, a middleware, a binding — make the capability a feature of its own that each
-requires: the graph then keeps it exactly while one of them is kept, and the manifest says so.
-
----
-
 [ap]: ./ASSET_PIPELINE.md
 [canon-testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
-[namespaces-3c]: ./NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin
+[namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
+[release-refusals]: ../src/tooling/release/README.md#getting-past-a-refusal
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-three-modes
 [testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-two-lines-between-the-modes

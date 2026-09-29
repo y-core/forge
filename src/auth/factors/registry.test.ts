@@ -41,6 +41,7 @@ function service(kind: AuthFactorKind, capabilities: { stepUp: boolean }, enrolm
 const EMAIL_OTP = service("email-otp", { stepUp: true }, "implicit");
 const PASSKEY = service("passkey", { stepUp: true }, "explicit");
 const TOTP_APP = service("totp-app", { stepUp: true }, "explicit");
+const RECOVERY_CODE = service("recovery-code", { stepUp: true }, "explicit");
 
 // A second factor that needs no enrolment row and identifies nobody, so the implicit-second cases
 // can be written without offering the one identifying kind as a second factor.
@@ -71,7 +72,6 @@ function stubStore(enrolled: readonly AuthFactor[], calls: AuthFactorKind[][] = 
     },
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
-    unconfirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     recordVerification: () => Promise.resolve(ok(true)),
     countSecretsNotUnder: () => Promise.resolve(ok(0)),
@@ -87,8 +87,14 @@ function second(offered: AuthFactorService, requirement: AuthFactorRequirement =
   return fakeFactorOffer(offered, "second", requirement);
 }
 
+/** `offered`, with the optional `recovery-code` offer the registry demands beside any `totp-app` or `passkey`. */
+function recoverable(offered: readonly AuthFactorOffer[]): AuthFactorOffer[] {
+  const needs = offered.some((offer) => offer.role === "second" && (offer.service.kind === "passkey" || offer.service.kind === "totp-app"));
+  return needs ? [...offered, second(RECOVERY_CODE)] : [...offered];
+}
+
 function registry(offered: readonly AuthFactorOffer[], store: FactorStore = stubStore([])): ReturnType<typeof createFactorRegistry> {
-  return createFactorRegistry(store, { offered });
+  return createFactorRegistry(store, { offered: recoverable(offered) });
 }
 
 describe("the capability matrix", () => {
@@ -168,6 +174,75 @@ describe("createFactorRegistry — what it refuses to build", () => {
   });
 });
 
+describe("createFactorRegistry — the recovery-code rules", () => {
+  function build(offered: readonly AuthFactorOffer[]): () => ReturnType<typeof createFactorRegistry> {
+    return () => createFactorRegistry(stubStore([]), { offered });
+  }
+
+  it("refuses `recovery-code` offered as the primary factor", () => {
+    const illegal = { service: RECOVERY_CODE, role: "primary" } as unknown as AuthFactorOffer;
+    expect(build([illegal, second(TOTP_APP)])).toThrow(/^createFactorRegistry: "recovery-code" cannot be primary$/);
+  });
+
+  it("refuses `recovery-code` under any requirement but `optional`", () => {
+    const refusals: string[] = [];
+    for (const requirement of ["mandatory", { mandatoryForRoles: ["admin"] }] as const) {
+      try {
+        build([primary(EMAIL_OTP), second(TOTP_APP), second(RECOVERY_CODE, requirement)])();
+      } catch (thrown) {
+        refusals.push((thrown as Error).message);
+      }
+    }
+    const refusal = 'createFactorRegistry: "recovery-code" must be offered as "optional" — it is issued after a step-up, never owed before one';
+    expect(refusals).toEqual([refusal, refusal]);
+  });
+
+  it("refuses `totp-app` or `passkey` offered as a second factor without `recovery-code`, whatever it is required to be", () => {
+    const refusals: string[] = [];
+    for (const offered of [TOTP_APP, PASSKEY, IMPLICIT_PASSKEY]) {
+      for (const requirement of ["optional", "mandatory"] as const) {
+        try {
+          build([primary(EMAIL_OTP), second(offered, requirement)])();
+          refusals.push(`${offered.kind} ${requirement}: built`);
+        } catch (thrown) {
+          refusals.push(`${offered.kind} ${requirement}: ${(thrown as Error).message}`);
+        }
+      }
+    }
+    const totp =
+      'createFactorRegistry: "totp-app" is offered as a second factor without "recovery-code" — a lost device or key would lock its users out';
+    const passkey =
+      'createFactorRegistry: "passkey" is offered as a second factor without "recovery-code" — a lost device or key would lock its users out';
+    expect(refusals).toEqual([
+      `totp-app optional: ${totp}`,
+      `totp-app mandatory: ${totp}`,
+      `passkey optional: ${passkey}`,
+      `passkey mandatory: ${passkey}`,
+      `passkey optional: ${passkey}`,
+      `passkey mandatory: ${passkey}`,
+    ]);
+  });
+
+  it("refuses `recovery-code` with no explicit second factor beside it to recover", () => {
+    const refusal = /^createFactorRegistry: "recovery-code" needs another explicit second factor to recover$/;
+    expect(build([primary(EMAIL_OTP), second(RECOVERY_CODE)])).toThrow(refusal);
+    expect(build([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY), second(RECOVERY_CODE)])).toThrow(refusal);
+  });
+
+  it("builds `recovery-code` offered as optional beside either recoverable kind, and a deployment with no second factor needs none", () => {
+    const built = [
+      build([primary(EMAIL_OTP), second(TOTP_APP, "mandatory"), second(RECOVERY_CODE)])(),
+      build([primary(EMAIL_OTP), second(PASSKEY), second(RECOVERY_CODE)])(),
+      build([primary(EMAIL_OTP)])(),
+    ];
+    expect(built.map((one) => one.seconds.map((offer) => offer.service.kind))).toEqual([
+      ["totp-app", "recovery-code"],
+      ["passkey", "recovery-code"],
+      [],
+    ]);
+  });
+});
+
 describe("createFactorRegistry — resolving a second factor", () => {
   it("asks for nothing when no second factor is offered, and does not touch the store", async () => {
     const calls: AuthFactorKind[][] = [];
@@ -191,7 +266,7 @@ describe("createFactorRegistry — resolving a second factor", () => {
   it("asks for enrolment as a successful outcome when a mandatory factor is not enrolled", async () => {
     const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")]).resolve(USER_ID);
     expect(resolved.ok).toBe(true);
-    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"] } });
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] } });
   });
 
   it("asks for nothing when every second factor is optional and nothing is enrolled", async () => {
@@ -204,12 +279,24 @@ describe("createFactorRegistry — resolving a second factor", () => {
   it("owes a mandatory factor even where another second factor is already confirmed", async () => {
     const store = stubStore([factor("passkey", 5_000)]);
     const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory"), second(PASSKEY)], store).resolve(USER_ID);
-    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"] } });
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: ["passkey"] } });
+  });
+
+  it("names a confirmed recovery code as the step-up owed before re-enrolling a purged factor", async () => {
+    const store = stubStore([factor("recovery-code", 5_000)]);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")], store).resolve(USER_ID);
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: ["recovery-code"] } });
+  });
+
+  it("names every confirmed second kind as a step-up before enrolling, in offered order, and no unconfirmed one", async () => {
+    const store = stubStore([factor("recovery-code", 5_000), factor("passkey", 5_000), factor("totp-app", null)]);
+    const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory"), second(PASSKEY)], store).resolve(USER_ID);
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: ["passkey", "recovery-code"] } });
   });
 
   it("names only the owed kinds, never every enrollable one", async () => {
     const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory"), second(PASSKEY)]).resolve(USER_ID);
-    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"] } });
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] } });
   });
 
   it("lets any confirmed second factor satisfy the step-up once nothing is owed", async () => {
@@ -223,14 +310,14 @@ describe("createFactorRegistry — resolving a second factor", () => {
   it("owes an enrolment on a row that exists and is unconfirmed, never a step-up", async () => {
     const store = stubStore([factor("totp-app", null)]);
     const resolved = await registry([primary(EMAIL_OTP), second(TOTP_APP, "mandatory")], store).resolve(USER_ID);
-    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"] } });
+    expect(resolved).toEqual({ ok: true, data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] } });
   });
 
   it("demands `mandatoryForRoles` of a matching role alone", async () => {
     const offered = [primary(EMAIL_OTP), second(TOTP_APP, { mandatoryForRoles: ["admin"] })];
     expect(await registry(offered).resolve(USER_ID, { roles: ["admin"] })).toEqual({
       ok: true,
-      data: { status: "enrolment-required", kinds: ["totp-app"] },
+      data: { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] },
     });
     expect(await registry(offered).resolve(USER_ID, { roles: ["member"] })).toEqual({ ok: true, data: { status: "satisfied" } });
     expect(await registry(offered).resolve(USER_ID)).toEqual({ ok: true, data: { status: "satisfied" } });
@@ -244,12 +331,12 @@ describe("createFactorRegistry — resolving a second factor", () => {
   it("never offers the primary factor as its own step-up", async () => {
     const calls: AuthFactorKind[][] = [];
     await registry([primary(EMAIL_OTP), second(PASSKEY, "mandatory"), second(TOTP_APP, "mandatory")], stubStore([], calls)).resolve(USER_ID);
-    expect(calls).toEqual([["passkey", "totp-app"]]);
+    expect(calls).toEqual([["passkey", "totp-app", "recovery-code"]]);
   });
 
   it("demands an implicit step-up factor from a user holding no factor rows, whatever it is required to be", async () => {
     for (const requirement of ["mandatory", "optional"] as const) {
-      const resolved = await registry([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY, requirement)]).resolve(USER_ID);
+      const resolved = await registry([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY, requirement), second(TOTP_APP)]).resolve(USER_ID);
       expect(`${requirement}: ${JSON.stringify(resolved)}`).toBe(
         `${requirement}: ${JSON.stringify({ ok: true, data: { status: "step-up-required", kinds: ["passkey"] } })}`,
       );
@@ -263,7 +350,7 @@ describe("createFactorRegistry — resolving a second factor", () => {
   });
 
   it("never reports `enrolment-required` with an empty kinds list, whatever is offered and whatever is enrolled", async () => {
-    const seconds: readonly (readonly AuthFactorService[])[] = [[TOTP_APP], [IMPLICIT_PASSKEY], [IMPLICIT_PASSKEY, TOTP_APP]];
+    const seconds: readonly (readonly AuthFactorService[])[] = [[TOTP_APP], [IMPLICIT_PASSKEY, TOTP_APP]];
     const stores = [stubStore([]), stubStore([factor("totp-app", null)]), stubStore([factor("totp-app", 5_000)])];
     const requirements: readonly AuthFactorRequirement[] = ["mandatory", "optional", { mandatoryForRoles: ["admin"] }];
     const empty: string[] = [];
@@ -297,26 +384,19 @@ describe("createFactorRegistry — the query count", () => {
   it("issues exactly one factor-table statement for three offered factors", async () => {
     const db = fakeD1(() => []);
     const store = createFactorStore(createD1Client(db as unknown as D1Database, { logger: nullLogger }));
-    await createFactorRegistry(store, { offered: [primary(EMAIL_OTP), second(PASSKEY, "mandatory"), second(TOTP_APP, "mandatory")] }).resolve(
-      USER_ID,
-    );
+    await createFactorRegistry(store, {
+      offered: recoverable([primary(EMAIL_OTP), second(PASSKEY, "mandatory"), second(TOTP_APP, "mandatory")]),
+    }).resolve(USER_ID);
     expect(db.calls).toHaveLength(1);
-    expect(db.calls[0]?.sql).toContain("kind IN (?, ?)");
+    expect(db.calls[0]?.sql).toContain("kind IN (?, ?, ?)");
   });
 
   it("asks the store only about the explicit kinds, because an implicit one has no row to find", async () => {
     const db = fakeD1(() => []);
     const store = createFactorStore(createD1Client(db as unknown as D1Database, { logger: nullLogger }));
-    await createFactorRegistry(store, { offered: [primary(EMAIL_OTP), second(IMPLICIT_PASSKEY), second(TOTP_APP)] }).resolve(USER_ID);
+    await createFactorRegistry(store, { offered: recoverable([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY), second(TOTP_APP)]) }).resolve(USER_ID);
     expect(db.calls).toHaveLength(1);
-    expect(db.calls[0]?.params.slice(1)).toEqual(["totp-app"]);
-  });
-
-  it("issues no statement at all when every second factor is implicit", async () => {
-    const db = fakeD1(() => []);
-    const store = createFactorStore(createD1Client(db as unknown as D1Database, { logger: nullLogger }));
-    await createFactorRegistry(store, { offered: [primary(EMAIL_OTP), second(IMPLICIT_PASSKEY, "mandatory")] }).resolve(USER_ID);
-    expect(db.calls).toHaveLength(0);
+    expect(db.calls[0]?.params.slice(1)).toEqual(["totp-app", "recovery-code"]);
   });
 });
 

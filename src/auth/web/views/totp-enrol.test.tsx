@@ -9,7 +9,7 @@ import type { ForgeIcon } from "../../../ui/core/types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
 import { attrOf, attrsOf, elementOf, tagOf, textOf } from "../web.fixture";
-import { TotpEnrolView } from "./totp-enrol";
+import { AUTH_TOTP_ID, TotpEnrolView } from "./totp-enrol";
 import type { TotpEnrolViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
@@ -139,6 +139,17 @@ describe("TotpEnrolView once enrolled", () => {
     expect(attrsOf(html, 'data-ref="totp-remove"')["data-slot"]).toBe("button");
     expect(attrOf(html, 'data-slot="form"', "hx-delete")).toBe("/account/totp");
   });
+
+  it("sends the remove's CSRF token as a header only, with no hidden field htmx would put in the DELETE's URL", async () => {
+    const html = await totp({ state: ENROLLED });
+    expect(attrOf(html, 'data-slot="form"', "hx-headers")).toBe("{&quot;X-CSRF-Token&quot;:&quot;csrf-1&quot;}");
+    expect(html).not.toContain('name="_csrf"');
+  });
+
+  it("swaps the remove's answer over the view's own root", async () => {
+    const html = await totp({ state: ENROLLED });
+    expect(attrsOf(html, 'data-slot="form"')).toMatchObject({ "hx-target": `#${AUTH_TOTP_ID}`, "hx-swap": "outerHTML" });
+  });
 });
 
 describe("TotpEnrolView paths", () => {
@@ -146,6 +157,11 @@ describe("TotpEnrolView paths", () => {
     const settings = authPaths(accountRoutes("/settings"));
     expect(attrOf(await totp({ enrolPath: settings.totpEnrol() }), 'data-slot="form"', "action")).toBe("/settings/totp");
     expect(attrOf(await totp({ state: ENROLLED, removePath: settings.totpRemove() }), 'data-slot="form"', "hx-delete")).toBe("/settings/totp");
+  });
+
+  it("marks the root with one id in either state", async () => {
+    expect(attrOf(await totp(), 'data-slot="card"', "id")).toBe(AUTH_TOTP_ID);
+    expect(attrOf(await totp({ state: ENROLLED }), 'data-slot="card"', "id")).toBe(AUTH_TOTP_ID);
   });
 
   it("heads the two states differently, so a visitor can tell which one they are on", async () => {

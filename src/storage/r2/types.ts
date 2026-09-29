@@ -58,6 +58,7 @@ export interface StorePutOptions {
   contentLanguage?: string;
   cacheControl?: string;
   metadata?: Record<string, string>;
+  sha256?: string | Uint8Array;
 }
 
 /** @public */
@@ -117,6 +118,7 @@ export interface R2ObjectBody extends R2Object {
 export interface R2PutOptions {
   httpMetadata?: R2HttpMetadata;
   customMetadata?: Record<string, string>;
+  sha256?: string | Uint8Array;
 }
 
 /** @public */
@@ -182,6 +184,7 @@ export interface R2ListLike {
 export interface R2PutLike {
   httpMetadata?: R2HttpMetadata;
   customMetadata?: Record<string, string>;
+  sha256?: string | Uint8Array;
 }
 
 /** Structural contract — the consumed surface of an R2 bucket binding. @public */

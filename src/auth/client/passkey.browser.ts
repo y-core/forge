@@ -24,7 +24,15 @@ declare global {
     passkeyOutcomes: Array<{ mode: string; reason?: string }>;
     /** Cleanup returned by the controller, parked so a later evaluate can call it. */
     passkeyCleanup?: () => void;
+    /** Hands each PRF result the page received to the spec, since in-page state dies at the navigation. */
+    recordPrf: (result: RecordedPrf) => Promise<void>;
   }
+}
+
+interface RecordedPrf {
+  mode: string;
+  credentialId: string;
+  output: number[] | null;
 }
 
 const OPTIONS_PATH = "/auth/passkey/options";
@@ -57,12 +65,21 @@ const fixture = async (mode = "registration"): Promise<string> => `<!doctype htm
   </div>
 </body></html>`;
 
+const hex = (bytes: number[]): string => bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
 /** Attaches a CDP virtual authenticator, so `navigator.credentials` runs a real ceremony. */
-async function addVirtualAuthenticator(page: Page): Promise<{ session: CDPSession; authenticatorId: string }> {
+async function addVirtualAuthenticator(page: Page, options: { prf?: boolean } = {}): Promise<{ session: CDPSession; authenticatorId: string }> {
   const session = await page.context().newCDPSession(page);
   await session.send("WebAuthn.enable");
   const { authenticatorId } = await session.send("WebAuthn.addVirtualAuthenticator", {
-    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      ...(options.prf ? { hasPrf: true } : {}),
+    },
   });
   return { session, authenticatorId };
 }
@@ -90,7 +107,12 @@ async function addDiscoverableCredential(page: Page): Promise<void> {
 /** Serves the two ceremony endpoints, recording each request so the spec can read the tokens back. */
 async function routeCeremony(
   page: Page,
-  options: { verifyStatus?: number; mode?: "registration" | "authentication" } = {},
+  options: {
+    verifyStatus?: number;
+    mode?: "registration" | "authentication";
+    extensions?: Record<string, unknown>;
+    allowCredentials?: Array<{ type: "public-key"; id: string }>;
+  } = {},
 ): Promise<Array<{ url: string; token: string | null }>> {
   const seen: Array<{ url: string; token: string | null }> = [];
 
@@ -106,6 +128,8 @@ async function routeCeremony(
               rpId: RP_ID,
               timeout: 60_000,
               userVerification: "required",
+              ...(options.allowCredentials ? { allowCredentials: options.allowCredentials } : {}),
+              ...(options.extensions ? { extensions: options.extensions } : {}),
             }
           : {
               challenge: b64url([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
@@ -115,6 +139,7 @@ async function routeCeremony(
               timeout: 60_000,
               attestation: "none",
               authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+              ...(options.extensions ? { extensions: options.extensions } : {}),
             },
       ),
     });
@@ -146,6 +171,33 @@ async function mountCeremony(page: Page, mode = "registration"): Promise<void> {
 }
 
 const outcomes = (page: Page) => page.evaluate(() => window.passkeyOutcomes);
+
+/** Registers a PRF handler in the page that forwards every result to the returned list. */
+async function recordPrf(page: Page): Promise<RecordedPrf[]> {
+  const recorded: RecordedPrf[] = [];
+  await page.exposeFunction("recordPrf", (result: RecordedPrf) => {
+    recorded.push(result);
+  });
+  await page.evaluate(() => {
+    window.forgePasskey.onPasskeyPrf(({ mode, credentialId, output }) =>
+      window.recordPrf({ mode, credentialId, output: output && Array.from(output) }),
+    );
+  });
+  return recorded;
+}
+
+/** Answers the verify endpoint, keeping each raw body posted to it. */
+async function recordVerifyBodies(page: Page): Promise<string[]> {
+  const posted: string[] = [];
+  await page.route(`**${VERIFY_PATH}`, async (route) => {
+    posted.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  return posted;
+}
+
+const SALT_A = [0x61, 1, 2, 3, 4, 5, 6, 7];
+const SALT_B = [0x62, 1, 2, 3, 4, 5, 6, 7];
 
 test.describe("passkey controller — a real ceremony against a virtual authenticator", () => {
   test("registers a credential, sends each endpoint its own token, and redirects", async ({ page }) => {
@@ -194,6 +246,84 @@ test.describe("passkey controller — a real ceremony against a virtual authenti
       expect(JSON.parse(body).credential.response).toHaveProperty(mode === "authentication" ? "signature" : "attestationObject");
     });
   }
+
+  test("hands the page the 32-byte PRF output of a registration, and posts none of it", async ({ page }) => {
+    await addVirtualAuthenticator(page, { prf: true });
+    await mountCeremony(page);
+    await routeCeremony(page, { extensions: { prf: { eval: { first: b64url(SALT_A) } } } });
+    const posted = await recordVerifyBodies(page);
+    const recorded = await recordPrf(page);
+
+    await page.click(`[data-ref='${PASSKEY.trigger}']`);
+
+    await page.waitForURL("**/account/passkeys");
+    const body = posted[0] ?? "";
+    const output = recorded[0]?.output ?? [];
+    expect(recorded.map((r) => ({ mode: r.mode, credentialId: r.credentialId, bytes: r.output?.length }))).toEqual([
+      { mode: "registration", credentialId: JSON.parse(body).credential.id, bytes: 32 },
+    ]);
+    expect(body).not.toContain("prf");
+    expect(body).not.toContain(b64url(output));
+    expect(body).not.toContain(hex(output));
+  });
+
+  test("hands the page a step-up's PRF output, the same bytes the credential's creation gave for that salt", async ({ page }) => {
+    await addVirtualAuthenticator(page, { prf: true });
+    await mountCeremony(page, "authentication");
+    const enrolled = await page.evaluate(
+      async ({ rpId, saltA, saltB }) => {
+        const encode = (buffer: ArrayBuffer): string =>
+          btoa(String.fromCharCode(...new Uint8Array(buffer)))
+            .replaceAll("+", "-")
+            .replaceAll("/", "_")
+            .replaceAll("=", "");
+        const prfBytes = (credential: PublicKeyCredential): number[] | null => {
+          const first = credential.getClientExtensionResults().prf?.results?.first;
+          return first === undefined ? null : Array.from(new Uint8Array(first as ArrayBuffer));
+        };
+        const created = (await navigator.credentials.create({
+          publicKey: {
+            challenge: new Uint8Array(16),
+            rp: { id: rpId, name: "Forge" },
+            user: { id: new Uint8Array([1, 2, 3, 4]), name: "a@forge.test", displayName: "A" },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            authenticatorSelection: { residentKey: "required", userVerification: "required" },
+            extensions: { prf: { eval: { first: new Uint8Array(saltA) } } },
+          },
+        })) as PublicKeyCredential;
+        const other = (await navigator.credentials.get({
+          publicKey: {
+            challenge: new Uint8Array(16),
+            rpId,
+            allowCredentials: [{ type: "public-key", id: created.rawId }],
+            userVerification: "required",
+            extensions: { prf: { eval: { first: new Uint8Array(saltB) } } },
+          },
+        })) as PublicKeyCredential;
+        return { id: encode(created.rawId), atCreation: prfBytes(created), otherSalt: prfBytes(other) };
+      },
+      { rpId: RP_ID, saltA: SALT_A, saltB: SALT_B },
+    );
+    expect(enrolled.atCreation?.length).toBe(32);
+    await routeCeremony(page, {
+      mode: "authentication",
+      allowCredentials: [{ type: "public-key", id: enrolled.id }],
+      extensions: { prf: { evalByCredential: { [enrolled.id]: { first: b64url(SALT_A) } } } },
+    });
+    const posted = await recordVerifyBodies(page);
+    const recorded = await recordPrf(page);
+
+    await page.click(`[data-ref='${PASSKEY.trigger}']`);
+
+    await page.waitForURL("**/account/passkeys");
+    expect(recorded).toEqual([{ mode: "authentication", credentialId: enrolled.id, output: enrolled.atCreation }]);
+    expect(recorded[0]?.output).not.toEqual(enrolled.otherSalt);
+    const body = posted[0] ?? "";
+    const output = recorded[0]?.output ?? [];
+    expect(body).not.toContain("prf");
+    expect(body).not.toContain(b64url(output));
+    expect(body).not.toContain(hex(output));
+  });
 
   test("reports a refused verification as its own outcome and does not navigate", async ({ page }) => {
     await addVirtualAuthenticator(page);

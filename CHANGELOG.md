@@ -27,13 +27,134 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 3. **Compose a migration for the new `auth_access_tokens` table** with `forge db migrate compose` and apply it before you
    deploy, even if you issue no access tokens: deleting a user now also deletes that user's tokens, and fails on a
    database without the table.
+4. **Replace any secret the strength rule refuses with 32 CSPRNG bytes** (`openssl rand -hex 32`). A CSRF or signed-URL
+   secret under 64 hex characters (32 bytes), a session secret under 32 UTF-8 bytes, or any secret that is one repeated
+   value or drawn from fewer than eight byte values now throws when it is imported. **The old secret cannot stay in the
+   ring or the secrets array**, because it would be refused there too, so replacing it invalidates everything it
+   signed: sessions signed by it are logged out, CSRF tokens in flight fail, and signed URLs it minted stop verifying.
+   An auth root key refused by `importAuthKeyRing`, or in a hand-built `AuthKeyRing` by `resolveAuthServices`, takes
+   with it every auth token signed under it and every TOTP secret sealed under it. A TOTP factor sealed under it stays
+   stranded until `purgeStaleTotpSecrets` drops it or you remove it, and its user must then re-enrol. A webhook secret
+   is replaced with `whsec_$(openssl rand -base64 32)` and must be re-keyed on the other side too; a delivery or retry
+   signed under the old one fails verification.
+   Session-secret errors now name `createSignedCookie`, including those raised through `createAnonymousSession`.
+5. **Rename `hx-disabled-elt` to `hx-disable`**, after first renaming any htmx 2 `hx-disable` to `hx-ignore`. Delete
+   `hx-params` and `hx-ext`, and replace `hx-request` with `hx-config`. In `hxAttrs` and `formSubmit` the prop is
+   `disable`, and `params` is gone.
+6. **Add `:inherited` to an attribute a parent sets for its children**, such as `<body hx-boost:inherited="true">`.
+   htmx 4 applies a bare attribute only to the element that carries it, so a bare `hx-boost` on `<body>` or `<nav>`
+   silently stops boosting the links inside. `hxAttrs({ boost })` already emits the suffix.
+7. **Update htmx event listeners to the htmx 4 names, and read `event.detail.ctx`.**
+   `npx htmx.org@4.0.0 upgrade-check -- ./src` lists every site to change.
+8. **Choose between a page and a fragment with `isPartial`, not `isHxRequest`.** htmx 4 sends `HX-Request: true`
+   when it restores a page on back navigation, so a route that tests `isHxRequest` answers it with a fragment and
+   htmx replaces the whole body with that fragment.
+9. **Rename `hxTrigger` to `hxSource`** and `HxRequest.trigger` to `source`. Drop `hxTriggerName`, `triggerName`, and
+   the `triggerAfterSettle` and `triggerAfterSwap` props of `hxHeaders`; `trigger` now fires after the swap. Code
+   that matches an `HX-Source` or `HX-Target` value expects `tag#id`, such as `button#save`, rather than a bare id.
+10. **Check that every 4xx fragment you send is meant for the target.** A `text/html` 4xx response now swaps into it. A
+    4xx in any other content type is announced instead, and a 5xx still does not swap.
+11. **If you enforce Trusted Types, add `HTMX_TRUSTED_TYPES_POLICY` to the CSP's `trusted-types` list** and keep every
+    `<script src>` in `<head>`. A script in the `<body>` of a page a boosted link navigates to loses the whole swap.
+    `pageShell` already puts its scripts in `<head>`; a hand-written shell must do the same.
+12. **Offer `createRecoveryCodeFactor` as an `"optional"` second factor wherever you offer `totp-app` or `passkey`**, or
+    `createFactorRegistry` throws. Build it per request over your `FactorStore` and `createRecoveryCodeStore(db)`.
+13. **Compose a migration for the new `auth_recovery_codes` table with `forge db migrate compose` and apply it before you
+    deploy.** Removing a factor, deleting a user and resetting an account all write to it, and fail on a database without
+    it.
+14. **Expect every user holding an authenticator app or a passkey to be sent to generate recovery codes** after their next
+    step-up. Nothing is needed from you, but the page is new to them.
+15. **Pass the factor kind first to `authVerifySchema`**: `authVerifySchema(factor, digits)` where you called
+    `authVerifySchema(digits)`.
+16. **If you override the `verify` view, render its `choices`.** Without them a user whose first factor cannot be checked
+    has no way to choose another.
+17. **If you implement `FactorStore` or `AdminUserStore` yourself**, delete `unconfirm`, make `remove` clear the user's
+    recovery codes as the auth README's store table describes, and add `resetFactors`.
+18. **Move `hx-delete` onto the button of a `<Form>` that must also submit without JavaScript**, and give the button the
+    CSRF header in its own `hx-headers`, since a button does not read its form's. `<Form>` no longer renders the hidden
+    CSRF field on an `hx-delete` form, so without the move a no-JS submission of it carries no token and is refused.
+19. **Delete `catalogs` and `tableExemptSubpaths` from your `docsStep` config, and rename `listedOnlySubpaths` to
+    `unboundSubpaths`.** Drop any import of `uncitedSubpaths` from `@y-core/forge/warden/checks`.
+20. **Write a `README.md` for every namespace you publish, and keep it in the `files` array.** `checkPackaging`, and so
+    `packagingStep`, fails a published namespace with no README in its own source directory or in a directory containing
+    it below the source root.
+21. **Pass the namespace set to `findEnumerations` and `validateNoEnumeration`**, and stop calling `sectionWindow`.
+    `resolveNamespaces` derives the set from your exports map. The whole `enumerationDoc` is now scanned, so delete any
+    table in it whose rows name a namespace's source directory or package subpath, or it fails as `catalog-table`. A
+    `switch` over `EnumerationFindingKind` loses `missing-catalog-section` and `missing-classification-section` and
+    gains `catalog-table`, and `EnumerationFinding.line` needs no null check.
+22. **Remove `pages_build_output_dir` from the wrangler config before you run `forge cf sync`.** The command now refuses
+    any config that declares it, even beside `main`, so a Cloudflare Pages project must move to a Worker first. In code,
+    call `refusePagesConfig` where you called `detectTarget`; it throws for a Pages config and returns nothing
+    otherwise. Drop `DeploymentTarget`, `describeTarget` and `HandlerContext.target`, pass `describeCfFailure` the
+    script name instead of the target, and read `scriptName` wherever you read `target` from `SyncOutput` or the
+    `--json` report.
+23. **Add a case for each new union member wherever you switch over the union exhaustively**: `"recovery-code"` in
+    `AuthFactorKind`, `"unusable"` in `AuthFactorReason` and `AuthSigninNotice`, and `"unknown-key"` in
+    `SignedUrlFailure`. `redactSigninReason` passes `"unusable"` through, so a sign-in page that words each reason
+    needs a message telling the user to use another factor or a recovery code.
+24. **If you handle a sign-in resolution yourself, send an `enrolment-required` with a non-empty `stepUpKinds` to
+    step-up before enrolment.** Otherwise a user who already holds a confirmed second factor enrols a new one on email
+    alone. The auth README's section on signing a visitor in without forge's pages shows the branch.
+25. **If you map `accountRoutes` or `adminRoutes` yourself rather than through `registerAccount` and `registerAdmin`,
+    give the new routes their handlers**: `loadRecoveryCodes` and `createRecoveryCodeActions` for `recoveryCodes`,
+    `recoveryCodesGenerate` and `recoveryCodesConfirm`, and `createAdminUserActions` for `users.resetFactors`. Add an
+    `accountRecoveryCodes` entry to anything you key by every `AuthViewName`, and move any route of your own off
+    `/recovery-codes` under the account base path and `/users/:id/factors/reset` under the admin one.
+26. **If a module or `defer` script in your page body must run before `pageShell`'s scripts, list it first in the
+    shell's `script` option instead.** The shell's scripts now sit in `<head>`, so they run before every module or
+    `defer` script in the body rather than after it. A test that looks for them in `<body>` must look in `<head>`.
+27. **Read `exitCode` and `signalCode` where you read `killed` from a `ChildProcess` typed by
+    `@y-core/forge/testing/node`.** A process has ended once either is non-null. `killed` was never set for a process
+    that exited on its own, so it could not tell a reader the process was gone.
 
 ### Breaking Changes
 
+- **`validate-docs` no longer requires any document to cite every published subpath.** The `catalogs` and
+  `tableExemptSubpaths` options are removed from the docs check, and `uncitedSubpaths` from
+  `@y-core/forge/warden/checks`; delete either option from your `docsStep` config. A namespace's README describes it.
+- **The docs check's `listedOnlySubpaths` is renamed `unboundSubpaths`**, with no alias. It exempts a published subpath
+  from the rule that a prose rule binds every subpath; no table is involved.
 - **`importSigningKey` is removed from `@y-core/forge/storage/r2`**; `importSignedUrlKeyRing` takes secrets newest first.
 - **`createSignedObjectUrl` and `verifySignedObjectUrl` take an `HmacKeyRing`**, and a signed URL carries a `kid` the HMAC
   covers. `SignedUrlFailure` gains `"unknown-key"`.
 - **`CsrfKeyRing` is replaced by `HmacKeyRing`**, exported from `@y-core/forge/form` and `@y-core/forge/storage/r2`.
+- **A weak secret throws where one was accepted before.** CSRF and signed-URL secrets need 32 bytes, up from 16, and
+  session secrets 32 UTF-8 bytes rather than 32 characters; every secret must also pass the variety check (see
+  Changed and Upgrading).
+- **`hxTrigger` and `hxTriggerName` are removed from `@y-core/forge/html/htmx`**; `hxSource` reads `HX-Source`.
+  `HxRequest` replaces `trigger` with `source` and loses `triggerName`.
+- **`HxAttrsProps.disabledElt` is renamed `disable`** and emits `hx-disable`; `params` is removed. `formSubmit` takes
+  `disable`, which defaults to `"this"`.
+- **`hxAttrs({ boost })` emits `hx-boost:inherited`** rather than `hx-boost`.
+- **`HxResponseProps` loses `triggerAfterSettle` and `triggerAfterSwap`**, which htmx 4 does not read.
+- **`isPartial` is true only when `HX-Request-Type` is `partial`.** A boosted navigation, a history restore and a
+  request with no `HX-Request-Type` now get the full page.
+- **The JSX htmx attribute types add `hx-disable` and `hx-boost:inherited`**, and drop `hx-boost`, `hx-disabled-elt`,
+  `hx-params`, `hx-ext` and `hx-request`.
+- **`pageShell` renders its scripts as module scripts in `<head>`**, after the stylesheets, rather than in `<body>`.
+- **`@y-core/forge/ui/client/htmx` loads htmx 4.0.0**, and a `text/html` 4xx response now swaps into its target.
+- **`createFactorRegistry` refuses an offering that could lock a user out.** It throws when `totp-app` or `passkey` is
+  offered without `recovery-code`, and when `recovery-code` is offered as primary, as anything but `"optional"`, or with
+  no other explicit second factor.
+- **`AuthFactorKind` gains `"recovery-code"`, and `AuthFactorReason` and `AuthSigninNotice` gain `"unusable"`**, which
+  `redactSigninReason` passes through. The `enrolment-required` variant of `AuthFactorResolution` gains `stepUpKinds`.
+- **`authVerifySchema` takes the factor kind before the digit count.**
+- **`FactorStore.unconfirm` is removed, and `FactorStore.remove` also deletes the user's recovery codes and
+  `recovery-code` row** once no confirmed `totp-app` or `passkey` remains. `AdminUserStore` gains `resetFactors`.
+- **`accountRoutes` gains `recoveryCodes`, `recoveryCodesGenerate` and `recoveryCodesConfirm`, `adminRoutes` gains
+  `users.resetFactors`, and `AuthViewProps` gains `accountRecoveryCodes`.**
+- **`forge cf sync` refuses a Cloudflare Pages config.** A wrangler config declaring `pages_build_output_dir` stops the run
+  before any request; `detectTarget` is renamed `refusePagesConfig`, which throws for it and otherwise returns nothing.
+  `DeploymentTarget` and `describeTarget` are removed from `@y-core/forge/tooling/cf`, `HandlerContext` loses `target`, `describeCfFailure` takes the script
+  name, and `SyncOutput.target` and the `--json` report's `target` are replaced by `scriptName`.
+- **`sectionWindow` is removed from `@y-core/forge/tooling/gate`.** `findEnumerations` and `validateNoEnumeration` take
+  the namespace set, and scan the whole document rather than two sections. `EnumerationFindingKind` drops
+  `missing-catalog-section` and `missing-classification-section` and gains `catalog-table`, a table row naming a
+  namespace's source directory or package subpath. `EnumerationFinding.line` is always a number.
+- **`checkPackaging` fails a published namespace with no README** in its own directory or a directory containing it below
+  the source root, and a README the `files` array leaves out.
+- **`ChildProcess` in `@y-core/forge/testing/node` loses `killed`** and gains `exitCode` and `signalCode`.
 
 ### Added
 
@@ -60,12 +181,73 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`signWebhook` and `verifyWebhook` in `@y-core/forge/security` follow Standard Webhooks.** The signer emits one
   `v1` signature per active `whsec_` secret, and the verifier checks the timestamp window, caps the body read and
   answers the exact bytes that were signed, so an app parses only after the check.
+- **`StorePutOptions` takes `sha256`**, a hex string or bytes, and `r2Backend` passes it to R2, which refuses a body
+  that does not match; `fakeR2` checks it the same way, refusing a malformed digest with a `TypeError` and a mismatch
+  with R2's error 10037. It covers a single `put` only, since R2 multipart uploads accept no checksum.
+- **An `assets` JS bundle may declare esbuild `conditions`**, such as `["worker"]` for a service-worker bundle whose
+  dependencies' `browser` export touches `document`. Bundles that differ in conditions build separately.
+- **`forge cf sync` reads a `# forge:ring` marker** on a key ring held as one comma-joined variable, newest first.
+  `--local --rotate` prepends a fresh key and keeps every old one; `--commit` creates a missing ring from `.dev.vars`
+  and never overwrites an existing one. `--commit --rotate` on a ring is refused, and `--rotate all` leaves rings out
+  outside `--local`: a production ring is rotated by hand. A key marked both `generate` and `ring` is refused.
+- **`keyRingSecrets(value)` in `@y-core/forge/keyring`** splits that variable into the list `importKeyRing` and
+  `importAuthKeyRing` take, refusing an empty value or entry.
+- **`createPasskeyFactor` takes `prf`**, a `PasskeyPrfSalts` naming the salt a new passkey is evaluated with and a
+  salt per credential for a step-up. A salt must be a non-empty `Uint8Array`.
+- **`onPasskeyPrf` in `@y-core/forge/auth/client` hands the page a passkey's 32-byte PRF output**, or `null` when
+  the authenticator returned none, after verification and before navigation. The output is never posted and never
+  rides on `PASSKEY_OUTCOME_EVENT`.
+- **`HTMX_TRUSTED_TYPES_POLICY` in `@y-core/forge/ui/contracts`** names the Trusted Types policy htmx runs under, for
+  the CSP's `trusted-types` list.
+- **`TURNSTILE_TRUSTED_TYPES_POLICY` in `@y-core/forge/ui/contracts`** names the Trusted Types policy `<Turnstile>`
+  loads Cloudflare's script under, for the CSP's `trusted-types` list. The policy admits only that script's URL, and
+  when the CSP refuses it the widget shows its fallback message and logs the fix.
+- **`ui/client/htmx` registers the `forge-htmx` htmx extension**, which hands htmx a named Trusted Types policy so a
+  page that enforces Trusted Types can run htmx. It fails closed when the browser refuses the policy, and refuses a
+  `js:` or `javascript:` request URL, which htmx 4 would otherwise evaluate.
+- **`HxRequest.requestType`** is `"full"` or `"partial"` from `HX-Request-Type`, and `""` when the header is absent or
+  holds anything else.
+- **Recovery codes in `auth`.** `createRecoveryCodeFactor` issues a set of `AUTH_RECOVERY_CODE_COUNT` single-use codes of
+  `AUTH_RECOVERY_CODE_BYTES` random bytes each, stores only their SHA-256, and replaces a user's set only once they type
+  one of the new codes back. `createRecoveryCodeStore` is its D1 adapter, over a new `auth_recovery_codes` table (see
+  Upgrading). In `auth/web`, `GET`/`POST /recovery-codes` and `POST /recovery-codes/confirm` issue and confirm a set,
+  through `createRecoveryCodeActions`, `loadRecoveryCodes`, `RecoveryCodesView` and the `accountRecoveryCodes` view. Codes
+  are issued only to a user holding an authenticator app or a passkey who has just stepped up. A new set is shown once, in
+  one block ready to copy, with a message to keep it somewhere safe; it is never offered as a download.
+- **The verify page lets a user choose among their confirmed second factors**, recovery codes included; each choice is a
+  `VerifyChoice`. A step-up by recovery code lands on the factors page, which says how many codes are left and how to
+  replace an authenticator that does not work.
+- **An administrator can reset an account's sign-in methods.** `AdminUserService.resetFactors` and
+  `POST /users/:id/factors/reset`, the `resetFactors` action of `createAdminUserActions`, delete the user's factors,
+  passkeys and recovery codes in one batch and sign them out everywhere; the user then signs in with their address and
+  enrols again. The admin factors page carries the control, whose props are `AuthFactorsResetForm`, and an
+  administrator cannot reset their own account.
+- **`auth/web` logs `auth.factor.unusable` at warn**, with the factor's `kind`, when an authenticator-app secret will not
+  open under the key ring — the cue to put a dropped secret back. It reaches the logger `requestLogger` mounts.
+- **`resolveAuth` takes `stepUpMaxAgeMs`**, the window the verify page judges a step-up mark by, and refuses one below
+  the floor the other guards hold. `createAuthGuards` passes its own.
 
 ### Changed
 
+- **The canon homes what a namespace does in the namespace's own README**, beside its barrel. `NAMESPACE_DESIGN.md`,
+  `BOUNDARIES.md`, `LIBRARY_ARCHITECTURE.md`, `AGENT_GUIDE.md` §6d, the `CLAUDE.md` seeds and the synced agents no
+  longer tell a repository to catalogue its namespaces, routes or bindings in `docs/`, which now holds local rulings.
 - **A response's own `Content-Security-Policy` is combined with the app's instead of overwritten by it**, whether a
   handler set it or a proxied upstream response carried it. The browser enforces both, so it can only tighten the
   app's policy. Use `createRouteSecurityHeaders` to loosen a route.
+- **Every secret forge imports is held to one strength rule**: at least 32 bytes, not one byte value repeated, and at
+  least eight distinct byte values. CSRF and signed-URL secrets, session secrets (so `createAnonymousSession` and
+  flash cookies too), `whsec_` webhook secrets, `importKeyRing` and the auth key ring, hand-built or imported, all
+  apply it. `CsrfConfigSchema` now requires at least 64 hex characters. No token, URL, cookie or key id format
+  changed. The rule is `docs/SECURITY_HARDENING.md` §8.
+- **`<Form>` renders no hidden CSRF field on an `hx-delete` or `hx-get` form**, and sends the token in the header alone.
+  htmx puts those verbs' fields in the request URL, where any log that records URLs would keep the token.
+- **The auth views that update in place swap `outerHTML` over their own root**, whose id `@y-core/forge/auth/web` now
+  exports: `AUTH_PASSKEY_LIST_ID`, `AUTH_PASSKEY_EDIT_ID`, `AUTH_TOTP_ID` and `AUTH_ADMIN_USER_EDIT_ID`. A passkey rename
+  or removal, a TOTP removal and an admin account update used to nest the re-rendered view inside the form or row.
+- **`ui/client/htmx` announces a 4xx whose content type is not `text/html` instead of swapping it.** A plain-text
+  `Forbidden`, `Not Found` or rate-limit refusal is spoken on the `failure` channel and leaves the target intact. An
+  explicit `hx-status:` attribute still swaps it, and a rendered HTML 4xx still swaps.
 
 ### Fixed
 
@@ -74,6 +256,26 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   rendered unsandboxed on the app's origin.
 - **The passkey client no longer posts WebAuthn client extension results**, so PRF or `largeBlob` output can never
   reach the server.
+- **An authenticator-app secret the key ring cannot open no longer locks the account out or lets it in on email alone.**
+  A missing key refused every step-up, and a key that did not open the secret unconfirmed the factor. Both now answer
+  `"unusable"` without spending a guess, the factor stays confirmed, and the user steps up with another factor or a
+  recovery code. Putting the key back makes the factor work again.
+- **A user who owes an enrolment can no longer enrol on email alone while holding a confirmed second factor.** After
+  `purgeStaleTotpSecrets` drops a row, or with a mandatory factor beside a confirmed optional one, sign-in,
+  `requireAuth` and the enrolment guards now send them to step up with that factor first, unless the session holds a
+  step-up mark inside `stepUpMaxAgeMs`. A stale or future-dated mark does not count.
+- **An `assets` JS bundle's own `minify` is honoured.** The config accepted it, but every bundle was built with the
+  build-wide `--minify`. Content-hashed filenames still follow the build-wide flag alone.
+- **`forge cf sync zone` describes the rulesets it writes as managed by `forge cf sync zone`**, not by the retired
+  `forge sync`. A deployed ruleset keeps the old description until a rule in it next changes, because only the rules
+  are compared.
+- **An auth redirect under htmx navigates the page.** `requireAuth` and the auth actions answer an htmx request with a
+  204 and `HX-Redirect`, so an expired session or an admin remove loads the other page and updates the address bar.
+  They used to answer a 3xx, which `fetch` followed and htmx swapped into the card. A request without htmx still gets
+  the redirect.
+- **`startDevServer` recovers from a `wrangler dev` that never answers, and fails fast on one that exits.** A process
+  that exited before it was ready was waited on for the whole 180s budget, and one that came up but held every request
+  failed the start. Each attempt now gets 60s on a fresh port, up to the same 180s.
 
 ---
 

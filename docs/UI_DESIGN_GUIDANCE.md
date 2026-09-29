@@ -382,7 +382,7 @@ The dials are Defaults, not Floor — each is rebuttable per §2b, and each rebu
 [ag-2c]: ../warden/canon/shared/AGENT_GUIDE.md#2c-renumbering-is-atomic
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
-[namespaces-3c]: ./NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin
+[namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [ucc]: ./UI_CLASS_COMPOSITION.md
 [ucc-1c]: ./UI_CLASS_COMPOSITION.md#1c-the-table-is-derived-from-the-compiled-design-system
 [ucr]: ./UI_CLIENT_RUNTIME.md

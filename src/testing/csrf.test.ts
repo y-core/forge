@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { importCsrfKey, verifyCsrfToken } from "../form/csrf";
 import { mintTestCsrfToken } from "./csrf";
 
-const SECRET = "a".repeat(64);
+const SECRET = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
 
 describe("mintTestCsrfToken", () => {
   it("mints a token that verifies against the same secret and path", async () => {

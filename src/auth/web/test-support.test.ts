@@ -12,6 +12,7 @@ import {
   elementsOf,
   factorChoices,
   factorDemand,
+  fakeRecoveryCodeStore,
   HOSTILE_TEXT,
   HOSTILE_TEXT_ESCAPED,
   tagOf,
@@ -112,6 +113,7 @@ describe("authFactorGrid", () => {
       "passkey:-",
       "totp-app:-",
       "email-otp+passkey:email-otp",
+      "email-otp+recovery-code:email-otp",
       "email-otp+totp-app:email-otp",
       "passkey+totp-app:-",
       "email-otp+passkey+totp-app:email-otp",
@@ -148,6 +150,18 @@ describe("authFactorGrid", () => {
     expect(cell?.refusal).toBe("createFactorRegistry: no offered factor is declared primary");
   });
 
+  it("refuses recovery codes offered with no other explicit second factor to recover", () => {
+    const cell = grid.find((entry) => entry.label === "email-otp+recovery-code primary=email-otp / all-optional");
+    expect(cell?.refusal).toBe('createFactorRegistry: "recovery-code" needs another explicit second factor to recover');
+  });
+
+  it("refuses recovery codes owed before a step-up, whatever else is offered", () => {
+    const cell = grid.find((entry) => entry.label === "email-otp+recovery-code primary=email-otp / all-mandatory");
+    expect(cell?.refusal).toBe(
+      'createFactorRegistry: "recovery-code" must be offered as "optional" — it is issued after a step-up, never owed before one',
+    );
+  });
+
   it("admits an offering with nothing able to step up, which is simply a deployment offering no second factor", () => {
     const cell = grid.find((entry) => entry.label === "email-otp primary=email-otp / all-mandatory");
     expect(cell?.refusal).toBeNull();
@@ -167,16 +181,16 @@ describe("factorChoices", () => {
   it("reads the primary and the step-up set off the registry", () => {
     expect(factorChoices(cellAt("email-otp+passkey primary=email-otp / all-mandatory") as never)).toEqual({
       primary: "email-otp",
-      stepUp: ["passkey"],
-      enrollable: ["passkey"],
+      stepUp: ["passkey", "recovery-code"],
+      enrollable: ["passkey", "recovery-code"],
     });
   });
 
   it("offers TOTP-app for step-up and never as primary", () => {
     expect(factorChoices(cellAt("email-otp+totp-app primary=email-otp / all-mandatory") as never)).toEqual({
       primary: "email-otp",
-      stepUp: ["totp-app"],
-      enrollable: ["totp-app"],
+      stepUp: ["totp-app", "recovery-code"],
+      enrollable: ["totp-app", "recovery-code"],
     });
   });
 
@@ -188,7 +202,7 @@ describe("factorChoices", () => {
 describe("factorDemand", () => {
   it("demands an enrolment when nothing is enrolled and the factor is mandatory", async () => {
     const cell = authFactorGrid([]).find((entry) => entry.label === "email-otp+totp-app primary=email-otp / all-mandatory");
-    expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"] });
+    expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
   });
 
   it("demands a step-up once that factor is enrolled, which is the state the enrolment demand is not", async () => {
@@ -199,6 +213,36 @@ describe("factorDemand", () => {
   it("demands nothing where every second factor is optional and none is enrolled", async () => {
     const cell = authFactorGrid([]).find((entry) => entry.label === "email-otp+totp-app primary=email-otp / all-optional");
     expect(await factorDemand(cell as never)).toEqual({ status: "satisfied" });
+  });
+});
+
+describe("fakeRecoveryCodeStore", () => {
+  const hash = (byte: number) => new Uint8Array([byte]) as Uint8Array<ArrayBuffer>;
+
+  it("keeps a staged set out of use until it is committed, then drops the set it replaced", async () => {
+    const store = fakeRecoveryCodeStore();
+    await store.stage("u1", [hash(1)], 1);
+    await store.commit("u1", "f1", 1);
+    await store.stage("u1", [hash(2), hash(3)], 2);
+
+    const before = [await store.consume("u1", "f1", hash(2), 2), await store.remaining("u1")];
+    await store.commit("u1", "f1", 3);
+    const after = [await store.consume("u1", "f1", hash(1), 3), await store.remaining("u1")];
+
+    expect([...before, ...after].map((answer) => (answer.ok ? answer.data : null))).toEqual([false, 1, false, 2]);
+  });
+
+  it("spends a live code once, and never another user's", async () => {
+    const store = fakeRecoveryCodeStore();
+    await store.stage("u1", [hash(1)], 1);
+    await store.commit("u1", "f1", 1);
+
+    const answers = [
+      await store.consume("u2", "f2", hash(1), 2),
+      await store.consume("u1", "f1", hash(1), 2),
+      await store.consume("u1", "f1", hash(1), 3),
+    ];
+    expect(answers.map((answer) => (answer.ok ? answer.data : null))).toEqual([false, true, false]);
   });
 });
 

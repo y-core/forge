@@ -11,7 +11,7 @@ export interface SessionCookieOptions {
 /** Options for `createAnonymousSession`. @public */
 export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> extends KVSessionStorageOptions, SessionCookieOptions {
   cookieName?: string;
-  /** Resolves the signing secret, or a rotation array whose first element signs, from the request env; secrets shorter than 32 characters throw. */
+  /** Resolves the signing secret, or a rotation array whose first element signs, from the request env; a secret under 32 UTF-8 bytes, or too uniform to be random, throws. */
   secret: (c: AppContext<Bindings>) => string | [string, ...string[]];
   /** Resolves the KV binding that holds the session data; exactly one of this and `storage` must be given. */
   kv?: (c: AppContext<Bindings>) => SessionKVBinding;
@@ -80,7 +80,7 @@ export interface SignedCookieReading {
 
 /** Options for `createSignedCookie`, minus the flags it fixes itself. @public */
 export interface SignedCookieOptions extends Omit<CookieAttributes, "httpOnly" | "sameSite" | "secure"> {
-  /** The first secret signs; every one of them verifies, so a rotation keeps existing cookies valid. Each must be at least 32 characters. */
+  /** The first secret signs; every one of them verifies, so a rotation keeps existing cookies valid. Each must be at least 32 UTF-8 bytes and CSPRNG-random. */
   secrets: [string, ...string[]];
   sameSite?: "Strict" | "Lax";
 }

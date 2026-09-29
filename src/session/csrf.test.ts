@@ -10,8 +10,8 @@ import { createSignedCookie } from "./cookie";
 import { sessionCtx, sessionMiddleware } from "./session";
 import type { SessionKVBinding } from "./types";
 
-const HEX_SECRET = "c".repeat(64);
-const SESSION_SECRET = "s".repeat(48);
+const HEX_SECRET = "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d";
+const SESSION_SECRET = "Sw8eR3tY6uI1oP4aS7dF2gH5jK9lZ0xC3vB6nM1qW4eR7tY";
 const sessionCookie = createSignedCookie("__session", { path: "/", secrets: [SESSION_SECRET] });
 
 function fakeSessionKV(): SessionKVBinding {
@@ -96,8 +96,8 @@ describe("sessionMiddleware composed with csrfProtection", () => {
   // The signature is upgraded under the visitor, so the id the token is bound to must not move.
   it("mints the same subject across a secret rotation", async () => {
     const key = await importCsrfKey(HEX_SECRET);
-    const OLD = "o".repeat(32);
-    const NEW = "n".repeat(32);
+    const OLD = "Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv";
+    const NEW = "Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe";
     const storage = createCookieSessionStorage();
 
     const build = (secrets: [string, ...string[]]) => {

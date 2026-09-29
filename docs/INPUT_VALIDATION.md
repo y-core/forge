@@ -228,8 +228,8 @@ opt-out that makes "this route accepts path-only CSRF tokens" auditable — grep
 
 ### 3b. `importCsrfKey` and `importCsrfKeyRing` — Secret Import
 
-CSRF secrets are hex-encoded strings, minimum 32 hex characters (16 bytes). **Import them into `CryptoKey` objects before passing to middleware or
-token functions.**
+CSRF secrets are hex-encoded strings held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule. **Import them into `CryptoKey` objects before
+passing to middleware or token functions.**
 
 `importCsrfKeyRing` accepts an ordered array: the first entry signs, the rest are accepted for verification during a rotation window. **Rotate by
 prepending the new secret and removing the oldest once the window closes.**
@@ -321,8 +321,8 @@ response the caller sees is unchanged; only the server-side record is.
 
 ### 5a. `CsrfConfigSchema` — CSRF Secret Validation
 
-Expects a hex-encoded secret string of at least 32 hex characters. **Parse environment-sourced CSRF config through it at startup via the config
-store — never pass a raw `c.env` string to `importCsrfKey`.**
+Expects a hex-encoded secret string of at least 64 hex characters — the length half of [`SECURITY_HARDENING.md`][sh-8] §8, checked at parse.
+**Parse environment-sourced CSRF config through it at startup via the config store — never pass a raw `c.env` string to `importCsrfKey`.**
 
 ### 5b. `TurnstileConfigSchema` — Turnstile Credentials Validation
 
@@ -343,6 +343,7 @@ surface each step calls.
 [ram-2b]: ./ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [sh]: ./SECURITY_HARDENING.md
 [sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
+[sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [testing-1f]: ./TEST_RUNNERS.md#1f-the-workerd-set
 [testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
 [ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller

@@ -12,6 +12,9 @@ import { cn } from "../../../ui/core/utils/cn";
 import { AuthTimestamp } from "./timestamp";
 import type { PasskeyListViewProps } from "./types";
 
+/** The id on the passkey list's root, which each row's remove form swaps the re-rendered list into. @public */
+export const AUTH_PASSKEY_LIST_ID = "auth-passkey-list";
+
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
 
 const LOCKOUT_ID = "passkey-lockout";
@@ -35,7 +38,7 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
   const Heading = `h${level ?? 1}` as "h1";
 
   return (
-    <Card class={cn("mx-auto w-full max-w-2xl", cls)}>
+    <Card id={AUTH_PASSKEY_LIST_ID} class={cn("mx-auto w-full max-w-2xl", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Your passkeys</Heading>
@@ -94,7 +97,10 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
                       Rename
                     </a>
                   </Button>
-                  <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ delete: paths.passkeyRemove({ id: credential.id }) })}>
+                  <Form
+                    csrfToken={csrfToken}
+                    csrfHeader={csrfHeader}
+                    {...hxAttrs({ delete: paths.passkeyRemove({ id: credential.id }), target: `#${AUTH_PASSKEY_LIST_ID}`, swap: "outerHTML" })}>
                     <Button
                       type='submit'
                       tone='destructive'

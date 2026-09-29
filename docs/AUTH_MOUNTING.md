@@ -20,85 +20,39 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 The Mount, in Order: the builders, the one order that works, and the compiled copy of it
-- §2 The Three Route Groups and Their Guards: which paths each builder registers and what admits a visitor
+- §1 The Mount, in Order: the builders, the one order that works, and the test that holds the mount itself
+- §2 The Route Groups and Their Guards: where the group table lives, and why each group is guarded as it is
 - §3 What Forge Does Not Ship: the mailer, the deferral, the confirm route, and the bindings
 - §4 Why Guards Are Wired Separately from Routes: one table, two readers
 - §5 What Mounting Costs You: the bindings, the fixtures they break, and the pre-release caveat
 - §6 Embedding an Auth View in Your Own Page: `resolveAuthView`, the `guarded` claim, and the chrome props
-- §7 Rotating the Key Ring: the per-key seal bound, what crossing it costs, the cadence, and why a retired secret may never be dropped
+- §7 Rotating the Key Ring: the per-key seal bound, what crossing it costs, the cadence, and what dropping a retired secret early costs
 
 ---
 
 ## 1. The Mount, in Order
 
-Every builder is optional: omit a capability by not calling its builder. `authRoutes(base)` carries sign-in, sign-up, verification and passkey
-enrolment; `accountRoutes(base)` carries the signed-in self-service pages; `adminRoutes(base)` carries user management and the elevation bootstrap.
-`authPaths(routeMap)` turns a built map into href builders, so no path literal is written twice — every loader, action and view reads its targets
-off that map.
+Every builder is optional: omit a capability by not calling its builder. `authRoutes` carries sign-in, sign-up, verification and passkey
+enrolment; `accountRoutes` carries the signed-in self-service pages; `adminRoutes` carries user management and the elevation bootstrap.
+`authPaths` turns a built map into href builders, so no path literal is written twice — every loader, action and view reads its targets off that
+map.
 
-Order is load-bearing, and one order works. Every import below is a published subpath:
+**The mount is [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts), and this page holds no copy of it.** It is the whole mount with every
+name defined, and it is a test: it compiles against the real signatures and drives signup → code → enrolment → step-up → a guarded page, once per
+step-up factor. Copy the wiring from there. This section rules on the order it follows.
 
-```ts
-import { applyMiddlewareChain } from "@y-core/forge/app";
-import {
-  accountRoutes,
-  adminRoutes,
-  authEnrolmentPaths,
-  authPaths,
-  authRoutes,
-  createAuthGuards,
-  registerAccount,
-  registerAdmin,
-  registerAuth,
-} from "@y-core/forge/auth/web";
-import { csrfProtection } from "@y-core/forge/form";
-import { createAnonymousSession, sessionCtx } from "@y-core/forge/session";
-import { createD1Client } from "@y-core/forge/storage/db";
+**Order is load-bearing, and one order works: the session, then `globals`, then the guard groups, then the routes.** `applyMiddlewareChain` takes
+the first three and produces the chain order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e states. `registerAuth`, `registerAccount` and
+`registerAdmin` mount the routes after it.
 
-const authMap = authRoutes("/auth");
-const accountMap = accountRoutes("/account");
-const adminMap = adminRoutes("/admin");
+**`csrfProtection` goes in `globals`, never ahead of the session.** Its subject resolver runs before `next()`, so mounted ahead of the session it
+reads nothing and every token binds to nobody.
 
-// `AuthWebOptions.paths` wants every map under one object; `authPaths` builds one at a time.
-const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin: authPaths(adminMap) };
+**Every store handed to `createAuthGuards` is a resolver, not a value.** On a Worker a store needs `c.env`, which exists only per request. The
+factor registry is the same: the test's `factorRegistryFor` builds a `createFactorRegistry` over this request's factor store.
 
-applyMiddlewareChain(app, {                  // the chain order is ROUTING_AND_MIDDLEWARE.md §3e's
-  securityHeaders,
-  session: createAnonymousSession({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
-  // `globals` runs after the session and before the guard groups. csrfProtection belongs here: the
-  // subject resolver runs before `next()`, so a resolver mounted ahead of the session reads nothing
-  // and the token binds to nobody.
-  globals: [csrfProtection({ secret, subject: (c) => sessionCtx.getOptional(c)?.id })],
-  guards: createAuthGuards({
-    routes: { auth: authMap, account: accountMap, admin: adminMap },
-    // Both are resolvers: on a Worker a store needs `c.env`, which exists only per request.
-    auth: { users: (c) => createUserStore(createD1Client(c.env.DB)), signinPath: paths.auth.signin() },
-    enrolment: {
-      factors: (c) => factorRegistryFor(c),
-      // One page per kind a user enrols in deliberately: a passkey page cannot clear an owed
-      // authenticator-app enrolment, and `authEnrolmentPaths` covers both so neither can be missed.
-      enrolmentPaths: authEnrolmentPaths(paths.auth),
-      stepUpPath: paths.auth.verify.show(),
-      settledPath: paths.account.passkeys(),
-      freshStepUpMaxAgeMs: 900_000,        // optional; defaults to 15 minutes, `null` to opt out
-    },
-    origin: { allowedOrigins },
-    rateLimit: { auth: signinLimit, "auth.verify": verifyLimit },
-  }),
-});
-registerAuth(app, authMap, options);         // then the routes themselves
-registerAccount(app, accountMap, options);
-registerAdmin(app, adminMap, options);
-```
-
-**This snippet is compiled.** [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts) is the same mount with every free name given a
-definition, and it is a test — so a signature that drifts ahead of this page fails the gate. It also drives signup → code → enrolment → step-up → a
-guarded page, once per step-up factor. Read it when a shape here is ambiguous; it is the copy that cannot be wrong. `factorRegistryFor` is defined
-there: it builds a `createFactorRegistry` over this request's factor store, the way `requestStores` builds every other store from `c.env`.
-
-**A deployment offering no passkey factor must name a `settledPath` of its own — both of them.** The snippet above gives the guard chain
-`paths.account.passkeys()`, and `AuthWebOptions.settledPath` defaults to that same path when it is omitted. `/account/passkeys` answers **404**
+**A deployment offering no passkey factor must name a `settledPath` of its own — both of them.** The mount test gives the guard chain
+`accountRoutes`' `passkeys` page, and `AuthWebOptions.settledPath` defaults to that same page when it is omitted. That page answers **404**
 wherever the factor registry offers no passkey factor, so on such a deployment a completed sign-in, and a settled visitor bounced off an enrolment
 page, both land on a 404. Name a path the deployment actually serves — the account root is the usual choice — and set it in both places, because the
 two are read independently: this one is where a completed sign-in lands, the guard's is where a visitor owing nothing is sent off an enrolment page.
@@ -142,22 +96,16 @@ above happens at bootstrap.
 
 ---
 
-## 2. The Three Route Groups and Their Guards
+## 2. The Route Groups and Their Guards
 
-`AUTH_ROUTE_GROUPS` is the authoritative table: one entry per middleware group, each with the guards it carries and the medium it answers in. **A
-nested group exists only where its guards or its medium differ from its parent's** — that is what turns "these routes answer JSON" and "these are
-deliberately not admin-gated" into structure rather than a comment.
+**The groups, their guards and their media are read in `src/auth/web/routes.ts`, and nowhere else.** `AUTH_ROUTE_GROUPS` there is the
+authoritative table: one entry per middleware group, each with the guards it carries and the medium it answers in. A group's `path` is a key path
+into the maps `authRoutes`, `accountRoutes` and `adminRoutes` build — `["auth", "verify", "ceremony"]` is the `verify.ceremony` branch of
+`authRoutes` — so the routes a group answers are the ones its builder declares under that key. This section rules on why the groups are shaped as
+they are.
 
-| Group | Guards | Medium | Routes |
-| --- | --- | --- | --- |
-| `auth` | none | HTML | `GET`/`POST /signin`, `GET`/`POST /signup`, `POST /signout` |
-| `auth.verify` | `resolve-auth` | HTML | `GET`/`POST /verify`, `POST /verify/resend` |
-| `auth.verify.ceremony` | `require-auth` | JSON | `POST /verify/passkey/begin`, `POST /verify/passkey/finish` |
-| `auth.enrol` | `require-auth`, `require-pending-enrolment` | HTML | `GET /enrol/passkey`, `GET`/`POST /enrol/totp` |
-| `auth.enrol.ceremony` | `require-auth`, `require-pending-enrolment` | JSON | `POST /enrol/passkey/register/begin`, `POST /enrol/passkey/register/finish` |
-| `account` | `require-auth`, `require-enrolment`, `require-fresh-step-up` | HTML | `GET /passkeys`, `GET /passkeys/:id`, `GET /passkeys/:id/edit`, `PATCH`/`DELETE /passkeys/:id`, `GET`/`POST`/`DELETE /totp`, `GET`/`POST /email-change` |
-| `admin.users` | `require-auth`, `require-enrolment`, `require-admin`, `require-fresh-step-up` | HTML | `GET /users`, `GET /users/:id`, `GET /users/:id/edit`, `PATCH`/`DELETE /users/:id` |
-| `admin.elevate` | `require-auth`, `require-enrolment`, `require-fresh-step-up` | HTML | `GET`/`POST /elevate` |
+**A nested group exists only where its guards or its medium differ from its parent's** — that is what turns "these routes answer JSON" and "these
+are deliberately not admin-gated" into structure rather than a comment.
 
 **The medium is not documentation — the guards refuse in it.** `createAuthGuards` hands each group's `medium` to the guards it wires, so an expired
 session posting to `auth.enrol.ceremony` gets `401 {"error": "Not signed in."}` rather than an HTML redirect the controller would parse as a
@@ -203,12 +151,12 @@ Every item here is a seam with a contract and no implementation, and each is req
 | An `AuthDeferral` — `executionCtx.waitUntil` in a Worker | Both signup and sign-in return before the credential is issued. Doing the work inline reopens the timing oracle the decoy exists to close. |
 | The email-change **confirm route** | Forge mounts no route that calls `AuthEmailChangeFlow.confirm`; see [`AUTH_FLOWS.md`][af-5] §5. |
 | A D1 binding and the applied auth schema | Every auth store — the durable ones and the ephemeral ceremony pair, challenges and one-shot nonces. The package publishes `src/auth/schema.sql` and no SQL that runs: the app names that file by path in its own `forge db` host config, composes it into a migration of its own with `forge db migrate compose`, then applies it with `forge db migrate`. How that database is migrated, backed up and seeded is [`DATABASE_MANAGEMENT.md`][dm]. |
-| A scheduled call to `purgeAuthEphemera(db, Date.now())` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
+| A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
 | A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
-| A key ring | Hex root secrets, newest first, each at least 32 bytes, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
-| `AuthWebOptions.bootstrapSecret` — `(c) => string \| undefined`, if this deployment claims its first admin through the page | The claim grants the administrator role to whoever posts first, so it fails closed: with no secret configured, `GET` and `POST /admin/elevate` both answer **404** rather than offering an open endpoint. Read it off `c.env` per request, because a Worker has no secret until a request carries bindings. |
-| `EmailOtpOptions.address` — `(userId) => string \| Promise<string>` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
-| `PasskeyFactorOptions.subject` — `(userId) => { name, displayName }` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
+| A key ring | Hex root secrets, newest first, each held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
+| `AuthWebOptions.bootstrapSecret`, if this deployment claims its first admin through the page | The claim grants the administrator role to whoever posts first, so it fails closed: with no secret configured, both routes under `adminRoutes`' `elevate` answer **404** rather than offering an open endpoint. Read it off `c.env` per request, because a Worker has no secret until a request carries bindings. |
+| `EmailOtpOptions.address` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
+| `PasskeyFactorOptions.subject` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
 | Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
@@ -267,13 +215,7 @@ against prose, which does not.
 ## 6. Embedding an Auth View in Your Own Page
 
 `resolveAuthView` gives you one auth page's data, and the node built from it, inside a page you own. It is the same resolution forge's own loaders
-run, so what you place is what `/auth/signin` serves — the same paths, the same path-bound CSRF token, the same refusals.
-
-```tsx
-const view = await resolveAuthView(c, authWebOptions, { name: "signin" });
-if (!view.ok) return view.error;
-return renderPage(<MyPage ctx={ctx}>{view.data.node}</MyPage>, { status: view.data.status ?? 200 });
-```
+run, so what you place is what forge's own sign-in page serves — the same paths, the same path-bound CSRF token, the same refusals.
 
 **It returns a `Result`, and the failure channel is a `Response`.** Most pages can answer a redirect, a 404 or a 503 instead of props — a credential
 store that is down has no passkey list to render, and a function that could only return a node would have nowhere to put the 503. Return
@@ -284,11 +226,7 @@ override or forge's own view), and `status` — `undefined` for an ordinary 200.
 
 **A guarded page needs `guarded`, and the field is a claim you are making.** Most pages render data that only a guard establishes;
 `AUTH_VIEW_GUARDS` names, per page, which guards that is, and names none for a page that needs no guard. Passing
-`guarded: AUTH_VIEW_GUARDS.adminUsers` says _this route runs those guards_:
-
-```ts
-const view = await resolveAuthView(c, authWebOptions, { name: "adminUsers", guarded: AUTH_VIEW_GUARDS.adminUsers });
-```
+`guarded: AUTH_VIEW_GUARDS.adminUsers` says _this route runs those guards_.
 
 The compiler holds you to the exact list, in order, because `AUTH_VIEW_GUARDS` is `as const`. A guarded name with no `guarded` **throws** — a wiring
 mistake, not a request to refuse, so it 500s rather than rendering. An unguarded name types as `readonly []`, so the field stays inert there.
@@ -300,18 +238,14 @@ need a factor-registry round trip that would cost one per render, so for those `
 can check, and why a lie about it is a lie about your own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
-the action path — `/auth/signin` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a route embedding
-an auth view has to sit behind the same `csrfProtection` the auth prefixes do, not a second one configured differently: mint under a subject-less
-guard and the guarded path refuses the token, mint under none at all and `mintCsrf` throws before anything renders. Extending the path list of the
-guard you already mount is the whole fix.
+the action path — `authRoutes`' `signinSubmit` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a
+route embedding an auth view has to sit behind the same `csrfProtection` the auth prefixes do, not a second one configured differently: mint under a
+subject-less guard and the guarded path refuses the token, mint under none at all and `mintCsrf` throws before anything renders. Extending the path
+list of the guard you already mount is the whole fix.
 
 **Placing the view in your layout is `class` and `level`.** Every view accepts both. `class` is composed onto the root after the view's own classes,
 so your width or margin wins; `level` sets the heading tag from the view's place in _your_ document, never from its size. Both default to what forge
 renders on its own routes, so an embed that passes neither is byte-identical to one.
-
-```tsx
-<Signin {...view.data.props} class='max-w-none' level={2} />
-```
 
 There is no way to suppress the heading: the views use it as the accessible name of the surface they render. A page with its own heading passes
 `level={2}`. To replace a page's markup outright, use the `views` option on `AuthWebOptions` — `resolveAuthView` builds `node` off your entry when
@@ -340,14 +274,19 @@ it is sealed at enrolment and opened by the kid in its own frame, however old th
 
 **A `totpWrap` secret is droppable once no factor is sealed under it, and that is a condition you can test.** A successful verification re-seals the
 secret under the active kid when its frame names an older one, riding the write that already records the verification — so the population under a
-retiring key shrinks as its holders sign in. `authKeysRetirable(factors, "totp-app", ring)` is true exactly when that population is empty;
-`FactorStore.countSecretsNotUnder` is the same figure for a dashboard. Drop the secret before it answers true and every affected user loses their
-authenticator app permanently.
+retiring key shrinks as its holders sign in. `authKeysRetirable`, asked about `totp-app`, is true exactly when that population is empty;
+`FactorStore.countSecretsNotUnder` is the same figure for a dashboard.
+
+**Dropping the secret early costs each affected user a recovery code and a re-enrolment, not the account.** Their authenticator app stops being
+checkable: the verify page says so, offers their other methods, and logs `auth.factor.unusable`. They step up with a passkey or a recovery code,
+then remove the authenticator app and add it again. Put the secret back in the ring before they do, and every enrolment still under it works
+again ([`AUTH_FLOWS.md`][af-8] §8).
 
 **Bounding the wait is `purgeStaleTotpSecrets`, and it is yours to call.** A user who never signs in is never re-sealed, so the count can sit above
 zero on somebody who may never return. The purge drops `totp-app` rows still under an older kid whose last _accepted_ code is older than a window
-you name, from your own scheduled handler. Those users then owe an enrolment and are routed to the enrolment page, which is why it is **refused
-unless your deployment offers `totp-app` as `mandatory`**: under any other requirement nothing asks them to replace what was dropped. It takes the
+you name, from your own scheduled handler. Those users then owe an enrolment, which they reach only after stepping up with another second factor
+or a recovery code ([`AUTH_FLOWS.md`][af-8b] §8b). That is why it is **refused unless your deployment offers `totp-app` as `mandatory`**: under any
+other requirement nothing asks them to replace what was dropped. It takes the
 ring rather than a key id, because it deletes the complement of the active key and a wrong id would take the live enrolments.
 
 The mechanism of a rotation, and what `importAuthKeyRing` demands of each secret, is [`src/auth/README.md`][auth-readme] section “Rotating the
@@ -360,6 +299,8 @@ survives.
 
 [af]: ./AUTH_FLOWS.md
 [af-5]: ./AUTH_FLOWS.md#5-email-change
+[af-8]: ./AUTH_FLOWS.md#8-recovery--no-lost-value-locks-an-account-out-or-lets-it-in-on-less
+[af-8b]: ./AUTH_FLOWS.md#8b-a-confirmed-second-factor-comes-before-any-enrolment
 [auth-readme]: ../src/auth/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
@@ -367,6 +308,7 @@ survives.
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [session-readme]: ../src/session/README.md
+[sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2d]: ./SOURCE_OF_TRUTH.md#2d-ui-contracts-and-data-tables
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ui-readme]: ../src/ui/README.md

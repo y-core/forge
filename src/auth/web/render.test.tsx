@@ -50,12 +50,26 @@ describe("renderAuthPage", () => {
   });
 
   it("renders a fragment for an htmx request", async () => {
-    const res = await signin(context({ "HX-Request": "true" }, appShell));
+    const res = await signin(context({ "HX-Request": "true", "HX-Request-Type": "partial" }, appShell));
     expect(await res.text()).toBe('<p data-view="forge">Ada &amp; Co &lt;ada@example.com&gt;</p>');
   });
 
   it("renders a full document for a boosted navigation, which carries the htmx header but wants a page", async () => {
-    const res = await signin(context({ "HX-Request": "true", "HX-Boosted": "true" }, appShell));
+    const res = await signin(context({ "HX-Request": "true", "HX-Boosted": "true", "HX-Request-Type": "full" }, appShell));
+    expect(await res.text()).toBe(
+      '<!DOCTYPE html><html lang="en"><body><p data-view="forge">Ada &amp; Co &lt;ada@example.com&gt;</p></body></html>',
+    );
+  });
+
+  it("renders a full document for a history restore, which carries the htmx header but no HX-Boosted", async () => {
+    const res = await signin(context({ "HX-Request": "true", "HX-History-Restore-Request": "true", "HX-Request-Type": "full" }, appShell));
+    expect(await res.text()).toBe(
+      '<!DOCTYPE html><html lang="en"><body><p data-view="forge">Ada &amp; Co &lt;ada@example.com&gt;</p></body></html>',
+    );
+  });
+
+  it("renders a full document for an htmx request that names no request type", async () => {
+    const res = await signin(context({ "HX-Request": "true" }, appShell));
     expect(await res.text()).toBe(
       '<!DOCTYPE html><html lang="en"><body><p data-view="forge">Ada &amp; Co &lt;ada@example.com&gt;</p></body></html>',
     );
@@ -67,7 +81,7 @@ describe("renderAuthPage", () => {
 describe("renderAuthPage caching", () => {
   it("marks every page no-store, as a document and as a fragment alike", async () => {
     expect((await signin(context({}, appShell))).headers.get("cache-control")).toBe("no-store");
-    expect((await signin(context({ "HX-Request": "true" }, appShell))).headers.get("cache-control")).toBe("no-store");
+    expect((await signin(context({ "HX-Request": "true", "HX-Request-Type": "partial" }, appShell))).headers.get("cache-control")).toBe("no-store");
     expect(
       (await renderAuthPage(context(), { name: "signin", view: ForgeSignin, props: signinProps("a@b.test") })).headers.get("cache-control"),
     ).toBe("no-store");
@@ -106,8 +120,9 @@ describe("renderAuthPage without a registered shell", () => {
     expect(await res.text()).toBe(
       '<!DOCTYPE html><html lang="cy"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
         '<title>Passkeys</title><meta name="robots" content="noindex">' +
-        '<link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/auth.css"></head>' +
-        '<body><p data-view="forge">ada@example.com</p><script type="module" src="/assets/auth.js"></script></body></html>',
+        '<link rel="stylesheet" href="/assets/app.css"><link rel="stylesheet" href="/assets/auth.css">' +
+        '<script type="module" src="/assets/auth.js"></script></head>' +
+        '<body><p data-view="forge">ada@example.com</p></body></html>',
     );
   });
 
@@ -158,7 +173,7 @@ describe("renderAuthPage shell slot", () => {
       asked += 1;
       return <html lang='en'>{content}</html>;
     };
-    const res = await renderAuthPage(context({ "HX-Request": "true" }, capture), {
+    const res = await renderAuthPage(context({ "HX-Request": "true", "HX-Request-Type": "partial" }, capture), {
       name: "signin",
       view: ForgeSignin,
       props: signinProps("ada@example.com"),
@@ -188,12 +203,12 @@ describe("renderAuthPage view override", () => {
   });
 
   it("hands the override exactly the props forge's own view would have received", async () => {
-    const res = await signin(context({ "HX-Request": "true" }, appShell), { views });
+    const res = await signin(context({ "HX-Request": "true", "HX-Request-Type": "partial" }, appShell), { views });
     expect(await res.text()).toBe('<section data-view="consumer">Ada &amp; Co &lt;ada@example.com&gt;</section>');
   });
 
   it("leaves a page the consumer did not override on forge's markup", async () => {
-    const res = await renderAuthPage(context({ "HX-Request": "true" }), {
+    const res = await renderAuthPage(context({ "HX-Request": "true", "HX-Request-Type": "partial" }), {
       name: "verify",
       view: ForgeVerify,
       props: { factor: "email-otp", submitPath: "/auth/verify", signinPath: "/auth/signin", csrfToken: "tok", email: "ada@example.com", icon },

@@ -29,7 +29,7 @@ Registered once at app level: a hardened cookie, a storage backend, and the midd
 import { createCookieSessionStorage, createSignedCookie, sessionMiddleware } from "@y-core/forge/session";
 
 const sessionCookie = createSignedCookie("__Host-session", {
-  secrets: [env.SESSION_SECRET], // at least 32 characters, or the factory throws
+  secrets: [env.SESSION_SECRET], // a weak secret throws — see Security
   maxAge: 60 * 60 * 24 * 7,
   sameSite: "Lax",
 });
@@ -63,7 +63,7 @@ id**; the data lives server-side in KV under that id with a sliding TTL.
 app.use(
   "*",
   createAnonymousSession<AppEnv>({
-    secret: (c) => c.env.SESSION_SECRET, // ≥ 32 chars, enforced
+    secret: (c) => c.env.SESSION_SECRET, // a weak secret throws — see Security
     kv: (c) => c.env.SESSIONS_KV,
   }),
 );
@@ -255,7 +255,9 @@ alike, so a session cookie cannot ride a cross-site request. Pair it with `csrfP
 binding the token to the session id so one minted in one browser cannot be replayed from another — the wiring is
 [`src/form/README.md`][form-readme]'s.
 
-**Source secrets from bindings.** `env.SESSION_SECRET`, never a literal; each must be at least 32 characters or the factory throws.
+**Source secrets from bindings, and generate each one.** `env.SESSION_SECRET`, never a literal, holding the output of `openssl rand -hex 32`.
+`createSignedCookie` measures a secret as the UTF-8 bytes of the string, and throws on one that fails the strength rule in
+[`SECURITY_HARDENING.md`][sh-8] §8 — so `createAnonymousSession` and flash cookies refuse it too.
 
 ---
 
@@ -296,5 +298,6 @@ does not rebuild the response.
 [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [form-readme]: ../form/README.md
 [namespaces-5a]: ../../docs/NAMESPACES.md#5a-security--transport-layer-hardening-only
+[sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2f]: ../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows
 [wp-4e]: ../../warden/canon/apps/WORKERS_PLATFORM.md#4e-development-transport-posture

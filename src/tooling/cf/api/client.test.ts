@@ -88,24 +88,16 @@ describe("an auth failure names the permission the surface needs", () => {
     cfErrors: [{ code: 10000, message: "Authentication error" }],
   });
 
-  it("names the Pages permission on a Pages target", () => {
-    // A Workers token template does not grant Pages, so "check your scopes" left the
-    // reader with the one question the row could have answered.
-    expect(describeCfFailure(rejected, { kind: "pages", name: "client-fixture" })).toBe(
-      'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Cloudflare Pages" (Read to report, Edit to change) · code 10000',
-    );
-  });
-
   it("names the Workers permission on a worker target", () => {
-    expect(describeCfFailure(rejected, { kind: "worker", name: "w" })).toContain('lacks "Workers Scripts"');
+    expect(describeCfFailure(rejected, "w")).toContain('lacks "Workers Scripts"');
   });
 
   it("states both possibilities, because Cloudflare returns one code for both", () => {
-    expect(describeCfFailure(rejected, { kind: "pages", name: "p" })).toContain("is rejected or lacks");
+    expect(describeCfFailure(rejected, "w")).toContain("is rejected or lacks");
   });
 
   it("carries the code into a redacted row, since a code cannot echo a payload", () => {
-    const detail = describeCfFailure(rejected, { kind: "pages", name: "p" }, { redactMessage: true });
+    const detail = describeCfFailure(rejected, "w", { redactMessage: true });
     expect(detail).toContain("code 10000");
     expect(detail).not.toContain("Authentication error");
   });

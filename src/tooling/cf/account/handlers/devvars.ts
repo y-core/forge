@@ -11,6 +11,23 @@ export const GENERATE_MARKER = "# forge:generate";
 /** The comment marking the next key as one whose local value is pushed to the deployed surface. */
 export const PUSH_MARKER = "# forge:push";
 
+/** The comment marking the next key as a key ring: comma-joined hex, newest first, which rotation prepends to. */
+export const RING_MARKER = "# forge:ring";
+
+const MARKERS: ReadonlySet<string> = new Set([GENERATE_MARKER, PUSH_MARKER, RING_MARKER]);
+
+function classifyDevVar(name: string, markers: ReadonlySet<string>): DevVarKind {
+  if (markers.has(GENERATE_MARKER) && markers.has(RING_MARKER)) {
+    throw new CliError(
+      "invalid-args",
+      `${name} is marked both "${GENERATE_MARKER}" and "${RING_MARKER}": a generated value is replaced on rotation, a ring is prepended to. Keep one marker.`,
+    );
+  }
+  if (markers.has(GENERATE_MARKER)) return "rotatable";
+  if (markers.has(RING_MARKER)) return "ring";
+  return markers.has(PUSH_MARKER) ? "secret" : "local";
+}
+
 /** The path of the `.dev.vars` sitting beside the given wrangler config. */
 export function devVarsPath(configPath: string): string {
   return join(dirname(resolve(configPath)), ".dev.vars");
@@ -36,7 +53,7 @@ export function parseDevVars(content: string): DevVar[] {
     const trimmed = line.trim();
     if (!trimmed) return;
     if (trimmed.startsWith("#")) {
-      if (trimmed === GENERATE_MARKER || trimmed === PUSH_MARKER) markers.add(trimmed);
+      if (MARKERS.has(trimmed)) markers.add(trimmed);
       return;
     }
 
@@ -45,8 +62,7 @@ export function parseDevVars(content: string): DevVar[] {
     const name = trimmed.slice(0, eq).trim();
     if (!name) return;
 
-    const kind: DevVarKind = markers.has(GENERATE_MARKER) ? "rotatable" : markers.has(PUSH_MARKER) ? "secret" : "local";
-    vars.push({ name, value: readValue(trimmed.slice(eq + 1).trim()), kind, line: index });
+    vars.push({ name, value: readValue(trimmed.slice(eq + 1).trim()), kind: classifyDevVar(name, markers), line: index });
     markers.clear();
   });
 
@@ -56,13 +72,15 @@ export function parseDevVars(content: string): DevVar[] {
 /** Read and parse `.dev.vars`, or an empty list when it is absent; a present file that cannot be read is an error. */
 export function readDevVars(path: string): DevVar[] {
   if (!existsSync(path)) return [];
+  let content: string;
   try {
-    return parseDevVars(readFileSync(path, "utf-8"));
+    content = readFileSync(path, "utf-8");
   } catch (err) {
     // An empty list reads as "declares no keys", which every caller acts on by doing nothing and
     // reporting success — so a file that is there but unreadable has to stop the run.
     throw new CliError("external", `could not read ${path}: ${(err as Error).message}`);
   }
+  return parseDevVars(content);
 }
 
 /** Replaces the values of the named keys, leaving every other byte of the file untouched. */

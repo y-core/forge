@@ -25,8 +25,6 @@ export function resolveNamespaces(map: ExportsMap, sealedInternal: readonly stri
   return [...dirs].sort();
 }
 
-// `buildGraph` discards a test source, and the filter is known from the path alone — so the read
-// that would be thrown away never happens.
 function resolveSources(root: string, sourceDir: string): SourceFile[] {
   return collectFiles(root, sourceDir, (name) => /\.tsx?$/.test(name))
     .filter((path) => !isTestSource(path))
@@ -54,14 +52,11 @@ export function validateNoMutualValuePairs(edges: DeclaredGraph["edges"]): Findi
 }
 
 /** The failure text each enumeration finding produces, in the order `findEnumerations` reports them. @public */
-export function validateNoEnumeration(lines: readonly string[], doc: string): Finding[] {
+export function validateNoEnumeration(lines: readonly string[], doc: string, namespaces: readonly string[], sourceDir = "src"): Finding[] {
   const findings: Finding[] = [];
-  for (const finding of findEnumerations(lines)) {
-    const at = finding.line === null ? { file: doc } : { file: doc, line: finding.line };
+  for (const finding of findEnumerations(lines, namespaces, sourceDir)) {
+    const at = { file: doc, line: finding.line };
     switch (finding.kind) {
-      case "missing-classification-section":
-        findings.push(fail("no `### 4a.` heading — the classification section moved, and the guard no longer covers it", { file: doc }));
-        break;
       case "composes-table":
         findings.push(
           fail(
@@ -70,13 +65,18 @@ export function validateNoEnumeration(lines: readonly string[], doc: string): Fi
           ),
         );
         break;
-      case "missing-catalog-section":
-        findings.push(fail("no `### 3a.` heading — the catalog section moved, and the guard no longer covers it", { file: doc }));
-        break;
       case "classification-column":
         findings.push(
           fail(
             "the catalog's classification column is back — the graph module is authoritative for leaf/integration and `package.json` `sideEffects` for side-effect status; the document enumerates neither, so delete the column and cite them instead",
+            at,
+          ),
+        );
+        break;
+      case "catalog-table":
+        findings.push(
+          fail(
+            "a namespace catalogue is back — this table names a namespace's source or subpath, and what a namespace does lives in its own README, its exports in its `mod.ts` and its edges in the declared graph; delete the table rather than keep it in step",
             at,
           ),
         );
@@ -108,7 +108,7 @@ export function checkNamespaceGraph(config: NamespaceGraphCheckConfig): CheckRes
     if (!existsSync(path)) {
       findings.push(fail("the classification document is missing — this check has nothing to guard", { file: config.enumerationDoc }));
     } else {
-      findings.push(...validateNoEnumeration(readFileSync(path, "utf-8").split("\n"), config.enumerationDoc));
+      findings.push(...validateNoEnumeration(readFileSync(path, "utf-8").split("\n"), config.enumerationDoc, namespaces, sourceDir));
     }
   }
 

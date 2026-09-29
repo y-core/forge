@@ -31,14 +31,6 @@ describe("hxHeaders", () => {
     expect(hxHeaders({ trigger: "myEvent" })).toEqual({ "HX-Trigger": "myEvent" });
   });
 
-  it("triggerAfterSettle → HX-Trigger-After-Settle", () => {
-    expect(hxHeaders({ triggerAfterSettle: "afterSettle" })).toEqual({ "HX-Trigger-After-Settle": "afterSettle" });
-  });
-
-  it("triggerAfterSwap → HX-Trigger-After-Swap", () => {
-    expect(hxHeaders({ triggerAfterSwap: "afterSwap" })).toEqual({ "HX-Trigger-After-Swap": "afterSwap" });
-  });
-
   it("retarget → HX-Retarget", () => {
     expect(hxHeaders({ retarget: "#new-target" })).toEqual({ "HX-Retarget": "#new-target" });
   });

@@ -3,7 +3,6 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { CfPagesProject } from "../../api/types";
 import type { WranglerConfig } from "../../types";
 import type { HandlerContext } from "./types";
 import { createVarsHandler } from "./vars";
@@ -11,20 +10,7 @@ import { createVarsHandler } from "./vars";
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
 function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-  return {
-    auth: AUTH,
-    scriptName: "worker",
-    prefix: "",
-    dryRun: false,
-    rotate: new Set<string>(),
-    fetch: globalThis.fetch,
-    target: { kind: "worker", name: "worker" },
-    ...overrides,
-  };
-}
-
-function makePagesCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-  return makeCtx({ scriptName: "vars-fixture", target: { kind: "pages", name: "vars-fixture" }, ...overrides });
+  return { auth: AUTH, scriptName: "worker", prefix: "", dryRun: false, rotate: new Set<string>(), fetch: globalThis.fetch, ...overrides };
 }
 
 function ok(result: unknown): Response {
@@ -47,33 +33,6 @@ function makeFetch(remoteBindings: unknown[], patchOk = true): typeof globalThis
     return ok({ bindings: remoteBindings });
   };
 }
-
-interface Captured {
-  url: string;
-  method: string;
-  body: unknown;
-}
-
-/** Pages project stub that records the write it received. */
-function makePagesFetch(project: CfPagesProject, captured: Captured[], patchOk = true): typeof globalThis.fetch {
-  return async (url, init) => {
-    const method = (init?.method ?? "GET").toUpperCase();
-    if (method === "PATCH") {
-      captured.push({ url: String(url), method, body: JSON.parse(String(init?.body)) });
-      if (!patchOk) return cfError(1, "patch failed", 400);
-      return ok({});
-    }
-    captured.push({ url: String(url), method, body: undefined });
-    return ok(project);
-  };
-}
-
-type EnvVars = Record<string, { type: "plain_text" | "secret_text"; value?: string }>;
-
-const pagesProject = (envVars: EnvVars): CfPagesProject => ({
-  name: "vars-fixture",
-  deployment_configs: { production: { env_vars: envVars, wrangler_config_hash: "hash-1" } },
-});
 
 // `.dev.vars` is gitignored repo-wide, so fixtures are built in a temp tree at
 // runtime rather than committed.
@@ -193,54 +152,24 @@ describe("varsHandler.reconcile() — worker script", () => {
   });
 });
 
-describe("varsHandler.reconcile() — pages project", () => {
-  it("reads plain_text entries from deployment_configs.production", async () => {
-    const captured: Captured[] = [];
-    const fetchFn = makePagesFetch(pagesProject({ BASE_URL: { type: "plain_text", value: "https://x.test" } }), captured);
-
-    const res = await handler.reconcile([{ name: "BASE_URL", value: "https://x.test", overridden: false }], makePagesCtx({ fetch: fetchFn }));
-
-    expect(res.results[0]?.action).toBe("in-sync");
-    expect(res.results[0]?.detail).toBe("");
-    expect(captured[0]?.url).toContain("/accounts/acc/pages/projects/vars-fixture");
-    expect(captured[0]?.url).not.toContain("/workers/scripts");
-  });
-
-  it("does not treat a secret_text entry as a var", async () => {
-    const captured: Captured[] = [];
-    const fetchFn = makePagesFetch(pagesProject({ CSRF_SECRET: { type: "secret_text" } }), captured);
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v", overridden: false }], makePagesCtx({ fetch: fetchFn }));
-    expect(res.results[0]?.action).toBe("deploy-pushes");
-  });
-
-  it("issues no PATCH against the project", async () => {
-    const captured: Captured[] = [];
-    const fetchFn = makePagesFetch(pagesProject({ DRIFTED: { type: "plain_text", value: "old" } }), captured);
-
-    await handler.reconcile([{ name: "DRIFTED", value: "new", overridden: false }], makePagesCtx({ fetch: fetchFn }));
-
-    expect(captured.map((c) => c.method)).toEqual(["GET"]);
-  });
-});
-
 describe("varsHandler.reconcile() — a missing target is not an auth failure", () => {
   const entries = [{ name: "V", value: "v", overridden: false }];
 
-  it("reports a missing pages project as unavailable, naming it", async () => {
+  it("reports a missing worker script as unavailable, naming it", async () => {
     const notFound: typeof globalThis.fetch = async () => cfError(7003, "Could not route", 404);
-    const res = await handler.reconcile(entries, makePagesCtx({ fetch: notFound }));
+    const res = await handler.reconcile(entries, makeCtx({ fetch: notFound }));
     expect(res.results[0]?.action).toBe("unavailable");
-    expect(res.results[0]?.detail).toBe("pages project · pages project not found: vars-fixture");
+    expect(res.results[0]?.detail).toBe("worker script · worker script not found: worker");
   });
 
   it("reports a rejected token as an error", async () => {
     // Note the HTTP 400: Cloudflare does not use 401/403 here, which is why the
     // envelope's error code is what classification keys off.
     const badAuth: typeof globalThis.fetch = async () => cfError(9106, "Authentication failed", 400);
-    const res = await handler.reconcile(entries, makePagesCtx({ fetch: badAuth }));
+    const res = await handler.reconcile(entries, makeCtx({ fetch: badAuth }));
     expect(res.results[0]?.action).toBe("error");
     expect(res.results[0]?.detail).toBe(
-      'pages project · auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Cloudflare Pages" (Read to report, Edit to change) · code 9106',
+      'worker script · auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9106',
     );
   });
 
@@ -248,16 +177,9 @@ describe("varsHandler.reconcile() — a missing target is not an auth failure", 
     const notFound: typeof globalThis.fetch = async () => cfError(7003, "Could not route", 404);
     const badAuth: typeof globalThis.fetch = async () => cfError(9106, "Authentication failed", 400);
 
-    const missing = await handler.reconcile(entries, makePagesCtx({ fetch: notFound }));
-    const auth = await handler.reconcile(entries, makePagesCtx({ fetch: badAuth }));
+    const missing = await handler.reconcile(entries, makeCtx({ fetch: notFound }));
+    const auth = await handler.reconcile(entries, makeCtx({ fetch: badAuth }));
     expect(missing.results[0]?.action).not.toBe(auth.results[0]?.action);
-  });
-
-  it("applies the same distinction on the worker branch", async () => {
-    const notFound: typeof globalThis.fetch = async () => cfError(7003, "Could not route", 404);
-    const res = await handler.reconcile(entries, makeCtx({ fetch: notFound }));
-    expect(res.results[0]?.action).toBe("unavailable");
-    expect(res.results[0]?.detail).toBe("worker script · worker script not found: worker");
   });
 });
 
@@ -284,9 +206,8 @@ describe("varsHandler — a plain-text var only the remote knows about", () => {
   });
 
   it("does not mistake a remote secret for an orphaned var", async () => {
-    const captured: Captured[] = [];
-    const fetchFn = makePagesFetch(pagesProject({ A_SECRET: { type: "secret_text" } }), captured);
-    const res = await handler.reconcile([], makePagesCtx({ fetch: fetchFn }));
+    const fetchFn = makeFetch([{ type: "secret_text", name: "A_SECRET" }]);
+    const res = await handler.reconcile([], makeCtx({ fetch: fetchFn }));
     expect(res.results).toEqual([]);
   });
 });

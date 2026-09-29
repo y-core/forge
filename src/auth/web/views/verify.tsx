@@ -14,6 +14,7 @@ import { AUTH_OTP_DIGITS } from "../../config";
 import { PASSKEY } from "../../passkey-contract";
 import type { AuthFactorKind } from "../../types";
 import { AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
+import { RecoveryCodeField } from "./recovery-codes";
 import type { VerifyViewProps } from "./types";
 
 const SECOND_MS = 1000;
@@ -40,6 +41,15 @@ const PROMPT: Record<AuthFactorKind, string> = {
   "email-otp": "Enter the code we emailed you.",
   "totp-app": "Enter the current code from your authenticator app.",
   passkey: "Confirm with the passkey saved on this device.",
+  "recovery-code": "Enter one of your recovery codes.",
+};
+
+/** How the picker offers switching to each factor. */
+const CHOICE: Record<AuthFactorKind, string> = {
+  "email-otp": "Use an emailed code instead",
+  "totp-app": "Use your authenticator app instead",
+  passkey: "Use a passkey instead",
+  "recovery-code": "Use a recovery code instead",
 };
 
 // Design Read: a visitor mid-sign-in asked for a second factor; the one action is presenting it;
@@ -49,6 +59,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
   factor,
   codeDigits,
   passkey,
+  choices,
   submitPath,
   resendPath,
   signinPath,
@@ -95,24 +106,41 @@ export const VerifyView: FC<VerifyViewProps> = ({
           </AuthPasskeyScope>
         ) : (
           <Form action={submitPath} csrfToken={csrfToken} csrfHeader={csrfHeader} class='flex flex-col gap-6'>
-            <FormField name='code' invalid={fieldError !== undefined}>
-              <FormField.Label name='code'>Verification code</FormField.Label>
-              <OtpInput
-                length={digits}
-                autofocus
-                autocomplete='one-time-code'
-                field={{ name: "code", invalid: fieldError !== undefined, description: true }}
-              />
-              <FormField.Description name='code'>{digits} digits. Spaces and dashes are ignored.</FormField.Description>
-              {fieldError === undefined ? null : (
-                <FormField.Error name='code'>
-                  <AppIcon name='alert' class='me-2 inline-block size-4' />
-                  {fieldError}
-                </FormField.Error>
-              )}
-            </FormField>
+            {factor === "recovery-code" ? (
+              <RecoveryCodeField fieldError={fieldError} icon={AppIcon} />
+            ) : (
+              <FormField name='code' invalid={fieldError !== undefined}>
+                <FormField.Label name='code'>Verification code</FormField.Label>
+                <OtpInput
+                  length={digits}
+                  autofocus
+                  autocomplete='one-time-code'
+                  field={{ name: "code", invalid: fieldError !== undefined, description: true }}
+                />
+                <FormField.Description name='code'>{digits} digits. Spaces and dashes are ignored.</FormField.Description>
+                {fieldError === undefined ? null : (
+                  <FormField.Error name='code'>
+                    <AppIcon name='alert' class='me-2 inline-block size-4' />
+                    {fieldError}
+                  </FormField.Error>
+                )}
+              </FormField>
+            )}
             <Button type='submit'>Confirm</Button>
           </Form>
+        )}
+        {choices === undefined ? null : (
+          <ul data-ref='verify-choices' class='flex flex-col gap-2'>
+            {choices
+              .filter((choice) => choice.kind !== factor)
+              .map((choice) => (
+                <li key={choice.kind}>
+                  <Link href={choice.href} data-ref='verify-choice'>
+                    {CHOICE[choice.kind]}
+                  </Link>
+                </li>
+              ))}
+          </ul>
         )}
         {resendPath === undefined || resendToken === undefined || factor !== "email-otp" ? null : (
           <div class='flex flex-col gap-3'>

@@ -1,6 +1,5 @@
-import { describeTarget } from "../target";
-import type { DeploymentTarget } from "../types";
-import { CF_ERROR_CODES, SURFACE_PERMISSIONS } from "./endpoints";
+import { WORKER_SURFACE } from "../target";
+import { CF_ERROR_CODES, WORKER_PERMISSION } from "./endpoints";
 import type { CfApiClientError } from "./types";
 import type { CfFailureKind, DescribeCfFailureOptions } from "./types";
 
@@ -19,14 +18,14 @@ export function classifyCfError(e: CfApiClientError): CfFailureKind {
   return "other";
 }
 
-/** A detail string for a failed call against `target`. */
-export function describeCfFailure(e: CfApiClientError, target: DeploymentTarget, options: DescribeCfFailureOptions = {}): string {
+/** A detail string for a failed call against the Worker `scriptName`. */
+export function describeCfFailure(e: CfApiClientError, scriptName: string, options: DescribeCfFailureOptions = {}): string {
   const kind = classifyCfError(e);
   switch (kind) {
     case "not-found":
-      return `${describeTarget(target)} not found: ${target.name}`;
+      return `${WORKER_SURFACE} not found: ${scriptName}`;
     case "auth":
-      return describeAuthFailure(e, target);
+      return describeAuthFailure(e);
     case "network":
       return options.redactMessage ? "network error" : `network error — ${e.message}`;
     case "other":
@@ -35,11 +34,10 @@ export function describeCfFailure(e: CfApiClientError, target: DeploymentTarget,
   }
 }
 
-function describeAuthFailure(e: CfApiClientError, target: DeploymentTarget): string {
+function describeAuthFailure(e: CfApiClientError): string {
   const code = e.cfErrors?.[0]?.code;
-  const permission = SURFACE_PERMISSIONS[target.kind];
   return [
-    `auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "${permission}"`,
+    `auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "${WORKER_PERMISSION}"`,
     " (Read to report, Edit to change)",
     code !== undefined ? ` · code ${code}` : "",
   ].join("");

@@ -67,31 +67,6 @@ export interface CfWorkerSecret {
   type: string;
 }
 
-// `env_vars` is an object keyed by variable name, not an array; a `secret_text` entry
-// carries no readable `value` — see api/endpoints.ts.
-export interface CfPagesEnvVar {
-  type: "plain_text" | "secret_text";
-  value?: string;
-}
-
-export interface CfPagesDeploymentConfig {
-  /** A `null` value deletes that variable; PATCH merges rather than replaces. */
-  env_vars?: Record<string, CfPagesEnvVar | null>;
-  /** Echoed back on PATCH, as wrangler does on every one of these calls. */
-  wrangler_config_hash?: string;
-}
-
-export interface CfPagesDeploymentConfigs {
-  production?: CfPagesDeploymentConfig;
-  preview?: CfPagesDeploymentConfig;
-}
-
-export interface CfPagesProject {
-  name: string;
-  production_branch?: string;
-  deployment_configs?: CfPagesDeploymentConfigs;
-}
-
 export type CfApiClientErrorKind = "network" | "api" | "parse";
 
 export class CfApiClientError extends Error {

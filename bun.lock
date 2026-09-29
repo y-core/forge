@@ -9,7 +9,7 @@
         "@remix-run/headers": "^0.21.1",
         "@remix-run/route-pattern": "^0.24.0",
         "@remix-run/session": "^0.4.2",
-        "htmx.org": "^2.0.10",
+        "htmx.org": "^4.0.0",
         "valibot": "^1.5.0",
       },
       "devDependencies": {
@@ -338,7 +338,7 @@
 
     "harfbuzzjs": ["harfbuzzjs@1.6.1", "", {}, "sha512-+JeJmO+HzXjDwpfCOdGSyM2bNP8WzJNFKl/8TKivbInMYDtfRIuPIDLtnBNmQzcJw6GptbhHY6o5gaH6deCMEw=="],
 
-    "htmx.org": ["htmx.org@2.0.10", "", {}, "sha512-kdeJe7ZVwaS6QMz/ebBIVtZdpwen6L0OQ5GOhPV9MKBb196TCZeZu4yA7ZIQsaLKv7EpXz+So7KSXNuHXhj7Cw=="],
+    "htmx.org": ["htmx.org@4.0.0", "", { "bin": { "upgrade-check": "dist/scripts/upgrade-check.js" } }, "sha512-T/171FUY93Kdfp8t+DnHdk45QvKRiBhVhhrwSzrXgUi4pHKvhp77dUA/qg8FAjsFWPIHNbmUuIdCrcVHuiZWng=="],
 
     "kleur": ["kleur@4.1.5", "", {}, "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="],
 

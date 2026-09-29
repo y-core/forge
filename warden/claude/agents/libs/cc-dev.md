@@ -40,7 +40,7 @@ Implement `cc-plan`'s plan faithfully. Every file change is deliberate and trace
 
 1. Follow the **Coding Ruleset** below.
 2. **Never infer a rule mid-implementation — search for it.** `knowledge_search` with the question in plain words, then `knowledge_read` on the
-   chunk id (`AGENT_GUIDE.md §1`). `canon` carries the portable rule, `local` this repository's catalog and local rulings. **An empty result is an
+   chunk id (`AGENT_GUIDE.md §1`). `canon` carries the portable rule, `local` this repository's local rulings. **An empty result is an
    answer** — nothing governs it, so follow the surrounding code and say so; a near miss is not a rule. Cite the chunk id when a rule decides your
    change. Where no warden MCP is configured, the same index is `warden search` and `warden outline <path>` from a terminal.
 3. Read every file in full before modifying it. Understand the existing pattern before adding to it.

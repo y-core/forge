@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { hexToBytes } from "../../crypto/mod";
 import { fakeR2 } from "../../testing/fakes";
 import { r2Backend } from "./r2-backend";
 import { createObjectStore } from "./store";
@@ -385,4 +386,42 @@ describe("createObjectStore — get re-keying does not consume the body", () => 
     if (!res.ok) throw new Error("expected ok");
     expect(reads.body).toBe(0);
   });
+});
+
+describe("createObjectStore — sha256 upload verification over r2Backend(fakeR2())", () => {
+  const HELLO_SHA256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+  it("refuses a body whose digest does not match and leaves the key absent", async () => {
+    const store = createObjectStore(r2Backend(fakeR2()));
+    const res = await store.put("doc.txt", "hellO", { sha256: HELLO_SHA256 });
+    if (res.ok) throw new Error("expected the mismatching body to be refused");
+    expect({ name: res.error.name, code: (res.error as Error & { code?: unknown }).code }).toEqual({ name: "R2Error", code: 10037 });
+    expect(await store.head("doc.txt")).toEqual({ ok: true, data: null });
+  });
+
+  it("keeps the prior object when a mismatching body targets an existing key", async () => {
+    const store = createObjectStore(r2Backend(fakeR2({ "doc.txt": "original" })));
+    const res = await store.put("doc.txt", "hellO", { sha256: HELLO_SHA256 });
+    expect(res.ok).toBe(false);
+    const got = await store.get("doc.txt");
+    if (!got.ok || got.data === null) throw new Error("expected the original object");
+    expect(await got.data.text()).toBe("original");
+  });
+
+  const matching: { label: string; sha256: string | Uint8Array }[] = [
+    { label: "lowercase hex", sha256: HELLO_SHA256 },
+    { label: "uppercase hex", sha256: HELLO_SHA256.toUpperCase() },
+    { label: "Uint8Array", sha256: hexToBytes(HELLO_SHA256) },
+  ];
+
+  for (const { label, sha256 } of matching) {
+    it(`stores a body whose digest matches, given as ${label}`, async () => {
+      const store = createObjectStore(r2Backend(fakeR2()));
+      const res = await store.put("doc.txt", "hello", { sha256 });
+      expect(res.ok).toBe(true);
+      const got = await store.get("doc.txt");
+      if (!got.ok || got.data === null) throw new Error("expected the stored object");
+      expect(await got.data.text()).toBe("hello");
+    });
+  }
 });

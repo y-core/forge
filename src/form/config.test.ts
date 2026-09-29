@@ -6,13 +6,28 @@ import { CsrfConfigSchema, TurnstileConfigSchema } from "./config";
 const VALID_SECRET = "de7bf4aef360e3a4c3254c9cec7e45d0f1fd98cc2219c62b5b07e826ba1bcc6e";
 
 describe("CsrfConfigSchema", () => {
-  it("accepts a valid 32+ hex character secret", () => {
+  it("accepts a 64-hex-character secret", () => {
     const result = v.safeParse(CsrfConfigSchema, { secret: VALID_SECRET });
     expect(result.success).toBe(true);
   });
 
-  it("rejects a secret shorter than 32 hex characters", () => {
+  it("rejects a secret shorter than 64 hex characters", () => {
     const result = v.safeParse(CsrfConfigSchema, { secret: "abc123" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a secret one hex character under the 32-byte floor", () => {
+    const result = v.safeParse(CsrfConfigSchema, { secret: VALID_SECRET.slice(0, 63) });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a 16-byte secret the previous floor admitted", () => {
+    const result = v.safeParse(CsrfConfigSchema, { secret: VALID_SECRET.slice(0, 32) });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an odd-length hex secret that no byte string encodes", () => {
+    const result = v.safeParse(CsrfConfigSchema, { secret: `${VALID_SECRET}a` });
     expect(result.success).toBe(false);
   });
 

@@ -1,8 +1,11 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { resolveSiteConfig } from "../../../site/config";
 import type { SiteConfig, ZoneRule } from "../../../site/types";
-import { phaseAction, planZoneRules, rulesInSync } from "./commands";
+import { createSyncZoneCommand, phaseAction, planZoneRules, rulesInSync } from "./commands";
 
 const base: SiteConfig = {
   origin: "https://example.com",
@@ -115,5 +118,31 @@ describe("phaseAction", () => {
 
   it("reports a phase that failed as error, written or not", () => {
     expect(phaseAction({ ...firewall, desired: [rule], remote: null, error: "auth failed" })).toBe("error");
+  });
+});
+
+describe("sync zone --commit", () => {
+  it("describes each written ruleset as managed by `forge cf sync zone`, naming the config", async () => {
+    const config = join(mkdtempSync(join(tmpdir(), "forge-zone-")), "site.ts");
+    writeFileSync(config, `export default ${JSON.stringify(base)};\n`, "utf-8");
+
+    const puts: unknown[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") puts.push(JSON.parse(String(init.body)));
+      return Response.json({ success: true, errors: [], messages: [], result: { rules: [] } });
+    }) as unknown as typeof globalThis.fetch;
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const cmd = createSyncZoneCommand();
+      const flags = { config, commit: true, json: true, "zone-id": "zone", "api-token": "token" };
+      await cmd.run?.([], flags as Parameters<NonNullable<typeof cmd.run>>[1]);
+    } finally {
+      globalThis.fetch = original;
+      log.mockRestore();
+    }
+
+    expect(puts.length).toBe(2);
+    for (const body of puts) expect(body).toMatchObject({ description: `Managed by forge cf sync zone from ${config}` });
   });
 });

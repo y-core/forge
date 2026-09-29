@@ -12,6 +12,7 @@ import type { AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninRea
 /** Folds an operator's refusal to the one a visitor may see. @public */
 export function redactSigninReason(reason: AuthSigninReason): AuthSigninNotice {
   if (reason === "unavailable") return "unavailable";
+  if (reason === "unusable") return "unusable";
   if (reason === "too-many-attempts" || reason === "too-soon") return "throttled";
   return "unrecognised";
 }

@@ -32,13 +32,11 @@ export function pageShell<Bindings = Record<string, unknown>>(document: ShellDoc
         {hrefs(document.stylesheet).map((href) => (
           <link rel='stylesheet' href={href} />
         ))}
-      </head>
-      <body>
-        {content}
         {hrefs(document.script).map((src) => (
           <script type='module' src={src} />
         ))}
-      </body>
+      </head>
+      <body>{content}</body>
     </html>
   );
 }

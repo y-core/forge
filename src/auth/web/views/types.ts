@@ -77,12 +77,24 @@ export type AuthFactorsTriggerProps = {
   readonly class?: string | undefined;
 };
 
+/** The form an administrator resets another account's factors with. @public */
+export type AuthFactorsResetForm = {
+  readonly path: string;
+  readonly csrfToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
+};
+
 /** What the factors panel renders — the same shape for the account holder and for an administrator. @public */
 export type AuthFactorsViewProps = AuthViewChrome & {
   readonly factors: readonly AuthFactorRow[];
   readonly passkeys: readonly AuthCredential[];
   /** The holder's own management pages, absent when an administrator is reading someone else's account. */
   readonly manage?: AuthAccountPaths | undefined;
+  /** Unused recovery codes left after a step-up by one, which is what makes the panel explain the repair. */
+  readonly recovered?: number | undefined;
+  /** Offered to an administrator reading someone else's account, never to the account holder. */
+  readonly reset?: AuthFactorsResetForm | undefined;
   readonly icon: ForgeIcon<"key">;
 };
 
@@ -162,6 +174,26 @@ export type PasskeyListViewProps = AuthViewChrome & {
   readonly csrfHeader?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
+
+/** What the recovery-code page renders: the codes left, and a new set shown once until one of it is typed back. @public */
+export type RecoveryCodesViewProps = AuthViewChrome & {
+  /** Unused codes of the confirmed set, or `null` where no set has been confirmed yet. */
+  readonly remaining: number | null;
+  readonly generatePath: string;
+  readonly generateToken: string;
+  /** The staged set, present only on the render that issued it. */
+  readonly issued?: readonly string[] | undefined;
+  readonly confirmPath: string;
+  readonly confirmToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
+  /** A refused confirmation, in the web layer's words. */
+  readonly fieldError?: string | undefined;
+  readonly icon: ForgeIcon<"alert" | "key">;
+};
+
+/** One factor the verify page may be switched to, and the page asking for it. @public */
+export type VerifyChoice = { readonly kind: AuthFactorKind; readonly href: string };
 
 /** What the sign-in page renders. @public */
 export type SigninViewProps = AuthViewChrome & {
@@ -246,6 +278,8 @@ export type VerifyViewProps = AuthViewChrome & {
   readonly codeDigits?: OtpLength | undefined;
   /** The ceremony contract, required when `factor` is `passkey`. */
   readonly passkey?: AuthPasskeyContract | undefined;
+  /** Every confirmed factor this step-up may be met with, `factor` included; absent unless there is another to switch to. */
+  readonly choices?: readonly VerifyChoice[] | undefined;
   readonly submitPath: string;
   /** Where a new code is asked for. Only an emailed code can be re-sent. */
   readonly resendPath?: string | undefined;

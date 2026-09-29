@@ -24,13 +24,12 @@ export function hxAttrs(p: HxAttrsProps): HxAttrs {
   add("hx-trigger", p.trigger);
   add("hx-include", p.include);
   add("hx-indicator", p.indicator);
-  add("hx-disabled-elt", p.disabledElt);
+  add("hx-disable", p.disable);
   add("hx-sync", p.sync);
   add("hx-confirm", p.confirm);
   add("hx-encoding", p.encoding);
   add("hx-push-url", p.pushUrl);
   add("hx-replace-url", p.replaceUrl);
-  add("hx-params", p.params);
   if (p.values !== undefined) {
     const encoded = encodeMap(p.values);
     if (encoded !== undefined) out["hx-vals"] = encoded;
@@ -40,7 +39,7 @@ export function hxAttrs(p: HxAttrsProps): HxAttrs {
     if (encoded !== undefined) out["hx-headers"] = encoded;
   }
   if (p.boost !== undefined) {
-    out["hx-boost"] = String(p.boost);
+    out["hx-boost:inherited"] = String(p.boost);
   }
   return out;
 }

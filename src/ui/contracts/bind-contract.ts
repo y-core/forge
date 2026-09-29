@@ -29,12 +29,10 @@ const BOUND_URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
 /** Whether an attribute may never be driven by a signal: a handler name, bare or any `hx-on` spelling, plus `srcdoc` and `style`. @public */
 export function isBindAttrRefused(attribute: string): boolean {
   const lower = attribute.toLowerCase();
-  // htmx compiles all four spellings of its handler attribute, the dash form existing for templating
-  // where a colon cannot appear, so the `data-` prefix is stripped before the name is tested.
   const unprefixed = lower.startsWith("data-") ? lower.slice("data-".length) : lower;
   // `hx-on` is refused although `docs/HTMX.md` §7b ratifies it in the renderer: that ratification
   // is about source a developer typed, and here the signal supplies the body htmx would execute.
-  const isHxOn = unprefixed.startsWith("hx-on:") || unprefixed.startsWith("hx-on-");
+  const isHxOn = unprefixed.startsWith("hx-on");
   return lower.startsWith("on") || isHxOn || lower === "srcdoc" || lower === "style";
 }
 

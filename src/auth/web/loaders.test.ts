@@ -45,11 +45,12 @@ import {
   fakeSessionCookie,
   textOf,
   valuesOf,
+  recoveryOffer,
 } from "./web.fixture";
 
 const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
 
-const CSRF_SECRET = "c".repeat(64);
+const CSRF_SECRET = "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d";
 
 /** The one header htmx sends a row's token in, as `hxAttrs` serialises it. */
 interface CsrfHeaders {
@@ -144,6 +145,7 @@ describe("loadSignup", () => {
           offered: [
             { service: fakeFactorService("email-otp"), role: "primary" },
             { service: fakeFactorService("totp-app"), role: "second", requirement },
+            recoveryOffer(),
           ],
         }),
       });
@@ -173,13 +175,14 @@ describe("loadVerify", () => {
         offered: [
           { service: fakeFactorService("email-otp"), role: "primary" },
           { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+          recoveryOffer(),
         ],
       }),
     });
     const html = await page(loaderApp(loadVerify, options, "/page", "u9"));
 
     // The authenticator-app prompt, and no resend: only an emailed code can be sent again.
-    expect(valuesOf(html, "action")).toEqual(["/auth/verify"]);
+    expect(valuesOf(html, "action")).toEqual(["/auth/verify?factor=totp-app"]);
   });
 });
 
@@ -308,6 +311,7 @@ describe("loadTotpEnrol", () => {
         offered: [
           { service: fakeFactorService("email-otp"), role: "primary" },
           { service: enrolling, role: "second", requirement: "optional" },
+          recoveryOffer(),
         ],
       }),
     });
@@ -473,6 +477,7 @@ describe("every token a page renders is bound to the path its own control submit
         offered: [
           { service: fakeFactorService("email-otp"), role: "primary" },
           { service: enrolling, role: "second", requirement: "optional" },
+          recoveryOffer(),
         ],
       }),
     });

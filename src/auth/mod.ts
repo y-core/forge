@@ -14,6 +14,8 @@ export {
   AUTH_PASSKEY_TTL_MIN_SECONDS,
   AUTH_PASSKEY_TTL_MAX_SECONDS,
   AUTH_KV_MIN_TTL_SECONDS,
+  AUTH_RECOVERY_CODE_BYTES,
+  AUTH_RECOVERY_CODE_COUNT,
   AUTH_OTP_COOLDOWN_MS,
   AUTH_OTP_DIGITS,
   AUTH_OTP_MAX_ATTEMPTS,
@@ -37,6 +39,7 @@ export { createAdminUserStore } from "./stores/admin-users";
 export { createCredentialStore } from "./stores/credentials";
 export { createFactorStore } from "./stores/factors";
 export { createIdentityLinkStore } from "./stores/identity-links";
+export { createRecoveryCodeStore } from "./stores/recovery-codes";
 export { createUserStore } from "./stores/users";
 export type {
   AuthFactorCapabilities,
@@ -56,8 +59,10 @@ export type {
 } from "./factors/types";
 export type { ImplicitFactorService } from "./factors/types";
 export { authFactorContext, authIdentifies, createFactorRegistry } from "./factors/registry";
-export type { PasskeyFactorOptions, PasskeyFactorSubject } from "./factors/types";
+export type { PasskeyFactorOptions, PasskeyFactorSubject, PasskeyPrfSalts } from "./factors/types";
 export { createPasskeyFactor } from "./factors/passkey";
+export type { RecoveryCodeFactorOptions, RecoveryCodeFactorService } from "./factors/types";
+export { createRecoveryCodeFactor } from "./factors/recovery-code";
 export type { TotpAppEnrolment, TotpAppFactorOptions } from "./factors/types";
 export { createTotpAppFactor } from "./factors/totp-app";
 export type { AuthDecoyStores, AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./flows/types";
@@ -168,6 +173,7 @@ export type {
   NonceStore,
   OtpState,
   OtpStateStore,
+  RecoveryCodeStore,
   UserStore,
 } from "./types";
 export { normalizeEmail } from "./stores/email";

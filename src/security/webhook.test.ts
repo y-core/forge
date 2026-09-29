@@ -63,8 +63,8 @@ describe("computeWebhookSignature", () => {
 describe("signWebhook", () => {
   it("refuses the 24-byte reference secret synchronously, without echoing it", () => {
     const secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
-    expectMessageOmitsSecret(() => signWebhook({ id: "msg_1", body: "{}", secrets: [secret] }), secret, "24 bytes");
-    expectMessageOmitsSecret(() => signWebhook({ id: "msg_1", body: "{}", secrets: [secret] }), secret, "32-byte floor");
+    expectMessageOmitsSecret(() => signWebhook({ id: "msg_1", body: "{}", secrets: [secret] }), secret, "(got 24)");
+    expectMessageOmitsSecret(() => signWebhook({ id: "msg_1", body: "{}", secrets: [secret] }), secret, "at least 32 bytes");
   });
 
   it("produces exactly the three Standard Webhooks headers", async () => {
@@ -97,7 +97,9 @@ describe("signWebhook", () => {
     expect(sign("msg_1", [])).toThrow("signWebhook: secrets is empty");
     expectMessageOmitsSecret(sign("msg_1", ["MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSwMfKQ9r8GKYqr"]), "MfKQ9r8GKYqr", "whsec_-prefixed");
     expectMessageOmitsSecret(sign("msg_1", ["whsec_not*base64"]), "not*base64", "whsec_-prefixed");
-    expectMessageOmitsSecret(sign("msg_1", [short]), short.slice(6), "31 bytes");
+    expectMessageOmitsSecret(sign("msg_1", [short]), short.slice(6), "at least 32 bytes (got 31)");
+    const uniform = `whsec_${base64Encode(new Uint8Array(32).fill(0x2a))}`;
+    expectMessageOmitsSecret(sign("msg_1", [uniform]), uniform.slice(6), "all the same value");
     expect(sign("", [SECRET_OLD])).toThrow("signWebhook: id is empty");
     expect(sign("msg.1", [SECRET_OLD])).toThrow('signWebhook: id contains "."');
   });

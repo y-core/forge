@@ -25,3 +25,15 @@ export interface PasskeyRealm {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   navigate: (path: string) => void;
 }
+
+/** What a verified ceremony's PRF evaluation handed the page. @public */
+export interface PasskeyPrfResult {
+  readonly mode: PasskeyMode;
+  /** base64url — the key the step-up salts were given under. */
+  readonly credentialId: string;
+  /** Exactly 32 bytes, or `null` when the authenticator returned no real result. */
+  readonly output: Uint8Array<ArrayBuffer> | null;
+}
+
+/** @public */
+export type PasskeyPrfHandler = (result: PasskeyPrfResult) => void | Promise<void>;

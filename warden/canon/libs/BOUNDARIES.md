@@ -54,7 +54,7 @@ module:
 | A `…/*/client` side-effect registration entry | **Browser only** — controller and scope registration |
 | A vendored browser bundle | **Browser only** — a side-effect import, no exported surface |
 
-The repository's own catalog names which namespace is which; this section owns only the rule that the tier is a property of the path.
+Each namespace's README says which tier it is on; this section owns only the rule that the tier is a property of the path.
 
 ### 1b. Splitting a Component Across the Boundary
 
@@ -98,7 +98,7 @@ content-type enforcement on incoming requests.
 | Timing-safe comparison and other primitives | a sealed-internal crypto module |
 | Input sanitization and schema validation | the form-parsing and validation namespaces |
 
-The repository's own catalog names the namespace behind each row; this table owns only which side of the line a concern falls on.
+Each namespace's README says which concerns it owns; this table owns only which side of the line a concern falls on.
 
 **Any feature that requires reading session data or user identity belongs in a higher-level namespace.** Adding one to the security namespace is a
 layering violation even when the code is short and the import resolves.

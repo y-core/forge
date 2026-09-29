@@ -5,6 +5,14 @@ import { safeJoin } from "./paths";
 import { bundler } from "./peers";
 import type { ResolvedJsBundle } from "./types";
 
+type JsSubGroupOptions = {
+  format: NonNullable<ResolvedJsBundle["format"]>;
+  splitting: boolean;
+  define: ResolvedJsBundle["define"];
+  conditions: ResolvedJsBundle["conditions"];
+  minify: boolean;
+};
+
 /** Whether a file in the output directory is one of this group's own, hashed (`main-A1B2.js`) or not. */
 function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
   const stem = basename(name, extname(name));
@@ -53,33 +61,37 @@ export async function buildJS(
     rmSync(join(outdir, "chunks"), { recursive: true, force: true });
     mkdirSync(outdir, { recursive: true });
 
-    const bySubKey = new Map<string, ResolvedJsBundle[]>();
+    const bySubKey = new Map<string, { options: JsSubGroupOptions; bundles: ResolvedJsBundle[] }>();
     for (const bundle of group) {
-      const subKey = `${bundle.format ?? "esm"}:${bundle.splitting ?? false}:${JSON.stringify(bundle.define ?? {})}`;
-      const sub = bySubKey.get(subKey) ?? [];
-      sub.push(bundle);
+      const options: JsSubGroupOptions = {
+        format: bundle.format ?? "esm",
+        splitting: bundle.splitting ?? false,
+        define: bundle.define,
+        conditions: bundle.conditions,
+        minify: bundle.minify ?? opts.minify ?? false,
+      };
+      const subKey = JSON.stringify([options.format, options.splitting, options.define ?? {}, options.conditions ?? null, options.minify]);
+      const sub = bySubKey.get(subKey) ?? { options, bundles: [] };
+      sub.bundles.push(bundle);
       bySubKey.set(subKey, sub);
     }
 
-    for (const [subKey, subGroup] of bySubKey) {
-      const [format = "esm", splittingStr = "false"] = subKey.split(":");
-      const splitting = splittingStr === "true";
-      const define = subGroup[0]?.define;
-
+    for (const { options, bundles: subGroup } of bySubKey.values()) {
       const result = await esbuild.build({
         entryPoints: subGroup.map((b) => b.entry),
         outdir,
         bundle: true,
-        splitting,
-        format: format as "esm" | "cjs" | "iife",
-        minify: opts.minify ?? false,
+        splitting: options.splitting,
+        format: options.format,
+        minify: options.minify,
         platform: "browser",
         jsx: "automatic",
         jsxImportSource: "@y-core/forge/jsx",
         chunkNames: "chunks/[name]-[hash]",
         entryNames: shouldHash ? "[name]-[hash]" : "[name]",
         metafile: true,
-        ...(define !== undefined ? { define } : {}),
+        ...(options.define !== undefined ? { define: options.define } : {}),
+        ...(options.conditions !== undefined ? { conditions: options.conditions } : {}),
       });
 
       for (const bundle of subGroup) {

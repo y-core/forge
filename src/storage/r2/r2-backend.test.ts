@@ -70,6 +70,19 @@ describe("r2Backend", () => {
     expect(obj.key).toBe("file.txt");
   });
 
+  it("put forwards sha256 to the bucket's put options", async () => {
+    let seen: unknown;
+    const bucket: R2Bucket = {
+      ...makeBucket(),
+      async put(key, _value, opts) {
+        seen = opts?.sha256;
+        return makeR2Object(key);
+      },
+    };
+    await r2Backend(bucket).put("file.txt", "hello", { sha256: "abc" });
+    expect(seen).toBe("abc");
+  });
+
   it("get returns null for missing key", async () => {
     const backend = r2Backend(makeBucket());
     expect(await backend.get("missing")).toBeNull();

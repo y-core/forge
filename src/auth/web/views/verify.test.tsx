@@ -90,18 +90,19 @@ describe("VerifyView per factor", () => {
 
   it("asks for an emailed code, an app code, or a ceremony — one prompt per factor, never shared", async () => {
     const prompts: string[] = [];
-    for (const factor of ["email-otp", "totp-app", "passkey"] as AuthFactorKind[]) {
+    for (const factor of ["email-otp", "totp-app", "passkey", "recovery-code"] as AuthFactorKind[]) {
       prompts.push(prompt(await verify({ factor, passkey: PASSKEY_CONTRACT })));
     }
     expect(prompts).toEqual([
       "Enter the code we emailed you.",
       "Enter the current code from your authenticator app.",
       "Confirm with the passkey saved on this device.",
+      "Enter one of your recovery codes.",
     ]);
   });
 
-  it("renders the code field for both code factors and a ceremony scope for neither", async () => {
-    for (const factor of ["email-otp", "totp-app"] as AuthFactorKind[]) {
+  it("renders the code field for every code factor and a ceremony scope for none", async () => {
+    for (const factor of ["email-otp", "totp-app", "recovery-code"] as AuthFactorKind[]) {
       const html = await verify({ factor, passkey: PASSKEY_CONTRACT });
       expect({ factor, code: tagOf(html, 'id="field-code"') !== "", scope: tagOf(html, `data-scope="${PASSKEY_SCOPE}"`) !== "" }).toEqual({
         factor,
@@ -120,11 +121,11 @@ describe("VerifyView per factor", () => {
 
   it("offers another code only where one can be re-sent — never for an authenticator app or a passkey", async () => {
     const resends: string[] = [];
-    for (const factor of ["email-otp", "totp-app", "passkey"] as AuthFactorKind[]) {
+    for (const factor of ["email-otp", "totp-app", "passkey", "recovery-code"] as AuthFactorKind[]) {
       const html = await verify({ factor, passkey: PASSKEY_CONTRACT });
       resends.push(`${factor}:${elementsOf(html, "form", 'action="/auth/verify/resend"').length}`);
     }
-    expect(resends).toEqual(["email-otp:1", "totp-app:0", "passkey:0"]);
+    expect(resends).toEqual(["email-otp:1", "totp-app:0", "passkey:0", "recovery-code:0"]);
   });
 
   it("draws exactly one primary control per factor, so the resend never competes with the submit", async () => {
@@ -134,7 +135,7 @@ describe("VerifyView per factor", () => {
       "[--tone-fg:var(--color-primary-foreground)] [--tone-text:var(--color-primary-text)] [--tone-soft:var(--color-primary-soft)] " +
       "[--tone-soft-fg:var(--color-primary-soft-foreground)] [--tone-soft-border:var(--color-primary-soft-border)] border-transparent " +
       "bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]";
-    for (const factor of ["email-otp", "totp-app", "passkey"] as AuthFactorKind[]) {
+    for (const factor of ["email-otp", "totp-app", "passkey", "recovery-code"] as AuthFactorKind[]) {
       const html = await verify({ factor, passkey: PASSKEY_CONTRACT });
       const count = valuesOf(html, "class").filter((cls) => cls === primary || cls === `${primary} w-full`).length;
       expect({ factor, primaries: count }).toEqual({ factor, primaries: 1 });
@@ -206,9 +207,48 @@ describe("VerifyView and the step-up/enrolment distinction", () => {
   });
 
   it("never renders the enrolment page's heading, so the two demands cannot read the same", async () => {
-    for (const factor of ["email-otp", "totp-app", "passkey"] as AuthFactorKind[]) {
+    for (const factor of ["email-otp", "totp-app", "passkey", "recovery-code"] as AuthFactorKind[]) {
       const html = await verify({ factor, passkey: PASSKEY_CONTRACT });
       expect({ factor, heading: textOf(html, "h1", 'class="text-xl"') }).toEqual({ factor, heading: "Confirm it&#39;s you" });
     }
+  });
+});
+
+describe("VerifyView's step-up picker", () => {
+  const CHOICES: VerifyViewProps["choices"] = [
+    { kind: "totp-app", href: "/auth/verify?factor=totp-app" },
+    { kind: "recovery-code", href: "/auth/verify?next=%2Fapp&factor=recovery-code" },
+    { kind: "passkey", href: "/auth/verify?factor=passkey" },
+  ];
+  const linksOf = (html: string) =>
+    elementsOf(html, "a", 'data-ref="verify-choice"').map((link) => [attrOf(link, "href", "href"), textOf(link, "a", 'data-ref="verify-choice"')]);
+
+  it("links every choice but the one on screen, each named by what it switches to", async () => {
+    expect(linksOf(await verify({ factor: "totp-app", choices: CHOICES }))).toEqual([
+      ["/auth/verify?next=%2Fapp&amp;factor=recovery-code", "Use a recovery code instead"],
+      ["/auth/verify?factor=passkey", "Use a passkey instead"],
+    ]);
+  });
+
+  it("offers the same switch beside a passkey ceremony, which renders no code form", async () => {
+    expect(linksOf(await verify({ factor: "passkey", passkey: PASSKEY_CONTRACT, choices: CHOICES }))).toEqual([
+      ["/auth/verify?factor=totp-app", "Use your authenticator app instead"],
+      ["/auth/verify?next=%2Fapp&amp;factor=recovery-code", "Use a recovery code instead"],
+    ]);
+  });
+
+  it("renders no picker when there is nothing to switch to", async () => {
+    expect(elementsOf(await verify({ factor: "totp-app" }), "ul", 'data-ref="verify-choices"')).toEqual([]);
+  });
+
+  it("asks for a recovery code in a free-text field, never the digit cells a numeric code gets", async () => {
+    const field = attrsOf(await verify({ factor: "recovery-code" }), 'id="field-code"');
+    expect({
+      name: field.name,
+      type: field.type,
+      autocomplete: field.autocomplete,
+      inputmode: field.inputmode,
+      maxlength: field.maxlength,
+    }).toEqual({ name: "code", type: "text", autocomplete: "off", inputmode: undefined, maxlength: undefined });
   });
 });

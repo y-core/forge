@@ -86,17 +86,10 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
   }
 
   /** The sealed secret on `factor`, opened, or the reason it cannot stand in for an enrolment. */
-  async function openSecret(userId: string, factor: AuthFactor | null, at: number): Promise<Result<TotpSecretOpened, AuthFactorReason>> {
+  async function openSecret(userId: string, factor: AuthFactor | null): Promise<Result<TotpSecretOpened, AuthFactorReason>> {
     if (!factor || factor.secret === null) return err("not-enrolled");
     const opened = await openTotpSecret(options.keys, userId, factor.secret);
-    if (opened.ok) return ok(opened.data);
-    // A key merely off the ring is an operator's to put back, and un-enrolling on it would clear
-    // every standing row a premature retirement touched — with re-adding the key no longer a cure.
-    if (opened.error === "no-key") return err("unavailable");
-    // Left confirmed, a secret no key opens demands a step-up nothing can pass; unconfirmed, the
-    // registry owes an enrolment and `beginEnrolment` below clears it. The bytes stay in the row.
-    const cleared = await options.factors.unconfirm(factor.id, userId, at);
-    return cleared.ok ? err("not-enrolled") : err("unavailable");
+    return opened.ok ? ok(opened.data) : err("unusable");
   }
 
   async function matchingCounter(secret: Uint8Array<ArrayBuffer>, presented: string, at: number): Promise<number | null> {
@@ -117,6 +110,13 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     at: number,
     admits: (factor: AuthFactor) => boolean,
   ): Promise<Result<{ factor: AuthFactor; counter: number }, AuthFactorReason>> {
+    const found = await options.factors.find(userId, "totp-app");
+    if (!found.ok) return err("unavailable");
+    // Opened before the guess is spent: whether the secret opens depends on nothing the visitor sent,
+    // so refusing here reveals nothing, and an unusable factor must not burn the budget of a usable one.
+    const opened = await openSecret(userId, found.data);
+    if (!opened.ok) return err(opened.error);
+
     // One statement finds the row and spends the guess against it, so the guess is spent before the
     // comparison: a guess that costs nothing until it is wrong can be made as fast as the network.
     const spent = await options.factors.countAttempt(userId, "totp-app", maxAttempts, at, lockoutMs);
@@ -124,17 +124,16 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     // The one statement collapses "no such factor" into "budget spent", so a second read tells them
     // apart — and only once the write has already been refused, which costs an attacker the guess.
     if (!spent.data) {
-      const found = await options.factors.find(userId, "totp-app");
-      if (!found.ok) return err("unavailable");
-      return err(found.data ? "too-many-attempts" : "not-enrolled");
+      const still = await options.factors.find(userId, "totp-app");
+      if (!still.ok) return err("unavailable");
+      return err(still.data ? "too-many-attempts" : "not-enrolled");
     }
     const factor = spent.data;
+    if (factor.id !== found.data?.id) return err("unavailable");
     // Judged before the code is compared and before any counter moves: a row this caller may not use
     // must not have its step spent, or a refused verification would consume the confirming code.
     if (!admits(factor)) return err("not-enrolled");
 
-    const opened = await openSecret(userId, factor, at);
-    if (!opened.ok) return err(opened.error);
     const counter = await matchingCounter(opened.data.secret, presented, at);
     if (counter === null) return err("unrecognised");
     // Conditional, because re-sealing on every verification would spend a `totpWrap` nonce each
@@ -179,14 +178,9 @@ export function createTotpAppFactor(options: TotpAppFactorOptions): EnrollableFa
     if (existing.data?.secret) {
       const held = await openTotpSecret(options.keys, userId, existing.data.secret);
       if (held.ok) return enrolmentOf(userId, held.data.secret, at);
-      // The `remove` below destroys the sealed bytes, so it must not run on a key the operator can
-      // still put back: only a frame that will never open again is an abandonment to clear.
-      if (held.error === "no-key") return err("unavailable");
     }
 
     if (existing.data) {
-      // Only reached when the stored secret will not open, which is a rotated key rather than an
-      // abandoned ceremony: without this the user could never enrol again.
       const removed = await options.factors.remove(existing.data.id, userId);
       if (!removed.ok) return err("unavailable");
     }

@@ -63,19 +63,22 @@ describe("isBindAttrRefused", () => {
     expect(isBindAttrRefused("STYLE")).toBe(true);
   });
 
-  // `HTMX.md` §7b ratifies `hx-on:*` in the renderer, where a developer typed the whole attribute;
-  // here the signal supplies the body. htmx compiles all four spellings, so the colon alone leaks.
   it("refuses every hx-on spelling htmx compiles, in any casing, although the renderer admits it", () => {
     expect(isBindAttrRefused("hx-on:click")).toBe(true);
     expect(isBindAttrRefused("hx-on-click")).toBe(true);
     expect(isBindAttrRefused("data-hx-on:click")).toBe(true);
     expect(isBindAttrRefused("data-hx-on-click")).toBe(true);
     expect(isBindAttrRefused("HX-ON-CLICK")).toBe(true);
+    expect(isBindAttrRefused("hx-on")).toBe(true);
+    expect(isBindAttrRefused("data-hx-on")).toBe(true);
+    expect(isBindAttrRefused("hx-on::before:request")).toBe(true);
+    expect(isBindAttrRefused("hx-on_click")).toBe(true);
   });
 
   it("admits the htmx attributes that carry no script body", () => {
     expect(isBindAttrRefused("hx-swap")).toBe(false);
     expect(isBindAttrRefused("data-hx-get")).toBe(false);
+    expect(isBindAttrRefused("hx-disable")).toBe(false);
   });
 
   it("admits ordinary attributes, including one whose name merely contains a handler's letters", () => {

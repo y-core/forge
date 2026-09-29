@@ -20,6 +20,8 @@ import {
 import { csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
 
+const HEX_KEY_A = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
+
 describe("importCsrfKey()", () => {
   it("rejects an odd-length hex string", async () => {
     await expect(importCsrfKey("a".repeat(63))).rejects.toThrow("CSRF secret must have an even number of hex characters");
@@ -29,20 +31,24 @@ describe("importCsrfKey()", () => {
     await expect(importCsrfKey("zz".repeat(16))).rejects.toThrow("CSRF secret must contain only hexadecimal characters (0-9, a-f, A-F)");
   });
 
+  it("refuses a secret under 32 bytes, naming the CSRF secret", async () => {
+    await expect(importCsrfKey(HEX_KEY_A.slice(0, 62))).rejects.toThrow("CSRF secret: each secret must be at least 32 bytes (got 31)");
+  });
+
   it("accepts valid lowercase hex", async () => {
-    await expect(importCsrfKey("a".repeat(64))).resolves.toBeDefined();
+    await expect(importCsrfKey(HEX_KEY_A)).resolves.toBeDefined();
   });
 
   it("accepts valid uppercase hex", async () => {
-    await expect(importCsrfKey("A".repeat(64))).resolves.toBeDefined();
+    await expect(importCsrfKey("9C55DD3F0812C671DC6D905AB7941DEEBB36FEEFBBFE4BA28BD37AE08287A9CF")).resolves.toBeDefined();
   });
 
   it("accepts valid mixed-case hex", async () => {
-    await expect(importCsrfKey("aAbB0123".repeat(8))).resolves.toBeDefined();
+    await expect(importCsrfKey("3fA9c0E17bD24e8FaC05d6B19e3F7a2c4D8b0E61f5A3c9D7e2B4a6F8c1E0d9b7")).resolves.toBeDefined();
   });
 });
 
-const HEX_SECRET = "b".repeat(64);
+const HEX_SECRET = "38f516127047072640d79f757593f8c971ed2324a5e1db688f6f129f9b0478db";
 
 describe("mintCsrf()", () => {
   let key: CryptoKey;
@@ -361,8 +367,8 @@ describe("csrfProtection middleware", () => {
   });
 
   it("middleware with key ring accepts tokens from both active and previous keys", async () => {
-    const secret1 = "aa".repeat(32);
-    const secret2 = "bb".repeat(32);
+    const secret1 = HEX_KEY_A;
+    const secret2 = HEX_SECRET;
     const ring = await importCsrfKeyRing([secret1, secret2]);
     const oldRing = await importCsrfKeyRing([secret2]);
 
@@ -444,10 +450,10 @@ describe("csrfProtection middleware with resolver secret", () => {
 
   it("re-resolves key for different env objects and rejects cross-env tokens", async () => {
     let callCount = 0;
-    const keyA = await importCsrfKey("a".repeat(64));
-    const keyB = await importCsrfKey("b".repeat(64));
-    const envA = { CSRF_SECRET: "a".repeat(64) };
-    const envB = { CSRF_SECRET: "b".repeat(64) };
+    const keyA = await importCsrfKey(HEX_KEY_A);
+    const keyB = await importCsrfKey(HEX_SECRET);
+    const envA = { CSRF_SECRET: HEX_KEY_A };
+    const envB = { CSRF_SECRET: HEX_SECRET };
 
     const app = new Forge();
     app.use(
@@ -456,7 +462,7 @@ describe("csrfProtection middleware with resolver secret", () => {
         secret: async (c) => {
           callCount++;
           // oxlint-disable-next-line typescript/no-explicit-any -- test-only cast to read env secret
-          return ((c as any).env as { CSRF_SECRET: string }).CSRF_SECRET === "a".repeat(64) ? keyA : keyB;
+          return ((c as any).env as { CSRF_SECRET: string }).CSRF_SECRET === HEX_KEY_A ? keyA : keyB;
         },
         subject: false,
       }),
@@ -475,13 +481,11 @@ describe("csrfProtection middleware with resolver secret", () => {
   });
 });
 
-const HEX_SECRET_PURE = "a".repeat(64);
-
 describe("CSRF token", () => {
   let key: CryptoKey;
 
   beforeAll(async () => {
-    key = await importCsrfKey(HEX_SECRET_PURE);
+    key = await importCsrfKey(HEX_KEY_A);
   });
 
   it("round-trip succeeds", async () => {
@@ -598,7 +602,7 @@ describe("CSRF token", () => {
   });
 
   it("rejects a token with a tampered kid (invalid-signature)", async () => {
-    const key2 = await importCsrfKey("cc".repeat(32));
+    const key2 = await importCsrfKey("8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d");
     const ring: HmacKeyRing = { activeKeyId: "k1", keys: { k1: key, k2: key2 } };
 
     const token = await createCsrfToken(key, "/api/contact", { kid: "k1" });
@@ -682,8 +686,8 @@ describe("CSRF token", () => {
 
 describe("CSRF token rotation overlap", () => {
   it("ring with active and previous keys verifies tokens from both", async () => {
-    const secretNew = "dd".repeat(32);
-    const secretOld = "ee".repeat(32);
+    const secretNew = "0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9";
+    const secretOld = "a4be059a6bf8f74efeb3c721902802870bb3aa5ec060fea9241d201f1e4e27d4";
     const ring = await importCsrfKeyRing([secretNew, secretOld]);
 
     const newKey = ring.keys[ring.activeKeyId]!;
@@ -700,20 +704,20 @@ describe("CSRF token rotation overlap", () => {
 
 describe("importCsrfKeyRing()", () => {
   it("activeKeyId is the first secret's kid", async () => {
-    const ring = await importCsrfKeyRing(["aa".repeat(32), "bb".repeat(32)]);
-    const firstOnly = await importCsrfKeyRing(["aa".repeat(32)]);
+    const ring = await importCsrfKeyRing([HEX_KEY_A, HEX_SECRET]);
+    const firstOnly = await importCsrfKeyRing([HEX_KEY_A]);
     expect(ring.activeKeyId).toBe(firstOnly.activeKeyId);
   });
 
   it("derives stable kids — same secret produces same kid across calls", async () => {
-    const ring1 = await importCsrfKeyRing(["cc".repeat(32)]);
-    const ring2 = await importCsrfKeyRing(["cc".repeat(32)]);
+    const ring1 = await importCsrfKeyRing(["8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d"]);
+    const ring2 = await importCsrfKeyRing(["8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d"]);
     expect(ring1.activeKeyId).toBe(ring2.activeKeyId);
   });
 
   it("ring built from [s1, s2] verifies tokens minted by either key", async () => {
-    const s1 = "11".repeat(32);
-    const s2 = "22".repeat(32);
+    const s1 = "0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9";
+    const s2 = "a4be059a6bf8f74efeb3c721902802870bb3aa5ec060fea9241d201f1e4e27d4";
     const ring = await importCsrfKeyRing([s1, s2]);
 
     const kids = Object.keys(ring.keys);
@@ -727,7 +731,7 @@ describe("importCsrfKeyRing()", () => {
   });
 
   it("different secrets produce different kids", async () => {
-    const ring = await importCsrfKeyRing(["aa".repeat(32), "bb".repeat(32)]);
+    const ring = await importCsrfKeyRing([HEX_KEY_A, HEX_SECRET]);
     const kids = Object.keys(ring.keys);
     expect(kids[0]).not.toBe(kids[1]);
   });

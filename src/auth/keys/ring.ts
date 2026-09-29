@@ -1,7 +1,8 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { EnvKey } from "../../context/types";
-import { importKeyRingUnder, KEYRING_MIN_KEY_BYTES, keyRingKeyId, lookupKeyRingKey } from "../../keyring/ring";
+import { assertSecretStrength } from "../../crypto/strength";
+import { importKeyRingUnder, keyRingKeyId, lookupKeyRingKey } from "../../keyring/ring";
 import type { KeyRingDomain } from "../../keyring/types";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
 import type { AuthAlgorithm, AuthKeyRing, AuthOptions, AuthServices } from "../types";
@@ -40,9 +41,7 @@ function assertRingUsable(ring: AuthKeyRing): void {
     throw new Error(`resolveAuthServices: the key ring has no key for its active key id "${ring.activeKeyId}"`);
   }
   for (const [kid, key] of Object.entries(ring.keys)) {
-    if (key.byteLength < KEYRING_MIN_KEY_BYTES) {
-      throw new Error(`resolveAuthServices: key "${kid}" is ${key.byteLength} bytes — auth root keys must be at least ${KEYRING_MIN_KEY_BYTES}`);
-    }
+    assertSecretStrength(`resolveAuthServices: key "${kid}"`, key);
   }
 }
 

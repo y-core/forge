@@ -33,7 +33,7 @@ import { authCtx, AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SES
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthIdentity } from "./types";
-import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore, fakeSessionCookie } from "./web.fixture";
+import { AUTH_FACTOR_ASSIGNMENTS, fakeFactorService, fakeFactorStore, fakeSessionCookie, recoveryOffer } from "./web.fixture";
 
 const authMap = authRoutes("/auth");
 const accountMap = accountRoutes("/account");
@@ -134,6 +134,8 @@ function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: Sessio
   return app;
 }
 
+const locationOf = (res: Response) => ({ status: res.status, location: res.headers.get("location") });
+
 /** The session values the response's own `Set-Cookie` carries, read back through the cookie that signed them. */
 async function sessionOf(res: Response): Promise<Record<string, unknown>> {
   const pair =
@@ -158,6 +160,12 @@ describe("requireAuth", () => {
     const res = await app.request("/account/passkeys?tab=all", { method: "POST" });
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/signin");
+  });
+
+  it("navigates an anonymous htmx request to sign-in with HX-Redirect, which fetch cannot follow into the page", async () => {
+    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const res = await app.request("/account/passkeys", { method: "DELETE", headers: { "HX-Request": "true" } });
+    expect({ ...locationOf(res), redirect: res.headers.get("hx-redirect") }).toEqual({ status: 204, location: null, redirect: "/auth/signin" });
   });
 
   it("refuses a `json` group with a body rather than a sign-in redirect a controller cannot read", async () => {
@@ -246,8 +254,22 @@ describe("requireAuth — the second factor a session still owes", () => {
   });
 
   it("admits a session owing an enrolment, which is a page to visit and not a refusal", async () => {
-    const owing = perRequest(fakeFactors({ status: "enrolment-required", kinds: ["totp-app"] }));
+    const owing = perRequest(fakeFactors({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }));
     const app = guardedApp([requireAuth(guardOptions(users, owing))], { userId: "u1" });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  const enrolmentBesideHeld = perRequest(fakeFactors({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: ["recovery-code"] }));
+
+  it("sends an owed enrolment to verify while the account holds a confirmed factor this session has not proved", async () => {
+    const res = await guardedApp([requireAuth(guardOptions(users, enrolmentBesideHeld))], { userId: "u1" }).request("/account/passkeys");
+
+    expect(locationOf(res)).toEqual({ status: 303, location: "/auth/verify" });
+  });
+
+  it("admits that session once its step-up mark holds", async () => {
+    const app = guardedApp([requireAuth(guardOptions(users, enrolmentBesideHeld))], { userId: "u1", stepUpAt: Date.now() });
 
     expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
   });
@@ -394,10 +416,19 @@ function protectedApp(resolution: AuthFactorResolution, seed: SessionSeed = {}, 
 
 describe("requireEnrolment", () => {
   it("redirects to the enrolment page rather than refusing, because owing an enrolment is a success", async () => {
-    const res = await protectedApp({ status: "enrolment-required", kinds: ["totp-app"] }).request("/account/passkeys");
+    const res = await protectedApp({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }).request("/account/passkeys");
     expect(res.status).toBe(303);
     // The kind that is owed, and not a fixed page: a passkey page cannot clear an authenticator-app enrolment.
     expect(res.headers.get("location")).toBe("/auth/enrol/totp");
+  });
+
+  it("sends an owed enrolment to verify first while the account holds a confirmed factor, and to the enrol page once it is proved", async () => {
+    const owed: AuthFactorResolution = { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: ["recovery-code"] };
+    const locations = [
+      (await protectedApp(owed).request("/account/passkeys")).headers.get("location"),
+      (await protectedApp(owed, { stepUpAt: Date.now() }).request("/account/passkeys")).headers.get("location"),
+    ];
+    expect(locations).toEqual(["/auth/verify", "/auth/enrol/totp"]);
   });
 
   it("redirects a step-up demand to the verify page", async () => {
@@ -484,7 +515,9 @@ function enrolmentApp(resolution: AuthFactorResolution, seed: SessionSeed = {}) 
 
 describe("requirePendingEnrolment", () => {
   it("admits a user who genuinely owes an enrolment", async () => {
-    expect(await (await enrolmentApp({ status: "enrolment-required", kinds: ["totp-app"] }).request("/auth/enrol/passkey")).text()).toBe("enrol");
+    expect(
+      await (await enrolmentApp({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }).request("/auth/enrol/passkey")).text(),
+    ).toBe("enrol");
   });
 
   it("sends a session owing a step-up to verify, so a compromised primary factor cannot mint the second one", async () => {
@@ -516,7 +549,49 @@ describe("requirePendingEnrolment", () => {
   });
 
   it("admits a session that owes a step-up it has already completed and now owes an enrolment", async () => {
-    const app = enrolmentApp({ status: "enrolment-required", kinds: ["passkey"] }, { stepUpAt: Date.now() });
+    const app = enrolmentApp({ status: "enrolment-required", kinds: ["passkey"], stepUpKinds: [] }, { stepUpAt: Date.now() });
+    expect(await (await app.request("/auth/enrol/passkey")).text()).toBe("enrol");
+  });
+
+  const owedBesideHeld: AuthFactorResolution = { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: ["recovery-code"] };
+
+  it("sends an owed enrolment to verify while the account holds a confirmed factor this session has not proved", async () => {
+    const res = await enrolmentApp(owedBesideHeld).request("/auth/enrol/passkey");
+    expect({ status: res.status, location: res.headers.get("location"), body: await res.text() }).toEqual({
+      status: 303,
+      location: "/auth/verify",
+      body: "",
+    });
+  });
+
+  /** The enrolment page behind a `clearsStepUp` require-auth, so this guard alone judges the mark against a 30-second window. */
+  const pendingBehindWindow = (stepUpAt: number) => {
+    const factors = perRequest(fakeFactors(owedBesideHeld));
+    return guardedApp(
+      [
+        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }),
+        requirePendingEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: 30_000 }),
+      ],
+      { userId: "u1", stepUpAt },
+    );
+  };
+
+  it("sends that enrolment to verify when the mark is older than the configured lifetime", async () => {
+    const res = await pendingBehindWindow(Date.now() - 60_000).request("/auth/enrol/passkey");
+    expect(locationOf(res)).toEqual({ status: 303, location: "/auth/verify" });
+  });
+
+  it("sends that enrolment to verify when the mark is dated into the future", async () => {
+    const res = await pendingBehindWindow(Date.now() + 3_600_000).request("/auth/enrol/passkey");
+    expect(locationOf(res)).toEqual({ status: 303, location: "/auth/verify" });
+  });
+
+  it("admits that enrolment while the mark is inside the configured lifetime", async () => {
+    expect(await (await pendingBehindWindow(Date.now() - 5_000).request("/auth/enrol/passkey")).text()).toBe("enrol");
+  });
+
+  it("admits that enrolment once the session has proved the factor it holds", async () => {
+    const app = enrolmentApp(owedBesideHeld, { stepUpAt: Date.now() });
     expect(await (await app.request("/auth/enrol/passkey")).text()).toBe("enrol");
   });
 
@@ -616,9 +691,10 @@ describe("requireFreshStepUp", () => {
   it("admits a user nothing demands a step-up of — no second factor offered, or a mandatory kind not yet enrolled", async () => {
     const single = await freshApp({ userId: "u1" }, HOUR, { status: "satisfied" }).request("/account/passkeys", { method: "POST" });
     expect(await single.text()).toBe("enrolled");
-    const unenrolled = await freshApp({ userId: "u1" }, HOUR, { status: "enrolment-required", kinds: ["totp-app"] }).request("/account/passkeys", {
-      method: "POST",
-    });
+    const unenrolled = await freshApp({ userId: "u1" }, HOUR, { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }).request(
+      "/account/passkeys",
+      { method: "POST" },
+    );
     expect(await unenrolled.text()).toBe("enrolled");
   });
 
@@ -704,7 +780,7 @@ describe("the enrolment guards taken together", () => {
   });
 
   it("sends an owed enrolment to the one page that admits it, so the pair cannot loop", async () => {
-    const owed: AuthFactorResolution = { status: "enrolment-required", kinds: ["totp-app"] };
+    const owed: AuthFactorResolution = { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] };
     expect((await protectedApp(owed).request("/account/passkeys")).headers.get("location")).toBe("/auth/enrol/totp");
     expect(await (await enrolmentApp(owed).request("/auth/enrol/passkey")).text()).toBe("enrol");
   });
@@ -722,7 +798,7 @@ describe("the roles both enrolment guards resolve against", () => {
         [true, { roles: ["admin"] }],
         [false, {}],
       ] as const) {
-        const factors = recordingFactors({ status: "enrolment-required", kinds: ["totp-app"] });
+        const factors = recordingFactors({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
         const app = guardedApp(
           [
             requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]), perRequest(factors))),
@@ -743,6 +819,7 @@ describe("the roles both enrolment guards resolve against", () => {
       offered: [
         { service: fakeFactorService("email-otp"), role: "primary" },
         { service: fakeFactorService("totp-app"), role: "second", requirement: assignment.requirement(0) },
+        recoveryOffer(),
       ],
     });
     const app = (isAdmin: boolean) =>
@@ -983,6 +1060,13 @@ describe("the enrolment guards — the step-up window they hold at construction"
     expect(() => requireAuth({ ...options, stepUpMaxAgeMs: 0 })).toThrow(`requireAuth: ${FLOOR}`);
     expect(() => requireAuth({ ...options, stepUpMaxAgeMs: 1_000 })).not.toThrow();
     expect(() => requireAuth(options)).not.toThrow();
+  });
+
+  it("holds `resolveAuth` to it too, since the verify page measures marks by the window it records", () => {
+    const users = perRequest(fakeUsers([fakeAuthUser()]));
+
+    expect(() => resolveAuth({ users, stepUpMaxAgeMs: 0 })).toThrow(`resolveAuth: ${FLOOR}`);
+    expect(() => resolveAuth({ users, stepUpMaxAgeMs: 1_000 })).not.toThrow();
   });
 
   it("refuses a fraction", () => {

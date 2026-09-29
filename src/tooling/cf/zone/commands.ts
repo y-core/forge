@@ -200,7 +200,7 @@ async function runSyncZone(flags: LooseFlags, ctx?: CliContext): Promise<void> {
     for (const plan of plans) {
       if (plan.error !== undefined || phaseInSync(plan)) continue;
       const written = await client.put<RemoteRuleset>(zoneRulesetEntrypoint(zoneId, plan.phase), {
-        description: `Managed by forge sync zone from ${configPath}`,
+        description: `Managed by forge cf sync zone from ${configPath}`,
         rules: plan.desired,
       });
       if (written.ok) {
@@ -274,7 +274,7 @@ function describeFailure(error: CfApiClientError, phase: string): { error: strin
   return { error: `could not read the phase${code}`, errorDetail: upstream };
 }
 
-/** The `forge sync zone` subcommand: reconciles zone entry point rulesets against `config/site.ts`. @public */
+/** The `forge cf sync zone` subcommand: reconciles zone entry point rulesets against `config/site.ts`. @public */
 export function createSyncZoneCommand() {
   return createCommand({
     name: "zone",

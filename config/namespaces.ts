@@ -36,6 +36,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "html/htmx": "value",
     http: "value",
     jsx: "value",
+    logging: "value",
     session: "value",
     "ui/core": "value",
   },

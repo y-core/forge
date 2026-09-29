@@ -25,7 +25,6 @@ const CTX = {
   fetch: (() => {
     throw new Error("the local-vars handler must not make a request");
   }) as unknown as typeof globalThis.fetch,
-  target: { kind: "worker" as const, name: "worker" },
 } satisfies HandlerContext;
 
 describe("createLocalVarsHandler().extract()", () => {

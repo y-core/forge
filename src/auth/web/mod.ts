@@ -5,6 +5,7 @@ export {
   createPasskeyEnrolActions,
   createPasskeyManageActions,
   createPasskeyStepUpActions,
+  createRecoveryCodeActions,
   createSigninActions,
   createSignoutActions,
   createSignupActions,
@@ -56,6 +57,7 @@ export {
   loadPasskeyEdit,
   loadPasskeyEnrol,
   loadPasskeyList,
+  loadRecoveryCodes,
   loadSignin,
   loadSignup,
   loadTotpEnrol,
@@ -93,19 +95,21 @@ export type { SigninViewProps } from "./views/types";
 export { SigninView } from "./views/signin";
 export type { SignupViewProps } from "./views/types";
 export { SignupView } from "./views/signup";
-export type { VerifyViewProps } from "./views/types";
+export type { VerifyChoice, VerifyViewProps } from "./views/types";
 export { VerifyView } from "./views/verify";
-export type { AuthFactorRow, AuthFactorState, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./views/types";
+export type { AuthFactorRow, AuthFactorState, AuthFactorsResetForm, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./views/types";
 export { AuthFactorsTrigger, AuthFactorsView } from "./views/factors";
 export type { AdminElevateViewProps } from "./views/types";
 export { AdminElevateView } from "./views/admin-elevate";
 export type { AdminUserEditViewProps } from "./views/types";
-export { AdminUserEditView } from "./views/admin-user-edit";
+export { AdminUserEditView, AUTH_ADMIN_USER_EDIT_ID } from "./views/admin-user-edit";
 export type { AdminUsersViewProps } from "./views/types";
 export { AdminUsersView } from "./views/admin-users";
 export type { PasskeyEditViewProps } from "./views/types";
-export { PasskeyEditView } from "./views/passkey-edit";
+export { AUTH_PASSKEY_EDIT_ID, PasskeyEditView } from "./views/passkey-edit";
 export type { PasskeyListViewProps, PasskeyRow } from "./views/types";
-export { PasskeyListView } from "./views/passkey-list";
+export { AUTH_PASSKEY_LIST_ID, PasskeyListView } from "./views/passkey-list";
+export type { RecoveryCodesViewProps } from "./views/types";
+export { RecoveryCodesView } from "./views/recovery-codes";
 export type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
-export { TotpEnrolView } from "./views/totp-enrol";
+export { AUTH_TOTP_ID, TotpEnrolView } from "./views/totp-enrol";

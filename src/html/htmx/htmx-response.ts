@@ -11,8 +11,6 @@ export function hxHeaders(p: HxResponseProps): HxResponseHeaders {
   add("HX-Push-Url", p.pushUrl);
   add("HX-Replace-Url", p.replaceUrl);
   add("HX-Trigger", p.trigger);
-  add("HX-Trigger-After-Settle", p.triggerAfterSettle);
-  add("HX-Trigger-After-Swap", p.triggerAfterSwap);
   add("HX-Retarget", p.retarget);
   add("HX-Reswap", p.reswap);
   return out;

@@ -1,11 +1,12 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import type { Mock } from "bun:test";
 
 import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
-import { TURNSTILE, TURNSTILE_ABANDONED_EVENT } from "../contracts/turnstile-contract";
+import { TURNSTILE, TURNSTILE_ABANDONED_EVENT, TURNSTILE_SCRIPT_URL, TURNSTILE_TRUSTED_TYPES_POLICY } from "../contracts/turnstile-contract";
 import type { TurnstileAbandonedDetail } from "../contracts/types";
 import { announce } from "./announce";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./dom.fixture";
-import { findWidget, hasTurnstileApi, hasHtmxSubmission, htmxWillValidate, mountTurnstile, restoreFocus } from "./turnstile";
+import { assignTurnstileScriptSrc, findWidget, hasTurnstileApi, hasHtmxSubmission, mountTurnstile, restoreFocus } from "./turnstile";
 
 const win = (turnstile?: unknown) => ({ turnstile }) as unknown as Window;
 
@@ -78,53 +79,6 @@ describe("hasHtmxSubmission", () => {
 
   it("is false for a native form, which has no request for the challenge to defer", () => {
     expect(hasHtmxSubmission(form({ action: "/contact", method: "post" }))).toBe(false);
-  });
-});
-
-describe("htmxWillValidate", () => {
-  const node = (tag: string, attrs: Record<string, string> = {}, props: Record<string, unknown> = {}) =>
-    Object.assign(new FakeElement(tag, attrs), props) as unknown as Element;
-
-  const willValidate = (elt: Element, submitter: Element | null = null) => htmxWillValidate(elt, submitter);
-
-  it("is true for a plain form, which is the case htmx validates", () => {
-    expect(willValidate(node("FORM"))).toBe(true);
-  });
-
-  it("is false for a form the author marked novalidate", () => {
-    expect(willValidate(node("FORM", {}, { noValidate: true }))).toBe(false);
-  });
-
-  it("is true when hx-validate overrides novalidate, as htmx's own || does", () => {
-    expect(willValidate(node("FORM", { "hx-validate": "true" }, { noValidate: true }))).toBe(true);
-  });
-
-  it("is false when the pressed control carries formnovalidate", () => {
-    expect(willValidate(node("FORM"), node("BUTTON", {}, { formNoValidate: true }))).toBe(false);
-    expect(willValidate(node("FORM", { "hx-validate": "true" }), node("BUTTON", {}, { formNoValidate: true }))).toBe(false);
-  });
-
-  it("is false for a button-issued submission, which htmx never validates on its own", () => {
-    expect(willValidate(node("BUTTON"), node("BUTTON", {}, { formNoValidate: true }))).toBe(false);
-    expect(willValidate(node("BUTTON"))).toBe(false);
-  });
-
-  it("is true for a button asking for validation, in either spelling", () => {
-    expect(willValidate(node("BUTTON", { "hx-validate": "true" }))).toBe(true);
-    expect(willValidate(node("BUTTON", { "data-hx-validate": "true" }))).toBe(true);
-  });
-
-  it("is still true for a validating button whose press carries formnovalidate", () => {
-    // htmx reads `formnovalidate` off the form's own data, which a button-issued press never reaches.
-    expect(willValidate(node("BUTTON", { "hx-validate": "true" }), node("BUTTON", {}, { formNoValidate: true }))).toBe(true);
-  });
-
-  it("is false for a button whose ancestor form declares hx-validate, which htmx does not inherit", () => {
-    const { el } = fakeTree();
-    const form = el("FORM", { "hx-validate": "true" });
-    const button = el("BUTTON", { "hx-post": "/contact" });
-    form.append(button);
-    expect(willValidate(button as unknown as Element)).toBe(false);
   });
 });
 
@@ -221,12 +175,24 @@ class FakeForm extends FakeElement {
   }
 }
 
+class FakeSubmitEvent extends FakeEvent {
+  declare readonly submitter?: FakeElement | null;
+}
+
+/** The hidden input Cloudflare writes the token into, answering the compound selector the fake's `matches` cannot parse. */
+class FakeTokenInput extends FakeElement {
+  override matches(selector: string): boolean {
+    return selector === "input[name]" || super.matches(selector);
+  }
+}
+
 interface Scene {
   form: FakeForm;
   field: FakeElement;
+  widget: FakeElement;
   calls: { executes: number; resets: number; params: Record<string, unknown> | null };
-  /** Which press each released request answered, and the `skipConfirmation` it carried. */
-  issued: Array<{ from: string; skip: boolean }>;
+  /** The control each replayed `submit` named, or `form` for a press with no submitter. */
+  replayed: string[];
 }
 
 /** A mounted controller over a form carrying `formAttrs`, with a descendant field that posts on its own. */
@@ -247,6 +213,7 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
       },
       remove: () => {},
     },
+    SubmitEvent: FakeSubmitEvent,
   });
 
   const form = new FakeForm("FORM", formAttrs);
@@ -256,20 +223,21 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
   form.append(field, widget);
   doc.body.append(form);
 
+  const replayed: string[] = [];
+  form.addEventListener("submit", (event) => replayed.push((event as FakeSubmitEvent).submitter?.id || "form"));
+
   mountTurnstile(form as unknown as HTMLElement);
-  return { form, field, calls, issued: [] };
+  return { form, field, widget, calls, replayed };
 }
 
-const afterRequest = (scene: Scene, from: FakeElement, detail: Record<string, unknown>): { resets: number; value: string } => {
-  from.dispatchEvent(new FakeEvent("htmx:afterRequest", { detail: { ...detail, requestConfig: { elt: from } } }));
+const finallyRequest = (scene: Scene, from: FakeElement, status?: number): { resets: number; value: string } => {
+  const response = status === undefined ? undefined : { status };
+  from.dispatchEvent(new FakeEvent("htmx:finally:request", { detail: { ctx: { sourceElement: from, response } } }));
   return { resets: scene.calls.resets, value: scene.field.value };
 };
 
-const confirm = (scene: Scene, elt: FakeElement, submitter?: FakeElement): { prevented: boolean; executes: number } => {
-  const from = submitter?.id || elt.tagName.toLowerCase();
-  const event = new FakeEvent("htmx:confirm", {
-    detail: { elt, ...(submitter ? { triggeringEvent: { submitter } } : {}), issueRequest: (skip: boolean) => scene.issued.push({ from, skip }) },
-  });
+const configRequest = (scene: Scene, elt: FakeElement, submitter?: FakeElement): { prevented: boolean; executes: number } => {
+  const event = new FakeEvent("htmx:config:request", { detail: { ctx: { sourceElement: elt, request: { submitter } } } });
   elt.dispatchEvent(event);
   return { prevented: event.defaultPrevented, executes: scene.calls.executes };
 };
@@ -284,11 +252,11 @@ describe("mountTurnstile — the reset is scoped to the element that issued the 
   const verbs = ["hx-post", "hx-put", "hx-patch", "hx-delete", "data-hx-post"];
 
   for (const verb of verbs) {
-    it(`resets the widget and clears the form for a successful request the form issued through ${verb}`, () => {
+    it(`resets the widget and clears the form for a 200 answer to a request the form issued through ${verb}`, () => {
       const scene = mountedScene({ [verb]: "/contact" });
       scene.field.value = "typed@example.com";
 
-      expect(afterRequest(scene, scene.form, { successful: true })).toEqual({ resets: 1, value: "" });
+      expect(finallyRequest(scene, scene.form, 200)).toEqual({ resets: 1, value: "" });
     });
   }
 
@@ -296,22 +264,21 @@ describe("mountTurnstile — the reset is scoped to the element that issued the 
     const scene = mountedScene({ "hx-post": "/contact" });
     scene.field.value = "typed@example.com";
 
-    expect(afterRequest(scene, scene.field, { successful: true })).toEqual({ resets: 0, value: "typed@example.com" });
+    expect(finallyRequest(scene, scene.field, 200)).toEqual({ resets: 0, value: "typed@example.com" });
   });
 
-  it("resets on the form's own submission however far the answering URL is from the declared one", () => {
-    const scene = mountedScene({ "hx-post": "/contact" });
-    scene.field.value = "typed@example.com";
-    const xhr = { responseURL: "https://example.test/thank-you" };
-
-    expect(afterRequest(scene, scene.form, { successful: true, xhr })).toEqual({ resets: 1, value: "" });
-  });
-
-  it("resets the token on an unsuccessful submission but keeps what the reader typed", () => {
+  it("resets the token on a 422 answer but keeps what the reader typed", () => {
     const scene = mountedScene({ "hx-post": "/contact" });
     scene.field.value = "typed@example.com";
 
-    expect(afterRequest(scene, scene.form, { successful: false })).toEqual({ resets: 1, value: "typed@example.com" });
+    expect(finallyRequest(scene, scene.form, 422)).toEqual({ resets: 1, value: "typed@example.com" });
+  });
+
+  it("resets the token on a request that never got a response but keeps what the reader typed", () => {
+    const scene = mountedScene({ "hx-post": "/contact" });
+    scene.field.value = "typed@example.com";
+
+    expect(finallyRequest(scene, scene.form)).toEqual({ resets: 1, value: "typed@example.com" });
   });
 });
 
@@ -325,36 +292,54 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     return control;
   };
 
-  it("holds the press and releases the request once the challenge answers", () => {
+  it("holds the press and replays the form's submission once the challenge answers", () => {
     const scene = submitScene();
 
-    expect(confirm(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
+    expect(configRequest(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
+    expect(scene.replayed).toEqual([]);
 
     completeChallenge(scene);
 
-    expect(scene.issued).toEqual([{ from: "form", skip: true }]);
+    expect(scene.replayed).toEqual(["form"]);
+  });
+
+  it("lets a press through unheld once the token input is filled, spending no challenge on it", () => {
+    const scene = submitScene();
+    const token = new FakeTokenInput("INPUT", { type: "hidden", name: "cf-turnstile-response" });
+    token.value = "token-1";
+    scene.widget.append(token);
+
+    expect(configRequest(scene, scene.form)).toEqual({ prevented: false, executes: 0 });
+  });
+
+  it("still holds a press while the token input is present but empty", () => {
+    const scene = submitScene();
+    scene.widget.append(new FakeTokenInput("INPUT", { type: "hidden", name: "cf-turnstile-response" }));
+
+    expect(configRequest(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
   });
 
   it("lets a descendant field's own request through unheld, spending no challenge on it", () => {
     const scene = submitScene();
 
-    expect(confirm(scene, scene.field)).toEqual({ prevented: false, executes: 0 });
-    expect(scene.issued).toEqual([]);
+    expect(configRequest(scene, scene.field)).toEqual({ prevented: false, executes: 0 });
+    expect(scene.replayed).toEqual([]);
   });
 
-  it("answers the press that displaced the first, and no other", () => {
+  it("replays the press that displaced the first, carrying its submitter and no other", () => {
     const scene = submitScene();
     const first = button(scene, "submit");
     const second = button(scene, "preview");
 
-    confirm(scene, scene.form, first);
+    configRequest(scene, scene.form, first);
     // One press is one challenge, so the displacement rides the one already in flight.
-    expect(confirm(scene, scene.form, second)).toEqual({ prevented: true, executes: 1 });
+    expect(configRequest(scene, scene.form, second)).toEqual({ prevented: true, executes: 1 });
     expect({ first: first.disabled, second: second.disabled }).toEqual({ first: false, second: true });
 
     completeChallenge(scene);
 
-    expect(scene.issued).toEqual([{ from: "preview", skip: true }]);
+    expect(scene.replayed).toEqual(["preview"]);
+    expect(second.disabled).toBe(false);
   });
 
   it("reports a dropped press to the form rather than losing it", () => {
@@ -365,12 +350,12 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
       reported.push((event as unknown as CustomEvent<TurnstileAbandonedDetail>).detail);
     });
 
-    confirm(scene, scene.form, pressed);
+    configRequest(scene, scene.form, pressed);
     const errored = scene.calls.params?.["error-callback"] as (code?: unknown) => void;
     errored(300010);
 
     expect(reported).toEqual([{ reason: "error", submitter: pressed as unknown as HTMLElement }]);
-    expect(scene.issued).toEqual([]);
+    expect(scene.replayed).toEqual([]);
     expect({ disabled: pressed.disabled, busy: pressed.getAttribute("aria-busy") }).toEqual({ disabled: false, busy: null });
   });
 });
@@ -392,5 +377,86 @@ describe("mountTurnstile — a revealed failure is announced on its own channel"
     doc.defaultView.flush();
 
     expect(assertive.children.map((node) => node.textContent)).toEqual(["The security check could not load.", "Payment declined"]);
+  });
+});
+
+describe("assignTurnstileScriptSrc", () => {
+  type Rules = { createScriptURL(input: string): string };
+  const trustedUrl = { trusted: TURNSTILE_SCRIPT_URL };
+  const scriptSink = () => ({ src: "" as unknown }) as unknown as HTMLScriptElement;
+  const ttWindow = (createPolicy: (name: string, rules: Rules) => { createScriptURL(input: string): object }) =>
+    ({ trustedTypes: { createPolicy } }) as unknown as Window;
+  let errors: Mock<typeof console.error>;
+
+  beforeEach(() => {
+    errors = spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errors.mockRestore();
+  });
+
+  it("writes the plain URL where the window has no Trusted Types API", () => {
+    const script = scriptSink();
+    expect(assignTurnstileScriptSrc(script, {} as Window)).toBe(true);
+    expect(script.src).toBe(TURNSTILE_SCRIPT_URL);
+  });
+
+  it("writes the policy's TrustedScriptURL, creating the named policy once per window", () => {
+    const names: string[] = [];
+    const policyWindow = ttWindow((name) => {
+      names.push(name);
+      return { createScriptURL: () => trustedUrl };
+    });
+    const first = scriptSink();
+    const second = scriptSink();
+    expect(assignTurnstileScriptSrc(first, policyWindow)).toBe(true);
+    expect(assignTurnstileScriptSrc(second, policyWindow)).toBe(true);
+    expect(first.src as unknown).toBe(trustedUrl);
+    expect(second.src as unknown).toBe(trustedUrl);
+    expect(names).toEqual([TURNSTILE_TRUSTED_TYPES_POLICY]);
+  });
+
+  it("gives the policy a rule that admits Cloudflare's URL and refuses any other", () => {
+    let rules: Rules | undefined;
+    assignTurnstileScriptSrc(
+      scriptSink(),
+      ttWindow((_, given) => {
+        rules = given;
+        return { createScriptURL: () => trustedUrl };
+      }),
+    );
+    expect(rules?.createScriptURL(TURNSTILE_SCRIPT_URL)).toBe(TURNSTILE_SCRIPT_URL);
+    expect(() => rules?.createScriptURL("https://evil.example/api.js")).toThrow(TypeError);
+  });
+
+  it("reports false, once, naming the policy, when the browser refuses to create it", () => {
+    let attempts = 0;
+    const policyWindow = ttWindow(() => {
+      attempts += 1;
+      throw new TypeError("Refused to create a TrustedTypePolicy");
+    });
+    expect(assignTurnstileScriptSrc(scriptSink(), policyWindow)).toBe(false);
+    expect(assignTurnstileScriptSrc(scriptSink(), policyWindow)).toBe(false);
+    expect(attempts).toBe(1);
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(String(errors.mock.calls[0]?.[0])).toContain(TURNSTILE_TRUSTED_TYPES_POLICY);
+    expect(String(errors.mock.calls[0]?.[0])).toContain("trusted-types");
+  });
+
+  it("reports false, naming the policy, when the sink write itself throws", () => {
+    const script = {
+      set src(_: unknown) {
+        throw new TypeError("This document requires 'TrustedScriptURL' assignment");
+      },
+    } as unknown as HTMLScriptElement;
+    expect(
+      assignTurnstileScriptSrc(
+        script,
+        ttWindow(() => ({ createScriptURL: () => trustedUrl })),
+      ),
+    ).toBe(false);
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(String(errors.mock.calls[0]?.[0])).toContain(TURNSTILE_TRUSTED_TYPES_POLICY);
   });
 });

@@ -9,6 +9,7 @@ import {
   TURNSTILE_SCRIPT_SRC,
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
+  TURNSTILE_TRUSTED_TYPES_POLICY,
 } from "../contracts/turnstile-contract";
 import type { TurnstileAbandonReason, TurnstileAbandonedDetail } from "../contracts/types";
 import { announce } from "./announce";
@@ -21,18 +22,11 @@ interface TurnstileAPI {
   remove(widgetId: string): void;
 }
 
-/** What htmx hands `htmx:confirm`: the request is held until `issueRequest` is called. */
-type ConfirmDetail = {
-  elt?: EventTarget | null;
-  triggeringEvent?: Event & { submitter?: EventTarget | null };
-  issueRequest?: (skipConfirmation: boolean) => void;
+type HtmxRequestDetail = {
+  ctx?: { sourceElement?: EventTarget | null; request?: { submitter?: EventTarget | null }; response?: { status?: number } };
 };
 
-/** A press waiting on the challenge: the request it would release, and the control it was made on. */
-type Hold = { issue: (skipConfirmation: boolean) => void; submitter: HTMLElement | null };
-
-/** What htmx hands `htmx:afterRequest`. */
-type AfterRequestDetail = { successful?: boolean; xhr?: XMLHttpRequest; requestConfig?: { elt?: EventTarget | null } };
+type Hold = { release: () => void; submitter: HTMLElement | null };
 
 const HTMX_SUBMISSION = "[hx-post],[hx-put],[hx-patch],[hx-delete],[data-hx-post],[data-hx-put],[data-hx-patch],[data-hx-delete]";
 
@@ -42,7 +36,61 @@ declare global {
   }
 }
 
+type TurnstileScriptUrlPolicy = { createScriptURL(input: string): object };
+
+type TurnstileTrustedTypesWindow = Window & {
+  trustedTypes?: { createPolicy(name: string, rules: { createScriptURL(input: string): string }): TurnstileScriptUrlPolicy };
+};
+
 const mounted = new WeakMap<HTMLElement, () => void>();
+
+// Per window, because `createPolicy` refuses a name already created there; a refusal is kept too.
+const scriptUrlPolicies = new WeakMap<Window, TurnstileScriptUrlPolicy | null>();
+
+const TRUSTED_TYPES_FIX = `list "${TURNSTILE_TRUSTED_TYPES_POLICY}" in the CSP's trusted-types directive`;
+
+function admitTurnstileScriptUrl(input: string): string {
+  if (input !== TURNSTILE_SCRIPT_URL)
+    throw new TypeError(`[turnstile] the "${TURNSTILE_TRUSTED_TYPES_POLICY}" policy admits only Cloudflare's script URL`);
+  return input;
+}
+
+function turnstileScriptUrlPolicy(win: TurnstileTrustedTypesWindow): TurnstileScriptUrlPolicy | null {
+  const cached = scriptUrlPolicies.get(win);
+  if (cached !== undefined) return cached;
+  let policy: TurnstileScriptUrlPolicy | null = null;
+  try {
+    policy = win.trustedTypes?.createPolicy(TURNSTILE_TRUSTED_TYPES_POLICY, { createScriptURL: admitTurnstileScriptUrl }) ?? null;
+  } catch (error) {
+    console.error(
+      `[turnstile] could not create the "${TURNSTILE_TRUSTED_TYPES_POLICY}" Trusted Types policy — ${TRUSTED_TYPES_FIX}; the widget will not load`,
+      error,
+    );
+  }
+  scriptUrlPolicies.set(win, policy);
+  return policy;
+}
+
+/** Sets `script.src` to Cloudflare's URL, through the Trusted Types policy where the window has the API, reporting whether the write held. @internal */
+export function assignTurnstileScriptSrc(script: HTMLScriptElement, win: Window): boolean {
+  const trusted = win as TurnstileTrustedTypesWindow;
+  if (!trusted.trustedTypes) {
+    script.src = TURNSTILE_SCRIPT_URL;
+    return true;
+  }
+  const policy = turnstileScriptUrlPolicy(trusted);
+  if (policy === null) return false;
+  try {
+    script.src = policy.createScriptURL(TURNSTILE_SCRIPT_URL) as unknown as string;
+    return true;
+  } catch (error) {
+    console.error(
+      `[turnstile] the browser refused the script URL through "${TURNSTILE_TRUSTED_TYPES_POLICY}" — ${TRUSTED_TYPES_FIX}; the widget will not load`,
+      error,
+    );
+    return false;
+  }
+}
 
 const ref = (name: string, scope: Element | Document | DocumentFragment) => scope.querySelector<HTMLElement>(`[data-ref='${name}']`);
 
@@ -60,14 +108,6 @@ export const hasTurnstileApi = (win: Window): win is Window & { turnstile: Turns
 /** Whether the form submits through htmx, which is what `challenge="submit"` defers on. @internal */
 export const hasHtmxSubmission = (form: Element): boolean => form.matches(HTMX_SUBMISSION) || form.querySelector(HTMX_SUBMISSION) !== null;
 
-/** Whether htmx itself would validate this submission. @internal */
-export function htmxWillValidate(elt: Element, submitter: Element | null): boolean {
-  const isForm = elt.tagName === "FORM";
-  const declared = (elt.getAttribute("hx-validate") ?? elt.getAttribute("data-hx-validate")) === "true";
-  if (!((isForm && (elt as HTMLFormElement).noValidate !== true) || declared)) return false;
-  return !(isForm && (submitter as HTMLButtonElement | null)?.formNoValidate === true);
-}
-
 /** How long after the render a stolen focus is still put back. @internal */
 export const TURNSTILE_FOCUS_GUARD_MS = 5_000;
 
@@ -84,6 +124,16 @@ export function restoreFocus(container: HTMLElement, previous: Element | null): 
   // Mounting the widget has already shifted the layout, and scrolling the field back into view would compound it.
   target.focus({ preventScroll: true });
   return true;
+}
+
+// A synthetic `submit` never submits natively, and htmx cancels the native submission a `click` would start.
+function replaySubmission(elt: HTMLElement, pressed: HTMLElement): void {
+  if (elt.tagName !== "FORM") {
+    elt.click();
+    return;
+  }
+  const { SubmitEvent } = ownerWindow(elt) as Window & typeof globalThis;
+  elt.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true, submitter: pressed === elt ? null : pressed }));
 }
 
 /** Mounts a resilient Cloudflare Turnstile controller for a `<Turnstile>` widget and returns a cleanup function. */
@@ -187,8 +237,8 @@ export function mountTurnstile(root: HTMLElement): () => void {
 
   const currentTheme = () => (doc.documentElement.classList.contains("dark") ? "dark" : "light");
 
-  // htmx applies `hx-disabled-elt` and its indicators only once the request is issued, so between the
-  // press and `issueRequest` the button would otherwise look dead.
+  // htmx applies `hx-disable` and its indicators only once the request is issued, so while the press
+  // is held the button would otherwise look dead.
   const setBusy = (el: HTMLElement | null, busy: boolean) => {
     if (!el) return;
     (el as HTMLButtonElement).disabled = busy;
@@ -234,8 +284,6 @@ export function mountTurnstile(root: HTMLElement): () => void {
     );
   };
 
-  // Last press wins: htmx reads the form's `lastButtonClicked` back when the request is finally
-  // issued, so answering the earlier press would send one button's URL under the other's name.
   const takeHold = (next: Hold) => {
     const running = held !== null;
     if (held) abandonHeld("superseded");
@@ -259,8 +307,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const hold = held;
     interactive = false;
     releaseHeld();
-    // `true`, so htmx does not then run the `window.confirm` this listener stepped in front of.
-    hold?.issue(true);
+    hold?.release();
   };
 
   const onErrorCallback = (code?: unknown) => {
@@ -409,7 +456,10 @@ export function mountTurnstile(root: HTMLElement): () => void {
     }
 
     const script = doc.createElement("script");
-    script.src = TURNSTILE_SCRIPT_URL;
+    if (!assignTurnstileScriptSrc(script, win)) {
+      showFallback();
+      return;
+    }
     script.async = true;
     // Read off the property, because the browser empties the `nonce` content attribute to stop
     // CSS-selector exfiltration; written back with `setAttribute`, which some engines need.
@@ -444,28 +494,31 @@ export function mountTurnstile(root: HTMLElement): () => void {
     return form.contains(elt) && elt.closest(HTMX_SUBMISSION) === elt && isSubmitControl(elt);
   };
 
-  const onAfterRequest = (event: Event) => {
-    const detail = (event as CustomEvent<AfterRequestDetail>).detail;
-    if (!isOwnSubmission(asElement(detail?.requestConfig?.elt))) return;
+  const onFinallyRequest = (event: Event) => {
+    const ctx = (event as CustomEvent<HtmxRequestDetail>).detail?.ctx;
+    if (!isOwnSubmission(asElement(ctx?.sourceElement))) return;
     resetWidget();
-    if (detail?.successful) form.reset();
+    const status = ctx?.response?.status ?? 0;
+    if (status >= 200 && status < 300) form.reset();
   };
-  form.addEventListener("htmx:afterRequest", onAfterRequest);
+  form.addEventListener("htmx:finally:request", onFinallyRequest);
 
-  const onConfirm = (event: Event) => {
-    const detail = (event as CustomEvent<ConfirmDetail>).detail;
-    const elt = asElement(detail?.elt);
+  // Whatever `responseFieldName` renames it to, the response input Cloudflare writes is the only named one in the container.
+  const hasToken = (): boolean => (container.querySelector<HTMLInputElement>("input[name]")?.value ?? "") !== "";
+
+  const onConfigRequest = (event: Event) => {
+    const ctx = (event as CustomEvent<HtmxRequestDetail>).detail?.ctx;
+    const elt = asElement(ctx?.sourceElement);
     if (elt === null || !isOwnSubmission(elt)) return;
-    if (typeof detail.issueRequest !== "function") return;
-    const pressed = asElement(detail.triggeringEvent?.submitter) ?? elt;
-    if (htmxWillValidate(elt, pressed) && typeof form.checkValidity === "function" && !form.checkValidity()) return;
+    if (hasToken()) return;
     // No API and no widget is a page where the challenge never loaded: let the request go and let
     // `verifyTurnstile` be the one that refuses it, as it already is for a blocked widget.
     if (!hasTurnstileApi(win) || state !== "ready") return;
     event.preventDefault();
-    takeHold({ issue: detail.issueRequest, submitter: pressed });
+    const pressed = asElement(ctx?.request?.submitter) ?? elt;
+    takeHold({ release: () => replaySubmission(elt, pressed), submitter: pressed });
   };
-  if (submitMode) form.addEventListener("htmx:confirm", onConfirm);
+  if (submitMode) form.addEventListener("htmx:config:request", onConfigRequest);
 
   const cleanup = () => {
     disposed = true;
@@ -476,8 +529,8 @@ export function mountTurnstile(root: HTMLElement): () => void {
     releaseHeld();
     disarmGuard();
     form.removeEventListener("focusin", loadScript);
-    form.removeEventListener("htmx:afterRequest", onAfterRequest);
-    form.removeEventListener("htmx:confirm", onConfirm);
+    form.removeEventListener("htmx:finally:request", onFinallyRequest);
+    form.removeEventListener("htmx:config:request", onConfigRequest);
     themeObserver?.disconnect();
     themeObserver = undefined;
     removeWidget();

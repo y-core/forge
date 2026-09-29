@@ -39,6 +39,12 @@ export const AUTH_OTP_COOLDOWN_MS = 60_000;
 /** How long an authenticator-app factor stays refused once its guess budget is spent, in milliseconds. @public */
 export const AUTH_TOTP_LOCKOUT_MS = 900_000;
 
+/** How many single-use recovery codes one generated set holds. @public */
+export const AUTH_RECOVERY_CODE_COUNT = 10;
+
+/** Random bytes behind each recovery code — 120 bits, which base32 spells in 24 characters. @public */
+export const AUTH_RECOVERY_CODE_BYTES = 15;
+
 // An absolute bound, not a sliding one: a session that is merely used often is a session an
 // attacker who took it can keep alive forever. Seven days is the ceiling, whatever the activity.
 /** How long a signed-in session stays valid from the moment it was established, in milliseconds. @public */

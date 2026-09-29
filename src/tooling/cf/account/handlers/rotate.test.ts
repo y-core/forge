@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { GENERATE_MARKER, parseDevVars } from "./devvars";
+import { GENERATE_MARKER, parseDevVars, RING_MARKER } from "./devvars";
 import { describeRefusal, planRotation, randomSecret, rotateSecrets } from "./rotate";
 
 const SAMPLE = `${GENERATE_MARKER}
@@ -38,6 +38,13 @@ describe("planRotation()", () => {
 
   it("refuses an unmarked key — a third-party credential cannot be re-obtained", () => {
     expect(planRotation(vars, ["STRIPE_KEY"])).toEqual({ ok: false, error: { unknown: [], unmarked: ["STRIPE_KEY"] } });
+  });
+
+  it("accepts a ring-marked key", () => {
+    expect(planRotation(parseDevVars(`${RING_MARKER}\nAPP_SEAL_KEY_RING=aa11\n`), ["APP_SEAL_KEY_RING"])).toEqual({
+      ok: true,
+      data: ["APP_SEAL_KEY_RING"],
+    });
   });
 
   it("refuses a name that is not in the file at all", () => {
@@ -97,5 +104,31 @@ describe("rotateSecrets()", () => {
   it("returns the names it rotated, never the values", () => {
     const path = makeFile();
     expect(rotateSecrets(path, ["SESSION_SECRET"])).toEqual(["SESSION_SECRET"]);
+  });
+});
+
+describe("rotateSecrets() — a key ring", () => {
+  const ringOf = (path: string) => parseDevVars(readFileSync(path, "utf-8")).find((v) => v.name === "APP_SEAL_KEY_RING")?.value ?? "";
+
+  it("prepends a fresh key and keeps every old one, in order", () => {
+    const path = makeFile(`${RING_MARKER}\nAPP_SEAL_KEY_RING=bb22,cc33\n`);
+    rotateSecrets(path, ["APP_SEAL_KEY_RING"]);
+    const [fresh, ...old] = ringOf(path).split(",");
+    expect(fresh).toMatch(/^[0-9a-f]{64}$/);
+    expect(old).toEqual(["bb22", "cc33"]);
+  });
+
+  it("seeds a ring that has no value yet with one fresh key", () => {
+    const path = makeFile(`${RING_MARKER}\nAPP_SEAL_KEY_RING=\n`);
+    rotateSecrets(path, ["APP_SEAL_KEY_RING"]);
+    expect(ringOf(path)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("still replaces a generate-marked key rotated alongside it", () => {
+    const path = makeFile(`${RING_MARKER}\nAPP_SEAL_KEY_RING=bb22\n${GENERATE_MARKER}\nSESSION_SECRET=old-session\n`);
+    rotateSecrets(path, ["APP_SEAL_KEY_RING", "SESSION_SECRET"]);
+    const session = parseDevVars(readFileSync(path, "utf-8")).find((v) => v.name === "SESSION_SECRET")?.value;
+    expect(session).toMatch(/^[0-9a-f]{64}$/);
+    expect(ringOf(path).split(",")[1]).toBe("bb22");
   });
 });

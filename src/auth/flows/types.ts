@@ -61,7 +61,7 @@ export interface AuthEmailChangeFlow {
 export type AuthSigninReason = AuthFactorReason | "deactivated";
 
 /** The one refusal a visitor may be shown, so a deactivated account and an unknown one read alike. @public */
-export type AuthSigninNotice = "throttled" | "unavailable" | "unrecognised";
+export type AuthSigninNotice = "throttled" | "unavailable" | "unrecognised" | "unusable";
 
 /** What a completed sign-in establishes, including what the second-factor policy still demands. @public */
 export interface AuthSignin {

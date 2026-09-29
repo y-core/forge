@@ -73,6 +73,14 @@ function parseAssertionCredential(presented: string): PasskeyAssertionCredential
   return { id: fields.id, response: { clientDataJSON, authenticatorData, signature, ...(typeof userHandle === "string" ? { userHandle } : {}) } };
 }
 
+function prfSalt(hook: "registration" | "stepUp", salt: Uint8Array<ArrayBuffer>): string {
+  if (!(salt instanceof Uint8Array) || salt.byteLength === 0) {
+    const returned = salt instanceof Uint8Array ? "an empty salt" : "a value that is not a Uint8Array";
+    throw new Error(`createPasskeyFactor: prf.${hook} returned ${returned} — a PRF salt is a non-empty Uint8Array.`);
+  }
+  return base64urlEncode(salt);
+}
+
 function ceremonyReason(error: PasskeyAuthenticationReason | PasskeyRegistrationReason | AuthStoreError): AuthFactorReason {
   if (error instanceof AuthStoreError) return "unavailable";
   return error === "challenge-not-found" ? "expired" : "unrecognised";
@@ -122,10 +130,26 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
     return handle ? ok(handle) : err("unrecognised");
   }
 
+  async function stepUpSalts(userId: string, ids: readonly string[]): Promise<Record<string, { first: string }> | null> {
+    const stepUp = options.prf?.stepUp;
+    if (!stepUp || ids.length === 0) return null;
+    const salts = await stepUp(userId, ids);
+    const entries = ids.flatMap((id) => {
+      const salt = salts.get(id);
+      return salt === undefined ? [] : [[id, { first: prfSalt("stepUp", salt) }] as const];
+    });
+    return entries.length > 0 ? Object.fromEntries(entries) : null;
+  }
+
   async function createChallenge(userId: string, at: number): Promise<Result<AuthFactorChallenge, AuthFactorReason>> {
     const built = await createPasskeyRequestOptions(ceremonyOptions(), { sessionId: options.sessionId, userId });
     if (!built.ok) return err("unavailable");
-    return ok({ kind: "passkey", expiresAt: at + ttlSeconds * 1000, options: { ...built.data } });
+    const evalByCredential = await stepUpSalts(
+      userId,
+      built.data.allowCredentials.map((descriptor) => descriptor.id),
+    );
+    const challengeOptions = evalByCredential ? { ...built.data, extensions: { prf: { evalByCredential } } } : { ...built.data };
+    return ok({ kind: "passkey", expiresAt: at + ttlSeconds * 1000, options: challengeOptions });
   }
 
   async function verifyChallenge(userId: string, presented: string, at: number): Promise<Result<AuthFactorVerified, AuthFactorReason>> {
@@ -145,6 +169,8 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
     const handle = await resolveUserHandle(userId, at);
     if (!handle.ok) return err(handle.error);
     const subject = await options.subject(userId);
+    const registrationSalt = await options.prf?.registration?.(userId);
+    const prf = registrationSalt == null ? null : { eval: { first: prfSalt("registration", registrationSalt) } };
     const built = await createPasskeyRegistrationOptions(ceremonyOptions(), {
       userId,
       userHandle: base64urlEncode(handle.data),
@@ -153,7 +179,8 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
       sessionId: options.sessionId,
     });
     if (!built.ok) return err("unavailable");
-    return ok({ kind: "passkey", expiresAt: at + ttlSeconds * 1000, options: { ...built.data } });
+    const enrolmentOptions = prf ? { ...built.data, extensions: { prf } } : { ...built.data };
+    return ok({ kind: "passkey", expiresAt: at + ttlSeconds * 1000, options: enrolmentOptions });
   }
 
   async function completeEnrolment(userId: string, presented: string, at: number): Promise<Result<AuthFactor, AuthFactorReason>> {

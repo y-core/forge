@@ -1,13 +1,13 @@
 import { base64DecodeOrNull, base64Encode } from "../crypto/base64";
 import { concatBytes, utf8Encode } from "../crypto/bytes";
 import { hmacSign, importHmacKey } from "../crypto/hmac";
+import { assertSecretStrength } from "../crypto/strength";
 import { timingSafeEqualBytes } from "../crypto/timing";
 import { err, ok } from "../result/result";
 import type { Result } from "../result/types";
 import type { VerifiedWebhook, WebhookRefusal, WebhookSignatureHeaders, WebhookSignOptions, WebhookVerifyOptions } from "./types";
 
 const WEBHOOK_SECRET_PREFIX = "whsec_";
-const WEBHOOK_SECRET_MIN_BYTES = 32;
 const WEBHOOK_TOLERANCE_SECONDS_DEFAULT = 300;
 const WEBHOOK_MAX_BYTES_DEFAULT = 1_048_576;
 const SIGNATURE_BYTES = 32;
@@ -27,11 +27,7 @@ interface WebhookLimits {
 function decodeWebhookSecret(operation: string, secret: string): Uint8Array<ArrayBuffer> {
   const raw = secret.startsWith(WEBHOOK_SECRET_PREFIX) ? base64DecodeOrNull(secret.slice(WEBHOOK_SECRET_PREFIX.length)) : null;
   if (raw === null) throw new Error(`${operation}: a secret is not a whsec_-prefixed base64 string.`);
-  if (raw.byteLength < WEBHOOK_SECRET_MIN_BYTES) {
-    throw new Error(
-      `${operation}: a secret is ${raw.byteLength} bytes, below the ${WEBHOOK_SECRET_MIN_BYTES}-byte floor — shorter keys fall under the HMAC-SHA256 security margin.`,
-    );
-  }
+  assertSecretStrength(operation, raw);
   return raw;
 }
 

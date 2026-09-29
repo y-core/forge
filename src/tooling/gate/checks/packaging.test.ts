@@ -21,7 +21,7 @@ const EXPORTS: ExportsMap = { "./ui": { import: "./src/ui/mod.ts", types: "./src
 const FILES = ["src/ui/", "!**/*.test.ts"];
 
 const run = (tree: Record<string, string>, overrides: Partial<PackagingCheckConfig> = {}) =>
-  checkPackaging({ root: fixtureRoot(tree), sources: ["src"], files: FILES, exports: EXPORTS, ...overrides });
+  checkPackaging({ root: fixtureRoot({ "src/ui/README.md": "# ui\n", ...tree }), sources: ["src"], files: FILES, exports: EXPORTS, ...overrides });
 
 const files = (tree: Record<string, string>, overrides: Partial<PackagingCheckConfig> = {}) =>
   run(tree, overrides).findings.map((finding) => finding.file);
@@ -35,6 +35,10 @@ describe("checkPackaging()", () => {
         "src/ui/button.test.ts": `import { button } from "./button";`,
       }),
     ).toEqual([]);
+  });
+
+  it("passes a barrel that only a test imports, since the exports map still publishes it", () => {
+    expect(files({ "src/ui/mod.ts": "export const ui = 1;", "src/ui/mod.test.ts": `import { ui } from "./mod";` })).toEqual([]);
   });
 
   it("reports a module only a test imports that the tarball still carries", () => {
@@ -137,6 +141,60 @@ describe("checkPackaging()", () => {
         ["CHANGELOG.md", "a file the tarball must carry does not exist"],
       ]);
     });
+  });
+});
+
+describe("checkPackaging() — namespace READMEs", () => {
+  const BARREL = "export const m = 1;";
+
+  const bare = (tree: Record<string, string>, overrides: Partial<PackagingCheckConfig> = {}) =>
+    checkPackaging({ root: fixtureRoot(tree), sources: ["src"], files: FILES, exports: EXPORTS, ...overrides });
+
+  it("passes a namespace with a README in its own directory", () => {
+    expect(bare({ "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui" }).findings).toEqual([]);
+  });
+
+  it("passes a nested namespace whose only README is in a directory containing it", () => {
+    const result = bare({ "src/ui/core/mod.ts": BARREL, "src/ui/README.md": "# ui" }, { exports: { "./ui/core": "./src/ui/core/mod.ts" } });
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("fails a namespace with no README at or above its directory, against its barrel", () => {
+    const result = bare({ "src/ui/mod.ts": BARREL });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => finding.file)).toEqual(["src/ui/mod.ts"]);
+    expect(result.findings[0]?.message).toContain("`./ui`");
+    expect(result.findings[0]?.message).toContain("no README");
+  });
+
+  it("fails a namespace whose only README is the source root's own", () => {
+    expect(bare({ "src/ui/mod.ts": BARREL, "src/README.md": "# src" }).findings.map((finding) => finding.file)).toEqual(["src/ui/mod.ts"]);
+  });
+
+  it("fails a found README the `files` array leaves out, naming the entry to add", () => {
+    const result = bare({ "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui" }, { files: ["src/ui/", "!**/README.md"] });
+
+    expect(result.findings.map((finding) => [finding.file, finding.detail])).toEqual([["src/ui/README.md", ["add `src/ui/README.md` to `files`"]]]);
+  });
+
+  it("asks nothing of an export whose target is a file rather than a barrel", () => {
+    const result = bare(
+      { "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui", "src/html/htmx.ts": BARREL },
+      { exports: { ...EXPORTS, "./html/htmx": "./src/html/htmx.ts" }, files: [...FILES, "src/html/"] },
+    );
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("asks nothing of a barrel outside `sources`", () => {
+    const result = bare(
+      { "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui", "warden/src/mod.ts": BARREL },
+      { exports: { ...EXPORTS, "./warden": "./warden/src/mod.ts" } },
+    );
+
+    expect(result.findings).toEqual([]);
   });
 });
 

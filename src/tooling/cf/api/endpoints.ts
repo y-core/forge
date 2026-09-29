@@ -8,9 +8,6 @@ export const workerSettings = (accountId: string, scriptName: string) =>
 export const workerSecrets = (accountId: string, scriptName: string) =>
   `${acct(accountId)}/workers/scripts/${encodeURIComponent(scriptName)}/secrets`;
 
-/** A Pages project, addressed by both GET and PATCH. */
-export const pagesProject = (accountId: string, projectName: string) => `${acct(accountId)}/pages/projects/${encodeURIComponent(projectName)}`;
-
 const zone = (zoneId: string) => `/zones/${encodeURIComponent(zoneId)}`;
 
 /** The phase entry point ruleset for a zone — GET reads the latest version, PUT replaces it. */
@@ -36,5 +33,5 @@ export const CF_ERROR_CODES = {
   auth: [9106, 9107, 9109, 10000] as const,
 } as const;
 
-/** The API-token permission each deployment surface needs. */
-export const SURFACE_PERMISSIONS = { worker: "Workers Scripts", pages: "Cloudflare Pages" } as const;
+/** The API-token permission a Worker's settings and secrets need. */
+export const WORKER_PERMISSION = "Workers Scripts";

@@ -44,8 +44,8 @@ export interface AuthUser {
   readonly updatedAt: number;
 }
 
-/** Which credential a factor represents. Closed, so a fourth factor is a deliberate edit. @public */
-export type AuthFactorKind = "email-otp" | "passkey" | "totp-app";
+/** Which credential a factor represents. Closed, so a new factor is a deliberate edit. @public */
+export type AuthFactorKind = "email-otp" | "passkey" | "recovery-code" | "totp-app";
 
 /** Every store operation resolves to this: an outcome, or the one I/O error. @public */
 export type AuthStoreResult<T> = Result<T, AuthStoreError>;
@@ -206,6 +206,8 @@ export interface AdminUserStore {
   setAdmin(id: string, isAdmin: boolean, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   setDeactivated(id: string, deactivated: boolean, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
   remove(id: string): Promise<AuthStoreResult<AdminUserOutcome>>;
+  /** Deletes every factor, credential and recovery code the user holds and refuses their sessions, in one batch. */
+  resetFactors(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
 }
 
 /** @public */
@@ -215,8 +217,6 @@ export interface FactorStore {
   findEnrolled(userId: string, kinds: readonly AuthFactorKind[]): Promise<AuthStoreResult<readonly AuthFactor[]>>;
   enrol(input: AuthFactorInput, at: number): Promise<AuthStoreResult<AuthFactor>>;
   confirm(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
-  /** Takes a confirmed factor back to owing an enrolment and hands back the guesses spent against it, for a secret that can no longer be checked at all. */
-  unconfirm(id: string, userId: string, at: number): Promise<AuthStoreResult<boolean>>;
   /** Finds the factor, spends one guess against it and returns it, reopening a budget spent more than `lockoutMs` ago — all in the one statement; `null` is no such factor, or the budget refusing. */
   countAttempt(
     userId: string,
@@ -229,7 +229,21 @@ export interface FactorStore {
   recordVerification(id: string, userId: string, counter: number, at: number, secret?: Uint8Array<ArrayBuffer>): Promise<AuthStoreResult<boolean>>;
   /** Counts rows of `kind` whose sealed secret is under a key id other than `kid` — the population a retiring key still holds. */
   countSecretsNotUnder(kind: AuthFactorKind, kid: string): Promise<AuthStoreResult<number>>;
+  /** Deletes the factor, and the user's recovery codes with their row once no confirmed `totp-app` or `passkey` remains. */
   remove(id: string, userId: string): Promise<AuthStoreResult<boolean>>;
+}
+
+/** The hashed recovery codes of each user: a live set, and a staged one awaiting confirmation. @public */
+export interface RecoveryCodeStore {
+  /** Replaces the user's staged set with `hashes`, leaving the live set untouched. */
+  stage(userId: string, hashes: readonly Uint8Array<ArrayBuffer>[], at: number): Promise<AuthStoreResult<void>>;
+  holdsStaged(userId: string, hash: Uint8Array<ArrayBuffer>): Promise<AuthStoreResult<boolean>>;
+  /** Swaps the staged set in for the live one and confirms `factorId`, clearing its spent guesses, in one batch. */
+  commit(userId: string, factorId: string, at: number): Promise<AuthStoreResult<void>>;
+  /** Spends one live code and clears `factorId`'s spent guesses in one batch; `false` is no unused live code matching. */
+  consume(userId: string, factorId: string, hash: Uint8Array<ArrayBuffer>, at: number): Promise<AuthStoreResult<boolean>>;
+  /** Counts the live codes not yet used. */
+  remaining(userId: string): Promise<AuthStoreResult<number>>;
 }
 
 /** @public */

@@ -125,6 +125,19 @@ CREATE TABLE IF NOT EXISTS auth_access_tokens (
 CREATE UNIQUE INDEX IF NOT EXISTS auth_access_tokens_token_hash ON auth_access_tokens (token_hash);
 CREATE INDEX IF NOT EXISTS auth_access_tokens_user_id ON auth_access_tokens (user_id);
 
+-- One row per issued recovery code, holding only its SHA-256. A staged row belongs to a set the user
+-- has not yet confirmed; confirming it replaces the live set in one batch.
+CREATE TABLE IF NOT EXISTS auth_recovery_codes (
+  id BLOB PRIMARY KEY NOT NULL,
+  user_id BLOB NOT NULL REFERENCES auth_users (id) ON DELETE CASCADE,
+  code_hash BLOB NOT NULL CHECK (length(code_hash) = 32),
+  staged INTEGER NOT NULL DEFAULT 0 CHECK (staged IN (0, 1)),
+  used_at INTEGER,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_recovery_codes_user_hash ON auth_recovery_codes (user_id, code_hash);
+
 -- The live emailed code for one identity, and the guesses spent against it. Durable and not KV:
 -- both counters are conditional writes on the primary factor, and KV can only read then write, so
 -- parallel guesses would each be compared against the same count.

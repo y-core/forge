@@ -2,6 +2,7 @@ import { formDigits } from "../../validation/form-digits";
 import { formText } from "../../validation/form-text";
 import { v } from "../../validation/validation";
 import { AUTH_OTP_DIGITS } from "../config";
+import type { AuthFactorKind } from "../types";
 
 /** Longest address the RFC 5321 path allows, so a hostile field cannot become an unbounded read. */
 const EMAIL_MAX = 254;
@@ -18,6 +19,9 @@ const TOTP_MIN = 6;
 const TOTP_MAX = 8;
 
 const SEARCH_MAX = 200;
+
+/** Bounds a presented recovery code, which the factor itself normalises and refuses by shape. */
+const RECOVERY_CODE_MAX = 64;
 
 /** Bounds the bootstrap secret a claim carries, so a hostile field cannot become an unbounded read. */
 const BOOTSTRAP_SECRET_MAX = 512;
@@ -42,8 +46,9 @@ export function authSignupSchema() {
 
 // The width is the presented factor's own, never a constant: `createEmailOtpFactor({ digits: 8 })`
 // is a supported configuration, and a page refusing every correct code of that width is the defect.
-/** The verify form: the one-time code the presented factor asks for, separators stripped. @public */
-export function authVerifySchema(digits: number = AUTH_OTP_DIGITS) {
+/** The verify form: the code `factor` asks for — its digits with separators stripped, or a recovery code as typed. @public */
+export function authVerifySchema(factor: AuthFactorKind = "email-otp", digits: number = AUTH_OTP_DIGITS) {
+  if (factor === "recovery-code") return v.strictObject({ code: v.pipe(v.string(), v.trim(), v.maxLength(RECOVERY_CODE_MAX)) });
   return v.strictObject({ code: v.pipe(formDigits(), v.length(digits)) });
 }
 

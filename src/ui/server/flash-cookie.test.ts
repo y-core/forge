@@ -5,7 +5,7 @@ import { mapHandler } from "../../testing/route";
 import { createFlash } from "./flash-cookie";
 import type { FlashMessage } from "./types";
 
-const SECRET = "a".repeat(32);
+const SECRET = "Fl4shC00kieS3cretV8pQ2mX9wLz7tRb";
 
 function extractCookieValue(setCookieHeader: string | null): string | null {
   if (!setCookieHeader) return null;
@@ -14,8 +14,8 @@ function extractCookieValue(setCookieHeader: string | null): string | null {
 }
 
 describe("createFlash", () => {
-  it("throws when a secret is shorter than 32 characters", () => {
-    expect(() => createFlash({ secrets: ["too-short"] })).toThrow();
+  it("throws when a secret is under 32 bytes, naming the floor", () => {
+    expect(() => createFlash({ secrets: ["too-short"] })).toThrow(/at least 32 bytes/);
   });
 });
 

@@ -8,7 +8,7 @@ import { createIcon } from "../../../ui/core/icon";
 import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthCredential } from "../../types";
 import { attrOf, attrsOf, elementOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../web.fixture";
-import { PasskeyEditView } from "./passkey-edit";
+import { AUTH_PASSKEY_EDIT_ID, PasskeyEditView } from "./passkey-edit";
 import type { PasskeyEditViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
@@ -50,11 +50,15 @@ function edit(props: Partial<PasskeyEditViewProps> = {}) {
 }
 
 describe("PasskeyEditView", () => {
-  it("patches the rename path, with the CSRF token merged into `hx-headers`", async () => {
+  it("patches the rename path, with the CSRF token merged into `hx-headers`, swapping the answer over the view's own root", async () => {
     expect(tagOf(await edit(), 'data-slot="form"')).toBe(
       '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;csrf-1&quot;}" class="flex flex-col gap-6" ' +
-        'hx-patch="/account/passkeys/c1">',
+        'hx-patch="/account/passkeys/c1" hx-target="#auth-passkey-edit" hx-swap="outerHTML">',
     );
+  });
+
+  it("marks its root with the id its rename form targets", async () => {
+    expect(attrOf(await edit(), 'data-slot="card"', "id")).toBe(AUTH_PASSKEY_EDIT_ID);
   });
 
   it("renders exactly one submitted field beyond the CSRF input", async () => {

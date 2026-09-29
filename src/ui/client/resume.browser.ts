@@ -19,8 +19,6 @@ declare global {
 
 const EXPOSE = { expose: { forgeResume: "./ui/client/resume", forgeSignal: "./ui/client/signal" } };
 
-// htmx boots off `DOMContentLoaded` and the harness injects its bundle after that, so a case using
-// it calls `htmx.process` itself.
 const HTMX_EXPOSE = { expose: { ...EXPOSE.expose, forgeHtmx: "./ui/client/htmx" } };
 
 /** One scope root with a single `data-on-click` button, rendered through the real SSR components. */
@@ -913,8 +911,6 @@ test.describe("resume — installing listeners and resuming a tree are two jobs"
 });
 
 test.describe("resume — disposal on a remove-only htmx swap", () => {
-  // Detached scopes are otherwise swept only from `ensureResumed`, so a swap that removes scoped
-  // markup and introduces none would leave live document-level listeners behind.
   test("htmx removing a scope runs its disposer, and the document listener stops firing", async ({ page }) => {
     await mount(page, `<div id="host"><div data-scope="demo"><span id="inner">x</span></div></div>`, HTMX_EXPOSE);
 
@@ -940,7 +936,7 @@ test.describe("resume — disposal on a remove-only htmx swap", () => {
       host.setAttribute("hx-swap", "innerHTML");
       window.forgeHtmx.htmx.process(document.body);
 
-      const settled = new Promise<void>((resolve) => document.body.addEventListener("htmx:afterSettle", () => resolve(), { once: true }));
+      const settled = new Promise<void>((resolve) => document.addEventListener("htmx:after:swap", () => resolve(), { once: true }));
       // `void`, not `await`: the settle listener is what this waits on, and awaiting the request
       // promise as well would race the two.
       void window.forgeHtmx.htmx.ajax("get", "/empty", { target: "#host", swap: "innerHTML" });
@@ -954,6 +950,25 @@ test.describe("resume — disposal on a remove-only htmx swap", () => {
       log: ["ping", "disposed"],
       remaining: 0,
     });
+  });
+
+  test("a swap replacing a container with no htmx attributes disposes a scope nested inside it", async ({ page }) => {
+    await mount(page, `<main id="main"><section><div data-scope="demo"><span>x</span></div></section></main>`, HTMX_EXPOSE);
+    await page.route("http://forge.test/page", (route) => route.fulfill({ contentType: "text/html", body: '<p id="fresh">fresh</p>' }));
+
+    const result = await page.evaluate(async () => {
+      const log: string[] = [];
+      window.forgeResume.registerScope("demo", { eager: true, setup: () => () => log.push("disposed") });
+      window.forgeResume.resume();
+
+      const swapped = new Promise<void>((resolve) => document.addEventListener("htmx:after:swap", () => resolve(), { once: true }));
+      void window.forgeHtmx.htmx.ajax("get", "/page", { target: "#main", swap: "innerHTML" });
+      await swapped;
+
+      return { log, fresh: document.querySelector("#fresh")?.textContent ?? null };
+    });
+
+    expect(result, "the nested scope was never htmx-powered, and its disposer did not run").toEqual({ log: ["disposed"], fresh: "fresh" });
   });
 
   test("disposeScopesIn takes the scope out of the active set, so a re-resume sets it up afresh", async ({ page }) => {

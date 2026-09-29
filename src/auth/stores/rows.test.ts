@@ -17,6 +17,7 @@ import { createFactorStore } from "./factors";
 import { createIdentityLinkStore } from "./identity-links";
 import { createNonceStore } from "./nonces";
 import { createOtpStateStore } from "./otp-state";
+import { createRecoveryCodeStore } from "./recovery-codes";
 import { blobBytes, inList, MAX_PAGE_LIMIT, storeError } from "./rows";
 import { createUserStore } from "./users";
 
@@ -357,6 +358,7 @@ describe("schema drift", () => {
     await admins.setDeactivated(USER_ID, true, 1);
     await admins.setDeactivated(USER_ID, false, 1);
     await admins.remove(USER_ID);
+    await admins.resetFactors(USER_ID, 1);
     await factors.listByUser(USER_ID);
     await factors.find(USER_ID, "passkey");
     await factors.findEnrolled(USER_ID, ["passkey", "totp-app"]);
@@ -390,6 +392,12 @@ describe("schema drift", () => {
     await accessTokens.listByUser(USER_ID);
     await accessTokens.recordUse(OTHER_ID, 1, 60_000);
     await accessTokens.revoke(OTHER_ID, USER_ID, 1);
+    const recoveryCodes = createRecoveryCodeStore(client);
+    await recoveryCodes.stage(USER_ID, [new Uint8Array(32)], 1);
+    await recoveryCodes.holdsStaged(USER_ID, new Uint8Array(32));
+    await recoveryCodes.commit(USER_ID, OTHER_ID, 1);
+    await recoveryCodes.consume(USER_ID, OTHER_ID, new Uint8Array(32), 1);
+    await recoveryCodes.remaining(USER_ID);
     return db.calls.map((call) => call.sql);
   }
 
@@ -402,6 +410,7 @@ describe("schema drift", () => {
       "auth_identity_links",
       "auth_nonces",
       "auth_otp_state",
+      "auth_recovery_codes",
       "auth_users",
     ]);
     expect([...(TABLES.get("auth_users") ?? [])].sort()).toEqual([

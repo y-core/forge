@@ -1,16 +1,6 @@
+import { crc32 } from "../../crypto/mod";
+
 const SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-
-const TABLE = Array.from({ length: 256 }, (_entry, index) => {
-  let value = index;
-  for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-  return value >>> 0;
-});
-
-function crc32(bytes: Uint8Array): number {
-  let value = 0xffffffff;
-  for (const byte of bytes) value = (TABLE[(value ^ byte) & 0xff] ?? 0) ^ (value >>> 8);
-  return (value ^ 0xffffffff) >>> 0;
-}
 
 function be32(value: number): number[] {
   return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];

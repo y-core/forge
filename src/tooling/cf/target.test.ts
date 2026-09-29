@@ -1,37 +1,41 @@
 import { describe, expect, it } from "bun:test";
 
-import { describeTarget, detectTarget } from "./target";
+import { CliError } from "../cli/errors";
+import { refusePagesConfig, surfaceDetail } from "./target";
 import type { WranglerConfig } from "./types";
 
-describe("detectTarget()", () => {
-  it("detects a Pages project from pages_build_output_dir alone", () => {
+function captureThrown(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
+describe("refusePagesConfig()", () => {
+  it("accepts a Worker config", () => {
+    expect(() => refusePagesConfig({ name: "w", main: "src/index.ts" }, "w")).not.toThrow();
+  });
+
+  it("refuses a config declaring a Cloudflare Pages project, naming Workers as the only target", () => {
     const config: WranglerConfig = { name: "target-fixture", pages_build_output_dir: "./public" };
-    expect(detectTarget(config, "target-fixture")).toEqual({ kind: "pages", name: "target-fixture" });
+    const refusal = captureThrown(() => refusePagesConfig(config, "target-fixture"));
+    expect(refusal).toBeInstanceOf(CliError);
+    expect((refusal as CliError).kind).toBe("invalid-args");
+    expect((refusal as CliError).message).toBe(
+      "target-fixture declares `pages_build_output_dir`, a Cloudflare Pages project — forge supports Workers only. Remove it and deploy target-fixture as a Worker.",
+    );
   });
 
-  it("detects a Worker when neither key is present", () => {
-    expect(detectTarget({ name: "w" }, "w")).toEqual({ kind: "worker", name: "w" });
-  });
-
-  it("detects a Worker from main", () => {
-    expect(detectTarget({ name: "w", main: "src/index.ts" }, "w").kind).toBe("worker");
-  });
-
-  it("treats a config carrying both keys as a Worker", () => {
-    // wrangler rejects this combination outright, so there is no correct answer to
-    // defer to — we follow its own advice: "use `main` if you are deploying a Worker".
+  it("refuses a Pages output directory even beside a Worker entry point", () => {
     const config: WranglerConfig = { name: "w", main: "src/index.ts", pages_build_output_dir: "./public" };
-    expect(detectTarget(config, "w").kind).toBe("worker");
-  });
-
-  it("uses the supplied script name rather than the config name", () => {
-    expect(detectTarget({ name: "config-name" }, "override").name).toBe("override");
+    expect(() => refusePagesConfig(config, "w")).toThrow(CliError);
   });
 });
 
-describe("describeTarget()", () => {
-  it("names each surface as it appears in result details", () => {
-    expect(describeTarget({ kind: "pages", name: "x" })).toBe("pages project");
-    expect(describeTarget({ kind: "worker", name: "x" })).toBe("worker script");
+describe("surfaceDetail()", () => {
+  it("prefixes the Worker surface and drops empty parts", () => {
+    expect(surfaceDetail("a", undefined, "", "b")).toBe("worker script · a · b");
   });
 });

@@ -1,4 +1,4 @@
-import { detectTarget } from "../target";
+import { refusePagesConfig } from "../target";
 import type { ResolvedPrefix, ResourceType, SyncConfig, SyncOutput, WranglerConfig } from "../types";
 import { sanitizeName } from "./handlers/naming";
 import { defaultHandlers } from "./handlers/registry";
@@ -30,7 +30,7 @@ export async function syncBindings(
   const scriptName = syncConfig.scriptName ?? config.name;
   const prefix = resolvePrefix(syncConfig, scriptName);
   const dryRun = syncConfig.dryRun ?? false;
-  const target = detectTarget(config, scriptName);
+  refusePagesConfig(config, scriptName);
 
   const resourceFilter = syncConfig.resources;
   const activeHandlers = resourceFilter ? handlers.filter((h) => resourceFilter.includes(h.type as ResourceType)) : handlers;
@@ -39,7 +39,7 @@ export async function syncBindings(
   const allResults: SyncOutput["results"] = [];
   const allNotes: SyncOutput["notes"] = [];
 
-  const ctx = { auth: syncConfig.auth, scriptName, prefix, dryRun, fetch: fetchFn, target, rotate: new Set(syncConfig.rotate ?? []) };
+  const ctx = { auth: syncConfig.auth, scriptName, prefix, dryRun, fetch: fetchFn, rotate: new Set(syncConfig.rotate ?? []) };
 
   for (const handler of activeHandlers) {
     const entries = handler.extract(updatedConfig);
@@ -55,7 +55,7 @@ export async function syncBindings(
     updatedConfig = mergeEntries(updatedConfig, handler.type as ResourceType, reconciled);
   }
 
-  return { results: allResults, notes: allNotes, updatedConfig, configChanged: configChanged(config, updatedConfig), target, prefix };
+  return { results: allResults, notes: allNotes, updatedConfig, configChanged: configChanged(config, updatedConfig), scriptName, prefix };
 }
 
 function mergeEntries(config: WranglerConfig, type: ResourceType, entries: unknown[]): WranglerConfig {

@@ -5,8 +5,8 @@ import { hmacSign } from "../../crypto/hmac";
 import type { HmacKeyRing } from "../../crypto/types";
 import { createSignedObjectUrl, importSignedUrlKeyRing, MAX_SIGNED_URL_LIFETIME, verifySignedObjectUrl } from "./signing";
 
-const SECRET_A = "deadbeef".repeat(8);
-const SECRET_B = "0badf00d".repeat(8);
+const SECRET_A = "5e1d0c7a9b3f28e46a0d91c7b52f8e3a4c6d17b09e2f5a83c1d4e6b7f9a02c58";
+const SECRET_B = "c83a1f6e0d29b74a5e8f13c6d0b9a2e7f41c5d8b36a09e2f7c1b4d6e8a3f5b90";
 
 function ringOf(...secrets: [string, ...string[]]): Promise<HmacKeyRing> {
   return importSignedUrlKeyRing(secrets);
@@ -206,6 +206,12 @@ describe("signed URL key rotation", () => {
 
 describe("importSignedUrlKeyRing", () => {
   it("names the signed URL secret when a secret is too short", async () => {
-    await expect(importSignedUrlKeyRing(["aabb"])).rejects.toThrow(/^Signed URL secret must/);
+    await expect(importSignedUrlKeyRing(["aabb"])).rejects.toThrow("Signed URL secret: each secret must be at least 32 bytes (got 2)");
+  });
+
+  it("names the signed URL secret when a secret is degenerate", async () => {
+    await expect(importSignedUrlKeyRing(["deadbeef".repeat(8)])).rejects.toThrow(
+      "Signed URL secret: a secret carrying only 4 distinct byte values is not one a CSPRNG produced",
+    );
   });
 });

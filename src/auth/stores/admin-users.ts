@@ -103,6 +103,7 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
         sql`DELETE FROM auth_identity_links WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
         sql`DELETE FROM auth_otp_state WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
         sql`DELETE FROM auth_access_tokens WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
+        sql`DELETE FROM auth_recovery_codes WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
         sql`DELETE FROM auth_users WHERE id = ${key} AND ${NOT_LAST_ADMIN}`,
       ]);
       if (!outcome.ok) return err(storeError("adminUsers.remove", outcome.error));
@@ -113,6 +114,22 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
       // transaction is a backend the caller cannot reason about, so it is reported as such.
       const removed = outcome.data.at(-1)?.rowsWritten ?? 0;
       return removed > 0 ? ok("changed") : err(storeError("adminUsers.remove", "the guarded delete matched the probe but removed no row"));
+    },
+
+    async resetFactors(id, at) {
+      const key = uuidKey(id);
+      if (!key) return ok("not-found");
+      const outcome = await db.batch<{ present: number }>([
+        sql`SELECT COUNT(*) AS present FROM auth_users WHERE id = ${key}`,
+        sql`DELETE FROM auth_credentials WHERE user_id = ${key}`,
+        sql`DELETE FROM auth_factors WHERE user_id = ${key}`,
+        sql`DELETE FROM auth_recovery_codes WHERE user_id = ${key}`,
+        sql`UPDATE auth_users SET sessions_invalid_before = ${at}, updated_at = ${at}
+            WHERE id = ${key} AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ${at})`,
+      ]);
+      if (!outcome.ok) return err(storeError("adminUsers.resetFactors", outcome.error));
+      const probe = outcome.data[0]?.results[0];
+      return probe === undefined || probe.present === 0 ? ok("not-found") : ok("changed");
     },
   };
 }

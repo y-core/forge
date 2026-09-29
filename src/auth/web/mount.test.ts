@@ -38,10 +38,10 @@ import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
-import { attrsOf, fakeAuthIcon, fakeAuthServices, fakeFactorService } from "./web.fixture";
+import { attrsOf, fakeAuthIcon, fakeAuthServices, fakeFactorService, recoveryOffer } from "./web.fixture";
 
-// This file is the mount AUTH_MOUNTING.md §1 describes, written out with no ellipsis and no free
-// variable, so the documented wiring is held to the real signatures by the compiler.
+// This file is the mount AUTH_MOUNTING.md §1 points to, written out with no ellipsis and no free
+// variable, so the one copy of the wiring is held to the real signatures by the compiler.
 
 /** Exactly the bindings a Worker mounting auth declares. */
 interface MountEnv extends Record<string, unknown> {
@@ -72,6 +72,7 @@ function requestStores(c: AppContext<MountEnv>) {
       offered: [
         { service: fakeFactorService("email-otp"), role: "primary" },
         { service: fakeFactorService("passkey"), role: "second", requirement: "mandatory" },
+        recoveryOffer(),
       ],
     }),
   };
@@ -135,7 +136,12 @@ function mount(): Forge<MountEnv> {
 const ADA = "018f0000-0000-7000-8000-000000000001";
 
 function env(users: readonly FakeAuthUser[] = []): MountEnv {
-  return { DB: fakeAuthD1(users), KV: fakeKV(), SESSION_SECRET: "s".repeat(48), CSRF_SECRET: "c".repeat(64) };
+  return {
+    DB: fakeAuthD1(users),
+    KV: fakeKV(),
+    SESSION_SECRET: "Sw8eR3tY6uI1oP4aS7dF2gH5jK9lZ0xC3vB6nM1qW4eR7tY",
+    CSRF_SECRET: "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d",
+  };
 }
 
 describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
@@ -276,11 +282,6 @@ function memoryFactors(): FactorStore {
       if (row) rows[rows.indexOf(row)] = { ...row, confirmedAt: at, updatedAt: at };
       return ok(row !== undefined);
     },
-    unconfirm: async (id, _userId, at) => {
-      const row = rows.find((held) => held.id === id);
-      if (row) rows[rows.indexOf(row)] = { ...row, confirmedAt: null, failedAttempts: 0, updatedAt: at };
-      return ok(row !== undefined);
-    },
     countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
     recordVerification: async () => ok(true),
     countSecretsNotUnder: async () => ok(0),
@@ -348,6 +349,7 @@ function flowMount(stepUp: AuthFactorKind): { readonly app: Forge<MountEnv>; rea
     offered: [
       { service: driveableFactor("email-otp", enrolments), role: "primary" },
       { service: driveableFactor(stepUp, enrolments), role: "second", requirement: "mandatory" },
+      recoveryOffer(),
     ],
   });
 
@@ -543,7 +545,7 @@ describe("a second factor, driven through the mount", () => {
     expect(signedIn.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard");
 
     const stepped = await returning.form(signedIn.headers.get("location") ?? "", { code: CODE });
-    expect(stepped.headers.get("location")).toBe("/app/dashboard");
+    expect(stepped.headers.get("location")).toBe("/account/recovery-codes?next=%2Fapp%2Fdashboard");
   });
 
   // The branch a visitor takes when the first code never arrived: it reloads the same page, so it
@@ -567,7 +569,7 @@ describe("a second factor, driven through the mount", () => {
 
     const signedIn = await returning.form(resent.headers.get("location") ?? "", { code: CODE });
     const stepped = await returning.form(signedIn.headers.get("location") ?? "", { code: CODE });
-    expect(stepped.headers.get("location")).toBe("/app/dashboard");
+    expect(stepped.headers.get("location")).toBe("/account/recovery-codes?next=%2Fapp%2Fdashboard");
   });
 
   // The sign-in path, not the sign-up path: an account whose second factor is already confirmed

@@ -9,6 +9,8 @@ import { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
 
+const CSRF_HEX_KEY = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
+
 const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
 function makeApp(action: ReturnType<typeof defineAction>) {
@@ -511,7 +513,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   }
 
   it("accepts a body over the default cap when the route and its guard both raise maxBytes", async () => {
-    const key = await importCsrfKey("a".repeat(64));
+    const key = await importCsrfKey(CSRF_HEX_KEY);
     const app = new Forge();
     mapHandler(app, "POST", "/upload", {
       middleware: [csrfProtection({ secret: () => key, subject: false, maxBytes: RAISED })],
@@ -524,7 +526,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   });
 
   it("answers 413 rather than a misleading 403 when the body exceeds the guard's cap", async () => {
-    const key = await importCsrfKey("a".repeat(64));
+    const key = await importCsrfKey(CSRF_HEX_KEY);
     const app = new Forge();
     mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
 
@@ -534,7 +536,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   });
 
   it("keeps a genuine token failure on 403 when the body is within the cap", async () => {
-    const key = await importCsrfKey("a".repeat(64));
+    const key = await importCsrfKey(CSRF_HEX_KEY);
     const app = new Forge();
     mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
 
@@ -544,7 +546,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   });
 
   it("keeps two routes with different caps independent within the same isolate", async () => {
-    const key = await importCsrfKey("a".repeat(64));
+    const key = await importCsrfKey(CSRF_HEX_KEY);
     const app = new Forge();
     mapHandler(app, "POST", "/big", {
       middleware: [csrfProtection({ secret: () => key, subject: false, maxBytes: RAISED })],
@@ -789,7 +791,7 @@ describe("defineAction — bot guards", () => {
 });
 
 describe("defineAction — injected field derivation", () => {
-  const SECRET = "a".repeat(64);
+  const SECRET = CSRF_HEX_KEY;
 
   function keysAction() {
     return defineAction({ schema: NameSchema, handle: (data) => new Response(Object.keys(data).join(",")) });

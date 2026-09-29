@@ -195,20 +195,6 @@ describe("createFactorStore", () => {
     expect(db.calls[0]?.params).toEqual(["totp-app", 6, base64urlDecode("AAAAAAAA")]);
   });
 
-  it("clears both the confirmation and the spent guesses on the one statement that unenrols", async () => {
-    const [client, db] = writerOf(() => 1);
-    expect(await createFactorStore(client).unconfirm(OTHER_ID, USER_ID, 7_000)).toEqual({ ok: true, data: true });
-    expect(db.calls).toHaveLength(1);
-    expect(db.calls[0]?.sql).toContain("SET confirmed_at = NULL, failed_attempts = 0");
-    expect(db.calls[0]?.params).toEqual([7_000, uuidToBytes(OTHER_ID), uuidToBytes(USER_ID)]);
-  });
-
-  it("carries the owner in the unenrolling statement, so another account's factor id changes no row", async () => {
-    const [client, db] = writerOf(() => 0);
-    expect(await createFactorStore(client).unconfirm(OTHER_ID, USER_ID, 7_000)).toEqual({ ok: true, data: false });
-    expect(db.calls[0]?.sql).toContain("WHERE id = ? AND user_id = ?");
-  });
-
   it("advances the counter once, and reports no change on a replay at the same or a lower step", async () => {
     let accepted: number | null = null;
     const [client, db] = writerOf((sql, params) => {
@@ -275,6 +261,49 @@ describe("createFactorStore", () => {
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 2 + LOCKOUT, LOCKOUT))).toBe(true);
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 3 + LOCKOUT, LOCKOUT))).toBe(true);
     expect(await admits(factors.countAttempt(USER_ID, "totp-app", 2, 4 + LOCKOUT, LOCKOUT))).toBe(false);
+  });
+});
+
+describe("createFactorStore — remove", () => {
+  const flat = (sql: string) => sql.replace(/\s+/g, " ").trim();
+  const HOLDS_ANOTHER = "EXISTS (SELECT 1 FROM auth_factors WHERE user_id = ? AND kind IN (?, ?) AND confirmed_at IS NOT NULL)";
+
+  it("drops the factor, then the codes and the recovery-code row only where no confirmed totp-app or passkey remains, in one batch", async () => {
+    const [client, db] = writerOf(() => 1);
+    expect(await createFactorStore(client).remove(OTHER_ID, USER_ID)).toEqual({ ok: true, data: true });
+    const owner = uuidToBytes(USER_ID);
+    expect(db.calls.map((call) => ({ sql: flat(call.sql), params: call.params }))).toEqual([
+      { sql: "DELETE FROM auth_factors WHERE id = ? AND user_id = ?", params: [uuidToBytes(OTHER_ID), owner] },
+      { sql: `DELETE FROM auth_recovery_codes WHERE user_id = ? AND NOT ${HOLDS_ANOTHER}`, params: [owner, owner, "totp-app", "passkey"] },
+      {
+        sql: `DELETE FROM auth_factors WHERE user_id = ? AND kind = ? AND NOT ${HOLDS_ANOTHER}`,
+        params: [owner, "recovery-code", owner, "totp-app", "passkey"],
+      },
+    ]);
+  });
+
+  it("answers from the factor's own delete, not from the codes it may have cleared", async () => {
+    const [client] = writerOf((sql) => (flat(sql).startsWith("DELETE FROM auth_factors WHERE id = ?") ? 0 : 10));
+    expect(await createFactorStore(client).remove(OTHER_ID, USER_ID)).toEqual({ ok: true, data: false });
+  });
+
+  it("answers `false` for an id or owner that is not a UUID, without a statement", async () => {
+    const [client, db] = writerOf(() => 1);
+    const factors = createFactorStore(client);
+    const outcomes = [await factors.remove("nope", USER_ID), await factors.remove(OTHER_ID, "nope")];
+    expect({ outcomes, calls: db.calls.length }).toEqual({
+      outcomes: [
+        { ok: true, data: false },
+        { ok: true, data: false },
+      ],
+      calls: 0,
+    });
+  });
+
+  it("reports a failing batch as `unavailable` under its own operation name", async () => {
+    const [client] = clientOf(() => [], { failOn: () => new Error("D1_ERROR: network lost") });
+    const removed = await createFactorStore(client).remove(OTHER_ID, USER_ID);
+    expect(removed.ok === false && `${removed.error.code} ${removed.error.operation}`).toBe("unavailable factors.remove");
   });
 });
 

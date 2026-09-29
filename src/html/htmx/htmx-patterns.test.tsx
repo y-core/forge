@@ -168,16 +168,17 @@ describe("infiniteScroll", () => {
 });
 
 describe("formSubmit", () => {
-  it("defaults: swap=outerHTML, disabledElt=this", () => {
+  it("defaults: swap=outerHTML, disable=this", () => {
     const attrs = formSubmit({ post: "/submit", target: "#form" });
     expect(attrs["hx-post"]).toBe("/submit");
     expect(attrs["hx-swap"]).toBe("outerHTML");
-    expect(attrs["hx-disabled-elt"]).toBe("this");
+    expect(attrs["hx-disable"]).toBe("this");
+    expect(attrs).not.toHaveProperty("hx-disabled-elt");
   });
 
-  it("overrides disabledElt and includes encoding/pushUrl", () => {
-    const attrs = formSubmit({ post: "/submit", target: "#form", disabledElt: ".btn", encoding: "multipart/form-data", pushUrl: "/done" });
-    expect(attrs["hx-disabled-elt"]).toBe(".btn");
+  it("overrides disable and includes encoding/pushUrl", () => {
+    const attrs = formSubmit({ post: "/submit", target: "#form", disable: ".btn", encoding: "multipart/form-data", pushUrl: "/done" });
+    expect(attrs["hx-disable"]).toBe(".btn");
     expect(attrs["hx-encoding"]).toBe("multipart/form-data");
     expect(attrs["hx-push-url"]).toBe("/done");
   });

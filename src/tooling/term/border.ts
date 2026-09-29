@@ -54,7 +54,7 @@ export const BORDERS: Readonly<Record<"none" | "ascii" | "single" | "markdown", 
     bottomJoin: "+",
     bottomRight: "+",
   }),
-  /** A fully boxed grid in single-line box-drawing characters — what `forge sync` prints. */
+  /** A fully boxed grid in single-line box-drawing characters — what `forge cf sync` prints. */
   single: style({
     topLeft: "┌",
     topBody: "─",

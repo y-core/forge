@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 import type { StringFlagDef } from "../../cli/types";
 import { resolveColorLevel } from "../../term/capability";
 import { createColorize, PLAIN } from "../../term/color";
-import type { DeploymentTarget } from "../types";
 import { RESOURCE_TYPES } from "../types";
 import type { SyncNote, SyncResult } from "../types";
 import {
@@ -134,14 +133,12 @@ describe("parseResources()", () => {
 });
 
 describe("printResults()", () => {
-  const WORKER: DeploymentTarget = { kind: "worker", name: "commands-fixture" };
-
-  function capture(results: SyncResult[], target: DeploymentTarget = WORKER, prefix = "COMMANDS", notes: SyncNote[] = []): string[] {
+  function capture(results: SyncResult[], scriptName = "commands-fixture", prefix = "COMMANDS", notes: SyncNote[] = []): string[] {
     const written: string[] = [];
     const original = console.log;
     console.log = (line?: unknown) => void written.push(String(line ?? ""));
     try {
-      printResults(results, target, prefix, notes);
+      printResults(results, scriptName, prefix, notes);
     } finally {
       console.log = original;
     }
@@ -198,10 +195,6 @@ describe("printResults()", () => {
     expect(lines.filter((l) => l.includes("worker script"))).toEqual(["worker script · commands-fixture"]);
   });
 
-  it("names a pages project as one", () => {
-    expect(capture([VAR], { kind: "pages", name: "site" })[0]).toBe("pages project · site");
-  });
-
   it("groups the rows by actor, into five sections", () => {
     // Reversed on the way in: the order is the report's, not the handlers'.
     expect(headings(capture([...ALL].reverse()))).toEqual([
@@ -243,14 +236,14 @@ describe("printResults()", () => {
     expect(notes).toEqual([
       ".dev.vars declared keys with no marker and no matching vars in wrangler.jsonc",
       "wrangler.jsonc declared keys; `deploy` writes them, sync only reports",
-      ".dev.vars secrets marked '# forge:push', created remotely under their own name",
+      ".dev.vars secrets marked '# forge:push' or '# forge:ring', created remotely under their own name; an existing one is never overwritten",
       "Bindings created as COMMANDS_<BINDING> with the id written back into wrangler.jsonc",
       ".dev.vars keys marked '# forge:generate'; --commit generates remote secret; --rotate rotates secrets",
     ]);
   });
 
   it("names the convention without a prefix when there is none", () => {
-    const lines = capture([PROVISIONED], WORKER, "");
+    const lines = capture([PROVISIONED], "commands-fixture", "");
     expect(noteUnder(lines, "Provisioned by --commit")).toBe("Bindings created as <BINDING> with the id written back into wrangler.jsonc");
   });
 
@@ -323,13 +316,13 @@ describe("printResults()", () => {
   });
 
   it("renders a note under the section it belongs to, not as a row", () => {
-    const lines = capture([SECRET], WORKER, "COMMANDS", [{ resourceType: "secrets", message: "No .dev.vars at /tmp/.dev.vars." }]);
+    const lines = capture([SECRET], "commands-fixture", "COMMANDS", [{ resourceType: "secrets", message: "No .dev.vars at /tmp/.dev.vars." }]);
     expect(lines.at(-1)).toBe("  No .dev.vars at /tmp/.dev.vars.");
     expect(lines.some((l) => l.includes("(none)"))).toBe(false);
   });
 
   it("prints a section carrying only a note", () => {
-    const lines = capture([], WORKER, "", [{ resourceType: "secrets", message: "No .dev.vars at /tmp/.dev.vars." }]);
+    const lines = capture([], "commands-fixture", "", [{ resourceType: "secrets", message: "No .dev.vars at /tmp/.dev.vars." }]);
     expect(
       lines
         .filter((l) => l.length > 0 && !l.startsWith(" "))
@@ -438,7 +431,7 @@ describe("--check and --json", () => {
     });
 
     it("writes the document and nothing else, byte for byte", () => {
-      const report = { target: "worker", results, pending: pendingRows(results).length };
+      const report = { scriptName: "proj", results, pending: pendingRows(results).length };
       expect(JSON.stringify(report, null, 2)).toBe(createColorize(3).strip(JSON.stringify(report, null, 2)));
     });
 
@@ -447,7 +440,7 @@ describe("--check and --json", () => {
       const original = console.log;
       console.log = (line?: unknown) => void written.push(String(line ?? ""));
       try {
-        printResults(results, { kind: "worker", name: "proj" }, "PROJ", [], { style: PLAIN });
+        printResults(results, "proj", "PROJ", [], { style: PLAIN });
       } finally {
         console.log = original;
       }
@@ -459,7 +452,7 @@ describe("--check and --json", () => {
       const original = console.log;
       console.log = (line?: unknown) => void written.push(String(line ?? ""));
       try {
-        printResults(results, { kind: "worker", name: "proj" }, "PROJ", [], { style: createColorize(3) });
+        printResults(results, "proj", "PROJ", [], { style: createColorize(3) });
       } finally {
         console.log = original;
       }
@@ -469,14 +462,12 @@ describe("--check and --json", () => {
 });
 
 describe("printResults() — colour and width", () => {
-  const WORKER_T: DeploymentTarget = { kind: "worker", name: "proj" };
-
   function capture(results: SyncResult[], options: Parameters<typeof printResults>[4]): string {
     const written: string[] = [];
     const original = console.log;
     console.log = (line?: unknown) => void written.push(String(line ?? ""));
     try {
-      printResults(results, WORKER_T, "PROJ", [], options);
+      printResults(results, "proj", "PROJ", [], options);
     } finally {
       console.log = original;
     }
@@ -586,9 +577,98 @@ describe("--rotate and --local", () => {
     expect(readFileSync(devVars, "utf-8")).toContain("SESSION_SECRET=keep-me");
   });
 
-  it("expands --rotate all to every rotate-marked key, and only those", () => {
-    const config = makeProject(`${GENERATE_MARKER}\nA=1\n# forge:push\nB=2\nC=3\n${GENERATE_MARKER}\nD=4\n`);
-    expect(resolveRotation("all", config)).toEqual(["A", "D"]);
+  it("expands --local --rotate all to every rotate- or ring-marked key, and only those", () => {
+    const config = makeProject(`${GENERATE_MARKER}\nA=1\n# forge:push\nB=2\nC=3\n${GENERATE_MARKER}\nD=4\n# forge:ring\nE=5\n`);
+    expect(resolveRotation("all", config, { local: true })).toEqual(["A", "D", "E"]);
+  });
+
+  it("leaves every ring out of --rotate all bound for Cloudflare", () => {
+    const config = makeProject(`${GENERATE_MARKER}\nA=1\n# forge:ring\nE=5\n`);
+    expect(resolveRotation("all", config)).toEqual(["A"]);
+  });
+
+  describe("a ring bound for Cloudflare", () => {
+    const auth = { "account-id": "acct", "api-token": "token" };
+
+    async function runCountingRequests(flags: Record<string, unknown>): Promise<{ error: unknown; requests: number }> {
+      const original = globalThis.fetch;
+      let requests = 0;
+      globalThis.fetch = (async () => {
+        requests += 1;
+        throw new Error("no request may be made");
+      }) as unknown as typeof globalThis.fetch;
+      try {
+        await run({ ...auth, ...flags });
+        return { error: undefined, requests };
+      } catch (error) {
+        return { error, requests };
+      } finally {
+        globalThis.fetch = original;
+      }
+    }
+
+    it("refuses --commit --rotate RING before any request, and says production rings are rotated by hand", async () => {
+      const config = makeProject("# forge:ring\nAPP_SEAL_KEY_RING=new-key,old-key\n");
+      const { error, requests } = await runCountingRequests({ commit: true, yes: true, config, rotate: "APP_SEAL_KEY_RING" });
+
+      expect(requests).toBe(0);
+      expect(String(error)).toContain("Refusing to rotate a key ring on Cloudflare from .dev.vars: APP_SEAL_KEY_RING");
+      expect(String(error)).toContain("prepend a fresh key to the current production ring, then run `wrangler secret put <NAME>`");
+      expect(String(error)).toContain('"Rotating a key ring" in the forge cf README');
+    });
+
+    it("refuses --rotate RING without --commit too, since the preview is of a refused write", async () => {
+      const config = makeProject("# forge:ring\nAPP_SEAL_KEY_RING=new-key,old-key\n");
+      const { error, requests } = await runCountingRequests({ config, rotate: "APP_SEAL_KEY_RING" });
+      expect(requests).toBe(0);
+      expect(String(error)).toContain("Refusing to rotate a key ring");
+    });
+
+    it("finds nothing for --commit --rotate all when only rings are marked, rather than writing one", async () => {
+      const config = makeProject("# forge:ring\nAPP_SEAL_KEY_RING=new-key,old-key\n");
+      const { error, requests } = await runCountingRequests({ commit: true, yes: true, config, rotate: "all" });
+      expect(requests).toBe(0);
+      expect(String(error)).toContain('--rotate all found no keys marked "# forge:generate" in');
+    });
+  });
+
+  it("prepends to a ring under --local --commit without asking, since no key is destroyed", async () => {
+    const config = makeProject("# forge:ring\nAPP_SEAL_KEY_RING=old-key\n");
+    const devVars = join(dirname(config), ".dev.vars");
+
+    await run({ local: true, commit: true, config, rotate: "APP_SEAL_KEY_RING" });
+
+    expect(readFileSync(devVars, "utf-8")).toMatch(/^# forge:ring\nAPP_SEAL_KEY_RING=[0-9a-f]{64},old-key\n$/);
+  });
+
+  describe("what --local --commit --rotate says about Cloudflare afterwards", () => {
+    async function captureLocalRotate(devVars: string, rotate: string): Promise<string[]> {
+      const config = makeProject(devVars);
+      const written: string[] = [];
+      const original = console.log;
+      console.log = (line?: unknown) => void written.push(String(line ?? ""));
+      try {
+        await run({ local: true, commit: true, yes: true, config, rotate });
+      } finally {
+        console.log = original;
+      }
+      return written;
+    }
+
+    it("names only the by-hand route after a ring-only rotation, since --commit --rotate refuses a ring", async () => {
+      const lines = await captureLocalRotate("# forge:ring\nAPP_SEAL_KEY_RING=old-key\n", "APP_SEAL_KEY_RING");
+      expect(lines.filter((line) => line.includes("--commit --rotate"))).toEqual([]);
+      expect(lines.at(-1)).toContain("A deployed key ring is rotated by hand");
+    });
+
+    it("names only a mixed rotation's generated secrets for --commit --rotate, leaving the ring to the by-hand route", async () => {
+      const devVars = `${GENERATE_MARKER}\nSESSION_SECRET=old\n# forge:ring\nAPP_SEAL_KEY_RING=old-key\n${GENERATE_MARKER}\nCSRF_SECRET=old\n`;
+      const lines = await captureLocalRotate(devVars, "all");
+      const hints = lines.filter((line) => line.includes("--commit --rotate"));
+      expect(hints).toEqual(["Cloudflare is unchanged — rotate there with --commit --rotate SESSION_SECRET,CSRF_SECRET, without --local."]);
+      expect(hints[0]).not.toContain("APP_SEAL_KEY_RING");
+      expect(lines.at(-1)).toContain("A deployed key ring is rotated by hand");
+    });
   });
 
   it("refuses --rotate all when nothing is marked, rather than silently doing nothing", () => {

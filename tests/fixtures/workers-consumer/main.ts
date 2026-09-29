@@ -5,5 +5,4 @@ import "@y-core/forge/auth/client";
 import { resume } from "@y-core/forge/ui/client";
 import { htmx } from "@y-core/forge/ui/client/htmx";
 
-htmx.config.responseHandling.unshift({ code: "422", swap: true });
 resume();

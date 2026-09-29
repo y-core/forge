@@ -15,13 +15,12 @@ export interface HxAttrsProps {
   trigger?: string;
   include?: string;
   indicator?: string;
-  disabledElt?: string;
+  disable?: string;
   sync?: string;
   confirm?: string;
   encoding?: string;
   pushUrl?: string;
   replaceUrl?: string;
-  params?: string;
   values?: Record<string, string>;
   headers?: Record<string, string>;
   boost?: boolean;
@@ -31,9 +30,9 @@ export interface HxAttrsProps {
 export interface HxRequest {
   enabled: boolean;
   boosted: boolean;
-  trigger: string;
+  source: string;
   target: string;
-  triggerName: string;
+  requestType: "full" | "partial" | "";
   currentUrl: string;
 }
 
@@ -47,8 +46,6 @@ export interface HxResponseProps {
   pushUrl?: string;
   replaceUrl?: string;
   trigger?: string;
-  triggerAfterSettle?: string;
-  triggerAfterSwap?: string;
   retarget?: string;
   reswap?: string;
 }

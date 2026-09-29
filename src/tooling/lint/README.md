@@ -168,6 +168,9 @@ the bundle does not apply and a rule edit takes effect with nothing regenerated.
 `plugin.mjs` — the file a consumer loads — is generated. Run `bun run gen:bundles` in the same commit as any rule change; the gate's
 `validate-lint-plugin` step re-bundles the source and fails on the drift otherwise.
 
+**Spell the `.ts` extension on every import the plugin reaches.** oxlint loads the source through Node's ESM resolver, which does not resolve an
+extensionless specifier; `tsconfig.json` sets `allowImportingTsExtensions` for exactly this.
+
 ---
 
 ## See also

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import type { DeploymentTarget } from "../types";
 import type { SyncConfig, WranglerConfig } from "../types";
 import { syncBindings } from "./engine";
 import type { ResourceHandler } from "./handlers/types";
@@ -32,15 +31,9 @@ describe("syncBindings()", () => {
     expect(out.results[0]?.binding).toBe("MY_KV");
   });
 
-  it("reports the surface it compared against", async () => {
-    // Returned rather than re-derived: `printResults` strips the surface prefix off every
-    // detail, and must strip the exact string the handlers put there.
-    const worker = await syncBindings(baseConfig, { auth: AUTH }, [makeKvHandler("in-sync")]);
-    expect(worker.target).toEqual({ kind: "worker", name: "my-worker" });
-
-    const pages: WranglerConfig = { name: "site", pages_build_output_dir: "dist", kv_namespaces: [{ binding: "KV" }] };
-    const out = await syncBindings(pages, { auth: AUTH }, [makeKvHandler("in-sync")]);
-    expect(out.target).toEqual({ kind: "pages", name: "site" });
+  it("reports the Worker script it compared against", async () => {
+    const out = await syncBindings(baseConfig, { auth: AUTH, scriptName: "override" }, [makeKvHandler("in-sync")]);
+    expect(out.scriptName).toBe("override");
   });
 
   it("carries a handler's notes out, tagged with the type that raised them", async () => {
@@ -155,8 +148,8 @@ describe("syncBindings()", () => {
 });
 
 describe("syncBindings() — deployment target", () => {
-  function captureTarget(): { handler: ResourceHandler; seen: () => DeploymentTarget | undefined } {
-    let captured: DeploymentTarget | undefined;
+  function captureTarget(): { handler: ResourceHandler; seen: () => string | undefined } {
+    let captured: string | undefined;
     return {
       seen: () => captured,
       handler: {
@@ -164,31 +157,30 @@ describe("syncBindings() — deployment target", () => {
         displayName: "KV",
         extract: (c: WranglerConfig) => c.kv_namespaces ?? [],
         reconcile: async (entries, ctx) => {
-          captured = ctx.target;
+          captured = ctx.scriptName;
           return { entries, results: [] };
         },
       },
     };
   }
 
-  it("threads a pages target derived from the config", async () => {
+  it("refuses a Cloudflare Pages config before any handler runs", async () => {
     const { handler, seen } = captureTarget();
-    await syncBindings({ name: "engine-fixture", pages_build_output_dir: "./public", kv_namespaces: [{ binding: "KV" }] }, { auth: AUTH }, [
-      handler,
-    ]);
-    expect(seen()).toEqual({ kind: "pages", name: "engine-fixture" });
+    const pages: WranglerConfig = { name: "engine-fixture", pages_build_output_dir: "./public", kv_namespaces: [{ binding: "KV" }] };
+    await expect(syncBindings(pages, { auth: AUTH }, [handler])).rejects.toThrow("forge supports Workers only");
+    expect(seen()).toBeUndefined();
   });
 
-  it("threads a worker target when main is present", async () => {
+  it("threads the config's name to the handlers when main is present", async () => {
     const { handler, seen } = captureTarget();
     await syncBindings({ name: "w", main: "src/index.ts", kv_namespaces: [{ binding: "KV" }] }, { auth: AUTH }, [handler]);
-    expect(seen()).toEqual({ kind: "worker", name: "w" });
+    expect(seen()).toBe("w");
   });
 
-  it("uses the overridden scriptName as the target name", async () => {
+  it("threads an overridden scriptName in place of the config's name", async () => {
     const { handler, seen } = captureTarget();
     await syncBindings({ name: "config-name", kv_namespaces: [{ binding: "KV" }] }, { auth: AUTH, scriptName: "override" }, [handler]);
-    expect(seen()?.name).toBe("override");
+    expect(seen()).toBe("override");
   });
 });
 

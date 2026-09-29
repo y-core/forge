@@ -39,13 +39,6 @@ export function createAnonymousSession<Bindings = Record<string, unknown>>(optio
 
     const resolved = options.secret(c);
     const secrets: [string, ...string[]] = typeof resolved === "string" ? [resolved] : resolved;
-    // Per element, never `secrets.length`: on the array arm that would measure the rotation's size
-    // rather than a secret, and a valid two-secret rotation would throw "got 2".
-    for (const secret of secrets) {
-      if (secret.length < 32) {
-        throw new Error(`createAnonymousSession: session secret must be at least 32 characters (got ${secret.length})`);
-      }
-    }
     const cookie = createSignedCookie(cookieName, { secrets, sameSite: "Lax", maxAge });
     const storage = options.kv
       ? createKVSessionStorage(options.kv(c), {

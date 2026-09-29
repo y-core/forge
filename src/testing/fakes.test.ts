@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { hexToBytes } from "../crypto/mod";
 import { createD1Client } from "../storage/db/client";
 import { requireRowsWritten, sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";
@@ -456,6 +457,80 @@ describe("fakeKV — platform refusals", () => {
       }),
     );
     expect(new Uint8Array((await kv.get("stream", { type: "arrayBuffer" })) as ArrayBuffer)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+});
+
+describe("fakeR2 — sha256 checksum refusals", () => {
+  const HELLO_SHA256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+  async function refusalOf(pending: Promise<unknown>): Promise<{ isError: boolean; name: unknown; code: unknown }> {
+    try {
+      await pending;
+    } catch (thrown) {
+      const error = thrown as Error & { code?: unknown };
+      return { isError: thrown instanceof Error, name: error.name, code: error.code };
+    }
+    throw new Error("expected put to reject");
+  }
+
+  const mismatches: { label: string; body: string; sha256: string | Uint8Array }[] = [
+    { label: "a hex digest of a different body", body: "hellO", sha256: HELLO_SHA256 },
+    { label: "a byte digest of a different body", body: "hellO", sha256: hexToBytes(HELLO_SHA256) },
+  ];
+
+  for (const { label, body, sha256 } of mismatches) {
+    it(`rejects ${label} as R2Error 10037 and stores nothing`, async () => {
+      const bucket = fakeR2();
+      expect(await refusalOf(bucket.put("k", body, { sha256 }))).toEqual({ isError: true, name: "R2Error", code: 10037 });
+      expect(await bucket.head("k")).toBeNull();
+    });
+  }
+
+  const malformed: { label: string; sha256: string | Uint8Array; message: string }[] = [
+    { label: "a truncated hex digest", sha256: HELLO_SHA256.slice(0, -2), message: "SHA-256 is 64 hex characters, not 62" },
+    { label: "an empty hex digest", sha256: "", message: "SHA-256 is 64 hex characters, not 0" },
+    { label: "a truncated byte digest", sha256: hexToBytes(HELLO_SHA256).subarray(1), message: "SHA-256 is 32 bytes, not 31" },
+    { label: "a non-hex digest", sha256: `${HELLO_SHA256.slice(0, -1)}g`, message: "Provided SHA-256 wasn't a valid hex string" },
+  ];
+
+  for (const { label, sha256, message } of malformed) {
+    it(`rejects ${label} as a TypeError with no code and stores nothing`, async () => {
+      const bucket = fakeR2();
+      const thrown = await bucket.put("k", "hello", { sha256 }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeInstanceOf(TypeError);
+      expect((thrown as TypeError).message).toBe(message);
+      expect(thrown).not.toHaveProperty("code");
+      expect(await bucket.head("k")).toBeNull();
+    });
+  }
+
+  it("leaves an existing object untouched when the replacement is refused", async () => {
+    const bucket = fakeR2({ k: "original" });
+    await refusalOf(bucket.put("k", "hellO", { sha256: HELLO_SHA256 }));
+    expect(await (await bucket.get("k"))?.text()).toBe("original");
+  });
+
+  it("verifies a streamed body against its digest", async () => {
+    const bucket = fakeR2();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("hel"));
+        controller.enqueue(new TextEncoder().encode("lo"));
+        controller.close();
+      },
+    });
+    await bucket.put("k", stream, { sha256: HELLO_SHA256.toUpperCase() });
+    expect(await (await bucket.get("k"))?.text()).toBe("hello");
+  });
+
+  it("verifies the viewed bytes of an offset ArrayBufferView, not its whole buffer", async () => {
+    const bucket = fakeR2();
+    const backing = new TextEncoder().encode("xxhelloyy");
+    await bucket.put("k", backing.subarray(2, 7), { sha256: HELLO_SHA256 });
+    expect(await (await bucket.get("k"))?.text()).toBe("hello");
   });
 });
 

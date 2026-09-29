@@ -15,6 +15,7 @@ import { authLimit } from "../limits";
 import type { AuthAccessToken, AuthFactorKind } from "../types";
 import { authCtx, resolveAuthIdentity } from "./identity";
 import { authEnrolTarget } from "./paths";
+import { createAuthRedirect } from "./redirect";
 import { AUTH_ROUTE_GROUPS } from "./routes";
 import type { AccessTokenGuardOptions, AuthIdentity } from "./types";
 import type { AuthGuardName, AuthMedium, AuthRouteGroup } from "./types";
@@ -73,18 +74,18 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
         const replayable = method === "GET" || method === "HEAD";
         const target = new URL(options.signinPath, context.url);
         if (replayable) target.searchParams.set(returnParam, safeRedirectPath(`${context.url.pathname}${context.url.search}`, "/"));
-        return createRedirectResponse(`${target.pathname}${target.search}`, replayable ? undefined : 303);
+        return createAuthRedirect(context, `${target.pathname}${target.search}`, replayable ? 302 : 303);
       });
     }
 
-    authCtx.set(context, identity);
+    establish(context, identity, options);
 
     // The session is established before the second factor is proved, so without this the owed
     // step-up is only enforced by the groups that happen to list an enrolment guard.
     if (options.clearsStepUp !== true) {
       const resolved = await resolveFactorDemand(context, identity, options);
       if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
-      if (resolved.status === "step-up-required" && !stepUpHolds(identity.stepUpAt, options.stepUpMaxAgeMs, guardNow(options))) {
+      if (authStepUpOwed(resolved, identity.stepUpAt, stepUpWindow(options))) {
         return refuse(options.medium, STEP_UP_OWED, 403, () => createRedirectResponse(options.stepUpPath, 303));
       }
     }
@@ -94,12 +95,21 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
 }
 
 /** Establishes the request's identity when the session carries one, and admits an anonymous request unchanged. @public */
-export function resolveAuth<Bindings = Record<string, unknown>>(options: Pick<AuthGuardOptions<Bindings>, "users" | "now">): Middleware {
+export function resolveAuth<Bindings = Record<string, unknown>>(
+  options: Pick<AuthGuardOptions<Bindings>, "users" | "stepUpMaxAgeMs" | "now">,
+): Middleware {
+  assertStepUpMaxAge("resolveAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
   return async (context, next) => {
     const identity = await establishIdentity<Bindings>(context, options);
-    if (identity !== null) authCtx.set(context, identity);
+    if (identity !== null) establish(context, identity, options);
     return next();
   };
+}
+
+/** Puts `identity` on `context` beside the step-up window this guard measures its mark against. */
+function establish(context: Parameters<Middleware>[0], identity: AuthIdentity, options: Pick<AuthGuardOptions, "stepUpMaxAgeMs" | "now">): void {
+  authCtx.set(context, identity);
+  stepUpWindowCtx.set(context, stepUpWindow(options));
 }
 
 /** The identity `requireAuth` established, or a throw naming the guard that was ordered before it. */
@@ -189,6 +199,32 @@ function stepUpHolds(stepUpAt: number | null, maxAgeMs: number | undefined, now:
   return maxAgeMs === undefined || age < maxAgeMs;
 }
 
+/** The lifetime a step-up mark is measured against, and the clock reading it is measured at. */
+interface AuthStepUpWindow {
+  readonly maxAgeMs: number | undefined;
+  readonly now: number;
+}
+
+const stepUpWindowCtx = contextVar<AuthStepUpWindow>("auth.stepUpWindow");
+
+/** The window `options` configures, read on this request's clock. */
+function stepUpWindow(options: { readonly stepUpMaxAgeMs?: number; readonly now?: () => number }): AuthStepUpWindow {
+  return { maxAgeMs: options.stepUpMaxAgeMs, now: guardNow(options) };
+}
+
+// The verify page reads the window of the guard that established the identity rather than a setting
+// of its own: were the two to judge a mark differently, a stale one would bounce between verify and enrol.
+/** The window the guard that established this request's identity measures a mark against, or `undefined` when no guard did. @internal */
+export function authStepUpWindow(context: Parameters<Middleware>[0]): AuthStepUpWindow | undefined {
+  return stepUpWindowCtx.getOptional(context);
+}
+
+/** Whether `resolved` demands a second factor that a session marked `stepUpAt` has not proved inside `window`; no window proves nothing. @internal */
+export function authStepUpOwed(resolved: AuthFactorResolution, stepUpAt: number | null, window: AuthStepUpWindow | undefined): boolean {
+  const demanded = resolved.status === "step-up-required" || (resolved.status === "enrolment-required" && resolved.stepUpKinds.length > 0);
+  return demanded && (window === undefined || !stepUpHolds(stepUpAt, window.maxAgeMs, window.now));
+}
+
 // One reader for both guards, so the demand is computed in one place and they only disagree about which side of it they admit.
 async function resolveFactorDemand<Bindings>(
   context: Parameters<Middleware>[0],
@@ -212,12 +248,10 @@ async function resolveAuthDemand<Bindings>(
 ): Promise<AuthDemand> {
   const resolved = await resolveFactorDemand(context, identity, options);
   if (resolved === undefined) return { status: "unknown" };
-  if (resolved.status === "enrolment-required") return { status: "enrolment", kinds: resolved.kinds };
   // `resolve` reads confirmed factor rows and nothing else, so it answers `step-up-required` on
   // every request of a session that has already verified. The session's own mark is the memory it has not got.
-  if (resolved.status === "step-up-required") {
-    return stepUpHolds(identity.stepUpAt, options.stepUpMaxAgeMs, guardNow(options)) ? { status: "none" } : { status: "step-up" };
-  }
+  if (authStepUpOwed(resolved, identity.stepUpAt, stepUpWindow(options))) return { status: "step-up" };
+  if (resolved.status === "enrolment-required") return { status: "enrolment", kinds: resolved.kinds };
   return { status: "none" };
 }
 
@@ -350,7 +384,11 @@ function guardMiddleware<Bindings>(
 ): Middleware {
   const medium = group.medium;
   if (name === "resolve-auth")
-    return resolveAuth({ users: options.auth.users, ...(options.auth.now === undefined ? {} : { now: options.auth.now }) });
+    return resolveAuth({
+      users: options.auth.users,
+      ...(options.auth.now === undefined ? {} : { now: options.auth.now }),
+      ...(options.enrolment.stepUpMaxAgeMs === undefined ? {} : { stepUpMaxAgeMs: options.enrolment.stepUpMaxAgeMs }),
+    });
   if (name === "require-auth")
     return requireAuth({
       ...options.auth,

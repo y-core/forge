@@ -20,7 +20,7 @@ audience: consumer
 - §1a bun:test Primitives: import source and nesting limit
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
 - §1c The Browser Set: real Chromium behind its own verb
-- §1d Waiting on an htmx Swap: settled, not merely swapped
+- §1d Waiting on an htmx Swap: `htmx:after:swap` on `document`, once the new markup is live
 - §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
 - §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, and the published helper that starts it
 - §2 Co-Located Test Files: tests live beside their source
@@ -141,13 +141,19 @@ for the slider track would pass whatever the track actually did. `slider.browser
 
 ### 1d. Waiting on an htmx Swap
 
-**A case that interacts with the page after an htmx swap waits on `htmx:afterSettle`, never on the state the swap wrote.** htmx inserts the fragment
-into the DOM immediately, then binds its `hx-*` trigger listeners in a settle task deferred by `htmx.config.defaultSettleDelay` — so every swap
-leaves a window in which the new markup is fully readable and completely inert. A poll on the swapped-in attributes therefore returns _inside_ that
-window, and the next interaction fires no request at all.
+**A case that interacts with the page after an htmx swap waits on `htmx:after:swap`, listened for on `document`, never on the state the swap
+wrote.** htmx inserts the fragment, settles it, and binds the new markup's `hx-*` listeners before it fires `htmx:after:swap`, so the event marks
+the moment the new markup is live. Before it there is a window in which the markup is fully readable and completely inert. A poll on the swapped-in
+attributes returns _inside_ that window, and the next interaction fires no request at all.
 
-Whether the poll's tick lands before or after the settle is a coin flip that CPU contention biases, which is what makes the resulting failure
-load-dependent rather than reproducible. `resume.browser.ts` awaits `htmx:afterSettle` on `document.body` before it interacts. Raising
+**Listen on `document`, not on an element.** htmx dispatches the event on the element that issued the request, and when the swap removed that
+element it dispatches on the swap target or on `document` instead. The event bubbles, so `document` is the one listener that hears every swap.
+
+**The nearest-sounding event is the wrong wait.** htmx 4 has no `htmx:afterSettle`, and its `htmx:after:settle` fires _before_ the new content is
+processed, so waiting on it reopens the same window.
+
+Whether a poll's tick lands before or after that processing is a coin flip that CPU contention biases, which is what makes the resulting failure
+load-dependent rather than reproducible. `resume.browser.ts` awaits `htmx:after:swap` on `document` before it interacts. Raising
 `defaultSettleDelay` is how such a race is made deterministic while it is being diagnosed; production settle timing is never changed to suit a spec.
 
 ### 1e. Media Options and the Harness `test`
@@ -194,7 +200,13 @@ the `--port` the helper reserves, wrangler binds a port of its own choosing whil
 and the loser's workerd exits with `Address already in use` — reserving the inspector port as well does not prevent it. The lock is held from
 before the port is reserved until the server answers, so two spec files under `--parallel=2` start one after the other and then run side by side.
 A holder whose process is gone, or that has held the lock past the readiness budget, is taken over. The lock is `src/testing/dev-server-lock.ts`,
-which the helper alone imports.
+which `src/testing/dev-server-start.ts` alone imports.
+
+**A start that does not answer is abandoned and started again on a fresh port.** A `wrangler dev` whose runtime is up can still hold every request
+to its `--port` indefinitely: its proxy queues requests until it is told to forward them, and once, under a gate running at twice its usual time,
+that message never came — the runtime was up a second after spawn and the probe went unanswered for the whole budget. Waiting does not recover
+that process and a new one does, so each attempt gets 60s of the 180s budget. A process that exits ends its attempt at once rather than being
+waited out, which is how a port lost to another process between reservation and bind presents.
 
 **`stop()` kills the process group, not the CLI.** wrangler spawns workerd and esbuild as its own children, so a signal to the CLI alone leaves a
 `workerd` pair reparented to PID 1, ignoring `SIGTERM` and holding a core each. The helper spawns `detached`, kills `-pid` with `SIGKILL`, and binds
@@ -467,7 +479,7 @@ makes visibly. `checkExports` supports this directly: a non-`mod.ts` export targ
 "published but off the barrel" is a shape the gate holds rather than one it tolerates.
 
 **A suite that imports it references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a types-only subpath declaring exactly
-the node surface `workerd.ts` reaches — the `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
+the node surface `startDevServer` reaches — the `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
 file that reaches `startDevServer`:
 
 ```ts
@@ -549,7 +561,7 @@ not. `key` is `barrel/component`, the spelling a coverage manifest's own keys us
 
 [errors-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
-[namespaces-3c]: NAMESPACES.md#3c-toolinglint--a-namespace-whose-barrel-is-also-a-plugin
+[namespaces-3c]: NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [nd-1c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1c-what-the-export-gate-proves
 [pdf-readme]: ../src/output/pdf/README.md

@@ -14,7 +14,7 @@ import { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
 import type { AuthIdentity, AuthNavContext, AuthNavOptions } from "./types";
 import { attrOf, attrsOf, tagOf, textOf } from "./web.fixture";
 
-const HEX_SECRET = "b".repeat(64);
+const HEX_SECRET = "38f516127047072640d79f757593f8c971ed2324a5e1db688f6f129f9b0478db";
 const SIGNOUT_PATH = "/auth/signout";
 
 function fakeIdentity(overrides: Partial<AuthIdentity> = {}): AuthIdentity {

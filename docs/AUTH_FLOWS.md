@@ -1,13 +1,13 @@
 ---
 title: Auth Flows
-description: "What each auth flow does once mounted: signup, sign-in under each factor requirement, passkey and TOTP enrolment, email change, admin management, and the limits this release carries."
+description: "What each auth flow does once mounted — signup, sign-in, passkey and TOTP enrolment, email change, admin management, recovery from a lost value — and this release's limits."
 audience: consumer
 ---
 
 # Auth Flows
 
 > Owns what each flow does once the capability is mounted — the credential each one issues, what the visitor is told, and where a resolution sends
-> them. Owns the limits this release carries (§7).
+> them. Owns the limits this release carries (§7), and how an account recovers when a key, a device or a code is lost (§8).
 >
 > Defers to: [`AUTH_MOUNTING.md`][am] for the mount itself — the builders, the guard table, the seams forge ships no implementation for, and
 > embedding a single view; [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
@@ -27,17 +27,24 @@ audience: consumer
 - §3a Enrolment: the registration ceremony and the pending-enrolment gate
 - §3b Sign-in: why a passkey never starts one
 - §3c Management: what the shipped pages do, and the limits they carry
+- §3d PRF Output Stays in the Page: never posted, judged by a real result, salted per credential
 - §4 Authenticator App (TOTP): the secret, the URI, and the confirm step
 - §5 Email Change: the two sealed links, the stage each one carries, and the confirm route you own
 - §6 Admin Management: the user pages, the last-admin guard, and the first-admin bootstrap
 - §7 Limits in This Release: what does not work yet, stated plainly
+- §8 Recovery — No Lost Value Locks an Account Out or Lets It In on Less: what the user sees, and the way back from each loss
+- §8a Choosing a Factor at Step-Up: every confirmed second factor is offered, and the URL names the one presented
+- §8b A Confirmed Second Factor Comes Before Any Enrolment: why an owed enrolment waits for a step-up
+- §8c Recovery Codes: who may be issued them, shown once and never downloadable, the staged set, single use, and the offering the registry demands
+- §8d A Code Lands on the Repair Page: what a step-up by recovery code shows the user
+- §8e The Administrator's Reset Is the Last Resort: what it clears, and the one weakening it allows
 
 ---
 
 ## 1. Signup
 
-`POST /signup` takes one field: an address. The address is normalised, and the response is a 303 to `/verify` with the address kept in the session —
-never in the URL, which lands in history, `Referer` and proxy logs.
+`authRoutes`' `signupSubmit` takes one field: an address. The address is normalised, and the response is a 303 to `verify.show` with the address
+kept in the session — never in the URL, which lands in history, `Referer` and proxy logs.
 
 **An address that already has an account is challenged, not refused.** "That email is taken" is the account-enumeration answer this flow exists not
 to give, and a code delivered to the address's real owner is harmless. So both branches issue a real challenge, both render the same page, and the
@@ -50,9 +57,9 @@ five minutes, and the code is never stored: what the OTP state holds is the seal
 
 ## 2. Sign-in
 
-Sign-in is a request and a verification, and they are separate requests. `POST /signin` defers the issue and redirects to `/verify`; `POST /verify`
-completes it. **An address with no account gets a decoy** — the same token work, the same shape of response, nothing delivered — so the two cases
-cannot be told apart by timing or by what comes back.
+Sign-in is a request and a verification, and they are separate requests. `authRoutes`' `signinSubmit` defers the issue and redirects to
+`verify.show`; `verify.submit` completes it. **An address with no account gets a decoy** — the same token work, the same shape of response, nothing
+delivered — so the two cases cannot be told apart by timing or by what comes back.
 
 Completion refuses a deactivated user at the same point it refuses an unknown one, and on success resolves the offered factors before deciding where
 the visitor goes.
@@ -82,10 +89,10 @@ factor puts it in the confirmed set unconditionally — it is never owed, and it
 primary is excluded by construction rather than by a filter: proving it again proves nothing new. An `email-otp` primary with a `second` passkey
 therefore leaves the passkey as the only step-up factor, and `"mandatory"` there demands a **passkey** enrolment.
 
-**The default this release is built around is email-OTP primary with a mandatory authenticator-app second factor** —
-`offered: [{service: emailOtp, role: "primary"}, {service: totpApp, role: "second", requirement: "mandatory"}]`. Both offerings work and both are
-driven through the mount in [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts); the passkey step-up is the alternative. With two second
-factors confirmed the verify page demands **the first in `offered` order**, and forge renders no chooser — that ordering is the whole of the choice.
+**The default this release is built around is email-OTP primary with a mandatory authenticator-app second factor**, plus the recovery codes that
+offering requires (§8c). Both offerings work and both are driven through the mount in [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts);
+the passkey step-up is the alternative. With two second factors confirmed the verify page presents **the first in `offered` order** and links the
+others, so the user can choose (§8a).
 
 **Offering nothing mandatory makes the enrolment pages unreachable, and nothing says so at the option.** `requirePendingEnrolment` admits only a
 visitor who owes an enrolment, and nobody ever owes an `"optional"` factor — so every visitor goes to `settledPath` and no enrolment page can be
@@ -99,6 +106,10 @@ The notices are a closed set: the service is unavailable, you are throttled, or 
 enrolled, deactivated, unrecognised — folds into **that did not match**, because telling them apart is the account-enumeration oracle the decoy
 closes. The unredacted reason is for your logs and your branching, never for the page ([`FORGE_ERRORS.md`][eh-1c] §1c).
 
+**A step-up adds one notice: that method cannot be checked right now.** It is the `unusable` reason, answered when a factor's stored secret will
+not open, and it tells the user to choose another method (§8a). It says nothing about membership, because only a signed-in user reaches a
+step-up.
+
 **On the primary path, throttled folds in too.** A known-but-throttled address answering "you are throttled" where an unknown one answers "that did
 not match" is the same membership answer, so `complete` reports both `too-many-attempts` and `too-soon` as `unrecognised` there. `stepUp` and
 `requestStepUp` keep the true reason: the visitor is already signed in, so there is no membership left to leak, and being told to wait is what makes
@@ -107,7 +118,8 @@ a lockout comprehensible.
 ### 2c. Where a Resolution Sends the Visitor
 
 A resolution that is not `satisfied` is **a successful outcome of a correct sign-in**, not a refusal of one, so it is a page to visit rather than a
-4xx: `enrolment-required` redirects to the enrolment page **for a kind it actually names**, `step-up-required` back to `/verify`, and `satisfied` to
+4xx: `enrolment-required` redirects to the enrolment page **for a kind it actually names** — or to the verify page first, while the user holds a
+confirmed second factor they have not yet passed (§8b) — `step-up-required` back to the verify page, and `satisfied` to
 the return path — the `?next=` value reduced to a same-origin path, or your `settledPath`. Both the guards and the sign-in actions read the
 resolution's `kinds`, because a passkey page cannot clear an owed authenticator-app enrolment and sending a visitor there is a loop.
 
@@ -131,13 +143,13 @@ rather than failing after the visitor has committed.
 
 ### 3a. Enrolment
 
-`GET /enrol/passkey` and `GET /enrol/totp` are guarded by `require-pending-enrolment`, which admits **only** a visitor who owes an enrolment. One
-who owes a step-up instead is sent to verify it first — an owed step-up cannot be enrolled around — and one who owes nothing is sent to the settled
-path.
+`authRoutes`' `enrol.passkey` and `enrol.totp` pages are guarded by `require-pending-enrolment`, which admits **only** a visitor who owes an
+enrolment. One who owes a step-up instead is sent to verify it first — an owed step-up cannot be enrolled around — and so is one who owes an
+enrolment while holding a confirmed second factor (§8b). One who owes nothing is sent to the settled path.
 
-The ceremony posts to `register/begin` for options and `register/finish` with the credential. Registration excludes the credentials the user already
-has, so re-enrolling one authenticator is refused by the browser rather than by a database conflict later. `finish` writes no session state:
-enrolment does not sign anyone in.
+The ceremony posts to `enrol.ceremony.begin` for options and `enrol.ceremony.finish` with the credential. Registration excludes the credentials the
+user already has, so re-enrolling one authenticator is refused by the browser rather than by a database conflict later. `finish` writes no session
+state: enrolment does not sign anyone in.
 
 ### 3b. Sign-in
 
@@ -151,15 +163,35 @@ The second half of a sign-in runs the same step-up pair as any other step-up —
 
 ### 3c. Management
 
-`GET /passkeys` lists the visitor's credentials with their labels, creation and last-use times, a rename link and a remove control, and warns when
-removing the last credential would leave nothing to sign in with. Removing a passkey is scoped to its owner in the statement's own `WHERE`, so
-ownership is not a check a caller can forget.
+`accountRoutes`' `passkeys` page lists the visitor's credentials with their labels, creation and last-use times, a rename link and a remove control,
+and warns when removing the last credential would leave nothing to sign in with. Removing a passkey is scoped to its owner in the statement's own
+`WHERE`, so ownership is not a check a caller can forget.
 
 **Removing one signs every other session out.** The removal raises the account's revocation barrier, and every session established at or before it —
 including the ones on devices this request cannot see — is refused on its own next request. The acting session is carried past the barrier, so the
 visitor stays where they are. Removing the authenticator-app factor does the same.
 
 **No configuration removes the limits that apply to this page** — §7 states them.
+
+### 3d. PRF Output Stays in the Page
+
+A passkey factor given `prf` salts asks the authenticator to evaluate its PRF during the ceremony. The result is a 32-byte secret an app uses to
+derive a key its server never holds.
+
+**The output is handed to the page and nowhere else.** The controller gives it to the handler `onPasskeyPrf` registered, after the server has
+verified the ceremony and before the page navigates. It is never posted to the server, and it never rides on `PASSKEY_OUTCOME_EVENT`, because a
+DOM event bubbles to every listener on the page. The server never learns whether a PRF result came back.
+
+**Support is judged by a real 32-byte result, never by `prf.enabled` or `getClientCapabilities()`.** Both misreport: an authenticator can claim
+PRF and return nothing. So the handler is called whenever the options asked for PRF, with `output` set to `null` when no 32-byte result arrived.
+That lets a page tell "this passkey has no PRF" from "nothing ran" before navigation tears it down.
+
+**Step-up salts are keyed per credential, and none are sent when the user has no listed credential.** The browser matches each salt against
+`allowCredentials`. It throws `NotSupportedError` on `evalByCredential` with an empty `allowCredentials`, and `SyntaxError` on a key that list
+does not hold. So the factor asks for step-up salts only when the user has credentials, and drops any salt keyed to an id outside the list.
+
+**A registration's output equals later assertions with the same salt.** An app can wrap its key as soon as the passkey is enrolled, without
+waiting for a first step-up.
 
 ---
 
@@ -168,14 +200,14 @@ visitor stays where they are. Removing the authenticator-app factor does the sam
 TOTP is **step-up only**: an authenticator app proves possession, it does not say who you are, so the registry refuses it as a primary factor at
 construction.
 
-The page is mounted **twice**, and the two are not interchangeable. `GET`/`POST /enrol/totp` sits in `auth.enrol` behind `require-pending-enrolment`
-and is where a visitor who _owes_ the enrolment clears it, because `require-enrolment` refuses the whole `account` group while that enrolment is
-outstanding. `GET`/`POST`/`DELETE /totp` sits in `account` and is the settled visitor's management page; only it offers removal, there being nothing
-to remove until something is enrolled.
+The page is mounted **twice**, and the two are not interchangeable. `authRoutes`' `enrol.totp` sits in `auth.enrol` behind
+`require-pending-enrolment` and is where a visitor who _owes_ the enrolment clears it, because `require-enrolment` refuses the whole `account` group
+while that enrolment is outstanding. `accountRoutes`' `totp` sits in `account` and is the settled visitor's management page; only it offers removal
+(`totpRemove`), there being nothing to remove until something is enrolled.
 
 Either mount renders the secret twice — as base32 to type, and as an `otpauth://` URI to paste. **Forge renders no QR code**; the URI is the seam
-for one, and drawing it is yours. The `POST` takes the code and confirms the enrolment, accepting one step of clock drift either way and advancing
-the stored counter so a code cannot be replayed inside its own step. `DELETE /totp` removes the enrolment.
+for one, and drawing it is yours. Submitting the code (`enrol.totpEnrol` or `totpEnrol`) confirms the enrolment, accepting one step of clock drift
+either way and advancing the stored counter so a code cannot be replayed inside its own step.
 
 **A wrong code costs a guess, spent before it is compared.** `failed_attempts` is incremented by the statement that admits the guess, so parallel
 attempts each spend one rather than all comparing against a count none has written; past `maxAttempts` (5 by default, 1–20) even a correct code is
@@ -203,17 +235,17 @@ seconds, so a configured `digits` or `period` is what the visitor is told and wh
 
 ## 5. Email Change
 
-**A change of address takes two links, and only the second one moves the account.** `POST /email-change` mints a sealed, one-hour token and defers
-delivery of a link built by your `confirmUrl`. The page then says a confirmation has been sent — a 200 with a notice, not a redirect, because
-nothing has changed yet.
+**A change of address takes two links, and only the second one moves the account.** `accountRoutes`' `emailChangeSubmit` mints a sealed, one-hour
+token and defers delivery of a link built by your `confirmUrl`. The page then says a confirmation has been sent — a 200 with a notice, not a
+redirect, because nothing has changed yet.
 
 **The first link goes to the address the account already holds**, whenever that address is verified, so the move is authorised by whoever owns the
 current mailbox rather than by whoever holds the session — without which a stolen cookie moves the account to the thief's inbox and, with email-OTP
 as the primary factor, locks the owner out for good. An unverified address has proved nothing, so there the new one is the only address to ask and
 gets the link instead.
 
-**Name `sentTo` on the page, not the address the visitor typed.** `request(userId, email, at)` answers `AuthEmailChangeRequest` — `expiresAt` and
-`sentTo`, the address the mail actually went to — and which of the two addresses that is depends on whether the account's own is verified. The
+**Name `sentTo` on the page, not the address the visitor typed.** `AuthEmailChangeFlow.request` answers `AuthEmailChangeRequest`, whose `sentTo` is
+the address the mail actually went to — and which of the two addresses that is depends on whether the account's own is verified. The
 shipped action renders the flow's answer for exactly that reason; a page that echoes the typed address tells half its visitors to watch the wrong
 inbox.
 
@@ -229,17 +261,17 @@ could open.
 **The new address is deliberately never looked up before the email goes out.** Answering "that address is taken" here is the same enumeration oracle
 sign-in refuses to give. The unique index refuses the collision at the `move` stage instead, folded into the same refusal an unknown account gets.
 
-**You mount the confirm route, and the one route serves both stages.** Forge ships `AuthEmailChangeFlow.confirm(token, now)` and no route that calls
-it: the URL shape is yours, so the handler is too. `confirm` decodes the token and burns it through the nonce store — a second visit to the same
-link answers `consumed`, which is what makes a link scanner harmless — and then acts on the stage it read. An `approve` token defers the second mail
-and answers `{ status: "forwarded", sentTo, expiresAt }`, describing the link just sent to the new address. A `move` token writes the address and
-marks it verified in one statement, answering `{ status: "moved", user }`.
+**You mount the confirm route, and the one route serves both stages.** Forge ships `AuthEmailChangeFlow.confirm` and no route that calls it: the URL
+shape is yours, so the handler is too. `confirm` decodes the token and burns it through the nonce store — a second visit to the same link answers
+`consumed`, which is what makes a link scanner harmless — and then acts on the stage it read. An `approve` token defers the second mail and answers
+`forwarded`, whose `sentTo` names the new address the second link went to. A `move` token writes the address and marks it verified in one statement,
+answering `moved`.
 
 **The confirmation page is yours to render, and `resolveAuthView` does not reach it** — it is no `AuthViewName`, so forge has no view for it. Render
 it in your own layout with your own copy; [`AUTH_MOUNTING.md`][am-6] §6 is the recipe for putting a forge auth view beside it.
 
 **It renders in the same document shell the auth pages do**, because that shell belongs to the app rather than to the mount
-([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6). Call `renderShell(c, content, slot)` from your own view with a slot you name yourself — `mount` is an
+([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6). Call `renderShell` from your own view with a slot you name yourself — its `mount` is an
 open string — and the page comes out inside the chrome every auth page already renders in. Forge asks a shell for a document, not for a component
 typed against `AuthViewName`, so there is no adapter to write.
 
@@ -248,9 +280,9 @@ way; what makes it safe is that each link is single-use. The first visit does it
 prefetch, the user clicking twice — changes nothing. Do not add your own idempotency around it, and do not make the route a `POST` behind an
 interstitial unless you want the extra click: the nonce store already carries the guarantee.
 
-**The route renders two success pages, and the failure arm needs `instanceof`.** `confirm` returns
-`Result<AuthEmailChangeConfirm, AuthEmailChangeReason | AuthStoreError>`: the success value is a union discriminated on `status`, and the error is a
-union of a string literal and a class, so those two arms are told apart by type rather than by value.
+**The route renders two success pages, and the failure arm needs `instanceof`.** The success value `confirm` answers is a union discriminated on
+`status`, and its error is a union of a string literal and the `AuthStoreError` class, so those two arms are told apart by type rather than by
+value.
 
 ```ts
 const outcome = await services.emailChange.confirm(token, Date.now());
@@ -277,8 +309,8 @@ account was signed in on. Render the `moved` page as a page that asks the visito
 
 ## 6. Admin Management
 
-`GET /users` lists and searches accounts by cursor; `GET /users/:id/edit` carries the role, status and delete controls. Each control is disabled
-with its own reason when the guard would refuse it, and a refusal that happens anyway comes back as a **409** naming which guard fired.
+`adminRoutes`' `users.list` lists and searches accounts by cursor; `users.edit` carries the role, status and delete controls. Each control is
+disabled with its own reason when the guard would refuse it, and a refusal that happens anyway comes back as a **409** naming which guard fired.
 
 **An administrator cannot deactivate or delete their own account.** The last-admin guard does not catch it — a deployment with two admins would
 admit it — so both controls are disabled on the page with their own reason, and a request that arrives anyway comes back **409** with the outcome
@@ -291,6 +323,9 @@ instead of a full table scan. A substring in the middle of an address — the do
 standing rather than none, and the admin count the page displays is a display value only — never the thing a write is trusted against.
 
 Deleting a user removes its children first, in one batch that rolls back whole, because D1 does not guarantee foreign-key enforcement is on.
+
+**An account's factors page carries a reset control**, the last resort for a user who has lost every second factor and every recovery code.
+What it clears and what it allows is §8e.
 
 **Elevation is the first-admin bootstrap, which is why it is not admin-gated.** A signed-in, enrolment-satisfied visitor may claim the role only
 while there is no admin at all, and the count is re-read **at write time** — the check on the page is a courtesy, and the one at the write is what
@@ -324,8 +359,99 @@ twice.
 enrolled value on every assertion, so a changed one is refused as the misreporting it is; `backedUp` moves and is kept current. Refusing a synced
 credential outright is right for a high-assurance tenant and wrong for a consumer product — read both off `CredentialStore` and decide.
 
+**A new set of recovery codes has no print view.** The user copies the set from the codes page, the only place it is shown, before confirming one
+of the codes. That it is never offered as a download is a ruling rather than a limit (§8c).
+
 **Federated identity is not here.** The OIDC relying party and the OAuth2 provider are a separate effort, and they will publish their own subpaths
 under the same one-way rule ([`NAMESPACES.md`][namespaces-5h] §5h).
+
+---
+
+## 8. Recovery — No Lost Value Locks an Account Out or Lets It In on Less
+
+**No missing key, device or code may lock an account out, and none may let it in on less than it needed before.** Every way back below passes
+through a second factor the user still holds. The one exception is the administrator's reset (§8e), and it is deliberate.
+
+| What was lost | What the user sees | How they get back in |
+| --- | --- | --- |
+| The ring key an authenticator-app secret is sealed under, or a secret that will not open under it | The verify page says the method cannot be checked right now, and offers their other methods | Step up with a passkey or a recovery code, then remove the authenticator app and add it again. Putting the key back in the ring makes the old enrolment work again |
+| An authenticator-app row `purgeStaleTotpSecrets` dropped | The verify page, not the enrolment page | Step up with another confirmed factor or a recovery code, then enrol again (§8b) |
+| The phone or security key itself | The verify page | Choose a recovery code, then replace the lost factor from the repair page (§8d) |
+| The session secret | A signed-out session | Sign in again with the address and the second factor |
+| The CSRF secret | A 403 on a form already on screen | Reload the page and submit again |
+| Every second factor and every recovery code | No way to step up | An administrator resets the account (§8e) |
+
+### 8a. Choosing a Factor at Step-Up
+
+**The verify page offers every second factor the user has confirmed, recovery codes included.** It presents the first in `offered` order and
+links each of the others. The link names the kind as `?factor=<kind>` and keeps the return path, and the form posts to the same query. The server
+presents the named kind only when it is one this user's resolution offers, so a forged value falls back to the first.
+
+**A factor whose stored secret cannot be opened answers `unusable`, and costs no guess.** The authenticator-app factor opens the secret before it
+spends an attempt, and the enrolment stays confirmed, so a key put back in the ring makes it work again. Verify re-renders at 422 with the notice
+of §2b and the other methods, and logs `auth.factor.unusable` at warn with the factor's kind. That log is the operator's cue; what to do on it is
+[`src/auth/README.md`][auth-readme]'s.
+
+### 8b. A Confirmed Second Factor Comes Before Any Enrolment
+
+**A user who owes an enrolment while holding a confirmed second factor passes that factor first.** `resolve` answers `enrolment-required` with
+`stepUpKinds`, the second kinds this user has confirmed. While that list is not empty and the session holds no step-up mark inside
+`stepUpMaxAgeMs`, sign-in, verify, `require-auth` and `require-pending-enrolment` all send the user to verify. A mark dated in the future counts as
+none. Verify measures the mark against the same window as the guards, so the two cannot bounce a user between them. After the step-up they go on to
+the enrolment page.
+
+Without this, holding the mailbox would be enough to enrol an authenticator of your own. It is reachable in two ordinary ways: after
+`purgeStaleTotpSecrets` drops a row under a `"mandatory"` authenticator app, and with a mandatory factor offered beside an optional one the user has
+already confirmed.
+
+### 8c. Recovery Codes
+
+**An offering that includes an authenticator app or a passkey must include recovery codes.** `createFactorRegistry` throws at construction when:
+
+- `totp-app` or `passkey` is offered as a second factor without `recovery-code`, because a lost device or key would lock its users out;
+- `recovery-code` is offered as primary;
+- `recovery-code` is offered with a requirement other than `"optional"`, because codes are issued after a step-up and so can never be owed before
+  one;
+- `recovery-code` is the only explicit second factor, because codes recover a factor and have nothing to recover on their own.
+
+**Codes are issued only to a user who holds a confirmed authenticator app or passkey and has stepped up within `AUTH_FRESH_STEP_UP_MS`.** Both code
+`POST`s check this in the handler, not through `require-fresh-step-up`, which admits a user the policy owes no step-up. Without it, holding the
+mailbox would be enough to mint a way past the second factor. A user holding neither factor gets a 409, and a stale step-up is redirected to verify
+and brought back to the codes page.
+
+**A new set replaces the old one only when the user types one of the new codes back.** Generating a set stages it, and the old set keeps working
+until the confirmation, so a set the user never saved costs them nothing.
+
+**A set is shown once, laid out for copying, and is never downloadable.** The codes page presents a new set in one block the user can copy
+whole, and tells them to keep it somewhere safe now, because it will not be shown again. No route hands a set over as a file — not a file
+endpoint, not a `data:` link and not a blob the page builds. Only the SHA-256 of each code is stored, and the page is sent `no-store`.
+
+**Each code works once.** Using one spends it and clears the factor's spent guesses in the same batch. A wrong code spends a guess, against the
+same `maxAttempts` and `lockoutMs` budget the authenticator app uses. Spaces, dashes and letter case are ignored.
+
+**A user who holds no unused codes is sent to generate them.** After every step-up or enrolment, a user holding a confirmed authenticator app or
+passkey and no unused codes is redirected to the codes page. Enrolling is not a step-up, so after a first enrolment the user proves the new factor
+once on verify before the codes page lets them generate.
+
+**Removing the last authenticator app or passkey removes the codes with it**, in the same batch, so no account is left holding codes alone.
+
+### 8d. A Code Lands on the Repair Page
+
+**A step-up by recovery code always lands on the account's factors page with `?recovered=1`**, whatever return path the step-up began with. The
+page says how many unused codes are left, and tells the user to remove an authenticator that does not work, add it again, and then generate a new
+set. A code is spent on getting in, so the repair is the next thing the user must see.
+
+### 8e. The Administrator's Reset Is the Last Resort
+
+**The reset deletes the user's factors, passkeys and recovery codes, and raises their revocation barrier, in one batch.** Every session the
+user holds is refused on its next request. The control is on the account's admin factors page and posts to `adminRoutes`' `users.resetFactors`,
+which sits in `admin.users`, so the administrator must have stepped up recently.
+
+**This is the one path back that lets an account in on less than it needed before.** The user signs in with the address alone. Where a second
+factor is demanded they enrol it on the strength of the mailbox and are then sent to generate codes; where none is, they are simply signed in.
+That is why the reset takes an administrator rather than anything the user can do.
+
+**An administrator cannot reset their own account.** The request answers 409 with the outcome `self`, and an unknown user answers 404.
 
 [am]: ./AUTH_MOUNTING.md
 [am-1]: ./AUTH_MOUNTING.md#1-the-mount-in-order

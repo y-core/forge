@@ -9,7 +9,6 @@ const MASK = "\u0001";
 /** Extensions a specifier may carry that must be stripped before namespace attribution. */
 const SPECIFIER_EXTENSIONS = [".ts", ".tsx", ".js"];
 
-// A masked comment is a run of `MASK`, so a clause and a `from` that hold one stay matchable.
 /** Characters an import/export clause may contain between the keyword and its `from`. */
 const CLAUSE = `[A-Za-z0-9_$,{}\\s*${MASK}]*?`;
 
@@ -362,54 +361,43 @@ export function diffGraph(
   return findings;
 }
 
-/** The classification section, whose prose cites `EDGES` and must enumerate nothing. */
-const CLASSIFICATION_START = /^### 4a\. /;
-
-/** The catalog section, whose table names every export subpath. */
-const CATALOG_START = /^### 3a\. /;
-
 /** The header row of the enumeration table that `EDGES` replaced. */
 const COMPOSES_TABLE = /^\|\s*Namespace\s*\|\s*Composes\s*\|/;
 
 /** A catalog header row carrying leaf/integration or side-effect status as a column. */
 const CLASSIFICATION_COLUMN = /^\|.*\|\s*(?:Category|Classification)\s*\|/;
 
-/** The half-open line range from the first heading matching `start` to the next `## `, or `null` when absent. */
-export function sectionWindow(lines: readonly string[], start: RegExp): { from: number; to: number } | null {
-  const from = lines.findIndex((line) => start.test(line));
-  if (from === -1) return null;
-
-  for (let i = from + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line !== undefined && line.startsWith("## ")) return { from, to: i };
-  }
-  return { from, to: lines.length };
+/** A regex source matching `text` literally. */
+function escapeRegex(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
-/** Every enumeration the document carries: the classification section first, then the catalog. */
-export function findEnumerations(lines: readonly string[]): EnumerationFinding[] {
+/** A matcher for a line naming a namespace's source directory or package subpath, or `null` for an empty set. */
+function namespacePathPattern(namespaces: readonly string[], sourceDir: string): RegExp | null {
+  if (namespaces.length === 0) return null;
+  const alternatives = [...namespaces]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegex)
+    .join("|");
+  return new RegExp(`(?:${escapeRegex(sourceDir)}/|@[\\w.-]+/[\\w.-]+/)(?:${alternatives})(?=[/\`\\s|]|$)`);
+}
+
+/** Every enumeration the data files or a namespace's README own, anywhere in the document, in line order. */
+export function findEnumerations(lines: readonly string[], namespaces: readonly string[], sourceDir = "src"): EnumerationFinding[] {
+  const catalogRow = namespacePathPattern(namespaces, sourceDir);
   const findings: EnumerationFinding[] = [];
+  let tableReported = false;
 
-  const classification = sectionWindow(lines, CLASSIFICATION_START);
-  if (classification === null) {
-    findings.push({ kind: "missing-classification-section", line: null });
-  } else {
-    for (let i = classification.from; i < classification.to; i++) {
-      const line = lines[i];
-      if (line === undefined || !COMPOSES_TABLE.test(line)) continue;
-      findings.push({ kind: "composes-table", line: i + 1 });
-    }
-  }
+  for (const [index, line] of lines.entries()) {
+    const isTableRow = line.trimStart().startsWith("|");
+    if (!isTableRow) tableReported = false;
 
-  const catalog = sectionWindow(lines, CATALOG_START);
-  if (catalog === null) {
-    findings.push({ kind: "missing-catalog-section", line: null });
-    return findings;
-  }
-  for (let i = catalog.from; i < catalog.to; i++) {
-    const line = lines[i];
-    if (line === undefined || !CLASSIFICATION_COLUMN.test(line)) continue;
-    findings.push({ kind: "classification-column", line: i + 1 });
+    if (COMPOSES_TABLE.test(line)) findings.push({ kind: "composes-table", line: index + 1 });
+    if (CLASSIFICATION_COLUMN.test(line)) findings.push({ kind: "classification-column", line: index + 1 });
+
+    if (!isTableRow || tableReported || catalogRow === null || !catalogRow.test(line)) continue;
+    findings.push({ kind: "catalog-table", line: index + 1 });
+    tableReported = true;
   }
 
   return findings;

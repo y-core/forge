@@ -9,7 +9,7 @@ import type { ForgeIcon } from "../../../ui/core/types";
 import type { AuthCredential } from "../../types";
 import { authPaths } from "../paths";
 import { accountRoutes } from "../routes";
-import { attrOf, elementOf, elementsOf } from "../web.fixture";
+import { attrOf, elementOf, elementsOf, tagOf, textOf } from "../web.fixture";
 import { AuthFactorsTrigger, AuthFactorsView } from "./factors";
 import type { AuthFactorRow, AuthFactorsViewProps } from "./types";
 
@@ -105,6 +105,51 @@ describe("AuthFactorsView", () => {
     const html = await panel({ factors: [], level: 3 });
     expect(elementsOf(html, "h3", 'class="text-sm font-medium text-foreground"').length).toBe(2);
     expect(elementsOf(html, "h4", 'data-slot="empty-state-title"').map(words)).toEqual(["No sign-in methods offered"]);
+  });
+});
+
+describe("AuthFactorsView after a step-up by recovery code", () => {
+  const REPAIR = "If your authenticator app or passkey no longer works, remove it below and add it again, then generate a new set of codes.";
+
+  it("counts the codes left, singular and plural, and says how to repair a broken method", async () => {
+    const notices = [];
+    for (const recovered of [1, 0, 9]) notices.push(textOf(await panel({ recovered }), "div", 'data-slot="alert-description"'));
+    expect(notices).toEqual([
+      `You have 1 unused code left. ${REPAIR}`,
+      `You have 0 unused codes left. ${REPAIR}`,
+      `You have 9 unused codes left. ${REPAIR}`,
+    ]);
+  });
+
+  it("says nothing about recovery on a panel reached any other way", async () => {
+    expect(tagOf(await panel(), 'data-ref="factors-recovered"')).toBe("");
+  });
+});
+
+describe("AuthFactorsView's administrative reset", () => {
+  it("posts a confirm-guarded reset to the path it is given, carrying its own token", async () => {
+    const html = await panel({ reset: { path: "/admin/users/u2/factors/reset", csrfToken: "csrf-reset" } });
+    const form = elementOf(html, "form", 'action="/admin/users/u2/factors/reset"');
+    expect({
+      post: attrOf(form, "hx-post", "hx-post"),
+      confirm: attrOf(form, "hx-confirm", "hx-confirm"),
+      token: attrOf(form, 'name="_csrf"', "value"),
+      button: words(elementOf(form, "button", 'data-ref="factors-reset"')),
+    }).toEqual({
+      post: "/admin/users/u2/factors/reset",
+      confirm: "Reset every sign-in method on this account? This cannot be undone.",
+      token: "csrf-reset",
+      button: "Reset sign-in methods",
+    });
+  });
+
+  it("sends the token on a renamed CSRF header when the app configured one", async () => {
+    const html = await panel({ reset: { path: "/admin/users/u2/factors/reset", csrfToken: "csrf-reset", csrfHeader: "X-Custom-CSRF" } });
+    expect(attrOf(html, "hx-headers", "hx-headers")).toBe("{&quot;X-Custom-CSRF&quot;:&quot;csrf-reset&quot;}");
+  });
+
+  it("offers no reset on a panel given none, which is what the account holder reads", async () => {
+    expect(tagOf(await panel({ manage: ACCOUNT }), 'data-ref="factors-reset"')).toBe("");
   });
 });
 

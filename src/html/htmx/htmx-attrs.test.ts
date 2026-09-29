@@ -42,8 +42,13 @@ describe("hxAttrs", () => {
     expect(hxAttrs({ selectOob: "#result" })).toEqual({ "hx-select-oob": "#result" });
   });
 
-  it("maps disabledElt → hx-disabled-elt", () => {
-    expect(hxAttrs({ disabledElt: "this" })).toEqual({ "hx-disabled-elt": "this" });
+  it("maps disable → hx-disable", () => {
+    expect(hxAttrs({ disable: "this" })).toEqual({ "hx-disable": "this" });
+  });
+
+  it("never emits hx-params, even for a stray params prop", () => {
+    const stray = { params: "*", get: "/a" } as unknown as HxAttrsProps;
+    expect(hxAttrs(stray)).toEqual({ "hx-get": "/a" });
   });
 
   it("maps pushUrl → hx-push-url", () => {
@@ -54,16 +59,18 @@ describe("hxAttrs", () => {
     expect(hxAttrs({ replaceUrl: "/current" })).toEqual({ "hx-replace-url": "/current" });
   });
 
-  it("boost true → hx-boost=true (string)", () => {
-    expect(hxAttrs({ boost: true })).toEqual({ "hx-boost": "true" });
+  it("boost true → hx-boost:inherited=true (string)", () => {
+    expect(hxAttrs({ boost: true })).toEqual({ "hx-boost:inherited": "true" });
   });
 
-  it("boost false → hx-boost=false (string, not omitted)", () => {
-    expect(hxAttrs({ boost: false })).toEqual({ "hx-boost": "false" });
+  it("boost false → hx-boost:inherited=false (string, not omitted)", () => {
+    expect(hxAttrs({ boost: false })).toEqual({ "hx-boost:inherited": "false" });
   });
 
   it("boost undefined → omitted", () => {
-    expect(hxAttrs({})).not.toHaveProperty("hx-boost");
+    const attrs = hxAttrs({});
+    expect(attrs).not.toHaveProperty("hx-boost:inherited");
+    expect(attrs).not.toHaveProperty("hx-boost");
   });
 
   it("values → hx-vals as JSON", () => {

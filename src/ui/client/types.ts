@@ -94,6 +94,28 @@ export interface FragmentObserverConfig {
   plan(entries: FragmentEntry[]): FragmentObserverPlan | null;
 }
 
+/** The pass-through htmx's `initSecurity` takes. @internal */
+export interface HtmxSinkPolicy {
+  createHTML(input: string): unknown;
+  createScript(input: string): unknown;
+}
+
+/** The htmx instance the extension registers on. @internal */
+export interface HtmxExtensionHost {
+  registerExtension(
+    name: string,
+    extension: {
+      init(api: { initSecurity(policy: HtmxSinkPolicy): void }): void;
+      htmx_config_request(elt: Element, detail: { ctx?: { request?: { action?: string } } }): false | undefined;
+    },
+  ): unknown;
+}
+
+/** A window that may carry the Trusted Types factory. @internal */
+export type TrustedTypesWindow = Window & {
+  trustedTypes?: { createPolicy(name: string, rules: { createHTML(input: string): string; createScript(input: string): string }): HtmxSinkPolicy };
+};
+
 export interface LazyImportOptions<T> {
   ref: string;
   load: () => Promise<T>;

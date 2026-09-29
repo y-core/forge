@@ -13,8 +13,8 @@ application a new project starts from.
 **Node.js / Bun only.** This namespace shells out to `git` and reads and writes the file system. Do not import it into a Cloudflare Worker or a
 client bundle.
 
-Why it matches markers rather than content, why it refuses rather than warns, and why the graph closes each way it does, is
-[`BUILD_TOOLING.md`][bt-4] §4's; this file teaches the use.
+No `docs/` document stands above this file: why it matches markers rather than content, why it refuses rather than warns, and why the graph
+closes each way it does are this file's own rulings ([`SOURCE_OF_TRUTH.md`][sot-2f] §2f).
 
 ---
 
@@ -38,7 +38,9 @@ export default defineFeatures({
 });
 ```
 
-A feature's `directories` are removed whole, with or without a trailing `/`. Its `seams` are the files holding its markers.
+A feature's `directories` are removed whole, with or without a trailing `/`. Its `seams` are the files holding its markers. The manifest is the
+whole of forge's understanding of your features: forge knows nothing about what a feature means, only which directories, files, scripts and seams it
+names.
 
 A file that must stay where a tool reads it, outside every feature's directory, goes in the feature's `files` and is left out whole. Scripts in
 `package.json`, which takes no marker, go in `scripts` by name:
@@ -52,8 +54,10 @@ db: {
 },
 ```
 
-Each script is removed as its line, so `package.json` has to hold one script per line, as a formatter writes it. An owned file may be a seam only
-of its owner or a feature that requires the owner, since either is dropped with it. Wrap each feature's
+Each script is removed as its line, so `package.json` has to hold one script per line, as a formatter writes it. The file is edited rather than
+re-serialised, so the formatter's layout survives; the edit is held against the parsed file with those scripts deleted, and a layout on which
+removing lines is not exactly that is refused rather than guessed at. An owned file may be a seam only of its owner or a feature that requires the
+owner, since either is dropped with it — a kept feature marking a file the copy leaves out would lose its lines without a word. Wrap each feature's
 entry in its own region, as above: a copy that keeps some features keeps the manifest, and the regions trim it to the features it kept. Feature
 names are lowercase letters, digits and `-`. Every path is relative to the repository root; an absolute path, a `..` segment and a leading `./`
 are refused.
@@ -75,6 +79,10 @@ A copy keeping `contact` then keeps `email` too, and a copy dropping `email` dro
 any number of features, and the curation prints each feature it added and why. A requirement naming no feature in the manifest, a feature
 requiring itself, and features requiring one another are refused.
 
+Each direction is the only one that leaves a skeleton whose imports resolve: a kept feature whose requirement is gone imports a directory that is
+not there, and a dropped requirement under a kept dependent is the same failure seen from the other side. Features that require one another
+can be neither kept nor dropped apart, so they are one feature under two names — merge them, or move what they share into a feature both require.
+
 ---
 
 ## Marking the lines a feature owns
@@ -86,9 +94,16 @@ import { registerShowcase } from "./showcase/mod"; /* feature:showcase */
 registerShowcase(app); /* feature:showcase */
 ```
 
-The comment may be `/* … */`, `// …`, `# …` or `<!-- … -->`, whichever the file's language takes.
+The comment may be `/* … */`, `// …`, `# …` or `<!-- … -->`, whichever the file's language takes. The marker is matched on the comment, not on
+the line's content, so it survives any reformatting that keeps the comment on its line; a match on content would stop matching the moment the line
+was reformatted, and then remove nothing. A marker anywhere but at the end of its line — inside a string, say — is not a marker, and the line is
+kept.
 
-**A line two features share** names both, and is removed only when both are dropped:
+A marker in a file that is not one of its feature's seams is refused, and so is one naming a feature the manifest does not: either line would
+otherwise survive into the skeleton with nothing to report it. The manifest is the one file any feature may mark without listing it as a seam.
+
+**A line two features share** names both, and is removed only when both are dropped — the only reading under which dropping one feature cannot
+break the other:
 
 ```ts
 const TURNSTILE_CSP = ["https://challenges.cloudflare.com"]; /* feature:showcase,contact */
@@ -107,7 +122,8 @@ Set `TURNSTILE_SECRET` before deploying.
 <!-- feature:contact:end -->
 ```
 
-Regions do not nest, and an end names the same features as its begin. A region's markers stay in a copy that keeps its feature.
+Regions do not nest, and an end names the same features as its begin; either would otherwise leave the extent of a removal to be guessed. A
+region's markers stay in a copy that keeps its feature.
 
 ---
 
@@ -132,10 +148,13 @@ The report lists the files copied, the features kept and dropped, each feature t
 removed, the scripts removed from `package.json`, the lines each seam lost, the regenerations run, and whether the manifest was left out.
 
 The copy is what git sees: tracked and untracked files, minus anything `.gitignore` excludes and anything deleted from disk. `node_modules` is
-never copied. The manifest is copied unless every feature is dropped.
+never copied. The manifest is copied unless every feature is dropped. Every other byte of a copied file is kept, its final newline included, so a
+skeleton differs from its demonstrator by exactly what its dropped features name. Features are chosen when a copy is made and never added to one
+afterwards; a copy that keeps the manifest can be curated in turn.
 
-The target must not exist yet, or be an empty directory. Nothing is written when the curation refuses. It holds the whole manifest to these rules
-whichever features you drop, and refuses when:
+The target must not exist yet, or be an empty directory. Nothing is written when the curation refuses: a curation that quietly removed nothing
+would leave a skeleton importing a directory that is gone, failing far from the cause. It holds the whole manifest to these rules whichever
+features you drop, so the combination nobody ran is as sound as the one somebody did, and refuses when:
 
 - `--keep` and `--drop` are both given, even empty; `--list` is given with a target, `--keep` or `--drop`; or neither a target nor `--list` is
 - `--keep` or `--drop` names a feature the manifest does not
@@ -150,7 +169,7 @@ whichever features you drop, and refuses when:
   from a `package.json` that does not hold one script per line
 - a marker is malformed, names an unknown feature, or sits in a file that is not one of that feature's seams
 - a region nests inside another, is never closed, is closed without being opened, or closes with features its begin did not name
-- a file to copy or edit lies beneath a symbolic link to a directory, which a stale git index lists
+- a file to copy or edit lies beneath a symbolic link to a directory, which a stale git index lists — the write would land outside the target
 - the working tree holds a nested repository or a submodule
 - the target is a file or already holds something
 - the root is not a git working tree
@@ -210,7 +229,8 @@ export default defineFeatures({
 When a copy keeps `db` and drops at least one feature, the paths in `remove` are left out of it, and `run` runs inside it after every file is
 written. The command runs with the root's `node_modules` linked into the copy, its `.bin` first on `PATH`, and `FORGE_APP_ROOT` set to the copy;
 the link is removed afterwards. Several kept features regenerate in requirement order. A plain copy, a copy that keeps every feature, and a copy
-dropping `db` itself run nothing.
+dropping `db` itself run nothing: a dropped feature's regeneration would rebuild what the copy does not hold, and a plain copy changed nothing its
+history describes, so in each the demonstrator's own files are still true.
 
 ---
 
@@ -227,9 +247,19 @@ It adds `validate-features`, last in the `full` tier. For each profile — a `--
 row resolves the profile through the graph, curates into a temporary directory, runs any regeneration, links your `node_modules` into it, checks a
 kept manifest names exactly the features kept, builds its assets when the preset names an `assetConfig`, and runs the skeleton's `standard` gate
 there. Profiles resolving to the same features are proved once, and a profile's label names what the graph added — `--drop email (+ contact)`. A
-failure names the profile and reports the tail of the skeleton's own output.
+failure names the profile and reports the tail of the skeleton's own output, and the row stops there.
+
+The default profiles end with every feature dropped together, because a line two features share is exercised both ways only by that set. An empty
+`profiles`, or a profile that drops nothing, fails the row: either would pass having proved no skeleton.
+
+The skeleton runs `standard`, never `full`: its own step table still carries `validate-features`, so a full run inside it would curate again. Your
+`node_modules` is linked rather than installed, so the row makes no network call, and the link is removed before the temporary tree is, so the
+removal cannot follow it into your installed dependencies. Every command runs with `FORGE_APP_ROOT` set to the temporary tree and
+`NODE_PRESERVE_SYMLINKS=1`, so a verb that defaults its root from that variable resolves the skeleton, and a module resolved through the link keeps
+its in-tree path.
 
 Taking `importBoundary` beside `features` guards every feature's directory against the core as well, and fails a feature's source that imports
-a feature it does not require.
+a feature it does not require. The manifest is then the one statement of which slice may reach which: an undeclared import is exactly the edge a
+curation would cut without knowing, so the boundary refuses it at the import rather than at the skeleton's gate.
 
-[bt-4]: ../../../docs/BUILD_TOOLING.md#4-toolingcurate--reducing-a-demonstrator-to-its-skeleton
+[sot-2f]: ../../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows

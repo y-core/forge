@@ -7,15 +7,14 @@ import type { HandlerContext } from "./types";
 
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
-const ctxFor = (kind: "worker" | "pages"): HandlerContext => ({
+const WORKER_CTX: HandlerContext = {
   auth: AUTH,
   scriptName: "my-worker",
   prefix: "",
   dryRun: false,
   rotate: new Set<string>(),
   fetch: () => Promise.reject(new Error("failureRows must not make a request")),
-  target: { kind, name: kind === "pages" ? "my-site" : "my-worker" },
-});
+};
 
 const cf = (...codes: number[]): CfApiError[] => codes.map((code) => ({ code, message: `upstream ${code}` }));
 
@@ -36,7 +35,7 @@ describe("staleIdDetail", () => {
 describe("failureRows", () => {
   it("marks a missing target unavailable rather than an error", () => {
     const error = new CfApiClientError("api", "Could not route", { statusCode: 404, cfErrors: cf(7003) });
-    expect(failureRows("kv_namespaces", [{ binding: "CACHE" }], error, ctxFor("worker"))).toEqual([
+    expect(failureRows("kv_namespaces", [{ binding: "CACHE" }], error, WORKER_CTX)).toEqual([
       {
         resourceType: "kv_namespaces",
         binding: "CACHE",
@@ -49,7 +48,7 @@ describe("failureRows", () => {
 
   it("marks a rejected token an error, which is the action a missing target must not share", () => {
     const error = new CfApiClientError("api", "Authentication error", { statusCode: 403, cfErrors: cf(10000) });
-    expect(failureRows("d1_databases", [{ binding: "DB" }], error, ctxFor("worker"))).toEqual([
+    expect(failureRows("d1_databases", [{ binding: "DB" }], error, WORKER_CTX)).toEqual([
       {
         resourceType: "d1_databases",
         binding: "DB",
@@ -61,23 +60,16 @@ describe("failureRows", () => {
     ]);
   });
 
-  it("prefixes the detail with the pages surface it queried", () => {
-    const error = new CfApiClientError("network", "fetch failed");
-    expect(failureRows("r2_buckets", [{ binding: "BUCKET" }], error, ctxFor("pages"))[0]?.detail).toBe(
-      "pages project · network error — fetch failed",
-    );
-  });
-
   it("carries the remote name each identity supplied", () => {
     const error = new CfApiClientError("api", "boom", { statusCode: 500 });
-    expect(failureRows("queues", [{ binding: "JOBS", remoteName: "proj-jobs" }], error, ctxFor("worker"))).toEqual([
+    expect(failureRows("queues", [{ binding: "JOBS", remoteName: "proj-jobs" }], error, WORKER_CTX)).toEqual([
       { resourceType: "queues", binding: "JOBS", remoteName: "proj-jobs", action: "error", detail: "worker script · boom" },
     ]);
   });
 
   it("emits one row per identity, all sharing the one classification", () => {
     const error = new CfApiClientError("api", "boom", { statusCode: 500 });
-    const rows = failureRows("secrets", [{ binding: "A" }, { binding: "B" }, { binding: "C" }], error, ctxFor("worker"));
+    const rows = failureRows("secrets", [{ binding: "A" }, { binding: "B" }, { binding: "C" }], error, WORKER_CTX);
     expect(rows.map((r) => [r.binding, r.action])).toEqual([
       ["A", "error"],
       ["B", "error"],
@@ -86,18 +78,18 @@ describe("failureRows", () => {
   });
 
   it("emits nothing for an empty identity list", () => {
-    expect(failureRows("vars", [], new CfApiClientError("api", "boom"), ctxFor("worker"))).toEqual([]);
+    expect(failureRows("vars", [], new CfApiClientError("api", "boom"), WORKER_CTX)).toEqual([]);
   });
 
   it("withholds the upstream message when the failed request carried a secret", () => {
     const error = new CfApiClientError("api", "value secret=hunter2 is not permitted", { statusCode: 400, cfErrors: cf(1234) });
-    expect(failureRows("secrets", [{ binding: "TOKEN" }], error, ctxFor("worker"), { redactMessage: true })[0]?.detail).toBe(
+    expect(failureRows("secrets", [{ binding: "TOKEN" }], error, WORKER_CTX, { redactMessage: true })[0]?.detail).toBe(
       "worker script · request failed — Cloudflare error 1234 — HTTP 400 (message withheld: it can echo the request body)",
     );
   });
 
   it("quotes the upstream message when redaction was not asked for", () => {
     const error = new CfApiClientError("api", "Invalid binding name", { statusCode: 400, cfErrors: cf(1234) });
-    expect(failureRows("secrets", [{ binding: "TOKEN" }], error, ctxFor("worker"))[0]?.detail).toBe("worker script · Invalid binding name");
+    expect(failureRows("secrets", [{ binding: "TOKEN" }], error, WORKER_CTX)[0]?.detail).toBe("worker script · Invalid binding name");
   });
 });

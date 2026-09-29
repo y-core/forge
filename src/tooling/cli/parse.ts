@@ -40,7 +40,7 @@ function readValue(name: string, token: ArgToken, tokens: readonly ArgToken[], p
   if (token.value !== undefined) return token.value;
 
   const next = tokens[position + 1];
-  // A `-`-leading element is refused rather than swallowed: `forge sync --config --commit` must not
+  // A `-`-leading element is refused rather than swallowed: `forge cf sync --config --commit` must not
   // silently take `--commit` as a path. The tokenizer's digit guard still admits `--limit -5`.
   if (next === undefined || next.kind !== "positional" || next.index !== token.index + 1 || next.value === "-" || next.value === undefined) {
     throw new CliError("missing-value", `Flag --${name} requires a value`);

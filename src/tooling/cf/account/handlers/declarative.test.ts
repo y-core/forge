@@ -8,16 +8,7 @@ const AUTH = { apiToken: "tok", accountId: "acc" };
 type AnyEntry = { binding?: string; name?: string; [key: string]: unknown };
 
 function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-  return {
-    auth: AUTH,
-    scriptName: "worker",
-    prefix: "",
-    dryRun: false,
-    rotate: new Set<string>(),
-    fetch: globalThis.fetch,
-    target: { kind: "worker", name: "worker" },
-    ...overrides,
-  };
+  return { auth: AUTH, scriptName: "worker", prefix: "", dryRun: false, rotate: new Set<string>(), fetch: globalThis.fetch, ...overrides };
 }
 
 describe("createDeclarativeHandler() — no remote object", () => {

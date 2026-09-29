@@ -18,7 +18,7 @@ import type {
   UserStore,
 } from "../types";
 import { createPasskeyFactor } from "./passkey";
-import type { PasskeyFactorOptions } from "./types";
+import type { PasskeyFactorOptions, PasskeyPrfSalts } from "./types";
 
 const RP_ID = "example.com";
 const ORIGIN = "https://example.com";
@@ -110,7 +110,6 @@ function fakeFactors() {
       rows[index] = { ...row, confirmedAt: at, updatedAt: at };
       return Promise.resolve(ok(true));
     },
-    unconfirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     recordVerification: () => Promise.resolve(ok(true)),
     countSecretsNotUnder: () => Promise.resolve(ok(0)),
@@ -170,7 +169,7 @@ function world(users: readonly AuthUser[] = [userRow()], credentials: readonly A
   return { challenges: fakeChallenges(), credentials: fakeCredentials(credentials), factors: fakeFactors(), users: fakeUsers(users) };
 }
 
-function build(scene: World) {
+function build(scene: World, prf?: PasskeyPrfSalts) {
   const options: PasskeyFactorOptions = {
     rpId: RP_ID,
     rpName: "Forge Demo",
@@ -181,6 +180,7 @@ function build(scene: World) {
     credentials: scene.credentials.store,
     challenges: scene.challenges.store,
     subject: () => ({ name: "person@example.com", displayName: "A Person" }),
+    ...(prf === undefined ? {} : { prf }),
   };
   return createPasskeyFactor(options);
 }
@@ -513,5 +513,181 @@ describe("createPasskeyFactor — the ceremony lifetime it holds at construction
       });
     expect(wire).toThrow(Error);
     expect(scene.challenges.entries.size).toBe(0);
+  });
+});
+
+describe("createPasskeyFactor — PRF salts", () => {
+  const SALT = new Uint8Array([0xfb, 0xff]) as Uint8Array<ArrayBuffer>;
+  const SALT_B64URL = "-_8";
+  const OTHER_SALT = new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer>;
+  const OTHER_SALT_B64URL = "AQID";
+
+  function credentialRow(credentialId: string): AuthCredential {
+    return {
+      id: uuidv7(),
+      userId: USER_ID,
+      credentialId,
+      publicKey: new Uint8Array(1) as Uint8Array<ArrayBuffer>,
+      algorithm: -7,
+      signCount: 0,
+      transports: [],
+      backupEligible: false,
+      backedUp: false,
+      label: null,
+      lastUsedAt: null,
+      createdAt: AT,
+      updatedAt: AT,
+    };
+  }
+
+  async function enrolmentOptions(scene: World, prf?: PasskeyPrfSalts): Promise<Record<string, unknown>> {
+    const begun = await build(scene, prf).beginEnrolment(USER_ID, AT);
+    if (!begun.ok) throw new Error(`enrolment refused: ${begun.error}`);
+    return begun.data.options as Record<string, unknown>;
+  }
+
+  async function challengeOptions(scene: World, prf?: PasskeyPrfSalts): Promise<Record<string, unknown>> {
+    const challenge = await build(scene, prf).createChallenge(USER_ID, AT);
+    if (!challenge.ok) throw new Error(`challenge refused: ${challenge.error}`);
+    return challenge.data.options as Record<string, unknown>;
+  }
+
+  const stepUpWith = (salts: ReadonlyMap<string, Uint8Array<ArrayBuffer>>): PasskeyPrfSalts => ({ stepUp: () => salts });
+
+  it("asks for no extension in either ceremony when no `prf` is configured", async () => {
+    const scene = world([userRow()], [credentialRow("cred-a")]);
+    expect(Object.hasOwn(await enrolmentOptions(scene), "extensions")).toBe(false);
+    expect(Object.hasOwn(await challengeOptions(scene), "extensions")).toBe(false);
+  });
+
+  it("evaluates a new credential with the base64url of the salt `registration` returned for that user, sync or async", async () => {
+    for (const returning of ["sync", "async"] as const) {
+      const asked: string[] = [];
+      const registration = (userId: string) => {
+        asked.push(userId);
+        return returning === "sync" ? SALT : Promise.resolve(SALT);
+      };
+      const options = await enrolmentOptions(world(), { registration });
+      expect({ returning, asked, extensions: options.extensions }).toEqual({
+        returning,
+        asked: [USER_ID],
+        extensions: { prf: { eval: { first: SALT_B64URL } } },
+      });
+    }
+  });
+
+  it("asks for no extension at enrolment when `registration` returns null", async () => {
+    const options = await enrolmentOptions(world(), { registration: () => null });
+    expect(Object.hasOwn(options, "extensions")).toBe(false);
+  });
+
+  it("hands `stepUp` the allow-list ids in order, and keys each salt by its credential id", async () => {
+    const scene = world([userRow()], [credentialRow("cred-b"), credentialRow("cred-a")]);
+    const seen: Array<{ userId: string; ids: readonly string[] }> = [];
+    const options = await challengeOptions(scene, {
+      stepUp: (userId, ids) => {
+        seen.push({ userId, ids: [...ids] });
+        return new Map([
+          ["cred-a", OTHER_SALT],
+          ["cred-b", SALT],
+        ]);
+      },
+    });
+    expect(seen).toEqual([{ userId: USER_ID, ids: ["cred-b", "cred-a"] }]);
+    expect(options.extensions).toEqual({ prf: { evalByCredential: { "cred-b": { first: SALT_B64URL }, "cred-a": { first: OTHER_SALT_B64URL } } } });
+  });
+
+  it("drops a salt keyed by a credential the allow-list does not name, since the browser refuses one", async () => {
+    const scene = world([userRow()], [credentialRow("cred-a")]);
+    const options = await challengeOptions(
+      scene,
+      stepUpWith(
+        new Map([
+          ["cred-a", SALT],
+          ["cred-elsewhere", OTHER_SALT],
+        ]),
+      ),
+    );
+    expect(options.extensions).toEqual({ prf: { evalByCredential: { "cred-a": { first: SALT_B64URL } } } });
+  });
+
+  it("asks for no extension when `stepUp` salts only unlisted credentials, or none at all", async () => {
+    for (const salts of [new Map([["cred-elsewhere", SALT]]), new Map<string, Uint8Array<ArrayBuffer>>()]) {
+      const scene = world([userRow()], [credentialRow("cred-a")]);
+      const options = await challengeOptions(scene, stepUpWith(salts));
+      expect(`${salts.size}: ${Object.hasOwn(options, "extensions")}`).toBe(`${salts.size}: false`);
+    }
+  });
+
+  it("never asks `stepUp` for a user with no credentials, and asks for no extension, since an empty allow-list refuses one", async () => {
+    let called = false;
+    const options = await challengeOptions(world(), {
+      stepUp: () => {
+        called = true;
+        return new Map([["cred-a", SALT]]);
+      },
+    });
+    expect(called).toBe(false);
+    expect(Object.hasOwn(options, "extensions")).toBe(false);
+  });
+
+  it("throws naming `prf.registration` for an empty salt or a non-Uint8Array, before any challenge is stored", async () => {
+    const cases = [
+      { salt: new Uint8Array(0), returned: "an empty salt" },
+      { salt: "secret-salt-value" as unknown as Uint8Array<ArrayBuffer>, returned: "a value that is not a Uint8Array" },
+    ];
+    for (const { salt, returned } of cases) {
+      const scene = world();
+      await expect(build(scene, { registration: () => salt as Uint8Array<ArrayBuffer> }).beginEnrolment(USER_ID, AT)).rejects.toThrow(
+        `createPasskeyFactor: prf.registration returned ${returned} — a PRF salt is a non-empty Uint8Array.`,
+      );
+      expect(scene.challenges.entries.size).toBe(0);
+    }
+  });
+
+  it("throws naming `prf.stepUp` for an empty salt or a non-Uint8Array keyed by a listed credential", async () => {
+    const cases = [
+      { salt: new Uint8Array(0), returned: "an empty salt" },
+      { salt: [1, 2, 3] as unknown as Uint8Array<ArrayBuffer>, returned: "a value that is not a Uint8Array" },
+    ];
+    for (const { salt, returned } of cases) {
+      const scene = world([userRow()], [credentialRow("cred-a")]);
+      await expect(build(scene, stepUpWith(new Map([["cred-a", salt as Uint8Array<ArrayBuffer>]]))).createChallenge(USER_ID, AT)).rejects.toThrow(
+        `createPasskeyFactor: prf.stepUp returned ${returned} — a PRF salt is a non-empty Uint8Array.`,
+      );
+    }
+  });
+
+  it("still enrols and verifies a step-up end to end with both salts configured", async () => {
+    const scene = world();
+    const prf: PasskeyPrfSalts = { registration: () => SALT, stepUp: (_userId, ids) => new Map(ids.map((id) => [id, OTHER_SALT])) };
+    const begun = await build(scene, prf).beginEnrolment(USER_ID, AT);
+    expect(begun.ok).toBe(true);
+    const registration = await fakePasskeyRegistration({
+      key: ES256,
+      rpId: RP_ID,
+      origin: ORIGIN,
+      challenge: issuedChallenge(scene, "register"),
+      credentialId: CREDENTIAL_ID,
+    });
+    expect((await build(scene, prf).completeEnrolment(USER_ID, JSON.stringify({ credential: registration }), AT)).ok).toBe(true);
+
+    const credentialId = base64urlEncode(CREDENTIAL_ID);
+    const challenge = await build(scene, prf).createChallenge(USER_ID, AT);
+    expect(challenge.ok && (challenge.data.options as Record<string, unknown>).extensions).toEqual({
+      prf: { evalByCredential: { [credentialId]: { first: OTHER_SALT_B64URL } } },
+    });
+    const assertion = await fakePasskeyAssertion({
+      key: ES256,
+      rpId: RP_ID,
+      origin: ORIGIN,
+      challenge: issuedChallenge(scene, "authenticate"),
+      credentialId,
+      signCount: 1,
+    });
+    expect(await build(scene, prf).verifyChallenge(USER_ID, JSON.stringify(assertion), AT)).toEqual({
+      ok: true,
+      data: { kind: "passkey", userId: USER_ID, verifiedAt: AT },
+    });
   });
 });

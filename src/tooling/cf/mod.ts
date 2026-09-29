@@ -12,7 +12,16 @@ export { syncBindings } from "./account/engine";
 export type { Verification } from "./account/handlers/types";
 export { createDeclarativeHandler, UNVERIFIED_DETAIL } from "./account/handlers/declarative";
 export type { DevVar, DevVarKind } from "./account/handlers/types";
-export { devVarsPath, editDevVars, GENERATE_MARKER, PUSH_MARKER, parseDevVars, readDevVars, writeDevVars } from "./account/handlers/devvars";
+export {
+  devVarsPath,
+  editDevVars,
+  GENERATE_MARKER,
+  PUSH_MARKER,
+  parseDevVars,
+  readDevVars,
+  RING_MARKER,
+  writeDevVars,
+} from "./account/handlers/devvars";
 export { createLocalVarsHandler } from "./account/handlers/localvars";
 export { dnsName, prefixedName, sanitizeName } from "./account/handlers/naming";
 export { rateLimitsHandler } from "./account/handlers/ratelimits";
@@ -39,8 +48,7 @@ export { createGenEnvCommand, loadOptions, readWranglerConfig } from "./gen/cf-e
 export type { GenOptions } from "./gen/types";
 export type { TableSection } from "./types";
 export { renderSections, renderTable } from "./table";
-export type { DeploymentTarget } from "./types";
-export { describeTarget, detectTarget } from "./target";
+export { refusePagesConfig } from "./target";
 export type { CfAuth, PrefixStrategy, ResourceType, SyncAction, SyncConfig, SyncNote, SyncOutput, SyncResult, WranglerConfig } from "./types";
 export { ACTION_LABELS, RESOURCE_TYPES } from "./types";
 export { createSyncZoneCommand, planZoneRules, rulesInSync } from "./zone/commands";

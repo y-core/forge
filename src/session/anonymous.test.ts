@@ -6,7 +6,7 @@ import { createAnonymousSession } from "./anonymous";
 import { sessionCtx } from "./session";
 import type { SessionKVBinding } from "./types";
 
-const SECRET = "s".repeat(32);
+const SECRET = "Rk7vQ2mX9pLw4sTz8bNc3yHd6fJg1aUe";
 
 function fakeSessionKV() {
   const data = new Map<string, string>();
@@ -147,7 +147,7 @@ describe("createAnonymousSession — KV mode", () => {
     await app.request("/", {}, env);
     expect(storageBuilds).toBe(1);
 
-    await app.request("/", {}, { SESSION_SECRET: "x".repeat(32), SESSIONS: kv });
+    await app.request("/", {}, { SESSION_SECRET: "Xq4wE7rT1yUi9oPa3sDf6gHj2kLz5xCv", SESSIONS: kv });
     expect(storageBuilds).toBe(2);
   });
 
@@ -195,7 +195,7 @@ describe("createAnonymousSession — KV mode", () => {
 
     const res = await app.request("/", {}, { SESSION_SECRET: "short", SESSIONS: kv });
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe("createAnonymousSession: session secret must be at least 32 characters (got 5)");
+    expect(await res.text()).toBe("createSignedCookie: each secret must be at least 32 bytes (got 5)");
   });
 });
 
@@ -204,8 +204,8 @@ describe("createAnonymousSession — secret rotation", () => {
   // what keeps a rotation from silently never completing.
   it("accepts a secret array and signs with the first", async () => {
     const { kv } = fakeSessionKV();
-    const OLD = "o".repeat(32);
-    const NEW = "n".repeat(32);
+    const OLD = "Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv";
+    const NEW = "Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe";
 
     const seeded = await rotatingApp([OLD]).request("/save", { method: "POST" }, { SESSIONS: kv });
     const sent = (seeded.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
@@ -225,15 +225,21 @@ describe("createAnonymousSession — secret rotation", () => {
     expect(settled.headers.get("set-cookie")).toBeNull();
   });
 
-  it("rejects a short secret inside an array, reporting its character count", async () => {
+  it("rejects a short secret inside an array, reporting its byte count", async () => {
     const { kv } = fakeSessionKV();
     const app = new Forge<{ SESSIONS: SessionKVBinding }>();
     app.setOnError((err) => new Response(err.message, { status: 500 }));
-    app.use("*", createAnonymousSession<{ SESSIONS: SessionKVBinding }>({ secret: () => ["n".repeat(32), "short"], kv: (c) => c.env.SESSIONS }));
+    app.use(
+      "*",
+      createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
+        secret: () => ["Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe", "short"],
+        kv: (c) => c.env.SESSIONS,
+      }),
+    );
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
     const res = await app.request("/", {}, { SESSIONS: kv });
-    expect(await res.text()).toBe("createAnonymousSession: session secret must be at least 32 characters (got 5)");
+    expect(await res.text()).toBe("createSignedCookie: each secret must be at least 32 bytes (got 5)");
   });
 
   it("forwards reissue to the middleware", async () => {

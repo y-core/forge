@@ -63,6 +63,17 @@ describe("AssetsConfigSchema — js bundles", () => {
     expect(parse({ js: { bundles: [{ entry: "a.ts", outdir: "out", define: { X: { __other: "y" } } }] } }).success).toBe(false);
   });
 
+  it("accepts a list of export conditions", () => {
+    const bundle = { entry: "a.ts", outdir: "out", conditions: ["worker"] };
+    expect(parse({ js: { bundles: [bundle] } }).output).toEqual({ js: { bundles: [bundle] } });
+  });
+
+  it("rejects a non-string or empty export condition", () => {
+    for (const conditions of [[1], [""], "worker"]) {
+      expect(parse({ js: { bundles: [{ entry: "a.ts", outdir: "out", conditions }] } }).success).toBe(false);
+    }
+  });
+
   it("accepts a nested outdir", () => {
     expect(parse({ js: { bundles: [{ entry: "a.ts", outdir: "js/islands" }] } }).success).toBe(true);
   });

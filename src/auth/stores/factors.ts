@@ -6,11 +6,12 @@ import type { D1Client } from "../../storage/db/types";
 import type { AuthFactorRequirement } from "../factors/types";
 import { assertAuthKeyId } from "../keys/token";
 import { authLimit } from "../limits";
-import type { AuthStoreResult, FactorStore } from "../types";
+import type { AuthFactorKind, AuthStoreResult, FactorStore } from "../types";
 import { inList, readFactor, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
 import type { FactorRow, TotpSecretPurgeOptions } from "./types";
 
 const MIN_IDLE_MS = 86_400_000;
+const RECOVERABLE_KINDS: readonly AuthFactorKind[] = ["totp-app", "passkey"];
 const MAX_IDLE_MS = 31_536_000_000;
 
 /** Why a purge is refused where the deployment does not demand the factor it would drop. */
@@ -22,8 +23,8 @@ function unpromptedRefusal(requirement: Exclude<AuthFactorRequirement, "mandator
   );
 }
 
-// A scheduled drop and not a refusal to open: refusing is the hard lockout `beginEnrolment`'s
-// recovery exists to undo, while a dropped row resolves `enrolment-required` on a page that works.
+// A dropped row resolves `enrolment-required`, and a purged user steps up with another factor or a
+// recovery code before re-enrolling, so the drop neither locks them out nor lets them in on email alone.
 /** Drops `totp-app` rows sealed under a key other than `activeKeyId` and unverified for `idleForMs`, answering how many went. Call it from a scheduled handler. @public */
 export async function purgeStaleTotpSecrets(db: D1Client, at: number, options: TotpSecretPurgeOptions): Promise<AuthStoreResult<number>> {
   if (options.requirement !== "mandatory") throw new Error(unpromptedRefusal(options.requirement));
@@ -112,18 +113,6 @@ export function createFactorStore(db: D1Client): FactorStore {
       return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("factors.confirm", outcome.error));
     },
 
-    // `failed_attempts` is cleared by the same statement: the budget guarded a secret that can no
-    // longer be checked, so carrying the spend forward would only lock the re-enrolment behind it.
-    async unconfirm(id, userId, at) {
-      const key = uuidKey(id);
-      const owner = uuidKey(userId);
-      if (!key || !owner) return ok(false);
-      const outcome = await db.execute(
-        sql`UPDATE auth_factors SET confirmed_at = NULL, failed_attempts = 0, updated_at = ${at} WHERE id = ${key} AND user_id = ${owner}`,
-      );
-      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("factors.unconfirm", outcome.error));
-    },
-
     async countAttempt(userId, kind, maxAttempts, at, lockoutMs) {
       const owner = uuidKey(userId);
       if (!owner) return ok(null);
@@ -168,8 +157,15 @@ export function createFactorStore(db: D1Client): FactorStore {
       const key = uuidKey(id);
       const owner = uuidKey(userId);
       if (!key || !owner) return ok(false);
-      const outcome = await db.execute(sql`DELETE FROM auth_factors WHERE id = ${key} AND user_id = ${owner}`);
-      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("factors.remove", outcome.error));
+      const holdsAnother = sql`EXISTS (SELECT 1 FROM auth_factors
+        WHERE user_id = ${owner} AND kind IN (${inList(RECOVERABLE_KINDS)}) AND confirmed_at IS NOT NULL)`;
+      const outcome = await db.batch([
+        sql`DELETE FROM auth_factors WHERE id = ${key} AND user_id = ${owner}`,
+        sql`DELETE FROM auth_recovery_codes WHERE user_id = ${owner} AND NOT ${holdsAnother}`,
+        sql`DELETE FROM auth_factors WHERE user_id = ${owner} AND kind = ${"recovery-code"} AND NOT ${holdsAnother}`,
+      ]);
+      if (!outcome.ok) return err(storeError("factors.remove", outcome.error));
+      return ok((outcome.data[0]?.rowsWritten ?? 0) > 0);
     },
   };
 }

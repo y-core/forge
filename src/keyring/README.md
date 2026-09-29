@@ -10,18 +10,18 @@ A value your app has to store and read back later — a webhook signing secret, 
 belongs to your app alone. Each frame is AES-256-GCM under a subkey derived for the purpose you name, bound to the row it is stored in.
 
 ```ts
-import { atRestKeyId, importKeyRing, openAtRest, sealAtRest, type AtRestBinding, type KeyRing } from "@y-core/forge/keyring";
+import { atRestKeyId, importKeyRing, keyRingSecrets, openAtRest, sealAtRest, type AtRestBinding, type KeyRing } from "@y-core/forge/keyring";
 ```
 
 ---
 
 ## Getting started
 
-Give the ring a root secret of its own, such as `APP_SEAL_KEY`: 32 random bytes of hex, the shape `openssl rand -hex 32` produces. **Never reuse
-the auth secret** — see [Gotchas](#gotchas).
+Give the ring a variable of its own, such as `APP_SEAL_KEY_RING`, holding 32 random bytes of hex — the shape `openssl rand -hex 32` produces.
+**Never reuse the auth secret** — see [Gotchas](#gotchas). `keyRingSecrets` splits the variable into the list `importKeyRing` takes:
 
 ```ts
-const ring = await importKeyRing([c.env.APP_SEAL_KEY]);
+const ring = await importKeyRing(keyRingSecrets(c.env.APP_SEAL_KEY_RING));
 ```
 
 Seal the value and store the frame as a blob:
@@ -82,16 +82,17 @@ That write is how rows migrate to a new secret: every row read after a rotation 
 
 ## Rotating the root secret
 
-**A rotation is prepending a secret, never replacing one.** `importKeyRing` takes hex root secrets newest first; the first seals, and every one
-opens:
+**A rotation is prepending a secret, never replacing one.** The ring variable holds hex root secrets comma-joined, newest first; the first seals,
+and every one opens:
 
-```ts
-const ring = await importKeyRing([c.env.APP_SEAL_KEY_NEW, c.env.APP_SEAL_KEY]);
+```bash
+APP_SEAL_KEY_RING=9c1e…,ab3f…
 ```
 
-Replacing the secret instead makes every stored row unopenable. For the same reason, **never mark the root secret `# forge:generate`** in
-`.dev.vars`: that marking is what lets `forge sync --rotate` overwrite a value, and the mechanism is
-[`src/tooling/cf/README.md`][cf-readme-rotate]'s "Rotating a secret".
+`keyRingSecrets` trims each entry and throws on an empty value or an empty entry. Replacing the secret instead makes every stored row unopenable,
+so **mark the ring `# forge:ring`** in `.dev.vars`: `forge cf sync --commit --local --rotate APP_SEAL_KEY_RING` then prepends a new key there
+and keeps the old ones. The deployed ring is rotated by hand, never pushed from `.dev.vars`. The mechanism for both is
+[`src/tooling/cf/README.md`][cf-readme-rotate]'s "Rotating a key ring".
 
 **Rotate on a schedule, not only on suspicion.** Every seal spends the random-nonce budget of its `(key, purpose)` subkey. The bound, the
 cadence it sets and why forge counts nothing are [`AUTH_MOUNTING.md`][am-7] §7's, and they hold for this ring unchanged.
@@ -161,6 +162,6 @@ is genuine.
 
 [am-7]: ../../docs/AUTH_MOUNTING.md#7-rotating-the-key-ring
 [auth-readme]: ../auth/README.md
-[cf-readme-rotate]: ../tooling/cf/README.md#rotating-a-secret
+[cf-readme-rotate]: ../tooling/cf/README.md#rotating-a-key-ring
 [crypto-readme]: ../crypto/README.md
 [namespaces-5k]: ../../docs/NAMESPACES.md#5k-keyring--at-rest-sealing-under-the-apps-own-root-secret

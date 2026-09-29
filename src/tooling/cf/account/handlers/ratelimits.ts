@@ -20,19 +20,9 @@ function matches(local: RateLimitConfig, remote: CfRateLimitBinding): boolean {
   );
 }
 
-function pagesResults(entries: RateLimitConfig[]): SyncResult[] {
-  return entries.map((entry) => ({
-    resourceType: "ratelimits" as const,
-    binding: entry.name,
-    action: "unavailable" as const,
-    local: true,
-    detail: 'not supported — wrangler rejects "ratelimits" in a Pages config, so this binding is inert',
-  }));
-}
-
 async function reconcileWorkerRateLimits(entries: RateLimitConfig[], ctx: HandlerContext): Promise<ReconcileResult<RateLimitConfig>> {
   const client = createCfClient(ctx.auth, ctx.fetch);
-  const getResult = await client.get<CfWorkerSettings>(workerSettings(ctx.auth.accountId, ctx.target.name));
+  const getResult = await client.get<CfWorkerSettings>(workerSettings(ctx.auth.accountId, ctx.scriptName));
 
   if (!getResult.ok) {
     const identities = entries.map((entry) => ({ binding: entry.name }));
@@ -72,6 +62,6 @@ export const rateLimitsHandler: ResourceHandler<RateLimitConfig> = {
 
   async reconcile(entries, ctx): Promise<ReconcileResult<RateLimitConfig>> {
     if (entries.length === 0) return { entries, results: [] };
-    return ctx.target.kind === "pages" ? { entries, results: pagesResults(entries) } : reconcileWorkerRateLimits(entries, ctx);
+    return reconcileWorkerRateLimits(entries, ctx);
   },
 };

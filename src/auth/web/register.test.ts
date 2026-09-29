@@ -40,9 +40,10 @@ import {
   fakeFactorStore,
   fakeSessionCookie,
   valuesOf,
+  recoveryOffer,
 } from "./web.fixture";
 
-const CSRF_SECRET = "b".repeat(64);
+const CSRF_SECRET = "38f516127047072640d79f757593f8c971ed2324a5e1db688f6f129f9b0478db";
 
 interface AppSeed {
   readonly userId?: string;
@@ -309,6 +310,7 @@ describe("the CSRF header name a renamed deployment stamps on the passkey scope"
             role: "second",
             requirement: "mandatory",
           },
+          recoveryOffer(),
         ],
       }),
     });

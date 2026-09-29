@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
+import { HTMX_TRUSTED_TYPES_POLICY } from "../contracts/htmx-contract";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import {
   TURNSTILE_ABANDONED_EVENT,
@@ -14,10 +15,11 @@ import {
   TURNSTILE_SCRIPT_SRC,
   TURNSTILE_SCRIPT_TIMEOUT_MS,
   TURNSTILE_SCRIPT_URL,
+  TURNSTILE_TRUSTED_TYPES_POLICY,
 } from "../contracts/turnstile-contract";
 import { Announcer } from "../core/announcer";
 import { Turnstile } from "../core/turnstile";
-import { mount } from "./browser.fixture";
+import { bundleModules, mount } from "./browser.fixture";
 import { TURNSTILE_FOCUS_GUARD_MS } from "./turnstile";
 
 declare global {
@@ -32,8 +34,8 @@ declare global {
       executes: number;
       params: Record<string, unknown> | null;
     };
-    /** Which press each released request answered, and the `skipConfirmation` it carried. */
-    turnstileIssued: Array<{ from: string; skip: boolean }>;
+    /** The control each replayed press named: a replayed `submit`'s submitter, or a replayed `click`'s target. */
+    turnstileReplayed: string[];
     /** Every `turnstile:abandoned` the form dispatched, by reason and by the control pressed. */
     turnstileAbandoned: Array<{ reason: string; submitter: string | null }>;
     /** Cleanup returned by the controller, parked so a later evaluate can call it. */
@@ -48,6 +50,8 @@ declare global {
     turnstileSteal?: () => void;
     /** What the mount put on the form and gave back, so a dropped removal has somewhere to show. */
     turnstileTeardown: { listeners: Record<string, number>; disconnects: number; timers: Array<{ id: number; delay: number }>; cleared: number[] };
+    /** Every `securitypolicyviolation` the page raised, by directive and sample. */
+    turnstileViolations: string[];
   }
 }
 
@@ -62,7 +66,11 @@ const FAKE_SCRIPT = `
     },
     // Records only: the real challenge answers later, which is what completeChallenge stands in for.
     execute: function () { window.turnstileCalls.executes += 1; },
-    reset: function () { window.turnstileCalls.resets += 1; },
+    reset: function () {
+      window.turnstileCalls.resets += 1;
+      var input = document.querySelector("[name='cf-turnstile-response']");
+      if (input) input.value = "";
+    },
     remove: function () { window.turnstileCalls.removes += 1; },
   };
 `;
@@ -137,7 +145,7 @@ function submitModeMarkup(
 ): Promise<string> {
   const { appearance, required = false, htmx = true, novalidate = false, onButton = false } = options;
   const { validateAttr = false, formNoValidate = false, second = false } = options;
-  const verb = htmx ? { "hx-post": "/contact" } : { action: "/contact", method: "post" };
+  const verb = htmx ? { "hx-post": "/contact", "hx-swap": "none" } : { action: "/contact", method: "post" };
   return render(
     jsx("form", {
       id: "form",
@@ -150,7 +158,9 @@ function submitModeMarkup(
         jsx("button", {
           id: "submit",
           type: "submit",
-          ...(onButton ? { "hx-post": "/contact" } : {}),
+          name: "intent",
+          value: "send",
+          ...(onButton ? { "hx-post": "/contact", "hx-swap": "none" } : {}),
           ...(validateAttr ? { "hx-validate": "true" } : {}),
           ...(formNoValidate ? { formnovalidate: true } : {}),
           children: "Send",
@@ -160,23 +170,30 @@ function submitModeMarkup(
   );
 }
 
-/** The `htmx:confirm` htmx fires before a request, carrying `elt`, the pressed `submitter`, and the closure that releases it. */
-const pressSubmit = (page: Page, options: { on?: string; elt?: string; submitter?: string } = {}) =>
+/** The `htmx:config:request` htmx fires before a request, carrying the issuing `sourceElement` and the pressed `submitter`. */
+const pressSubmit = (page: Page, options: { elt?: string; submitter?: string } = {}) =>
   page.evaluate((opts) => {
-    window.turnstileIssued = window.turnstileIssued ?? [];
-    const elt = document.querySelector(opts.elt ?? "#form");
+    if (window.turnstileReplayed === undefined) {
+      window.turnstileReplayed = [];
+      // Untrusted only, so a replayed `click`'s native follow-on `submit` is not counted twice; no htmx is
+      // loaded here to cancel that submission, so every one is cancelled before it navigates.
+      document.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (event.isTrusted) return;
+        window.turnstileReplayed.push((event as SubmitEvent).submitter?.id ?? (event.target as Element).id);
+      });
+      document.addEventListener("click", (event) => {
+        if (!event.isTrusted) window.turnstileReplayed.push((event.target as Element).id);
+      });
+    }
+    const sourceElement = document.querySelector(opts.elt ?? "#form");
     const submitter = document.querySelector(opts.submitter ?? "#submit");
-    const from = submitter?.id ?? "";
-    const event = new CustomEvent("htmx:confirm", {
+    const event = new CustomEvent("htmx:config:request", {
       bubbles: true,
       cancelable: true,
-      detail: {
-        elt,
-        triggeringEvent: { submitter },
-        issueRequest: (skipConfirmation: boolean) => window.turnstileIssued.push({ from, skip: skipConfirmation }),
-      },
+      detail: { ctx: { sourceElement, request: { submitter } } },
     });
-    document.querySelector(opts.on ?? opts.elt ?? "#form")?.dispatchEvent(event);
+    sourceElement?.dispatchEvent(event);
     return { prevented: event.defaultPrevented, executes: window.turnstileCalls.executes };
   }, options);
 
@@ -196,7 +213,7 @@ const submitState = (page: Page) =>
   page.evaluate(() => {
     const button = document.querySelector<HTMLButtonElement>("#submit");
     return {
-      issued: window.turnstileIssued ?? [],
+      replayed: window.turnstileReplayed ?? [],
       executes: window.turnstileCalls.executes,
       disabled: button?.disabled ?? null,
       busy: button?.getAttribute("aria-busy"),
@@ -992,13 +1009,13 @@ test.describe("mountTurnstile — the post-render focus guard", () => {
 });
 
 test.describe("mountTurnstile — the reset is scoped to the form's own submission", () => {
-  /** The `htmx:afterRequest` htmx fires on completion, naming the issuing element on `requestConfig`. */
-  const afterRequest = (page: Page, options: { successful?: boolean; from?: string }) =>
-    page.evaluate(({ successful, from }) => {
+  /** The `htmx:finally:request` htmx fires on completion, naming the issuing element on `ctx.sourceElement`. */
+  const finallyRequest = (page: Page, options: { status?: number; from?: string }) =>
+    page.evaluate(({ status, from }) => {
       const field = document.querySelector<HTMLInputElement>("#field");
       if (field) field.value = "typed@example.com";
       const elt = document.querySelector(from ?? "#form");
-      elt?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful, requestConfig: { elt } }, bubbles: true }));
+      elt?.dispatchEvent(new CustomEvent("htmx:finally:request", { detail: { ctx: { sourceElement: elt, response: { status } } }, bubbles: true }));
       return { resets: window.turnstileCalls.resets, value: field?.value };
     }, options);
 
@@ -1009,7 +1026,7 @@ test.describe("mountTurnstile — the reset is scoped to the form's own submissi
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    expect(await afterRequest(page, { successful: true })).toEqual({ resets: 1, value: "" });
+    expect(await finallyRequest(page, { status: 200 })).toEqual({ resets: 1, value: "" });
   });
 
   test("leaves the token and the fields alone for a request the form merely triggered", async ({ page }) => {
@@ -1021,7 +1038,7 @@ test.describe("mountTurnstile — the reset is scoped to the form's own submissi
 
     // A field-triggered reshape, bubbling to the form exactly as the submission does: burning the
     // single-use token here is what made every reshape cost the reader a fresh challenge.
-    expect(await afterRequest(page, { successful: true, from: "#field" })).toEqual({ resets: 0, value: "typed@example.com" });
+    expect(await finallyRequest(page, { status: 200, from: "#field" })).toEqual({ resets: 0, value: "typed@example.com" });
   });
 
   test("takes a submit control's request as the form's own when the form declares no verb", async ({ page }) => {
@@ -1031,7 +1048,7 @@ test.describe("mountTurnstile — the reset is scoped to the form's own submissi
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    expect(await afterRequest(page, { successful: true, from: "#submit" })).toEqual({ resets: 1, value: "" });
+    expect(await finallyRequest(page, { status: 200, from: "#submit" })).toEqual({ resets: 1, value: "" });
   });
 
   test("leaves a non-submit control's own request alone when the form declares no verb", async ({ page }) => {
@@ -1041,7 +1058,7 @@ test.describe("mountTurnstile — the reset is scoped to the form's own submissi
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    expect(await afterRequest(page, { successful: true, from: "#reshape" })).toEqual({ resets: 0, value: "typed@example.com" });
+    expect(await finallyRequest(page, { status: 200, from: "#reshape" })).toEqual({ resets: 0, value: "typed@example.com" });
   });
 });
 
@@ -1053,17 +1070,19 @@ test.describe("mountTurnstile — token lifecycle", () => {
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    const submissionCompleted = (successful: boolean) =>
-      page.evaluate((ok) => {
+    const submissionCompleted = (status: number) =>
+      page.evaluate((answered) => {
         const field = document.querySelector<HTMLInputElement>("#field");
         if (field) field.value = "typed@example.com";
         const elt = document.querySelector("#form");
-        elt?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: ok, requestConfig: { elt } }, bubbles: true }));
+        elt?.dispatchEvent(
+          new CustomEvent("htmx:finally:request", { detail: { ctx: { sourceElement: elt, response: { status: answered } } }, bubbles: true }),
+        );
         return { resets: window.turnstileCalls.resets, value: field?.value };
-      }, successful);
+      }, status);
 
-    expect(await submissionCompleted(true)).toEqual({ resets: 1, value: "" });
-    expect(await submissionCompleted(false)).toEqual({ resets: 2, value: "typed@example.com" });
+    expect(await submissionCompleted(200)).toEqual({ resets: 1, value: "" });
+    expect(await submissionCompleted(422)).toEqual({ resets: 2, value: "typed@example.com" });
   });
 
   test("wires no expiry or timeout reset, leaving both refreshes to Cloudflare's own defaults", async ({ page }) => {
@@ -1276,18 +1295,11 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
     // The window itself: no request yet, no token yet, and a button that says it is working.
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: true, busy: "true", token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: true, busy: "true", token: null });
 
     await completeChallenge(page);
 
-    // `true` is the `skipConfirmation` that keeps htmx from running its own `window.confirm`.
-    expect(await submitState(page)).toEqual({
-      issued: [{ from: "submit", skip: true }],
-      executes: 1,
-      disabled: false,
-      busy: null,
-      token: "token-1",
-    });
+    expect(await submitState(page)).toEqual({ replayed: ["submit"], executes: 1, disabled: false, busy: null, token: "token-1" });
   });
 
   test("spends no second challenge on a re-press of the same button, reporting the press it displaced", async ({ page }) => {
@@ -1303,13 +1315,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await completeChallenge(page);
 
-    expect(await submitState(page)).toEqual({
-      issued: [{ from: "submit", skip: true }],
-      executes: 1,
-      disabled: false,
-      busy: null,
-      token: "token-1",
-    });
+    expect(await submitState(page)).toEqual({ replayed: ["submit"], executes: 1, disabled: false, busy: null, token: "token-1" });
   });
 
   test("answers the press that displaced the first, never the earlier control's request", async ({ page }) => {
@@ -1319,8 +1325,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await expect.poll(() => rendered(page)).toBe(1);
 
     await pressSubmit(page);
-    // htmx reads the form's `lastButtonClicked` back when it issues, so the earlier press's request
-    // would go out under the later button's name.
     expect(await pressSubmit(page, { submitter: "#preview" })).toEqual({ prevented: true, executes: 1 });
 
     expect(await abandonments(page)).toEqual([{ reason: "superseded", submitter: "submit" }]);
@@ -1329,7 +1333,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await completeChallenge(page);
 
-    expect(await page.evaluate(() => window.turnstileIssued)).toEqual([{ from: "preview", skip: true }]);
+    expect(await page.evaluate(() => window.turnstileReplayed)).toEqual(["preview"]);
   });
 
   test("a failed challenge reveals the fallback, issues nothing, and leaves the button pressable", async ({ page }) => {
@@ -1345,7 +1349,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     // No reset of its own: `retry` defaults to `auto`, so Cloudflare is already retrying, and a
     // second `reset()` would spend a further challenge on top of the one it re-presented.
     expect(await page.evaluate(() => window.turnstileCalls.resets)).toBe(0);
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
     expect(await abandonments(page)).toEqual([{ reason: "error", submitter: "submit" }]);
   });
 
@@ -1360,7 +1364,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await expect(page.locator("[data-ref='turnstile-unsupported']")).toBeVisible();
     expect(await abandonments(page)).toEqual([{ reason: "unsupported", submitter: "submit" }]);
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
   });
 
   test("lets a press through unheld once the widget has errored, rather than holding it for the full budget", async ({ page }) => {
@@ -1374,7 +1378,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     // Unheld: htmx issues the request itself and `verifyTurnstile` refuses the token-less POST,
     // rather than the press sitting disabled for the whole execute budget on a widget that is dead.
     expect(await pressSubmit(page)).toEqual({ prevented: false, executes: 0 });
-    expect(await submitState(page)).toEqual({ issued: [], executes: 0, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 0, disabled: false, busy: null, token: null });
   });
 
   test("stands down the execute budget and the busy state while an interactive challenge is up", async ({ page }) => {
@@ -1386,24 +1390,18 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await pressSubmit(page);
 
     await fireCallback(page, "before-interactive-callback");
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
 
     // Well past the budget that would have discarded the submission out from under the visitor.
     await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS * 2);
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
 
     await fireCallback(page, "after-interactive-callback");
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: true, busy: "true", token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: true, busy: "true", token: null });
 
     await completeChallenge(page);
-    expect(await submitState(page)).toEqual({
-      issued: [{ from: "submit", skip: true }],
-      executes: 1,
-      disabled: false,
-      busy: null,
-      token: "token-1",
-    });
+    expect(await submitState(page)).toEqual({ replayed: ["submit"], executes: 1, disabled: false, busy: null, token: "token-1" });
   });
 
   test("ends an interactive challenge the visitor abandoned, at the human-scale ceiling", async ({ page }) => {
@@ -1423,7 +1421,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
     expect(await abandonments(page)).toEqual([{ reason: "interactive-timeout", submitter: "submit" }]);
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
   });
 
   test("keeps the human-scale ceiling for a press made while the interactive challenge is still up", async ({ page }) => {
@@ -1446,13 +1444,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await fireCallback(page, "after-interactive-callback");
     await completeChallenge(page);
 
-    expect(await submitState(page)).toEqual({
-      issued: [{ from: "submit", skip: true }],
-      executes: 1,
-      disabled: false,
-      busy: null,
-      token: "token-1",
-    });
+    expect(await submitState(page)).toEqual({ replayed: ["submit"], executes: 1, disabled: false, busy: null, token: "token-1" });
   });
 
   test("re-arms the budget after an interactive challenge, so an abandoned one still ends", async ({ page }) => {
@@ -1468,7 +1460,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS);
 
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
   });
 
   test("releases the press as a failure when the challenge never answers within the budget", async ({ page }) => {
@@ -1483,71 +1475,8 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS);
 
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
     expect(await abandonments(page)).toEqual([{ reason: "timeout", submitter: "submit" }]);
-  });
-
-  test("spends no challenge on a form htmx would halt as invalid", async ({ page }) => {
-    await serveScript(page);
-    await mount(page, await submitModeMarkup({ required: true }), EXPOSE);
-    await mountController(page);
-    await expect.poll(() => rendered(page)).toBe(1);
-
-    expect(await pressSubmit(page)).toEqual({ prevented: false, executes: 0 });
-
-    await page.locator("#field").fill("typed@example.com");
-    expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
-  });
-
-  test("holds an invalid press on a novalidate form, where htmx sends the request either way", async ({ page }) => {
-    await serveScript(page);
-    await mount(page, await submitModeMarkup({ required: true, novalidate: true }), EXPOSE);
-    await mountController(page);
-    await expect.poll(() => rendered(page)).toBe(1);
-
-    // The author declared constraint validation is not the gate, so the press spends a challenge
-    // rather than letting the request leave with an empty token.
-    expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
-
-    await completeChallenge(page);
-
-    expect(await submitState(page)).toEqual({
-      issued: [{ from: "submit", skip: true }],
-      executes: 1,
-      disabled: false,
-      busy: null,
-      token: "token-1",
-    });
-  });
-
-  test("holds an invalid press issued by the button, which htmx does not validate", async ({ page }) => {
-    await serveScript(page);
-    await mount(page, await submitModeMarkup({ required: true, onButton: true }), EXPOSE);
-    await mountController(page);
-    await expect.poll(() => rendered(page)).toBe(1);
-
-    expect(await pressSubmit(page, { elt: "#submit" })).toEqual({ prevented: true, executes: 1 });
-  });
-
-  test("holds an invalid press the control waived validation for with formnovalidate", async ({ page }) => {
-    await serveScript(page);
-    await mount(page, await submitModeMarkup({ required: true, formNoValidate: true }), EXPOSE);
-    await mountController(page);
-    await expect.poll(() => rendered(page)).toBe(1);
-
-    expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
-  });
-
-  test("spends no challenge on a button-issued press that asks htmx to validate", async ({ page }) => {
-    await serveScript(page);
-    await mount(page, await submitModeMarkup({ required: true, onButton: true, validateAttr: true }), EXPOSE);
-    await mountController(page);
-    await expect.poll(() => rendered(page)).toBe(1);
-
-    expect(await pressSubmit(page, { elt: "#submit" })).toEqual({ prevented: false, executes: 0 });
-
-    await page.locator("#field").fill("typed@example.com");
-    expect(await pressSubmit(page, { elt: "#submit" })).toEqual({ prevented: true, executes: 1 });
   });
 
   test("lets a press through unheld when the script never loaded, leaving the refusal to the server", async ({ page }) => {
@@ -1571,7 +1500,9 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await completeChallenge(page);
     await page.evaluate(() => {
       const elt = document.querySelector("#form");
-      elt?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true, requestConfig: { elt } }, bubbles: true }));
+      elt?.dispatchEvent(
+        new CustomEvent("htmx:finally:request", { detail: { ctx: { sourceElement: elt, response: { status: 200 } } }, bubbles: true }),
+      );
     });
     expect(await page.evaluate(() => window.turnstileCalls.resets)).toBe(1);
 
@@ -1589,7 +1520,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await page.evaluate(() => window.turnstileCleanup?.());
     await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS);
 
-    expect(await submitState(page)).toEqual({ issued: [], executes: 1, disabled: false, busy: null, token: null });
+    expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
     // Silently: teardown runs mid-swap, and the listener the event would reach is on a page that is
     // already going away.
@@ -1613,7 +1544,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     expect(await pressSubmit(page)).toEqual({ prevented: false, executes: 0 });
   });
 
-  test("under the default challenge='render' a confirm is neither held nor executed", async ({ page }) => {
+  test("under the default challenge='render' a press is neither held nor executed", async ({ page }) => {
     await serveScript(page);
     await mount(page, await htmxFormMarkup(), EXPOSE);
     await mountController(page);
@@ -1622,6 +1553,117 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     expect(await pressSubmit(page)).toEqual({ prevented: false, executes: 0 });
     expect(await page.evaluate(() => "execution" in (window.turnstileCalls.params ?? {}))).toBe(false);
+  });
+});
+
+test.describe("mountTurnstile — challenge='submit' against real htmx", () => {
+  const EXPOSE_HTMX = { expose: { forgeTurnstile: "./ui/client/turnstile", forgeHtmx: "./ui/client/htmx" } };
+
+  /** Mounts `markup` under htmx itself, answering `/contact` with 200 and recording every request body it is sent. */
+  async function mountUnderHtmx(page: Page, markup: string): Promise<string[]> {
+    const posts: string[] = [];
+    await serveScript(page);
+    await mount(page, markup, EXPOSE_HTMX);
+    await page.route("http://forge.test/contact", (route) => {
+      posts.push(route.request().postData() ?? "");
+      return route.fulfill({ status: 200, contentType: "text/html", body: "" });
+    });
+    await mountController(page);
+    await expect.poll(() => page.evaluate(() => window.turnstileCalls?.renders.length ?? 0)).toBe(1);
+    return posts;
+  }
+
+  const executes = (page: Page) => page.evaluate(() => window.turnstileCalls.executes);
+
+  test("spends no challenge and sends nothing for an invalid required form", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup({ required: true }));
+
+    await page.locator("#submit").click();
+    await page.waitForTimeout(50);
+
+    expect({ executes: await executes(page), posts }).toEqual({ executes: 0, posts: [] });
+  });
+
+  test("holds a valid press with no request, then sends exactly one POST carrying the token and the pressed button", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup());
+    await page.locator("#field").fill("typed@example.com");
+
+    await page.locator("#submit").click();
+    await expect.poll(() => executes(page)).toBe(1);
+    expect(await buttonState(page, "#submit")).toEqual({ disabled: true, busy: "true" });
+    expect(posts).toEqual([]);
+
+    await completeChallenge(page);
+    await expect.poll(() => page.evaluate(() => window.turnstileCalls.resets)).toBe(1);
+
+    expect(posts).toHaveLength(1);
+    const body = new URLSearchParams(posts[0]);
+    expect({ token: body.get("cf-turnstile-response"), intent: body.get("intent"), email: body.get("email") }).toEqual({
+      token: "token-1",
+      intent: "send",
+      email: "typed@example.com",
+    });
+  });
+
+  test("resets the form once the replayed submission is answered 200", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup());
+    await page.locator("#field").fill("typed@example.com");
+
+    await page.locator("#submit").click();
+    await expect.poll(() => executes(page)).toBe(1);
+    await completeChallenge(page);
+
+    await expect.poll(() => posts.length).toBe(1);
+    await expect(page.locator("#field")).toHaveValue("");
+  });
+
+  test("holds an invalid press on a novalidate form, where htmx sends the request either way", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup({ required: true, novalidate: true }));
+
+    await page.locator("#submit").click();
+    await expect.poll(() => executes(page)).toBe(1);
+    expect(posts).toEqual([]);
+
+    await completeChallenge(page);
+
+    await expect.poll(() => posts.length).toBe(1);
+    expect(new URLSearchParams(posts[0]).get("cf-turnstile-response")).toBe("token-1");
+  });
+
+  test("holds an invalid press issued by the button, which htmx does not validate, and replays it as a click", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup({ required: true, onButton: true }));
+
+    await page.locator("#submit").click();
+    await expect.poll(() => executes(page)).toBe(1);
+    expect(posts).toEqual([]);
+
+    await completeChallenge(page);
+
+    await expect.poll(() => posts.length).toBe(1);
+    expect(new URLSearchParams(posts[0]).get("cf-turnstile-response")).toBe("token-1");
+  });
+
+  test("holds an invalid press the control waived validation for with formnovalidate", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup({ required: true, formNoValidate: true }));
+
+    await page.locator("#submit").click();
+
+    await expect.poll(() => executes(page)).toBe(1);
+    expect(posts).toEqual([]);
+  });
+
+  test("spends no challenge on a button-issued press that asks htmx to validate", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup({ required: true, onButton: true, validateAttr: true }));
+
+    await page.locator("#submit").click();
+    await page.waitForTimeout(50);
+    expect({ executes: await executes(page), posts }).toEqual({ executes: 0, posts: [] });
+
+    await page.locator("#field").fill("typed@example.com");
+    await page.locator("#submit").click();
+
+    await expect.poll(() => executes(page)).toBe(1);
+    expect(posts).toEqual([]);
   });
 });
 
@@ -1669,7 +1711,9 @@ test.describe("the turnstile scope — the capability arrives with the component
     const after = await page.evaluate(() => {
       window.turnstileCleanup?.();
       const elt = document.querySelector("#form");
-      elt?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true, requestConfig: { elt } }, bubbles: true }));
+      elt?.dispatchEvent(
+        new CustomEvent("htmx:finally:request", { detail: { ctx: { sourceElement: elt, response: { status: 200 } } }, bubbles: true }),
+      );
       return { removes: window.turnstileCalls.removes, resets: window.turnstileCalls.resets };
     });
 
@@ -1713,7 +1757,9 @@ test.describe("mountTurnstile — scoped to the node it is given", () => {
       window.turnstileCleanup?.();
       for (const selector of ["#form", "#form-b"]) {
         const elt = document.querySelector(selector);
-        elt?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true, requestConfig: { elt } }, bubbles: true }));
+        elt?.dispatchEvent(
+          new CustomEvent("htmx:finally:request", { detail: { ctx: { sourceElement: elt, response: { status: 200 } } }, bubbles: true }),
+        );
       }
       return { removes: window.turnstileCalls.removes, resets: window.turnstileCalls.resets };
     });
@@ -1749,7 +1795,9 @@ test.describe("mountTurnstile — lifecycle", () => {
     const after = await page.evaluate(() => {
       window.turnstileCleanup?.();
       const elt = document.querySelector("#form");
-      elt?.dispatchEvent(new CustomEvent("htmx:afterRequest", { detail: { successful: true, requestConfig: { elt } }, bubbles: true }));
+      elt?.dispatchEvent(
+        new CustomEvent("htmx:finally:request", { detail: { ctx: { sourceElement: elt, response: { status: 200 } } }, bubbles: true }),
+      );
       return { removes: window.turnstileCalls.removes, resets: window.turnstileCalls.resets };
     });
 
@@ -1888,8 +1936,8 @@ test.describe("mountTurnstile — the teardown surface", () => {
     await page.evaluate(() => window.turnstileCleanup?.());
     const left = await page.evaluate(() => ({ ...window.turnstileTeardown.listeners }));
 
-    expect(Object.keys(added).sort()).toEqual(["focusin", "focusout", "htmx:afterRequest", "htmx:confirm"]);
-    expect(left).toEqual({ focusin: 0, focusout: 0, "htmx:afterRequest": 0, "htmx:confirm": 0 });
+    expect(Object.keys(added).sort()).toEqual(["focusin", "focusout", "htmx:config:request", "htmx:finally:request"]);
+    expect(left).toEqual({ focusin: 0, focusout: 0, "htmx:config:request": 0, "htmx:finally:request": 0 });
   });
 
   test("disconnects the theme observer on dispose", async ({ page }) => {
@@ -1950,5 +1998,55 @@ test.describe("mountTurnstile — the teardown surface", () => {
 
     expect(settle.armed).not.toBeNull();
     expect(settle.cleared).toContain(settle.armed);
+  });
+});
+
+const TT_ORIGIN = "http://forge.test";
+
+/** Serves the eager form as a real page under `csp`, its bundle an external script, and records violations and console errors. */
+async function openTrustedTypesPage(page: Page, csp: string): Promise<string[]> {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  await page.addInitScript(() => {
+    window.turnstileViolations = [];
+    document.addEventListener("securitypolicyviolation", (event) => {
+      window.turnstileViolations.push(`${event.violatedDirective} ${event.sample}`);
+    });
+  });
+  const bundle = await bundleModules(EXPOSE.expose);
+  const body = `<!doctype html><html><head><script src="/bundle.js"></script></head><body>${await formMarkup("eager")}</body></html>`;
+  await serveScript(page);
+  await page.route(`${TT_ORIGIN}/**`, (route) => {
+    if (new URL(route.request().url()).pathname === "/bundle.js") return route.fulfill({ contentType: "text/javascript", body: bundle });
+    return route.fulfill({ contentType: "text/html", headers: { "Content-Security-Policy": csp }, body });
+  });
+  await page.goto(`${TT_ORIGIN}/`);
+  await page.waitForFunction(() => "forgeTurnstile" in window);
+  return consoleErrors;
+}
+
+test.describe("mountTurnstile — under an enforcing Trusted Types CSP", () => {
+  test("loads the script through its named policy and renders, with no violation", async ({ page }) => {
+    await openTrustedTypesPage(
+      page,
+      `require-trusted-types-for 'script'; trusted-types ${HTMX_TRUSTED_TYPES_POLICY} ${TURNSTILE_TRUSTED_TYPES_POLICY}`,
+    );
+    await mountController(page);
+
+    await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
+    expect(await scriptCount(page)).toBe(1);
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
+    expect(await page.evaluate(() => window.turnstileViolations)).toEqual([]);
+  });
+
+  test("reveals the fallback and names the policy when the CSP leaves it out", async ({ page }) => {
+    const consoleErrors = await openTrustedTypesPage(page, `require-trusted-types-for 'script'; trusted-types ${HTMX_TRUSTED_TYPES_POLICY}`);
+    await mountController(page);
+
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
+    expect(await scriptCount(page)).toBe(0);
+    expect(consoleErrors.some((text) => text.includes(TURNSTILE_TRUSTED_TYPES_POLICY) && text.includes("trusted-types"))).toBe(true);
   });
 });

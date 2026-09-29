@@ -87,7 +87,7 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
       swap: SWAP.outerHtml,
       pushUrl: "true",
       indicator: `#${targetId}`,
-      disabledElt: "find button[type='submit']",
+      disable: "find button[type='submit']",
     })}>
     <FormField name='q' class='min-w-xs flex-1'>
       <FormField.Label name='q'>Search</FormField.Label>
@@ -188,7 +188,7 @@ export const LogLoadMoreRow: FC<LogLoadMoreRowProps> = ({ cursor, complete, load
             target: `#${LOG_TBODY_ID}`,
             swap: SWAP.beforeEnd,
             indicator: "this",
-            disabledElt: "this",
+            disable: "this",
           })}>
           {failed ? "Try again" : "Load more"}
         </Button>
@@ -233,7 +233,7 @@ const LogRowPair: FC<{ row: LogRow; loadMoreAction: string }> = ({ row, loadMore
               target: `#${detailId}`,
               swap: SWAP.outerHtml,
               indicator: `#${detailId}`,
-              disabledElt: "this",
+              disable: "this",
             })}>
             {row.message}
           </Button>
@@ -301,7 +301,7 @@ const LogEmptyRow: FC<{ level?: string | undefined; q?: string | undefined; clea
                 swap: SWAP.outerHtml,
                 pushUrl: clearAction,
                 indicator: "this",
-                disabledElt: "this",
+                disable: "this",
               })}>
               Clear filters
             </Button>
@@ -328,7 +328,7 @@ const LogErrorRow: FC<{ level?: string | undefined; q?: string | undefined; retr
             target: `#${LOG_TBODY_ID}`,
             swap: SWAP.outerHtml,
             indicator: "this",
-            disabledElt: "this",
+            disable: "this",
           })}>
           Retry
         </Button>

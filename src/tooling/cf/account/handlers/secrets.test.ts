@@ -5,23 +5,14 @@ import { join } from "node:path";
 
 import type { WranglerConfig } from "../../types";
 import { syncBindings } from "../engine";
-import { GENERATE_MARKER, PUSH_MARKER } from "./devvars";
+import { GENERATE_MARKER, PUSH_MARKER, RING_MARKER } from "./devvars";
 import { createRotatableSecretsHandler, createSecretsHandler } from "./secrets";
 import type { HandlerContext } from "./types";
 
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
 function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-  return {
-    auth: AUTH,
-    scriptName: "worker",
-    prefix: "",
-    dryRun: false,
-    rotate: new Set<string>(),
-    fetch: globalThis.fetch,
-    target: { kind: "worker", name: "worker" },
-    ...overrides,
-  };
+  return { auth: AUTH, scriptName: "worker", prefix: "", dryRun: false, rotate: new Set<string>(), fetch: globalThis.fetch, ...overrides };
 }
 
 function makeFetch(secrets: unknown[], putOk = true): typeof globalThis.fetch {
@@ -340,6 +331,51 @@ describe("rotatable secrets — the local value never leaves", () => {
   });
 });
 
+describe("key rings — the local ring only creates a missing one", () => {
+  const { configPath } = makeProject(`${RING_MARKER}\nAPP_SEAL_KEY_RING=new-key,old-key\n`);
+  const handler = createSecretsHandler(configPath);
+  const entry = [{ name: "APP_SEAL_KEY_RING", value: "new-key,old-key", conflictsWithVar: false }];
+
+  function capturingFetch(remoteSecrets: unknown[], sent: { text?: string }[]): typeof globalThis.fetch {
+    return async (_url, init) => {
+      if ((init?.method ?? "GET").toUpperCase() === "PUT") {
+        sent.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: {} }));
+      }
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: remoteSecrets }));
+    };
+  }
+
+  it("is extracted by the fixed handler, and never by the rotatable one", () => {
+    expect(handler.extract({} as WranglerConfig)).toEqual(entry);
+    expect(createRotatableSecretsHandler(configPath).extract({} as WranglerConfig)).toEqual([]);
+  });
+
+  it("creates a ring that is not there yet from the local value on a plain --commit", async () => {
+    const sent: { text?: string }[] = [];
+    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch([], sent) }));
+    expect(sent[0]?.text).toBe("new-key,old-key");
+    expect(res.results[0]?.action).toBe("created");
+  });
+
+  it("leaves an existing ring in-sync on a plain --commit, and writes nothing", async () => {
+    const sent: { text?: string }[] = [];
+    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("APP_SEAL_KEY_RING"), sent) }));
+    expect(sent).toHaveLength(0);
+    expect(res.results[0]?.action).toBe("in-sync");
+  });
+
+  it("never overwrites an existing ring, even when the rotate set names it", async () => {
+    const sent: { text?: string }[] = [];
+    const res = await handler.reconcile(
+      entry,
+      makeCtx({ fetch: capturingFetch(remote("APP_SEAL_KEY_RING"), sent), rotate: new Set(["APP_SEAL_KEY_RING"]) }),
+    );
+    expect(sent).toHaveLength(0);
+    expect(res.results[0]?.action).toBe("in-sync");
+  });
+});
+
 describe("a remote secret nothing local claims", () => {
   it("is reported as remote-only, and never removed", async () => {
     const { configPath } = makeProject(fixed("MINE"));
@@ -360,24 +396,6 @@ describe("a remote secret nothing local claims", () => {
     const { configPath } = makeProject(`LOG_LEVEL=DEBUG\n${GENERATE_MARKER}\nSESSION_SECRET=v\n`);
     const res = await createSecretsHandler(configPath).reconcile([], makeCtx({ fetch: makeFetch(remote("SESSION_SECRET", "LOG_LEVEL")) }));
     expect(res.results).toEqual([]);
-  });
-
-  it("is found on the pages branch too", async () => {
-    const { configPath } = makeProject(fixed("MINE"));
-    const pagesFetch: typeof globalThis.fetch = async () =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          errors: [],
-          messages: [],
-          result: { name: "p", deployment_configs: { production: { env_vars: { STALE_KEY: { type: "secret_text" } } } } },
-        }),
-      );
-    const res = await createSecretsHandler(configPath).reconcile(
-      [{ name: "MINE", value: "v", conflictsWithVar: false }],
-      makeCtx({ fetch: pagesFetch, dryRun: true, target: { kind: "pages", name: "p" } }),
-    );
-    expect(res.results.find((r) => r.binding === "STALE_KEY")?.action).toBe("remote-only");
   });
 });
 
@@ -447,122 +465,6 @@ describe("secret values never reach a result row", () => {
   });
 });
 
-describe("fixed secrets — pages project", () => {
-  const { configPath } = makeProject(fixed("CSRF_SECRET"));
-  const handler = createSecretsHandler(configPath);
-
-  function makePagesCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
-    return makeCtx({ scriptName: "secrets-fixture", target: { kind: "pages", name: "secrets-fixture" }, ...overrides });
-  }
-
-  function makePagesFetch(
-    envVars: Record<string, { type: string; value?: string }>,
-    captured: { url: string; method: string; body: unknown }[],
-    patchOk = true,
-  ): typeof globalThis.fetch {
-    return async (url, init) => {
-      const method = (init?.method ?? "GET").toUpperCase();
-      if (method === "PATCH") {
-        captured.push({ url: String(url), method, body: JSON.parse(String(init?.body)) });
-        if (!patchOk)
-          return new Response(JSON.stringify({ success: false, errors: [{ code: 1, message: "nope" }], messages: [], result: null }), {
-            status: 400,
-          });
-        return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: {} }));
-      }
-      captured.push({ url: String(url), method, body: undefined });
-      return new Response(
-        JSON.stringify({
-          success: true,
-          errors: [],
-          messages: [],
-          result: { name: "secrets-fixture", deployment_configs: { production: { env_vars: envVars, wrangler_config_hash: "hash-1" } } },
-        }),
-      );
-    };
-  }
-
-  it("finds a secret by name and says the value was not compared", async () => {
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const fetchFn = makePagesFetch({ CSRF_SECRET: { type: "secret_text" } }, captured);
-
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }], makePagesCtx({ fetch: fetchFn }));
-
-    expect(res.results[0]?.action).toBe("in-sync");
-    expect(res.results[0]?.detail).toBe("name only (value not readable)");
-    expect(captured[0]?.url).toContain("/pages/projects/secrets-fixture");
-  });
-
-  it("does not mistake a plain_text var for a secret", async () => {
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const fetchFn = makePagesFetch({ CSRF_SECRET: { type: "plain_text", value: "x" } }, captured);
-    const res = await handler.reconcile(
-      [{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }],
-      makePagesCtx({ fetch: fetchFn, dryRun: true }),
-    );
-    expect(res.results[0]?.action).toBe("would-create");
-  });
-
-  it("creates via a PATCH with the documented body shape", async () => {
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const fetchFn = makePagesFetch({}, captured);
-
-    const res = await handler.reconcile([{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }], makePagesCtx({ fetch: fetchFn }));
-    expect(res.results[0]?.action).toBe("created");
-
-    const patch = captured.find((c) => c.method === "PATCH");
-    expect(patch?.url).toBe("https://api.cloudflare.com/client/v4/accounts/acc/pages/projects/secrets-fixture");
-    expect(patch?.body).toEqual({
-      deployment_configs: { production: { env_vars: { CSRF_SECRET: { type: "secret_text", value: "v" } }, wrangler_config_hash: "hash-1" } },
-    });
-  });
-
-  it("reports a missing project as unavailable rather than as an auth error", async () => {
-    const notFound: typeof globalThis.fetch = async () =>
-      new Response(JSON.stringify({ success: false, errors: [{ code: 7003, message: "Could not route" }], messages: [], result: null }), {
-        status: 404,
-      });
-    const res = await handler.reconcile([{ name: "S", value: "v", conflictsWithVar: false }], makePagesCtx({ fetch: notFound }));
-    expect(res.results[0]?.action).toBe("unavailable");
-    expect(res.results[0]?.detail).toBe("pages project · pages project not found: secrets-fixture");
-  });
-
-  it("keeps the secret value out of rows even when the PATCH is rejected", async () => {
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const fetchFn = makePagesFetch({}, captured, false);
-    const res = await handler.reconcile(
-      [{ name: "CSRF_SECRET", value: "S3CR3T-SENTINEL", conflictsWithVar: false }],
-      makePagesCtx({ fetch: fetchFn }),
-    );
-    expect(res.results[0]?.action).toBe("error");
-    expect(JSON.stringify(res.results)).not.toContain("S3CR3T-SENTINEL");
-  });
-
-  it("keeps an existing secret present when the batched PATCH is rejected", async () => {
-    // One rejected PATCH would otherwise mark every batched write `remote: false`.
-    const { configPath: rotatablePath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=local\n`);
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const fetchFn = makePagesFetch({ SESSION_SECRET: { type: "secret_text" } }, captured, false);
-    const res = await createRotatableSecretsHandler(rotatablePath).reconcile(
-      [{ name: "SESSION_SECRET", value: "local", conflictsWithVar: false }],
-      makePagesCtx({ fetch: fetchFn, rotate: new Set(["SESSION_SECRET"]) }),
-    );
-    expect(res.results[0]?.action).toBe("error");
-    expect(res.results[0]?.remote).toBe(true);
-  });
-
-  it("does not push a rotatable secret on this branch either", async () => {
-    const { configPath: rotatablePath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=local\n`);
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const res = await createRotatableSecretsHandler(rotatablePath).reconcile(
-      [{ name: "SESSION_SECRET", value: "local", conflictsWithVar: false }],
-      makePagesCtx({ fetch: makePagesFetch({}, captured), dryRun: true }),
-    );
-    expect(captured.map((c) => c.method)).toEqual(["GET"]);
-    expect(res.results[0]?.action).toBe("would-rotate");
-  });
-});
-
 describe("a secret is not a binding", () => {
   // A secret has no id and takes no prefix: it exists under its own name, unlike KV/D1/R2/queues
   // resources that are created independently and then linked via a prefix and write-back.
@@ -628,22 +530,6 @@ describe("a secret whose name is also a plain var is refused", () => {
     expect(res.results[0]?.action).toBe("refused");
     expect(res.results[0]?.detail).toContain("vars");
     expect(sent).not.toContain("PUT");
-  });
-
-  it("refuses on the pages path too, since the rule is the config's and not the surface's", async () => {
-    const { configPath } = makeProject(fixed("SHARED_NAME"));
-    const handler = createSecretsHandler(configPath);
-    const captured: { url: string; method: string; body: unknown }[] = [];
-    const fetchFn: typeof globalThis.fetch = async (_url, init) => {
-      const method = (init?.method ?? "GET").toUpperCase();
-      if (method === "PATCH") captured.push({ url: "", method, body: null });
-      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { deployment_configs: { production: {} } } }));
-    };
-
-    const res = await handler.reconcile(handler.extract(CONFLICT), makeCtx({ fetch: fetchFn, target: { kind: "pages", name: "proj" } }));
-
-    expect(res.results[0]?.action).toBe("refused");
-    expect(captured).toEqual([]);
   });
 
   // The refusal sits above the `rotatable` branch, so `--rotate` is covered by where it is

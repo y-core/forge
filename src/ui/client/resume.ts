@@ -145,17 +145,13 @@ function disposeScope(root: HTMLElement): void {
   resumed.delete(root);
 }
 
-/** Disposes every scope whose root has left its document. */
-function sweepDetached(): void {
-  // An htmx swap detaches a scope's markup with no notice, so nothing else would ever run those
-  // disposers; sweeping as the replacement resumes bounds the collection to live scopes.
+/** Disposes every scope whose root has left its document. @internal */
+export function sweepDetachedScopes(): void {
   for (const root of [...active.keys()]) {
     if (!root.isConnected) disposeScope(root);
   }
 }
 
-// htmx's per-element `cleanUpElement` hook, because `sweepDetached` runs only as something else
-// resumes: a swap that removes scoped markup and introduces none would leak `active`'s listeners.
 /** Disposes the scope at `el` and every scope below it, before the DOM removes them. @public */
 export function disposeScopesIn(el: HTMLElement): void {
   // The same cast `scanRoot` makes: under the Workers consumer's lib set `HTMLElement.append` is
@@ -167,7 +163,8 @@ export function disposeScopesIn(el: HTMLElement): void {
 
 /** Hydrates a scope's state into signals and runs its `setup` exactly once. */
 function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
-  sweepDetached();
+  // A removal outside htmx gives no notice, so sweeping here too bounds `active` to live scopes without the htmx entry.
+  sweepDetachedScopes();
   let state = resumed.get(root);
   if (!state) {
     const signals = hydrateState(root.dataset[ISLAND_STATE_KEY]);

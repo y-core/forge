@@ -51,9 +51,3 @@ export function findSubpathCitations(source: string, packageName: string, opts: 
   }
   return found;
 }
-
-/** Every published subpath that no citation names and no exemption licenses, sorted. */
-export function uncitedSubpaths(exportSubpaths: Iterable<string>, citations: readonly SubpathCitation[], exempt: ReadonlySet<string>): string[] {
-  const cited = new Set(citations.map((citation) => citation.subpath));
-  return [...exportSubpaths].filter((subpath) => !cited.has(subpath) && !exempt.has(subpath)).sort();
-}

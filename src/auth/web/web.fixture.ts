@@ -22,6 +22,7 @@ import type {
   ChallengeStore,
   CredentialStore,
   FactorStore,
+  RecoveryCodeStore,
   UserStore,
 } from "../types";
 import { authPaths } from "./paths";
@@ -102,18 +103,19 @@ export const HOSTILE_TEXT = `Ada & "Bob" <script>'x'`;
 export const HOSTILE_TEXT_ESCAPED = "Ada &amp; &quot;Bob&quot; &lt;script&gt;&#39;x&#39;";
 
 /** The session cookie every web unit mounts `sessionMiddleware` with. @internal */
-export const fakeSessionCookie = createSignedCookie("__session", { path: "/", secrets: ["o".repeat(32)] });
+export const fakeSessionCookie = createSignedCookie("__session", { path: "/", secrets: ["Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv"] });
 
 /** Which kinds carry an enrolment row; email-OTP's enrolment is a verified email, so it has none. @internal */
-export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "totp-app"];
+export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "recovery-code", "totp-app"];
 
-/** Every offered set the factor matrix crosses — none, each, every pair, all three. @internal */
+/** Every offered set the factor matrix crosses; a set holding `totp-app` or `passkey` is offered with `recovery-code` beside it. @internal */
 export const AUTH_FACTOR_SETS: readonly (readonly AuthFactorKind[])[] = [
   [],
   ["email-otp"],
   ["passkey"],
   ["totp-app"],
   ["email-otp", "passkey"],
+  ["email-otp", "recovery-code"],
   ["email-otp", "totp-app"],
   ["passkey", "totp-app"],
   ["email-otp", "passkey", "totp-app"],
@@ -135,7 +137,7 @@ export function fakeFactorService<kind extends AuthFactorKind>(kind: kind): Auth
     kind,
     capabilities: { stepUp: true },
     challengeTtlMs: AUTH_OTP_TTL_MS,
-    codeDigits: kind === "passkey" ? null : AUTH_OTP_DIGITS,
+    codeDigits: kind === "passkey" || kind === "recovery-code" ? null : AUTH_OTP_DIGITS,
     codePeriodSeconds: null,
     reissueAfterMs: kind === "email-otp" ? AUTH_OTP_COOLDOWN_MS : null,
     createChallenge: async () => err("unavailable" as const),
@@ -171,11 +173,46 @@ export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStor
     findEnrolled: async (_userId, kinds) => ok(rows.filter((row) => kinds.includes(row.kind))),
     enrol: async () => err(new Error("fakeFactorStore: enrol is not part of the view fixture") as never),
     confirm: async () => ok(true),
-    unconfirm: async () => ok(true),
     countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
     recordVerification: async () => ok(true),
     countSecretsNotUnder: async () => ok(0),
     remove: async () => ok(true),
+  };
+}
+
+/** One stored recovery code of `fakeRecoveryCodeStore`, its hash held as hex. */
+interface FakeRecoveryCode {
+  readonly userId: string;
+  readonly hash: string;
+  staged: boolean;
+  usedAt: number | null;
+}
+
+/** A recovery-code store held in memory, whose staging, commit and single-use consumption behave as the real one's. @internal */
+export function fakeRecoveryCodeStore(): RecoveryCodeStore {
+  let codes: FakeRecoveryCode[] = [];
+  const hex = (hash: Uint8Array<ArrayBuffer>) => [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return {
+    stage: async (userId, hashes) => {
+      codes = [
+        ...codes.filter((code) => !(code.userId === userId && code.staged)),
+        ...hashes.map((hash) => ({ userId, hash: hex(hash), staged: true, usedAt: null })),
+      ];
+      return ok(undefined);
+    },
+    holdsStaged: async (userId, hash) => ok(codes.some((code) => code.userId === userId && code.staged && code.hash === hex(hash))),
+    commit: async (userId) => {
+      codes = codes.filter((code) => !(code.userId === userId && !code.staged));
+      for (const code of codes) if (code.userId === userId) code.staged = false;
+      return ok(undefined);
+    },
+    consume: async (userId, _factorId, hash, at) => {
+      const code = codes.find((held) => held.userId === userId && !held.staged && held.usedAt === null && held.hash === hex(hash));
+      if (code === undefined) return ok(false);
+      code.usedAt = at;
+      return ok(true);
+    },
+    remaining: async (userId) => ok(codes.filter((code) => code.userId === userId && !code.staged && code.usedAt === null).length),
   };
 }
 
@@ -198,10 +235,20 @@ export function fakeFactorOffer(
   return { service: service as AuthIdentifyingFactorService, role };
 }
 
-/** A registry offering email-OTP as primary and `kinds` as optional seconds. @internal */
+/** The optional `recovery-code` offer the registry demands beside any `totp-app` or `passkey` offer. @internal */
+export function recoveryOffer(): AuthFactorOffer {
+  return fakeFactorOffer("recovery-code", "second");
+}
+
+/** A registry offering email-OTP as primary and `kinds` as optional seconds, with `recovery-code` beside them. @internal */
 export function fakeFactorRegistry(kinds: readonly AuthFactorKind[]): AuthFactorRegistry {
+  const recoverable = kinds.some((kind) => kind === "passkey" || kind === "totp-app");
   return createFactorRegistry(fakeFactorStore([]), {
-    offered: [fakeFactorOffer("email-otp", "primary"), ...kinds.map((kind) => fakeFactorOffer(kind, "second"))],
+    offered: [
+      fakeFactorOffer("email-otp", "primary"),
+      ...kinds.map((kind) => fakeFactorOffer(kind, "second")),
+      ...(recoverable ? [recoveryOffer()] : []),
+    ],
   });
 }
 
@@ -214,16 +261,18 @@ export function authFactorOfferings(): AuthFactorOffering[] {
   });
 }
 
-/** The tagged list `kinds` amounts to under `assignment`, with `primary` declared primary. @internal */
+/** The tagged list `kinds` amounts to under `assignment`, with `primary` declared primary and `recovery-code` beside a recoverable kind. @internal */
 function authFactorOffers(
   kinds: readonly AuthFactorKind[],
   primary: AuthFactorKind | undefined,
   assignment: AuthFactorAssignment,
 ): AuthFactorOffer[] {
   let seconds = 0;
-  return kinds.map((kind) =>
+  const offers = kinds.map((kind) =>
     kind === primary ? fakeFactorOffer(kind, "primary") : fakeFactorOffer(kind, "second", assignment.requirement(seconds++)),
   );
+  const recoverable = kinds.some((kind) => kind === "passkey" || kind === "totp-app") && !kinds.includes("recovery-code");
+  return recoverable ? [...offers, recoveryOffer()] : offers;
 }
 
 /** Every offering crossed with every assignment, in a stable order — the matrix both view units assert across. @internal */
@@ -340,6 +389,7 @@ export function fakeAdminUserStore(users: readonly AuthUser[], overrides: Partia
     setAdmin: async () => ok("changed" as const),
     setDeactivated: async () => ok("changed" as const),
     remove: async () => ok("changed" as const),
+    resetFactors: async () => ok("changed" as const),
     ...overrides,
   };
 }

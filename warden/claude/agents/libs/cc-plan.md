@@ -31,8 +31,8 @@ your plan directly and should never have to guess.
 2. Read `CLAUDE.md` — the constitution, the facade doctrine, and the Growth Rules placement recipes.
 3. **Before choosing a namespace, search the corpus** — `knowledge_search` with the placement question in plain words, then `knowledge_read` on the
    chunk id it returns (`AGENT_GUIDE.md §1`). Placement is where retrieval most changes the answer: the section that rules on it is usually titled
-   after the namespace, not after your question. Search **both corpora** — `canon` carries the portable rule, `local` this repository's catalog and
-   its local rulings, and a placement question almost always needs both. Name the corpus when you cite, because the titles collide. **An empty
+   after the namespace, not after your question. Search **both corpora** — `canon` carries the portable rule, `local` this repository's local
+   rulings, and a placement question almost always needs both. Name the corpus when you cite, because the titles collide. **An empty
    result is an answer**: nothing governs it, so decide on the merits and say in the plan that you did — never infer a rule from a near miss. Cite
    the chunk id for every placement claim so a reviewer can resolve it. Where no warden MCP is configured, the same index is `warden search` and
    `warden outline <path>` from a terminal.
@@ -73,7 +73,7 @@ plan instead.
   the boundary
 - Always plan the test cases alongside the implementation, as a section `cc-test` can act on
 - Every new public symbol needs its barrel export planned explicitly
-- A new namespace needs its `docs/` catalog entry and its graph classification planned too
+- A new namespace needs its README (or a parent's) and its graph classification planned too
 
 ## Collaboration
 

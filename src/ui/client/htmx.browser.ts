@@ -1,13 +1,16 @@
 import { expect, test } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
 
+import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "../../form/constants";
 import { jsx } from "../../jsx/jsx-runtime";
 import type { JSXNode } from "../../jsx/types";
 import { render } from "../../testing/render";
 import { ANNOUNCE_FAILURE_ATTR, ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
 import { Alert } from "../core/alert";
 import { Announcer } from "../core/announcer";
+import { Button } from "../core/button";
 import { FieldError } from "../core/field";
+import { Form } from "../core/form";
 import { createIcon } from "../core/icon";
 import { Spinner } from "../core/spinner";
 import { mount } from "./browser.fixture";
@@ -63,7 +66,16 @@ async function answer(page: Page, respond: (route: Route) => Promise<void>): Pro
 /** Clicks the button and resolves once htmx has settled the swap its response caused. */
 async function loadAndSettle(page: Page): Promise<void> {
   await page.evaluate(() => {
-    window.htmxDone = new Promise((resolve) => document.body.addEventListener("htmx:afterSettle", () => resolve(), { once: true }));
+    window.htmxDone = new Promise((resolve) => document.addEventListener("htmx:after:swap", () => resolve(), { once: true }));
+  });
+  await page.click("#load");
+  await page.evaluate(() => window.htmxDone);
+}
+
+/** Clicks the button and resolves once htmx has finished the request, whether or not it swapped. */
+async function requestAndFinish(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.htmxDone = new Promise((resolve) => document.addEventListener("htmx:finally:request", () => resolve(), { once: true }));
   });
   await page.click("#load");
   await page.evaluate(() => window.htmxDone);
@@ -85,6 +97,19 @@ test.describe("htmx — a request's busy indicator", () => {
 
     expect(await politeWritesSettled(page)).toEqual(["probe"]);
     await expect(page.locator("#out")).toHaveText("Done");
+  });
+
+  test("never speaks the spinner when the request fails on the network before the settle", async ({ page }) => {
+    await mountPage(page, await markup());
+    await answer(page, (route) => route.abort());
+
+    await page.evaluate(() => {
+      window.htmxDone = new Promise((resolve) => document.addEventListener("htmx:error", () => resolve(), { once: true }));
+    });
+    await page.click("#load");
+    await page.evaluate(() => window.htmxDone);
+
+    expect(await politeWritesSettled(page)).toEqual(["probe"]);
   });
 
   test("speaks the indicator's spinner label while a slow request is still waiting", async ({ page }) => {
@@ -159,14 +184,137 @@ test.describe("htmx — content a swap introduces", () => {
 });
 
 test.describe("htmx — the configured module", () => {
-  test("leaves eval and swapped-in script tags allowed, so the CSP is what blocks them", async ({ page }) => {
+  test("drops htmx's own unlayered indicator sheet, so forge-ui's layered rules govern", async ({ page }) => {
     await mount(page, "<div></div>", EXPOSE);
 
-    const config = await page.evaluate(() => {
-      const { allowEval, allowScriptTags } = window.forgeHtmx.htmx.config;
-      return { allowEval, allowScriptTags };
+    const adopted = await page.evaluate(() =>
+      document.adoptedStyleSheets.some((sheet) => {
+        const first = sheet.cssRules[0];
+        return first instanceof CSSStyleRule && first.selectorText === ".htmx-indicator";
+      }),
+    );
+
+    expect(adopted).toBe(false);
+  });
+
+  test("swaps a 422 fragment into the target and interrupts with its field error", async ({ page }) => {
+    await mountPage(page, await markup());
+    const html = await render(jsx("form", { children: FieldError({ name: "email", children: "Enter an email address" }) }));
+    await answer(page, (route) => route.fulfill({ status: 422, contentType: "text/html", body: html }));
+
+    await loadAndSettle(page);
+
+    await expect(page.locator("#out")).toContainText("Enter an email address");
+    await expect(page.locator(ASSERTIVE)).toHaveText("Enter an email address");
+  });
+
+  test("leaves the target unchanged on a 500", async ({ page }) => {
+    await mountPage(page, await markup());
+    await answer(page, (route) => route.fulfill({ status: 500, contentType: "text/html", body: "<p>Server error</p>" }));
+
+    await requestAndFinish(page);
+
+    await expect(page.locator("#out")).toBeEmpty();
+  });
+
+  test("leaves the target untouched on a text/plain 403 and interrupts with its text", async ({ page }) => {
+    await mountPage(page, await markup());
+    await page.evaluate(() => {
+      const out = document.querySelector("#out");
+      if (out) out.textContent = "Kept";
+    });
+    await answer(page, (route) => route.fulfill({ status: 403, contentType: "text/plain", body: "Forbidden" }));
+
+    await requestAndFinish(page);
+
+    await expect(page.locator("#out")).toHaveText("Kept");
+    await expect(page.locator(ASSERTIVE)).toHaveText("Forbidden");
+  });
+
+  test("still swaps a text/plain 403 where the element asks for it with hx-status", async ({ page }) => {
+    const html = await render(
+      jsx("div", {
+        children: [
+          jsx("button", { id: "load", "hx-get": "/results", "hx-target": "#out", "hx-status:403": "swap:innerHTML", children: "Load" }),
+          jsx("div", { id: "out" }),
+          Announcer({}),
+        ],
+      }),
+    );
+    await mountPage(page, html);
+    await answer(page, (route) => route.fulfill({ status: 403, contentType: "text/plain", body: "Forbidden" }));
+
+    await requestAndFinish(page);
+
+    await expect(page.locator("#out")).toHaveText("Forbidden");
+  });
+
+  test("never speaks the spinner for a fast request whose button swaps itself away", async ({ page }) => {
+    const html = await render(
+      jsx("div", {
+        children: [
+          jsx("button", {
+            id: "load",
+            "hx-get": "/results",
+            "hx-target": "this",
+            "hx-swap": "outerHTML",
+            "hx-indicator": "#busy",
+            children: "Load",
+          }),
+          jsx("span", { id: "busy", class: "htmx-indicator", children: Spinner({ icon, label: "Loading results" }) }),
+          Announcer({}),
+        ],
+      }),
+    );
+    await mountPage(page, html);
+    await answer(page, (route) => route.fulfill({ contentType: "text/html", body: '<p id="done">Done</p>' }));
+
+    await loadAndSettle(page);
+
+    await expect(page.locator("#done")).toHaveText("Done");
+    expect(await politeWritesSettled(page)).toEqual(["probe"]);
+  });
+});
+
+test.describe("htmx — a no-JS DELETE form whose button carries the verb", () => {
+  const token = "csrf-token-7f3a";
+
+  type SentDelete = { method: string; url: string; csrfHeader: string | null };
+
+  async function submitDelete(page: Page, button: Record<string, unknown>): Promise<SentDelete> {
+    const html = await render(
+      Form({
+        csrfToken: token,
+        action: "/items/1",
+        children: Button({ id: "load", type: "submit", "hx-delete": "/items/1", ...button, children: "Remove" }),
+      }),
+    );
+    await mount(page, html, EXPOSE);
+    await page.evaluate(() => window.forgeHtmx.htmx.process(document.body));
+    let sent: SentDelete | undefined;
+    await page.route("http://forge.test/items/1**", async (route) => {
+      const request = route.request();
+      sent = { method: request.method(), url: request.url(), csrfHeader: await request.headerValue(CSRF_HEADER_DEFAULT) };
+      await route.fulfill({ contentType: "text/html", body: "" });
     });
 
-    expect(config).toEqual({ allowEval: true, allowScriptTags: true });
+    await requestAndFinish(page);
+
+    if (!sent) throw new Error("no request reached /items/1");
+    return sent;
+  }
+
+  test("sends the CSRF header from the button's own hx-headers, and no field in the URL", async ({ page }) => {
+    const sent = await submitDelete(page, { "hx-headers": JSON.stringify({ [CSRF_HEADER_DEFAULT]: token }) });
+
+    expect(sent).toEqual({ method: "DELETE", url: "http://forge.test/items/1", csrfHeader: token });
+    await expect(page.locator(`form input[type='hidden'][name='${CSRF_FIELD_DEFAULT}']`)).toHaveValue(token);
+  });
+
+  test("sends no CSRF header when only the form carries hx-headers, since the button inherits none", async ({ page }) => {
+    const sent = await submitDelete(page, {});
+
+    expect(sent).toEqual({ method: "DELETE", url: "http://forge.test/items/1", csrfHeader: null });
+    expect(JSON.parse((await page.locator("form").getAttribute("hx-headers")) ?? "{}")).toEqual({ [CSRF_HEADER_DEFAULT]: token });
   });
 });

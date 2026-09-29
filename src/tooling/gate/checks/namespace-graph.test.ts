@@ -81,15 +81,15 @@ describe("validateNoMutualValuePairs()", () => {
 });
 
 describe("validateNoEnumeration()", () => {
-  const withSections = (body: string[]): string[] => ["### 3a. Catalog", "| Subpath | Barrel |", ...body, "### 4a. Classification", ""];
+  const NS = ["alpha", "beta"];
 
-  it("reports nothing for a document carrying neither enumeration", () => {
-    expect(validateNoEnumeration(withSections([]), DOC)).toEqual([]);
+  it("reports nothing for a document carrying no enumeration, with no headings needed", () => {
+    expect(validateNoEnumeration(["Prose only.", "| Concern | Home |", "| CSRF | `form` |"], DOC, NS)).toEqual([]);
   });
 
   it("names a returned `Namespace | Composes` table at its own line", () => {
-    const lines = ["### 3a. Catalog", "| Subpath | Barrel |", "### 4a. Classification", "| Namespace | Composes |", ""];
-    const findings = validateNoEnumeration(lines, DOC);
+    const lines = ["Prose.", "| Subpath | Barrel |", "Prose.", "| Namespace | Composes |", ""];
+    const findings = validateNoEnumeration(lines, DOC, NS);
 
     expect(findings).toHaveLength(1);
     expect(findings[0]?.file).toBe(DOC);
@@ -97,18 +97,21 @@ describe("validateNoEnumeration()", () => {
     expect(findings[0]?.message).toContain("the `| Namespace | Composes |` table is back");
   });
 
-  it("reports a moved §4a heading against the document rather than a line", () => {
-    const findings = validateNoEnumeration(["### 3a. Catalog", "| Subpath | Barrel |"], DOC);
+  it("names a returned namespace catalogue at the row that names a namespace", () => {
+    const findings = validateNoEnumeration(["Prose.", "| Subpath | Barrel |", "| `./alpha` | `src/alpha/mod.ts` |"], DOC, NS);
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.line).toBeUndefined();
-    expect(findings[0]?.message).toContain("no `### 4a.` heading");
+    expect(findings[0]?.file).toBe(DOC);
+    expect(findings[0]?.line).toBe(3);
+    expect(findings[0]?.message).toContain("a namespace catalogue is back");
   });
 
-  it("reports a moved §3a heading against the document rather than a line", () => {
-    const findings = validateNoEnumeration(["### 4a. Classification", ""], DOC);
+  it("names a returned classification column at its own line", () => {
+    const findings = validateNoEnumeration(["Prose.", "| Subpath | Category |"], DOC, NS);
 
-    expect(findings.some((finding) => finding.message.includes("no `### 3a.` heading"))).toBe(true);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.line).toBe(2);
+    expect(findings[0]?.message).toContain("the catalog's classification column is back");
   });
 });
 
@@ -185,5 +188,24 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
     });
 
     expect(checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH }).findings).toEqual([]);
+  });
+});
+
+describe("checkNamespaceGraph() — the document guarded against a returning catalogue", () => {
+  const tree = (doc: string) =>
+    gateFixtureRoot({ "src/alpha/mod.ts": "export const m = 1;\n", "src/beta/mod.ts": "export const m = 2;\n", [DOC]: doc });
+
+  it("fails a document whose table names a namespace's barrel, at that row", () => {
+    const root = tree("# Namespaces\n\n| Barrel |\n| `src/alpha/mod.ts` |\n");
+    const result = checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH, enumerationDoc: DOC });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => [finding.file, finding.line])).toEqual([[DOC, 4]]);
+  });
+
+  it("passes the same document once the barrel is named in prose", () => {
+    const root = tree("# Namespaces\n\nThe barrel is `src/alpha/mod.ts`.\n");
+
+    expect(checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH, enumerationDoc: DOC }).findings).toEqual([]);
   });
 });

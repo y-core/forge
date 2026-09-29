@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
+import { hexToBytes } from "../../crypto/bytes";
 import { importKeyRing, lookupKeyRingKey } from "../../keyring/ring";
 import { openAtRest, sealAtRest } from "../../keyring/seal";
 import { createTestContext } from "../../testing/context";
@@ -7,8 +8,11 @@ import { buildRequest } from "../../testing/request";
 import type { AuthKeyRing } from "../types";
 import { importAuthKeyRing, resolveAuthServices } from "./ring";
 
+const KEY_1 = hexToBytes("0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9");
+const KEY_2 = hexToBytes("8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d");
+
 function ring(overrides: Partial<AuthKeyRing> = {}): AuthKeyRing {
-  return { activeKeyId: "k1", keys: { k1: new Uint8Array(32).fill(7) }, ...overrides };
+  return { activeKeyId: "k1", keys: { k1: KEY_1 }, ...overrides };
 }
 
 // oxlint-disable-next-line typescript/no-explicit-any -- the test only needs `env` off the context
@@ -43,7 +47,7 @@ describe("resolveAuthServices", () => {
   it("answers two option sets on one env with their own services, rather than the first caller's", async () => {
     const context = contextFor({ DB: {} });
     const first = { secret: () => ring() };
-    const second = { secret: () => ring({ activeKeyId: "k2", keys: { k2: new Uint8Array(32).fill(9) } }) };
+    const second = { secret: () => ring({ activeKeyId: "k2", keys: { k2: KEY_2 } }) };
 
     expect((await resolveAuthServices(context, first)).keys.activeKeyId).toBe("k1");
     expect((await resolveAuthServices(context, second)).keys.activeKeyId).toBe("k2");
@@ -122,9 +126,16 @@ describe("resolveAuthServices", () => {
   });
 
   it("throws when any key is shorter than 32 bytes", () => {
-    const secret = (): AuthKeyRing => ({ activeKeyId: "k1", keys: { k1: new Uint8Array(32), k0: new Uint8Array(16) } });
+    const secret = (): AuthKeyRing => ({ activeKeyId: "k1", keys: { k1: KEY_1, k0: KEY_2.slice(0, 16) } });
     expect(resolveAuthServices(contextFor({}), { secret })).rejects.toThrow(
-      'resolveAuthServices: key "k0" is 16 bytes — auth root keys must be at least 32',
+      'resolveAuthServices: key "k0": each secret must be at least 32 bytes (got 16)',
+    );
+  });
+
+  it("throws when a hand-built ring carries a degenerate key that importAuthKeyRing would refuse", () => {
+    const secret = (): AuthKeyRing => ({ activeKeyId: "k1", keys: { k1: KEY_1, k0: new Uint8Array(32).fill(7) } });
+    expect(resolveAuthServices(contextFor({}), { secret })).rejects.toThrow(
+      'resolveAuthServices: key "k0": a secret whose bytes are all the same value is not a secret',
     );
   });
 });

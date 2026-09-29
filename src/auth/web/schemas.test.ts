@@ -77,6 +77,24 @@ describe("authVerifySchema", () => {
   it("rejects a long code", () => {
     expect(fieldsRejected(authVerifySchema(), { code: "1234567" })).toEqual(["code"]);
   });
+
+  it("holds a numeric factor to the width it is given, not to the emailed code's", () => {
+    expect([
+      output(authVerifySchema("totp-app", 8), { code: "1234-5678" }),
+      fieldsRejected(authVerifySchema("totp-app", 8), { code: "123456" }),
+    ]).toEqual([{ code: "12345678" }, ["code"]]);
+  });
+
+  it("takes a recovery code as typed, trimmed but with its case and dashes left for the factor to fold", () => {
+    expect(output(authVerifySchema("recovery-code"), { code: "  abcd-EFGH-ijkl  " })).toEqual({ code: "abcd-EFGH-ijkl" });
+  });
+
+  it("bounds a recovery code at 64 characters, so a hostile field cannot become an unbounded read", () => {
+    expect([
+      output(authVerifySchema("recovery-code"), { code: "A".repeat(64) }),
+      fieldsRejected(authVerifySchema("recovery-code"), { code: "A".repeat(65) }),
+    ]).toEqual([{ code: "A".repeat(64) }, ["code"]]);
+  });
 });
 
 describe("authEmailChangeSchema", () => {

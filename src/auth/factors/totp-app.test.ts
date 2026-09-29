@@ -6,8 +6,9 @@ import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import type { AuthFactor, AuthFactorInput, AuthKeyRing, FactorStore } from "../types";
 import { installTimingProbe } from "./factors.fixture";
+import { createFactorRegistry } from "./registry";
 import { createTotpAppFactor } from "./totp-app";
-import type { TimingProbeHandle } from "./types";
+import type { AuthFactorRequirement, EnrollableFactorService, ImplicitFactorService, TimingProbeHandle } from "./types";
 
 const USER_ID = uuidv7();
 const PERIOD = 30;
@@ -80,16 +81,6 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
       rows[index] = { ...row, confirmedAt: at, updatedAt: at };
       return Promise.resolve(ok(true));
     },
-    // The D1 adapter clears `failed_attempts` on the same statement, so the fixture hands the spend
-    // back too — a factor unenrolled this way must not lock the re-enrolment behind its own budget.
-    unconfirm: (id, _userId, at) => {
-      const index = rows.findIndex((row) => row.id === id);
-      const row = rows[index];
-      if (index < 0 || !row) return Promise.resolve(ok(false));
-      rows[index] = { ...row, confirmedAt: null, failedAttempts: 0, updatedAt: at };
-      spent.set(id, 0);
-      return Promise.resolve(ok(true));
-    },
     // The conditional advance the D1 adapter writes as one statement: it takes only a counter above
     // the last accepted one, so a replay writes neither the counter nor the secret riding with it.
     recordVerification: (id, _userId, counter, at, secret) => {
@@ -115,6 +106,40 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
     },
   };
   return { store, rows, advances, removals, spent };
+}
+
+const refuse = () => Promise.resolve(err("unavailable" as const));
+
+const EMAIL_OTP: ImplicitFactorService<"email-otp"> = {
+  kind: "email-otp",
+  enrolment: "implicit",
+  capabilities: { stepUp: true },
+  challengeTtlMs: 600_000,
+  codeDigits: 6,
+  codePeriodSeconds: null,
+  reissueAfterMs: null,
+  createChallenge: refuse,
+  verifyChallenge: refuse,
+  listEnrolments: () => Promise.resolve(ok([])),
+};
+
+const RECOVERY_CODE: EnrollableFactorService<"recovery-code"> = {
+  ...EMAIL_OTP,
+  kind: "recovery-code",
+  enrolment: "explicit",
+  codeDigits: null,
+  beginEnrolment: refuse,
+  completeEnrolment: refuse,
+};
+
+function resolveOver(spy: StoreSpy, requirement: AuthFactorRequirement) {
+  return createFactorRegistry(spy.store, {
+    offered: [
+      { service: EMAIL_OTP, role: "primary" },
+      { service: build(spy), role: "second", requirement },
+      { service: RECOVERY_CODE, role: "second", requirement: "optional" },
+    ],
+  }).resolve(USER_ID);
 }
 
 function factor(spy: StoreSpy): AuthFactor {
@@ -310,6 +335,29 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
 
 // Together these turn "never safe to drop a `totpWrap` secret" into a condition a deployment can
 // test: the population under a retired key shrinks on its own, and reaching zero is observable.
+describe("createTotpAppFactor — the row a guess is spent on", () => {
+  function spendLandsOnAnotherRow(spy: StoreSpy): void {
+    spy.store.countAttempt = () => Promise.resolve(ok({ ...factor(spy), id: uuidv7() }));
+  }
+
+  it("answers `unavailable` to a step-up, comparing nothing and advancing no counter", async () => {
+    const spy = fakeFactors();
+    const secret = await confirmed(spy);
+    const advancedBefore = spy.advances.length;
+    spendLandsOnAnotherRow(spy);
+    const outcome = await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT);
+    expect({ outcome, advanced: spy.advances.length - advancedBefore }).toEqual({ outcome: { ok: false, error: "unavailable" }, advanced: 0 });
+  });
+
+  it("answers `unavailable` to a confirming code, leaving the row unconfirmed", async () => {
+    const spy = fakeFactors();
+    const secret = await enrolled(spy);
+    spendLandsOnAnotherRow(spy);
+    const outcome = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT);
+    expect({ outcome, confirmed: factor(spy).confirmedAt }).toEqual({ outcome: { ok: false, error: "unavailable" }, confirmed: null });
+  });
+});
+
 describe("createTotpAppFactor — re-sealing a secret under the ring's active key", () => {
   /** The key id the row's sealed secret currently names. */
   function sealedUnder(spy: StoreSpy): string {
@@ -365,78 +413,76 @@ describe("createTotpAppFactor — re-sealing a secret under the ring's active ke
   });
 });
 
-// The lockout this closes: left confirmed, the row resolves `step-up-required` forever, and every
-// page that could remove it sits behind the step-up its own secret can no longer answer.
 describe("createTotpAppFactor — a secret that will never open again", () => {
   /** A confirmed row whose sealed secret was replaced by bytes the ring cannot open. */
   async function stranded(spy: StoreSpy): Promise<void> {
     await confirmed(spy);
-    spy.rows[0] = { ...(spy.rows[0] as AuthFactor), secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
+    spy.rows[0] = { ...factor(spy), secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
   }
 
-  it("takes the row back to owing an enrolment, which is what routes the visitor to a page that works", async () => {
+  it("answers `unusable` and leaves the row confirmed with its bytes intact", async () => {
     const spy = fakeFactors();
     await stranded(spy);
-    await build(spy).verifyChallenge(USER_ID, "000000", AT);
-    expect(factor(spy).confirmedAt).toBeNull();
+    const refused = await build(spy).verifyChallenge(USER_ID, "000000", AT);
+    expect({ refused, confirmed: factor(spy).confirmedAt !== null, secret: factor(spy).secret }).toEqual({
+      refused: { ok: false, error: "unusable" },
+      confirmed: true,
+      secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer>,
+    });
   });
 
-  it("refuses as `not-enrolled` rather than `unavailable`, so nothing tells the visitor the servers are down", async () => {
-    const spy = fakeFactors();
-    await stranded(spy);
-    expect(await build(spy).verifyChallenge(USER_ID, "000000", AT)).toEqual({ ok: false, error: "not-enrolled" });
-  });
-
-  it("hands the guess back, since the code was never checked against anything", async () => {
+  it("spends no guess, since the code was never checked against anything", async () => {
     const spy = fakeFactors();
     await stranded(spy);
     await build(spy, 2).verifyChallenge(USER_ID, "000000", AT);
-    expect(spy.spent.get(factor(spy).id)).toBe(0);
+    expect(spy.spent.get(factor(spy).id) ?? 0).toBe(0);
   });
 
-  // One presentation ends it, which is what bounds the spend: from here the row is unenrolled, so
-  // no later code is ever checked against a secret that cannot open.
-  it("unenrols on the first code presented, rather than on the one that exhausts the budget", async () => {
+  it("verifies the same row again once the sealed bytes are restored", async () => {
     const spy = fakeFactors();
-    await stranded(spy);
-    await build(spy, 2).verifyChallenge(USER_ID, "000000", AT);
-    expect(factor(spy).confirmedAt).toBeNull();
-    expect(spy.spent.get(factor(spy).id)).toBe(0);
-  });
-
-  it("lets `beginEnrolment` re-enrol them on the very next request, on a fresh secret", async () => {
-    const spy = fakeFactors();
-    await stranded(spy);
+    const held = await confirmed(spy);
+    const sealed = factor(spy).secret;
+    spy.rows[0] = { ...factor(spy), secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
     await build(spy).verifyChallenge(USER_ID, "000000", AT);
-    const begun = await build(spy).beginEnrolment(USER_ID, AT);
-    expect(begun.ok).toBe(true);
-    expect(spy.removals).toHaveLength(1);
-    expect(factor(spy).confirmedAt).toBeNull();
+    spy.rows[0] = { ...factor(spy), secret: sealed };
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(held, CURRENT), AT)).toEqual({
+      ok: true,
+      data: { kind: "totp-app", userId: USER_ID, verifiedAt: AT },
+    });
   });
 
-  // The bytes are left in the row rather than dropped, so this is recovery and not just a reset.
-  it("re-offers the secret their app already holds when the key is restored before they re-enrol", async () => {
-    const spy = fakeFactors();
-    const secret = await confirmed(spy);
-    const held = spy.rows[0] as AuthFactor;
-    spy.rows[0] = { ...held, secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
-    await build(spy).verifyChallenge(USER_ID, "000000", AT);
-    spy.rows[0] = { ...(spy.rows[0] as AuthFactor), secret: held.secret };
-    const begun = await build(spy).beginEnrolment(USER_ID, AT);
-    expect(begun.ok && base32Decode((begun.data.options as { secret: string }).secret)).toEqual(secret);
-    expect(spy.removals).toHaveLength(0);
-  });
-
-  it("still reports a store outage on the write that unenrols as `unavailable`", async () => {
+  it("answers `already-enrolled` to `beginEnrolment` on the confirmed row, removing nothing", async () => {
     const spy = fakeFactors();
     await stranded(spy);
-    spy.store.unconfirm = () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.unconfirm")));
-    expect(await build(spy).verifyChallenge(USER_ID, "000000", AT)).toEqual({ ok: false, error: "unavailable" });
+    expect({ begun: await build(spy).beginEnrolment(USER_ID, AT), removals: spy.removals.length }).toEqual({
+      begun: { ok: false, error: "already-enrolled" },
+      removals: 0,
+    });
+  });
+
+  it("keeps demanding a step-up, and never answers `satisfied`, however often the unusable code is presented", async () => {
+    const outcomes: Record<string, unknown> = {};
+    for (const requirement of ["optional", "mandatory"] as const) {
+      const spy = fakeFactors();
+      await stranded(spy);
+      for (let presented = 0; presented < 3; presented++) await build(spy, 2).verifyChallenge(USER_ID, "000000", AT + presented);
+      outcomes[requirement] = await resolveOver(spy, requirement);
+    }
+    expect(outcomes).toEqual({
+      optional: { ok: true, data: { status: "step-up-required", kinds: ["totp-app"] } },
+      mandatory: { ok: true, data: { status: "step-up-required", kinds: ["totp-app"] } },
+    });
+  });
+
+  it("replaces an unconfirmed row whose secret will not open with a fresh enrolment", async () => {
+    const spy = fakeFactors();
+    await enrolled(spy);
+    spy.rows[0] = { ...factor(spy), secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
+    const begun = await build(spy).beginEnrolment(USER_ID, AT);
+    expect({ ok: begun.ok, removals: spy.removals.length, confirmed: factor(spy).confirmedAt }).toEqual({ ok: true, removals: 1, confirmed: null });
   });
 });
 
-// A key dropped from the ring before `authKeysRetirable` said so is an operator's mistake and an
-// undoing one, where clearing `confirmed_at` on it is neither: re-adding the key restores nothing.
 describe("createTotpAppFactor — a sealing key merely absent from the ring", () => {
   /** A ring holding a different root entirely, so nothing sealed under `ring` resolves a key here. */
   let strangers: AuthKeyRing;
@@ -445,27 +491,43 @@ describe("createTotpAppFactor — a sealing key merely absent from the ring", ()
     strangers = await importAuthKeyRing([ROOT_NEW]);
   });
 
-  it("leaves the factor confirmed, and answers the server-side reason rather than `not-enrolled`", async () => {
+  it("leaves the factor confirmed and answers `unusable`, spending no guess", async () => {
     const spy = fakeFactors();
     await confirmed(spy);
 
     const refused = await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT);
 
-    expect({ refused, confirmed: factor(spy).confirmedAt !== null }).toEqual({ refused: { ok: false, error: "unavailable" }, confirmed: true });
+    expect({ refused, confirmed: factor(spy).confirmedAt !== null, spent: spy.spent.get(factor(spy).id) ?? 0 }).toEqual({
+      refused: { ok: false, error: "unusable" },
+      confirmed: true,
+      spent: 0,
+    });
   });
 
-  it("keeps the sealed bytes on `beginEnrolment` too, which would otherwise destroy what the key still opens", async () => {
+  it("still resolves `step-up-required`, since the row it could not open stays confirmed", async () => {
+    const spy = fakeFactors();
+    await confirmed(spy);
+    await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT);
+    expect(await resolveOver(spy, "optional")).toEqual({ ok: true, data: { status: "step-up-required", kinds: ["totp-app"] } });
+  });
+
+  it("verifies the same row again once the key is back on the ring", async () => {
+    const spy = fakeFactors();
+    const secret = await confirmed(spy);
+    await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT);
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).toEqual({
+      ok: true,
+      data: { kind: "totp-app", userId: USER_ID, verifiedAt: AT },
+    });
+  });
+
+  it("replaces an unconfirmed row on `beginEnrolment`, since its ceremony was never finished", async () => {
     const spy = fakeFactors();
     await enrolled(spy);
-    const held = factor(spy).secret;
 
     const begun = await build(spy, undefined, undefined, strangers).beginEnrolment(USER_ID, AT);
 
-    expect({ begun, removals: spy.removals.length, secret: factor(spy).secret }).toEqual({
-      begun: { ok: false, error: "unavailable" },
-      removals: 0,
-      secret: held,
-    });
+    expect({ ok: begun.ok, removals: spy.removals.length }).toEqual({ ok: true, removals: 1 });
   });
 });
 

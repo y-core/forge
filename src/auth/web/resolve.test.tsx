@@ -3,6 +3,8 @@
 
 import { describe, expect, it } from "bun:test";
 
+import type { Middleware } from "@remix-run/fetch-router";
+
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
 import type { AppContext } from "../../context/types";
@@ -12,8 +14,10 @@ import type { FC, JSXElement } from "../../jsx/types";
 import { err, ok } from "../../result/result";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorService } from "../factors/types";
-import { PASSKEY_SCOPE } from "../passkey-contract";
+import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
+import { PASSKEY_REDIRECT_ATTR, PASSKEY_SCOPE } from "../passkey-contract";
+import type { AuthFactor, AuthFactorKind } from "../types";
+import { resolveAuth } from "./guards";
 import { authCtx } from "./identity";
 import {
   loadAccountFactors,
@@ -27,13 +31,14 @@ import {
   loadPasskeyEdit,
   loadPasskeyEnrol,
   loadPasskeyList,
+  loadRecoveryCodes,
   loadSignin,
   loadSignup,
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
 import { AUTH_VIEWS } from "./render";
-import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
+import { AUTH_VIEW_GUARDS, authAfterStepUpTarget, resolveAuthView } from "./resolve";
 import { AUTH_ROUTE_GROUPS } from "./routes";
 import type { AuthIdentity } from "./types";
 import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
@@ -59,6 +64,7 @@ import {
   elementsOf,
   tagOf,
   textOf,
+  recoveryOffer,
 } from "./web.fixture";
 
 type Loader = (c: never, options: AuthWebOptions, state?: AuthPageState) => Promise<Response>;
@@ -74,14 +80,20 @@ function optionsWith(overrides: Partial<AuthRequestServices>): AuthWebOptions {
   return fakeAuthWebOptions({ resolveServices: () => services });
 }
 
-/** Mounts `handler` on an app carrying a deterministic minter and, when given, the identity a guard would have set. */
-function guardedApp(handler: (c: AppContext) => Promise<Response>, identity: AuthIdentity | null, pattern = "/page"): Forge {
+/** Mounts `handler` on an app carrying a deterministic minter and, when given, the identity a guard would have set, then `guards`. */
+function guardedApp(
+  handler: (c: AppContext) => Promise<Response>,
+  identity: AuthIdentity | null,
+  pattern = "/page",
+  guards: readonly Middleware[] = [],
+): Forge {
   const app = new Forge();
   app.use("*", (context, next) => {
     csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
     if (identity !== null) authCtx.set(context, identity);
     return next();
   });
+  for (const guard of guards) app.use("*", guard);
   mapHandler(app, "GET", pattern, (context) => handler(getAppContext(context)));
   return app;
 }
@@ -103,6 +115,7 @@ const totpRegistry = createFactorRegistry(fakeFactorStore([]), {
   offered: [
     { service: fakeFactorService("email-otp"), role: "primary" },
     { service: totpService, role: "second", requirement: "optional" },
+    recoveryOffer(),
   ],
 });
 
@@ -110,6 +123,7 @@ const stepUpRegistry = createFactorRegistry(fakeFactorStore(["totp-app"]), {
   offered: [
     { service: fakeFactorService("email-otp"), role: "primary" },
     { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+    recoveryOffer(),
   ],
 });
 
@@ -263,6 +277,21 @@ const CASES: readonly Case[] = [
     identity: member,
   },
   {
+    label: "accountRecoveryCodes",
+    name: "accountRecoveryCodes",
+    load: loadRecoveryCodes,
+    options: optionsWith({ users: fakeAuthUserStore([viewer]), factors: fakeFactorRegistry(["totp-app"]) }),
+    identity: member,
+  },
+  {
+    label: "accountRecoveryCodes+issued",
+    name: "accountRecoveryCodes",
+    load: loadRecoveryCodes,
+    options: optionsWith({ users: fakeAuthUserStore([viewer]), factors: fakeFactorRegistry(["totp-app"]) }),
+    state: { issuedCodes: ["AAAA-BBBB"] },
+    identity: member,
+  },
+  {
     label: "adminUserFactors",
     name: "adminUserFactors",
     load: loadAdminUserFactors,
@@ -301,6 +330,7 @@ const VIEW_GROUP: Readonly<Record<AuthViewName, readonly string[]>> = {
   accountTotp: ["account"],
   accountEmailChange: ["account"],
   accountFactors: ["account"],
+  accountRecoveryCodes: ["account"],
   adminUsers: ["admin", "users"],
   adminUser: ["admin", "users"],
   adminUserEdit: ["admin", "users"],
@@ -438,6 +468,7 @@ describe("resolveAuthView refusals", () => {
             role: "second",
             requirement: "optional",
           },
+          recoveryOffer(),
         ],
       }),
     });
@@ -468,7 +499,7 @@ describe("no configuration makes a passkey start a sign-in", () => {
 
   it("renders no passkey scope on the sign-in page, whether or not the passkey is offered", async () => {
     const seconds = createFactorRegistry(fakeFactorStore([]), {
-      offered: [fakeFactorOffer("email-otp", "primary"), fakeFactorOffer("passkey", "second")],
+      offered: [fakeFactorOffer("email-otp", "primary"), fakeFactorOffer("passkey", "second"), recoveryOffer()],
     });
     expect(tagOf(await signinPage(optionsWith({ factors: seconds })), `data-scope="${PASSKEY_SCOPE}"`)).toBe("");
     expect(tagOf(await signinPage(fakeAuthWebOptions()), `data-scope="${PASSKEY_SCOPE}"`)).toBe("");
@@ -673,4 +704,272 @@ describe("every view places its heading where the host says", () => {
       expect(await rendered(one, one.name, { class: undefined, level: undefined })).toBe(await rendered(one, one.name, {}));
     });
   }
+});
+
+describe("the passkey enrolment page's rendered redirect", () => {
+  const owing = (seconds: readonly ("passkey" | "totp-app")[]) =>
+    optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      factors: createFactorRegistry(fakeFactorStore([]), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          ...seconds.map((kind) => fakeFactorOffer(kind, "second", "mandatory")),
+          recoveryOffer(),
+        ],
+      }),
+    });
+  const redirectOf = async (options: AuthWebOptions) => {
+    const html = await (await loaderApp(loadPasskeyEnrol, options, member).request("/page")).text();
+    return attrOf(html, `data-scope="${PASSKEY_SCOPE}"`, PASSKEY_REDIRECT_ATTR);
+  };
+
+  it("sends a first passkey straight on to generate recovery codes, since the account holds none", async () => {
+    expect(await redirectOf(owing(["passkey"]))).toBe("/account/recovery-codes");
+  });
+
+  it("sends it on to an enrolment still owed besides the passkey first", async () => {
+    expect(await redirectOf(owing(["passkey", "totp-app"]))).toBe("/auth/enrol/totp");
+  });
+});
+
+const confirmedRow = (kind: AuthFactorKind): AuthFactor => ({
+  id: `f-${kind}`,
+  userId: "u9",
+  kind,
+  secret: null,
+  lastCounter: null,
+  failedAttempts: 0,
+  lastVerifiedAt: null,
+  confirmedAt: 1,
+  createdAt: 1,
+  updatedAt: 1,
+});
+
+interface Holding {
+  readonly totp?: AuthFactorRequirement;
+  readonly passkey?: AuthFactorRequirement;
+  readonly remaining?: number;
+  readonly storeDown?: boolean;
+}
+
+/** A registry whose explicit factors list `held` as confirmed, the recovery-code one counting `remaining` unused codes. */
+function holdingRegistry(held: readonly AuthFactorKind[], { totp = "optional", passkey, remaining = 10, storeDown = false }: Holding = {}) {
+  const listed = (kind: AuthFactorKind) => ({
+    ...fakeFactorService(kind),
+    listEnrolments: async () => (storeDown ? err(new Error("store down") as never) : ok(held.includes(kind) ? [confirmedRow(kind)] : [])),
+  });
+  const codes = Object.assign(listed("recovery-code"), { remaining: async () => ok(remaining) }) as AuthFactorService;
+  return createFactorRegistry(fakeFactorStore(held), {
+    offered: [
+      fakeFactorOffer("email-otp", "primary"),
+      fakeFactorOffer(listed("totp-app") as AuthFactorService, "second", totp),
+      ...(passkey === undefined ? [] : [fakeFactorOffer(listed("passkey") as AuthFactorService, "second", passkey)]),
+      fakeFactorOffer(codes, "second"),
+    ],
+  });
+}
+
+const unproved: AuthIdentity = { ...member, stepUpAt: null };
+
+const choicesOf = (html: string) =>
+  elementsOf(html, "a", 'data-ref="verify-choice"').map((link) => [attrOf(link, "href", "href"), textOf(link, "a", 'data-ref="verify-choice"')]);
+
+describe("the verify page's step-up picker", () => {
+  const verifyOf = async (held: readonly AuthFactorKind[], path: string) => {
+    const options = optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(held) });
+    const html = await (await loaderApp(loadVerify, options, unproved).request(path)).text();
+    return {
+      prompt: textOf(html, "div", 'data-slot="card-description"'),
+      action: attrOf(html, "action", "action"),
+      field: attrOf(html, 'name="code"', "data-slot"),
+      choices: choicesOf(html),
+    };
+  };
+
+  it("offers every other confirmed second factor by a link that keeps the return-to, and posts the one it asks for", async () => {
+    expect(await verifyOf(["totp-app", "recovery-code"], "/page?next=%2Fapp")).toEqual({
+      prompt: "Enter the current code from your authenticator app.",
+      action: "/auth/verify?next=%2Fapp&amp;factor=totp-app",
+      field: "otp-input",
+      choices: [["/auth/verify?next=%2Fapp&amp;factor=recovery-code", "Use a recovery code instead"]],
+    });
+  });
+
+  it("switches to the factor the query names when the account holds it, asking for it in a free-text field", async () => {
+    expect(await verifyOf(["totp-app", "recovery-code"], "/page?next=%2Fapp&factor=recovery-code")).toEqual({
+      prompt: "Enter one of your recovery codes.",
+      action: "/auth/verify?next=%2Fapp&amp;factor=recovery-code",
+      field: "input",
+      choices: [["/auth/verify?next=%2Fapp&amp;factor=totp-app", "Use your authenticator app instead"]],
+    });
+  });
+
+  for (const forged of ["passkey", "email-otp", "recovery-code", "nonsense", ""]) {
+    it(`falls back to the first held factor for a query naming ${forged === "" ? "nothing" : `"${forged}"`}, which this account cannot step up with`, async () => {
+      const page = await verifyOf(["totp-app"], `/page?factor=${forged}`);
+      expect({ prompt: page.prompt, action: page.action }).toEqual({
+        prompt: "Enter the current code from your authenticator app.",
+        action: "/auth/verify?factor=totp-app",
+      });
+    });
+  }
+
+  it("offers no picker to an account holding a single second factor", async () => {
+    expect((await verifyOf(["totp-app"], "/page")).choices).toEqual([]);
+  });
+});
+
+describe("the verify page for an owed enrolment beside a confirmed second factor", () => {
+  const owing = optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(["recovery-code"], { totp: "mandatory" }) });
+
+  /** The verify page behind the `resolve-auth` its group mounts, whose window is 30 seconds, for a session marked `stepUpAt`. */
+  const verifyMarked = async (stepUpAt: number | null) => {
+    const guard = resolveAuth({ users: () => fakeAuthUserStore([viewer]), stepUpMaxAgeMs: 30_000 });
+    const res = await guardedApp((c) => loadVerify(c as never, owing), { ...member, stepUpAt }, "/page", [guard]).request("/page");
+    return { status: res.status, location: res.headers.get("location"), prompt: textOf(await res.text(), "div", 'data-slot="card-description"') };
+  };
+  const asksForCode = { status: 200, location: null, prompt: "Enter one of your recovery codes." };
+
+  it("asks a session that has not proved the held factor for it, rather than sending it to enrol on email alone", async () => {
+    expect(await verifyMarked(null)).toEqual(asksForCode);
+  });
+
+  it("asks again for a mark older than the guard's window, as the enrol page's guard does", async () => {
+    expect(await verifyMarked(Date.now() - 60_000)).toEqual(asksForCode);
+  });
+
+  it("asks again for a mark dated into the future", async () => {
+    expect(await verifyMarked(Date.now() + 3_600_000)).toEqual(asksForCode);
+  });
+
+  it("sends a session whose mark holds on to the enrolment it still owes", async () => {
+    expect(await verifyMarked(Date.now() - 5_000)).toEqual({ status: 303, location: "/auth/enrol/totp", prompt: "" });
+  });
+
+  it("asks for the held factor whatever the mark when no guard established the window to measure it by", async () => {
+    const res = await loaderApp(loadVerify, owing, member).request("/page");
+    expect({ status: res.status, prompt: textOf(await res.text(), "div", 'data-slot="card-description"') }).toEqual({
+      status: 200,
+      prompt: "Enter one of your recovery codes.",
+    });
+  });
+});
+
+describe("authAfterStepUpTarget", () => {
+  const targetOf = async (registry: ReturnType<typeof holdingRegistry>, verified: AuthFactorKind) => {
+    const options = optionsWith({ users: fakeAuthUserStore([viewer]), factors: registry });
+    const app = guardedApp(async (c) => new Response(await authAfterStepUpTarget(c, options, member, verified, "/otherwise")), member);
+    return (await app.request("/page?next=%2Fapp")).text();
+  };
+
+  const cases: readonly { label: string; registry: ReturnType<typeof holdingRegistry>; verified: AuthFactorKind; expected: string }[] = [
+    {
+      label: "lands a step-up by recovery code on the repair page, ahead of any enrolment owed",
+      registry: holdingRegistry(["totp-app", "recovery-code"], { passkey: "mandatory", remaining: 4 }),
+      verified: "recovery-code",
+      expected: "/account/factors?recovered=1",
+    },
+    {
+      label: "sends a step-up on to an enrolment the policy still owes",
+      registry: holdingRegistry(["totp-app", "recovery-code"], { passkey: "mandatory", remaining: 4 }),
+      verified: "totp-app",
+      expected: "/auth/enrol/passkey",
+    },
+    {
+      label: "sends a holder of an authenticator who never confirmed codes to generate them, return-to kept",
+      registry: holdingRegistry(["totp-app"]),
+      verified: "totp-app",
+      expected: "/account/recovery-codes?next=%2Fapp",
+    },
+    {
+      label: "sends a holder whose every code is spent to generate a new set",
+      registry: holdingRegistry(["totp-app", "recovery-code"], { remaining: 0 }),
+      verified: "totp-app",
+      expected: "/account/recovery-codes?next=%2Fapp",
+    },
+    {
+      label: "leaves a holder with codes to spare on the page they were going to",
+      registry: holdingRegistry(["totp-app", "recovery-code"], { remaining: 1 }),
+      verified: "totp-app",
+      expected: "/otherwise",
+    },
+    {
+      label: "falls back to the page they were going to when the store cannot say where they stand",
+      registry: holdingRegistry(["totp-app"], { storeDown: true }),
+      verified: "totp-app",
+      expected: "/otherwise",
+    },
+  ];
+
+  for (const { label, registry, verified, expected } of cases) {
+    it(label, async () => {
+      expect(await targetOf(registry, verified)).toBe(expected);
+    });
+  }
+});
+
+describe("the recovery-code resolvers", () => {
+  it("never counts recovery codes as a way back in once the last passkey is gone", async () => {
+    const options = optionsWith({
+      users: fakeAuthUserStore([viewer]),
+      credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+      factors: holdingRegistry(["passkey", "totp-app", "recovery-code"], { passkey: "optional" }),
+    });
+    const app = guardedApp(async (c) => {
+      const view = await resolveAuthView(c, options, { name: "accountPasskeys", guarded: AUTH_VIEW_GUARDS.accountPasskeys });
+      return view.ok ? Response.json(view.data.props.fallbackFactors) : view.error;
+    }, member);
+    expect(await (await app.request("/page")).json()).toEqual(["email-otp", "totp-app"]);
+  });
+
+  it("tells a visitor back from a recovery code how many codes they have left", async () => {
+    const options = optionsWith({ factors: holdingRegistry(["totp-app", "recovery-code"], { remaining: 3 }) });
+    const html = await (await loaderApp(loadAccountFactors, options, member).request("/page?recovered=1")).text();
+    expect(textOf(html, "div", 'data-slot="alert-description"')).toBe(
+      "You have 3 unused codes left. If your authenticator app or passkey no longer works, remove it below and add it again, then generate a new set of codes.",
+    );
+  });
+
+  it("says nothing about recovery on a factors page reached any other way", async () => {
+    const options = optionsWith({ factors: holdingRegistry(["totp-app", "recovery-code"], { remaining: 3 }) });
+    const html = await (await loaderApp(loadAccountFactors, options, member).request("/page")).text();
+    expect(tagOf(html, 'data-ref="factors-recovered"')).toBe("");
+  });
+
+  it("offers an administrator the reset of someone else's factors, posted with a token minted for that account's reset path", async () => {
+    const options = optionsWith({ admin: fakeAdminUserStore([...roster, viewer]), factors: holdingRegistry(["totp-app"]) });
+    const html = await (await loaderApp(loadAdminUserFactors, options, admin, "/page/:id").request("/page/u2")).text();
+    const form = elementOf(html, "form", 'action="/admin/users/u2/factors/reset"');
+    expect(attrOf(form, 'name="_csrf"', "value")).toBe("csrf-for:/admin/users/u2/factors/reset");
+  });
+
+  it("offers no reset on an administrator's own factors, which would lock them out of the console they stand in", async () => {
+    const options = optionsWith({ admin: fakeAdminUserStore([...roster, viewer]), factors: holdingRegistry(["totp-app"]) });
+    const html = await (await loaderApp(loadAdminUserFactors, options, admin, "/page/:id").request("/page/u9")).text();
+    expect(elementsOf(html, "form", 'action="/admin/users/u9/factors/reset"')).toEqual([]);
+    expect(tagOf(html, 'data-ref="factors-reset"')).toBe("");
+  });
+
+  it("counts the confirmed set's unused codes on the codes page, and posts each form on its own path and token", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(["totp-app", "recovery-code"], { remaining: 3 }) });
+    const html = await (
+      await loaderApp(loadRecoveryCodes, options, member, "/page", { issuedCodes: ["AAAA-BBBB"] }).request("/page?next=%2Fapp")
+    ).text();
+    const tokenOf = (action: string) => attrOf(elementOf(html, "form", `action="${action}"`), 'name="_csrf"', "value");
+    expect({
+      standing: textOf(html, "span", 'data-ref="recovery-remaining"'),
+      generate: tokenOf("/account/recovery-codes?next=%2Fapp"),
+      confirm: tokenOf("/account/recovery-codes/confirm?next=%2Fapp"),
+    }).toEqual({
+      standing: "You have 3 unused recovery codes left.",
+      generate: "csrf-for:/account/recovery-codes",
+      confirm: "csrf-for:/account/recovery-codes/confirm",
+    });
+  });
+
+  it("reports no codes for an account whose set was never confirmed, whatever a staged set holds", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([viewer]), factors: holdingRegistry(["totp-app"], { remaining: 7 }) });
+    const html = await (await loaderApp(loadRecoveryCodes, options, member).request("/page")).text();
+    expect(textOf(html, "span", 'data-ref="recovery-remaining"')).toBe("You have no recovery codes yet.");
+  });
 });

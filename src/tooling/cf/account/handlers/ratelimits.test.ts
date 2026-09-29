@@ -14,12 +14,9 @@ function makeCtx(overrides: Partial<HandlerContext> = {}): HandlerContext {
     dryRun: false,
     rotate: new Set<string>(),
     fetch: globalThis.fetch,
-    target: { kind: "worker", name: "ratelimit-fixture" },
     ...overrides,
   };
 }
-
-const pagesCtx = (overrides: Partial<HandlerContext> = {}) => makeCtx({ target: { kind: "pages", name: "ratelimit-fixture" }, ...overrides });
 
 function settingsFetch(bindings: unknown[]): typeof globalThis.fetch {
   return async () => new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { bindings } }));
@@ -35,28 +32,6 @@ describe("rateLimitsHandler.extract()", () => {
 
   it("returns empty when none are declared", () => {
     expect(rateLimitsHandler.extract({ name: "t" })).toEqual([]);
-  });
-});
-
-describe("rateLimitsHandler — pages project", () => {
-  it("reports the binding as inert, because Pages rejects ratelimits outright", async () => {
-    // wrangler's supportedPagesConfigFields has no "ratelimits", so a Pages config
-    // declaring one binds nothing.
-    const res = await rateLimitsHandler.reconcile([MAIN_LIMITER], pagesCtx());
-    expect(res.results[0]?.action).toBe("unavailable");
-    expect(res.results[0]?.action).not.toBe("in-sync");
-    expect(res.results[0]?.detail).toMatch(/not supported/);
-    expect(res.results[0]?.detail).toMatch(/inert/);
-  });
-
-  it("makes no API call to reach that conclusion", async () => {
-    let calls = 0;
-    const counting: typeof globalThis.fetch = async () => {
-      calls++;
-      return new Response("{}");
-    };
-    await rateLimitsHandler.reconcile([MAIN_LIMITER], pagesCtx({ fetch: counting }));
-    expect(calls).toBe(0);
   });
 });
 

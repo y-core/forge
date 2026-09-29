@@ -9,6 +9,17 @@ import type { AuthEntryPaths, AuthPathMap } from "./types";
 /** The query flag the resend action redirects with, so the verify page can say a code was asked for. @internal */
 export const AUTH_RESENT_PARAM = "resent";
 
+/** The query flag a step-up by recovery code lands on the factors page with, so it can say what to repair. @internal */
+export const AUTH_RECOVERED_PARAM = "recovered";
+
+/** The query parameter naming which confirmed factor the verify page asks for. @internal */
+export const AUTH_FACTOR_PARAM = "factor";
+
+/** `path` with `name=value` added to whatever query it already carries. @internal */
+export function authWithQuery(path: string, name: string, value: string): string {
+  return `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams({ [name]: value }).toString()}`;
+}
+
 /** Binds one route's `href` so the mount point stays the route map's and never the caller's. */
 function bindHref(leaf: Route): (...args: Parameters<Route["href"]>) => string {
   return (...args) => leaf.href(...args);

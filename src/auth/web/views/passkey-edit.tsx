@@ -12,6 +12,9 @@ import { cn } from "../../../ui/core/utils/cn";
 import { AuthTimestamp } from "./timestamp";
 import type { PasskeyEditViewProps } from "./types";
 
+/** The id on the passkey edit view's root, which its rename form swaps the re-rendered view into. @public */
+export const AUTH_PASSKEY_EDIT_ID = "auth-passkey-edit";
+
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
 
 // Design Read: a signed-in visitor renaming one passkey; the one action is saving the new name;
@@ -30,7 +33,7 @@ export const PasskeyEditView: FC<PasskeyEditViewProps> = ({
 }) => {
   const Heading = `h${level ?? 1}` as "h1";
   return (
-    <Card class={cn("mx-auto w-full max-w-sm", cls)}>
+    <Card id={AUTH_PASSKEY_EDIT_ID} class={cn("mx-auto w-full max-w-sm", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl' data-ref='credential-label'>
@@ -44,7 +47,11 @@ export const PasskeyEditView: FC<PasskeyEditViewProps> = ({
         </Card.Description>
       </Card.Header>
       <Card.Content>
-        <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: renamePath })} class='flex flex-col gap-6'>
+        <Form
+          csrfToken={csrfToken}
+          csrfHeader={csrfHeader}
+          {...hxAttrs({ patch: renamePath, target: `#${AUTH_PASSKEY_EDIT_ID}`, swap: "outerHTML" })}
+          class='flex flex-col gap-6'>
           <FormField name='label' invalid={fieldError !== undefined}>
             <FormField.Label name='label'>Name</FormField.Label>
             <Input value={credential.label ?? ""} autofocus field={{ name: "label", invalid: fieldError !== undefined, description: true }} />

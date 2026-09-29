@@ -23,5 +23,6 @@ export function createAdminUserService(options: AdminUserServiceOptions): AdminU
     deactivate: (id, at) => options.users.setDeactivated(id, true, at),
     reactivate: (id, at) => options.users.setDeactivated(id, false, at),
     remove: (id) => options.users.remove(id),
+    resetFactors: (id, at) => options.users.resetFactors(id, at),
   };
 }

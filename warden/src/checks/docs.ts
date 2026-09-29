@@ -6,7 +6,7 @@ import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import type { ExportsMap } from "../../../src/tooling/gate/checks/types";
 import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
 import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
-import { findSubpathCitations, quickReference, uncitedSubpaths } from "./docs-parse";
+import { findSubpathCitations, quickReference } from "./docs-parse";
 
 /** The canon tree a directory's documents are read from. @public */
 export type DocKind = "libs" | "apps" | "shared";
@@ -52,12 +52,8 @@ export interface DocsCheckConfig {
   sourceDir?: string;
   /** Subpaths a document may name despite their absence from the exports map. */
   documentedNonExports?: readonly string[];
-  /** Published subpaths the front page is licensed *not* to cite. */
-  tableExemptSubpaths?: readonly string[];
-  /** Documents that must enumerate every published subpath, each with its own exemptions. */
-  catalogs?: readonly { doc: string; exempt?: readonly string[] }[];
-  /** Published subpaths licensed to be listed in a table and bound by no prose rule. */
-  listedOnlySubpaths?: readonly string[];
+  /** Published subpaths exempt from the rule that a prose rule binds every subpath. */
+  unboundSubpaths?: readonly string[];
   /** Line count above which a governing document warns. Defaults to 600. */
   sizeWarn?: number;
   /** Line count above which it fails. Defaults to 800. */
@@ -428,8 +424,7 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
   const sizeFail = config.sizeFail ?? 800;
   const descriptionMax = config.descriptionMax ?? 200;
   const documentedNonExports = new Set(config.documentedNonExports ?? []);
-  const catalogs = config.catalogs ?? [{ doc: rootReadme, exempt: config.tableExemptSubpaths }];
-  const listedOnly = new Set(config.listedOnlySubpaths ?? []);
+  const unbound = new Set(config.unboundSubpaths ?? []);
 
   const findings: Finding[] = [];
   const proseBound = new Set<string>();
@@ -763,24 +758,9 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
     }
   }
 
-  for (const catalog of catalogs) {
-    const source = sources.get(catalog.doc);
-    if (source === undefined) continue;
-    const citations = findSubpathCitations(source, packageName, { strict: true });
-    for (const subpath of uncitedSubpaths(exportSubpaths, citations, new Set(catalog.exempt ?? []))) {
-      findings.push(
-        fail(`\`${subpath}\` is published by package.json exports but not cited — add a namespace-table row, or exempt it with a rationale`, {
-          file: catalog.doc,
-        }),
-      );
-    }
-  }
-
-  // A row lists a subpath; a prose rule binds it. A failure now the backlog is empty — the warning
-  // was for working the list down, and holding it there would let the next subpath ship unbound.
   for (const subpath of [...exportSubpaths].sort()) {
-    if (proseBound.has(subpath) || listedOnly.has(subpath) || documentedNonExports.has(subpath)) continue;
-    findings.push(fail(`\`${subpath}\` is listed but bound by no prose rule — add one, or exempt it with a reason`));
+    if (proseBound.has(subpath) || unbound.has(subpath) || documentedNonExports.has(subpath)) continue;
+    findings.push(fail(`\`${subpath}\` is published but no prose rule binds it — add one, or exempt it in \`unboundSubpaths\``));
   }
 
   const warnings = findings.filter((finding) => finding.level === "warn").length;

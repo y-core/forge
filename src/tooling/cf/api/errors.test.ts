@@ -1,12 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import type { DeploymentTarget } from "../types";
 import { classifyCfError, describeCfFailure } from "./errors";
 import type { CfApiClientError, CfApiClientErrorKind, CfApiError } from "./types";
 import { CfApiClientError as CfError } from "./types";
 
-const WORKER: DeploymentTarget = { kind: "worker", name: "my-worker" };
-const PAGES: DeploymentTarget = { kind: "pages", name: "my-site" };
+const WORKER = "my-worker";
 
 const fail = (kind: CfApiClientErrorKind, message: string, opts?: { statusCode?: number; cfErrors?: CfApiError[] }): CfApiClientError =>
   new CfError(kind, message, opts);
@@ -74,8 +72,8 @@ describe("describeCfFailure — not-found", () => {
     );
   });
 
-  it("names the pages project and the name that was missing", () => {
-    expect(describeCfFailure(fail("api", "Could not route", { statusCode: 404 }), PAGES)).toBe("pages project not found: my-site");
+  it("names the worker script from the status alone when the envelope carried no code", () => {
+    expect(describeCfFailure(fail("api", "Could not route", { statusCode: 404 }), WORKER)).toBe("worker script not found: my-worker");
   });
 
   it("never quotes upstream text, so redaction changes nothing", () => {
@@ -88,12 +86,6 @@ describe("describeCfFailure — auth", () => {
   it("names the worker permission and the code returned", () => {
     expect(describeCfFailure(fail("api", "Authentication error", { statusCode: 400, cfErrors: cf(10000) }), WORKER)).toBe(
       'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 10000',
-    );
-  });
-
-  it("names the pages permission", () => {
-    expect(describeCfFailure(fail("api", "Authentication error", { statusCode: 403, cfErrors: cf(9106) }), PAGES)).toBe(
-      'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Cloudflare Pages" (Read to report, Edit to change) · code 9106',
     );
   });
 
@@ -133,7 +125,7 @@ describe("describeCfFailure — other", () => {
   });
 
   it("returns a parse failure's message unchanged", () => {
-    expect(describeCfFailure(fail("parse", "Unexpected token < in JSON"), PAGES)).toBe("Unexpected token < in JSON");
+    expect(describeCfFailure(fail("parse", "Unexpected token < in JSON"), WORKER)).toBe("Unexpected token < in JSON");
   });
 
   it("replaces the message with the code and status when redaction is asked for", () => {

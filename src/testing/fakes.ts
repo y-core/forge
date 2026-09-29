@@ -1,4 +1,5 @@
 import type { AssetsFetcher } from "../app/types";
+import { bytesToHex } from "../crypto/mod";
 import { ROWS_WRITTEN_GUARD } from "../storage/db/sql";
 import type { D1DatabaseLike, D1PreparedStatement, D1Result } from "../storage/db/types";
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";
@@ -146,6 +147,23 @@ async function toBytes(value: ReadableStream | ArrayBuffer | ArrayBufferView | s
   return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 }
 
+function assertR2DigestShape(digest: string | Uint8Array): void {
+  if (typeof digest !== "string") {
+    if (digest.byteLength !== 32) throw new TypeError(`SHA-256 is 32 bytes, not ${digest.byteLength}`);
+    return;
+  }
+  if (digest.length !== 64) throw new TypeError(`SHA-256 is 64 hex characters, not ${digest.length}`);
+  if (!/^[0-9a-f]{64}$/i.test(digest)) throw new TypeError("Provided SHA-256 wasn't a valid hex string");
+}
+
+async function assertR2Checksum(bytes: Uint8Array, expected: string | Uint8Array): Promise<void> {
+  assertR2DigestShape(expected);
+  const actual = bytesToHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))));
+  if (actual === (typeof expected === "string" ? expected.toLowerCase() : bytesToHex(expected))) return;
+  const message = "put: The SHA-256 checksum you specified did not match what we received. (10037)";
+  throw Object.assign(new Error(message), { name: "R2Error", code: 10037 });
+}
+
 function toR2Object(key: string, entry: StoredR2Entry): R2ObjectLike {
   return {
     key,
@@ -190,6 +208,7 @@ export function fakeR2(seed?: Record<string, string>): R2BucketLike {
       options?: R2PutLike,
     ): Promise<R2ObjectLike> => {
       const bytes = await toBytes(value);
+      if (options?.sha256 !== undefined) await assertR2Checksum(bytes, options.sha256);
       const entry: StoredR2Entry = {
         bytes,
         etag: hashBytes(bytes),

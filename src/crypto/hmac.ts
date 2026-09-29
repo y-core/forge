@@ -1,6 +1,7 @@
 import { base64urlEncode } from "./base64";
 import { hexToBytes, utf8Encode } from "./bytes";
 import { sha256 } from "./digest";
+import { assertSecretStrength } from "./strength";
 import type { HmacKeyRing } from "./types";
 
 async function keyFingerprint(hexSecret: string): Promise<string> {
@@ -16,9 +17,9 @@ export function importHmacKey(raw: Uint8Array<ArrayBuffer>): Promise<CryptoKey> 
 export async function importHmacKeyFromHex(hexSecret: string, label = "secret"): Promise<CryptoKey> {
   if (hexSecret.length % 2 !== 0) throw new Error(`${label} must have an even number of hex characters`);
   if (!/^[0-9a-fA-F]+$/.test(hexSecret)) throw new Error(`${label} must contain only hexadecimal characters (0-9, a-f, A-F)`);
-  const pairs = hexSecret.match(/.{2}/g);
-  if (!pairs || pairs.length < 16) throw new Error(`${label} must be at least 32 hex characters (16 bytes)`);
-  return importHmacKey(hexToBytes(hexSecret));
+  const raw = hexToBytes(hexSecret);
+  assertSecretStrength(label, raw);
+  return importHmacKey(raw);
 }
 
 /** Imports hex-encoded secrets into a key ring, the first becoming the active signing key. @internal */

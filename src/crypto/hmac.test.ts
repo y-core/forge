@@ -3,10 +3,13 @@ import { describe, expect, it } from "bun:test";
 import { hexToBytes, randomBytes, utf8Encode } from "./bytes";
 import { hmacSign, hmacVerify, importHmacKey, importHmacKeyFromHex, importHmacKeyRing, lookupHmacKey } from "./hmac";
 
-describe("importHmacKeyFromHex", () => {
-  const validHex = "a".repeat(32); // 16 bytes
+const HEX_A = "358b1487d61f45faee7d40c46f2e735451bdee612b02576b37426d8b4617d48d";
+const HEX_B = "a4be059a6bf8f74efeb3c721902802870bb3aa5ec060fea9241d201f1e4e27d4";
 
-  it("resolves a CryptoKey for valid 32-char hex", async () => {
+describe("importHmacKeyFromHex", () => {
+  const validHex = HEX_A;
+
+  it("resolves a CryptoKey for a 32-byte hex secret", async () => {
     const key = await importHmacKeyFromHex(validHex, "secret");
     expect(key).toBeInstanceOf(CryptoKey);
     expect(key.algorithm.name).toBe("HMAC");
@@ -22,33 +25,45 @@ describe("importHmacKeyFromHex", () => {
     );
   });
 
-  it("rejects with label when hex is fewer than 32 chars (< 16 bytes)", async () => {
-    await expect(importHmacKeyFromHex("aabb", "secret")).rejects.toThrow("secret must be at least 32 hex characters (16 bytes)");
+  it("rejects with label when the secret is under 32 bytes", async () => {
+    await expect(importHmacKeyFromHex(HEX_A.slice(0, 62), "secret")).rejects.toThrow("secret: each secret must be at least 32 bytes (got 31)");
+  });
+
+  it("rejects with label when every byte of the secret is the same value", async () => {
+    await expect(importHmacKeyFromHex("a".repeat(64), "secret")).rejects.toThrow(
+      "secret: a secret whose bytes are all the same value is not a secret",
+    );
+  });
+
+  it("rejects with label when the secret carries too few distinct byte values", async () => {
+    await expect(importHmacKeyFromHex("0102".repeat(16), "secret")).rejects.toThrow(
+      "secret: a secret carrying only 2 distinct byte values is not one a CSPRNG produced",
+    );
   });
 });
 
 describe("hmacSign / hmacVerify", () => {
   it("sign then verify round-trips as true", async () => {
-    const key = await importHmacKeyFromHex("a".repeat(32), "secret");
+    const key = await importHmacKeyFromHex(HEX_A, "secret");
     const sig = await hmacSign(key, "test payload");
     expect(await hmacVerify(key, "test payload", sig)).toBe(true);
   });
 
   it("returns false when data is tampered", async () => {
-    const key = await importHmacKeyFromHex("a".repeat(32), "secret");
+    const key = await importHmacKeyFromHex(HEX_A, "secret");
     const sig = await hmacSign(key, "test payload");
     expect(await hmacVerify(key, "tampered payload", sig)).toBe(false);
   });
 
   it("returns false when signature is tampered", async () => {
-    const key = await importHmacKeyFromHex("a".repeat(32), "secret");
+    const key = await importHmacKeyFromHex(HEX_A, "secret");
     const sig = await hmacSign(key, "test payload");
     sig[0]! ^= 0xff;
     expect(await hmacVerify(key, "test payload", sig)).toBe(false);
   });
 
   it("accepts Uint8Array data", async () => {
-    const key = await importHmacKeyFromHex("b".repeat(32), "secret");
+    const key = await importHmacKeyFromHex(HEX_B, "secret");
     const data = utf8Encode("binary data");
     const sig = await hmacSign(key, data);
     expect(await hmacVerify(key, data, sig)).toBe(true);
@@ -64,7 +79,7 @@ describe("importHmacKey", () => {
   });
 
   it("produces the same signatures as importHmacKeyFromHex for equal key material", async () => {
-    const hex = "ab".repeat(16);
+    const hex = HEX_A;
     const fromHex = await importHmacKeyFromHex(hex, "secret");
     const fromBytes = await importHmacKey(hexToBytes(hex));
     expect(await hmacSign(fromBytes, "x")).toEqual(await hmacSign(fromHex, "x"));
@@ -91,7 +106,7 @@ describe("importHmacKeyRing", () => {
   });
 
   it("derives a twelve-character base64url kid", async () => {
-    const ring = await importHmacKeyRing(["ab".repeat(32)], "Label");
+    const ring = await importHmacKeyRing([HEX_A], "Label");
     expect(ring.activeKeyId).toMatch(/^[A-Za-z0-9_-]{12}$/);
   });
 
@@ -104,7 +119,7 @@ describe("importHmacKeyRing", () => {
   });
 
   it("carries the label into a short secret's error", async () => {
-    await expect(importHmacKeyRing(["aabb"], "Label")).rejects.toThrow("Label must be at least 32 hex characters (16 bytes)");
+    await expect(importHmacKeyRing(["aabb"], "Label")).rejects.toThrow("Label: each secret must be at least 32 bytes (got 2)");
   });
 
   it("rejects an empty secret list, naming the label", async () => {
@@ -114,7 +129,7 @@ describe("importHmacKeyRing", () => {
 
 describe("lookupHmacKey", () => {
   it("resolves a present kid and nothing else, prototype names included", async () => {
-    const ring = await importHmacKeyRing(["ab".repeat(32)], "Label");
+    const ring = await importHmacKeyRing([HEX_A], "Label");
     expect(lookupHmacKey(ring, ring.activeKeyId)).toBe(ring.keys[ring.activeKeyId]!);
     for (const kid of ["absent-kid00", "constructor", "__proto__", "toString"]) {
       expect(lookupHmacKey(ring, kid)).toBeUndefined();

@@ -5,8 +5,9 @@ description: "The design consequences of swapping fragments: what a partial upda
 
 # HTMX Surfaces
 
-This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`, `hxHeaders`, the pattern helpers, `isHxRequest`, the trust
-posture on selector-valued attributes — belongs to [`HTMX.md`][htmx] and `src/html/README.md`, and is not restated here.
+This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`, `hxHeaders`, the pattern helpers, `isPartial` for
+choosing between a page and a fragment, the trust posture on selector-valued attributes — belongs to [`HTMX.md`][htmx] and `src/html/README.md`, and
+is not restated here.
 
 The one idea everything below follows from: **a swapped region is a surface, not a hole.** It is rendered by its own handler, it can be requested
 directly, and it arrives into a page that was laid out before anyone knew what it would contain. Each of those is a design obligation.
@@ -83,14 +84,14 @@ Default: put the busy state on the control the reader touched, via `hxAttrs`' `i
 with `infiniteScroll`, where the indicator belongs at the point of insertion. <!-- rule:forge-ui-htmx-indicator-on-control --> The reader's
 attention is on the thing they clicked. A spinner two hundred pixels away in a region they are not looking at answers a question nobody asked.
 
-Default: disable the initiating control for the duration with `disabledElt`, and prefer the pattern helper that already does it — unless the
-interaction is deliberately repeatable in flight. <!-- rule:forge-ui-htmx-disable-inflight --> `formSubmit` defaults `disabledElt` to `"this"`, so
-an HTMX form built with it is already protected against a double submit. Building the same form by hand and forgetting it is the common route to two
+Default: disable the initiating control for the duration with `disable`, and prefer the pattern helper that already does it — unless the
+interaction is deliberately repeatable in flight. <!-- rule:forge-ui-htmx-disable-inflight --> `formSubmit` defaults `disable` to `"this"`, so an
+HTMX form built with it is already protected against a double submit. Building the same form by hand and forgetting it is the common route to two
 records.
 
 | The wait is for… | Indicator goes on | Placeholder |
 | --- | --- | --- |
-| A form submission | the submitting `Button` (`disabledElt: "this"`) | none — the control's own state is the signal |
+| A form submission | the submitting `Button` (`disable: "this"`) | none — the control's own state is the signal |
 | A region of content loading | the region | `Skeleton` at the incoming shape |
 | A live search | the search `Input`'s row | `Skeleton` rows in the reserved result box |
 | An appended page (`infiniteScroll`) | the sentinel at the list's end | `Skeleton` row where the next item lands |
@@ -108,7 +109,8 @@ that was just re-rendered means the confirmation disappears the next time that r
 
 Where a failure renders is [`07-states.md`][states]'s — `forge-ui-state-error-inline` for a failure that belongs to a visible surface,
 `forge-ui-state-error-toast` for one the reader is not watching. Under a swap the two map cleanly onto the two response shapes: the in-place `Alert`
-is the fragment body, and the toast is an out-of-band swap.
+is the fragment body, and the toast is an out-of-band swap. A 4xx fragment lands in its target and a 5xx leaves the target as it was
+([`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a), so a refusal the reader can fix is rendered at 4xx beside what they did.
 
 Default: target out-of-band swaps at stable ids the page layout owns, and give each one exactly one writer — unless the region is a genuine append
 target such as the flash container. <!-- rule:forge-ui-htmx-oob-scoped --> An OOB selector picks its target client-side, so two handlers writing the
@@ -154,3 +156,4 @@ deliberately, on the element that now represents what the reader was doing.
 [floor]: ../floor.md
 [htmx]: ../../../../docs/HTMX.md
 [states]: ./07-states.md
+[ucr-4a]: ../../../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no

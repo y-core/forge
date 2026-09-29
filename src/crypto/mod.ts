@@ -14,6 +14,7 @@ export type { HmacKeyRing } from "./types";
 export { hmacSign, hmacVerify, importHmacKey, importHmacKeyFromHex, importHmacKeyRing, lookupHmacKey } from "./hmac";
 export type { HotpHash, HotpOptions, TotpOptions } from "./types";
 export { hotpCode, totpCode, totpCounter } from "./hotp";
+export { assertSecretStrength } from "./strength";
 export { timingSafeEqual, timingSafeEqualBytes } from "./timing";
 export type { UuidByteInput, Uuidv7Options } from "./types";
 export { createUuidv7, createUuidv7Bytes, uuidFromBytes, uuidToBytes, uuidv7, uuidv7Bytes } from "./uuid";

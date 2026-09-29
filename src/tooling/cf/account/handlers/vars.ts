@@ -1,6 +1,6 @@
 import { createCfClient } from "../../api/client";
-import { pagesProject, workerSettings } from "../../api/endpoints";
-import type { CfPagesProject, CfWorkerSettings } from "../../api/types";
+import { workerSettings } from "../../api/endpoints";
+import type { CfWorkerSettings } from "../../api/types";
 import type { SyncResult } from "../../types";
 import { devVarsPath, readDevVars } from "./devvars";
 import { failureRows } from "./rows";
@@ -64,30 +64,13 @@ function rowsFor(entries: VarEntry[], remote: Map<string, string>): SyncResult[]
 
 async function readWorkerVars(entries: VarEntry[], ctx: HandlerContext): Promise<ReconcileResult<VarEntry>> {
   const client = createCfClient(ctx.auth, ctx.fetch);
-  const getResult = await client.get<CfWorkerSettings>(workerSettings(ctx.auth.accountId, ctx.target.name));
+  const getResult = await client.get<CfWorkerSettings>(workerSettings(ctx.auth.accountId, ctx.scriptName));
 
   if (!getResult.ok) {
     return { entries, results: failureRows("vars", identities(entries), getResult.error, ctx) };
   }
 
   const remote = new Map((getResult.data.bindings ?? []).filter((b) => b.type === "plain_text").map((b) => [b.name, b.text ?? ""]));
-  return { entries, results: rowsFor(entries, remote) };
-}
-
-async function readPagesVars(entries: VarEntry[], ctx: HandlerContext): Promise<ReconcileResult<VarEntry>> {
-  const client = createCfClient(ctx.auth, ctx.fetch);
-  const getResult = await client.get<CfPagesProject>(pagesProject(ctx.auth.accountId, ctx.target.name));
-
-  if (!getResult.ok) {
-    return { entries, results: failureRows("vars", identities(entries), getResult.error, ctx) };
-  }
-
-  const envVars = getResult.data.deployment_configs?.production?.env_vars ?? {};
-  const remote = new Map(
-    Object.entries(envVars)
-      .filter(([, v]) => v?.type === "plain_text")
-      .map(([name, v]) => [name, v?.value ?? ""]),
-  );
   return { entries, results: rowsFor(entries, remote) };
 }
 
@@ -106,7 +89,7 @@ export function createVarsHandler(configPath: string): ResourceHandler<VarEntry>
     },
 
     async reconcile(entries, ctx): Promise<ReconcileResult<VarEntry>> {
-      return ctx.target.kind === "pages" ? readPagesVars(entries, ctx) : readWorkerVars(entries, ctx);
+      return readWorkerVars(entries, ctx);
     },
   };
 }

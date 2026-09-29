@@ -3,9 +3,11 @@
 
 import { hxAttrs } from "../../../html/htmx/htmx-attrs";
 import type { FC } from "../../../jsx/types";
+import { Alert } from "../../../ui/core/alert";
 import { Badge } from "../../../ui/core/badge";
 import { Button } from "../../../ui/core/button";
 import { EmptyState } from "../../../ui/core/empty-state";
+import { Form } from "../../../ui/core/form";
 import { Link } from "../../../ui/core/link";
 import { Separator } from "../../../ui/core/separator";
 import { cn } from "../../../ui/core/utils/cn";
@@ -14,16 +16,27 @@ import { AuthTimestamp } from "./timestamp";
 import type { AuthFactorRow, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./types";
 
 /** What each factor is called on a page, so no surface spells a stored `kind` at a reader. */
-const FACTOR_LABEL: Readonly<Record<AuthFactorKind, string>> = { "email-otp": "Emailed code", passkey: "Passkey", "totp-app": "Authenticator app" };
+const FACTOR_LABEL: Readonly<Record<AuthFactorKind, string>> = {
+  "email-otp": "Emailed code",
+  passkey: "Passkey",
+  "recovery-code": "Recovery codes",
+  "totp-app": "Authenticator app",
+};
 
 /** What each factor does, in the one line a reader needs to tell them apart. */
 const FACTOR_NOTE: Readonly<Record<AuthFactorKind, string>> = {
   "email-otp": "A single-use code sent to the address on this account.",
   passkey: "The screen lock or security key held by a registered device.",
+  "recovery-code": "Single-use codes kept for when your other methods are out of reach.",
   "totp-app": "A rotating code from an authenticator app.",
 };
 
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
+
+const RESET_NOTE =
+  "Removes every authenticator app, passkey and recovery code on this account and signs it out everywhere. The holder then signs in with an emailed code and enrols again.";
+
+const RESET_CONFIRM = "Reset every sign-in method on this account? This cannot be undone.";
 
 /** The badge each enrolment state earns — a tone, and the word beside it, never the tone alone. */
 const STATE_BADGE: Readonly<Record<AuthFactorRow["state"], { readonly tone: "success" | "warning" | "neutral"; readonly label: string }>> = {
@@ -49,6 +62,7 @@ function factorManagePath(kind: AuthFactorKind, manage: AuthFactorsViewProps["ma
   if (manage === undefined) return undefined;
   if (kind === "passkey") return manage.passkeys();
   if (kind === "totp-app") return manage.totp();
+  if (kind === "recovery-code") return manage.recoveryCodes();
   return undefined;
 }
 
@@ -84,12 +98,22 @@ const AuthFactorItem: FC<{ row: AuthFactorRow; manage: string | undefined }> = (
 // Design Read: the account's holder or an administrator, checking what can sign it in; the one action
 // is managing a factor, offered only to the holder; failure is a down store, which the resolver answers.
 /** One account's sign-in methods and registered passkeys, identical whoever is reading them. @public */
-export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, manage, icon: AppIcon, class: cls, level }) => {
+export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, manage, recovered, reset, icon: AppIcon, class: cls, level }) => {
   const own = level ?? 2;
   const Heading = `h${own}` as "h2";
   const nested = (own < 6 ? own + 1 : 6) as 3;
   return (
     <section data-ref='factors' class={cn("flex flex-col gap-6", cls)}>
+      {recovered === undefined ? null : (
+        <Alert tone='info' data-ref='factors-recovered'>
+          <AppIcon name='key' class='size-4' />
+          <Alert.Title>You signed in with a recovery code</Alert.Title>
+          <Alert.Description>
+            {recovered === 1 ? "You have 1 unused code left." : `You have ${recovered} unused codes left.`} If your authenticator app or passkey no
+            longer works, remove it below and add it again, then generate a new set of codes.
+          </Alert.Description>
+        </Alert>
+      )}
       <Heading class='text-sm font-medium text-foreground'>Sign-in methods</Heading>
       {factors.length === 0 ? (
         <EmptyState>
@@ -129,6 +153,22 @@ export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, m
             </li>
           ))}
         </ul>
+      )}
+      {reset === undefined ? null : (
+        <>
+          <Separator />
+          <Form
+            action={reset.path}
+            csrfToken={reset.csrfToken}
+            csrfHeader={reset.csrfHeader}
+            {...hxAttrs({ post: reset.path, confirm: RESET_CONFIRM })}
+            class='flex flex-col gap-2'>
+            <p class='max-w-prose text-sm text-pretty text-muted-foreground'>{RESET_NOTE}</p>
+            <Button type='submit' tone='destructive' class='self-start' data-ref='factors-reset'>
+              Reset sign-in methods
+            </Button>
+          </Form>
+        </>
       )}
     </section>
   );

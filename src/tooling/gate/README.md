@@ -77,8 +77,8 @@ that match rules your repository actually holds; the label in each row is its `-
 | Step | Proves |
 | --- | --- |
 | `exportsStep` → `validate-exports` | Every declared subpath resolves, every `@public` symbol is in its barrel, and every barrel, `files[]` entry and asset is reachable |
-| `namespaceGraphStep` → `validate-namespace-graph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair |
-| `packagingStep` → `validate-packaging` | No module the tarball carries is one only a test reaches, computed from the `exports` map and `bin`; `required` fails each named file the `files` array leaves out or the disk lacks |
+| `namespaceGraphStep` → `validate-namespace-graph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair; the named document carries no namespace catalogue, composes table or classification column |
+| `packagingStep` → `validate-packaging` | No module the tarball carries is one only a test reaches, computed from the `exports` map and `bin`; `required` fails each named file the `files` array leaves out or the disk lacks; every published namespace resolves to a README the tarball carries |
 | `coLocationStep` → `validate-co-location` | Every source module has a test beside it, so deleting one is loud |
 | `commentBudgetStep` → `validate-comment-budget` | Every comment in the files and directories your `sources` names is one [`CODE_RULES.md`][cr-5a] §5a permits, less a `!` entry's subtree — `!**/.wrangler` drops every `.wrangler` at any depth; `licences` waives the cap for one leading attribution header |
 | `jsxStep` → `validate-jsx` | Every shipped `.tsx` carries its runtime pragmas |

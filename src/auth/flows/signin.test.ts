@@ -18,7 +18,7 @@ import { importAuthKeyRing } from "../keys/ring";
 import type { AuthFactor, AuthKeyRing, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
 import { createSigninFlow, redactSigninReason } from "./signin";
 import type { AuthIssueOutcome } from "./types";
-import type { AuthSigninOptions, AuthSigninReason } from "./types";
+import type { AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./types";
 
 const USER_ID = uuidv7();
 const EMAIL = "Person@Example.COM";
@@ -87,6 +87,26 @@ function totpFactor(spy: FactorSpy): EnrollableFactorService<"totp-app"> {
   };
 }
 
+/** The optional `recovery-code` offer the registry demands beside `totp-app`; nothing here presents a code. */
+const RECOVERY_OFFER: AuthFactorOffer = {
+  service: {
+    kind: "recovery-code",
+    enrolment: "explicit",
+    capabilities: { stepUp: true },
+    challengeTtlMs: 900_000,
+    codeDigits: null,
+    codePeriodSeconds: null,
+    reissueAfterMs: null,
+    createChallenge: () => Promise.resolve(err("not-enrolled" as const)),
+    verifyChallenge: () => Promise.resolve(err("not-enrolled" as const)),
+    beginEnrolment: () => Promise.resolve(err("unrecognised" as const)),
+    completeEnrolment: () => Promise.resolve(err("unrecognised" as const)),
+    listEnrolments: () => Promise.resolve(ok([])),
+  },
+  role: "second",
+  requirement: "optional",
+};
+
 function fakeFactorStore(enrolled: readonly AuthFactor[] = []): FactorStore {
   return {
     listByUser: () => Promise.resolve(ok(enrolled)),
@@ -94,7 +114,6 @@ function fakeFactorStore(enrolled: readonly AuthFactor[] = []): FactorStore {
     findEnrolled: (_userId, kinds) => Promise.resolve(ok(enrolled.filter((row) => kinds.includes(row.kind)))),
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
-    unconfirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     recordVerification: () => Promise.resolve(ok(true)),
     countSecretsNotUnder: () => Promise.resolve(ok(0)),
@@ -185,7 +204,7 @@ function flow(
 ) {
   const primary = { service: implicitFactor(world.primary, verdict), role: "primary" } as const;
   const offered: AuthFactorOffer[] =
-    second === "none" ? [primary] : [primary, { service: totpFactor(world.stepUp), role: "second", requirement: second }];
+    second === "none" ? [primary] : [primary, { service: totpFactor(world.stepUp), role: "second", requirement: second }, RECOVERY_OFFER];
   const options: AuthSigninOptions = {
     keys: ring,
     users: world.users.store,
@@ -291,6 +310,13 @@ describe("createSigninFlow — the step-up path keeps the true reason", () => {
     world.stepUp.verdict = err("too-many-attempts" as const);
     expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT)).toEqual({ ok: false, error: "too-many-attempts" });
   });
+
+  it("answers `unusable` from stepUp, so the caller can offer another factor rather than a wrong-code notice", async () => {
+    const world = scene();
+    const signin = flow(world, "mandatory", [factorRow("totp-app", 1)]);
+    world.stepUp.verdict = err("unusable" as const);
+    expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT)).toEqual({ ok: false, error: "unusable" });
+  });
 });
 
 describe("createSigninFlow — anti-enumeration on request", () => {
@@ -373,7 +399,7 @@ describe("createSigninFlow — the second-factor requirement", () => {
   it("answers `enrolment-required` as a success under `mandatory` with nothing enrolled", async () => {
     const outcome = await flow(scene(), "mandatory").complete(EMAIL, "123456", AT);
     expect(outcome.ok).toBe(true);
-    expect(outcome.ok && outcome.data.resolution).toEqual({ status: "enrolment-required", kinds: ["totp-app"] });
+    expect(outcome.ok && outcome.data.resolution).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
   });
 
   it("completes under `optional` with nothing enrolled, and demands a step-up once one is", async () => {
@@ -387,7 +413,7 @@ describe("createSigninFlow — the second-factor requirement", () => {
   it("derives the roles off the row it loaded, so `mandatoryForRoles` binds an admin and nobody else", async () => {
     const second: AuthFactorRequirement = { mandatoryForRoles: ["admin"] };
     const matched = await flow(scene([userRow({ isAdmin: true })]), second).complete(EMAIL, "123456", AT);
-    expect(matched.ok && matched.data.resolution).toEqual({ status: "enrolment-required", kinds: ["totp-app"] });
+    expect(matched.ok && matched.data.resolution).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
 
     const other = await flow(scene(), second).complete(EMAIL, "123456", AT);
     expect(other.ok && other.data.resolution).toEqual({ status: "satisfied" });
@@ -449,19 +475,21 @@ describe("redactSigninReason", () => {
     expect(redactSigninReason("deactivated")).toBe("unrecognised");
   });
 
-  it("collapses every membership-revealing reason and keeps only throttling and outage apart", () => {
-    const rows: readonly [AuthSigninReason, string][] = [
-      ["deactivated", "unrecognised"],
-      ["expired", "unrecognised"],
-      ["consumed", "unrecognised"],
-      ["already-enrolled", "unrecognised"],
-      ["not-enrolled", "unrecognised"],
-      ["unrecognised", "unrecognised"],
-      ["too-many-attempts", "throttled"],
-      ["too-soon", "throttled"],
-      ["unavailable", "unavailable"],
-    ];
-    for (const [reason, notice] of rows) expect(`${reason}: ${redactSigninReason(reason)}`).toBe(`${reason}: ${notice}`);
+  it("collapses every membership-revealing reason and keeps throttling, outage and an unusable factor apart", () => {
+    const table: Record<AuthSigninReason, AuthSigninNotice> = {
+      deactivated: "unrecognised",
+      expired: "unrecognised",
+      consumed: "unrecognised",
+      "already-enrolled": "unrecognised",
+      "not-enrolled": "unrecognised",
+      unrecognised: "unrecognised",
+      "too-many-attempts": "throttled",
+      "too-soon": "throttled",
+      unavailable: "unavailable",
+      unusable: "unusable",
+    };
+    const rows = Object.entries(table) as [AuthSigninReason, AuthSigninNotice][];
+    expect(rows.map(([reason]) => [reason, redactSigninReason(reason)])).toEqual(rows);
   });
 });
 

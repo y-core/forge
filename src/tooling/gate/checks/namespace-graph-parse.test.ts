@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { buildGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier, sectionWindow } from "./namespace-graph-parse";
+import { buildGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier } from "./namespace-graph-parse";
 import type { EdgeKind, SourceFile } from "./types";
 
 function sites(source: string): [string, EdgeKind][] {
@@ -294,201 +294,96 @@ describe("buildGraph() — kind is the AND over every site (the reader chasing t
   });
 });
 
-describe("sectionWindow() — where a guard is allowed to look", () => {
-  it("returns null when no line matches the heading, since a section that moved silently is the failure", () => {
-    const lines = ["# Namespace design", "## 3. Catalog", "Prose only."];
+describe("findEnumerations() — the enumerations the data files or a namespace's README own", () => {
+  const NS = ["app", "ui/core", "crypto"];
 
-    expect(sectionWindow(lines, /^### 4a\. /)).toEqual(null);
+  it("reports nothing for a document whose tables name no namespace path", () => {
+    const lines = ["# Namespace design", "| Concern | Correct home |", "| --- | --- |", "| CSRF | `form` |"];
+
+    expect(findEnumerations(lines, NS)).toEqual([]);
   });
 
-  it("opens the window on the heading line itself, not the line after it", () => {
-    const lines = ["# Namespace design", "Prose.", "### 4a. Classification", "Prose.", "## 5. Next"];
+  it("reports a `| Namespace | Composes |` row at its own line in any section, not only the classification one", () => {
+    const lines = ["## 4. Composition", "Prose.", "## 5. Growth", "| Namespace | Composes |"];
 
-    expect(sectionWindow(lines, /^### 4a\. /)).toEqual({ from: 2, to: 4 });
+    expect(findEnumerations(lines, NS)).toEqual([{ kind: "composes-table", line: 4 }]);
   });
 
-  it("closes the window at the next `## ` line", () => {
-    const lines = ["### 3a. Catalog", "| Subpath | Purpose |", "## 4. Composition", "| Subpath | Category |"];
+  it("reports a `Category` column row at its own line with no catalog heading anywhere", () => {
+    const lines = ["# Namespace design", "Prose.", "| Subpath | Category |"];
 
-    expect(sectionWindow(lines, /^### 3a\. /)).toEqual({ from: 0, to: 2 });
+    expect(findEnumerations(lines, NS)).toEqual([{ kind: "classification-column", line: 3 }]);
   });
 
-  it("closes the window at the end of the document when no `## ` follows", () => {
-    const lines = ["# Namespace design", "### 3a. Catalog", "| Subpath | Purpose |"];
+  it("reports a row naming a package subpath and its barrel as a catalogue at that row", () => {
+    const lines = ["Prose.", "| `@y-core/forge/app` | `src/app/mod.ts` | bootstrap |"];
 
-    expect(sectionWindow(lines, /^### 3a\. /)).toEqual({ from: 1, to: 3 });
+    expect(findEnumerations(lines, NS)).toEqual([{ kind: "catalog-table", line: 2 }]);
   });
 
-  it("runs past a sibling `###` heading, covering §3b from a window opened on §3a", () => {
-    const lines = ["### 3a. Catalog", "Prose.", "### 3b. Sibling", "| Subpath | Category |", "## 4. Composition"];
-
-    expect(sectionWindow(lines, /^### 3a\. /)).toEqual({ from: 0, to: 4 });
+  it("reports a row naming only a package subpath, since the subpath alone restates the catalogue", () => {
+    expect(findEnumerations(["| `@y-core/forge/ui/core` | components |"], NS)).toEqual([{ kind: "catalog-table", line: 1 }]);
   });
 
-  it("opens on the first matching heading when the pattern appears twice", () => {
-    const lines = ["### 4a. Classification", "Prose.", "## 5. Next", "### 4a. Classification", "Prose."];
+  it("reports a sealed-internal source directory in a row, so an internal-namespaces table is caught too", () => {
+    const lines = ["### 3b. Internal Namespaces", "| `src/crypto/` | HMAC | `auth` |"];
 
-    expect(sectionWindow(lines, /^### 4a\. /)).toEqual({ from: 0, to: 2 });
+    expect(findEnumerations(lines, NS)).toEqual([{ kind: "catalog-table", line: 2 }]);
   });
-});
 
-describe("findEnumerations() — the enumerations the data files own", () => {
-  it("reports nothing for a document whose sections cite the data files and enumerate nothing", () => {
+  it("reports one catalogue per table, at its first naming row, and a second table separately", () => {
     const lines = [
-      "# Namespace design",
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
       "| Subpath | Purpose |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "Prose citing `EDGES`.",
+      "| `src/app/` | bootstrap |",
+      "| `src/ui/core/` | components |",
+      "| `src/crypto/` | HMAC |",
+      "Prose between the tables.",
+      "| `src/app/` | bootstrap |",
     ];
 
-    expect(findEnumerations(lines)).toEqual([]);
-  });
-
-  it("reports a `| Namespace | Composes |` row inside the §4a window, at the row's own line", () => {
-    const lines = [
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "| Subpath | Purpose |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "| Namespace | Composes |",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([{ kind: "composes-table", line: 6 }]);
-  });
-
-  it("reports nothing for the same `| Namespace | Composes |` row placed outside the §4a window", () => {
-    const lines = [
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "| Namespace | Composes |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "Prose citing `EDGES`.",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([]);
-  });
-
-  it("reports a `Category` column row inside the §3a window", () => {
-    const lines = [
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "| Subpath | Category |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "Prose citing `EDGES`.",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([{ kind: "classification-column", line: 3 }]);
-  });
-
-  it("reports a `Classification` column row inside the §3a window on the same terms", () => {
-    const lines = [
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "| Subpath | Classification |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "Prose citing `EDGES`.",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([{ kind: "classification-column", line: 3 }]);
-  });
-
-  it("reports nothing for the same column row placed outside the §3a window", () => {
-    const lines = [
-      "# Namespace design",
-      "| Subpath | Category |",
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "Prose only.",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "Prose citing `EDGES`.",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([]);
-  });
-
-  it("reports an absent §4a heading and still runs the §3a checks, since the sections are independent", () => {
-    const lines = ["## 3. Catalog", "### 3a. Subpath catalog", "| Subpath | Category |", "## 4. Composition", "Prose only."];
-
-    expect(findEnumerations(lines)).toEqual([
-      { kind: "missing-classification-section", line: null },
-      { kind: "classification-column", line: 3 },
+    expect(findEnumerations(lines, NS)).toEqual([
+      { kind: "catalog-table", line: 2 },
+      { kind: "catalog-table", line: 6 },
     ]);
   });
 
-  it("reports an absent §3a heading and no column finding, even for a row later in the document", () => {
-    const lines = ["## 4. Composition", "### 4a. Classification", "Prose citing `EDGES`.", "## 5. Catalog", "| Subpath | Category |"];
-
-    expect(findEnumerations(lines)).toEqual([{ kind: "missing-catalog-section", line: null }]);
+  it("reports nothing for a namespace path written in prose rather than a table row", () => {
+    expect(findEnumerations(["The barrel is `src/app/mod.ts`."], NS)).toEqual([]);
   });
 
-  it("reports both missing sections, classification before catalog", () => {
-    const lines = ["# Namespace design", "## 3. Catalog", "Prose only."];
+  it("reports nothing for a row naming a namespace bare, which is how a growth ruling names its home", () => {
+    expect(findEnumerations(["| `Timeline` | shipped | lives in `ui/core` |"], NS)).toEqual([]);
+  });
 
-    expect(findEnumerations(lines)).toEqual([
-      { kind: "missing-classification-section", line: null },
-      { kind: "missing-catalog-section", line: null },
+  it("reports nothing for a directory that only begins with a namespace's name", () => {
+    expect(findEnumerations(["| `src/apple/x.ts` | fruit |"], NS)).toEqual([]);
+  });
+
+  it("reports nothing for a row naming a directory outside the namespace set", () => {
+    expect(findEnumerations(["| `src/tooling/root/` | helpers |"], NS)).toEqual([]);
+  });
+
+  it("reports no missing section for a document with no headings at all", () => {
+    expect(findEnumerations(["Prose only.", "More prose."], NS)).toEqual([]);
+  });
+
+  it("returns mixed kinds in ascending line order", () => {
+    const lines = ["| Subpath | Category |", "Prose.", "| `src/app/` | bootstrap |", "Prose.", "| Namespace | Composes |"];
+
+    expect(findEnumerations(lines, NS)).toEqual([
+      { kind: "classification-column", line: 1 },
+      { kind: "catalog-table", line: 3 },
+      { kind: "composes-table", line: 5 },
     ]);
   });
 
-  it("reports both offending rows in one window, ascending by line", () => {
-    const lines = [
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "Prose only.",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "| Namespace | Composes |",
-      "Prose.",
-      "| Namespace | Composes |",
-    ];
+  it("reads namespace paths under the source root it is given", () => {
+    const lines = ["| `lib/app/mod.ts` | bootstrap |", "Prose.", "| `src/app/mod.ts` | bootstrap |"];
 
-    expect(findEnumerations(lines)).toEqual([
-      { kind: "composes-table", line: 6 },
-      { kind: "composes-table", line: 8 },
-    ]);
+    expect(findEnumerations(lines, NS, "lib")).toEqual([{ kind: "catalog-table", line: 1 }]);
   });
 
-  it("reports the §4a hit before the §3a hit, whichever line each sits on", () => {
-    const lines = [
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "| Subpath | Category |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "| Namespace | Composes |",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([
-      { kind: "composes-table", line: 6 },
-      { kind: "classification-column", line: 3 },
-    ]);
-  });
-
-  it("numbers lines from one and names the offending row, not the heading that opened the window", () => {
-    const lines = [
-      "# Namespace design",
-      "## 3. Catalog",
-      "### 3a. Subpath catalog",
-      "Prose.",
-      "Prose.",
-      "| Subpath | Category |",
-      "## 4. Composition",
-      "### 4a. Classification",
-      "Prose.",
-      "| Namespace | Composes |",
-    ];
-
-    expect(findEnumerations(lines)).toEqual([
-      { kind: "composes-table", line: 10 },
-      { kind: "classification-column", line: 6 },
-    ]);
+  it("reports no catalogue when the namespace set is empty", () => {
+    expect(findEnumerations(["| `src/app/` | bootstrap |"], [])).toEqual([]);
   });
 });

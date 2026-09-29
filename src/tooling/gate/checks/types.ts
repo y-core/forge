@@ -715,14 +715,14 @@ export interface GraphFinding {
   detail: string;
 }
 
-/** The ways the document can carry an enumeration the data files own. */
-export type EnumerationFindingKind = "missing-catalog-section" | "missing-classification-section" | "composes-table" | "classification-column";
+/** The ways the document can carry an enumeration the data files or a namespace's README own. */
+export type EnumerationFindingKind = "composes-table" | "classification-column" | "catalog-table";
 
 /** One enumeration finding, carrying no message because its remedy is a fixed string the caller emits. */
 export interface EnumerationFinding {
   kind: EnumerationFindingKind;
-  /** 1-indexed line, or null for a missing section. */
-  line: number | null;
+  /** 1-indexed. */
+  line: number;
 }
 
 /** What the namespace-graph check needs to know about the project. @public */

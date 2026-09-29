@@ -75,18 +75,15 @@ interface HtmxAttributes {
   "hx-select-oob"?: string | undefined;
   "hx-include"?: string | undefined;
   "hx-encoding"?: string | undefined;
-  "hx-params"?: string | undefined;
-  "hx-ext"?: string | undefined;
   "hx-confirm"?: string | undefined;
-  "hx-boost"?: string | undefined;
+  "hx-boost:inherited"?: string | undefined;
   "hx-headers"?: string | undefined;
   "hx-vals"?: string | undefined;
   "hx-indicator"?: string | undefined;
-  "hx-disabled-elt"?: string | undefined;
+  "hx-disable"?: string | undefined;
   "hx-swap-oob"?: string | undefined;
   "hx-replace-url"?: string | undefined;
   "hx-preserve"?: string | undefined;
-  "hx-request"?: string | undefined;
 }
 
 /** Attributes shared by all HTML elements. @public */

@@ -7,7 +7,8 @@ audience: consumer
 # Security Hardening
 
 > Owns the `security` namespace — transport-layer request/response hardening only — and the `trustCfHeaders` trust boundary. CSP, CORS, origin
-> verification, rate limiting, request identity. Authentication, sessions, and RBAC are out of scope (§7).
+> verification, rate limiting, request identity. Authentication, sessions, and RBAC are out of scope (§7). Also owns the one strength rule every
+> secret forge imports is held to (§8).
 >
 > Defers to: [`INPUT_VALIDATION.md`][iv] for CSRF, Turnstile, and the form body cap; [`ROUTING_AND_MIDDLEWARE.md`][ram] for middleware placement;
 > [`FORGE_ERRORS.md`][eh-2d] §2d and §5b for fragment-option escaping and the baseline-hardened 500; [`STORAGE_BINDINGS.md`][sb-3b] §3b, §3c, §4a
@@ -25,6 +26,8 @@ audience: consumer
 - §2d getNonce and Automatic URL Sanitization: reading the nonce; `safeUrl` at render time
 - §2e Default Header Set: which headers are emitted, which are opt-in, and which are a route concern
 - §2f createRouteSecurityHeaders and the Handler-Set CSP: why a response's own CSP combines with the app's, and how a route loosens it instead
+- §2g Trusted Types and htmx — the forge-htmx Policy: the name to list, why a pass-through policy is acceptable, how it fails closed, and what
+  enforcement forbids
 - §3 CORS and Origin Protection: the cross-origin guards
 - §3a cors Middleware for API Routes: scoped application and response rebuild
 - §3b originGuard — Strict Origin Allowlist: the Origin/Referer tier
@@ -44,6 +47,7 @@ audience: consumer
 - §6 Content Type Guards: incoming-body enforcement
 - §6a requireFormContentType: the 415 guard
 - §7 Transport-Layer Boundary: pointer to the governance rule that owns it
+- §8 Secret Strength — One Rule for Every Secret: the floor and the variety check, how each kind of secret is measured, and how to generate one
 
 ---
 
@@ -133,7 +137,8 @@ value once before parsing the frame document — a single escape would cancel ex
 **No `hx-*` attribute is covered by this**, in either half. Selector and JSON values cannot be sanitized at all ([`HTMX.md`][htmx-7] §7); URL-valued
 `hx-*` attributes deliberately are not, because `"#"` is a live same-origin request rather than a dead link once htmx fetches it
 ([`HTMX.md`][htmx-7a] §7a). `hx-on:*` is outside the handler drop for the same reason its name is outside the test — it begins `hx-`, not `on` — and
-a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both are held by who wrote the value ([`HTMX.md`][htmx-7b] §7b).
+a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both are held by who wrote the value ([`HTMX.md`][htmx-7b] §7b). Where
+Trusted Types is enforced, htmx's own writes go through the `forge-htmx` policy and both evaluated forms are refused (§2g).
 
 ### 2e. Default Header Set
 
@@ -183,7 +188,8 @@ a `js:`-prefixed `hx-vals` or `hx-headers` is evaluated on the same terms; both 
 
   `trustedTypes` adds `require-trusted-types-for 'script'` and a `trusted-types` list of policy names, each name held to the Trusted Types name
   grammar. `require: false` omits the first directive, so an app can restrict which policies exist before it requires them. Merging concatenates
-  the policy lists, and an `allowDuplicates` or `require` the extra states wins.
+  the policy lists, and an `allowDuplicates` or `require` the extra states wins. An app that loads `ui/client/htmx` lists its policy name there, or
+  no htmx swap succeeds (§2g).
 
   `reporting` emits `Reporting-Endpoints` and adds `report-to` to every CSP, with a `report-uri` fallback beside it because browser support for
   `report-to` still varies. The endpoint must be an absolute https URL and throws otherwise. Merging replaces `reporting` outright: an app has one
@@ -229,6 +235,56 @@ request's nonce. It is registered deeper than the app-level factory, so its queu
 - **An invalid merge throws at the route's first request, not at construction.** `extra` is validated alone when the middleware is built, but the
   app's options exist only on a request. A combination the validator refuses — `UNSAFE_INLINE` merged onto a backfilled nonce (§2e) — is never
   cached, so it throws on every request to the route.
+
+### 2g. Trusted Types and htmx — the forge-htmx Policy
+
+**An app that enforces Trusted Types and loads `ui/client/htmx` lists `forge-htmx` in its `trusted-types` directive.** The entry creates a policy by
+that name when it loads and hands it to htmx. htmx then routes its one HTML parse, and the text of every script in swapped content, through it. The
+name is exported as `HTMX_TRUSTED_TYPES_POLICY` from `@y-core/forge/ui/contracts`. A page that renders `<Turnstile>` also lists
+`forge-turnstile`, exported beside it as `TURNSTILE_TRUSTED_TYPES_POLICY`:
+
+```ts
+createSecurityHeaders({ trustedTypes: { policies: [HTMX_TRUSTED_TYPES_POLICY, TURNSTILE_TRUSTED_TYPES_POLICY] } });
+```
+
+`security` does not re-export either name. That would add a dependency from `security` to `ui/contracts`, and the app already imports both.
+
+**The `forge-turnstile` policy admits only Cloudflare's script URL.** The Turnstile controller creates one per window and uses it for a single
+write: `TURNSTILE_SCRIPT_URL` into the `src` of the script it injects. Any other URL throws. When the browser refuses the policy or the write, the
+controller logs a `console.error` naming the `trusted-types` fix and shows the widget's fallback message instead of loading the script.
+
+**The policy returns its input unchanged, and that is acceptable because of what reaches it.** htmx fetches only from the page's own origin
+([`HTMX.md`][htmx-7a] §7a), and every body forge renders is escaped server-side markup. The policy therefore vouches only for markup the app's own
+server wrote. Trusted Types still guards everything else: an `innerHTML` write in app code, a third-party script, a string handed to `eval` — none
+of them has a policy, so the browser refuses each. `forge-htmx` is a named policy that only htmx holds, and forge creates no `default` policy.
+
+**It fails closed.** When the browser refuses to create the policy — the name is missing from `trusted-types`, or something already created it and
+the list carries no `'allow-duplicates'` — the entry logs a `console.error` naming the `trusted-types` fix. It then gives htmx a policy that throws
+on every call, so htmx reports `htmx:error` and swaps nothing rather than writing to a sink unguarded. That holds even under `require: false`: a
+`trusted-types` list that leaves the name out refuses the policy whether or not the browser requires one.
+
+**What enforcing Trusted Types forbids in an htmx page:**
+
+- **No `hx-on:*` attribute and no `js:` value.** htmx compiles them with the native `Function` constructor and `forge-htmx` gives it no policy for
+  that, so the browser refuses them even where `UNSAFE_EVAL` admits eval ([`HTMX.md`][htmx-7b] §7b). A `js:` request URL is refused earlier, by
+  `forge-htmx` itself, whether or not Trusted Types is enforced.
+- **No `<script src>` in content htmx swaps in, including the `<body>` of a page a boosted link navigates to.** htmx rebuilds each swapped script by
+  copying its attributes with `setAttribute`, and `src` is a Trusted Types sink htmx does not send through the policy. The write throws and the
+  whole swap is lost: the URL is pushed and the body is never replaced, and going back fails the same way. `pageShell` puts its scripts in
+  `<head>` for this reason ([`ROUTING_AND_MIDDLEWARE.md`][ram-6a] §6a), and a hand-written shell must do the same. Inline script text goes through
+  the policy and runs.
+- **An htmx `extensions` allowlist, if the app sets one, names `forge-htmx`.** htmx refuses to register an extension the list leaves out. The
+  entry logs a `console.error`, htmx keeps its own pass-through object, and the browser refuses every sink write made with it.
+
+**Nothing is enforced in a browser without the Trusted Types API.** It ignores both directives, the entry creates no policy, and htmx writes as it
+always has; `script-src` (§2e) is then the only layer. The `js:` request-URL refusal still applies there, because it belongs to the extension and
+not to the policy.
+
+The swap under the policy, both refusals of it, the lost `<script src>` swap and the `js:` refusal are pinned in
+`src/ui/client/htmx-security.browser.ts`.
+The Turnstile script load under `forge-turnstile` and the fallback when the CSP leaves it out are pinned in
+`src/ui/client/turnstile.browser.ts`. That spec serves a stand-in for Cloudflare's `api.js`, so what the real script writes once it runs is not
+covered.
 
 ---
 
@@ -447,6 +503,41 @@ accept JSON.**
 See [`BOUNDARIES.md`][boundaries-2] §2 for the transport-versus-application boundary: what `security` may hold, what belongs to a higher-level
 namespace, and why identity is application-layer.
 
+---
+
+## 8. Secret Strength — One Rule for Every Secret
+
+**Every secret forge imports is held to one rule, and a secret that fails it throws where it is imported — for a session secret, where the
+cookie is created — naming the call that refused it.** The rule is
+`assertSecretStrength` in `src/crypto/strength.ts`, which is the source of truth:
+
+- **At least 32 bytes** — HMAC-SHA-256's full security margin, and HKDF's floor for input keying material.
+- **Not one byte value repeated** throughout.
+- **At least eight distinct byte values.** A CSPRNG's 32 bytes clear this by a wide margin; a placeholder drawn from seven byte values or fewer
+  does not.
+
+The variety check refuses a secret that was plainly never generated. It does not measure entropy: a typed passphrase or a patterned hex string
+passes it, so passing proves nothing about a secret chosen by hand.
+
+**The bytes measured depend on the kind of secret:**
+
+| Secret | Imported by | Measured as |
+| --- | --- | --- |
+| CSRF secret | `importCsrfKey`, `importCsrfKeyRing` | the hex-decoded bytes, so 64 hex characters is the floor |
+| Signed-URL secret | `importSignedUrlKeyRing` | the hex-decoded bytes |
+| Key-ring root secret | `importKeyRing`, `importAuthKeyRing`, and a hand-built `AuthKeyRing` when `resolveAuthServices` checks it | the hex-decoded bytes |
+| Session secret | `createSignedCookie`, so `createAnonymousSession` and flash cookies too | the UTF-8 bytes of the string, never hex-decoded |
+| Webhook secret | `signWebhook`, `verifyWebhook` | the base64-decoded bytes after `whsec_` |
+
+A session secret is used as the string it is, so 64 hex characters count as 64 bytes there. Hex-decoding it instead would change the HMAC key
+and invalidate every cookie already issued.
+
+**Generate every secret from a CSPRNG.** `openssl rand -hex 32` gives a secret that passes for every row above; a webhook secret is
+`whsec_$(openssl rand -base64 32)`. `forge cf sync --rotate` generates 32 CSPRNG bytes of hex for a key marked `# forge:generate`.
+
+**`CsrfConfigSchema` checks the length alone.** It requires at least 64 hex characters, so a short CSRF secret fails when the config is parsed at
+startup. The variety check runs when the secret is imported.
+
 [boundaries-2]: ../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
 [dev-readme]: ../src/dev/README.md
@@ -459,6 +550,7 @@ namespace, and why identity is application-layer.
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
 [ram-3d]: ./ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
+[ram-6a]: ./ROUTING_AND_MIDDLEWARE.md#6a-registering-a-shell
 [sb-3b]: ./STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend
 [security-webhooks]: ../src/security/README.md#signing-and-verifying-webhooks
 [sl-3c]: ./STRUCTURED_LOGGING.md#3c-ordering-requestid-before-requestlogger

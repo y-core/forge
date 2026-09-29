@@ -82,6 +82,7 @@ describe("createAdminUserStore", () => {
       "auth_identity_links",
       "auth_otp_state",
       "auth_access_tokens",
+      "auth_recovery_codes",
       "auth_users",
     ]);
   });
@@ -108,6 +109,56 @@ describe("createAdminUserStore", () => {
     await createAdminUserStore(client).search("100%_a");
     expect(db.calls[0]?.params[0]).toBe("100\\%\\_a%");
     expect(db.calls[0]?.sql).toContain("ESCAPE '\\'");
+  });
+});
+
+describe("createAdminUserStore — resetFactors", () => {
+  const flat = (sql: string) => sql.replace(/\s+/g, " ").trim();
+
+  function resetterOf(present: number): [D1Client, FakeDb] {
+    return clientOf((sql) => (sql.includes("AS present") ? [{ present }] : []), { rowsWritten: () => 1 });
+  }
+
+  it("probes, deletes every credential, factor and recovery code, and raises the sign-out mark, in one batch", async () => {
+    const [client, db] = resetterOf(1);
+    expect(await createAdminUserStore(client).resetFactors(USER_ID, 9_000)).toEqual({ ok: true, data: "changed" });
+    const key = uuidToBytes(USER_ID);
+    expect(db.calls.map((call) => ({ sql: flat(call.sql), params: call.params }))).toEqual([
+      { sql: "SELECT COUNT(*) AS present FROM auth_users WHERE id = ?", params: [key] },
+      { sql: "DELETE FROM auth_credentials WHERE user_id = ?", params: [key] },
+      { sql: "DELETE FROM auth_factors WHERE user_id = ?", params: [key] },
+      { sql: "DELETE FROM auth_recovery_codes WHERE user_id = ?", params: [key] },
+      {
+        sql: "UPDATE auth_users SET sessions_invalid_before = ?, updated_at = ? WHERE id = ? AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ?)",
+        params: [9_000, 9_000, key, 9_000],
+      },
+    ]);
+  });
+
+  it("leaves the sessions, identity links, one-time codes and access tokens alone", async () => {
+    const [client, db] = resetterOf(1);
+    await createAdminUserStore(client).resetFactors(USER_ID, 9_000);
+    const touched = db.calls.map((call) => /(?:FROM|UPDATE) (auth_\w+)/.exec(call.sql)?.[1]);
+    expect(touched.filter((table) => ["auth_identity_links", "auth_otp_state", "auth_access_tokens"].includes(table ?? ""))).toEqual([]);
+  });
+
+  it("answers `not-found` when the probe finds no such user", async () => {
+    const [client] = resetterOf(0);
+    expect(await createAdminUserStore(client).resetFactors(USER_ID, 9_000)).toEqual({ ok: true, data: "not-found" });
+  });
+
+  it("answers `not-found` for an id that is not a UUID, without a statement", async () => {
+    const [client, db] = resetterOf(1);
+    expect({ outcome: await createAdminUserStore(client).resetFactors("nope", 9_000), calls: db.calls.length }).toEqual({
+      outcome: { ok: true, data: "not-found" },
+      calls: 0,
+    });
+  });
+
+  it("reports a failing batch as `unavailable` under its own operation name", async () => {
+    const [client] = clientOf(() => [], { failOn: () => new Error("D1_ERROR: network lost") });
+    const outcome = await createAdminUserStore(client).resetFactors(USER_ID, 9_000);
+    expect(outcome.ok === false && `${outcome.error.code} ${outcome.error.operation}`).toBe("unavailable adminUsers.resetFactors");
   });
 });
 
@@ -167,7 +218,7 @@ describe("createAdminUserStore — the last-admin guard", () => {
     const [client, db] = clientOf((sql) => (sql.includes("AS present") ? [{ present: 1, deletable: 0 }] : []));
     expect(await createAdminUserStore(client).remove(USER_ID)).toEqual({ ok: true, data: "last-admin-delete" });
     const deletes = db.calls.filter((call) => call.sql.includes("DELETE FROM"));
-    expect(deletes).toHaveLength(6);
+    expect(deletes).toHaveLength(7);
     for (const call of deletes) expect(call.sql.replace(/\s+/g, " ")).toContain(GUARD);
   });
 

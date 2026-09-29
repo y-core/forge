@@ -179,7 +179,7 @@ to `forge-ui-platform-inert` in [`16-platform.md`][platform].
 | The action is unavailable and nothing the reader does changes it in this view | `disabled` + adjacent text | that it exists, and that it is not for them here |
 | The value is real and worth reading, but not editable | `readonly` on the control | the value, and that it is settled |
 | The reader has no permission for this capability at all | omit it | nothing — correctly |
-| The control is mid-flight on a request | `hx-disabled-elt` (see [`11-htmx.md`][htmx]) | that the request is running |
+| The control is mid-flight on a request | `hx-disable` (see [`11-htmx.md`][htmx]) | that the request is running |
 
 Default: prefer an enabled control that explains its refusal over a disabled one that does not — unless the reason is visible within one glance of
 the control. <!-- rule:forge-ui-interaction-disabled-last --> A disabled `Button` has no hover, no focus, and no accessible way to ask why; it is

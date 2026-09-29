@@ -10,7 +10,8 @@ audience: consumer
 > **§5 is the load-bearing rule: these exports must never reach an SSR context.**
 >
 > Defers to: [`UI_SSR_COMPONENTS.md`][usc] for the markup these controllers attach to and for the server half of the binding seam; `package.json`
-> `sideEffects` for which modules are side-effectful; `src/ui/README.md` for controller options, signatures, and worked usage.
+> `sideEffects` for which modules are side-effectful; [`SECURITY_HARDENING.md`][sh-2g] §2g for the Trusted Types policy htmx runs under;
+> `src/ui/README.md` for controller options, signatures, and worked usage.
 
 ---
 
@@ -21,7 +22,7 @@ audience: consumer
 - §2a State-Only Islands versus Contract-Bearing Scopes: when to reach for `Resumable`, and when the scope root is hand-rendered
 - §2b Theme Controller and FOUC Prevention: where the theme surface lives, and what earns a pre-paint script
 - §2c The `turnstile` scope — CAPTCHA controller: component-scoped, eager by default, self-healing, fails visible, and the opt-in
-  challenge-at-submit mode
+  challenge-at-submit mode that holds a press and replays it
 - §2d The Disposer Contract: every controller returns one, and why
 - §2e mountMenu — Menu Keyboard Behaviour: what the platform owns and what the controller adds
 - §2f mountTabs — Selection and Panel Visibility: automatic versus manual activation
@@ -35,8 +36,10 @@ audience: consumer
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: the settled-value guarantee and the rules that hold it up
 - §3b Lazy Loading: the deferred import, and the failure that must not be silent
-- §3c Resumable Scopes: `registerScope` and `resume`
-- §4 htmx Bundle Import: the side-effect entry point
+- §3c Resumable Scopes: `registerScope` and `resume`, and how a swapped-out scope is disposed
+- §4 htmx Bundle Import: the side-effect entry point, the `forge-htmx` extension, and why htmx's indicator sheet is removed
+- §4a Which Responses Swap: HTML 4xx Yes, 5xx No: why a rendered refusal lands in its target, and any other failure does not
+- §4b Why the Entry Listens on `document`: htmx dispatches on `document` for an element a swap removed
 - §5 Never Use ui/client in an SSR Context: pointer to the governance rule that owns it
 
 Every exported symbol's signature, options and worked usage — the controller primitives, the globals a browser controller may not reach for, and
@@ -87,8 +90,7 @@ The theme surface is split across two subpaths, and the split matters:
 - **`@y-core/forge/ui/chrome/client`** is a **side-effect module** that registers the `theme` and `navbar` resumable scopes — the latter applies the
   bar's runtime auth filtering and drives its viewport collapse (§2l) — and exports the `isDark` signal.
 
-**`FOUC_SCRIPT` is an inline script for `<head>` that reads storage and sets the dark class before first paint**, preventing a flash of unstyled
-content.
+**`FOUC_SCRIPT` is an inline script for `<head>` that reads storage and sets the dark class before first paint**, so no wrong theme flashes.
 
 **Its hash must be listed in the CSP `script-src`.** Any _other_ server-rendered inline `<script>` must instead carry the per-request nonce from
 `getNonce(c)` — see [`SECURITY_HARDENING.md`][sh-2a] §2a.
@@ -163,14 +165,14 @@ Its deliberate behaviours:
 - **The token is scoped to the form's own action, and to its own submission.** `action` and `cData` reach `turnstile.render` and are the halves of
   `verifyTurnstile`'s `expectedAction` and `expectedCData`; without `action` a token minted on one form verifies at any endpoint on the host.
   `responseFieldName` reaches Cloudflare as `response-field-name` and renames the hidden input the server's `tokenField` reads, which is what lets
-  widgets share a form. A value outside `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the
-  server stays the one enforcement point; `responseFieldName` carries no pattern, being an HTML field name forge has no charset ruling for. **One
-  predicate decides both htmx seams — the `htmx:confirm` hold and the `htmx:afterRequest` reset — by testing the element htmx issued the request
+  widgets share a form. A value outside `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the server
+  stays the one enforcement point; `responseFieldName` carries no pattern, being an HTML field name forge has no charset ruling for. **One predicate
+  decides both htmx seams — the `htmx:config:request` hold and the `htmx:finally:request` reset — by testing the element htmx issued the request
   from**, so a descendant field's own request is neither held nor reset and cannot burn the single-use token. **The test is structural because the
   answered URL cannot bear it**: a redirect leaves `responseURL` naming a URL the form never declared.
-- **Self-healing token, with expiry and timeout left to Cloudflare.** The token resets after every one of the form's own completed submissions,
-  success or error; the form clears only on success. No `expired-callback` or `timeout-callback` is wired — `refresh-expired` and `refresh-timeout`
-  both default to `auto`, so a `reset()` of forge's own was redundant at best and a second challenge at worst.
+- **Self-healing token, with expiry and timeout left to Cloudflare.** The token resets whenever one of the form's own requests ends — a success, an
+  error status or a network failure; the form clears only on a 2xx. No `expired-callback` or `timeout-callback` is wired — `refresh-expired` and
+  `refresh-timeout` both default to `auto`, so a `reset()` of forge's own was redundant at best and a second challenge at worst.
 - **Fails visible, and the message comes back down.** Two message slots, each overridable by prop: the general one (`children`) and an `unsupported`
   sibling for the one cause the general text misleads on — a browser Turnstile cannot run, where "disable your ad blocker" is advice the visitor
   cannot act on. **Those slots, and not one per cause**, because the text is the app's and the controller cannot invent English of its own. `retry`
@@ -181,8 +183,8 @@ Its deliberate behaviours:
 - **When the challenge runs is a second axis, and `challenge="submit"` is the opt-in.** `load` decides when the script is fetched, `challenge` when
   the challenge runs. The default `"render"` starts the single-use token ageing at mount — right for a short form, wrong for one that outlives the
   token, where a backgrounded tab can miss the auto-refresh and hand siteverify a `timeout-or-duplicate`. `"submit"` runs exactly one challenge at
-  the press, from `htmx:confirm`; it is opt-in because render-time is the prevalent configuration. `appearance` stays independent, as Cloudflare
-  treats it — pair `challenge="submit"` with `appearance="interaction-only"`.
+  the press, from `htmx:config:request`; it is opt-in because render-time is the prevalent configuration. `appearance` stays independent, as
+  Cloudflare treats it — pair `challenge="submit"` with `appearance="interaction-only"`.
 - **In submit mode the press is deferred, for a bounded window that always ends, and never on a widget that cannot answer.** The submitter is marked
   `disabled` and `aria-busy` for the window, since htmx's own indicators start only once the request is issued. **The hold is conditional on widget
   health**: a render that threw, a pre-press `error-callback` or a script that never loaded lets the press through unheld for `verifyTurnstile` to
@@ -190,20 +192,26 @@ Its deliberate behaviours:
   down** — the busy state drops while the reader is asked to click, and the 15s timer gives way to `TURNSTILE_INTERACTIVE_TIMEOUT_MS` (60s), well
   inside the token's ~300s life. **On failure the held request is dropped rather than issued**: a tokenless POST answers with a refusal naming the
   schema's first field, which reads as a validation error the reader cannot act on. The fallback is revealed and a second press retries.
-- **Forge bails on an invalid form only where htmx would have halted it anyway.** `htmx:confirm` fires before htmx validates, so a press htmx
-  _would_ halt must spend no challenge — but `form.checkValidity()` ignores `novalidate`, which htmx honours. `htmxWillValidate` mirrors htmx's gate
-  exactly: `hx-validate="true"` off the issuing element alone (no inheritance, both spellings), `novalidate` honoured unless that overrides it,
-  `formnovalidate` counting only when the issuing element is the form. **On a `novalidate` form, or a button-issued submission, an invalid press
+- **The press is held at `htmx:config:request` and replayed when the token arrives.** The controller cancels htmx's request and records the control
+  pressed; on the token it dispatches the press again — a `submit` carrying that control as its submitter for a form, a `click` for a control — and
+  the replayed press goes through because the token input is now filled. **Holding inside htmx's request instead would fail on each count**: htmx
+  has collected the body before any hook runs, so the token would have to be patched into it; htmx's own request timeout would race the interactive
+  window; and htmx's per-element request queue would break last press wins.
+- **An invalid form spends no challenge wherever htmx halts it, and forge runs no validity check of its own.** htmx validates a form before
+  `htmx:config:request` fires, so a press it halts never reaches the hold. **On a `novalidate` form, or a button-issued submission, an invalid press
   therefore spends a challenge** — htmx sends the request either way.
-- **Last press wins, and every dropped press is reported.** The hold records the request and the control pressed, because htmx reads back the form's
-  `lastButtonClicked` when the request is issued — answering an earlier press would send one button's URL under the other's name. A second press
-  displaces the first and re-arms the window but rides the challenge in flight, so one press stays one challenge. Every hold that ends without a
+- **A form whose own `hx-trigger` names some other event is not supported in submit mode.** Its press is held like any other, but the replay issues
+  only a `submit` or a `click`, which that form does not listen for — so the press is never sent. Every submission the controller treats as the
+  form's own by default is a `submit` or a `click`, and the replay is deliberately not generalised to an arbitrary trigger.
+- **Last press wins, because each replay carries its own submitter, and every dropped press is reported.** A second press displaces the first and
+  re-arms the window but rides the challenge in flight, so one press stays one challenge, and the replay carries the second press's control alone —
+  answering with the first would send one button's `name=value` under the other's press. Every hold that ends without a
   request dispatches `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, carrying `TurnstileAbandonedDetail` — `reason`
   (`timeout`, `interactive-timeout`, `error`, `unsupported`, `superseded`) and the `submitter`, un-busied before dispatch so a handler that focuses
-  it finds a live target. It deliberately does not carry the held `issueRequest`: reviving it is the tokenless POST the drop exists to prevent.
+  it finds a live target. It deliberately carries no way to release the held press: reviving it is the tokenless POST the drop exists to prevent.
   Teardown is the one silent exception, since it runs mid-swap into a page already going away.
-- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx verb fires no `htmx:confirm` and has no request to hold, so
-  the controller reports the authoring error and falls back to `challenge="render"` — a degraded but working form, never a dead submit button.
+- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx verb fires no `htmx:config:request` and has no request to
+  hold, so the controller reports the authoring error and falls back to `challenge="render"` — a degraded form, never a dead submit button.
 
 ### 2d. The Disposer Contract
 
@@ -397,15 +405,18 @@ toast or with the Turnstile failure, so neither is cancelled by the app's own `a
 | Site | Channel | Politeness |
 | --- | --- | --- |
 | `Toast.Container`: the toasts it holds at load, and each one inserted later, `FlashOob` included | `toast` | polite |
-| A failed submission's first `FieldError`: at load through the announcer's own scope, after a swap on `htmx:load` | `form-error` | assertive |
-| The first element carrying `ANNOUNCE_FAILURE_ATTR`, its value the message: at load through the announcer's scope, after a swap on `htmx:load` | `failure` | assertive |
-| A `Spinner` in the request's indicator, on `htmx:beforeSend`; one a swap inserts already visible, on `htmx:load` | `busy` | polite |
+| A failed submission's first `FieldError`: at load through the announcer's own scope, after a swap on `htmx:after:process` | `form-error` | assertive |
+| The first element carrying `ANNOUNCE_FAILURE_ATTR`, its value the message: at load through the announcer's scope, after a swap on `htmx:after:process` | `failure` | assertive |
+| A 4xx response's text when its type is not `text/html`, on `htmx:after:request`, in place of the swap (§4a) | `failure` | assertive |
+| A `Spinner` in the request's indicator, on `htmx:before:request`; one a swap inserts already visible, on `htmx:after:process` | `busy` | polite |
 | The `Turnstile` fallback or unsupported message, when the controller reveals it | `turnstile` | assertive |
 | A passkey ceremony's outcome in `auth/client`, a missing WebAuthn at mount included | `passkey` | assertive for a refusal, polite for a success |
 
-**The busy channel exists for its cancel.** `htmx:afterRequest` sends it empty text, so a request answered inside the settle is never announced:
-the reader hears the spinner's label only for a wait long enough to notice. It listens on `htmx:beforeSend` rather than `htmx:beforeRequest`,
-because htmx marks a request's indicators between the two.
+**The busy channel exists for its cancel.** The entry sends it empty text when a request ends, so a request answered inside the settle is never
+announced: the reader hears the spinner's label only for a wait long enough to notice. **The cancel rides `htmx:after:request` and `htmx:error`,
+never `htmx:finally:request`.** htmx fires `htmx:after:request` when the response arrives and before it swaps, and `htmx:error` covers a network
+failure, which never reaches `htmx:after:request`. `htmx:finally:request` fires only after the swap, so a cancel there would silence the spinner
+the swapped content had just queued.
 
 **Without an `<Announcer />` the call is a no-op that warns once per document.** A missing announcer is one layout mistake, and a warning per call
 would bury every other one. **The state is per document**, in a `WeakMap` keyed by it, so a frame's announcer is its own, and `within` takes any
@@ -465,8 +476,7 @@ disposer clears a pending retry timer, so a load still in flight when a scope te
 
 ### 3c. Resumable Scopes
 
-`registerScope(name, definition)` binds a scope's actions; `resume()` installs the single delegated island listener that drives every registered
-scope.
+`registerScope` binds a scope's actions; `resume` installs the single delegated island listener that drives every registered scope.
 
 **Register every scope before calling `resume()`**, the side-effect import that registers forge's own scopes included
 ([`UI_SSR_COMPONENTS.md`][usc-2d] §2d).
@@ -496,11 +506,15 @@ and the loop continues, so later scopes still resume and a subsequent `resume()`
 on malformed `data-state` rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` produced a
 scope whose every signal was missing.
 
-**`disposeScopesIn` exists because a removal is not a resume.** Detached scopes are otherwise swept only as something else resumes, so an htmx swap
-that removes scoped markup and introduces none never reaches the sweep — and `active` is a strong `Map` whose retained closures hold live
-document-level listeners (`drawer.ts`'s `keydown`, `bind.ts`'s `reset`, the navbar filter channel). That is a leak rather than untidiness, so the
-disposer is taken from htmx's per-element `cleanUpElement` hook, which costs no scan of `active` and needs no `isConnected` check — the element is
-still connected at cleanup time.
+**A removal is not a resume, so the htmx entry sweeps after every swap.** Detached scopes are otherwise swept only as something else resumes, so a
+swap that removes scoped markup and introduces none never reaches the sweep — and `active` is a strong `Map` whose retained closures hold live
+document-level listeners (`drawer.ts`'s `keydown`, `bind.ts`'s `reset`, the navbar filter channel). That is a leak rather than untidiness, so
+`ui/client/htmx` runs `sweepDetachedScopes` on `htmx:finally:swap`, disposing every scope whose root has left its document. **It is a sweep rather
+than a per-element hook** because htmx's `htmx:before:cleanup` fires only for elements that carry htmx attributes, and a plain `data-scope` subtree
+inside a swapped container carries none.
+
+**`disposeScopesIn` is for an app's own removals.** It disposes the scope at an element and every scope below it before the app detaches them — a
+removal htmx did not make raises no swap event, so nothing else would dispose those scopes until the next resume.
 
 **The delegated event vocabulary is `click`, `input`, `change`, `submit`. There is no `keydown`, by decision.** Composite controllers own `keydown`
 at their **own widget root**, where arrow keys and typeahead belong: a page-level keydown delegation would have to decide, for every keystroke,
@@ -518,29 +532,64 @@ goes dead — silently, because the invoker still fires and the platform still i
 
 ## 4. htmx Bundle Import
 
-**`@y-core/forge/ui/client/htmx` is imported for its side effect only, from the client entry**; it uses no exports, attaches `htmx` to `window`, and
-registers the built-in extensions.
+**`@y-core/forge/ui/client/htmx` is imported for its side effect only, from the client entry.** Importing it loads htmx, which attaches itself to
+`window`; registers the `forge-htmx` extension; decides which responses swap (§4a); removes htmx's own indicator stylesheet; and wires resumable
+scopes and the announcer to htmx's events on `document` (§4b).
+
+**The `forge-htmx` extension is how htmx meets Trusted Types.** It hands htmx a named pass-through policy for the HTML and script sinks htmx writes
+to, so a CSP that requires Trusted Types can name it, and it refuses a request whose URL is `js:` or `javascript:`, which htmx would otherwise
+evaluate ([`HTMX.md`][htmx-7a] §7a). The CSP recipe, why a pass-through policy is acceptable, the fail-closed path and what enforcement forbids in
+markup are [`SECURITY_HARDENING.md`][sh-2g] §2g's.
+
+**htmx's indicator stylesheet is removed because it would outrank forge's.** htmx adopts an unlayered constructed stylesheet for its indicator class
+when it is imported, before any later code can set its config, so the entry filters that sheet out of `document.adoptedStyleSheets` instead. An
+unlayered rule beats every `@layer` rule, so it would override `forge-ui.css`'s layered indicator rules and any caller class on the element; those
+rules replace it, and also hide an indicator on a page whose script never ran.
 
 **The module is listed in `package.json` `sideEffects`, which is what stops a bundler tree-shaking it away.** That file owns the list — never
 restate which modules are side-effectful. **Never import htmx from a CDN URL**: this entry point is what pins the version to the forge package.
+
+### 4a. Which Responses Swap: HTML 4xx Yes, 5xx No
+
+**A 4xx `text/html` response swaps into its target, and no other failure does.** The entry adds every 5xx to htmx's `noSwap` list beside its 204 and
+304; on `htmx:after:request` it sets a 4xx of any other type to swap `none` and speaks its text on the `failure` channel (§2m).
+
+**An HTML 4xx swaps because forge answers a refused submission with a fragment written for the target**: `defineAction`'s 422 of validation errors,
+and the `auth` actions' form re-rendered at 422 with a `FieldError` (§2m). Suppressing it would leave the reader no word of what was wrong.
+
+**Any other failure does not swap because it is not markup written for the target.** A CSRF or cross-origin refusal at 403, a 404 and a 429 answer
+in plain text, and forge's 5xx bodies are a full error page or plain text; swapped in, either would replace the form or card it answers.
+
+**An element's `hx-status:` attribute overrides the content-type rule**, because htmx reads it after `htmx:after:request`: `hx-status:403` swaps a
+403 whatever its type. A handler that answers a swap request with an HTML 4xx owns the body it sends.
+
+### 4b. Why the Entry Listens on `document`
+
+**Every listener the entry installs is on `document`, never on `document.body`, because htmx dispatches an event on `document` once the element
+it concerns has left the page.** A control that swaps itself away — `hx-target="this"` with `hx-swap="outerHTML"` — is detached by the time
+the swap ends, so its `htmx:finally:swap`, and an `htmx:error` raised after the swap, are dispatched on `document` itself and never pass through
+`<body>`. A body listener would miss the disposal of detached scopes (§3c), and a failure's cancel of the busy channel (§2m). An event from an
+element still in the page bubbles to `document`, so one listener there hears both.
 
 ---
 
 ## 5. Never Use `ui/client` in an SSR Context
 
-See [`BOUNDARIES.md`][boundaries-1a] §1a and §1b for the tier table and for splitting a component across the boundary. The forge subpaths each tier
-covers are catalogued in [`NAMESPACES.md`][namespaces-3a] §3a.
+See [`BOUNDARIES.md`][boundaries-1a] §1a and §1b for the tier table and for splitting a component across the boundary. Each forge subpath a tier
+covers is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] §3a).
 
 [boundaries-1]: ../warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-1a]: ../warden/canon/libs/BOUNDARIES.md#1a-what-may-be-imported-where
 [boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
+[htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [interaction]: ../src/ui/design/reference/09-interaction.md
 [iv-4a]: ./INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
-[namespaces-3a]: ./NAMESPACES.md#3a-public-export-paths
+[namespaces-3a]: ./NAMESPACES.md#3a-a-namespace-is-described-by-its-own-readme
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [nd-1c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1c-what-the-export-gate-proves
 [nd-3]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3-namespace-classification
 [sh-2a]: ./SECURITY_HARDENING.md#2a-createsecurityheaders-factory-pattern
+[sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [sh-3]: ./SECURITY_HARDENING.md#3-cors-and-origin-protection
 [ui-readme]: ../src/ui/README.md
 [usc]: ./UI_SSR_COMPONENTS.md

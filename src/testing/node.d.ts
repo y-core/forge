@@ -25,7 +25,8 @@ declare module "node:child_process" {
   }
   interface ChildProcess {
     readonly pid?: number;
-    readonly killed: boolean;
+    readonly exitCode: number | null;
+    readonly signalCode: string | null;
     readonly stdout: Readable | null;
     readonly stderr: Readable | null;
     unref(): void;

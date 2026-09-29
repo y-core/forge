@@ -36,7 +36,7 @@ const INPUT = `{
   "vars": {
     "BASE_URL": "https://www.example.test" // the canonical origin
   },
-  /* The namespace id is filled in by \`forge sync --commit\`. */
+  /* The namespace id is filled in by \`forge cf sync --commit\`. */
   "kv_namespaces": [
     {
       "binding": "MAIN_KV"
@@ -52,7 +52,7 @@ const EXPECTED = `{
   "vars": {
     "BASE_URL": "https://www.example.test" // the canonical origin
   },
-  /* The namespace id is filled in by \`forge sync --commit\`. */
+  /* The namespace id is filled in by \`forge cf sync --commit\`. */
   "kv_namespaces": [
     {
       "binding": "MAIN_KV",

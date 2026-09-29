@@ -16,24 +16,32 @@ import {
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
 import type { PasskeyFailureReason, PasskeyMode, PasskeyOutcomeDetail } from "../types";
-import type { PasskeyContract, PasskeyCredentials, PasskeyRealm } from "./types";
+import type { PasskeyContract, PasskeyCredentials, PasskeyPrfHandler, PasskeyRealm } from "./types";
+
+type PrfSaltJson = { first: string };
 
 /** Creation options as JSON: every `BufferSource` field crosses the wire base64url-encoded. */
-type CreationOptionsJson = Omit<PublicKeyCredentialCreationOptions, "challenge" | "excludeCredentials" | "user"> & {
+type CreationOptionsJson = Omit<PublicKeyCredentialCreationOptions, "challenge" | "excludeCredentials" | "extensions" | "user"> & {
   challenge: string;
   user: Omit<PublicKeyCredentialUserEntity, "id"> & { id: string };
   excludeCredentials?: Array<Omit<PublicKeyCredentialDescriptor, "id"> & { id: string }>;
+  extensions?: { prf?: { eval?: PrfSaltJson } };
 };
 
 /** Request options as JSON, on the same terms. */
-type RequestOptionsJson = Omit<PublicKeyCredentialRequestOptions, "allowCredentials" | "challenge"> & {
+type RequestOptionsJson = Omit<PublicKeyCredentialRequestOptions, "allowCredentials" | "challenge" | "extensions"> & {
   challenge: string;
   allowCredentials?: Array<Omit<PublicKeyCredentialDescriptor, "id"> & { id: string }>;
+  extensions?: { prf?: { evalByCredential?: Record<string, PrfSaltJson> } };
 };
 
 const bytes = (value: string): Uint8Array<ArrayBuffer> => base64urlDecode(value);
 
 const PASSKEY_ANNOUNCE_CHANNEL = "passkey";
+
+const PRF_OUTPUT_BYTES = 32;
+
+let prfHandler: PasskeyPrfHandler | null = null;
 
 const SUCCESS_MESSAGES: Record<PasskeyMode, string> = { registration: "Passkey created.", authentication: "Passkey accepted. Signing you in." };
 
@@ -91,22 +99,32 @@ export function readPasskeyContract(root: HTMLElement): PasskeyContract | null {
 
 /** Decodes the base64url fields of creation options, by name rather than by a walk over every `id`. */
 function decodeCreation(options: CreationOptionsJson): PublicKeyCredentialCreationOptions {
-  const { challenge, user, excludeCredentials, ...rest } = options;
+  const { challenge, user, excludeCredentials, extensions, ...rest } = options;
+  const prfEval = extensions?.prf?.eval;
   return {
     ...rest,
     challenge: bytes(challenge),
     user: { ...user, id: bytes(user.id) },
     ...(excludeCredentials ? { excludeCredentials: excludeCredentials.map((c) => ({ ...c, id: bytes(c.id) })) } : {}),
+    ...(prfEval ? { extensions: { prf: { eval: { first: bytes(prfEval.first) } } } } : {}),
   };
 }
 
 /** The same for request options, whose only credential list is the allow-list. */
 function decodeRequest(options: RequestOptionsJson): PublicKeyCredentialRequestOptions {
-  const { challenge, allowCredentials, ...rest } = options;
+  const { challenge, allowCredentials, extensions, ...rest } = options;
+  const evalByCredential = extensions?.prf?.evalByCredential;
   return {
     ...rest,
     challenge: bytes(challenge),
     ...(allowCredentials ? { allowCredentials: allowCredentials.map((c) => ({ ...c, id: bytes(c.id) })) } : {}),
+    ...(evalByCredential
+      ? {
+          extensions: {
+            prf: { evalByCredential: Object.fromEntries(Object.entries(evalByCredential).map(([id, v]) => [id, { first: bytes(v.first) }])) },
+          },
+        }
+      : {}),
   };
 }
 
@@ -129,6 +147,23 @@ export function encodeCredential(credential: PublicKeyCredential): Record<string
       ...(assertion.signature ? { signature: base64urlEncode(assertion.signature) } : {}),
       ...(userHandle ? { userHandle: base64urlEncode(userHandle) } : {}),
     },
+  };
+}
+
+/** The 32-byte PRF output a credential carries, or `null`. @internal */
+export function passkeyPrfOutput(credential: PublicKeyCredential): Uint8Array<ArrayBuffer> | null {
+  if (typeof credential.getClientExtensionResults !== "function") return null;
+  const first = credential.getClientExtensionResults().prf?.results?.first;
+  if (first === undefined) return null;
+  const view = ArrayBuffer.isView(first) ? new Uint8Array(first.buffer, first.byteOffset, first.byteLength) : new Uint8Array(first);
+  return view.byteLength === PRF_OUTPUT_BYTES ? view.slice() : null;
+}
+
+/** Hands the page each verified ceremony's PRF output before it navigates; the last handler registered wins. @public */
+export function onPasskeyPrf(handler: PasskeyPrfHandler): () => void {
+  prfHandler = handler;
+  return () => {
+    if (prfHandler === handler) prfHandler = null;
   };
 }
 
@@ -169,12 +204,13 @@ export async function runPasskeyCeremony(ceremony: PasskeyContract, realm: Passk
     return { mode, reason: "options-failed" };
   }
 
+  const publicKey = mode === "registration" ? decodeCreation(options as CreationOptionsJson) : decodeRequest(options as RequestOptionsJson);
   let credential: Credential | null;
   try {
     credential =
       mode === "registration"
-        ? await realm.credentials.create({ publicKey: decodeCreation(options as CreationOptionsJson) })
-        : await realm.credentials.get({ publicKey: decodeRequest(options as RequestOptionsJson) });
+        ? await realm.credentials.create({ publicKey: publicKey as PublicKeyCredentialCreationOptions })
+        : await realm.credentials.get({ publicKey: publicKey as PublicKeyCredentialRequestOptions });
   } catch (error) {
     return { mode, reason: ceremonyReason(error) };
   }
@@ -183,6 +219,14 @@ export async function runPasskeyCeremony(ceremony: PasskeyContract, realm: Passk
   const payload = { credential: encodeCredential(credential as PublicKeyCredential), ...(nickname ? { nickname } : {}) };
   const verified = await post(realm, ceremony, ceremony.verifyPath, ceremony.verifyToken, payload);
   if (!verified?.ok) return { mode, reason: "verification-failed" };
+
+  if (publicKey.extensions?.prf !== undefined && prfHandler !== null) {
+    try {
+      await prfHandler({ mode, credentialId: credential.id, output: passkeyPrfOutput(credential as PublicKeyCredential) });
+    } catch {
+      console.warn("[passkey] the PRF handler threw; the ceremony still succeeded");
+    }
+  }
 
   // The target reached the controller on a server-rendered attribute, which is not a trust boundary:
   // the value may have been assembled from a query parameter on the way out.

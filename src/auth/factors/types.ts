@@ -8,6 +8,7 @@ import type { AuthAlgorithm } from "../types";
 import type { ChallengeStore } from "../types";
 import type { CredentialStore } from "../types";
 import type { FactorStore } from "../types";
+import type { RecoveryCodeStore } from "../types";
 import type { UserStore } from "../types";
 import type { AuthFactor } from "../types";
 import type { AuthFactorKind } from "../types";
@@ -21,7 +22,7 @@ interface FactorServiceBase<kind extends AuthFactorKind = AuthFactorKind> {
   // the factor does not enforce.
   /** How long a challenge this factor issues lasts, in milliseconds. */
   readonly challengeTtlMs: number;
-  /** How many digits the code this factor asks for has, or `null` for a factor answered by a ceremony. */
+  /** How many digits the code this factor asks for has, or `null` for a factor not answered by a numeric code. */
   readonly codeDigits: number | null;
   /** How long one code stays current, in seconds, or `null` for a factor whose code is not on a clock. */
   readonly codePeriodSeconds: number | null;
@@ -51,6 +52,17 @@ export interface PasskeyFactorSubject {
   readonly displayName: string;
 }
 
+/** The salts a passkey's PRF is evaluated with, so the page can derive a key the server never holds. @public */
+export interface PasskeyPrfSalts {
+  /** The salt a new credential is first evaluated with, or `null` to request no PRF for this user. */
+  registration?: (userId: string) => Uint8Array<ArrayBuffer> | null | Promise<Uint8Array<ArrayBuffer> | null>;
+  /** Salts keyed by base64url credential id; an id left out is asked for no PRF output. */
+  stepUp?: (
+    userId: string,
+    credentialIds: readonly string[],
+  ) => ReadonlyMap<string, Uint8Array<ArrayBuffer>> | Promise<ReadonlyMap<string, Uint8Array<ArrayBuffer>>>;
+}
+
 /** @public */
 export interface PasskeyFactorOptions {
   rpId: string;
@@ -63,6 +75,7 @@ export interface PasskeyFactorOptions {
   challenges: ChallengeStore;
   /** How the user is shown in the authenticator's own account picker. */
   subject: (userId: string) => PasskeyFactorSubject | Promise<PasskeyFactorSubject>;
+  prf?: PasskeyPrfSalts;
   algorithms?: readonly AuthAlgorithm[];
   ttlSeconds?: number;
 }
@@ -95,7 +108,9 @@ export type AuthFactorReason =
   | "too-many-attempts"
   | "too-soon"
   | "unrecognised"
-  | "unavailable";
+  | "unavailable"
+  /** The enrolment stands, but the key its secret needs is missing or no longer opens it. */
+  | "unusable";
 
 /** An opened TOTP secret, with `stale` set where the key that sealed it is no longer the ring's active one. @internal */
 export interface TotpSecretOpened {
@@ -146,7 +161,12 @@ export interface AuthFactorContext {
 export type AuthFactorResolution =
   | { readonly status: "satisfied" }
   | { readonly status: "step-up-required"; readonly kinds: readonly AuthFactorKind[] }
-  | { readonly status: "enrolment-required"; readonly kinds: readonly AuthFactorKind[] };
+  | {
+      readonly status: "enrolment-required";
+      readonly kinds: readonly AuthFactorKind[];
+      /** The confirmed second kinds that must be passed before enrolling. */
+      readonly stepUpKinds: readonly AuthFactorKind[];
+    };
 
 /** @public */
 export interface AuthFactorRegistry {
@@ -182,3 +202,18 @@ export type TimingProbe = { compared: boolean[] };
 
 /** A probe and the restore that must run before another suite reads `crypto.subtle`. @internal */
 export type TimingProbeHandle = { probe: TimingProbe; restore: () => void };
+
+/** @public */
+export interface RecoveryCodeFactorOptions {
+  factors: FactorStore;
+  codes: RecoveryCodeStore;
+  /** Wrong codes this factor admits before it refuses every one, until an accepted code or `lockoutMs` clears them. */
+  maxAttempts?: number;
+  /** How long a spent budget stays refused before a new guess reopens it. Defaults to `AUTH_TOTP_LOCKOUT_MS`. */
+  lockoutMs?: number;
+}
+
+/** The single-use recovery-code factor, and how many unused codes a user still holds. @public */
+export interface RecoveryCodeFactorService extends EnrollableFactorService<"recovery-code"> {
+  remaining(userId: string): Promise<AuthStoreResult<number>>;
+}

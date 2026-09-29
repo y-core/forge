@@ -26,8 +26,8 @@ function fakeKV(): SessionKVBinding {
   };
 }
 
-const OLD_SECRET = "o".repeat(32);
-const NEW_SECRET = "n".repeat(32);
+const OLD_SECRET = "Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv";
+const NEW_SECRET = "Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe";
 
 const sessionCookie = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET] });
 

@@ -226,7 +226,7 @@ describe("error path carries security headers (F9)", () => {
   });
 
   it("attaches security headers to a CSRF 403 rejection", async () => {
-    const key = await importCsrfKey("a".repeat(64));
+    const key = await importCsrfKey("9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf");
     const app = new Forge();
     app.use("*", createSecurityHeaders());
     app.use("*", csrfProtection({ secret: () => key, subject: false }));

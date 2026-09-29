@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { authPaths } from "./paths";
+import { authEnrolmentPaths, authPaths, authWithQuery } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 
 describe("authPaths", () => {
@@ -26,5 +26,24 @@ describe("authPaths", () => {
 
   it("appends search parameters a caller supplies", () => {
     expect(authPaths(authRoutes("/auth")).verify.show({}, { searchParams: { token: "abc" } })).toBe("/auth/verify?token=abc");
+  });
+});
+
+describe("authWithQuery", () => {
+  it("starts a query on a bare path, and extends one a path already carries", () => {
+    expect([authWithQuery("/auth/verify", "factor", "totp-app"), authWithQuery("/auth/verify?next=%2Fapp", "factor", "totp-app")]).toEqual([
+      "/auth/verify?factor=totp-app",
+      "/auth/verify?next=%2Fapp&factor=totp-app",
+    ]);
+  });
+
+  it("encodes the value, so a path cannot be smuggled into the query", () => {
+    expect(authWithQuery("/auth/verify", "next", "/account/recovery-codes?x=1")).toBe("/auth/verify?next=%2Faccount%2Frecovery-codes%3Fx%3D1");
+  });
+});
+
+describe("authEnrolmentPaths", () => {
+  it("never names recovery codes as an enrolment page, since they are issued after a step-up", () => {
+    expect(Object.keys(authEnrolmentPaths(authPaths(authRoutes("/auth"))))).not.toContain("recovery-code");
   });
 });

@@ -17,6 +17,9 @@ export const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile
 /** The URL the controller injects; `render=explicit` suppresses the document scan Cloudflare would otherwise run. @public */
 export const TURNSTILE_SCRIPT_URL = `${TURNSTILE_SCRIPT_SRC}?render=explicit`;
 
+/** The Trusted Types policy the controller creates to inject `TURNSTILE_SCRIPT_URL`; list it in the CSP's `trusted-types`. @public */
+export const TURNSTILE_TRUSTED_TYPES_POLICY = "forge-turnstile";
+
 /** If the script has not loaded within this budget, the controller reveals the fallback message. @public */
 export const TURNSTILE_SCRIPT_TIMEOUT_MS = 10_000;
 

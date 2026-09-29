@@ -9,8 +9,8 @@ import type { ForgeIcon } from "../../../ui/core/types";
 import type { AdminUserOutcome, AuthUser } from "../../types";
 import { authPaths } from "../paths";
 import { adminRoutes } from "../routes";
-import { attrOf, attrsOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf } from "../web.fixture";
-import { AdminUserEditView } from "./admin-user-edit";
+import { attrOf, attrsOf, elementsOf, HOSTILE_TEXT, HOSTILE_TEXT_ESCAPED, tagOf, textOf, valuesOf } from "../web.fixture";
+import { AdminUserEditView, AUTH_ADMIN_USER_EDIT_ID } from "./admin-user-edit";
 import type { AdminUserEditViewProps } from "./types";
 
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
@@ -196,5 +196,17 @@ describe("AdminUserEditView paths", () => {
   it("carries the CSRF token into the header htmx sends every one of the three writes on", async () => {
     const html = await account();
     expect(elementsOf(html, "form", 'hx-headers="{&quot;X-CSRF-Token&quot;:&quot;csrf-1&quot;}"').length).toBe(3);
+  });
+
+  it("keeps the hidden token on the two updates and drops it from the delete, which htmx would serialise into its URL", async () => {
+    expect(valuesOf(await account(), "name").filter((name) => name === "_csrf").length).toBe(2);
+    expect(elementsOf(await account(), "form", 'hx-delete="/admin/users/u1"')[0]).not.toContain('name="_csrf"');
+  });
+
+  it("marks its root with the id every one of the three writes swaps the re-rendered view over", async () => {
+    const html = await account();
+    expect(attrOf(html, 'data-slot="card"', "id")).toBe(AUTH_ADMIN_USER_EDIT_ID);
+    const forms = elementsOf(html, "form", 'data-slot="form"').map((form) => attrsOf(form, 'data-slot="form"'));
+    expect(forms.map((form) => [form["hx-target"], form["hx-swap"]])).toEqual(Array(3).fill([`#${AUTH_ADMIN_USER_EDIT_ID}`, "outerHTML"]));
   });
 });

@@ -50,7 +50,7 @@ The benefit is containment: **a dependency's version bump or API change is absor
 consumer that reaches past the facade has taken on a coupling the library exists to hold on its behalf, and it will not follow the next upgrade.
 
 **Not every namespace is a facade.** An in-house runtime — a renderer, a validation pipeline, a component set — wraps nothing and is not judged by
-this rule. The repository's namespace catalog records which is which; naming the dependency each facade covers is implementation, because those
+this rule. Each namespace's README says whether it is a facade; naming the dependency each facade covers is implementation, because those
 names change.
 
 ### 1b. Runtime-Only Library Constraint

@@ -108,11 +108,11 @@ describe("Form component", () => {
     expect(attrOf(await render(<Form csrfToken='abc123' csrfField='authenticity_token' />), "name", CSRF_FIELD)).toBe("authenticity_token");
   });
 
-  it("passes through hx-disabled-elt and novalidate, the selector's quotes escaped", async () => {
-    expect(attrsOf(await render(<Form hx-disabled-elt="find [data-ref='submit']" novalidate={true} />))).toEqual({
+  it("passes through hx-disable and novalidate, the selector's quotes escaped", async () => {
+    expect(attrsOf(await render(<Form hx-disable="find [data-ref='submit']" novalidate={true} />))).toEqual({
       "data-slot": "form",
       method: "post",
-      "hx-disabled-elt": "find [data-ref=&#39;submit&#39;]",
+      "hx-disable": "find [data-ref=&#39;submit&#39;]",
       novalidate: "",
     });
   });
@@ -156,4 +156,28 @@ describe("Form — class composition", () => {
   it("resolves a conflict within the caller's own class, proving the prop passes through cn", async () => {
     expect(classesOf(await render(<Form class='p-4 p-8' />))).toEqual(["p-8"]);
   });
+});
+
+describe("Form — a verb htmx sends its fields in the URL for", () => {
+  for (const verb of ["hx-delete", "hx-get", "data-hx-delete", "data-hx-get"] as const) {
+    it(`renders no hidden token on an ${verb} form, and still sends the token as a header`, async () => {
+      const html = await render(<Form csrfToken='abc123' {...{ [verb]: "/items/1" }} />);
+
+      expect(html).not.toContain(CSRF_FIELD);
+      expect(attrOf(html, "hx-headers")).toBe("{&quot;X-CSRF-Token&quot;:&quot;abc123&quot;}");
+    });
+  }
+
+  it("sends the token on the app's renamed header when it drops the field", async () => {
+    const html = await render(<Form csrfToken='abc123' csrfHeader='X-App-Csrf' hx-delete='/items/1' />);
+
+    expect(html).not.toContain(CSRF_FIELD);
+    expect(attrOf(html, "hx-headers")).toBe("{&quot;X-App-Csrf&quot;:&quot;abc123&quot;}");
+  });
+
+  for (const verb of ["hx-post", "hx-patch"] as const) {
+    it(`keeps the hidden token on an ${verb} form, whose fields travel in the body`, async () => {
+      expect(attrOf(await render(<Form csrfToken='abc123' {...{ [verb]: "/items/1" }} />), "value", CSRF_FIELD)).toBe("abc123");
+    });
+  }
 });

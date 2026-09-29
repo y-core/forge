@@ -143,7 +143,7 @@ A title names the concept, pattern, or mechanism the section governs — not its
 | --- | --- |
 | `### Rules` | `### 3f. Barrel Export Rules and Constraints` |
 | `### Setup` | `### 1a. Application Factory Setup and Configuration` |
-| `### The Barrel Pattern` | `### 1a. Barrel Export and Module Catalog` |
+| `### The Barrel Pattern` | `### 1a. Barrel Export and Cycle-Guard Pattern` |
 | `### Domain Errors` | `### 1b. Domain Error Sentinels and HTTP Status Mapping` |
 | `### Security headers` | `### 6b. Security-Header Middleware and Nonce Injection` |
 
@@ -174,11 +174,11 @@ Short (2–5 words), title-cased, matching the document's primary concern.
 
 Good:
 
-    description: "Barrel export rules, the module catalog, and leaf-versus-integration classification for every namespace."
+    description: "Barrel export rules, the import guard, and leaf-versus-integration classification for every namespace."
 
 Avoid — a keyword dump reads as noise and dates badly:
 
-    description: "barrel exports, catalog, export check, route map, bindings, CSP nonce, partial render, design tokens"
+    description: "barrel exports, export check, route map, bindings, CSP nonce, partial render, design tokens"
 
 ---
 
@@ -223,7 +223,7 @@ reader not running one.
 Within one document, use the `§N` shorthand inline:
 
 ```markdown
-The export validation rule (§3f) interacts with the barrel catalog (§3a).
+The export validation rule (§3f) interacts with the barrel rules (§3a).
 ```
 
 ### 5c. The Agent Roster Is Reconciled Both Ways
@@ -252,7 +252,7 @@ citation may carry a relative link; where it is not, the name and the section ar
 
     See `DOC.md` §N for the rule this section specialises.
 
-Where a governance document genuinely must name a local artifact — a register, a catalog, a config file — it **names the path in prose and does not
+Where a governance document genuinely must name a local artifact — a register, a schema, a config file — it **names the path in prose and does not
 link it** (§8 is the standing case). Prose survives a repository that has not written that file yet; a link does not.
 
 `warden sync --check` enforces the direction: it reports any markdown link in the canon whose target reaches into `docs/`. A boundary with nothing
@@ -315,10 +315,11 @@ repository of the same kind?**
 | Home | Holds | Where it is |
 | --- | --- | --- |
 | The canon | Portable rules, postures, and boundaries | Warden, in the installed package — never on disk here |
-| `docs/` | Catalogs, concrete APIs, routes, bindings, local rulings | This repository, and only this one |
+| `docs/` | Local rulings | This repository, and only this one |
+| A `README.md` beside the code | What that code does and how to use it (§6c) | Beside the barrel or module it describes |
 
-A rule that names a real subpath, binding, table, route, or file inventory belongs in `docs/` by construction, however principled it sounds. A rule
-that would survive being pasted into a different repository belongs in the canon.
+A rule that names a real subpath, binding, table, or route belongs in `docs/` by construction, however principled it sounds. An inventory of them
+belongs in no document, because the code owns it (§8). A rule that would survive being pasted into a different repository belongs in the canon.
 
 **A local amendment to a canon rule is written in `docs/`.** The canon is not in this repository to edit: it is served from warden, and a rule that
 must genuinely change is changed in warden and released everywhere at once.

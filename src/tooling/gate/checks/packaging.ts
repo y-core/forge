@@ -1,14 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
+import { resolveNamespaces } from "./namespace-graph";
 import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { PackagingCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
-// Both spellings: a lazily loaded module is reached by `import("./x")` and by nothing else.
 const RELATIVE_SPECIFIER = /(?:from\s+|import\s*\(\s*)["'](\.[^"']*)["']/g;
 
 /** One `files` entry as a matcher over a repo-relative posix path. */
@@ -88,7 +88,37 @@ function missingRequired(config: PackagingCheckConfig): Finding[] {
   });
 }
 
-/** Reports every module only a test reaches that the published tarball would still carry, and every required file it would lack. @public */
+/** A finding for each published namespace with no README at or above its directory, or one the `files` array leaves out. */
+function missingNamespaceReadmes(config: PackagingCheckConfig): Finding[] {
+  return (config.sources ?? ["src"]).flatMap((dir) =>
+    resolveNamespaces(config.exports, [], dir).flatMap((ns) => {
+      const readme = namespaceReadmeCandidates(dir, ns).find((file) => existsSync(resolve(config.root, file)));
+      if (readme === undefined)
+        return [
+          fail(`\`./${ns}\` is published with no README — write \`${dir}/${ns}/README.md\`, or one in a directory containing it below \`${dir}\``, {
+            file: `${dir}/${ns}/mod.ts`,
+          }),
+        ];
+      if (!isPacked(readme, config.files))
+        return [
+          fail("the README a published namespace resolves to is left out by the `files` array", {
+            file: readme,
+            detail: [`add \`${readme}\` to \`files\``],
+          }),
+        ];
+      return [];
+    }),
+  );
+}
+
+/** Each README path that may describe `ns`, nearest first, stopping at its top-level directory below `dir`. */
+function namespaceReadmeCandidates(dir: string, ns: string): string[] {
+  const candidates: string[] = [];
+  for (let current = ns; current !== "."; current = dirname(current)) candidates.push(`${dir}/${current}/README.md`);
+  return candidates;
+}
+
+/** Reports every module only a test reaches that the published tarball would still carry, and every required file or namespace README it would lack. @public */
 export function checkPackaging(config: PackagingCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const walked = sources.flatMap((dir) => collectFiles(config.root, dir, (name) => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext))));
@@ -99,8 +129,6 @@ export function checkPackaging(config: PackagingCheckConfig): CheckResult {
   const present = new Set(walked);
   const imports = new Map(walked.map((file) => [file, moduleImports(config.root, file, present)]));
 
-  // Reachability from the exports map, not importer counts: a barrel is imported by tests alone and
-  // is still the published surface, while a test-only module is what nothing consumable reaches.
   const reachable = new Set<string>();
   const queue = entryModules(config, present);
   for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
@@ -116,6 +144,7 @@ export function checkPackaging(config: PackagingCheckConfig): CheckResult {
 
   const findings: Finding[] = [
     ...missingRequired(config),
+    ...missingNamespaceReadmes(config),
     ...walked
       .filter((file) => !isTestSource(file) && !reachable.has(file) && (importers.get(file) ?? []).length > 0)
       .filter((file) => isPacked(file, config.files))

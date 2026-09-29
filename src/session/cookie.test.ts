@@ -4,10 +4,10 @@ import { base64Encode, hmacSign, importHmacKey, utf8Encode } from "../crypto/mod
 import { createSignedCookie, createUnsignedCookie } from "./cookie";
 import type { SignedCookie } from "./types";
 
-const SECRET_32 = "a".repeat(32);
-const SECRET_64 = "b".repeat(64);
-const SECRET = "s".repeat(32);
-const OTHER = "o".repeat(32);
+const SECRET_32 = "D5EfoRtVdAg6PLeZU7o7xie8rkRq515c";
+const SECRET_64 = "lMBatlqHQB44SSL8m9owfAj3Q17WGZK7rEnE9dIWHx2pNq8WvR4tLm0YcJ6sKb3F";
+const SECRET = "d7o1aaO6eUnrMUqpdYz0jhE3RcwJ2QRs4UbT3BWj";
+const OTHER = "qsF8gYubD5OSmPBtk0BMNT257XAPeDZt6St0Nd6K";
 
 /** The `name=value` pair a browser would send back from a `Set-Cookie`. */
 function back(setCookieHeader: string): string {
@@ -20,18 +20,18 @@ async function forgeWire(covered: string): Promise<string> {
   return `c=${covered}.${base64Encode(signature).replace(/=+$/, "")}`;
 }
 
-// Captured from a differential run against `@remix-run/cookie` 0.5.4, the implementation this file
-// replaced. They are the wire-format contract: a cookie in the wild must keep verifying.
+// The wire-format contract, captured against `@remix-run/cookie` 0.5.4 and re-signed under `SECRET` by the
+// HMAC-SHA-256 that reproduces that capture: a cookie in the wild must keep verifying.
 const GOLDEN = {
-  hello: { unsigned: "c=aGVsbG8=", signed: "c=aGVsbG8=.uoovmJ2VqIgTjdJDvVNBw2gWM8OGq76JA366LG3+vLg" },
-  "a+b/c=d": { unsigned: "c=YStiL2M9ZA==", signed: "c=YStiL2M9ZA==.Xgh4Y09ZKUbR3sTEMaYXM8eUHypbQDrgkLHhT8W/eOA" },
-  café: { unsigned: "c=Y2Fmw6k=", signed: "c=Y2Fmw6k=.0+0fPenBZMMrthNXyPkESo2dgs1ZzhK3R4mqU9wjMQY" },
-  "🎉": { unsigned: "c=8J+OiQ==", signed: "c=8J+OiQ==.G18giGWY9SQDW7pqTqTkD830gtk0duc+wPB3UDSg8OI" },
+  hello: { unsigned: "c=aGVsbG8=", signed: "c=aGVsbG8=.15c9FnTBDt0oRSESFN41sQVGma5g1cfR6/YsHYLAnXc" },
+  "a+b/c=d": { unsigned: "c=YStiL2M9ZA==", signed: "c=YStiL2M9ZA==.qiKMOXX6rqoaGzwjnZQhEL+8LUv2TaJAqlsGNKi6v4o" },
+  café: { unsigned: "c=Y2Fmw6k=", signed: "c=Y2Fmw6k=.FDqCc5LcRzPyQZq6QM4JI7/ZfrQBELC/8yV962lFrMk" },
+  "🎉": { unsigned: "c=8J+OiQ==", signed: "c=8J+OiQ==.FFX9WG9Ox/QBguXAZO/p5oiCNpioWHoEn1krt8DdOBE" },
   '{"i":"abc","d":{}}': {
     unsigned: "c=eyJpIjoiYWJjIiwiZCI6e319",
-    signed: "c=eyJpIjoiYWJjIiwiZCI6e319.dA3fbiAsNbjDsKTJC7H8aFslzw4X85hiEwkRFaU3hXo",
+    signed: "c=eyJpIjoiYWJjIiwiZCI6e319.lXr9DBd9G9mDl1SHyLQ3TpIhzn5UHmHHYZ8EtMdC8EU",
   },
-  "ÿÿÿ~": { unsigned: "c=w7/Dv8O/fg==", signed: "c=w7/Dv8O/fg==.BVR4+jJ8gEBkERuWgJUkCmn8aQtQnsJ+fIXks7kB8s8" },
+  "ÿÿÿ~": { unsigned: "c=w7/Dv8O/fg==", signed: "c=w7/Dv8O/fg==.l3I+GteuGMEn9eS0ngqnysKkRZ/+cmbeHRU2RlvDhTI" },
 } as const;
 
 describe("wire format — golden vectors", () => {
@@ -62,6 +62,25 @@ describe("wire format — golden vectors", () => {
     const signature = wire.slice(wire.lastIndexOf(".") + 1);
     expect(signature).toHaveLength(43);
     expect(signature).not.toContain("=");
+  });
+
+  it("re-signs the @remix-run/cookie 0.5.4 capture with the same HMAC-SHA-256 that produced it", async () => {
+    const signatureUnder = async (secret: string, covered: string) =>
+      base64Encode(await hmacSign(await importHmacKey(utf8Encode(secret)), covered)).replace(/=+$/, "");
+    const REMIX_CAPTURE_SECRET = "s".repeat(32);
+    const REMIX_CAPTURE: Record<keyof typeof GOLDEN, string> = {
+      hello: "uoovmJ2VqIgTjdJDvVNBw2gWM8OGq76JA366LG3+vLg",
+      "a+b/c=d": "Xgh4Y09ZKUbR3sTEMaYXM8eUHypbQDrgkLHhT8W/eOA",
+      café: "0+0fPenBZMMrthNXyPkESo2dgs1ZzhK3R4mqU9wjMQY",
+      "🎉": "G18giGWY9SQDW7pqTqTkD830gtk0duc+wPB3UDSg8OI",
+      '{"i":"abc","d":{}}': "dA3fbiAsNbjDsKTJC7H8aFslzw4X85hiEwkRFaU3hXo",
+      "ÿÿÿ~": "BVR4+jJ8gEBkERuWgJUkCmn8aQtQnsJ+fIXks7kB8s8",
+    };
+    for (const [value, { unsigned, signed }] of Object.entries(GOLDEN)) {
+      const payload = unsigned.slice(2);
+      expect(await signatureUnder(REMIX_CAPTURE_SECRET, payload)).toBe(REMIX_CAPTURE[value as keyof typeof GOLDEN]);
+      expect(`c=${payload}.${await signatureUnder(SECRET, payload)}`).toBe(signed);
+    }
   });
 });
 
@@ -313,11 +332,11 @@ describe("createSignedCookie — the signed expiry", () => {
 });
 
 describe("createSignedCookie — secret validation", () => {
-  it("does not throw for a single secret of exactly 32 characters", () => {
+  it("does not throw for a single secret of exactly 32 bytes", () => {
     expect(() => createSignedCookie("session", { secrets: [SECRET_32] })).not.toThrow();
   });
 
-  it("does not throw for a single secret longer than 32 characters", () => {
+  it("does not throw for a single secret longer than 32 bytes", () => {
     expect(() => createSignedCookie("session", { secrets: [SECRET_64] })).not.toThrow();
   });
 
@@ -325,12 +344,14 @@ describe("createSignedCookie — secret validation", () => {
     expect(() => createSignedCookie("session", { secrets: [SECRET_32, SECRET_64] })).not.toThrow();
   });
 
-  it("throws when the only secret is shorter than 32 characters", () => {
-    expect(() => createSignedCookie("session", { secrets: ["short"] })).toThrow("at least 32 characters");
+  it("throws when the only secret is shorter than 32 bytes", () => {
+    expect(() => createSignedCookie("session", { secrets: ["short"] })).toThrow(
+      "createSignedCookie: each secret must be at least 32 bytes (got 5)",
+    );
   });
 
   it("throws when one secret in a multi-secret array is too short (even if first is valid)", () => {
-    expect(() => createSignedCookie("session", { secrets: [SECRET_32, "short"] })).toThrow("at least 32 characters");
+    expect(() => createSignedCookie("session", { secrets: [SECRET_32, "short"] })).toThrow("at least 32 bytes");
   });
 
   it("throws with a message that includes the offending length", () => {
@@ -341,7 +362,23 @@ describe("createSignedCookie — secret validation", () => {
       message = (err as Error).message;
     }
     expect(message).toContain("3");
-    expect(message).toContain("at least 32 characters");
+    expect(message).toContain("at least 32 bytes");
+  });
+
+  it("measures a secret in UTF-8 bytes, so eleven three-byte characters clear the floor", () => {
+    expect(() => createSignedCookie("session", { secrets: ["日本語の秘密鍵を生成す"] })).not.toThrow();
+  });
+
+  it("throws when a 32-character secret repeats one character", () => {
+    expect(() => createSignedCookie("session", { secrets: ["s".repeat(32)] })).toThrow(
+      "createSignedCookie: a secret whose bytes are all the same value is not a secret",
+    );
+  });
+
+  it("throws when a secret is drawn from too small an alphabet", () => {
+    expect(() => createSignedCookie("session", { secrets: [SECRET_32, "abcd".repeat(8)] })).toThrow(
+      "createSignedCookie: a secret carrying only 4 distinct byte values is not one a CSPRNG produced",
+    );
   });
 });
 

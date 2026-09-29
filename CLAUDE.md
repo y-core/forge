@@ -127,7 +127,8 @@ from a wrapped package directly.
 **Leaf vs integration:** classify a namespace before adding code, and never introduce an undeclared cross-namespace dependency
 ([`NAMESPACE_DESIGN.md`][nd-3] §3).
 
-For the namespace catalog, barrel rules, and growth recipes, search for the governing `docs/` document rather than restating any of it here.
+For barrel rules, classification and growth recipes, search for the governing `docs/` document rather than restating any of it here; what a
+namespace is and how to use it is its own `README.md`.
 
 ---
 

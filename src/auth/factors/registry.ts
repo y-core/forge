@@ -13,6 +13,8 @@ import type {
 
 type SecondOffer = Extract<AuthFactorOffer, { role: "second" }>;
 
+const RECOVERABLE_KINDS: readonly AuthFactorKind[] = ["totp-app", "passkey"];
+
 /** The factor context a subject's roles amount to — the one place `isAdmin` becomes a role name. @public */
 export function authFactorContext(subject: { readonly isAdmin: boolean }): AuthFactorContext {
   return subject.isAdmin ? { roles: [AUTH_ADMIN_ROLE] } : {};
@@ -43,6 +45,21 @@ function pickPrimary(options: AuthFactorsOptions): AuthIdentifyingFactorService 
   return only.service;
 }
 
+function refuseUnrecoverable(seconds: readonly SecondOffer[]): void {
+  const recovery = seconds.find((offer) => offer.service.kind === "recovery-code");
+  if (recovery && recovery.requirement !== "optional") {
+    throw new Error('createFactorRegistry: "recovery-code" must be offered as "optional" — it is issued after a step-up, never owed before one');
+  }
+  const unrecoverable = seconds.find((offer) => RECOVERABLE_KINDS.includes(offer.service.kind));
+  if (unrecoverable && !recovery) {
+    throw new Error(
+      `createFactorRegistry: "${unrecoverable.service.kind}" is offered as a second factor without "recovery-code" — a lost device or key would lock its users out`,
+    );
+  }
+  const recoverable = seconds.some((offer) => offer.service.enrolment === "explicit" && offer.service.kind !== "recovery-code");
+  if (recovery && !recoverable) throw new Error('createFactorRegistry: "recovery-code" needs another explicit second factor to recover');
+}
+
 function demanded(requirement: AuthFactorRequirement, context: AuthFactorContext): boolean {
   if (requirement === "optional") return false;
   if (requirement === "mandatory") return true;
@@ -54,6 +71,8 @@ function demanded(requirement: AuthFactorRequirement, context: AuthFactorContext
 
 /** Builds the registry that resolves the offered factors against one user's enrolments. @public */
 export function createFactorRegistry(store: FactorStore, options: AuthFactorsOptions): AuthFactorRegistry {
+  const primaryKinds: readonly AuthFactorKind[] = options.offered.filter((offer) => offer.role === "primary").map((offer) => offer.service.kind);
+  if (primaryKinds.includes("recovery-code")) throw new Error('createFactorRegistry: "recovery-code" cannot be primary');
   const primary = pickPrimary(options);
   const seconds = options.offered.filter((offer): offer is SecondOffer => offer.role === "second");
   for (const offer of seconds) {
@@ -66,6 +85,7 @@ export function createFactorRegistry(store: FactorStore, options: AuthFactorsOpt
     if (seen.has(kind)) throw new Error(`createFactorRegistry: "${kind}" is offered twice`);
     seen.add(kind);
   }
+  refuseUnrecoverable(seconds);
   const secondKinds = seconds.map((offer) => offer.service.kind);
   // An implicit factor has no enrolment row by design, so asking the store about it always answers
   // "no": offering it *is* the enrolment, which puts it in the confirmed set unconditionally.
@@ -94,11 +114,11 @@ export function createFactorRegistry(store: FactorStore, options: AuthFactorsOpt
       const owed = seconds
         .filter((offer) => demanded(offer.requirement, context) && !confirmed.has(offer.service.kind))
         .map((offer) => offer.service.kind);
+      const usable = secondKinds.filter((kind) => confirmed.has(kind));
       // A successful outcome, not an `err`: needing to enrol is a normal onboarding step, and
       // modelling it as a failure pushes it onto the error path every caller treats as exceptional.
-      if (owed.length > 0) return ok({ status: "enrolment-required", kinds: owed });
+      if (owed.length > 0) return ok({ status: "enrolment-required", kinds: owed, stepUpKinds: usable });
 
-      const usable = secondKinds.filter((kind) => confirmed.has(kind));
       if (usable.length > 0) return ok({ status: "step-up-required", kinds: usable });
       return ok({ status: "satisfied" });
     },

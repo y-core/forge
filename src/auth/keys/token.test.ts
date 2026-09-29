@@ -56,7 +56,7 @@ describe("importAuthKeyRing", () => {
 
   it("refuses a secret that is not hex or is under 32 bytes", () => {
     expect(ringOf("zz".repeat(32))).rejects.toThrow("importAuthKeyRing: each secret must be an even-length hex string");
-    expect(ringOf("a1".repeat(16))).rejects.toThrow("importAuthKeyRing: each secret must be at least 32 bytes (64 hex characters)");
+    expect(ringOf("a1".repeat(16))).rejects.toThrow("importAuthKeyRing: each secret must be at least 32 bytes (got 16)");
   });
 });
 

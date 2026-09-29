@@ -145,7 +145,6 @@ describe("registry-wide invariant: no `in-sync` without a query", () => {
         dryRun: true,
         rotate: new Set<string>(),
         fetch: countingFetch,
-        target: { kind: "worker", name: "proj" },
       });
 
       for (const row of results) {
@@ -169,7 +168,6 @@ describe("registry-wide invariant: no `in-sync` without a query", () => {
         dryRun: true,
         rotate: new Set<string>(),
         fetch: async () => new Response(JSON.stringify({ success: true, errors: [], messages: [], result: [] })),
-        target: { kind: "worker", name: "proj" },
       });
       for (const row of results) {
         expect(row.detail ?? "").not.toBe("declarative — no provisioning needed");

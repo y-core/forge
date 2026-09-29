@@ -151,7 +151,15 @@ describe("the shipped store adapters against real D1", () => {
       removeFactorByStranger: false,
       removeUser: "changed",
       // Only `frank` is left: the delete batch took the user and every child row together.
-      leftBehind: { auth_access_tokens: 0, auth_credentials: 0, auth_factors: 0, auth_identity_links: 0, auth_otp_state: 0, auth_users: 1 },
+      leftBehind: {
+        auth_access_tokens: 0,
+        auth_credentials: 0,
+        auth_factors: 0,
+        auth_identity_links: 0,
+        auth_otp_state: 0,
+        auth_recovery_codes: 0,
+        auth_users: 1,
+      },
     });
   });
 
@@ -166,6 +174,31 @@ describe("the shipped store adapters against real D1", () => {
       revokeAgain: false,
       foundWhileDeactivated: null,
       foundAfterReactivation: true,
+    });
+  });
+
+  it("spends a live code once, never a staged or a stranger's, swaps sets on commit, and leaves no code behind a removed factor or a reset", () => {
+    expect(guards.recoveryCodes).toEqual({
+      confirmedAt: 1_700_000_000_002,
+      consumeFirst: true,
+      attemptsAfterFirst: 0,
+      consumeReplay: false,
+      // A code already spent clears no guesses: only the call that stamped it resets the counter.
+      attemptsAfterReplay: 1,
+      consumeByStranger: false,
+      consumeStaged: false,
+      heldStaged: true,
+      heldStagedByStranger: false,
+      remainingBeforeCommit: 1,
+      remainingAfterCommit: 2,
+      consumeRetired: false,
+      consumeSwapped: true,
+      removeLastTotp: true,
+      codesAfterRemove: 0,
+      codeFactorsAfterRemove: 0,
+      resetFactors: "changed",
+      sessionsInvalidBefore: 1_700_000_000_020,
+      leftAfterReset: { auth_credentials: 0, auth_factors: 0, auth_recovery_codes: 0 },
     });
   });
 });

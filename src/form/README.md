@@ -55,7 +55,9 @@ const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
 ```
 
 On `GET` the guard pre-mints a token for the current path; render it with `<Form csrfToken={…}>` from `@y-core/forge/ui/core`, which writes both the
-hidden `_csrf` input and the `hx-headers` entry htmx submits it on.
+hidden `_csrf` input and the `hx-headers` entry htmx submits it on. An `hx-delete` or `hx-get` form gets the header alone, because htmx puts
+those verbs' fields in the URL. For a DELETE form that must also work without JavaScript, see
+[`ui/core`'s form section][ui-form].
 
 ```tsx
 import { csrfTokenCtx } from "@y-core/forge/form";
@@ -168,7 +170,7 @@ const csrfGuard = csrfProtection({ secret: () => ring, subject: false });
 ```
 
 Prepend the new secret, deploy, and remove the oldest once the token lifetime has elapsed — the procedure is [`INPUT_VALIDATION.md`][iv-3b] §3b's.
-Each secret must be at least 32 hex characters.
+Each secret is held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule; `openssl rand -hex 32` gives one that passes.
 
 ---
 
@@ -292,3 +294,5 @@ when a fresh isolate starts rather than mid-life.
 [ram-2b]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [security-readme]: ../security/README.md
 [session-readme]: ../session/README.md
+[sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
+[ui-form]: ../ui/README.md#build-a-form

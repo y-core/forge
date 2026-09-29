@@ -235,115 +235,11 @@ CSRF minting, and an SSR render helper. Type checking uses `tsc` (`typescript` 7
 
 ---
 
-## Namespace catalog
+## Namespaces
 
-Consumers import from `@y-core/forge/{namespace}` and never from a wrapped package. Each namespace has its own `README.md` with the full API — click
-through for it. [NAMESPACES.md][namespaces] is the authoritative catalog, and owns the leaf/integration classification.
-
-### The request path
-
-| Import path | Concern | Docs |
-| --- | --- | --- |
-| `@y-core/forge/app` | App bootstrap, middleware chain, page & action builders, the shell | [src/app/README.md][app-readme] |
-| `@y-core/forge/router` | Routes as data, controllers, URL generation | [src/router/README.md][router-readme] |
-| `@y-core/forge/context` | `RequestContext`, `AppContext`, typed per-request variables | [src/context/README.md][context-readme] |
-| `@y-core/forge/config` | Raw bindings mapped to a validated, per-env config store | [src/config/README.md][config-readme] |
-| `@y-core/forge/validation` | Schema validation — the valibot facade and the form-field shapes | [src/validation/README.md][validation-readme] |
-| `@y-core/forge/form` | Capped body reads, stateless CSRF, Turnstile verification | [src/form/README.md][form-readme] |
-| `@y-core/forge/http` | HTTP output — response builders, header classes, `SafeHtml` | [src/http/README.md][http-readme] |
-| `@y-core/forge/output/pdf` | Printable documents rendered to bytes — no browser, no dependency | [src/output/pdf/README.md][output-pdf-readme] |
-| `@y-core/forge/output/pdf/audit` | What stands between a render and the conformance it aims at, read before any bytes | [src/output/pdf/README.md][output-pdf-readme] |
-| `@y-core/forge/output/pdf/fonts` | Font packs and the CSS matching ladder a document selects a face through | [src/output/pdf/README.md][output-pdf-readme] |
-| `@y-core/forge/output/pdf/jsx-runtime` | The `jsxImportSource` that lets a PDF document be written as markup | [src/output/pdf/README.md][output-pdf-readme] |
-| `@y-core/forge/result` | The failure-as-data primitive every client answers with | [src/result/README.md][result-readme] |
-| `@y-core/forge/security` | Transport hardening — CSP nonces, origin, CORS, rate limits, ids | [src/security/README.md][security-readme] |
-| `@y-core/forge/session` | Hardened cookies and the session lifecycle middleware | [src/session/README.md][session-readme] |
-| `@y-core/forge/logging` | Structured logging over pluggable channels | [src/logging/README.md][logging-readme] |
-| `@y-core/forge/logging/viewer` | The mountable log viewer — one loader, access-gated | [src/logging/README.md][logging-readme] |
-| `@y-core/forge/site` | `robots.txt`, sitemap and edge allow-rules, derived from the routes | [src/site/README.md][site-readme] |
-| `@y-core/forge/dev` | The development allowance every dev-only relaxation takes | [src/dev/README.md][dev-readme] |
-
-### Identity
-
-| Import path | Concern | Docs |
-| --- | --- | --- |
-| `@y-core/forge/auth` | The identity domain — key rings, stores, factors, flows | [src/auth/README.md][auth-readme] |
-| `@y-core/forge/auth/web` | Mountable routes, paths, guards, form schemas & the render seam | [src/auth/README.md][auth-readme] |
-| `@y-core/forge/auth/client` | Browser island for the passkey ceremony (side-effect) | [src/auth/README.md][auth-readme] |
-| `@y-core/forge/auth/schema.sql` | The identity tables' desired state, for a consumer's `config/db.ts` | [src/auth/README.md][auth-readme] |
-
-### HTML and UI
-
-| Import path | Concern | Docs |
-| --- | --- | --- |
-| `@y-core/forge/jsx` | The SSR JSX runtime — `renderPage`, `renderToString`, the types | [src/jsx/README.md][jsx-readme] |
-| `@y-core/forge/jsx/jsx-runtime` | The automatic-transform entry `jsxImportSource` resolves to | [src/jsx/README.md][jsx-readme] |
-| `@y-core/forge/jsx/register` | Classic-mode registration, for esbuild's zero-config fallback | [src/jsx/README.md][jsx-readme] |
-| `@y-core/forge/html/htmx` | The server half of HTMX — inbound headers, `hx-*` attrs, directives | [src/html/README.md][html-readme] |
-| `@y-core/forge/ui/core` | The server-rendered component library | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/core/client` | The scopes `ui/core` markup names (side-effect) | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/controls` | Signal-bound wrappers over the `ui/core` primitives | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/chrome` | App chrome — Navbar, Dock, Toolbar, ThemeToggle | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/chrome/client` | Browser island for the chrome scopes (side-effect) | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/server` | SSR-only Flash and Resumable | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/client` | Signals, the island runtime, and realm-safe DOM helpers | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/client/htmx` | The pinned HTMX bundle (side-effect) | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/contracts` | The DOM contract both halves write, as pure data | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/contracts/theme` | Colour-scheme generation and the audited contrast pairs | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/assets` | Forge's icon glyph names and sprite file map | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/assets/build` | Build-time glyph, colour, cursor and token computation | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/assets/glyphs` | Browser-safe sprite glyph parser | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/assets/css/*.css` | The stylesheets by filename — `tailwind.css` is the entry point | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/ui/design/*.md` | The design corpus as markdown, by filename | [src/ui/README.md][ui-readme] |
-| `@y-core/forge/assets` | Request-time lookup from a logical name to its hashed URL | [src/assets/README.md][assets-readme] |
-
-### Storage and testing
-
-| Import path | Concern | Docs |
-| --- | --- | --- |
-| `@y-core/forge/storage/db` | D1 through `sql` fragments, answering with a `Result` | [src/storage/README.md][storage-readme] |
-| `@y-core/forge/storage/kv` | Workers KV through a codec you choose | [src/storage/README.md][storage-readme] |
-| `@y-core/forge/storage/r2` | R2 through a swappable object-storage backend | [src/storage/README.md][storage-readme] |
-| `@y-core/forge/keyring` | Sealing a stored secret under your own key ring, with rotation | [src/keyring/README.md][keyring-readme] |
-| `@y-core/forge/testing` | Fixtures and fakes — context, storage, CSRF, SSR render | [src/testing/README.md][testing-readme] |
-| `@y-core/forge/testing/workerd` | `wrangler dev` fixture server (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
-| `@y-core/forge/testing/snapshot` | Text against a committed fixture, as a line diff (node-only, off the barrel) | [src/testing/README.md][testing-readme] |
-| `@y-core/forge/testing/coverage` | Every published UI component, for a coverage manifest to declare (off the barrel) | [src/testing/README.md][testing-readme] |
-| `@y-core/forge/testing/node` | Types only: the node surface those two reach | [src/testing/README.md][testing-readme] |
-
-### The command layer
-
-Everything here is **Node/Bun only** and unreachable from a Worker — `validate-import-boundary` proves it.
-
-| Import path | Concern | Docs |
-| --- | --- | --- |
-| `@y-core/forge/tooling/cli` | The command framework the `forge` tree is built from | [src/tooling/cli/README.md][cli-readme] |
-| `@y-core/forge/tooling/gate` | The verification gate — steps, presets & checks | [src/tooling/gate/README.md][gate-readme] |
-| `@y-core/forge/tooling/gate/chromium` | Chromium resolution prebuilt — the spelling `playwright.config.ts` imports | [src/tooling/gate/README.md][gate-readme] |
-| `@y-core/forge/tooling/assets` | Asset config, the build pipeline & `forge assets` | [src/tooling/assets/README.md][tooling-assets-readme] |
-| `@y-core/forge/tooling/db` | D1 — migrations, backup, seeds, sync & Time Travel (`forge db`) | [src/tooling/db/README.md][db-readme] |
-| `@y-core/forge/tooling/cf` | Cloudflare — account bindings, zone rules, env schema (`forge cf`) | [src/tooling/cf/README.md][cf-readme] |
-| `@y-core/forge/tooling/release` | Release workflow — version, changelog & surface guard | [src/tooling/release/README.md][release-readme] |
-| `@y-core/forge/tooling/curate` | Reducing a demonstrator to its skeleton from a feature manifest | [src/tooling/curate/README.md][curate-readme] |
-| `@y-core/forge/tooling/lint` | Forge's oxlint rules, and the rule catalogs the gate reads | [src/tooling/lint/README.md][lint-readme] |
-| `@y-core/forge/tooling/lint/plugin` | The same plugin prebuilt — the spelling `.oxlintrc.json` names | [src/tooling/lint/README.md][lint-readme] |
-| `@y-core/forge/tooling/term` | Terminal rendering — width, wrapping, grids & colour | [src/tooling/term/README.md][term-readme] |
-
-### Governance
-
-| Import path | Concern | Docs |
-| --- | --- | --- |
-| `@y-core/forge/warden/steps` | Gate steps ready to drop into a repository's `config/steps.ts` | [warden/README.md][warden-readme] |
-| `@y-core/forge/warden/checks` | The documentation, changelog and design-corpus checks | [warden/README.md][warden-readme] |
-| `@y-core/forge/warden/knowledge` | BM25 retrieval over the corpus — index, search, read, related | [warden/README.md][warden-readme] |
-| `@y-core/forge/warden/mcp` | The MCP server behind `warden serve` — its tools and resources | [warden/README.md][warden-readme] |
-| `@y-core/forge/warden` | The whole of warden, for the `warden` command alone | [warden/README.md][warden-readme] |
-| `@y-core/forge/warden/canon/*.md` | The fleet canon as markdown, by filename | [warden/README.md][warden-readme] |
-
-> **There is no aggregate `storage` or `ui` barrel** — each client and each UI surface is imported from its own subpath above.
->
-> **Internal only:** `src/crypto/` is not a public namespace — it has no export path and its symbols are `@internal`. Its capabilities surface
-> through whichever namespace owns the concern. See [src/crypto/README.md][crypto-readme].
+Import from `@y-core/forge/{namespace}`, never from a package forge wraps. Each namespace teaches its own use in the `README.md` beside its barrel,
+or in the nearest parent directory's for a nested subpath; warden's is [warden/README.md][warden-readme]. The subpaths themselves are `package.json`
+`exports`.
 
 ---
 
@@ -352,37 +248,5 @@ Everything here is **Node/Bun only** and unreachable from a Worker — `validate
 MIT — see [LICENSE](LICENSE). This covers everything the package ships, including the design corpus in `src/ui/design/`.
 
 [app-readme]: src/app/README.md
-[assets-readme]: src/assets/README.md
-[auth-readme]: src/auth/README.md
-[cf-readme]: src/tooling/cf/README.md
 [changelog]: CHANGELOG.md
-[cli-readme]: src/tooling/cli/README.md
-[config-readme]: src/config/README.md
-[context-readme]: src/context/README.md
-[crypto-readme]: src/crypto/README.md
-[curate-readme]: src/tooling/curate/README.md
-[db-readme]: src/tooling/db/README.md
-[dev-readme]: src/dev/README.md
-[form-readme]: src/form/README.md
-[gate-readme]: src/tooling/gate/README.md
-[html-readme]: src/html/README.md
-[http-readme]: src/http/README.md
-[jsx-readme]: src/jsx/README.md
-[keyring-readme]: src/keyring/README.md
-[lint-readme]: src/tooling/lint/README.md
-[logging-readme]: src/logging/README.md
-[namespaces]: docs/NAMESPACES.md
-[output-pdf-readme]: src/output/pdf/README.md
-[release-readme]: src/tooling/release/README.md
-[result-readme]: src/result/README.md
-[router-readme]: src/router/README.md
-[security-readme]: src/security/README.md
-[session-readme]: src/session/README.md
-[site-readme]: src/site/README.md
-[storage-readme]: src/storage/README.md
-[term-readme]: src/tooling/term/README.md
-[testing-readme]: src/testing/README.md
-[tooling-assets-readme]: src/tooling/assets/README.md
-[ui-readme]: src/ui/README.md
-[validation-readme]: src/validation/README.md
 [warden-readme]: warden/README.md

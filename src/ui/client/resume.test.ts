@@ -1,8 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { FakeDocument, fakeTree } from "./dom.fixture";
-import type { FakeElement } from "./dom.fixture";
-import { findScopes, hydrateState, scanRoot } from "./resume";
+import { FakeDocument, FakeElement, fakeTree } from "./dom.fixture";
+import { disposeScopesIn, findScopes, hydrateState, registerScope, resumeScope, scanRoot, sweepDetachedScopes } from "./resume";
 
 const asParent = (el: FakeElement) => el as unknown as ParentNode;
 
@@ -114,5 +113,32 @@ describe("findScopes", () => {
     const root = el();
     root.append(el(), el());
     expect(findScopes(asParent(root))).toEqual([]);
+  });
+});
+
+describe("sweepDetachedScopes", () => {
+  it("disposes only the scopes whose root has left its document, once, leaving the connected one active", () => {
+    const disposed: string[] = [];
+    registerScope("sweep-probe", {
+      setup:
+        ({ root }) =>
+        () =>
+          disposed.push(root.id),
+    });
+    const { el } = fakeTree();
+    const connected = el("DIV", { "data-scope": "sweep-probe", id: "connected" });
+    const detached = new FakeElement("DIV", { "data-scope": "sweep-probe", id: "detached" });
+    new FakeElement().append(detached);
+    const asRoot = (node: FakeElement) => node as unknown as HTMLElement;
+    resumeScope(asRoot(connected));
+    resumeScope(asRoot(detached));
+    detached.remove();
+
+    sweepDetachedScopes();
+    sweepDetachedScopes();
+
+    expect(disposed).toEqual(["detached"]);
+    disposeScopesIn(asRoot(connected));
+    expect(disposed).toEqual(["detached", "connected"]);
   });
 });

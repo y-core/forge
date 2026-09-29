@@ -94,8 +94,8 @@ command's exit status is stated with the one permitted suffix and no variant of 
 **Layer discipline:** every unit belongs to exactly one layer, and the layer decides what it may import. Resolve placement by **concern first, then
 latency, then thread cost**; when two layers fit, pick the one further from the request path.
 
-For the route inventory, the config schema, the bindings, and the concrete design system, search for the governing `docs/` document rather than
-restating any of it here.
+For the concrete design system and the local rulings, search for the governing `docs/` document rather than restating any of it here. The routes,
+the config schema and the bindings are owned by their code, and no document restates them.
 
 ---
 

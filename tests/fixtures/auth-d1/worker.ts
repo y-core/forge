@@ -9,6 +9,7 @@ import { createFactorStore } from "../../../src/auth/stores/factors";
 import { createIdentityLinkStore } from "../../../src/auth/stores/identity-links";
 import { createNonceStore } from "../../../src/auth/stores/nonces";
 import { createOtpStateStore } from "../../../src/auth/stores/otp-state";
+import { createRecoveryCodeStore } from "../../../src/auth/stores/recovery-codes";
 import { createUserStore } from "../../../src/auth/stores/users";
 import type { Result } from "../../../src/result/result";
 import { createD1Client } from "../../../src/storage/db/client";
@@ -49,6 +50,7 @@ async function resetSchema(db: D1Database): Promise<Response> {
     "auth_otp_state",
     "auth_identity_links",
     "auth_credentials",
+    "auth_recovery_codes",
     "auth_factors",
     "auth_users",
   ];
@@ -239,6 +241,7 @@ async function storesOn(db: D1Database) {
     "auth_otp_state",
     "auth_identity_links",
     "auth_credentials",
+    "auth_recovery_codes",
     "auth_factors",
     "auth_users",
   ]) {
@@ -256,6 +259,7 @@ async function storesOn(db: D1Database) {
     challenges: createChallengeStore(client),
     nonces: createNonceStore(client),
     accessTokens: createAccessTokenStore(client),
+    recoveryCodes: createRecoveryCodeStore(client),
   };
 }
 
@@ -307,7 +311,7 @@ async function probeDeactivatedAdmin(db: D1Database): Promise<Record<string, unk
 }
 
 async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, unknown>> {
-  const { users, admins, credentials, factors, links, otp, accessTokens } = await storesOn(db);
+  const { users, admins, credentials, factors, links, otp, accessTokens, recoveryCodes } = await storesOn(db);
   const person = async (local: string): Promise<string> =>
     must(await users.create({ email: `${local}@example.test`, emailKey: `${local}@example.test` }, AT), `create ${local}`).id;
 
@@ -327,6 +331,7 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
     await accessTokens.create({ userId: erin, tokenHash: new Uint8Array(32).fill(1), label: "CLI", scopes: ["notes:read"], expiresAt: null }, AT),
     "issue erin's token",
   );
+  must(await recoveryCodes.stage(erin, [new Uint8Array(32).fill(7)], AT), "stage erin's codes");
 
   const LOCKOUT_MS = 60_000;
   const spend = async (userId: string, at: number): Promise<number | null> =>
@@ -369,6 +374,7 @@ async function probeOwnershipAndCounter(db: D1Database): Promise<Record<string, 
       auth_factors: await countOf(db, "auth_factors"),
       auth_identity_links: await countOf(db, "auth_identity_links"),
       auth_otp_state: await countOf(db, "auth_otp_state"),
+      auth_recovery_codes: await countOf(db, "auth_recovery_codes"),
       auth_users: await countOf(db, "auth_users"),
     },
   };
@@ -462,6 +468,87 @@ async function probeAccessTokens(db: D1Database): Promise<Record<string, unknown
   };
 }
 
+async function probeRecoveryCodes(db: D1Database): Promise<Record<string, unknown>> {
+  const { users, admins, credentials, factors, recoveryCodes } = await storesOn(db);
+  const person = async (local: string): Promise<string> =>
+    must(await users.create({ email: `${local}@example.test`, emailKey: `${local}@example.test` }, AT), `create ${local}`).id;
+  const code = (n: number) => new Uint8Array(32).fill(n);
+  const attemptsOf = async (userId: string): Promise<number | null> =>
+    must(await factors.find(userId, "recovery-code"), "find the code factor")?.failedAttempts ?? null;
+  const LOCKOUT_MS = 60_000;
+  const spend = async (userId: string, at: number) =>
+    must(await factors.countAttempt(userId, "recovery-code", 5, at, LOCKOUT_MS), `spend at ${at}`);
+
+  const mia = await person("mia");
+  const noah = await person("noah");
+  const totp = must(await factors.enrol({ userId: mia, kind: "totp-app", secret: new Uint8Array([9]), confirmedAt: AT }, AT), "enrol mia's totp");
+  const factor = must(await factors.enrol({ userId: mia, kind: "recovery-code" }, AT), "enrol mia's codes");
+  must(await recoveryCodes.stage(mia, [code(1), code(2)], AT + 1), "stage the first set");
+  must(await recoveryCodes.commit(mia, factor.id, AT + 2), "commit the first set");
+  const consume = async (userId: string, hash: number, at: number): Promise<boolean> =>
+    must(await recoveryCodes.consume(userId, factor.id, code(hash), at), `consume ${hash} at ${at}`);
+
+  const confirmedAt = must(await factors.find(mia, "recovery-code"), "find after commit")?.confirmedAt ?? null;
+  await spend(mia, AT + 3);
+  const consumeFirst = await consume(mia, 1, AT + 4);
+  const attemptsAfterFirst = await attemptsOf(mia);
+  await spend(mia, AT + 5);
+  const consumeReplay = await consume(mia, 1, AT + 6);
+  const attemptsAfterReplay = await attemptsOf(mia);
+  const consumeByStranger = await consume(noah, 2, AT + 7);
+
+  must(await recoveryCodes.stage(mia, [code(3), code(4)], AT + 8), "stage the second set");
+  const consumeStaged = await consume(mia, 3, AT + 9);
+  const heldStaged = must(await recoveryCodes.holdsStaged(mia, code(3)), "holds staged");
+  const heldStagedByStranger = must(await recoveryCodes.holdsStaged(noah, code(3)), "holds staged as stranger");
+  const remainingBeforeCommit = must(await recoveryCodes.remaining(mia), "remaining before commit");
+  must(await recoveryCodes.commit(mia, factor.id, AT + 10), "commit the second set");
+  const remainingAfterCommit = must(await recoveryCodes.remaining(mia), "remaining after commit");
+  const consumeRetired = await consume(mia, 2, AT + 11);
+  const consumeSwapped = await consume(mia, 4, AT + 12);
+
+  const removeLastTotp = must(await factors.remove(totp.id, mia), "remove mia's totp");
+  const codesAfterRemove = await countOf(db, "auth_recovery_codes");
+  const codeFactorsAfterRemove = await countOf(db, "auth_factors", "kind = 'recovery-code'");
+
+  const olive = await person("olive");
+  must(await factors.enrol({ userId: olive, kind: "totp-app", secret: new Uint8Array([9]), confirmedAt: AT }, AT), "enrol olive's totp");
+  const oliveFactor = must(await factors.enrol({ userId: olive, kind: "recovery-code" }, AT), "enrol olive's codes");
+  must(await recoveryCodes.stage(olive, [code(5)], AT + 13), "stage olive's codes");
+  must(await recoveryCodes.commit(olive, oliveFactor.id, AT + 14), "commit olive's codes");
+  must(
+    await credentials.create({ userId: olive, credentialId: "olive-1", publicKey: new Uint8Array([1, 2, 3]), algorithm: -7, signCount: 0 }, AT),
+    "create olive's credential",
+  );
+  const resetFactors = must(await admins.resetFactors(olive, AT + 20), "reset olive's factors");
+
+  return {
+    confirmedAt,
+    consumeFirst,
+    attemptsAfterFirst,
+    consumeReplay,
+    attemptsAfterReplay,
+    consumeByStranger,
+    consumeStaged,
+    heldStaged,
+    heldStagedByStranger,
+    remainingBeforeCommit,
+    remainingAfterCommit,
+    consumeRetired,
+    consumeSwapped,
+    removeLastTotp,
+    codesAfterRemove,
+    codeFactorsAfterRemove,
+    resetFactors,
+    sessionsInvalidBefore: must(await users.findById(olive), "find olive")?.sessionsInvalidBefore ?? null,
+    leftAfterReset: {
+      auth_credentials: await countOf(db, "auth_credentials"),
+      auth_factors: await countOf(db, "auth_factors"),
+      auth_recovery_codes: await countOf(db, "auth_recovery_codes"),
+    },
+  };
+}
+
 async function probeGuards(db: D1Database): Promise<Response> {
   return json({
     lastAdmin: await probeLastAdmin(db),
@@ -471,6 +558,7 @@ async function probeGuards(db: D1Database): Promise<Response> {
     ephemera: await probeEphemera(db),
     emailLength: await probeEmailLength(db),
     accessTokens: await probeAccessTokens(db),
+    recoveryCodes: await probeRecoveryCodes(db),
   });
 }
 

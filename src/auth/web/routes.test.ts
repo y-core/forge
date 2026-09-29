@@ -138,6 +138,9 @@ describe("accountRoutes", () => {
         "/account/email-change",
         "/account/email-change",
         "/account/factors",
+        "/account/recovery-codes",
+        "/account/recovery-codes",
+        "/account/recovery-codes/confirm",
       ].sort(),
     );
   });
@@ -151,6 +154,7 @@ describe("adminRoutes", () => {
         "/admin/users/:id",
         "/admin/users/:id/edit",
         "/admin/users/:id/factors",
+        "/admin/users/:id/factors/reset",
         "/admin/users/:id",
         "/admin/users/:id",
         "/admin/elevate",
@@ -168,6 +172,7 @@ describe("adminRoutes", () => {
         show: () => new Response("user"),
         edit: () => new Response("edit"),
         factors: () => new Response("factors"),
+        resetFactors: () => new Response("reset"),
         update: () => new Response("updated"),
         remove: () => new Response("removed"),
       },

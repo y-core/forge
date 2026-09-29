@@ -9,8 +9,8 @@ audience: internal
 > Owns forge's structural principles — how it is layered, why it ships raw TypeScript, and the constraints that keep it portable across Workers
 > runtimes.
 >
-> Defers to: [`NAMESPACES.md`][namespaces-4] §4 for the leaf/integration classification and the namespace catalog; [`CODE_RULES.md`][cr] for the
-> coding rules; `tsconfig.json` for the compiler configuration.
+> Defers to: [`NAMESPACES.md`][namespaces-4] §4 for the leaf/integration classification; [`CODE_RULES.md`][cr] for the coding rules;
+> `tsconfig.json` for the compiler configuration.
 
 ---
 
@@ -132,8 +132,8 @@ the namespace's `mod.ts`, and the gate step that answers is `validate-exports`.
 
 ## 5. Demand Composition in Practice
 
-See [`LIBRARY_ARCHITECTURE.md`][la-5] §5 for demand composition at the consumer and the ban on namespace aggregators. The subpaths an app composes
-from are catalogued in [`NAMESPACES.md`][namespaces-3a] §3a.
+See [`LIBRARY_ARCHITECTURE.md`][la-5] §5 for demand composition at the consumer and the ban on namespace aggregators. Each subpath an app composes
+from is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] §3a).
 
 ---
 
@@ -247,7 +247,7 @@ the JSX pragma check skips one, because the pragma pair exists for a file compil
 [la-4c]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#4c-breaking-the-facade
 [la-5]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#5-demand-composition-in-practice
 [la-6]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#6-cloudflare-workers-runtime-model
-[namespaces-3a]: ./NAMESPACES.md#3a-public-export-paths
+[namespaces-3a]: ./NAMESPACES.md#3a-a-namespace-is-described-by-its-own-readme
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification
 [nd-3]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3-namespace-classification
 [testing-1b]: ./TEST_RUNNERS.md#1b-custom-buntest-stub--no-bun-types

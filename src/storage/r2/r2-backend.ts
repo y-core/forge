@@ -56,6 +56,7 @@ export function r2Backend(bucket: R2BucketLike): ObjectStorageBackend {
           ...(options?.cacheControl ? { cacheControl: options.cacheControl } : {}),
         },
         ...(options?.metadata ? { customMetadata: options.metadata } : {}),
+        ...(options?.sha256 !== undefined ? { sha256: options.sha256 } : {}),
       });
       return toStoredObject(obj);
     },

@@ -18,6 +18,9 @@ import type { TotpEnrolViewProps } from "./types";
 const DEFAULT_CODE_DIGITS = 6;
 const DEFAULT_CODE_PERIOD_SECONDS = 30;
 
+/** The id on the authenticator-app view's root in either state, which its remove form swaps the answer into. @public */
+export const AUTH_TOTP_ID = "auth-totp";
+
 const SECRET_BOX = "rounded-field border-field border-border px-3 py-2 font-mono text-sm break-all text-foreground";
 
 // Design Read: a signed-in visitor adding an authenticator app; the one action is confirming the code
@@ -40,7 +43,7 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
   const digits = codeDigits ?? DEFAULT_CODE_DIGITS;
   const period = codePeriodSeconds ?? DEFAULT_CODE_PERIOD_SECONDS;
   return state.status === "enrolled" ? (
-    <Card class={cn("mx-auto w-full max-w-md", cls)}>
+    <Card id={AUTH_TOTP_ID} class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Your authenticator app</Heading>
@@ -58,7 +61,7 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
       </Card.Header>
       <Card.Content>
         {removePath === undefined ? null : (
-          <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ delete: removePath })}>
+          <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ delete: removePath, target: `#${AUTH_TOTP_ID}`, swap: "outerHTML" })}>
             <Button type='submit' tone='destructive' appearance='outline' data-ref='totp-remove'>
               Remove authenticator app
             </Button>
@@ -67,7 +70,7 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
       </Card.Content>
     </Card>
   ) : (
-    <Card class={cn("mx-auto w-full max-w-md", cls)}>
+    <Card id={AUTH_TOTP_ID} class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Add an authenticator app</Heading>

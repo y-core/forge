@@ -197,10 +197,9 @@
      control it wants to show as busy. `hxAttrs`' `indicator` option is what points a request at it —
      see `forge-ui-htmx-indicator-on-control` in src/ui/design/reference/11-htmx.md.
 
-     Replicated here rather than left to htmx because htmx injects this stylesheet at runtime through
-     a `<style>` element, which `Content-Security-Policy: style-src 'self'` refuses. Forge sets
-     `includeIndicatorStyles: false` in its htmx config and ships the rules instead, so a CSP-strict
-     app gets the behaviour without the inline style.
+     Replicated here rather than left to htmx: htmx adopts an unlayered constructed sheet at import,
+     which `ui/client/htmx` removes so these layered rules govern, and they also hide an indicator on a
+     page that loads no script.
 
      The layer matters here: `.htmx-request .htmx-indicator` is the rule that *reveals* the spinner,
      and a caller's `opacity-0` on the same element would beat it from `components`. */

@@ -1,20 +1,17 @@
 import type { Result } from "../../../../result/types";
 import type { CfApiClientError } from "../../api/types";
 import type { CfClient } from "../../api/types";
-import type { DeploymentTarget } from "../../types";
 import type { CfAuth, ResolvedPrefix, ResourceType, WranglerConfig } from "../../types";
 
 export interface HandlerContext {
   auth: CfAuth;
-  /** Seed for {@link prefix}, and the deployment's name. */
+  /** Seed for {@link prefix}, and the Worker script every request addresses. */
   scriptName: string;
   prefix: ResolvedPrefix;
   dryRun: boolean;
   /** Secret names this run may regenerate; empty unless `--rotate` named them. */
   readonly rotate: ReadonlySet<string>;
   fetch: typeof globalThis.fetch;
-  /** Which deployment surface the config addresses — Pages project or Worker script. */
-  readonly target: DeploymentTarget;
 }
 
 export interface ReconcileResult<TLocal> {
@@ -37,7 +34,7 @@ export interface ResourceHandler<TLocal = unknown> {
 export type Verification = { kind: "no-remote-object"; reason: string } | { kind: "unverified"; reason: string };
 
 /** What a `.dev.vars` key is, decided by the mutually exclusive markers above it. */
-export type DevVarKind = "local" | "secret" | "rotatable";
+export type DevVarKind = "local" | "secret" | "rotatable" | "ring";
 
 /** One key read from `.dev.vars`, with the line it came from and what its markers make it. */
 export interface DevVar {

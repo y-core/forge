@@ -70,6 +70,14 @@ function fakeAdminUsers(seed: readonly AuthUser[]) {
       rows.splice(index, 1);
       return Promise.resolve(ok("changed" as const));
     },
+    resetFactors: (id, at) => {
+      const index = indexOf(id);
+      const row = rows[index];
+      if (index < 0 || !row) return Promise.resolve(ok("not-found" as const));
+      batches.push(["auth_credentials", "auth_factors", "auth_recovery_codes", "auth_users"]);
+      rows[index] = { ...row, sessionsInvalidBefore: at, updatedAt: at };
+      return Promise.resolve(ok("changed" as const));
+    },
   };
   return { store, rows, batches };
 }
@@ -146,6 +154,31 @@ describe("createAdminUserService — named writes", () => {
     const built = service([alice, bob]);
     expect(await built.admin.remove(bob.id)).toEqual({ ok: true, data: "changed" });
     expect(built.users.batches).toEqual([["auth_credentials", "auth_factors", "auth_identity_links", "auth_access_tokens", "auth_users"]]);
+  });
+});
+
+describe("createAdminUserService — resetFactors", () => {
+  it("resets the named user at the given instant, signing them out and leaving the account itself in place", async () => {
+    const alice = userRow({ isAdmin: true });
+    const bob = userRow({ emailKey: "bob@example.com" });
+    const built = service([alice, bob]);
+    expect(await built.admin.resetFactors(bob.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect({
+      rows: built.users.rows.length,
+      bob: built.users.rows[1]?.sessionsInvalidBefore,
+      alice: built.users.rows[0]?.sessionsInvalidBefore,
+    }).toEqual({ rows: 2, bob: AT, alice: null });
+  });
+
+  it("reports an id it does not hold as `not-found`", async () => {
+    expect(await service([]).admin.resetFactors(uuidv7(), AT)).toEqual({ ok: true, data: "not-found" });
+  });
+
+  it("passes a store outage through as the AuthStoreError it was", async () => {
+    const built = service([]);
+    built.users.store.resetFactors = () => Promise.resolve(err(new AuthStoreError("unavailable", "adminUsers.resetFactors")));
+    const outcome = await built.admin.resetFactors(uuidv7(), AT);
+    expect(outcome.ok === false && outcome.error).toBeInstanceOf(AuthStoreError);
   });
 });
 

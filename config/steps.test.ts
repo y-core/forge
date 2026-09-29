@@ -73,3 +73,13 @@ describe("the gate's exemptions", () => {
     expect(BROWSER_ONLY.filter(isBrowserSubpath)).toEqual([]);
   });
 });
+
+describe("the package's exports", () => {
+  it("publishes no aggregate `storage` or `ui` barrel, so each client and UI surface is imported from its own subpath", () => {
+    const exports = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { exports: Record<string, unknown> }).exports;
+
+    expect(Object.keys(exports).filter((key) => key === "./storage" || key === "./ui")).toEqual([]);
+    expect(Object.keys(exports)).toContain("./storage/db");
+    expect(Object.keys(exports)).toContain("./ui/core");
+  });
+});

@@ -135,7 +135,7 @@ describe("PasskeyEnrolView markup", () => {
 describe("PasskeyEnrolView and the step-up/enrolment distinction", () => {
   it("is the page for an enrolment demand, and renders a registration ceremony rather than a code field", async () => {
     const cell = authFactorGrid([]).find((entry) => entry.label === "email-otp+totp-app primary=email-otp / all-mandatory");
-    expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"] });
+    expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
 
     const html = await enrol();
     expect(textOf(html, "h1", 'class="text-xl"')).toBe("Add a passkey");
