@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.3.8] — 2026-09-29
+
 ### Upgrading
 
 1. **Replace `importSigningKey(hex)` with `importSignedUrlKeyRing([hex])`** and pass the ring to `createSignedObjectUrl` and
@@ -5322,6 +5328,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.3.8]: https://github.com/y-core/forge/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/y-core/forge/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/y-core/forge/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/y-core/forge/compare/v0.3.4...v0.3.5
