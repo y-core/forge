@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.3.11] — 2026-10-01
+
 ### Added
 
 - **`Navbar` takes `drawerEdge`** (`"leading"` or `"trailing"`) on a bar with `collapsedAs="drawer"`, overriding the edge `placement` derives, so a top
@@ -5398,6 +5404,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.3.11]: https://github.com/y-core/forge/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/y-core/forge/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/y-core/forge/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/y-core/forge/compare/v0.3.7...v0.3.8
