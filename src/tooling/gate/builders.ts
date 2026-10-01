@@ -378,6 +378,11 @@ export function chromiumBundleStep(config: BundleCheckConfig, options: StepOptio
   return checkStep("validate-chromium-bundle", () => checkBundle(config), options, { requires: esbuildRequired() });
 }
 
+/** Rebuilds the committed TOTP test-helper bundle and fails on any drift from its TypeScript source. @public */
+export function totpBundleStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-totp-bundle", () => checkBundle(config), options, { requires: esbuildRequired() });
+}
+
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */
 export function classOrderStep(config: ClassOrderCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-class-order", () => checkClassOrder(config), options, { watches: sourceWatches(config.sources) });

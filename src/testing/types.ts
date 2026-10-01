@@ -71,3 +71,10 @@ export interface FakeD1Options {
 
 /** A route action for the test helper: a bare handler or a `{ middleware, handler }` object. @public */
 export type TestAction = RequestHandler | { middleware: readonly Middleware[]; handler: RequestHandler };
+
+/** The codes an authenticator app would show either side of one step boundary. @public */
+export interface TotpCodes {
+  /** The step before the clock reading, which a server's one-step drift window still accepts. */
+  previous: string;
+  current: string;
+}

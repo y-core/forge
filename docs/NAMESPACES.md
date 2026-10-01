@@ -104,12 +104,14 @@ symbol that was never added to a surfacing barrel — that entry is manual disci
 `@y-core/forge/tooling/lint` from source however forge is installed; `@y-core/forge/tooling/lint/plugin` is the bundle it names instead. Forge is
 consumed as a git tarball, so there is no publish step that could build the bundle and no `prepare` hook a consumer runs: committing the artifact is
 the only form that reaches a consumer without the consumer building it. The cost is that a generated file can drift from its source, so a drift
-check rebuilds each bundle on every gate run and fails on any difference — `validate-lint-plugin` and `validate-chromium-bundle`.
+check rebuilds each bundle on every gate run and fails on any difference — `validate-lint-plugin`, `validate-chromium-bundle` and
+`validate-totp-bundle`.
 
 **Playwright is the second such host, and forge cannot choose bun on the consumer's behalf.** A `playwright.config.ts` importing a forge subpath
 dies at config load with the same error, and under bun a dev server playwright spawns binds where the browser cannot reach it — specs that pass
 under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So `@y-core/forge/tooling/gate/chromium` publishes a
-committed bundle of the one symbol a config needs.
+committed bundle of the one symbol a config needs. A consumer's browser spec loads the same way, so `@y-core/forge/testing/totp` is a committed
+bundle of `totpCodes`, which also stays on the `./testing` barrel for a suite running under bun.
 
 Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
 broken bundle fails here rather than there.

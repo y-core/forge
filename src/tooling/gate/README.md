@@ -101,6 +101,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `contrastStep` → `validate-contrast` | Every audited foreground/background pair meets its contrast criterion |
 | `lintPluginStep` → `validate-lint-plugin` | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source |
 | `chromiumBundleStep` → `validate-chromium-bundle` | The committed chromium-resolution bundle a `playwright.config.ts` imports matches a fresh build of its source |
+| `totpBundleStep` → `validate-totp-bundle` | The committed `@y-core/forge/testing/totp` bundle a browser spec imports matches a fresh build of its source |
 
 The tool rows carry no check and simply spawn: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep`
 (`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Others spawn something a machine may not have —

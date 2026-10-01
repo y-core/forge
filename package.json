@@ -26,6 +26,7 @@
       "./testing/coverage",
       "./testing/node",
       "./testing/snapshot",
+      "./testing/totp",
       "./testing/workerd",
       "./tooling/*"
     ]
@@ -234,6 +235,10 @@
     "./testing/snapshot": {
       "types": "./src/testing/snapshot.ts",
       "import": "./src/testing/snapshot.ts"
+    },
+    "./testing/totp": {
+      "types": "./src/testing/totp.ts",
+      "import": "./src/testing/totp.mjs"
     },
     "./testing/workerd": {
       "types": "./src/testing/workerd.ts",

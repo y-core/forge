@@ -189,6 +189,26 @@ resolver, pass the same subject — usually the session id — as `{ subject }`,
 
 ---
 
+## Answering an authenticator-app prompt
+
+`totpCodes` reads the `otpauth://` URI the enrolment page shows and returns the code an authenticator app would display, by the URI's own
+algorithm, digits and period. It also returns the code for the step before, and both come from one clock reading. A Playwright spec runs under
+node, which strips no types under `node_modules`, so it imports the prebuilt `@y-core/forge/testing/totp` rather than this barrel.
+
+```ts
+import { totpCodes } from "@y-core/forge/testing/totp";
+
+const totp = await totpCodes(uri, Date.now());
+await page.getByLabel("Code from your app").fill(totp.previous);
+// … and at the step-up that follows:
+await page.getByLabel("Verification code").fill(totp.current);
+```
+
+Enrol with `previous` and step up with `current`. Forge's authenticator-app factor accepts one step of drift and refuses a step it has already
+seen, so this order passes both prompts without waiting for the clock to move on.
+
+---
+
 ## Asserting rendered markup
 
 `render` turns a JSX element into the exact HTML string. One render, one `toBe` on the whole output, and the file is a `.test.tsx`:

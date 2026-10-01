@@ -34,6 +34,7 @@ import {
   ssrBoundaryStep,
   stubGlobalsStep,
   testStep,
+  totpBundleStep,
   typeAwareLintStep,
   typecheckStep,
   workerdStep,
@@ -191,6 +192,10 @@ export const STEPS: readonly Step[] = [
     { root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN },
     { watches: ["src/tooling/gate/checks/chromium.ts", "src/tooling/gate/chromium.mjs"] },
   ),
+  totpBundleStep(
+    { root: ROOT, entry: "src/testing/totp.ts", bundle: "src/testing/totp.mjs", fixer: GEN },
+    { watches: ["src/testing/totp.ts", "src/crypto/base32.ts", "src/crypto/hotp.ts", "src/testing/totp.mjs"] },
+  ),
   contrastStep(
     {
       root: ROOT,
@@ -222,7 +227,7 @@ export const STEPS: readonly Step[] = [
   wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { watches: CORPUS_WATCHES }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
-  browserStep({ tier: "full", watches: ["src/**", "playwright.config.ts"] }),
+  browserStep({ tier: "full", watches: ["src/**", "tests/fixtures/**", "playwright.config.ts"] }),
   workerdStep({ tier: "full", watches: ["src/**", "tests/**"] }),
   ...dbSchemaStep({
     root: "tests/fixtures/db-schema",

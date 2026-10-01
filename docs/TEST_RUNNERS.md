@@ -91,6 +91,8 @@ a gate never reaches a registry to find what it runs.
 legitimate ground for holding a step back. Cost never is. It runs under `bun run verify:full`, the release gate, which is permitted to carry one
 ([`TESTING.md`][testing-6c] §6c).
 
+**A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
+
 **The browser comes from the environment, so forge ships no install script.** `CHROME_PATH` is what `hasChromium` resolves first, so an environment
 that sets it at an installed Chromium satisfies the probe before anyone runs anything. `browserStep`'s hint is reached only where it is unset, and
 it names `bunx playwright install chromium` rather than a script this repository would otherwise have to define.

@@ -10,3 +10,5 @@ export { render } from "./render";
 export { buildRequest } from "./request";
 export type { TestAction } from "./types";
 export { mapHandler } from "./route";
+export type { TotpCodes } from "./types";
+export { totpCodes } from "./totp";

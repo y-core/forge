@@ -36,6 +36,7 @@ export {
   stubGlobalsStep,
   featuresStep,
   testStep,
+  totpBundleStep,
   typeAwareLintStep,
   checkStep,
   dbSchemaStep,

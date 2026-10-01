@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { CDPSession, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { mount, SECURE_ORIGIN } from "../../ui/client/browser.fixture";
@@ -16,6 +16,7 @@ import {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "../passkey-contract";
+import { addVirtualAuthenticator } from "./authenticator.fixture";
 
 declare global {
   interface Window {
@@ -66,23 +67,6 @@ const fixture = async (mode = "registration"): Promise<string> => `<!doctype htm
 </body></html>`;
 
 const hex = (bytes: number[]): string => bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
-
-/** Attaches a CDP virtual authenticator, so `navigator.credentials` runs a real ceremony. */
-async function addVirtualAuthenticator(page: Page, options: { prf?: boolean } = {}): Promise<{ session: CDPSession; authenticatorId: string }> {
-  const session = await page.context().newCDPSession(page);
-  await session.send("WebAuthn.enable");
-  const { authenticatorId } = await session.send("WebAuthn.addVirtualAuthenticator", {
-    options: {
-      protocol: "ctap2",
-      transport: "internal",
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      ...(options.prf ? { hasPrf: true } : {}),
-    },
-  });
-  return { session, authenticatorId };
-}
 
 /** Enrols a discoverable credential for `RP_ID` directly, so a spec can start at the assertion. */
 async function addDiscoverableCredential(page: Page): Promise<void> {

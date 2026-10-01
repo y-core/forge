@@ -8,7 +8,8 @@ const executablePath = resolveChromiumPath();
 
 export default defineConfig({
   testDir: ".",
-  // No `webServer`: `src/ui/client/browser.fixture.ts` bundles each module under test into `page.setContent()` markup.
+  // No `webServer`: `src/ui/client/browser.fixture.ts` bundles each module under test into `page.setContent()`
+  // markup, and a journey spec that needs a Worker starts its own with `startDevServer`.
   testMatch: "src/**/*.browser.ts",
   testIgnore: "**/.claude/**",
   fullyParallel: true,

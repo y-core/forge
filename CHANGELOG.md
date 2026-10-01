@@ -18,7 +18,13 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`totpCodes(uri, at)`** returns the code an authenticator app enrolled from an `otpauth://` URI would show, and the code for the step
+  before, so a spec can pass the enrolment and the step-up without its own HMAC. A Playwright spec imports it from the prebuilt
+  `@y-core/forge/testing/totp`, held to its source by the new `validate-totp-bundle` row; a bun suite has it on `@y-core/forge/testing` too.
+- **Forge's auth journey is now proven in forge.** `src/auth/journey.browser.ts` drives the real mount under workerd, covering sign-up, TOTP
+  enrolment and step-up, a passkey added from the account pages, sign-out, and a passkey step-up on sign-in.
 
 ---
 

@@ -71,6 +71,7 @@ if (import.meta.main) {
   for (const [entry, bundle] of [
     ["src/tooling/lint/mod.ts", "src/tooling/lint/plugin.mjs"],
     ["src/tooling/gate/checks/chromium.ts", "src/tooling/gate/chromium.mjs"],
+    ["src/testing/totp.ts", "src/testing/totp.mjs"],
   ] as const) {
     await writeBundle({ root, entry, bundle, fixer });
     console.log(`wrote ${bundle}`);
