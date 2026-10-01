@@ -121,6 +121,9 @@ export type NavPlacement = "top" | "bottom" | "left" | "right";
 /** How the collapsed panel presents below `md`: in the flow, or as an off-canvas overlay. @public */
 export type NavCollapsedAs = "inline" | "drawer";
 
+/** The edge a drawer's panel slides from, in the writing direction: `leading` is the left in a left-to-right page. @public */
+export type NavDrawerEdge = "leading" | "trailing";
+
 /** What a drawer's toggle draws instead of a hamburger, mirrored under `rtl:`. @public */
 export type NavDrawerGlyph = "panel-open" | "panel-close";
 
@@ -258,6 +261,7 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
 interface NavbarInlineProps extends NavbarSharedProps {
   collapsedAs?: "inline" | undefined;
   icon: ForgeIcon<NavGlyph>;
+  drawerEdge?: undefined;
 }
 
 /** A top bar that opens off-canvas: still a hamburger, which is the affordance a bar's menu has. */
@@ -265,6 +269,8 @@ interface NavbarBarDrawerProps extends NavbarSharedProps {
   collapsedAs: "drawer";
   collapsible?: "mobile" | undefined;
   icon: ForgeIcon<NavGlyph>;
+  /** Overrides the edge `placement` derives — for a top bar whose leading edge an app drawer already holds. */
+  drawerEdge?: NavDrawerEdge | undefined;
 }
 
 /** A rail that opens off-canvas: its toggle draws the panel pair, so those two glyphs are owed too. */
@@ -272,4 +278,5 @@ interface NavbarRailDrawerProps extends NavbarSharedProps {
   collapsedAs: "drawer";
   collapsible: "always";
   icon: ForgeIcon<NavGlyph | NavDrawerGlyph>;
+  drawerEdge?: undefined;
 }

@@ -44,3 +44,55 @@ test.describe("mountNavDrawer — a panel that transitions `visibility` on open"
     expect(await scrollY(page)).toBe(500);
   });
 });
+
+const POPOVER_FIXTURE = `<details id="drawer" open>
+  <summary>Menu</summary>
+  <div id="panel"><button id="opener" popovertarget="menu">Open menu</button><div id="menu" popover><button id="item">Item</button></div></div>
+</details>`;
+
+test.describe("mountNavDrawer — a popover open inside the panel", () => {
+  test("leaves the Escape that light-dismisses the popover to it, and closes on the next", async ({ page }) => {
+    await mount(page, POPOVER_FIXTURE, { expose: { forgeDrawer: "./ui/client/drawer" } });
+    await page.evaluate(() => window.forgeDrawer.mountNavDrawer({ selector: "#drawer", query: "all", panelSelector: "#panel" }));
+    await page.click("#opener");
+    await page.focus("#item");
+    const state = () =>
+      page.evaluate(() => [
+        document.querySelector("#menu")?.matches(":popover-open"),
+        (document.querySelector("#drawer") as HTMLDetailsElement).open,
+      ]);
+    expect(await state()).toEqual([true, true]);
+
+    await page.keyboard.press("Escape");
+    expect(await state()).toEqual([false, true]);
+
+    await page.keyboard.press("Escape");
+    expect(await state()).toEqual([false, false]);
+  });
+});
+
+test.describe("mountNavDrawer — a surface Escape does not close, open inside the panel", () => {
+  for (const [name, surface] of [
+    ["a manual popover", `<div id="surface" popover="manual">Pinned</div>`],
+    ["a manual popover spelled in another case", `<div id="surface" popover="Manual">Pinned</div>`],
+    ["a popover whose invalid value falls back to manual", `<div id="surface" popover="pinned">Pinned</div>`],
+    ["a non-modal dialog", `<dialog id="surface" open>Note</dialog>`],
+  ] as const) {
+    test(`closes on Escape past ${name}`, async ({ page }) => {
+      await mount(
+        page,
+        `<details id="drawer" open><summary>Menu</summary><div id="panel"><button id="item">Item</button>${surface}</div></details>`,
+        { expose: { forgeDrawer: "./ui/client/drawer" } },
+      );
+      await page.evaluate(() => {
+        window.forgeDrawer.mountNavDrawer({ selector: "#drawer", query: "all", panelSelector: "#panel" });
+        document.querySelector<HTMLElement>("#surface[popover]")?.showPopover();
+      });
+      await page.focus("#item");
+
+      await page.keyboard.press("Escape");
+
+      expect(await page.evaluate(() => (document.querySelector("#drawer") as HTMLDetailsElement).open)).toBe(false);
+    });
+  }
+});

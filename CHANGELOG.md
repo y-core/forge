@@ -18,7 +18,18 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`Navbar` takes `drawerEdge`** (`"leading"` or `"trailing"`) on a bar with `collapsedAs="drawer"`, overriding the edge `placement` derives, so a top
+  bar's menu can open from the trailing edge when an app keeps a drawer of its own on the leading one. The `NavDrawerEdge` type is exported from
+  `@y-core/forge/ui/chrome`. Omitting the prop renders exactly what 0.3.10 rendered.
+
+### Fixed
+
+- **`mountNavDrawer` leaves an Escape that belongs to something open inside its panel.** It closed the drawer on every Escape, so the
+  key that dismissed a menu or dialog inside the panel shut the drawer with it. An Escape a nearer handler already consumed
+  (`defaultPrevented`), or one pressed while a light-dismiss popover or modal `<dialog>` inside the panel is open, now goes to that surface; the next Escape
+  closes the drawer.
 
 ---
 

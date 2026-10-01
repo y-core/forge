@@ -8,11 +8,19 @@ const DEFAULT_QUERY =
 /** The panel inside the disclosure: its first element child that is not the backdrop. */
 const DEFAULT_PANEL_SELECTOR = ":scope > div:not([data-slot~='navbar-backdrop'])";
 
+/** A surface open inside the panel that the platform closes on Escape, after `keydown` is dispatched, so it is still open here. */
+const OPEN_SURFACE = ":popover-open,dialog:modal";
+
 /** The trap's own candidate list: the ordinary interactive elements and nothing else. */
 const FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
 
 const mountedDrawers = new WeakMap<Element, () => void>();
+
+/** Whether a surface open inside the panel takes the Escape: the reflected `popover` normalises case and an invalid value to `manual`, which never light-dismisses. */
+function ownsEscape(panel: HTMLElement | null): boolean {
+  return panel !== null && [...panel.querySelectorAll<HTMLElement>(OPEN_SURFACE)].some((surface) => surface.popover !== "manual");
+}
 
 /** The longest `duration + delay` a computed style's transition lists name, in milliseconds. */
 function transitionSpan(style: CSSStyleDeclaration): number {
@@ -183,6 +191,7 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     if (!isActive()) return;
     const key = (event as KeyboardEvent).key;
     if (key === "Escape") {
+      if (event.defaultPrevented || ownsEscape(panel)) return;
       el.open = false;
       return;
     }

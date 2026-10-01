@@ -9,7 +9,7 @@ import { cn } from "../core/utils/cn";
 import { cva } from "../core/utils/cva";
 import { Resumable } from "../server/resumable";
 import { renderSection } from "./navbar-items";
-import type { NavCollapsible, NavRenderCtx } from "./types";
+import type { NavCollapsible, NavDrawerEdge, NavRenderCtx } from "./types";
 import type { NavbarProps } from "./types";
 
 /** One responsive sticky class string per placement: a vertical mobile edge re-pinned horizontally at `md:`. */
@@ -50,16 +50,14 @@ const DRAWER_PANEL_BASE = cn(
   "max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[translate,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-safe:max-md:group-open:transition-[translate] motion-reduce:max-md:transition-none",
 );
 
-/** Which edge the panel slides from — derived from `placement`, never configured separately. */
-type DrawerEdge = "leading" | "trailing";
-
-const DRAWER_EDGE_CLASS: Record<DrawerEdge, string> = {
+/** Which edge the panel slides from — derived from `placement` unless `drawerEdge` overrides it, since a top bar's leading edge may already hold an app's own drawer. */
+const DRAWER_EDGE_CLASS: Record<NavDrawerEdge, string> = {
   leading: "max-md:start-0 max-md:-translate-x-full max-md:border-e max-md:rtl:translate-x-full",
   trailing: "max-md:end-0 max-md:translate-x-full max-md:border-s max-md:rtl:-translate-x-full",
 };
 
 /** The glyph pair is drawn once, for a leading edge in a left-to-right page, and mirrored into the other three cases */
-const DRAWER_GLYPH_CLASS: Record<DrawerEdge, string> = { leading: "rtl:-scale-x-100", trailing: "-scale-x-100 rtl:scale-x-100" };
+const DRAWER_GLYPH_CLASS: Record<NavDrawerEdge, string> = { leading: "rtl:-scale-x-100", trailing: "-scale-x-100 rtl:scale-x-100" };
 
 /** The scrim under the panel. A `<div>` rather than a `<button>`: it duplicates the summary's affordance, so it must not be a second tab stop. */
 const DRAWER_BACKDROP_CLASS = cn(
@@ -88,7 +86,7 @@ const DRAWER_PANEL_CLASS: Record<NavCollapsible, string> = {
 };
 
 /** The toggle's open and close glyphs, chosen from the props union's discriminants. */
-function renderToggleGlyphs(props: NavbarProps, edge: DrawerEdge): JSXNode {
+function renderToggleGlyphs(props: NavbarProps, edge: NavDrawerEdge): JSXNode {
   if (props.collapsedAs === "drawer" && props.collapsible === "always") {
     const Glyph = props.icon;
     const mirror = DRAWER_GLYPH_CLASS[edge];
@@ -123,6 +121,7 @@ export const Navbar: FC<NavbarProps> = (props) => {
     collapsible = "mobile",
     toggleLabel = LABEL_DEFAULTS.navbarToggle,
     collapsedAs = "inline",
+    drawerEdge,
     defaultOpen = false,
     icon: Icon,
     class: cls,
@@ -137,7 +136,9 @@ export const Navbar: FC<NavbarProps> = (props) => {
   const variants = collapsible === "always" ? railPlacementVariants : placementVariants;
   const heightLink: { class?: string | undefined } = collapsible === "always" ? { class: RAIL_HEIGHT_CHAIN } : {};
   const drawer = collapsedAs === "drawer";
-  const edge = resolvedPlacement === "right" || resolvedPlacement === "bottom" ? "trailing" : "leading";
+  const edge =
+    (collapsible === "always" ? undefined : drawerEdge) ??
+    (resolvedPlacement === "right" || resolvedPlacement === "bottom" ? "trailing" : "leading");
   const drawerBar = collapsible === "always" ? DRAWER_RAIL_CLASS : DRAWER_BAR_CLASS;
   return (
     <Resumable name={NAVBAR_SCOPE} state={{ filters: activeFilters }} {...heightLink}>

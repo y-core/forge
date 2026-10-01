@@ -1022,6 +1022,11 @@ up; `"always"` keeps both at every breakpoint, which is why `placement` defaults
 open on first paint, attribute-only — pair it with `mountViewportCollapse` for a rail that should follow viewport width, and with `mountNavDrawer`
 for one that should behave as a modal off-canvas panel.
 
+**A drawer slides from the edge `placement` derives** — the leading edge for `top` and `left`, the trailing edge for `right` and `bottom` — and
+`drawerEdge` overrides it. Reach for it when the app keeps a drawer of its own on a top bar's leading edge: `drawerEdge="trailing"` opens the site
+menu from the other side, so the two never share an edge. A rail takes no `drawerEdge`: its toggle shows at every width, so its panel slides
+from the edge `placement` names.
+
 **`id` namespaces the generated menu ids** on both `Navbar` and `Toolbar`, falling back to the placement each renders at. Supply a distinct value
 when two bars share a placement, or both mint the same id and the second bar's trigger toggles the first bar's popup.
 

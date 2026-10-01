@@ -69,6 +69,7 @@ class FakeFrames {
 
 class FakeNode {
   readonly nodeType = 1;
+  popover: string | null = null;
   ownerDocument: FakeDocument | null = null;
   /** Set while the node is still `visibility: hidden`, which the browser refuses focus to. */
   refusesFocus = false;
@@ -91,8 +92,11 @@ class FakeNode {
 class FakePanel extends FakeNode {
   readonly items: FakeNode[] = [];
   queried: string[] = [];
+  /** Answers the open-surface lookup: a menu or dialog left open inside the panel. */
+  openSurface: FakeNode | null = null;
 
   querySelectorAll(selector: string): FakeNode[] {
+    if (selector.includes(":popover-open")) return this.openSurface === null ? [] : [this.openSurface];
     this.queried.push(selector);
     return this.items;
   }
@@ -146,10 +150,19 @@ class FakeDocument {
 
   /** A key the reader pressed, with the `preventDefault` the trap is expected to call. */
   press(key: string, shiftKey = false): { defaultPrevented: boolean } {
+    return this.dispatch(key, shiftKey, false);
+  }
+
+  /** A key a handler nearer the target already consumed. */
+  pressConsumed(key: string): { defaultPrevented: boolean } {
+    return this.dispatch(key, false, true);
+  }
+
+  private dispatch(key: string, shiftKey: boolean, defaultPrevented: boolean): { defaultPrevented: boolean } {
     const event = {
       key,
       shiftKey,
-      defaultPrevented: false,
+      defaultPrevented,
       preventDefault(): void {
         this.defaultPrevented = true;
       },
@@ -383,6 +396,53 @@ describe("mountNavDrawer", () => {
     f.doc.press("Escape");
 
     expect(f.el.open).toBe(false);
+  });
+
+  it("leaves an Escape to a popover or dialog still open inside the panel, so the drawer stays open", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    f.el.panel.openSurface = new FakeNode();
+
+    f.doc.press("Escape");
+
+    expect(f.el.open).toBe(true);
+  });
+
+  it("closes on the next Escape once the surface inside the panel has shut", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    f.el.panel.openSurface = new FakeNode();
+    f.doc.press("Escape");
+
+    f.el.panel.openSurface = null;
+    f.doc.press("Escape");
+
+    expect(f.el.open).toBe(false);
+  });
+
+  it("closes past a manual popover open inside the panel, which Escape never dismisses", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    const pinned = new FakeNode();
+    pinned.popover = "manual";
+    f.el.panel.openSurface = pinned;
+
+    f.doc.press("Escape");
+
+    expect(f.el.open).toBe(false);
+  });
+
+  it("leaves an Escape a handler nearer the target already consumed", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.doc.pressConsumed("Escape");
+
+    expect(f.el.open).toBe(true);
   });
 
   it("ignores Escape while the drawer is shut, and above the breakpoint", () => {

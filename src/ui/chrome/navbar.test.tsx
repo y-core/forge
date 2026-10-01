@@ -8,7 +8,7 @@ import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
-import type { NavPlacement } from "./types";
+import type { NavDrawerEdge, NavPlacement } from "./types";
 import type { NavDefinition } from "./types";
 
 const id = (key: string) => `/route/${key}`;
@@ -334,6 +334,21 @@ describe("Navbar — drawer mode", () => {
     expect(await edgeOf("bottom")).toEqual(trailing);
   });
 
+  it("lets drawerEdge override the edge placement derives, either way, mirroring both the offset and the transform under rtl", async () => {
+    const edgeOf = async (placement: NavPlacement, drawerEdge: NavDrawerEdge) =>
+      panelClass(
+        await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' placement={placement} drawerEdge={drawerEdge} />),
+      ).filter((token) => /^max-md:(?:start-0|end-0|border-e|border-s|-?translate-x-full|rtl:-?translate-x-full)$/.test(token));
+
+    expect(await edgeOf("top", "trailing")).toEqual(["max-md:end-0", "max-md:translate-x-full", "max-md:border-s", "max-md:rtl:-translate-x-full"]);
+    expect(await edgeOf("right", "leading")).toEqual([
+      "max-md:start-0",
+      "max-md:-translate-x-full",
+      "max-md:border-e",
+      "max-md:rtl:translate-x-full",
+    ]);
+  });
+
   it("draws the panel pair for a rail, and leaves a bar its hamburger even when it opens off-canvas", async () => {
     const railDrawer = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' collapsedAs='drawer' />);
     const barDrawer = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' />);
@@ -357,6 +372,22 @@ describe("Navbar — drawer mode", () => {
     expect(await mirrorOf("left")).toEqual(["rtl:-scale-x-100", "rtl:-scale-x-100"]);
     expect(await mirrorOf("right")).toEqual(["-scale-x-100 rtl:scale-x-100", "-scale-x-100 rtl:scale-x-100"]);
     expect(await mirrorOf("bottom")).toEqual(["-scale-x-100 rtl:scale-x-100", "-scale-x-100 rtl:scale-x-100"]);
+  });
+
+  it("refuses drawerEdge on a rail, whose toggle stays on the edge placement names at every width", async () => {
+    const out = await render(
+      // @ts-expect-error — a rail's glyph pair would point away from its desktop edge
+      <Navbar config={A} resolveHref={id} icon={icon} collapsible='always' collapsedAs='drawer' placement='left' drawerEdge='trailing' />,
+    );
+
+    expect(out).not.toContain("-scale-x-100 rtl:scale-x-100");
+  });
+
+  it("keeps drawerEdge off the rendered bar, which carries no attribute it would not carry without one", async () => {
+    const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' drawerEdge='trailing' />);
+    const details = /<details ([^>]*)>/.exec(out)?.[1] ?? "";
+
+    expect([...details.matchAll(/([\w-]+)(?:="[^"]*")?/g)].map(([, name]) => name)).toEqual(["data-slot", "class", "data-navbar-drawer"]);
   });
 
   it("leaves a hamburger toggle's glyph spans free of any mirroring class, drawer or not", async () => {
