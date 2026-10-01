@@ -1,11 +1,11 @@
 import { TOOLTIP_MOUNTED_ATTR } from "../contracts/toggle-contract";
-import { elementById, ownerWindow } from "./dom";
+import { ownerWindow } from "./dom";
 import type { TooltipOptions } from "./types";
 
 /** Mounts a tooltip's delayed show/hide behaviour and returns a disposer. */
 export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): () => void {
   const trigger = root.querySelector<HTMLElement>("[data-slot~='tooltip-trigger']");
-  const content = trigger ? elementById(trigger, trigger.getAttribute("aria-describedby") ?? "") : null;
+  const content = root.querySelector<HTMLElement>("[data-slot~='tooltip-content']");
   if (!trigger || !content) return () => {};
 
   const win = ownerWindow(root);

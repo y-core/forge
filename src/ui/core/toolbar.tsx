@@ -119,7 +119,8 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({
       slot,
       class: className,
       props: attrs,
-      type: "button",
+      type: rest.type,
+      defaultType: "button",
       ...(typeof rest.disabled === "boolean" ? { disabled: rest.disabled } : {}),
       message:
         "Toolbar.Button with asChild requires exactly one JSX element child (e.g. <a> or <button>); received a string, number, fragment, array, or empty child instead.",

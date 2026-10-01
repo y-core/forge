@@ -107,6 +107,15 @@ a composed element. A consumer keying on `[data-slot="…"]` exactly must make t
 `forge-ui.css` declares forge's one named anchor on the tooltip trigger slot alone, and the set is closed: `Tooltip.Trigger` is the only trigger
 compound offering `asChild`, which makes it always the outer wrapper.
 
+**Apply the intrinsic-element rules only to an intrinsic child.** `cloneAsChild` normalises `disabled` and `type` for a `<button>`, and turns
+`disabled` into `aria-disabled` on any other tag, because those are the attributes the element itself will render. A component child is not yet an
+element: it receives the compound's `disabled` as a prop only where the compound set it, and `type` by the one rule both kinds of child share —
+the caller's, then the child's own, then a default — and its own render decides what they become. The default is `"button"` for a `<button>`, and
+for a component only the `defaultType` its compound declares. `cloneAsChild` cannot see what a component renders, so it treats one carrying an
+`href` as a link, and a component carrying `href` never receives the compound's default. A compound forwards its caller's
+`type` as `type` and never passes its own default there, where it would overwrite a child's `type="submit"`.
+Erasing or translating them beforehand stripped `disabled` from a `Toolbar.Button` before it could resolve it into its own `aria-disabled`.
+
 **Destructure the inherited `"data-slot"` out of props and rewrite the literal in place** as `data-slot={slotToken("own-token", inherited)}`, own
 token first (`slotToken` is owned by `src/ui/core/utils/as-child.ts`). A bare literal loses the compound's own token to any caller that passes
 `data-slot`, because the rest-props spread that follows it wins. Rewrite in place rather than merging through a spread-last helper, which would move
@@ -183,6 +192,17 @@ skips the accordion, and a reader finds its sections by Tab instead, where each 
 buys it is everything §1h opens with: exclusive-open, the toggle, and correct first paint with no script. **A caller who needs `H` navigation
 renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
 did would be asserting a structure the platform contradicts.
+
+**Name an icon-only trigger with `kind="label"`, never with a description.** `Tooltip.Trigger` points `aria-describedby` at its content by
+default, which is right when the trigger already has a name. An icon-only button has none but the tooltip's text, and repeating that text as an
+`aria-label` beside a description announces it twice. `kind="label"` points `aria-labelledby` at the content instead and emits no description, so
+the tooltip is the name and is read once. A label-mode trigger carrying `aria-label` or `aria-labelledby` throws, because whichever name wins, the
+other is silently dead ([`ERROR_HANDLING.md`][eh-5a] §5a).
+
+**Render an inert tooltip trigger `aria-disabled`, never `disabled`.** A natively disabled button receives no pointer events and no focus, so the
+tooltip explaining why it is unavailable could never be shown. `Tooltip.Trigger` converts `disabled`, its own or an `asChild` child's, into
+`aria-disabled="true"` with the disabled state hook; the paint stays, the stylesheet leaves the trigger slot hoverable, and the click the platform
+would still act on is cancelled by the runtime ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
 
 **Stamp no scope on an overlay whose behaviour is wholly the platform's.** `Dialog`, `Popover`, `Accordion` and `Collapsible` ship neither scope nor
 controller. The one exception is `Dialog`'s `openModal`: a modal has no markup spelling at all, so `showModal()` has to run on resume, and that prop

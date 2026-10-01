@@ -70,6 +70,19 @@ describe("Accordion", () => {
   });
 });
 
+describe("Accordion nesting", () => {
+  it("leaves a nested item no ancestor group to rotate its chevron by", async () => {
+    const html = await render(
+      <Accordion.Item open>
+        <Accordion.Trigger icon={icon}>Section</Accordion.Trigger>
+      </Accordion.Item>,
+    );
+    const groupClasses = (selector: string) => classesOf(html, selector).filter((name) => name.startsWith("group"));
+
+    expect({ root: groupClasses('data-slot="accordion-item"'), chevron: groupClasses('data-slot="icon"') }).toEqual({ root: [], chevron: [] });
+  });
+});
+
 describe("Accordion.Trigger glyph typing", () => {
   it("accepts a sheet narrowed to iconName plus its own chevron-down, uncast, and leads with that glyph", async () => {
     const html = await render(

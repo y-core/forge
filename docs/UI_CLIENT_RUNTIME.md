@@ -17,77 +17,58 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 Runtime Boundary: pointer to the governance rule that owns it
-- §2 Mount Controllers: the browser controllers, their contracts, and what decides which are exported
+- §2 Mount Controllers: the disposer every controller returns, and what decides which are exported
 - §2a State-Only Islands versus Contract-Bearing Scopes: when to reach for `Resumable`, and when the scope root is hand-rendered
 - §2b Theme Controller and FOUC Prevention: where the theme surface lives, and what earns a pre-paint script
 - §2c The `turnstile` scope — CAPTCHA controller: component-scoped, eager by default, self-healing, fails visible, and the opt-in
   challenge-at-submit mode that holds a press and replays it
 - §2d The Disposer Contract: every controller returns one, and why
-- §2e mountMenu — Menu Keyboard Behaviour: what the platform owns and what the controller adds
-- §2f mountTabs — Selection and Panel Visibility: automatic versus manual activation
-- §2g mountTooltip — Hint Popover: why `popover="hint"` is what makes it compose
-- §2h mountNumberField — Stepper Buttons: why its scope is eager
 - §2i openPopoverAt — Coordinate Placement: the popup with no invoker to anchor to
 - §2j mountCarouselDots — Strip-Driven Dot Marker: why it lifts the selected spelling off the row instead of restating it
 - §2k mountScrollSpy — Fragment Nav Current Marker: what orders the entries, and what it refuses to emit
 - §2l mountViewportCollapse — Width-Driven Disclosure: which state the server renders, and how the user takes over
-- §2m announce — The Page's One Voice: channels, the settle, the cancel, and the channels forge speaks on
+- §2m announce — The Page's One Voice: channels, the settle, the cancel, and which channels belong to forge
 - §3 Signals and Lazy Loading: client state without a framework
 - §3a Signals — Reactive State: the settled-value guarantee and the rules that hold it up
 - §3b Lazy Loading: the deferred import, and the failure that must not be silent
-- §3c Resumable Scopes: `registerScope` and `resume`, and how a swapped-out scope is disposed
+- §3c Resumable Scopes: `registerScope` and `resume`, how a swapped-out scope is disposed, and the inert-click guard
 - §4 htmx Bundle Import: the side-effect entry point, the `forge-htmx` extension, and why htmx's indicator sheet is removed
 - §4a Which Responses Swap: HTML 4xx Yes, 5xx No: why a rendered refusal lands in its target, and any other failure does not
 - §4b Why the Entry Listens on `document`: htmx dispatches on `document` for an element a swap removed
 - §5 Never Use ui/client in an SSR Context: pointer to the governance rule that owns it
 
-Every exported symbol's signature, options and worked usage — the controller primitives, the globals a browser controller may not reach for, and
-`mountRovingFocus` among them — is documented with the export surface in [`src/ui/README.md`][ui-readme]. This document carries only what was
-decided and why.
-
----
-
-## 1. Runtime Boundary
-
-See [`BOUNDARIES.md`][boundaries-1] §1 for the SSR-versus-browser boundary, which subpath tiers may be imported where, and why it is kept by import
-path rather than a runtime check.
-
 ---
 
 ## 2. Mount Controllers
 
-Every mount controller is **idempotent per element and returns a disposer**, so calling one twice is safe and a controller can be torn down. §2d
-states that contract as a rule.
+Every mount controller is **idempotent per element and returns a disposer**, so calling one twice is safe and a controller can be torn down (§2d).
 
 **What a controller addresses decides whether it is exported.** A controller pointed at markup the consumer wrote is public and carries its own
-per-root guard: `mountScrollSpy`, `mountCarouselDots`, `mountViewportCollapse`, `openPopoverAt`, `mountRovingFocus`. A controller that is a
-registered scope's `setup` body is not: `mountMenu`, `mountTabs`, `mountTooltip`, `mountNumberField`, `mountInputFormat`, `mountTurnstile`,
-`mountExpandedState`. Those scopes are `eager`, so `resume()` is their only correct caller and a second call would double-mount. Being internal
-without being un-`@public` is what [`NAMESPACE_DESIGN.md`][nd-1c] §1c permits — its gate proves `@public → barrel`, not the converse.
-`mountRovingFocus` is public despite backing scopes of its own, because it is a primitive those scopes _call_ rather than a scope's `setup`.
+per-root guard, and the barrel `src/ui/client/mod.ts` names each one. A controller that is a registered scope's `setup` body is not exported,
+because those scopes are `eager`, `resume()` is their only correct caller, and a second call would double-mount; `src/ui/core/client.ts` registers
+them. Being internal without being un-`@public` is what [`NAMESPACE_DESIGN.md`][nd-1c] §1c permits — its gate proves `@public → barrel`, not the
+converse. `mountRovingFocus` is public despite backing scopes of its own, because it is a primitive those scopes _call_ rather than a scope's
+`setup`.
 
 ### 2a. State-Only Islands versus Contract-Bearing Scopes
 
 **`Resumable` is for a state-only island; a contract-bearing scope root is hand-rendered.** That is the rule, not a gap in `Resumable`.
 
-`ResumableProps` is `{ name, id, state, ref, class }` with no rest spread, and the closed shape is the job: the component resumes _state_, stamping
-`data-scope` and serialising `state` for the signals to rehydrate from. A wiring contract is a different mechanism — named attributes a controller
-reads off the element carrying `data-scope` — and wrapping that element in a `Resumable` does not help, because wrapping moves the attributes off
-the root the controller reads. Giving `Resumable` a rest spread would admit arbitrary attributes to a component whose whole value is its closed
-shape, and would make two mechanisms that do different jobs look interchangeable.
+`Resumable`'s props are a closed shape with no rest spread, and the closed shape is the job: the component resumes _state_, stamping `data-scope`
+and serialising `state` for the signals to rehydrate from. A wiring contract is a different mechanism — named attributes a controller reads off the
+element carrying `data-scope` — and wrapping that element in a `Resumable` moves the attributes off the root the controller reads. A rest spread
+would admit arbitrary attributes to a component whose whole value is its closed shape, and would make two mechanisms that do different jobs look
+interchangeable.
 
 **Reach for `Resumable` when the server hands the browser values to rehydrate; render the scope root by hand when the server hands it a contract to
-act on.** forge's one contract-bearing scope is the passkey ceremony's — `AuthPasskeyScope` in `src/auth/web/views/passkey-enrol.tsx`, stamping
-`auth`'s `PASSKEY_*` data ([`NAMESPACES.md`][namespaces-5h] §5h).
+act on.** The passkey ceremony is that case — `AuthPasskeyScope` in `src/auth/web/views/passkey-enrol.tsx` stamps `auth`'s `PASSKEY_*` data
+([`NAMESPACES.md`][namespaces-5h] §5h).
 
 ### 2b. Theme Controller and FOUC Prevention
 
-The theme surface is split across two subpaths, and the split matters:
-
-- **`@y-core/forge/ui/chrome`** (SSR) exports `FOUC_SCRIPT`, `THEME_ATTR`, `DARK_CLASS`, `THEME_STORAGE_KEY`, and the `ThemeToggle` component.
-- **`@y-core/forge/ui/chrome/client`** is a **side-effect module** that registers the `theme` and `navbar` resumable scopes — the latter applies the
-  bar's runtime auth filtering and drives its viewport collapse (§2l) — and exports the `isDark` signal.
+The theme surface is split across two subpaths, and the split matters. **`@y-core/forge/ui/chrome`** renders on the server: the pre-paint
+`FOUC_SCRIPT` and the `ThemeToggle` markup. **`@y-core/forge/ui/chrome/client`** is a **side-effect module** that registers the `theme` and
+`navbar` resumable scopes and exports the `isDark` signal.
 
 **`FOUC_SCRIPT` is an inline script for `<head>` that reads storage and sets the dark class before first paint**, so no wrong theme flashes.
 
@@ -103,22 +84,18 @@ rather than hidden:** the correction lands when the app's client entry runs, so 
 which the disclosure shows what the server rendered.
 
 **The theme preference is held per document, not per scope.** A navbar toggle beside a settings toggle is a legitimate composition, and each scope
-hydrating its own `pref` left the other advancing from a stale value. The shared state is refcounted per document, the same shape `resume.ts` uses
-(§3c), and its effects are created inside a **nested `withOwner`** so they land in a bag the resuming scope's own owner does not empty — otherwise
-the first toggle disposed would take the painting with it.
+hydrating its own preference left the other advancing from a stale value. Disposing one toggle therefore leaves the painting running for any other
+still live in the same document.
 
-**`isDark` is a stable binding over the live documents, not a slot.** Its getter delegates to the most recently acquired one, so it can be captured
-before `resume()` runs and still report the truth afterwards; release promotes whichever document is still live, falling back to a constant `false`
-when none is. A single slot fails both ways — a second document silently takes the export over, and disposing either leaves `isDark` reading a
-computed whose sources are dead.
+**`isDark` is a stable binding over the live documents, not a slot**, so it can be captured before `resume()` runs and still report the truth
+afterwards, and it reads `false` once no document holds a theme scope. A single slot fails both ways — a second document silently takes the export
+over, and disposing either leaves `isDark` reading sources that are dead.
 
-**Runtime auth filtering of the bar arrives as a document event, not through an exported setter.** The `navbar` scope applies the token list the
-event carries to every filterable descendant; the server seeds the same set at render, so the first paint is already correct. A channel rather than
-a forge-held signal, because the emitter — a login, an htmx swap, an app's own router — need not hold a reference to any forge module, and because
-where the event is dispatched is its address: on `document` every bar follows one push, on or inside one bar only that bar does. Each scope holds
-a capture-phase listener on its own root, so a dispatch on a bar reaches it whether or not the event bubbles or is composed, inside an open shadow
-root too, and a document listener that applies only an event dispatched on the document itself. Both are removed by the disposer `setup` returns
-(§2d). `src/ui/README.md` owns the event's name and payload shape.
+**Runtime auth filtering of the bar arrives as an event, not through an exported setter.** The server seeds the same token set at render, so the
+first paint is already correct. A channel rather than a forge-held signal, because the emitter — a login, an htmx swap, an app's own router — need
+not hold a reference to any forge module. **Where the event is dispatched is its address**: dispatched on `document`, every bar follows it;
+dispatched on or inside one bar, only that bar does, whether or not the event bubbles and inside an open shadow root too. `src/ui/README.md` owns
+the event's name and payload shape.
 
 **Any script on the page may dispatch it, and that is a ratified fail-open, not a hole** ([`BOUNDARIES.md`][boundaries-5c] §5c). The listeners take
 any dispatcher and the payload is unauthenticated, so a forged `navbar:filters` can repaint the bar with any token set. What it cannot do is widen
@@ -135,7 +112,7 @@ exported from `ui/client`**: a global one in a shared client entry runs on every
 
 **Its argument is the tree it searches, and it is required.** Given the scope root — which _is_ the widget — it matches that node before descending;
 given an enclosing element it searches within it, so a page with several widgets mounts one controller each. Searching the whole document instead
-resolved every widget to the first one. It finds its `<form>` and site key from the markup, with no selector to configure, and no-ops — reporting —
+resolves every widget to the first one. It finds its `<form>` and site key from the markup, with no selector to configure, and no-ops — reporting —
 when either is absent from the tree it was given.
 
 **The server is the only enforcement point, in either mode.** `verifyTurnstile` ([`INPUT_VALIDATION.md`][iv-4a] §4a) fails closed, so nothing the
@@ -145,9 +122,8 @@ Its deliberate behaviours:
 
 - **Eager by default, deferrable per widget.** The script loads at mount, so a challenge is solved before the reader reaches submit. `load="focus"`
   defers to the first `focusin` within the form, for a form incidental to its page. **There is no third, app-triggered mode**: `"lazy"` would
-  collide with `ui/client`'s `lazy()`, which means an IntersectionObserver. It renders with `?render=explicit` and function-ref callbacks — no
-  global callback names, no document scan — on the script's `load` event, and **never calls `turnstile.ready()`**, which throws under an async load.
-  **The preconnect hint is the app's job**; forge has no page-head API to hang it on.
+  collide with `ui/client`'s `lazy()`, which means an IntersectionObserver. **It never calls `turnstile.ready()`**, which throws under an async
+  load.
 - **The post-render focus guard is armed unconditionally; the restore acts only on a focus the reader held.** Turnstile steals focus a beat after
   `render` returns, by which time an eagerly rendered page's reader has clicked the first field — so arming on a held focus alone left that page
   undefended, while a restore needs somewhere to restore _to_. A `focusout` from inside the container is ignored, so tabbing between fields is
@@ -161,14 +137,12 @@ Its deliberate behaviours:
 - **The container reserves the widget's box only when the widget is always visible.** The reservation is keyed on `appearance`, not `challenge`:
   `always` holds Cloudflare's published dimensions so the eager render stops shifting first paint, while `execute` and `interaction-only` reserve
   nothing rather than leaving a permanent hole. Classes, never a `style` attribute ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a).
-- **The token is scoped to the form's own action, and to its own submission.** `action` and `cData` reach `turnstile.render` and are the halves of
-  `verifyTurnstile`'s `expectedAction` and `expectedCData`; without `action` a token minted on one form verifies at any endpoint on the host.
-  `responseFieldName` reaches Cloudflare as `response-field-name` and renames the hidden input the server's `tokenField` reads, which is what lets
-  widgets share a form. A value outside `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the server
-  stays the one enforcement point; `responseFieldName` carries no pattern, being an HTML field name forge has no charset ruling for. **One predicate
-  decides both htmx seams — the `htmx:config:request` hold and the `htmx:finally:request` reset — by testing the element htmx issued the request
-  from**, so a descendant field's own request is neither held nor reset and cannot burn the single-use token. **The test is structural because the
-  answered URL cannot bear it**: a redirect leaves `responseURL` naming a URL the form never declared.
+- **The token is scoped to the form's own action, and to its own submission.** `action`, `cData` and `responseFieldName` are the widget halves of
+  `verifyTurnstile`'s options, and why each pair must be set together is [`INPUT_VALIDATION.md`][iv-4a] §4a's. A value outside
+  `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the server stays the one enforcement point.
+  **One predicate decides both htmx seams — the `htmx:config:request` hold and the `htmx:finally:request` reset — by testing the element htmx
+  issued the request from**, so a descendant field's own request is neither held nor reset and cannot burn the single-use token. **The test is
+  structural because the answered URL cannot bear it**: a redirect leaves `responseURL` naming a URL the form never declared.
 - **Self-healing token, with expiry and timeout left to Cloudflare.** The token resets whenever one of the form's own requests ends — a success, an
   error status or a network failure; the form clears only on a 2xx. No `expired-callback` or `timeout-callback` is wired — `refresh-expired` and
   `refresh-timeout` both default to `auto`, so a `reset()` of forge's own was redundant at best and a second challenge at worst.
@@ -188,27 +162,26 @@ Its deliberate behaviours:
   `disabled` and `aria-busy` for the window, since htmx's own indicators start only once the request is issued. **The hold is conditional on widget
   health**: a render that threw, a pre-press `error-callback` or a script that never loaded lets the press through unheld for `verifyTurnstile` to
   refuse, rather than sitting disabled for `TURNSTILE_EXECUTE_TIMEOUT_MS`. **An interactive challenge swaps the budget rather than standing it
-  down** — the busy state drops while the reader is asked to click, and the 15s timer gives way to `TURNSTILE_INTERACTIVE_TIMEOUT_MS` (60s), well
-  inside the token's ~300s life. **On failure the held request is dropped rather than issued**: a tokenless POST answers with a refusal naming the
-  schema's first field, which reads as a validation error the reader cannot act on. The fallback is revealed and a second press retries.
+  down** — the busy state drops while the reader is asked to click, and the window becomes `TURNSTILE_INTERACTIVE_TIMEOUT_MS`, well inside the
+  token's life. **On failure the held request is dropped rather than issued**: a tokenless POST answers with a refusal naming the schema's first
+  field, which reads as a validation error the reader cannot act on. The fallback is revealed and a second press retries.
 - **The press is held at `htmx:config:request` and replayed when the token arrives.** The controller cancels htmx's request and records the control
   pressed; on the token it dispatches the press again — a `submit` carrying that control as its submitter for a form, a `click` for a control — and
   the replayed press goes through because the token input is now filled. **Holding inside htmx's request instead would fail on each count**: htmx
   has collected the body before any hook runs, so the token would have to be patched into it; htmx's own request timeout would race the interactive
   window; and htmx's per-element request queue would break last press wins.
 - **An invalid form spends no challenge wherever htmx halts it, and forge runs no validity check of its own.** htmx validates a form before
-  `htmx:config:request` fires, so a press it halts never reaches the hold. **On a `novalidate` form, or a button-issued submission, an invalid press
-  therefore spends a challenge** — htmx sends the request either way.
+  `htmx:config:request` fires, so a press it halts never reaches the hold. **On a `novalidate` form, a button-issued submission, or a press whose
+  control carries `formnovalidate`, an invalid press therefore spends a challenge** — htmx sends the request either way.
 - **A form whose own `hx-trigger` names some other event is not supported in submit mode.** Its press is held like any other, but the replay issues
-  only a `submit` or a `click`, which that form does not listen for — so the press is never sent. Every submission the controller treats as the
-  form's own by default is a `submit` or a `click`, and the replay is deliberately not generalised to an arbitrary trigger.
+  only a `submit` or a `click`, which that form does not listen for — so the press is never sent. The replay is deliberately not generalised to an
+  arbitrary trigger.
 - **Last press wins, because each replay carries its own submitter, and every dropped press is reported.** A second press displaces the first and
   re-arms the window but rides the challenge in flight, so one press stays one challenge, and the replay carries the second press's control alone —
-  answering with the first would send one button's `name=value` under the other's press. Every hold that ends without a
-  request dispatches `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, carrying `TurnstileAbandonedDetail` — `reason`
-  (`timeout`, `interactive-timeout`, `error`, `unsupported`, `superseded`) and the `submitter`, un-busied before dispatch so a handler that focuses
-  it finds a live target. It deliberately carries no way to release the held press: reviving it is the tokenless POST the drop exists to prevent.
-  Teardown is the one silent exception, since it runs mid-swap into a page already going away.
+  answering with the first would send one button's `name=value` under the other's press. Every hold that ends without a request dispatches
+  `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, its detail a `TurnstileAbandonedDetail`; the submitter is un-busied
+  before dispatch so a handler that focuses it finds a live target. It deliberately carries no way to release the held press: reviving it is the
+  tokenless POST the drop exists to prevent. Teardown is the one silent exception, since it runs mid-swap into a page already going away.
 - **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx verb fires no `htmx:config:request` and has no request to
   hold, so the controller reports the authoring error and falls back to `challenge="render"` — a degraded form, never a dead submit button.
 
@@ -222,9 +195,9 @@ runs every disposer collected during that resume, so the two halves fit without 
 starts handling the same keystroke several times.
 
 **The runtime owns the effects a `setup` creates; the author owns everything else.** Every `effect` created while a scope's `setup` runs is
-collected and disposed with the scope — `withOwner` is the primitive, and the scope runtime is its only caller. What a `setup` _returns_ is for what
-the runtime cannot see: listeners, observers, timers, controller handles. It runs **after** the scope's effects are disposed, so no reactive
-computation is alive while an author's teardown mutates the DOM those effects write to.
+collected and disposed with the scope. What a `setup` _returns_ is for what the runtime cannot see: listeners, observers, timers, controller
+handles. It runs **after** the scope's effects are disposed, so no reactive computation is alive while an author's teardown mutates the DOM those
+effects write to.
 
 **Ownership is the window in which `setup` runs, and nothing wider.** An effect created in an `on` handler, or in a `.then()` resolving after
 `setup` returned, is owned by nothing and must be disposed by whoever created it — per-invocation ownership would be wrong more often than right,
@@ -239,50 +212,6 @@ These consequences follow, each the rule rather than a special case:
   unreachable by every teardown and inert on re-resume, which is a worse failure than the throw.
 - **A throwing disposer is reported and does not stop the rest of teardown.** Teardown iterates every live scope, so one failure must not silently
   skip the scopes queued behind it.
-
-### 2e. `mountMenu` — Menu Keyboard Behaviour
-
-**It opens and closes only what the horizontal arrows ask it to.** Opening, closing, light-dismiss, Escape and top-layer stacking belong to the
-Popover API, and selecting an item closes the menu through `command="hide-popover"` ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h). What is left is what
-ARIA's menu pattern asks for and the platform does not supply: arrow navigation, typeahead, focus management, and the two arrows that move between a
-panel and its submenu.
-
-**The two horizontal arrows go through the platform rather than around it**, and which arrow means which is **resolved from the popup's own writing
-direction** rather than hardcoded — so the pair mirrors under `dir="rtl"`, including for a single RTL subtree inside an LTR page. The key pointing
-_toward_ the submenu clicks the row's own trigger, whose `command="toggle-popover"` opens the panel; the key pointing _away_ calls `hidePopover()`,
-the same path Escape already takes, so focus restoration is one `toggle` handler rather than a second parallel one.
-
-**Both keys are guarded twice**, and neither guard is optional: the handler bails on `event.defaultPrevented`, because `keydown` bubbles from an
-open submenu to the panel containing it and without the bail both controllers act on one press; and it calls `preventDefault()` on every key it
-consumes, which is the other half of that contract.
-
-Further rulings: this lives in a controller mounted on the popup, **never in the scope system**, whose delegated vocabulary carries no
-`keydown` by decision (§3c). **The opener is captured, not derived from `commandfor`** — a menu can be opened by any invoker, and a context menu has
-no single trigger button. And **it does no anchoring at all**: an invoker-opened popup gets an implicit anchor, so every panel and submenu is placed
-by CSS alone (§2i).
-
-### 2f. `mountTabs` — Selection and Panel Visibility
-
-Adds the part specific to tabs on top of the composite controller: moving the selection, and the panel visibility that follows it. **Panels are
-found through the `aria-controls` the markup already declares**, so there is no second registry to keep in step.
-
-**Automatic activation rides `focusin`**, which the arrow keys already produce, so the selection follows roving focus without this controller
-knowing which key moved it. Manual activation listens for `click`; which applies is read from the root's `data-activation`.
-
-### 2g. `mountTooltip` — Hint Popover
-
-**`popover="hint"` is the reason it composes**: a hint does not close an `auto` popover, so a tooltip on a menu item does not dismiss the menu
-underneath it.
-
-### 2h. `mountNumberField` — Stepper Buttons
-
-Wires the increment and decrement buttons to the native input's own `stepUp` / `stepDown`, so `min`, `max` and `step` are enforced by the platform
-rather than re-implemented.
-
-**Its scope is eager, and that is forced by the markup**: the steppers carry no `data-on-*` action, so a lazy scope would have nothing to resume it
-and the buttons would sit inert. The same reasoning makes `toolbar`, `menu`, `tabs` and `tooltip` eager — every one is setup-only. `Dialog`,
-`Popover`, `Accordion` and `Collapsible` stamp no scope at all, because the platform does the whole job — except a `Dialog` given `openModal`, whose
-scope exists solely to call `showModal()` on resume, the one opening markup cannot express ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h).
 
 ### 2i. `openPopoverAt` — Coordinate Placement
 
@@ -304,17 +233,16 @@ to nothing, and the UA's `[popover]` default centres the panel — the one place
   once after. Both in one task, so the browser paints the corrected position rather than the provisional one.
 - **A menu opened from `contextmenu` must be held back until the button is released**, or the platform light-dismisses it on the very `pointerup`
   that ended the right-click: `contextmenu` fires _between_ `pointerdown` and `pointerup`, and the dismiss pass on that release finds neither target
-  inside a popup. `afterPointerUp` defers the show to a one-shot **capture-phase** `pointerup` on the owner document, ahead of the dismiss pass's
-  own listeners and before any paint. Callers pass `event.buttons !== 0`, never a flat `true`: a keyboard-raised `contextmenu` (Menu key,
-  `Shift+F10`) reports no buttons and is followed by no release, so an unconditional guard arms a listener the _next_ unrelated click fires.
+  inside a popup. `afterPointerUp` defers the show to a **capture-phase** `pointerup` on the owner document, ahead of the dismiss pass's own
+  listeners and before any paint. Callers pass `event.buttons !== 0`, never a flat `true`: a keyboard-raised `contextmenu` (Menu key, `Shift+F10`)
+  reports no buttons and is followed by no release, so an unconditional guard arms a listener the _next_ unrelated click fires.
 
 The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the coordinate rule; `openPopoverAt` stamps it too, so a
 popup that opens both ways needs no second markup variant. Calling it again **repositions** an open popup.
 
-**It returns a disposer, because the deferred path arms a listener.** It cancels a pending arm, and a second call on the same element cancels the
-first, which would show at stale coordinates on the next release. The deferred show bails once the element has left the document, so an htmx swap
-between arm and release never reaches `showPopover()`. A popup open when its region swaps keeps its placement into the settle, so the caller closes
-it first.
+**It returns a disposer, because the deferred path arms a listener.** A second call on the same element cancels the first's pending show, which
+would otherwise land at stale coordinates on the next release, and a show deferred past an htmx swap that removed the element never happens. A
+popup open when its region swaps keeps its placement into the settle, so the caller closes it first.
 
 ### 2j. `mountCarouselDots` — Strip-Driven Dot Marker
 
@@ -322,8 +250,8 @@ it first.
 A dot is a fragment link: pressing it moves the strip, but nothing in the platform moves the highlight with it. This controller closes that gap and
 nothing else — the scrolling stays the platform's.
 
-**It observes the slides against the _strip_ as the observer root, not the viewport**, and marks the dot of the slide with the highest intersection
-ratio — against the viewport every slide of a visible strip intersects at once.
+**It observes the slides against the _strip_ as the observer root, not the viewport**, because against the viewport every slide of a visible strip
+intersects at once.
 
 **It lifts both class spellings off the server-rendered row rather than restating them.** Unlike `mountScrollSpy`'s nav, a dot's selected look is
 baked into utility classes by `Pagination.Item`'s variants, so there is no attribute for a stylesheet to select on. Reading the `on` and `off`
@@ -344,11 +272,9 @@ destinations are all one document.
 **Entries are ordered by the _targets'_ document position, never by link order.** "Which section is being read" is a question about the page, and a
 nav may list its links in whatever order reads best.
 
-**The offset line is read off the page, never configured.** The band opens one pixel below the root element's `scroll-padding-top` plus the largest
-`scroll-margin-top` among the spied targets — the offset a fragment jump already lands at, so the section the jump lands is the one marked. The
-largest margin is taken because the band is one rectangle for every target, and one past it clears the tallest header any target declares; the
-edge is exclusive by one pixel because an edge-adjacent box counts as intersecting, which would otherwise mark the section ending at the line. The
-offset is read once, at mount, and one past 30% of the viewport leaves the band empty, so nothing is marked.
+**The offset line is read off the page unless the caller passes a `rootMargin`.** It comes from the root element's `scroll-padding-top` and the
+spied targets' `scroll-margin-top` — the offset a fragment jump already lands at, so the section the jump lands is the one marked. It is read once,
+at mount.
 
 **It emits `aria-current` and nothing else, with the value `location` rather than `page`.** The visible cue is selected from the attribute directly
 by the stylesheet, so there is no parallel `data-*` state to keep in step, and `page` would announce a navigation that never happened. **The marker
@@ -384,43 +310,34 @@ property rather than through `instanceof`, for the cross-realm reason `src/ui/RE
 ### 2m. `announce` — The Page's One Voice
 
 **Every announcement goes through `announce()`, into the two regions `<Announcer />` renders** ([`UI_SSR_COMPONENTS.md`][usc-1o] §1o). Separate
-live regions interleave their speech with no order between them. So a toast, a field error, a busy indicator, a failure panel and a Turnstile
-failure are all visual, and hand their text over rather than speaking for themselves.
+live regions interleave their speech with no order between them, which is why forge's own visual components hand their text over rather than
+speaking for themselves.
 
 **A channel is a stream in which only the latest message matters.** A message waits `ANNOUNCE_SETTLE_MS` before it is spoken, and a later message
 on the same channel replaces it, so a burst of status text is heard once, as its final state. **An identical consecutive message on a channel is
-skipped unless `repeat` is set.** forge's toast, field-error, failure, busy and passkey sites set it, because a second toast, a second failed
-submission or a second refused ceremony is a new event even in the same words; the Turnstile message does not. **Empty text cancels the channel's
-pending message and forgets its last one**, so a prompt cancelled with Esc and raised again is spoken again.
+skipped unless `repeat` is set** — set it where a second identical message is a new event, as a second failed submission is. **Empty text cancels
+the channel's pending message and forgets its last one**, so a prompt cancelled with Esc and raised again is spoken again.
 
 **Each message is appended to its region as a node of its own, and removed after `ANNOUNCE_LINGER_MS`.** Two channels settling together both reach
 the screen reader rather than the second overwriting the first before it is read, and a repeat is a new node rather than a rewrite of the old one.
 The regions are not `aria-atomic`, so an addition is read alone and a message still lingering is never spoken twice. Removing it keeps spent text
 out of a browse-mode reader's path.
 
-**The toast channel is the one that never drops a message.** A later toast joins the pending ones instead of replacing them, so two toasts from
-separate swaps inside one settle are both spoken. Toasts reach it through `announceToast`, which is internal; no app message shares a channel with a
-toast or with the Turnstile failure, so neither is cancelled by the app's own `announce()`.
+**An app message uses a channel of its own, never one forge speaks on.** Sharing one would let the app's `announce()` cancel or replace forge's
+message. `ui`'s channels are the `ANNOUNCE_*_CHANNEL` constants in `src/ui/contracts/announcer-contract.ts`; the passkey ceremony in
+`auth/client` speaks on one of its own. **The toast channel is the one that never
+drops a message**: a later toast joins the pending ones instead of replacing them, so two toasts from separate swaps inside one settle are both
+spoken.
 
-| Site | Channel | Politeness |
-| --- | --- | --- |
-| `Toast.Container`: the toasts it holds at load, and each one inserted later, `FlashOob` included | `toast` | polite |
-| A failed submission's first `FieldError`: at load through the announcer's own scope, after a swap on `htmx:after:process` | `form-error` | assertive |
-| The first element carrying `ANNOUNCE_FAILURE_ATTR`, its value the message: at load through the announcer's scope, after a swap on `htmx:after:process` | `failure` | assertive |
-| A 4xx response's text when its type is not `text/html`, on `htmx:after:request`, in place of the swap (§4a) | `failure` | assertive |
-| A `Spinner` in the request's indicator, on `htmx:before:request`; one a swap inserts already visible, on `htmx:after:process` | `busy` | polite |
-| The `Turnstile` fallback or unsupported message, when the controller reveals it | `turnstile` | assertive |
-| A passkey ceremony's outcome in `auth/client`, a missing WebAuthn at mount included | `passkey` | assertive for a refusal, polite for a success |
-
-**The busy channel exists for its cancel.** The entry sends it empty text when a request ends, so a request answered inside the settle is never
-announced: the reader hears the spinner's label only for a wait long enough to notice. **The cancel rides `htmx:after:request` and `htmx:error`,
-never `htmx:finally:request`.** htmx fires `htmx:after:request` when the response arrives and before it swaps, and `htmx:error` covers a network
-failure, which never reaches `htmx:after:request`. `htmx:finally:request` fires only after the swap, so a cancel there would silence the spinner
-the swapped content had just queued.
+**The busy channel exists for its cancel.** The htmx entry sends it empty text when a request ends, so a request answered inside the settle is
+never announced: the reader hears the spinner's label only for a wait long enough to notice. **The cancel rides `htmx:after:request` and
+`htmx:error`, never `htmx:finally:request`.** htmx fires `htmx:after:request` when the response arrives and before it swaps, and `htmx:error`
+covers a network failure, which never reaches `htmx:after:request`. `htmx:finally:request` fires only after the swap, so a cancel there would
+silence the spinner the swapped content had just queued.
 
 **Without an `<Announcer />` the call is a no-op that warns once per document.** A missing announcer is one layout mistake, and a warning per call
-would bury every other one. **The state is per document**, in a `WeakMap` keyed by it, so a frame's announcer is its own, and `within` takes any
-node in the document to speak in.
+would bury every other one. **The state is per document**, so a frame's announcer is its own, and `within` takes any node in the document to speak
+in.
 
 ---
 
@@ -434,14 +351,12 @@ state that must survive navigation or be authoritative belongs on the server.
 **The engine is deliberately in-house, and those names are the migration boundary.** A seam this small sits below the cost of a facade over a
 third-party graph; swapping the implementation behind them is the whole migration if that ever inverts.
 
-**By the time a write returns, every dependent has observed the settled value.** A write enqueues its subscribers and the queue drains synchronously
-— re-read after each run rather than snapshotted, which collapses a chain to a single run of its shared reader. Synchronous rather than deferred to
-a microtask: a scope action writes a signal, and the painted DOM has to be there before the handler returns.
+**By the time a write returns, every dependent has observed the settled value.** The flush is synchronous rather than deferred to a microtask,
+because a scope action writes a signal and the painted DOM has to be there before the handler returns.
 
 **A `computed` is lazy and pull-based**, so a read answers from its sources' _current_ values and nothing can observe a derived value assembled
-before one of its sources moved — the torn read an eager, push-based derivation produces. Whether a derived value really moved is decided at dequeue
-against a per-source version that advances only on a real `Object.is` change, so an effect whose sources moved under an unchanged value is dropped
-without running. **There is deliberately no dirty flag**: an "already dirty, so stop propagating" short-circuit cannot coexist with the
+before one of its sources moved — the torn read an eager, push-based derivation produces. An effect whose sources moved under an unchanged value is
+dropped without running. **There is deliberately no dirty flag**: an "already dirty, so stop propagating" short-circuit cannot coexist with the
 throw-clears-the-queue rule below, because a flush abandoned by a thrower would leave the computed marked dirty and wedge its queued reader for
 good.
 
@@ -461,8 +376,7 @@ than the first line: an effect that writes the signal it reads is refused by the
 ### 3b. Lazy Loading
 
 `lazy` defers a dynamic import until the element carrying its `data-ref` **intersects the viewport** — an IntersectionObserver, not an idle
-callback. It takes an **options object**, not positional arguments, and accepts `within` so a controller inside an iframe or a shadow tree searches
-its own document.
+callback.
 
 **A missing anchor and a missing IntersectionObserver both report.** Either leaves the module never loaded, which is indistinguishable from never
 having been scheduled unless it is said out loud.
@@ -472,46 +386,40 @@ with nowhere to go is the one outcome this module refuses. The element is re-obs
 cap exists because `observe()` invokes its callback _immediately_ for an element already on screen, so an uncapped re-observe on a visible element
 is a spin loop; the delay is what makes the retry a retry. Re-observing rather than calling `load()` again keeps an element scrolled out of view
 waiting for re-entry instead of loading off-screen. A throw from `init` is reported the same way and stops there, since the load succeeded. The
-disposer clears a pending retry timer, so a load still in flight when a scope tears down neither re-observes nor runs `init`.
+disposer clears a pending retry, so a load still in flight when a scope tears down neither re-observes nor runs `init`.
 
 ### 3c. Resumable Scopes
-
-`registerScope` binds a scope's actions; `resume` installs the single delegated island listener that drives every registered scope.
 
 **Register every scope before calling `resume()`**, the side-effect import that registers forge's own scopes included
 ([`UI_SSR_COMPONENTS.md`][usc-2d] §2d).
 
 **A component whose markup names a scope must guarantee the scope exists.** A side-effect module registering scopes for markup a _sibling_ renders
 imports the module those scopes live in, rather than leaving the app to discover the dependency from a warning. `ui/chrome/client` imports
-`ui/core/client` for exactly this reason: chrome markup names the `menu` and `toolbar` scopes.
+`ui/core/client` for exactly this reason: chrome markup names scopes `ui/core/client` registers.
 
 **A scope is lazy by default and resumes on the first delegated interaction inside it; an `eager` scope runs its `setup` at `resume()`.** Choose
-`eager` whenever the markup carries no `data-on-*` action of its own, because a lazy scope then has nothing that could ever resume it — that is the
-whole setup-only family (§2h), and it is a correctness requirement rather than a performance preference.
+`eager` whenever the markup carries no `data-on-*` action of its own, because a lazy scope then has nothing that could ever resume it — a
+correctness requirement rather than a performance preference.
 
-**Scope discovery descends into open shadow roots.** The eager pass walks the tree rather than running one flat `querySelectorAll`, because a
-selector cannot cross a shadow boundary: a scope rendered inside a web component would never be _visited_, so its `setup` would never run and
-nothing would warn. Only an eager scope fails that way — the delegated half climbs out through `host`. `resume(within)` accepts a `ShadowRoot` as
-the walk root, so a web component can resume only its own subtree; the delegated listeners still go on the containing document, the scope events
-being composed.
+**Scope discovery descends into open shadow roots.** A selector cannot cross a shadow boundary, so an eager scope rendered inside a web component
+would otherwise never be visited, its `setup` would never run, and nothing would warn. `resume(within)` accepts a `ShadowRoot`, so a web component
+can resume only its own subtree.
 
-**Installing the listeners and resuming a tree are two jobs, and `resume` keeps them apart.** The delegation is installed once per **document** and
-refcounted by the live `resume` calls holding it; the eager pass runs on **every** call, over the root it was given. Conflating the two would make
-`resume()` followed by `resume(shadowRoot)` return the first call's disposer without ever visiting the shadow subtree. Each call's disposer owns
-only the scopes that call resumed; when its release takes the refcount to zero, it first disposes every scope still active in the document — a
-lazily-resumed scope belongs to no call's set and would otherwise outlive the listeners that were its only route to teardown.
+**Installing the listeners and resuming a tree are two jobs, and `resume` keeps them apart.** The delegation is installed once per **document**; the
+eager pass runs on **every** call, over the root it was given, so `resume()` followed by `resume(shadowRoot)` still visits the shadow subtree. Each
+call's disposer owns only the scopes that call resumed, and the release that removes the listeners first disposes every scope still active in the
+document — a lazily-resumed scope belongs to no call's set and would otherwise outlive its only route to teardown.
 
-**One scope's `setup` cannot take the page down.** Each eager `setup` runs inside its own try/catch: a throw is reported against the scope's name
-and the loop continues, so later scopes still resume and a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_
-on malformed `data-state` rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` produced a
-scope whose every signal was missing.
+**One scope's `setup` cannot take the page down.** A throw from an eager `setup` is reported against the scope's name and the loop continues, so
+later scopes still resume and a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_ on malformed `data-state`
+rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` produced a scope whose every signal
+was missing.
 
 **A removal is not a resume, so the htmx entry sweeps after every swap.** Detached scopes are otherwise swept only as something else resumes, so a
-swap that removes scoped markup and introduces none never reaches the sweep — and `active` is a strong `Map` whose retained closures hold live
-document-level listeners (`drawer.ts`'s `keydown`, `bind.ts`'s `reset`, the navbar filter channel). That is a leak rather than untidiness, so
-`ui/client/htmx` runs `sweepDetachedScopes` on `htmx:finally:swap`, disposing every scope whose root has left its document. **It is a sweep rather
-than a per-element hook** because htmx's `htmx:before:cleanup` fires only for elements that carry htmx attributes, and a plain `data-scope` subtree
-inside a swapped container carries none.
+swap that removes scoped markup and introduces none never reaches the sweep — and a retained scope keeps its document-level listeners alive. That
+is a leak rather than untidiness, so `ui/client/htmx` disposes every scope whose root has left its document on `htmx:finally:swap`. **It is a sweep
+rather than a per-element hook** because htmx's `htmx:before:cleanup` fires only for elements that carry htmx attributes, and a plain `data-scope`
+subtree inside a swapped container carries none.
 
 **`disposeScopesIn` is for an app's own removals.** It disposes the scope at an element and every scope below it before the app detaches them — a
 removal htmx did not make raises no swap event, so nothing else would dispose those scopes until the next resume.
@@ -521,20 +429,25 @@ at their **own widget root**, where arrow keys and typeahead belong: a page-leve
 which of several live widgets it was meant for — a question the widget's own root answers by construction. The vocabulary is declared once and
 shared by the runtime's listeners and the server's emitted `data-on-*` attributes, so adding an event changes every attribute the server writes.
 
-**One further delegated listener bridges native Invoker Commands, and it is not another entry in that vocabulary.** `resume` installs a `command`
-listener alongside them, routing **only custom commands** — those whose name begins with `--`. The platform's built-ins are left entirely to the
-platform, which is what the markup-only menu of §2e depends on. The invoker enters the same walk a `data-on-*` action does, so one handler table
-serves both routes and the server writes no new attribute. **That listener must be capture-phase**, and that is the platform's constraint rather
-than a preference: `command` is dispatched with `bubbles: false`, so a bubble-phase delegated listener never sees it and every custom invoker action
-goes dead — silently, because the invoker still fires and the platform still ignores a command it does not know.
+**One further delegated listener bridges native Invoker Commands, and it is not another entry in that vocabulary.** It routes **only custom
+commands** — those whose name begins with `--` — and leaves the platform's built-ins entirely to the platform, which is what the markup-only menu of
+[`UI_SSR_COMPONENTS.md`][usc-1h] §1h depends on. The invoker enters the same handler table a `data-on-*` action does, so the server writes no new
+attribute. **That listener must be capture-phase**, and that is the platform's constraint rather than a preference: `command` is dispatched with
+`bubbles: false`, so a bubble-phase delegated listener never sees it and every custom invoker action goes dead — silently, because the invoker
+still fires and the platform still ignores a command it does not know.
+
+**An inert element runs no action, and the runtime stops the platform acting on an `aria-disabled` one too.** Neither route runs an action on a
+`disabled` or `aria-disabled="true"` element. `aria-disabled` is only advisory to the platform, which still submits, navigates, fires `command` and
+toggles `popovertarget` on a click, so `resume` also cancels, in the capture phase, any click inside an `aria-disabled="true"` element before a
+listener or a default acts on it. Enter and Space on such an element arrive as that same click.
 
 ---
 
 ## 4. htmx Bundle Import
 
-**`@y-core/forge/ui/client/htmx` is imported for its side effect only, from the client entry.** Importing it loads htmx, which attaches itself to
-`window`; registers the `forge-htmx` extension; decides which responses swap (§4a); removes htmx's own indicator stylesheet; and wires resumable
-scopes and the announcer to htmx's events on `document` (§4b).
+**`@y-core/forge/ui/client/htmx` is imported for its side effect only, from the client entry.** It loads htmx, registers the `forge-htmx`
+extension, decides which responses swap (§4a), removes htmx's own indicator stylesheet, and wires resumable scopes and the announcer to htmx's
+events on `document` (§4b).
 
 **The `forge-htmx` extension is how htmx meets Trusted Types.** It hands htmx a named pass-through policy for the HTML and script sinks htmx writes
 to, so a CSP that requires Trusted Types can name it, and it refuses a request whose URL is `js:` or `javascript:`, which htmx would otherwise
@@ -551,14 +464,14 @@ restate which modules are side-effectful. **Never import htmx from a CDN URL**: 
 
 ### 4a. Which Responses Swap: HTML 4xx Yes, 5xx No
 
-**A 4xx `text/html` response swaps into its target, and no other failure does.** The entry adds every 5xx to htmx's `noSwap` list beside its 204 and
-304; on `htmx:after:request` it sets a 4xx of any other type to swap `none` and speaks its text on the `failure` channel (§2m).
+**A 4xx `text/html` response swaps into its target, and no other failure does.** A 5xx never swaps, and a 4xx of any other type swaps nothing and
+has its text spoken on the `failure` channel (§2m).
 
 **An HTML 4xx swaps because forge answers a refused submission with a fragment written for the target**: `defineAction`'s 422 of validation errors,
-and the `auth` actions' form re-rendered at 422 with a `FieldError` (§2m). Suppressing it would leave the reader no word of what was wrong.
+and the `auth` actions' form re-rendered at 422 with a `FieldError`. Suppressing it would leave the reader no word of what was wrong.
 
-**Any other failure does not swap because it is not markup written for the target.** A CSRF or cross-origin refusal at 403, a 404 and a 429 answer
-in plain text, and forge's 5xx bodies are a full error page or plain text; swapped in, either would replace the form or card it answers.
+**Any other failure does not swap because it is not markup written for the target.** forge's CSRF and cross-origin refusals, its 404 and its 429
+answer in plain text, and its 5xx bodies are a full error page or plain text; swapped in, either would replace the form or card it answers.
 
 **An element's `hx-status:` attribute overrides the content-type rule**, because htmx reads it after `htmx:after:request`: `hx-status:403` swaps a
 403 whatever its type. A handler that answers a swap request with an HTML 4xx owns the body it sends.
@@ -575,8 +488,9 @@ element still in the page bubbles to `document`, so one listener there hears bot
 
 ## 5. Never Use `ui/client` in an SSR Context
 
-See [`BOUNDARIES.md`][boundaries-1a] §1a and §1b for the tier table and for splitting a component across the boundary. Each forge subpath a tier
-covers is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] §3a).
+See [`BOUNDARIES.md`][boundaries-1] §1 for the SSR-versus-browser boundary and why it is kept by import path rather than a runtime check, and
+[`BOUNDARIES.md`][boundaries-1a] §1a and §1b for the tier table and for splitting a component across the boundary. Each forge subpath a tier covers
+is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] §3a).
 
 [boundaries-1]: ../warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-1a]: ../warden/canon/libs/BOUNDARIES.md#1a-what-may-be-imported-where
@@ -591,7 +505,6 @@ covers is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] 
 [sh-2a]: ./SECURITY_HARDENING.md#2a-createsecurityheaders-factory-pattern
 [sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [sh-3]: ./SECURITY_HARDENING.md#3-cors-and-origin-protection
-[ui-readme]: ../src/ui/README.md
 [usc]: ./UI_SSR_COMPONENTS.md
 [usc-1a]: ./UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes
 [usc-1h]: ./UI_SSR_COMPONENTS.md#1h-overlays-and-disclosures

@@ -96,7 +96,8 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   /** The drawer is modal exactly while it is both narrow enough to overlay and actually disclosed. */
   const isActive = () => query.matches && el.open;
 
-  const focusables = (): HTMLElement[] => (panel === null ? [] : [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => !n.hidden));
+  const focusables = (): HTMLElement[] =>
+    panel === null ? [] : [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => !n.hidden && n.checkVisibility());
 
   // The summary draws the visible close glyph but is a sibling of the panel, so trapping the panel
   // alone leaves it outside the cycle — a keyboard trap under WCAG 2.1.2.

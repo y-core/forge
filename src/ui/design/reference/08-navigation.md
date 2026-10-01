@@ -96,8 +96,9 @@ zone model.
 
 ### 1c. Menus, groups and megamenus
 
-**Default: `NavMenu` nests one level.** <!-- rule:forge-ui-nav-menu-depth --> The renderer supports deeper nesting — a submenu opens
-`side="inline-end"` beside its parent panel — but a destination three panels deep is a destination the user will not find twice. Override for a
+**Default: `NavMenu` nests one level.** <!-- rule:forge-ui-nav-menu-depth --> The renderer supports deeper nesting — on the desktop bar a
+submenu opens `side="inline-end"` beside its parent panel, and in the collapsed panel it nests as an indented disclosure — but a destination three
+levels deep is a destination the user will not find twice. Override for a
 reference-style application whose navigation is genuinely a tree.
 
 **Default: when the destinations under a heading should be scannable, reach for `NavGroup`, not `NavMenu`.**

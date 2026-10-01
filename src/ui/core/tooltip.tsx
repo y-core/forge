@@ -1,5 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/jsx */
+
+import { isValidElement } from "../../jsx/element";
 import type { FC, JSX, JSXNode } from "../../jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
@@ -12,8 +14,10 @@ interface TooltipRootProps extends Omit<JSX.IntrinsicElements["div"], "children"
 }
 
 interface TooltipTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  /** id of the `Tooltip.Content` describing this trigger. */
+  /** id of the `Tooltip.Content` this trigger points at. */
   for: string;
+  /** Whether the content describes the trigger or is its accessible name; defaults to `"description"`. */
+  kind?: "description" | "label" | undefined;
   /** Render onto the caller's own element instead of forge's, which must be exactly one JSX element child. */
   asChild?: boolean | undefined;
   children?: JSXNode | undefined;
@@ -32,10 +36,35 @@ const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, "data-slot": 
   </div>
 );
 
-const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = false, class: cls, children, "data-slot": inherited, ...rest }) => {
+const NAME_PROPS = ["aria-label", "aria-labelledby"] as const;
+
+function assertUnnamedTrigger(own: Record<string, unknown>, child: JSXNode): void {
+  const childProps = isValidElement(child) ? child.props : {};
+  const named = NAME_PROPS.find((prop) => own[prop] !== undefined || childProps[prop] !== undefined);
+  if (!named) return;
+  throw new Error(
+    `Tooltip.Trigger with kind="label" cannot also carry ${named}: the tooltip content is the trigger's name, and two names leave one unannounced. ` +
+      `Drop ${named}, or use kind="description" to keep it as the name.`,
+  );
+}
+
+const TooltipTrigger: FC<TooltipTriggerProps> = ({
+  for: contentId,
+  kind = "description",
+  asChild = false,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  ...rest
+}) => {
+  if (kind === "label") assertUnnamedTrigger(rest, asChild ? children : null);
   const className = cn("cursor-default focus-ring", cls);
-  // `mountTooltip` resolves the content by `aria-describedby`, so dropping it disables the tooltip entirely.
-  const attrs = { "aria-describedby": contentId, ...rest };
+  const inert = rest.disabled === true || (asChild && isValidElement(children) && children.props.disabled === true);
+  const attrs = {
+    ...(kind === "label" ? { "aria-labelledby": contentId } : { "aria-describedby": contentId }),
+    ...rest,
+    ...(inert ? { disabled: undefined, "aria-disabled": "true" as const, ...stateAttrs({ disabled: true }) } : {}),
+  };
   const slot = slotToken("tooltip-trigger", inherited);
 
   if (asChild) {
@@ -43,8 +72,8 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({ for: contentId, asChild = fal
       slot,
       class: className,
       props: attrs,
-      type: "button",
-      ...(typeof rest.disabled === "boolean" ? { disabled: rest.disabled } : {}),
+      type: rest.type,
+      defaultType: "button",
       message:
         "Tooltip.Trigger with asChild requires exactly one JSX element child (e.g. <button> or <a>); received a string, number, fragment, array, or empty child instead.",
     }) as ReturnType<FC<TooltipTriggerProps>>;
@@ -70,5 +99,5 @@ const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "ce
   </div>
 );
 
-/** Compound tooltip whose trigger is described by a hint popover shown on hover or keyboard focus. @public */
+/** Compound tooltip whose trigger is described or named by a hint popover shown on hover or keyboard focus. @public */
 export const Tooltip = Object.assign(TooltipRoot, { Trigger: TooltipTrigger, Content: TooltipContent });

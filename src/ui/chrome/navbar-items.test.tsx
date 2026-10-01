@@ -2,10 +2,11 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { elementOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
-import type { NavDefinition } from "./types";
+import type { NavDefinition, NavGroup, NavLink, NavMegaMenu, NavMenu, NavSlot } from "./types";
 
 const id = (key: string) => `/route/${key}`;
 
@@ -24,10 +25,10 @@ const icon = createIcon("/sprite.svg", {
 });
 
 const MENU_FILE_NEW =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="menu" class="relative inline-block"><button type="button" data-slot="menu-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="menu" class="cursor-pointer focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground" id="navbar-menu-top-0-trigger"><span>File</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="menu" aria-labelledby="navbar-menu-top-0-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><a role="menuitem" data-slot="menu-link-item" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" href="/route/new">New</a></div></div></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="menu" class="relative inline-block max-md:hidden"><button type="button" data-slot="menu-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="menu" class="cursor-pointer focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground" id="navbar-menu-top-0-trigger"><span>File</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="menu" aria-labelledby="navbar-menu-top-0-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><a role="menuitem" data-slot="menu-link-item" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" href="/route/new">New</a></div></div><details data-slot="navbar-disclosure" class="md:hidden"><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>File</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><a href="/route/new" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">New</a></div></details></div></div></details></nav></div>';
 
 const MENU_NESTED =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="menu" class="relative inline-block"><button type="button" data-slot="menu-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="menu" class="cursor-pointer focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground" id="navbar-menu-top-0-trigger"><span>Edit</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="menu" aria-labelledby="navbar-menu-top-0-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><button type="button" role="menuitem" data-slot="menu-submenu-trigger" command="toggle-popover" commandfor="navbar-menu-top-1" aria-controls="navbar-menu-top-1" aria-expanded="false" aria-haspopup="menu" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" id="navbar-menu-top-1-trigger"><span>More</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-1" role="menu" aria-labelledby="navbar-menu-top-1-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="inline-end" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><a role="menuitem" data-slot="menu-link-item" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" href="/route/deep">Deep</a></div></div></div></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="menu" class="relative inline-block max-md:hidden"><button type="button" data-slot="menu-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="menu" class="cursor-pointer focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground" id="navbar-menu-top-0-trigger"><span>Edit</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="menu" aria-labelledby="navbar-menu-top-0-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><button type="button" role="menuitem" data-slot="menu-submenu-trigger" command="toggle-popover" commandfor="navbar-menu-top-1" aria-controls="navbar-menu-top-1" aria-expanded="false" aria-haspopup="menu" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" id="navbar-menu-top-1-trigger"><span>More</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-1" role="menu" aria-labelledby="navbar-menu-top-1-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="inline-end" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><a role="menuitem" data-slot="menu-link-item" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" href="/route/deep">Deep</a></div></div></div><details data-slot="navbar-disclosure" class="md:hidden"><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>Edit</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><details data-slot="navbar-disclosure" class="md:hidden"><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>More</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><a href="/route/deep" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">Deep</a></div></details></div></details></div></div></details></nav></div>';
 
 const GROUP_DOCS =
   '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-0" class="flex flex-col gap-1"><p id="navbar-group-top-0" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Docs</p><a href="/route/intro" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">Intro</a></div></div></div></details></nav></div>';
@@ -369,15 +370,15 @@ describe("Navbar — megamenu", () => {
   const section = (html: string) => html.slice(html.indexOf('<div data-slot="navbar-section"'));
 
   const MEGA_SECTION =
-    '<div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="popover navbar-megamenu" class="relative inline-block max-md:hidden"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="dialog" class="cursor-pointer list-none focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"><span>Products</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="dialog" aria-label="Products" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover text-popover-foreground shadow-md w-max max-w-[calc(100vw-2rem)] p-4"><div class="grid gap-6 grid-cols-2"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-1" class="flex flex-col gap-1"><p id="navbar-group-top-1" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-2" class="flex flex-col gap-1"><p id="navbar-group-top-2" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G1</p><a href="/route/l1" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l1</a></div></div></div></div><div data-slot="navbar-megamenu-list" class="flex flex-col gap-2 md:hidden"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-3" class="flex flex-col gap-1"><p id="navbar-group-top-3" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-4" class="flex flex-col gap-1"><p id="navbar-group-top-4" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G1</p><a href="/route/l1" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l1</a></div></div></div></div></details></nav></div>';
+    '<div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="popover navbar-megamenu" class="relative inline-block max-md:hidden"><button type="button" data-slot="popover-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="dialog" class="cursor-pointer list-none focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground"><span>Products</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="dialog" aria-label="Products" data-slot="popover-content" data-scope="popover" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-32 rounded-box border border-border bg-popover text-popover-foreground shadow-md w-max max-w-[calc(100vw-2rem)] p-4"><div class="grid gap-6 grid-cols-2"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-1" class="flex flex-col gap-1"><p id="navbar-group-top-1" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-2" class="flex flex-col gap-1"><p id="navbar-group-top-2" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G1</p><a href="/route/l1" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l1</a></div></div></div></div><details data-slot="navbar-disclosure" class="md:hidden"><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>Products</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-d-0" class="flex flex-col gap-1"><p id="navbar-group-top-d-0" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-d-1" class="flex flex-col gap-1"><p id="navbar-group-top-d-1" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G1</p><a href="/route/l1" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l1</a></div></div></details></div></div></details></nav></div>';
 
   const SUBMENU_SECTION =
-    '<div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="menu" class="relative inline-block"><button type="button" data-slot="menu-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="menu" class="cursor-pointer focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground" id="navbar-menu-top-0-trigger"><span>More</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="menu" aria-labelledby="navbar-menu-top-0-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><button type="button" role="menuitem" data-slot="menu-submenu-trigger" command="toggle-popover" commandfor="navbar-menu-top-1" aria-controls="navbar-menu-top-1" aria-expanded="false" aria-haspopup="menu" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" id="navbar-menu-top-1-trigger"><span>Mega</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-1" role="menu" aria-labelledby="navbar-menu-top-1-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="inline-end" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><fieldset data-slot="menu-group" class="m-0 flex flex-col border-0 p-0" aria-labelledby="navbar-group-top-2"><div data-slot="menu-group-label" class="px-2 py-1.5 text-xs font-medium text-muted-foreground" id="navbar-group-top-2">G0</div><a role="menuitem" data-slot="menu-link-item" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" href="/route/l0">l0</a></fieldset></div></div></div></div></div></details></nav></div>';
+    '<div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><div data-slot="menu" class="relative inline-block max-md:hidden"><button type="button" data-slot="menu-trigger" command="toggle-popover" commandfor="navbar-menu-top-0" aria-controls="navbar-menu-top-0" aria-expanded="false" aria-haspopup="menu" class="cursor-pointer focus-ring inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground" id="navbar-menu-top-0-trigger"><span>More</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-0" role="menu" aria-labelledby="navbar-menu-top-0-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="bottom" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><button type="button" role="menuitem" data-slot="menu-submenu-trigger" command="toggle-popover" commandfor="navbar-menu-top-1" aria-controls="navbar-menu-top-1" aria-expanded="false" aria-haspopup="menu" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" id="navbar-menu-top-1-trigger"><span>Mega</span><span aria-hidden="true" class="text-xs opacity-70"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></button><div id="navbar-menu-top-1" role="menu" aria-labelledby="navbar-menu-top-1-trigger" data-slot="menu-popup" data-scope="menu" popover="auto" data-side="inline-end" data-align="start" class="z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none"><fieldset data-slot="menu-group" class="m-0 flex flex-col border-0 p-0" aria-labelledby="navbar-group-top-2"><div data-slot="menu-group-label" class="px-2 py-1.5 text-xs font-medium text-muted-foreground" id="navbar-group-top-2">G0</div><a role="menuitem" data-slot="menu-link-item" class="flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground state-disabled" href="/route/l0">l0</a></fieldset></div></div></div><details data-slot="navbar-disclosure" class="md:hidden"><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>More</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><details data-slot="navbar-disclosure" class="md:hidden"><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>Mega</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-top-d-0" class="flex flex-col gap-1"><p id="navbar-group-top-d-0" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div></div></details></div></details></div></div></details></nav></div>';
 
   const RAIL_MEGA_SECTION =
-    '<div data-slot="navbar-section" class="flex flex-col gap-1"><div data-slot="navbar-megamenu-list" class="flex flex-col gap-2"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-left-0" class="flex flex-col gap-1"><p id="navbar-group-left-0" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-left-1" class="flex flex-col gap-1"><p id="navbar-group-left-1" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G1</p><a href="/route/l1" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l1</a></div></div></div></div></details></nav></div>';
+    '<div data-slot="navbar-section" class="flex flex-col gap-1"><details data-slot="navbar-disclosure" class=""><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>Products</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-left-0" class="flex flex-col gap-1"><p id="navbar-group-left-0" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G0</p><a href="/route/l0" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l0</a></div><div data-slot="navbar-group" role="group" aria-labelledby="navbar-group-left-1" class="flex flex-col gap-1"><p id="navbar-group-left-1" data-slot="navbar-group-heading" class="px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">G1</p><a href="/route/l1" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">l1</a></div></div></details></div></div></details></nav></div>';
 
-  it("renders a bar-level megamenu as a Popover of link columns beside its collapsed list twin", async () => {
+  it("renders a bar-level megamenu as a Popover of link columns beside its collapsed disclosure twin", async () => {
     expect(section(await render(<Navbar config={MEGA} resolveHref={id} icon={icon} />))).toBe(MEGA_SECTION);
   });
 
@@ -407,25 +408,31 @@ describe("Navbar — megamenu", () => {
 
   it("mints one popover id and distinct heading ids per copy, in document order", async () => {
     const out = await render(<Navbar config={MEGA} resolveHref={id} icon={icon} />);
-    expect(attrs(out, "id")).toEqual(["navbar-menu-top-0", "navbar-group-top-1", "navbar-group-top-2", "navbar-group-top-3", "navbar-group-top-4"]);
-    expect(attrs(out, "aria-labelledby")).toEqual(["navbar-group-top-1", "navbar-group-top-2", "navbar-group-top-3", "navbar-group-top-4"]);
+    expect(attrs(out, "id")).toEqual([
+      "navbar-menu-top-0",
+      "navbar-group-top-1",
+      "navbar-group-top-2",
+      "navbar-group-top-d-0",
+      "navbar-group-top-d-1",
+    ]);
+    expect(attrs(out, "aria-labelledby")).toEqual(["navbar-group-top-1", "navbar-group-top-2", "navbar-group-top-d-0", "navbar-group-top-d-1"]);
   });
 
   it("stamps the filter on both copies, hidden together until a token is active", async () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "P", groups: groups(1), filters: ["user"] }] }] };
-    const filtered = (html: string) => [...html.matchAll(/<div [^>]*data-filter="[^"]*"[^>]*>/g)].map(([tag]) => tag);
+    const filtered = (html: string) => [...html.matchAll(/<(?:div|details) [^>]*data-filter="[^"]*"[^>]*>/g)].map(([tag]) => tag);
 
     expect(filtered(await render(<Navbar config={config} resolveHref={id} icon={icon} />))).toEqual([
       '<div data-slot="popover navbar-megamenu" class="relative inline-block max-md:hidden" data-filter="user" hidden>',
-      '<div data-slot="navbar-megamenu-list" class="flex flex-col gap-2 md:hidden" data-filter="user" hidden>',
+      '<details data-slot="navbar-disclosure" class="md:hidden" data-filter="user" hidden>',
     ]);
     expect(filtered(await render(<Navbar config={config} resolveHref={id} icon={icon} activeFilters={["user"]} />))).toEqual([
       '<div data-slot="popover navbar-megamenu" class="relative inline-block max-md:hidden" data-filter="user">',
-      '<div data-slot="navbar-megamenu-list" class="flex flex-col gap-2 md:hidden" data-filter="user">',
+      '<details data-slot="navbar-disclosure" class="md:hidden" data-filter="user">',
     ]);
   });
 
-  it("renders only the list form in a rail", async () => {
+  it("renders only the disclosure form in a rail", async () => {
     const out = section(await render(<Navbar config={MEGA} resolveHref={id} icon={icon} collapsible='always' />));
     expect(out).toBe(RAIL_MEGA_SECTION);
     expect(attrs(out, "id")).toEqual(["navbar-group-left-0", "navbar-group-left-1"]);
@@ -435,5 +442,222 @@ describe("Navbar — megamenu", () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "More", items: [{ label: "Mega", groups: groups(1) }] }] }] };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} />);
     expect(section(out)).toBe(SUBMENU_SECTION);
+  });
+});
+
+describe("Navbar — collapsed disclosure", () => {
+  const FILE: NavDefinition = {
+    sections: [
+      {
+        items: [
+          {
+            label: "File",
+            items: [
+              { label: "New", href: "new" },
+              { slot: <b>beta</b>, label: "Labs" },
+              { label: "Recent", items: [{ label: "alpha", href: "alpha" }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const TWIN = '<details data-slot="navbar-disclosure"';
+  const SECTION_END = "</div></div></details></nav>";
+  const section = (html: string) => html.slice(html.indexOf('<div data-slot="navbar-section"'), html.lastIndexOf(SECTION_END));
+  const desktopOf = (html: string) => html.slice(0, html.indexOf(TWIN));
+  const twinOf = (html: string) => html.slice(html.indexOf(TWIN), html.lastIndexOf(SECTION_END));
+  const attrs = (html: string, name: string) => [...html.matchAll(new RegExp(` ${name}="([^"]*)"`, "g"))].map(([, value]) => value ?? "");
+  const disclosureTags = (html: string) => [...html.matchAll(/<details data-slot="navbar-disclosure"[^>]*>/g)].map(([tag]) => tag);
+  const skeleton = (html: string) => [...html.matchAll(/<details\b|<\/details>|<a\b/g)].map(([tag]) => tag.replace(/[<>]/g, ""));
+
+  it("offers the desktop menu's destinations again in a disclosure shown only where the menu is not", async () => {
+    const out = await render(<Navbar config={FILE} resolveHref={id} icon={icon} />);
+    expect({
+      menu: tagOf(out, 'data-slot="menu"'),
+      twin: tagOf(out, 'data-slot="navbar-disclosure"'),
+      menuHrefs: attrs(desktopOf(out), "href").filter((href) => href.startsWith("/route/")),
+      twinHrefs: attrs(twinOf(out), "href").filter((href) => href.startsWith("/route/")),
+    }).toEqual({
+      menu: '<div data-slot="menu" class="relative inline-block max-md:hidden">',
+      twin: '<details data-slot="navbar-disclosure" class="md:hidden">',
+      menuHrefs: ["/route/new", "/route/alpha"],
+      twinHrefs: ["/route/new", "/route/alpha"],
+    });
+  });
+
+  it("renders the twin's rows as bar links and its slot without a menu role", async () => {
+    const twin = twinOf(await render(<Navbar config={FILE} resolveHref={id} icon={icon} />));
+    expect({ roles: attrs(twin, "role"), slots: attrs(twin, "data-slot").filter((slot) => !slot.startsWith("navbar-disclosure")) }).toEqual({
+      roles: [],
+      slots: ["icon", "navbar-link", "navbar-slot", "icon", "navbar-link"],
+    });
+  });
+
+  it("nests a submenu inside the twin as its own disclosure", async () => {
+    const out = await render(<Navbar config={FILE} resolveHref={id} icon={icon} />);
+    expect(skeleton(twinOf(out))).toEqual(["details", "a", "details", "a", "/details", "/details"]);
+  });
+
+  it("keeps every desktop menu id when a twin with a nested megamenu sits between two menus", async () => {
+    const config: NavDefinition = {
+      sections: [
+        {
+          items: [
+            { label: "Shop", items: [{ label: "Products", groups: [{ heading: "Build", group: [{ label: "Forge", href: "forge" }] }] }] },
+            { label: "Help", items: [{ label: "Docs", href: "docs" }] },
+          ],
+        },
+      ],
+    };
+    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} />);
+    expect({ ids: attrs(out, "id"), commandfor: attrs(out, "commandfor") }).toEqual({
+      ids: [
+        "navbar-menu-top-0-trigger",
+        "navbar-menu-top-0",
+        "navbar-menu-top-1-trigger",
+        "navbar-menu-top-1",
+        "navbar-group-top-2",
+        "navbar-group-top-d-0",
+        "navbar-menu-top-3-trigger",
+        "navbar-menu-top-3",
+      ],
+      commandfor: ["navbar-menu-top-0", "navbar-menu-top-1", "navbar-menu-top-3"],
+    });
+  });
+
+  it("renders a rail's nested menus only as nested disclosures, with no popup and no menu id", async () => {
+    const out = section(await render(<Navbar config={FILE} resolveHref={id} icon={icon} collapsible='always' />));
+    expect({ skeleton: skeleton(out), popovers: attrs(out, "popover"), roles: attrs(out, "role"), ids: attrs(out, "id") }).toEqual({
+      skeleton: ["details", "a", "details", "a", "/details", "/details"],
+      popovers: [],
+      roles: [],
+      ids: [],
+    });
+  });
+
+  it("numbers a rail's group headings from the bar's own counter", async () => {
+    const config: NavDefinition = {
+      sections: [
+        { items: [{ label: "Shop", items: [{ label: "Products", groups: [{ heading: "Build", group: [{ label: "Forge", href: "forge" }] }] }] }] },
+      ],
+    };
+    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} collapsible='always' />);
+    expect({ ids: attrs(out, "id"), labelledby: attrs(out, "aria-labelledby") }).toEqual({
+      ids: ["navbar-group-left-0"],
+      labelledby: ["navbar-group-left-0"],
+    });
+  });
+
+  it("server-opens the disclosure over the current page and every disclosure above it, and leaves the rest shut", async () => {
+    const config: NavDefinition = {
+      sections: [
+        {
+          items: [
+            {
+              label: "File",
+              items: [
+                { label: "New", href: "new" },
+                { label: "Recent", items: [{ label: "alpha", href: "alpha", current: true }] },
+              ],
+            },
+            { label: "Shop", groups: [{ heading: "Build", group: [{ label: "Forge", href: "forge", current: true }] }] },
+            { label: "Edit", items: [{ label: "Undo", href: "undo" }] },
+          ],
+        },
+      ],
+    };
+    expect(disclosureTags(await render(<Navbar config={config} resolveHref={id} icon={icon} />))).toEqual([
+      '<details data-slot="navbar-disclosure" class="md:hidden" open>',
+      '<details data-slot="navbar-disclosure" class="md:hidden" open>',
+      '<details data-slot="navbar-disclosure" class="md:hidden" open>',
+      '<details data-slot="navbar-disclosure" class="md:hidden">',
+    ]);
+    expect(disclosureTags(await render(<Navbar config={config} resolveHref={id} icon={icon} collapsible='always' />))).toEqual([
+      '<details data-slot="navbar-disclosure" class="" open>',
+      '<details data-slot="navbar-disclosure" class="" open>',
+      '<details data-slot="navbar-disclosure" class="" open>',
+      '<details data-slot="navbar-disclosure" class="">',
+    ]);
+  });
+
+  it("marks the current page inside the twin as well as inside the desktop menu", async () => {
+    const config: NavDefinition = { sections: [{ items: [{ label: "File", items: [{ label: "Here", href: "here", current: true }] }] }] };
+    const twin = twinOf(await render(<Navbar config={config} resolveHref={id} icon={icon} />));
+    expect(elementOf(twin, "a", 'href="/route/here"')).toBe(
+      `<a href="/route/here" data-slot="navbar-link" aria-current="page" data-selected="" class="${BAR_LINK}">Here</a>`,
+    );
+  });
+
+  it("labels a megamenu's twin with the megamenu's own label", async () => {
+    const config: NavDefinition = {
+      sections: [{ items: [{ label: "Products", groups: [{ heading: "Build", group: [{ label: "Forge", href: "forge" }] }] }] }],
+    };
+    const summary = elementOf(
+      await render(<Navbar config={config} resolveHref={id} icon={icon} />),
+      "summary",
+      'data-slot="navbar-disclosure-trigger"',
+    );
+    expect(/^<summary[^>]*><span>([^<]*)<\/span>/.exec(summary)?.[1]).toBe("Products");
+  });
+
+  it("stamps a gated menu's filter on both copies, hidden together until a token is active", async () => {
+    const config: NavDefinition = { sections: [{ items: [{ label: "Admin", items: [{ label: "Users", href: "users" }], filters: ["admin"] }] }] };
+    const filtered = (html: string) => [...html.matchAll(/<(?:div|details) [^>]*data-filter="[^"]*"[^>]*>/g)].map(([tag]) => tag);
+
+    expect(filtered(await render(<Navbar config={config} resolveHref={id} icon={icon} />))).toEqual([
+      '<div data-slot="menu" class="relative inline-block max-md:hidden" data-filter="admin" hidden>',
+      '<details data-slot="navbar-disclosure" class="md:hidden" data-filter="admin" hidden>',
+    ]);
+    expect(filtered(await render(<Navbar config={config} resolveHref={id} icon={icon} activeFilters={["admin"]} />))).toEqual([
+      '<div data-slot="menu" class="relative inline-block max-md:hidden" data-filter="admin">',
+      '<details data-slot="navbar-disclosure" class="md:hidden" data-filter="admin">',
+    ]);
+  });
+
+  it("keeps a gated submenu and a gated link inside the twin under their own filters", async () => {
+    const config: NavDefinition = {
+      sections: [
+        {
+          items: [
+            {
+              label: "Top",
+              items: [
+                { label: "Admin", items: [{ label: "Users", href: "users" }], filters: ["admin"] },
+                { label: "Billing", href: "billing", filters: ["owner"] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const twin = twinOf(await render(<Navbar config={config} resolveHref={id} icon={icon} activeFilters={["guest"]} />));
+    expect({ submenu: disclosureTags(twin)[1], link: elementOf(twin, "a", 'href="/route/billing"') }).toEqual({
+      submenu: '<details data-slot="navbar-disclosure" class="md:hidden" data-filter="admin" hidden>',
+      link: `<a href="/route/billing" data-slot="navbar-link" class="${BAR_LINK}" data-filter="owner" hidden>Billing</a>`,
+    });
+  });
+});
+
+describe("NavGroup column entries", () => {
+  const columnOf = (entry: NavGroup["group"][number]): NavGroup => ({ heading: "Build", group: [entry] });
+  const menu: NavMenu = { label: "Tools", items: [{ label: "Forge", href: "forge" }] };
+  const megamenu: NavMegaMenu = { label: "Products", groups: [{ heading: "Ship", group: [{ label: "Deploy", href: "deploy" }] }] };
+
+  it("refuses a menu as a column entry, so a column holds no branch", () => {
+    // @ts-expect-error -- a NavMenu is a branch, and a column holds only links and slots
+    expect(columnOf(menu).group).toEqual([menu]);
+  });
+
+  it("refuses a megamenu as a column entry, so a column holds no branch", () => {
+    // @ts-expect-error -- a NavMegaMenu is a branch, and a column holds only links and slots
+    expect(columnOf(megamenu).group).toEqual([megamenu]);
+  });
+
+  it("accepts a link and a slot as column entries", () => {
+    const link: NavLink = { label: "Forge", href: "forge" };
+    const slot: NavSlot = { slot: "search" };
+    expect([columnOf(link).group, columnOf(slot).group]).toEqual([[link], [slot]]);
   });
 });

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { createElement } from "../../../jsx/element";
+import type { FC, JSX } from "../../../jsx/types";
 import { render } from "../../../testing/render";
 import { MENU_ITEM_CLASS } from "../../contracts/menu-contract";
 import { Button, buttonVariants } from "../button";
@@ -101,6 +102,84 @@ describe("cloneAsChild — non-button children", () => {
       '<a href="/docs" class="probe-class" data-slot="probe">Docs</a>',
     );
   });
+});
+
+const Probe: FC<JSX.IntrinsicElements["button"]> = (props) => <button {...props} />;
+const ProbeLink: FC<JSX.IntrinsicElements["a"]> = ({ children, ...props }) => <a {...props}>{children}</a>;
+
+describe("cloneAsChild — a component child renders its own disabled and type", () => {
+  const cases = [
+    {
+      label: "keeps its own disabled when no disabled option is given",
+      child: <Probe disabled>Go</Probe>,
+      options: base,
+      expected: '<button disabled class="probe-class" data-slot="probe">Go</button>',
+    },
+    {
+      label: "keeps its own type when no type option is given",
+      child: <Probe type='submit'>Go</Probe>,
+      options: base,
+      expected: '<button type="submit" class="probe-class" data-slot="probe">Go</button>',
+    },
+    {
+      label: "receives a disabled option as the prop itself, not translated to aria-disabled",
+      child: <Probe>Go</Probe>,
+      options: { ...base, disabled: true },
+      expected: '<button disabled class="probe-class" data-slot="probe">Go</button>',
+    },
+    {
+      label: "receives disabled=false as a decision that clears its own",
+      child: <Probe disabled>Go</Probe>,
+      options: { ...base, disabled: false },
+      expected: '<button class="probe-class" data-slot="probe">Go</button>',
+    },
+    {
+      label: "a type option overrides the child's own",
+      child: <Probe type='submit'>Go</Probe>,
+      options: { ...base, type: "button" },
+      expected: '<button type="button" class="probe-class" data-slot="probe">Go</button>',
+    },
+    {
+      label: "takes the compound's default type when neither the option nor the child sets one",
+      child: <Probe>Go</Probe>,
+      options: { ...base, defaultType: "button" as const },
+      expected: '<button type="button" class="probe-class" data-slot="probe">Go</button>',
+    },
+    {
+      label: "gets no type at all when the compound declares no default, so a link component stays a plain link",
+      child: <ProbeLink href='/docs'>Docs</ProbeLink>,
+      options: base,
+      expected: '<a href="/docs" class="probe-class" data-slot="probe">Docs</a>',
+    },
+    {
+      label: "gets no type from the compound's default when it carries an href, so a link component never renders type='button'",
+      child: <ProbeLink href='/docs'>Docs</ProbeLink>,
+      options: { ...base, defaultType: "button" as const },
+      expected: '<a href="/docs" class="probe-class" data-slot="probe">Docs</a>',
+    },
+    {
+      label: "keeps its own type over the compound's default when it carries an href",
+      child: (
+        <ProbeLink href='/docs' type='text/html'>
+          Docs
+        </ProbeLink>
+      ),
+      options: { ...base, defaultType: "button" as const },
+      expected: '<a href="/docs" type="text/html" class="probe-class" data-slot="probe">Docs</a>',
+    },
+    {
+      label: "still receives the caller's explicit type when it carries an href, because the caller wins",
+      child: <ProbeLink href='/docs'>Docs</ProbeLink>,
+      options: { ...base, type: "button", defaultType: "button" as const },
+      expected: '<a href="/docs" type="button" class="probe-class" data-slot="probe">Docs</a>',
+    },
+  ];
+
+  for (const { label, child, options, expected } of cases) {
+    it(label, async () => {
+      expect(await render(cloneAsChild(child, options))).toBe(expected);
+    });
+  }
 });
 
 describe("cloneAsChild — data-slot is a token list", () => {

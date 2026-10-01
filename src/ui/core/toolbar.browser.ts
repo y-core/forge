@@ -180,6 +180,31 @@ test.describe("Toolbar — an aria-disabled item is focusable but inert", () => 
   });
 });
 
+test.describe("Toolbar — an aria-disabled command button", () => {
+  test("toggles no popover on click or Enter until aria-disabled is lifted", async ({ page }) => {
+    const toolbar = await render(
+      Toolbar({
+        label: "Formatting",
+        children: Toolbar.Button({ id: "more", "aria-disabled": "true", command: "toggle-popover", commandfor: "more-pop", children: "More" }),
+      }),
+    );
+    await mount(page, `${toolbar}<div id="more-pop" popover="manual">more</div>`, EXPOSE);
+    await start(page);
+    const isOpen = () => page.evaluate(() => document.getElementById("more-pop")?.matches(":popover-open") ?? false);
+
+    await page.click("#more", { force: true });
+    const afterClick = await isOpen();
+    await page.focus("#more");
+    await page.keyboard.press("Enter");
+    const afterEnter = await isOpen();
+    await page.evaluate(() => document.getElementById("more")?.removeAttribute("aria-disabled"));
+    await page.keyboard.press("Enter");
+    const lifted = await isOpen();
+
+    expect({ afterClick, afterEnter, lifted }).toEqual({ afterClick: false, afterEnter: false, lifted: true });
+  });
+});
+
 test.describe("Toolbar.Input", () => {
   test("keeps ArrowRight for its own caret", async ({ page }) => {
     await mount(page, await pageMarkup(), EXPOSE);

@@ -1,8 +1,12 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { jsx } from "../../jsx/jsx-runtime";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
+import { scopeAttrs } from "../contracts/scope-attrs";
+import { Resumable } from "../server/resumable";
+import { Toolbar } from "./toolbar";
 import { Tooltip } from "./tooltip";
 
 declare global {
@@ -117,6 +121,177 @@ test.describe("Tooltip", () => {
     await page.hover("#save");
     await expect.poll(() => page.evaluate(() => document.querySelector("#save-tip")?.matches(":popover-open")), { timeout: 3000 }).toBe(true);
   });
+});
+
+test.describe("Tooltip — label kind", () => {
+  test("names its trigger by the tooltip text and gives it no description", async ({ page }) => {
+    const html = await render(
+      Tooltip({
+        children: [
+          Tooltip.Trigger({ id: "bold", for: "bold-tip", kind: "label", children: jsx("svg", { "aria-hidden": "true" }) }),
+          Tooltip.Content({ id: "bold-tip", children: "Bold" }),
+        ],
+      }),
+    );
+    await mount(page, html, EXPOSE);
+
+    await expect(page.locator("#bold")).toHaveAccessibleName("Bold");
+    await expect(page.locator("#bold")).toHaveAccessibleDescription("");
+  });
+
+  test("still opens on hover, found by its slot rather than by aria-describedby", async ({ page }) => {
+    const html = await render(
+      Tooltip({
+        children: [
+          Tooltip.Trigger({ id: "bold", for: "bold-tip", kind: "label", children: "B" }),
+          Tooltip.Content({ id: "bold-tip", children: "Bold" }),
+        ],
+      }),
+    );
+    await mount(page, html, EXPOSE);
+    await start(page);
+
+    await page.hover("#bold");
+
+    await expect.poll(() => page.evaluate(() => document.querySelector("#bold-tip")?.matches(":popover-open")), { timeout: 3000 }).toBe(true);
+  });
+});
+
+function isOpen(page: Page, id: string): Promise<boolean> {
+  return page.evaluate((target) => document.getElementById(target)?.matches(":popover-open") ?? false, id);
+}
+
+const pasteToolbar = () =>
+  render(
+    Toolbar({
+      label: "Formatting",
+      children: [
+        Toolbar.Button({ id: "bold", children: "Bold" }),
+        Tooltip({
+          children: [
+            Tooltip.Trigger({ for: "paste-tip", asChild: true, children: Toolbar.Button({ id: "paste", disabled: true, children: "Paste" }) }),
+            Tooltip.Content({ id: "paste-tip", children: "Nothing to paste" }),
+          ],
+        }),
+        Toolbar.Button({ id: "italic", children: "Italic" }),
+      ],
+    }),
+  );
+
+test.describe("Tooltip — an aria-disabled trigger still shows its tooltip", () => {
+  test("opens on hover through the state-disabled styling a toolbar item carries", async ({ page }) => {
+    const html = await pasteToolbar();
+    await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
+    await start(page);
+    const box = await page.locator("#paste").boundingBox();
+    if (!box) throw new Error("#paste has no box to hover");
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    await expect.poll(() => isOpen(page, "paste-tip"), { timeout: 3000 }).toBe(true);
+  });
+
+  test("takes keyboard focus and opens on it", async ({ page }) => {
+    const html = await render(
+      Tooltip({
+        children: [
+          Tooltip.Trigger({ id: "save", for: "save-tip", disabled: true, children: "Save" }),
+          Tooltip.Content({ id: "save-tip", children: "Nothing to save" }),
+        ],
+      }),
+    );
+    await mount(page, `<button id="before">b</button>${html}`, EXPOSE);
+    await start(page);
+
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+
+    expect(await focusedId(page)).toBe("save");
+    await expect.poll(() => isOpen(page, "save-tip"), { timeout: 3000 }).toBe(true);
+  });
+
+  test("stays in its toolbar's roving ring, opening as the arrows pass through it", async ({ page }) => {
+    await mount(page, await pasteToolbar(), EXPOSE);
+    await start(page);
+
+    await page.focus("#bold");
+    await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("paste");
+    await expect.poll(() => isOpen(page, "paste-tip"), { timeout: 3000 }).toBe(true);
+
+    await page.keyboard.press("ArrowRight");
+    expect(await focusedId(page)).toBe("italic");
+  });
+});
+
+test.describe("Tooltip — an aria-disabled trigger fires nothing", () => {
+  const tip = (id: string, trigger: Parameters<typeof Tooltip.Trigger>[0]) =>
+    Tooltip({ children: [Tooltip.Trigger(trigger), Tooltip.Content({ id: `${id}-tip`, children: `${id} hint` })] });
+
+  const markup = async () =>
+    (await render(
+      Resumable({
+        name: "editor",
+        children: [
+          tip("act", { id: "act", for: "act-tip", disabled: true, ...scopeAttrs({ onClick: "act" }), children: "Act" }),
+          tip("cmd", { id: "cmd", for: "cmd-tip", disabled: true, command: "toggle-popover", commandfor: "cmd-pop", children: "Cmd" }),
+          tip("pt", { id: "pt", for: "pt-tip", disabled: true, popovertarget: "pt-pop", children: "Pt" }),
+          jsx("form", { id: "form", children: tip("sub", { id: "sub", for: "sub-tip", disabled: true, type: "submit", children: "Sub" }) }),
+          tip("nav", { for: "nav-tip", asChild: true, children: jsx("a", { id: "nav", href: "#moved", children: "Nav" }) }),
+        ],
+      }),
+    )) + '<div id="cmd-pop" popover="manual">c</div><div id="pt-pop" popover="manual">p</div>';
+
+  async function arm(page: Page): Promise<void> {
+    await mount(page, await markup(), EXPOSE);
+    await page.evaluate(() => {
+      window.forgeResume.registerScope("editor", { on: { act: () => document.body.setAttribute("data-ran", "") } });
+      document.getElementById("form")?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.body.setAttribute("data-submitted", "");
+      });
+      document.getElementById("nav")?.setAttribute("aria-disabled", "true");
+      window.forgeResume.resume();
+    });
+  }
+
+  function outcome(page: Page) {
+    return page.evaluate(() => ({
+      action: document.body.hasAttribute("data-ran"),
+      command: document.getElementById("cmd-pop")?.matches(":popover-open") ?? false,
+      popovertarget: document.getElementById("pt-pop")?.matches(":popover-open") ?? false,
+      submit: document.body.hasAttribute("data-submitted"),
+      navigation: location.hash === "#moved",
+    }));
+  }
+
+  const TRIGGERS = ["act", "cmd", "pt", "sub", "nav"];
+
+  for (const input of ["click", "Enter"] as const) {
+    test(`on ${input}: no action, command, popovertarget, submit or navigation until aria-disabled is lifted`, async ({ page }) => {
+      await arm(page);
+      const activate = async (id: string) => {
+        if (input === "click") await page.click(`#${id}`, { force: true });
+        else {
+          await page.focus(`#${id}`);
+          await page.keyboard.press("Enter");
+        }
+      };
+
+      for (const id of TRIGGERS) await activate(id);
+      const inert = await outcome(page);
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll('[aria-disabled="true"]')) el.removeAttribute("aria-disabled");
+      });
+      for (const id of TRIGGERS) await activate(id);
+      const live = await outcome(page);
+
+      expect({ inert, live }).toEqual({
+        inert: { action: false, command: false, popovertarget: false, submit: false, navigation: false },
+        live: { action: true, command: true, popovertarget: true, submit: true, navigation: true },
+      });
+    });
+  }
 });
 
 type Tree = "light" | "shadow";

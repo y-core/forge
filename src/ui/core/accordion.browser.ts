@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { Accordion } from "./accordion";
 import { createIcon } from "./icon";
 
@@ -94,5 +94,52 @@ test.describe("Accordion", () => {
     await mount(page, await markup(true), EXPOSE);
 
     expect(await state(page)).toEqual({ one: { nativeOpen: true }, two: { nativeOpen: false } });
+  });
+});
+
+test.describe("Accordion — nested, under its real stylesheet", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  const nested = () =>
+    render(
+      Accordion({
+        children: Accordion.Item({
+          id: "outer",
+          open: true,
+          children: [
+            Accordion.Trigger({ icon, children: "Outer" }),
+            Accordion.Content({
+              children: Accordion({
+                children: Accordion.Item({
+                  id: "inner",
+                  children: [Accordion.Trigger({ icon, id: "inner-trigger", children: "Inner" }), Accordion.Content({ children: "Body" })],
+                }),
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
+
+  const chevronRotation = (page: Page) =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        ["outer", "inner"].map((id) => {
+          const chevron = document.querySelector(`#${id} > summary > svg`);
+          if (chevron === null) throw new Error(`#${id} has no chevron in its summary`);
+          return [id, getComputedStyle(chevron).rotate];
+        }),
+      ),
+    );
+
+  test("a closed item inside an open one keeps its own chevron unturned, and turns it once opened", async ({ page }) => {
+    const html = await nested();
+    await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
+
+    expect(await chevronRotation(page)).toEqual({ outer: "180deg", inner: "none" });
+
+    await page.click("#inner-trigger");
+
+    await expect.poll(() => chevronRotation(page)).toEqual({ outer: "180deg", inner: "180deg" });
   });
 });

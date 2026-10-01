@@ -259,7 +259,7 @@ from both, unbound from `ui/core` and bound from `ui/controls`. **The collision 
 | `Filter` | **shipped** | Not a `RadioGroup` skin: the hide-siblings-on-check plus reset composition is `:has()` CSS a consumer would get wrong. A `ToggleGroup type="single"` sibling in `ui/core`, markup-only. |
 | `OtpInput` | **shipped** | One native `<input autocomplete="one-time-code">` painted as cells by an `@utility` — one field, one value, native paste and autofill, no controller. A per-cell input array is rejected: it assembles its value client-side. Bound variant in `ui/controls`. |
 | `SpeedDial` | **rejected** | A floating action button earns its place only on a screen with no toolbar and no header primary, which the primitive set does not target, and its `asChild` action could not close the panel because invoker commands are button-only. A consumer composes `Popover` with `Button` rows instead. |
-| `Megamenu` | **shipped as `Navbar` growth** | Not a new export: a `NavMegaMenu` item renders as a wide `Popover` of `NavGroup` columns beside a list twin for the collapsed panel. `role="menu"` is wrong for a block of links, so it is `Popover` plus `<nav>`, not `core/Menu`. |
+| `Megamenu` | **shipped as `Navbar` growth** | Not a new export: a `NavMegaMenu` item renders as a wide `Popover` of `NavGroup` columns, which hold links and slots, beside a disclosure twin for the collapsed panel. `role="menu"` is wrong for a block of links, so it is `Popover` plus `<nav>`, not `core/Menu`. |
 
 The marketing and effect set (hero, footer, mockups, mask, hover-3D, hover gallery, aura, text rotate, countdown, diff, chat bubble) is app-level
 composition, not a primitive, and is ruled out as a class.

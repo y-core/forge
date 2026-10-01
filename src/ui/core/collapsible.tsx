@@ -20,7 +20,7 @@ interface CollapsibleContentProps extends Omit<JSX.IntrinsicElements["div"], "ch
 }
 
 const CollapsibleRoot: FC<CollapsibleRootProps> = ({ open = false, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <details data-slot={slotToken("collapsible", inherited)} {...(open ? { open } : {})} class={cn("group/collapsible-item", cls)} {...rest}>
+  <details data-slot={slotToken("collapsible", inherited)} {...(open ? { open } : {})} class={cls} {...rest}>
     {children}
   </details>
 );
@@ -38,7 +38,7 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ icon: Icon, class: cl
     <Icon
       name='chevron-down'
       viewBox='0 0 24 24'
-      class='size-4 shrink-0 text-muted-foreground group-open/collapsible-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200'
+      class='size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 [[open]>summary>&]:rotate-180'
     />
   </summary>
 );

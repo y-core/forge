@@ -132,7 +132,16 @@ export const Navbar: FC<NavbarProps> = (props) => {
     ...rest
   } = props;
   const resolvedPlacement = placement ?? (collapsible === "always" ? "left" : "top");
-  const ctx: NavRenderCtx = { resolveHref, slots, activeFilters, icon: Icon, idBase: id ?? resolvedPlacement, seq: { n: 0 }, collapsible };
+  const ctx: NavRenderCtx = {
+    resolveHref,
+    slots,
+    activeFilters,
+    icon: Icon,
+    idBase: id ?? resolvedPlacement,
+    seq: { n: 0 },
+    disclosureSeq: { n: 0 },
+    collapsible,
+  };
   const variants = collapsible === "always" ? railPlacementVariants : placementVariants;
   const heightLink: { class?: string | undefined } = collapsible === "always" ? { class: RAIL_HEIGHT_CHAIN } : {};
   const drawer = collapsedAs === "drawer";

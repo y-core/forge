@@ -52,16 +52,25 @@ export async function mount(page: Page, html: string, options: MountOptions = {}
   }
 }
 
+/** Undoes `escapeHtml`, so a class carrying `>` or `'` reaches the compiler as the utility the source wrote. */
+function unescapeAttribute(value: string): string {
+  return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&amp;", "&");
+}
+
 /** The rendered class list of the element carrying `slot` in its `data-slot`, un-escaped back from HTML. */
 export function classesOf(html: string, slot: string): string[] {
   const match = new RegExp(`data-slot="(?:[^"]*\\s)?${slot}(?:\\s[^"]*)?"[^>]*?class="([^"]*)"`).exec(html);
   if (!match?.[1]) throw new Error(`no class attribute on [data-slot~='${slot}']`);
-  return match[1].replaceAll("&amp;", "&").split(" ");
+  return unescapeAttribute(match[1]).split(" ");
 }
 
 /** Every class any element in `html` names, un-escaped back from HTML — the candidates its stylesheet compiles from. */
 export function renderedClasses(html: string): string[] {
-  return [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").replaceAll("&amp;", "&").split(" ").filter(Boolean));
+  return [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) =>
+    unescapeAttribute(match[1] ?? "")
+      .split(" ")
+      .filter(Boolean),
+  );
 }
 
 // Painted through a canvas because `light-dark()` resolves at used-value time and a non-legacy

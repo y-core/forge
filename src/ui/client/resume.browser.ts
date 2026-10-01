@@ -712,6 +712,62 @@ test.describe("resume — an inert element's action never runs", () => {
   });
 });
 
+test.describe("resume — the inert-click guard", () => {
+  const GUARD_MARKUP =
+    '<a id="inert" href="#inert-moved" aria-disabled="true"><span id="inert-inner">x</span></a>' +
+    '<a id="live" href="#live-moved" aria-disabled="false">y</a>';
+
+  function listenOn(page: Page): Promise<void> {
+    return page.evaluate(() => {
+      const reached: string[] = [];
+      Object.assign(window, { reached });
+      for (const el of document.querySelectorAll("a, span")) el.addEventListener("click", () => reached.push(el.id));
+    });
+  }
+
+  function clickAndRead(page: Page, id: string): Promise<{ reached: string[]; hash: string }> {
+    return page.evaluate((target) => {
+      const reached = (window as unknown as { reached: string[] }).reached;
+      reached.length = 0;
+      document.getElementById(target)?.click();
+      return { reached: [...reached], hash: location.hash };
+    }, id);
+  }
+
+  test("cancels a click on an aria-disabled element before any listener or default sees it, and leaves aria-disabled=false alone", async ({
+    page,
+  }) => {
+    await mount(page, GUARD_MARKUP, EXPOSE);
+    await page.evaluate(() => window.forgeResume.resume());
+    await listenOn(page);
+
+    const inert = await clickAndRead(page, "inert");
+    const live = await clickAndRead(page, "live");
+
+    expect({ inert, live }).toEqual({ inert: { reached: [], hash: "" }, live: { reached: ["live"], hash: "#live-moved" } });
+  });
+
+  test("cancels a click landing on a descendant of an aria-disabled element", async ({ page }) => {
+    await mount(page, GUARD_MARKUP, EXPOSE);
+    await page.evaluate(() => window.forgeResume.resume());
+    await listenOn(page);
+
+    expect(await clickAndRead(page, "inert-inner")).toEqual({ reached: [], hash: "" });
+  });
+
+  test("is removed by the disposer, so the platform default returns", async ({ page }) => {
+    await mount(page, GUARD_MARKUP, EXPOSE);
+    const dispose = await page.evaluateHandle(() => window.forgeResume.resume());
+    await listenOn(page);
+
+    const guarded = await clickAndRead(page, "inert");
+    await dispose.evaluate((release) => release());
+    const released = await clickAndRead(page, "inert");
+
+    expect({ guarded, released }).toEqual({ guarded: { reached: [], hash: "" }, released: { reached: ["inert"], hash: "#inert-moved" } });
+  });
+});
+
 test.describe("resume — a throwing setup is contained", () => {
   async function twoScopes(page: Page): Promise<void> {
     const html = await render([

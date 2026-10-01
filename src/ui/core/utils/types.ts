@@ -6,6 +6,8 @@ export interface AsChildOptions {
   class: string;
   props: Record<string, unknown>;
   type?: string | undefined;
+  /** Applied to a component child without an `href` only where neither the caller nor the child set a `type`. */
+  defaultType?: "button" | undefined;
   disabled?: boolean | undefined;
   /** Rendered inside the cloned child, before its own children. */
   prefix?: JSXNode;

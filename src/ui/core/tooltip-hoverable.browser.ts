@@ -19,11 +19,11 @@ const CSS = ["./ui/assets/css/forge-ui.css"];
 
 // Wide and tall, and far from the trigger, so the pointer has real distance to cross — a tooltip
 // abutting its trigger would pass by accident.
-const MARKUP = () =>
+const MARKUP = (trigger: Partial<Parameters<typeof Tooltip.Trigger>[0]> = {}) =>
   render(
     Tooltip({
       children: [
-        Tooltip.Trigger({ for: "tip", children: "Help" }),
+        Tooltip.Trigger({ for: "tip", children: "Help", ...trigger }),
         Tooltip.Content({ id: "tip", side: "bottom", children: "A long explanation the user may want to select and copy." }),
       ],
     }),
@@ -71,29 +71,37 @@ test.describe("Tooltip — WCAG 2.1 SC 1.4.13 Hoverable", () => {
 // very mode these tests cover, so the rules are inlined.
 const INLINE_CSS = readFileSync(fileURLToPath(new URL("../assets/css/forge-ui.css", import.meta.url)), "utf-8");
 
-async function mountWithoutScript(page: Page): Promise<void> {
-  await mount(page, `<style>${INLINE_CSS}</style>${await MARKUP()}`);
+async function mountWithoutScript(page: Page, trigger: Partial<Parameters<typeof Tooltip.Trigger>[0]>): Promise<void> {
+  await mount(page, `<style>${INLINE_CSS}</style>${await MARKUP(trigger)}`);
 }
+
+const FALLBACK_TRIGGERS: ReadonlyArray<{ name: string; trigger: Partial<Parameters<typeof Tooltip.Trigger>[0]> }> = [
+  { name: "description kind", trigger: {} },
+  { name: "label kind", trigger: { kind: "label" } },
+  { name: "an aria-disabled trigger", trigger: { disabled: true } },
+];
 
 test.describe("Tooltip — with scripting off", () => {
   test.use({ javaScriptEnabled: false });
 
-  test("the content is display:none until the trigger is hovered, then legible", async ({ page }) => {
-    await mountWithoutScript(page);
+  for (const { name, trigger } of FALLBACK_TRIGGERS) {
+    test(`${name}: the content is display:none until the trigger is hovered, then legible`, async ({ page }) => {
+      await mountWithoutScript(page, trigger);
 
-    const content = page.locator("#tip");
-    await expect(content).toBeHidden();
+      const content = page.locator("#tip");
+      await expect(content).toBeHidden();
 
-    await page.hover("[data-slot~='tooltip-trigger']");
-    await expect(content).toBeVisible();
-    await expect(content).toHaveText("A long explanation the user may want to select and copy.");
-  });
+      await page.hover("[data-slot~='tooltip-trigger']", { force: true });
+      await expect(content).toBeVisible();
+      await expect(content).toHaveText("A long explanation the user may want to select and copy.");
+    });
 
-  test("keyboard focus on the trigger reveals it too", async ({ page }) => {
-    await mountWithoutScript(page);
+    test(`${name}: keyboard focus on the trigger reveals it too`, async ({ page }) => {
+      await mountWithoutScript(page, trigger);
 
-    await page.locator("[data-slot~='tooltip-trigger']").focus();
+      await page.locator("[data-slot~='tooltip-trigger']").focus();
 
-    await expect(page.locator("#tip")).toBeVisible();
-  });
+      await expect(page.locator("#tip")).toBeVisible();
+    });
+  }
 });

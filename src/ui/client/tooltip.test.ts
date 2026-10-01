@@ -5,12 +5,10 @@ import type { FakeElement } from "./dom.fixture";
 import { mountTooltip } from "./tooltip";
 
 /** A tooltip whose content records show/hide calls, since a fake has no top layer. */
-function tooltip() {
+function tooltip(reference: Record<string, string> = { "aria-describedby": "tip" }) {
   const { doc, el } = fakeTree();
   const root = el("DIV", { "data-slot": "tooltip" });
-  const trigger = el("BUTTON", { "data-slot": "tooltip-trigger", "aria-describedby": "tip" }) as FakeElement & {
-    matches: (selector: string) => boolean;
-  };
+  const trigger = el("BUTTON", { "data-slot": "tooltip-trigger", ...reference }) as FakeElement & { matches: (selector: string) => boolean };
   const content = el("DIV", { "data-slot": "tooltip-content", id: "tip" }) as FakeElement & {
     calls: string[];
     showPopover: () => void;
@@ -52,6 +50,23 @@ describe("mountTooltip", () => {
 
     win.flush();
     expect(content.calls).toEqual(["show"]);
+  });
+
+  it("shows in either kind, whichever ARIA reference the trigger carries", () => {
+    const kinds = [
+      { kind: "description", reference: { "aria-describedby": "tip" } },
+      { kind: "label", reference: { "aria-labelledby": "tip" } },
+    ];
+
+    const actual = kinds.map(({ kind, reference }) => {
+      const { root, trigger, content, win } = tooltip(reference);
+      mountTooltip(root as never);
+      pointer(trigger, "pointerenter");
+      win.flush();
+      return { kind, mounted: root.hasAttribute("data-tooltip-mounted"), calls: content.calls };
+    });
+
+    expect(actual).toEqual(kinds.map(({ kind }) => ({ kind, mounted: true, calls: ["show"] })));
   });
 
   // WCAG 2.1 SC 1.4.13: entering the content must cancel the hide the trigger's leave armed.
@@ -153,10 +168,10 @@ describe("mountTooltip", () => {
     expect({ trigger: counts(trigger), content: counts(content) }).toEqual({ trigger: 0, content: 0 });
   });
 
-  it("does nothing at all when aria-describedby resolves to no content", () => {
+  it("does nothing at all when the root holds no content", () => {
     const { doc, el } = fakeTree();
     const root = el("DIV", { "data-slot": "tooltip" });
-    root.append(el("BUTTON", { "data-slot": "tooltip-trigger", "aria-describedby": "missing" }));
+    root.append(el("BUTTON", { "data-slot": "tooltip-trigger" }));
     doc.root.append(root);
 
     expect(() => mountTooltip(root as never)()).not.toThrow();

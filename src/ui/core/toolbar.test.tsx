@@ -2,8 +2,11 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import type { FC, JSX } from "../../jsx/types";
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { Button } from "./button";
+import { Link } from "./link";
 import { Toolbar } from "./toolbar";
 
 const defaultItem = () => render(<Toolbar.Button>Bold</Toolbar.Button>);
@@ -284,5 +287,73 @@ describe("Toolbar — exactly one tab stop, whatever is pressed", () => {
 
     const marked = [...html.matchAll(/<button[^>]*data-composite-item-active[^>]*>([^<]*)</g)].map((match) => match[1]);
     expect(marked).toEqual(["Save"]);
+  });
+});
+
+const BareButton: FC<JSX.IntrinsicElements["button"]> = (props) => <button {...props} />;
+
+describe("Toolbar.Button asChild — a component child's type", () => {
+  it("keeps a Button child's own type='submit', so it still submits its form", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Toolbar.Button asChild>
+            <Button type='submit'>Save</Button>
+          </Toolbar.Button>,
+        ),
+      ),
+    ).toEqual({ type: "submit", "data-slot": "button toolbar-button", "data-toolbar-item": "" });
+  });
+
+  it("gives type='button' to a component child that sets no type and renders none of its own", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Toolbar.Button asChild>
+            <BareButton>Save</BareButton>
+          </Toolbar.Button>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "toolbar-button", "data-toolbar-item": "" });
+  });
+
+  it("gives no type to a Link child, adding only its slot token and the roving-focus marker", async () => {
+    const bare = attrsOf(await render(<Link href='/x'>Docs</Link>));
+
+    expect(
+      attrsOf(
+        await render(
+          <Toolbar.Button asChild>
+            <Link href='/x'>Docs</Link>
+          </Toolbar.Button>,
+        ),
+      ),
+    ).toEqual({ ...bare, "data-slot": "link toolbar-button", "data-toolbar-item": "" });
+  });
+});
+
+describe("Toolbar.Button asChild — an intrinsic button child's type", () => {
+  it("keeps a child <button type='submit'> a submit button inside its form", async () => {
+    const html = await render(
+      <form>
+        <Toolbar.Button asChild>
+          <button type='submit'>Save</button>
+        </Toolbar.Button>
+      </form>,
+    );
+
+    expect(attrsOf(html, "data-toolbar-item")).toEqual({ type: "submit", "data-slot": "toolbar-button", "data-toolbar-item": "" });
+  });
+
+  it("lets the caller's own type override the child's", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Toolbar.Button type='submit' asChild>
+            <button type='button'>Save</button>
+          </Toolbar.Button>,
+        ),
+      ),
+    ).toEqual({ type: "submit", "data-slot": "toolbar-button", "data-toolbar-item": "" });
   });
 });

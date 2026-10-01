@@ -12,7 +12,7 @@ const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 describe("Collapsible", () => {
   it("renders the whole disclosure exactly, with arbitrary data-* and aria-* values escaped", async () => {
     expect(await render(<Collapsible data-note={`R&D's "advanced" <opts>`} aria-label={`R&D's options`} />)).toBe(
-      '<details data-slot="collapsible" class="group/collapsible-item" data-note="R&amp;D&#39;s &quot;advanced&quot; &lt;opts&gt;" aria-label="R&amp;D&#39;s options"></details>',
+      '<details data-slot="collapsible" data-note="R&amp;D&#39;s &quot;advanced&quot; &lt;opts&gt;" aria-label="R&amp;D&#39;s options"></details>',
     );
   });
 
@@ -34,6 +34,17 @@ describe("Collapsible", () => {
 
   it("keeps its own slot token ahead of one handed down through props", async () => {
     expect(attrOf(await render(<Collapsible data-slot='filters' />), "data-slot")).toBe("collapsible filters");
+  });
+
+  it("leaves a nested disclosure no ancestor group to rotate its chevron by", async () => {
+    const html = await render(
+      <Collapsible open class='rounded-md'>
+        <Collapsible.Trigger icon={icon}>Advanced</Collapsible.Trigger>
+      </Collapsible>,
+    );
+    const groupClasses = (selector: string) => classesOf(html, selector).filter((name) => name.startsWith("group"));
+
+    expect({ root: groupClasses('data-slot="collapsible"'), chevron: groupClasses('data-slot="icon"') }).toEqual({ root: [], chevron: [] });
   });
 
   it("nests the trigger and the panel as siblings of the one details element", async () => {

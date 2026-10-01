@@ -122,7 +122,11 @@
 @utility state-disabled {
   &:is(:disabled, [aria-disabled="true"], :has(:disabled)),
   fieldset:disabled & {
-    @apply pointer-events-none opacity-50;
+    @apply opacity-50;
+  }
+  &:is(:disabled, [aria-disabled="true"], :has(:disabled)):not([data-slot~="tooltip-trigger"]),
+  fieldset:disabled &:not([data-slot~="tooltip-trigger"]) {
+    @apply pointer-events-none;
   }
 }
 

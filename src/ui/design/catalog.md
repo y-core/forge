@@ -60,7 +60,7 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
 | Interrupt for a decision that blocks the task | `Dialog` | `@y-core/forge/ui/core` |
 | Show secondary controls anchored to a trigger | `Popover` | `@y-core/forge/ui/core` |
 | Offer a list of commands from a trigger | `Menu` | `@y-core/forge/ui/core` |
-| Name an icon-only control on hover | `Tooltip` | `@y-core/forge/ui/core` |
+| Name an icon-only control on hover | `Tooltip` (`.Trigger` `kind='label'`) | `@y-core/forge/ui/core` |
 | Show one of several peer views in one region | `Tabs` | `@y-core/forge/ui/core` |
 | Let several independent sections expand | `Accordion` | `@y-core/forge/ui/core` |
 | Hide one optional block behind a disclosure | `Collapsible` | `@y-core/forge/ui/core` |

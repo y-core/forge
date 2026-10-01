@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { Collapsible } from "./collapsible";
 import { createIcon } from "./icon";
 
@@ -81,5 +81,48 @@ test.describe("Collapsible", () => {
     await mount(page, await render(Collapsible({ id: "adv", open: true, children: Collapsible.Trigger({ icon, children: "Advanced" }) })), EXPOSE);
 
     expect(await state(page)).toEqual({ nativeOpen: true });
+  });
+});
+
+test.describe("Collapsible — nested, under its real stylesheet", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  const nested = () =>
+    render(
+      Collapsible({
+        id: "outer",
+        open: true,
+        children: [
+          Collapsible.Trigger({ icon, children: "Outer" }),
+          Collapsible.Content({
+            children: Collapsible({
+              id: "inner",
+              children: [Collapsible.Trigger({ icon, id: "inner-trigger", children: "Inner" }), Collapsible.Content({ children: "Body" })],
+            }),
+          }),
+        ],
+      }),
+    );
+
+  const chevronRotation = (page: Page) =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        ["outer", "inner"].map((id) => {
+          const chevron = document.querySelector(`#${id} > summary > svg`);
+          if (chevron === null) throw new Error(`#${id} has no chevron in its summary`);
+          return [id, getComputedStyle(chevron).rotate];
+        }),
+      ),
+    );
+
+  test("a closed disclosure inside an open one keeps its own chevron unturned, and turns it once opened", async ({ page }) => {
+    const html = await nested();
+    await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
+
+    expect(await chevronRotation(page)).toEqual({ outer: "180deg", inner: "none" });
+
+    await page.click("#inner-trigger");
+
+    await expect.poll(() => chevronRotation(page)).toEqual({ outer: "180deg", inner: "180deg" });
   });
 });

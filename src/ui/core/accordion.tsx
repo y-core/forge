@@ -34,7 +34,7 @@ const AccordionItem: FC<AccordionItemProps> = ({ open, class: cls, children, "da
   <details
     data-slot={slotToken("accordion-item", inherited)}
     {...(open ? { open } : {})}
-    class={cn("group/accordion-item border-b border-border last:border-b-0", cls)}
+    class={cn("border-b border-border last:border-b-0", cls)}
     {...props}>
     {children}
   </details>
@@ -60,7 +60,7 @@ const AccordionTrigger = <N extends string = string>({
     <Icon
       name='chevron-down'
       viewBox='0 0 24 24'
-      class='size-4 shrink-0 text-muted-foreground group-open/accordion-item:rotate-180 motion-safe:transition-transform motion-safe:duration-200'
+      class='size-4 shrink-0 text-muted-foreground motion-safe:transition-transform motion-safe:duration-200 [[open]>summary>&]:rotate-180'
     />
   </summary>
 );

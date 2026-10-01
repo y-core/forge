@@ -2,9 +2,12 @@
 /** @jsxImportSource @y-core/forge/jsx */
 import { describe, expect, it } from "bun:test";
 
+import type { FC, JSX } from "../../jsx/types";
 import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { Link } from "./link";
 import { Menu } from "./menu";
+import { Toolbar } from "./toolbar";
 import { Tooltip } from "./tooltip";
 
 describe("Tooltip.Content", () => {
@@ -40,7 +43,7 @@ describe("Tooltip", () => {
 });
 
 describe("Tooltip.Trigger", () => {
-  it("describes itself by the content id, which is how the controller finds the hint at all", async () => {
+  it("is described by the content id when no kind is given", async () => {
     expect(attrsOf(await render(<Tooltip.Trigger for='tip'>Save</Tooltip.Trigger>))).toEqual({
       type: "button",
       "data-slot": "tooltip-trigger",
@@ -169,5 +172,245 @@ describe("Tooltip — a non-string inherited token contributes nothing", () => {
     expect(actual).toEqual(
       cases.map(({ label }) => ({ label, root: "tooltip", trigger: "tooltip-trigger", asChild: "tooltip-trigger", content: "tooltip-content" })),
     );
+  });
+});
+
+describe("Tooltip.Trigger kind — which ARIA reference the content id lands on", () => {
+  const cases = [
+    { kind: undefined, expected: { "aria-describedby": "tip" } },
+    { kind: "description" as const, expected: { "aria-describedby": "tip" } },
+    { kind: "label" as const, expected: { "aria-labelledby": "tip" } },
+  ];
+
+  it("labels by the content in label kind and describes by it otherwise, never both", async () => {
+    const actual = await Promise.all(
+      cases.map(async ({ kind }) => ({
+        kind,
+        own: attrsOf(
+          await render(
+            <Tooltip.Trigger for='tip' kind={kind}>
+              B
+            </Tooltip.Trigger>,
+          ),
+        ),
+        asChild: attrsOf(
+          await render(
+            <Tooltip.Trigger for='tip' kind={kind} asChild>
+              <button type='button'>B</button>
+            </Tooltip.Trigger>,
+          ),
+        ),
+      })),
+    );
+
+    expect(actual).toEqual(
+      cases.map(({ kind, expected }) => ({
+        kind,
+        own: { type: "button", "data-slot": "tooltip-trigger", ...expected },
+        asChild: { type: "button", "data-slot": "tooltip-trigger", ...expected },
+      })),
+    );
+  });
+});
+
+describe("Tooltip.Trigger kind=label refuses a second name", () => {
+  const cases = [
+    {
+      where: "its own props",
+      prop: "aria-label",
+      build: () => Tooltip.Trigger({ for: "tip", kind: "label", "aria-label": "Bold", children: "B" }),
+    },
+    {
+      where: "its own props",
+      prop: "aria-labelledby",
+      build: () => Tooltip.Trigger({ for: "tip", kind: "label", "aria-labelledby": "other", children: "B" }),
+    },
+    {
+      where: "the asChild child",
+      prop: "aria-label",
+      build: () =>
+        Tooltip.Trigger({
+          for: "tip",
+          kind: "label",
+          asChild: true,
+          children: (
+            <button type='button' aria-label='Bold'>
+              B
+            </button>
+          ),
+        }),
+    },
+    {
+      where: "the asChild child",
+      prop: "aria-labelledby",
+      build: () =>
+        Tooltip.Trigger({
+          for: "tip",
+          kind: "label",
+          asChild: true,
+          children: (
+            <button type='button' aria-labelledby='other'>
+              B
+            </button>
+          ),
+        }),
+    },
+  ];
+
+  for (const { where, prop, build } of cases) {
+    it(`throws naming ${prop} when it is on ${where}`, () => {
+      expect(build).toThrow(new RegExp(`kind="label" cannot also carry ${prop}:`));
+    });
+  }
+
+  it("keeps an aria-label in description kind, where the tooltip only describes", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' aria-label='Bold'>
+            B
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "tip", "aria-label": "Bold" });
+  });
+
+  it("treats an aria-label set to undefined as no name at all", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' kind='label' aria-label={undefined}>
+            B
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-labelledby": "tip" });
+  });
+});
+
+describe("Tooltip.Trigger disabled — inert but still hoverable and focusable", () => {
+  it("renders aria-disabled and data-disabled in place of the native disabled", async () => {
+    expect(
+      await render(
+        <Tooltip.Trigger for='tip' disabled>
+          Save
+        </Tooltip.Trigger>,
+      ),
+    ).toBe(
+      '<button type="button" data-slot="tooltip-trigger" class="cursor-default focus-ring" aria-describedby="tip" aria-disabled="true" data-disabled="">Save</button>',
+    );
+  });
+
+  it("renders nothing inert for disabled={false}", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' disabled={false}>
+            Save
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "tip" });
+  });
+
+  it("converts an asChild button child's own disabled the same way", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' asChild>
+            <button type='button' disabled>
+              Save
+            </button>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "tip", "aria-disabled": "true", "data-disabled": "" });
+  });
+
+  it("keeps a disabled Toolbar.Button child inert as aria-disabled, never native disabled", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' asChild>
+            <Toolbar.Button disabled>B</Toolbar.Button>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({
+      type: "button",
+      "data-slot": "toolbar-button tooltip-trigger",
+      "data-toolbar-item": "",
+      "aria-describedby": "tip",
+      "aria-disabled": "true",
+      "data-disabled": "",
+    });
+  });
+});
+
+const BareButton: FC<JSX.IntrinsicElements["button"]> = (props) => <button {...props} />;
+
+describe("Tooltip.Trigger asChild — a component child's type", () => {
+  it("keeps a Toolbar.Button child's own type='submit', so it still submits its form", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='t' asChild>
+            <Toolbar.Button type='submit'>Save</Toolbar.Button>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "submit", "data-slot": "toolbar-button tooltip-trigger", "data-toolbar-item": "", "aria-describedby": "t" });
+  });
+
+  it("gives type='button' to a component child that sets no type and renders none of its own", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='t' asChild>
+            <BareButton>Save</BareButton>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "t" });
+  });
+
+  it("gives no type to a Link child, adding only its slot token and aria-describedby", async () => {
+    const bare = attrsOf(await render(<Link href='/x'>Docs</Link>));
+
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='t' asChild>
+            <Link href='/x'>Docs</Link>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ ...bare, "data-slot": "link tooltip-trigger", "aria-describedby": "t" });
+  });
+});
+
+describe("Tooltip.Trigger asChild — an intrinsic button child's type", () => {
+  it("keeps a child <button type='submit'> a submit button inside its form", async () => {
+    const html = await render(
+      <form>
+        <Tooltip.Trigger for='t' asChild>
+          <button type='submit'>Save</button>
+        </Tooltip.Trigger>
+      </form>,
+    );
+
+    expect(attrsOf(html, "aria-describedby")).toEqual({ type: "submit", "data-slot": "tooltip-trigger", "aria-describedby": "t" });
+  });
+
+  it("lets the caller's own type override the child's", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='t' type='submit' asChild>
+            <button type='button'>Save</button>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "submit", "data-slot": "tooltip-trigger", "aria-describedby": "t" });
   });
 });

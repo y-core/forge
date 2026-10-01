@@ -91,7 +91,6 @@ describe("checkMenuItem", () => {
     checkMenuItem(loose as never, popup as never);
 
     expect(state(loose)).toEqual({ aria: "true", data: true });
-    // Scoped to the popup, so every radio row in it is cleared — including the grouped ones.
     expect(state(small)).toEqual({ aria: "false", data: false });
     expect(state(other)).toEqual({ aria: "false", data: false });
   });
@@ -166,8 +165,47 @@ describe("mountMenu", () => {
     expect(opened?.id ?? null).toBe("row-1");
   });
 
-  // `commandfor` makes the panel chain a graph rather than a tree, so it can cycle: the walk out of
-  // it is capped, and these two prove the cap holds where the chain closes on itself.
+  describe("mountMenu — returning focus on close", () => {
+    function openAndClose(popup: FakeElement): void {
+      popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "closed" }));
+    }
+
+    it("returns focus to the element that held it when a context menu with no trigger anywhere opened", () => {
+      const { doc, popup } = navigableMenu();
+      const canvas = new FakeElement("DIV", { tabindex: "0", id: "canvas" });
+      doc.root.append(canvas);
+      canvas.focus();
+      const dispose = mountMenu(popup as never);
+
+      popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+      const whileOpen = doc.activeElement?.id ?? null;
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "closed" }));
+      dispose();
+
+      expect({ whileOpen, afterClose: doc.activeElement?.id ?? null }).toEqual({ whileOpen: "row-0", afterClose: "canvas" });
+    });
+
+    it("returns focus to the element that opened the menu rather than to the trigger its commandfor names", () => {
+      installCssEscape();
+      const { doc, el } = fakeTree();
+      const trigger = el("BUTTON", { commandfor: "m", id: "trigger" });
+      const shortcut = el("BUTTON", { id: "shortcut" });
+      const popup = el("DIV", { "data-slot": "menu-popup", role: "menu", id: "m" });
+      popup.append(el("BUTTON", { role: "menuitem", id: "row" }));
+      doc.root.append(trigger, shortcut, popup);
+      shortcut.focus();
+      const dispose = mountMenu(popup as never);
+
+      openAndClose(popup);
+      dispose();
+
+      expect({ active: doc.activeElement?.id ?? null, triggerFocused: trigger.focused }).toEqual({ active: "shortcut", triggerFocused: false });
+    });
+  });
+
   describe("mountMenu — a cyclic panel chain", () => {
     /** Panels wired so that following `commandfor` outward from the first never reaches a root. */
     function cycle(panels: string[]) {
@@ -391,13 +429,9 @@ describe("mountMenu", () => {
     });
   });
 
-  // A menu popup is swapped wholesale by HTMX, so a listener left behind accumulates one per swap.
-  // The pass case dispatches *after* dispose: a removed listener and an inert one look alike otherwise.
   describe("mountMenu — disposing", () => {
     const count = (el: FakeElement, type: string): number => el.listeners.get(type)?.length ?? 0;
 
-    // The roving focus controller adds its own keydown listener to the same popup, so the count is
-    // what tells `disposeFocus()` apart from the removals beside it.
     it("listens for its own events and the roving ring's while mounted", () => {
       const { popup } = navigableMenu();
 

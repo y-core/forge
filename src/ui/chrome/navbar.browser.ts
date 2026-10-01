@@ -220,20 +220,6 @@ const PANEL = "[data-slot~='navbar-backdrop'] + div";
 const BACKDROP = "[data-slot~='navbar-backdrop']";
 const TOGGLE = "[data-slot~='navbar-toggle']";
 
-// Flat, for the trap tests alone: a collapsed nested disclosure leaves its links in the DOM and
-// unfocusable, so "the last panel item" would name an element no keyboard can reach.
-const FLAT: NavDefinition = {
-  sections: [
-    {
-      items: [
-        { label: "Home", href: "home" },
-        { label: "Docs", href: "docs" },
-        { label: "About", href: "about" },
-      ],
-    },
-  ],
-};
-
 async function mountDrawer(page: Page, config: NavDefinition = CONFIG): Promise<void> {
   const html = await render(Navbar({ config, resolveHref: (key: string) => `#${key}`, icon, collapsedAs: "drawer" }));
   // Reduced motion keeps this a geometry assertion: a settled rect rather than one mid-slide.
@@ -254,12 +240,12 @@ const isDrawerOpen = (page: Page) => page.evaluate(() => document.querySelector<
 const PANEL_FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
 
-/** Focuses the panel's last focusable item and reports its text, so no test hardcodes which it is. */
+/** Focuses the last panel item the browser renders and reports its text, so no test hardcodes which it is. */
 const focusLastPanelItem = (page: Page): Promise<string | undefined> =>
   page.evaluate(
     ([selector, focusable]) => {
       const panel = document.querySelector(selector);
-      const items = [...(panel?.querySelectorAll<HTMLElement>(focusable) ?? [])].filter((n) => !n.hidden);
+      const items = [...(panel?.querySelectorAll<HTMLElement>(focusable) ?? [])].filter((n) => !n.hidden && n.checkVisibility());
       const last = items.at(-1);
       if (last === undefined) throw new Error("the drawer panel holds no focusable item");
       last.focus();
@@ -267,6 +253,10 @@ const focusLastPanelItem = (page: Page): Promise<string | undefined> =>
     },
     [PANEL, PANEL_FOCUSABLE] as [string, string],
   );
+
+/** How many links the panel holds inside a disclosure that is shut, which no keyboard can reach. */
+const shutDisclosureLinks = (page: Page): Promise<number> =>
+  page.evaluate((selector) => document.querySelectorAll(`${selector} details[data-slot~='navbar-disclosure']:not([open]) a[href]`).length, PANEL);
 
 const focusedSlot = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
 
@@ -365,9 +355,10 @@ test.describe("Navbar — the drawer at phone width", () => {
   // The summary is a sibling of the panel and draws the only visible way out, so a trap scoped to
   // the panel leaves a reader who does not know Escape with no exit at all — WCAG 2.1.2.
   test("cycles Tab through its own toggle, so the visible close is reachable", async ({ page }) => {
-    await mountDrawer(page, FLAT);
+    await mountDrawer(page);
     await page.click(TOGGLE);
     await expect.poll(() => focusedText(page)).toBe("Home");
+    expect(await shutDisclosureLinks(page)).toBeGreaterThan(0);
 
     await focusLastPanelItem(page);
     await page.keyboard.press("Tab");
@@ -376,11 +367,12 @@ test.describe("Navbar — the drawer at phone width", () => {
   });
 
   test("cycles Shift+Tab back from its toggle to the last panel item", async ({ page }) => {
-    await mountDrawer(page, FLAT);
+    await mountDrawer(page);
     await page.click(TOGGLE);
     // The open handler moves focus into the panel a task later; taking the toggle before it lands
     // would make this a race rather than an assertion about the trap.
     await expect.poll(() => focusedText(page)).toBe("Home");
+    expect(await shutDisclosureLinks(page)).toBeGreaterThan(0);
     const last = await focusLastPanelItem(page);
     await page.focus(TOGGLE);
 
@@ -390,7 +382,7 @@ test.describe("Navbar — the drawer at phone width", () => {
   });
 
   test("closes from its own toggle once the keyboard reaches it", async ({ page }) => {
-    await mountDrawer(page, FLAT);
+    await mountDrawer(page);
     await page.click(TOGGLE);
     expect(await isDrawerOpen(page)).toBe(true);
     // Same wait as the two trap tests above: the open handler moves focus into the panel a task
@@ -408,7 +400,7 @@ test.describe("Navbar — the drawer at phone width", () => {
   // The Tab trap is keyboard-only, and a screen reader's swipe is not a Tab keydown: without `inert`
   // a reader swipes past the last link into the content under the backdrop and can activate it.
   test("makes the page behind it inert while open, and gives it back on close and on dispose", async ({ page }) => {
-    await mountDrawer(page, FLAT);
+    await mountDrawer(page);
     const outsideIsInert = () => page.evaluate(() => document.getElementById("page")?.inert ?? null);
     expect(await outsideIsInert()).toBe(false);
 
@@ -424,6 +416,104 @@ test.describe("Navbar — the drawer at phone width", () => {
   });
 });
 
+const INLINE: NavDefinition = {
+  sections: [
+    {
+      items: [
+        { label: "Home", href: "home" },
+        {
+          label: "File",
+          items: [
+            { label: "New", href: "new" },
+            { label: "Open", href: "open" },
+          ],
+        },
+        { label: "About", href: "about" },
+      ],
+    },
+  ],
+};
+
+const DISCLOSURE = "[data-slot~='navbar-disclosure']";
+const DISCLOSURE_TRIGGER = "[data-slot~='navbar-disclosure-trigger']";
+
+/** The drawer's disclosure, the links it holds and the item after it, measured against the panel. */
+function disclosureLayout(page: Page) {
+  return page.evaluate(
+    ([panelSel, disclosureSel]) => {
+      const panel = document.querySelector(panelSel)?.getBoundingClientRect();
+      const disclosure = document.querySelector<HTMLDetailsElement>(disclosureSel);
+      const about = document.querySelector(`${panelSel} a[href='#about']`);
+      const content = disclosure?.querySelector("[data-slot~='navbar-disclosure-content']");
+      if (panel === undefined || disclosure === null || about === null || content == null) throw new Error("the drawer fixture is not on the page");
+      const links = [...content.querySelectorAll("a[href]")];
+      return {
+        open: disclosure.open,
+        popoversOpen: document.querySelectorAll(":popover-open").length,
+        linksRendered: links.map((link) => link.checkVisibility()),
+        linksInsidePanel: links.map((link) => {
+          const box = link.getBoundingClientRect();
+          return box.left >= panel.left && box.right <= panel.right && box.top >= panel.top && box.bottom <= panel.bottom;
+        }),
+        aboutTop: about.getBoundingClientRect().top,
+        contentHeight: content.getBoundingClientRect().height,
+      };
+    },
+    [PANEL, DISCLOSURE] as [string, string],
+  );
+}
+
+test.describe("Navbar — a menu in the drawer opens in the flow", () => {
+  test.use({ viewport: { width: 375, height: 700 } });
+
+  test("a tap on a menu's summary opens its links inside the panel, with no popover", async ({ page }) => {
+    await mountDrawer(page, INLINE);
+    await page.click(TOGGLE);
+    await expect.poll(() => focusedText(page)).toBe("Home");
+    const shut = await disclosureLayout(page);
+
+    await page.click(DISCLOSURE_TRIGGER);
+
+    await expect.poll(async () => (await disclosureLayout(page)).open).toBe(true);
+    const open = await disclosureLayout(page);
+    expect({ shut: shut.linksRendered, open: open.linksRendered, inside: open.linksInsidePanel, popovers: open.popoversOpen }).toEqual({
+      shut: [false, false],
+      open: [true, true],
+      inside: [true, true],
+      popovers: 0,
+    });
+  });
+
+  test("pushes the item below it down by exactly the height of what it opened", async ({ page }) => {
+    await mountDrawer(page, INLINE);
+    await page.click(TOGGLE);
+    await expect.poll(() => focusedText(page)).toBe("Home");
+    const shut = await disclosureLayout(page);
+
+    await page.click(DISCLOSURE_TRIGGER);
+
+    await expect.poll(async () => (await disclosureLayout(page)).open).toBe(true);
+    const open = await disclosureLayout(page);
+    expect(open.contentHeight).toBeGreaterThan(0);
+    expect(open.aboutTop - shut.aboutTop).toBeCloseTo(open.contentHeight, 0);
+  });
+
+  test("Tab walks into an opened disclosure's links rather than past them", async ({ page }) => {
+    await mountDrawer(page, INLINE);
+    await page.click(TOGGLE);
+    await expect.poll(() => focusedText(page)).toBe("Home");
+    await page.click(DISCLOSURE_TRIGGER);
+    await expect.poll(async () => (await disclosureLayout(page)).open).toBe(true);
+
+    await page.keyboard.press("Tab");
+    expect(await focusedText(page)).toBe("New");
+    await page.keyboard.press("Tab");
+    expect(await focusedText(page)).toBe("Open");
+    await page.keyboard.press("Tab");
+    expect(await focusedText(page)).toBe("About");
+  });
+});
+
 const LEADING = "#pages";
 const TRAILING = "#toc";
 const LEADING_TOGGLE = `${LEADING} > ${TOGGLE}`;
@@ -434,7 +524,7 @@ async function mountStyledRails(page: Page): Promise<void> {
   const rail = (id: string, placement: "left" | "right") =>
     render(
       Navbar({
-        config: FLAT,
+        config: CONFIG,
         resolveHref: (key: string) => `#${key}`,
         icon,
         collapsible: "always",
@@ -628,5 +718,81 @@ test.describe("Navbar — megamenu", () => {
 
     await page.click("#before");
     await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(false);
+  });
+});
+
+async function mountStyled(page: Page, collapsible: "mobile" | "always"): Promise<void> {
+  const html = await render(Navbar({ config: CONFIG, resolveHref: (key: string) => `#${key}`, icon, collapsible }));
+  await mount(page, `${DETAILS_CONTENT_RULE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
+  await page.evaluate(() => window.forgeResume.resume());
+}
+
+test.describe("Navbar — desktop width under the real stylesheet", () => {
+  test("renders the bar menu and none of its disclosure twin", async ({ page }) => {
+    await mountStyled(page, "mobile");
+
+    const rendered = await page.evaluate(
+      ([disclosure, trigger]) => ({
+        disclosure: document.querySelector(disclosure)?.checkVisibility() ?? null,
+        menuTrigger: document.querySelector(trigger)?.checkVisibility() ?? null,
+      }),
+      [DISCLOSURE, "[data-slot~='menu-trigger']"] as [string, string],
+    );
+
+    expect(rendered).toEqual({ disclosure: false, menuTrigger: true });
+  });
+
+  test("opens the bar menu as its popover", async ({ page }) => {
+    await mountStyled(page, "mobile");
+
+    await page.click("[data-slot~='menu-trigger']");
+
+    await expect.poll(() => isOpen(page, "navbar-menu-top-0")).toBe(true);
+  });
+
+  test("a rail's menu opens in the flow at desktop width too, with no popover", async ({ page }) => {
+    await mountStyled(page, "always");
+    await page.click(TOGGLE);
+
+    await page.click(DISCLOSURE_TRIGGER);
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (sel) => ({
+            open: document.querySelector<HTMLDetailsElement>(sel)?.open ?? null,
+            popovers: document.querySelectorAll("[popover]").length,
+            newRendered: document.querySelector(`${sel} a[href='#new']`)?.checkVisibility() ?? null,
+          }),
+          DISCLOSURE,
+        ),
+      )
+      .toEqual({ open: true, popovers: 0, newRendered: true });
+  });
+});
+
+test.describe("Navbar — nested disclosures under the real stylesheet", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  const chevronRotation = (page: Page) =>
+    page.evaluate((disclosure) => {
+      const rotation = (selector: string) => {
+        const chevron = document.querySelector(selector)?.querySelector(":scope > summary > [aria-hidden='true']");
+        if (chevron == null) throw new Error(`${selector} has no chevron in its summary`);
+        return getComputedStyle(chevron).rotate;
+      };
+      return { outer: rotation(disclosure), inner: rotation(`${disclosure} ${disclosure}`) };
+    }, DISCLOSURE);
+
+  test("a closed disclosure inside an open one keeps its own chevron unturned, and turns it once opened", async ({ page }) => {
+    await mountStyled(page, "always");
+    await page.click(TOGGLE);
+    await page.click(DISCLOSURE_TRIGGER);
+
+    await expect.poll(() => chevronRotation(page)).toEqual({ outer: "180deg", inner: "none" });
+
+    await page.click(`${DISCLOSURE} ${DISCLOSURE} > ${DISCLOSURE_TRIGGER}`);
+
+    await expect.poll(() => chevronRotation(page)).toEqual({ outer: "180deg", inner: "180deg" });
   });
 });

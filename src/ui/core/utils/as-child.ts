@@ -37,15 +37,21 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
   // compound already resolved into the props it is merging.
   const ariaDisabled = options.props["aria-disabled"];
   const inert = options.disabled === true || ariaDisabled === true || ariaDisabled === "true";
+  const isLinkComponent = childType === undefined && children.props.href !== undefined;
+  const fallbackType = isButton ? "button" : isLinkComponent ? undefined : options.defaultType;
 
   return cloneElement(children, {
     ...options.props,
-    // The caller's `type` wins, then the child's own, then `"button"`: a compound that defaults
-    // `type` before this point would overwrite a child's `type="submit"`.
-    ...(isButton ? definedEntries({ disabled: options.disabled, type: options.type ?? children.props.type ?? "button" }) : {}),
+    // The caller's `type` wins, then the child's own, then the default: `"button"` for a `<button>`, and
+    // the compound's `defaultType` for a component without an `href`, which would render a link.
+    ...(childType === undefined || isButton
+      ? definedEntries({ disabled: options.disabled, type: options.type ?? children.props.type ?? fallbackType })
+      : {}),
     // `disabled` is button-only, and `rest` carries it through on compounds that do not destructure
     // it out, so an `<a>` would come out `<a disabled aria-disabled="true">`.
-    ...(!isButton ? { disabled: undefined, ...(options.disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}) } : {}),
+    ...(childType !== undefined && !isButton
+      ? { disabled: undefined, ...(options.disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}) }
+      : {}),
     ...(childType === "a" && inert ? INERT_ANCHOR_PROPS : {}),
     ...(present(options.prefix) || present(options.suffix)
       ? { children: [options.prefix ?? null, children.props.children, options.suffix ?? null] }

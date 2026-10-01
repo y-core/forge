@@ -85,8 +85,9 @@ drew, and forge names what goes back in its place.
 - `border-0` removes the boundary — restore it with `border-input`, `border-border`, or a `Separator`.
 
 A hidden `::marker` is the `<summary>` case: `Collapsible.Trigger` and `Accordion.Trigger` both set `list-none` to drop the UA disclosure triangle,
-and both draw their own `chevron-down` `Icon` back in its place, rotating on `group-open/accordion-item` and `group-open/collapsible-item`
-respectively. Neither can forget it: the `icon` prop is required on both, so the replacement is supplied at every call site or the build fails.
+and both draw their own `chevron-down` `Icon` back in its place, rotating on its own `<details>`'s `[open]` through a direct-child selector, so a
+nested disclosure reflects only its own state. Neither can forget it: the `icon` prop is required on both, so the replacement is supplied at every
+call site or the build fails.
 
 ### 1f. Hit Target and Reduced Motion
 

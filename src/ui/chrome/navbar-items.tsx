@@ -6,7 +6,7 @@ import { Menu } from "../core/menu";
 import { Popover } from "../core/popover";
 import { slotToken } from "../core/utils/as-child";
 import { cn } from "../core/utils/cn";
-import type { NavCollapsible, NavGroup, NavItem, NavMegaMenu, NavRenderCtx, NavSection, NavSlot } from "./types";
+import type { NavCollapsible, NavGroup, NavItem, NavMegaMenu, NavMenu, NavRenderCtx, NavSection, NavSlot } from "./types";
 
 /** Section classes per collapse mode; `"always"` never turns the row horizontal. */
 const SECTION_CLASS: Record<NavCollapsible, string> = { mobile: "flex flex-col gap-1 md:flex-row md:items-center", always: "flex flex-col gap-1" };
@@ -23,8 +23,10 @@ const MEGA_PANEL = "w-max max-w-[calc(100vw-2rem)] p-4";
 /** One literal per column count — Tailwind scans source, so a computed `grid-cols-${n}` never compiles. */
 const MEGA_COLS = ["grid-cols-1", "grid-cols-1", "grid-cols-2", "grid-cols-3", "grid-cols-4"] as const;
 
-/** The collapsed twin of a megamenu: the same groups as a stacked list, shown where the popover is not. */
-const MEGA_LIST_CLASS: Record<NavCollapsible, string> = { mobile: "flex flex-col gap-2 md:hidden", always: "flex flex-col gap-2" };
+/** The collapsed twin of a menu or megamenu: an inline disclosure, shown where the popover is not. */
+const DISCLOSURE_CLASS: Record<NavCollapsible, string> = { mobile: "md:hidden", always: "" };
+
+const BAR_DISCLOSURE = cn(`${BAR_LINK} w-full list-none justify-between [&::-webkit-details-marker]:hidden`);
 
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). @internal */
 export function filterAttrs(item: { filters?: string[] | undefined }, activeFilters: string[]): Record<string, unknown> {
@@ -39,9 +41,9 @@ export function filterAttrs(item: { filters?: string[] | undefined }, activeFilt
 }
 
 /** The chevron every menu trigger carries. */
-function chevron(ctx: NavRenderCtx): JSXNode {
+function chevron(ctx: NavRenderCtx, cls?: string): JSXNode {
   return (
-    <span aria-hidden='true' class='text-xs opacity-70'>
+    <span aria-hidden='true' class={cn("text-xs opacity-70", cls)}>
       <ctx.icon
         name='chevron-down'
         width={16}
@@ -68,7 +70,56 @@ function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
   );
 }
 
-/** A `Popover` of link columns plus its collapsed list twin at bar level, a submenu of groups when nested. */
+/** Whether the page the reader is on sits anywhere beneath this item. */
+function containsCurrent(item: NavItem): boolean {
+  if ("slot" in item) return false;
+  if ("groups" in item) return item.groups.some((group) => group.group.some(containsCurrent));
+  if ("items" in item) return item.items.some(containsCurrent);
+  return item.current === true;
+}
+
+/** A native `<details>` that opens a branch in the flow, server-open over the current page. */
+function renderDisclosure(item: NavMenu | NavMegaMenu, ctx: NavRenderCtx): JSXNode {
+  const body = "groups" in item ? item.groups.map((group) => renderGroup(group, ctx)) : item.items.map((child) => renderInlineItem(child, ctx));
+  return (
+    <details
+      data-slot={slotToken("navbar-disclosure")}
+      class={DISCLOSURE_CLASS[ctx.collapsible]}
+      {...(containsCurrent(item) ? { open: true } : {})}
+      {...filterAttrs(item, ctx.activeFilters)}>
+      <summary data-slot='navbar-disclosure-trigger' class={BAR_DISCLOSURE}>
+        <span>{item.label}</span>
+        {chevron(ctx, "motion-safe:transition-transform [[open]>summary>&]:rotate-180")}
+      </summary>
+      <div data-slot='navbar-disclosure-content' class='ms-3 flex flex-col gap-1 border-s border-border ps-2'>
+        {body}
+      </div>
+    </details>
+  );
+}
+
+/** The collapsed copy of a bar-level branch, minting its ids under a `-d` base from its own counter beside the desktop copy. */
+function renderDisclosureTwin(item: NavMenu | NavMegaMenu, ctx: NavRenderCtx): JSXNode {
+  return renderDisclosure(item, { ...ctx, idBase: `${ctx.idBase}-d`, seq: ctx.disclosureSeq });
+}
+
+/** Renders an item inside a disclosure: bar links, never menu rows, and no generated menu ids. */
+function renderInlineItem(item: NavItem, ctx: NavRenderCtx): JSXNode {
+  if ("slot" in item) return renderSlot(item, 0, ctx);
+  if ("groups" in item || "items" in item) return renderDisclosure(item, ctx);
+  return (
+    <a
+      href={ctx.resolveHref(item.href)}
+      data-slot={slotToken("navbar-link")}
+      {...currentAttrs(item.current ?? false)}
+      class={BAR_LINK}
+      {...filterAttrs(item, ctx.activeFilters)}>
+      {item.label}
+    </a>
+  );
+}
+
+/** A `Popover` of link columns plus its collapsed disclosure twin at bar level, a submenu of groups when nested. */
 function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JSXNode {
   const fattrs = filterAttrs(item, ctx.activeFilters);
 
@@ -93,12 +144,7 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
     ];
   }
 
-  const list = () => (
-    <div data-slot={slotToken("navbar-megamenu-list")} class={MEGA_LIST_CLASS[ctx.collapsible]} {...fattrs}>
-      {item.groups.map((group) => renderGroup(group, ctx))}
-    </div>
-  );
-  if (ctx.collapsible === "always") return list();
+  if (ctx.collapsible === "always") return renderDisclosure(item, ctx);
 
   const id = `navbar-menu-${ctx.idBase}-${ctx.seq.n++}`;
   const cols = MEGA_COLS[Math.min(item.groups.length, 4)] ?? "grid-cols-1";
@@ -112,8 +158,23 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
         <div class={cn("grid gap-6", cols)}>{item.groups.map((group) => renderGroup(group, ctx))}</div>
       </Popover.Content>
     </Popover>,
-    list(),
+    renderDisclosureTwin(item, ctx),
   ];
+}
+
+/** The desktop `Menu` of a bar-level branch, hidden below `md` where its disclosure twin shows. */
+function renderBarMenu(id: string, children: JSXNode, item: NavMenu, ctx: NavRenderCtx): JSXNode {
+  return (
+    <Menu class='max-md:hidden' {...filterAttrs(item, ctx.activeFilters)}>
+      <Menu.Trigger for={id} class={BAR_ITEM}>
+        <span>{item.label}</span>
+        {chevron(ctx)}
+      </Menu.Trigger>
+      <Menu.Popup triggered id={id}>
+        {children}
+      </Menu.Popup>
+    </Menu>
+  );
 }
 
 /** Renders a single item, recursing into nested menus; `depth` decides bar vocabulary from menu vocabulary. */
@@ -125,6 +186,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
   if ("groups" in item) return renderMegaMenu(item, depth, ctx);
 
   if ("items" in item) {
+    if (depth === 0 && ctx.collapsible === "always") return renderDisclosure(item, ctx);
     const id = `navbar-menu-${ctx.idBase}-${ctx.seq.n++}`;
     const children = item.items.map((child) => renderItem(child, depth + 1, ctx));
 
@@ -141,17 +203,7 @@ function renderItem(item: NavItem, depth: number, ctx: NavRenderCtx): JSXNode {
       ];
     }
 
-    return (
-      <Menu {...fattrs}>
-        <Menu.Trigger for={id} class={BAR_ITEM}>
-          <span>{item.label}</span>
-          {chevron(ctx)}
-        </Menu.Trigger>
-        <Menu.Popup triggered id={id}>
-          {children}
-        </Menu.Popup>
-      </Menu>
-    );
+    return [renderBarMenu(id, children, item, ctx), renderDisclosureTwin(item, ctx)];
   }
 
   const href = ctx.resolveHref(item.href);

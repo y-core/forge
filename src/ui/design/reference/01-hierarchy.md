@@ -107,7 +107,8 @@ whose width is set by the app, in which case `shape='square'` is the correct cho
 Default: `shape='square'` is used only where the parent supplies a definite width, unless a brief specifies a fluid grid of equal cells.
 <!-- rule:forge-ui-hierarchy-square-needs-width -->
 
-Every icon-only button still needs an accessible name — `forge-ui-accessible-name` is a Floor rule, and a `Tooltip` is not a substitute for one.
+Every icon-only button still needs an accessible name — `forge-ui-accessible-name` is a Floor rule. A `Tooltip` whose trigger is `kind='label'` is
+that name; a description tooltip is not a substitute for one.
 
 ## 4. Severity is a ladder, and `neutral` is the bottom rung
 

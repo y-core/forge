@@ -23,7 +23,7 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
   const win = ownerWindow(el);
 
   // Resolved off the element's realm so a realm lacking the constructor degrades to a no-op disposer
-  // rather than throwing off the bare global. See `UI_CLIENT_RUNTIME.md` §6a.
+  // rather than throwing off the bare global. See `UI_CLIENT_RUNTIME.md` §3b.
   const observerCtor = (win as Window & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
   if (typeof observerCtor !== "function") {
     console.warn(`[lazy] IntersectionObserver is unavailable in this realm; "${options.ref}" will never load`);

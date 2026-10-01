@@ -79,6 +79,13 @@ class FakeNode {
     if (this.ownerDocument) this.ownerDocument.activeElement = this;
   }
 
+  /** Cleared for a node inside a closed `<details>` or under `display: none`, which the browser renders nothing of. */
+  rendered = true;
+
+  checkVisibility(): boolean {
+    return this.rendered;
+  }
+
   getRootNode(): FakeDocument | FakeNode {
     return this.ownerDocument ?? this;
   }
@@ -653,5 +660,43 @@ describe("mountNavDrawer — a panel still hidden when it opens", () => {
     dispose();
 
     expect(f.doc.frames.pending.size).toBe(0);
+  });
+});
+
+describe("mountNavDrawer — items the browser renders nothing of", () => {
+  it("cycles Tab onto the summary from the last rendered item, past links a closed disclosure holds", () => {
+    const f = fixture(true);
+    (f.el.panel.items.at(-1) as FakeNode).rendered = false;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    (f.el.panel.items[1] as FakeNode).focus();
+
+    const event = f.doc.press("Tab");
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(f.doc.activeElement).toBe(f.el.summary);
+  });
+
+  it("cycles Shift+Tab from the summary to the last rendered item, never one a closed disclosure holds", () => {
+    const f = fixture(true);
+    (f.el.panel.items.at(-1) as FakeNode).rendered = false;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    f.el.summary.focus();
+
+    const event = f.doc.press("Tab", true);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(f.doc.activeElement).toBe(f.el.panel.items[1] as FakeNode);
+  });
+
+  it("moves focus on open to the first rendered item, past a copy hidden at this width", () => {
+    const f = fixture(true);
+    (f.el.panel.items[0] as FakeNode).rendered = false;
+    mountNavDrawer({ element: f.element });
+
+    f.el.userToggle();
+
+    expect(f.doc.activeElement).toBe(f.el.panel.items[1] as FakeNode);
   });
 });

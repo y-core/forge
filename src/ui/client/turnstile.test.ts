@@ -20,8 +20,6 @@ describe("hasTurnstileApi", () => {
   });
 
   it("is false for an element the DOM exposed under the name", () => {
-    // Any element with `id="turnstile"` becomes `window.turnstile`, and a truthiness test would
-    // take it for the API and try to render into it.
     const { el } = fakeTree();
     expect(hasTurnstileApi(win(el("DIV", { id: "turnstile" })))).toBe(false);
   });
@@ -332,7 +330,6 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     const second = button(scene, "preview");
 
     configRequest(scene, scene.form, first);
-    // One press is one challenge, so the displacement rides the one already in flight.
     expect(configRequest(scene, scene.form, second)).toEqual({ prevented: true, executes: 1 });
     expect({ first: first.disabled, second: second.disabled }).toEqual({ first: false, second: true });
 
@@ -357,6 +354,67 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     expect(reported).toEqual([{ reason: "error", submitter: pressed as unknown as HTMLElement }]);
     expect(scene.replayed).toEqual([]);
     expect({ disabled: pressed.disabled, busy: pressed.getAttribute("aria-busy") }).toEqual({ disabled: false, busy: null });
+  });
+});
+
+describe("mountTurnstile — explicit rendering", () => {
+  function injectedScene() {
+    const head = new FakeElement("HEAD");
+    const doc = Object.assign(new FakeDocument(), { head, documentElement: { classList: { contains: () => false } } });
+    head.ownerDocument = doc;
+    Object.assign(doc.defaultView, { turnstile: undefined, clearInterval: () => {} });
+    const form = new FakeForm("FORM", { "hx-post": "/contact" });
+    doc.body.append(form);
+    form.append(new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key" }));
+    return { doc, head, form };
+  }
+
+  it("loads Cloudflare's script with render=explicit as its only query parameter", () => {
+    const { head, form } = injectedScene();
+
+    const dispose = mountTurnstile(form as unknown as HTMLElement);
+    const src = String((head.children[0] as unknown as { src?: unknown } | undefined)?.src);
+    dispose();
+
+    expect([...new URL(src).searchParams]).toEqual([["render", "explicit"]]);
+  });
+
+  it("hands render a function for every callback and writes no global callback name onto the window", () => {
+    const { doc, head, form } = injectedScene();
+    let params: Record<string, unknown> = {};
+    const globalsBefore = Object.keys(doc.defaultView).sort();
+
+    const dispose = mountTurnstile(form as unknown as HTMLElement);
+    Object.assign(doc.defaultView, {
+      turnstile: {
+        render: (_el: unknown, given: Record<string, unknown>) => {
+          params = given;
+          return "widget-1";
+        },
+        execute: () => {},
+        reset: () => {},
+        remove: () => {},
+      },
+    });
+    head.children[0]?.dispatchEvent(new FakeEvent("load"));
+    const globalsAfter = Object.keys(doc.defaultView).sort();
+    dispose();
+
+    const callbacks = Object.fromEntries(
+      Object.entries(params)
+        .filter(([key]) => key === "callback" || key.endsWith("-callback"))
+        .map(([key, value]) => [key, typeof value]),
+    );
+    expect({ callbacks, globalsAdded: globalsAfter.filter((key) => !globalsBefore.includes(key)) }).toEqual({
+      callbacks: {
+        callback: "function",
+        "error-callback": "function",
+        "unsupported-callback": "function",
+        "before-interactive-callback": "function",
+        "after-interactive-callback": "function",
+      },
+      globalsAdded: [],
+    });
   });
 });
 

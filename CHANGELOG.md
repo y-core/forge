@@ -18,7 +18,42 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`NavGroup.group` accepts only `NavLink | NavSlot`.** A menu or megamenu in a section group or a megamenu column is now a type error.
+- **`Collapsible` and `Accordion.Item` no longer carry the `group/collapsible-item` and `group/accordion-item` classes.** A consumer selector keyed
+  on either must key on the element's own `[open]` instead.
+- **A disabled `Tooltip.Trigger` renders `aria-disabled="true"`, never `disabled`**, its own or an `asChild` child's, so its tooltip still shows on
+  hover and focus. A selector or test keyed on `:disabled` must key on `[aria-disabled="true"]`.
+- **`asChild` no longer rewrites `disabled` or `type` on a component child.** A component child receives them as props and renders them itself:
+  `disabled` only where the compound set it, and `type` by the rule an intrinsic `<button>` child follows too — the caller's, then the child's own,
+  then a default: `"button"` for a `<button>`, and for a component without an `href` only where its compound declares one, as
+  `Tooltip.Trigger` and `Toolbar.Button` do.
+- **`mountTooltip` finds the content by its `tooltip-content` slot inside the root**, no longer through the trigger's `aria-describedby`. Content
+  rendered outside the `Tooltip` root is no longer found.
+
+### Added
+
+- **`Tooltip.Trigger` takes `kind`** (`"description"` or `"label"`). `"label"` points `aria-labelledby` at the content, so the tooltip is an
+  icon-only trigger's name, and throws if the trigger also carries `aria-label` or `aria-labelledby`. The default is unchanged.
+
+### Changed
+
+- **A `Navbar` menu or megamenu opens inline in the collapsed panel.** Below `md`, and in a drawer, a `NavMenu` or `NavMegaMenu` now renders as a
+  native `<details>` disclosure that opens in the flow at full panel width, pushing the items below it down; a nested menu nests as an indented
+  disclosure. Above `md` it is still the popover. A rail (`collapsible="always"`) renders the disclosure at every width, so its menus are no longer
+  popovers. A disclosure is server-open over the current page.
+
+### Fixed
+
+- **`mountNavDrawer` traps Tab only over what is visible.** Its trap listed links inside a closed disclosure and the desktop copies hidden below
+  `md`, so Tab could land on an element the reader cannot see.
+- **A closed `Collapsible` or `Accordion` item nested in an open one no longer shows its chevron open.** The chevron rotates on its own
+  `<details>`'s `[open]` rather than on any open ancestor's.
+- **An `aria-disabled="true"` element no longer fires a `command`, a `popovertarget`, a form submission or a navigation.** `resume` cancels a
+  click inside one in the capture phase, keyboard activation included; before, only forge's own scope actions were skipped.
+- **An `asChild` `<button type="submit">` under `Tooltip.Trigger` or `Toolbar.Button` submits its form again.** Both compounds passed their own
+  `type="button"` default as though the caller had chosen it, overriding the child's `type`.
 
 ---
 

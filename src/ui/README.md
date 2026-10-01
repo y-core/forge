@@ -284,6 +284,34 @@ rather than silently degrading ([`UI_SSR_COMPONENTS.md`][usc-1c] §1c). `Link` a
 link. When you need the button's paint on markup that is not a button at all — a pagination anchor, a bespoke control — the `buttonVariants`
 resolver returns the class string on its own.
 
+### Name an icon-only button with a tooltip
+
+Give the trigger `kind="label"` and the tooltip's text becomes the button's accessible name, read once. Leave out `aria-label`: a label-mode
+trigger carrying one throws.
+
+```tsx
+<Tooltip>
+  <Tooltip.Trigger for='bold-tip' kind='label' asChild>
+    <Toolbar.Button disabled={!canFormat}>
+      <AppIcon name='bold' />
+    </Toolbar.Button>
+  </Tooltip.Trigger>
+  <Tooltip.Content id='bold-tip'>Bold</Tooltip.Content>
+</Tooltip>;
+```
+
+The default `kind="description"` is for a trigger that already has a name and wants a hint beside it. A disabled trigger renders
+`aria-disabled="true"` rather than `disabled`, so it still takes hover and focus and the tooltip can say why it is unavailable; the client runtime
+cancels its clicks ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h). To toggle one in the browser, set both the attribute and the state hook:
+
+```ts
+trigger.setAttribute("aria-disabled", String(disabled));
+applyStateAttrs(trigger, { disabled });
+```
+
+`applyStateAttrs` is exported from `@y-core/forge/ui/contracts`. Never set `disabled` on the trigger at runtime, which takes the tooltip away with
+the click.
+
 ### Bind the icon sprite once
 
 `Select`, `Spinner`, and the chrome `ThemeToggle` / `Navbar` / `Dock` / `Toolbar` take a required `icon` prop typed `ForgeIcon<Name>` — forge never
@@ -383,25 +411,14 @@ The choices below are worth making deliberately; everything else has a default t
   `focusin` inside it.
 - **When the challenge runs.** `challenge` is `"render"` by default. Choose `"submit"` for a form that takes longer to fill than the 300-second
   token lives, and exactly one challenge runs at the press. It needs an htmx submission on the form or a descendant; without one the controller
-  reports it and falls back to `"render"`. A form whose own `hx-trigger` fires on anything but `submit` is not supported in this mode — its press is
-  held and never sent ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c). Cloudflare's documented pairing for it is `appearance="interaction-only"`, which is an
-  independent axis.
+  reports it and falls back to `"render"`. Cloudflare's documented pairing for it is `appearance="interaction-only"`, which is an independent axis.
 - **What the token is scoped to.** `action` and `cData` are what make `verifyTurnstile({ expectedAction })` and `{ expectedCData }` usable on the
   server, and `cData` is the only way to tie a challenge to an app-side record. Each has a Cloudflare charset; a value outside it is reported and
   **still forwarded**, leaving the server the one enforcement point.
 - **More than one widget in one form.** `responseFieldName` renames the hidden token input, and pairs with the server's `tokenField` option.
 
-Under `challenge="submit"` the press is held while the challenge runs — the controller marks the submitter `disabled` and `aria-busy`, because
-htmx's own indicators have not started yet. **The window always ends**: on the token the press is replayed and the request goes out, and on a
-challenge error or the load budget the fallback alert is revealed, the request is dropped rather than sent tokenless, and the button is pressable
-again for a retry. An interactive challenge swaps that budget for a longer one while the visitor is being asked to act, so an abandoned one still
-ends. A widget that has already errored lets the press through unheld rather than holding it for a token that will never arrive, and the fallback is
-taken back down if a retried challenge then succeeds.
-
-**An invalid form spends no challenge**: htmx validates it before the controller sees the press, and stops there. `novalidate`, a button-issued
-submission, or `formnovalidate` on the press all mean htmx sends the request either way, so the press spends a challenge and the server stays the
-enforcement point. **The last press wins**: a second press displaces the first, re-arms the window and rides the challenge already in flight, so a
-token can never answer a different control's request.
+Under `challenge="submit"` the submitter is `disabled` and `aria-busy` while the press is held, and is re-enabled before
+`TURNSTILE_ABANDONED_EVENT` fires. How the hold ends, and which presses it holds at all, is [`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c's.
 
 **Every hold that ends without a request tells the page.** Listen for it when the page should react — refocusing the submitter, or surfacing your
 own message:
@@ -414,9 +431,6 @@ form.addEventListener(TURNSTILE_ABANDONED_EVENT, (event) => {
   submitter?.focus();
 });
 ```
-
-The event bubbles from the form, `reason` names which window closed (`timeout`, `interactive-timeout`, `error`, `unsupported`, `superseded`), and
-the submitter is re-enabled before the event fires.
 
 ---
 
@@ -1001,10 +1015,14 @@ The type does not express these rules, and both bite silently:
 heading level it is nested under. Only a section's items and a mega menu's groups accept one, so a group nested inside a menu is a compile error
 rather than a runtime degradation.
 
+**Below `md`, and always on a rail, a menu or megamenu renders as an inline disclosure of its items; above `md` it is the popover.** The
+disclosure is a native `<details>` that opens in the flow and pushes the items below it down, a nested menu nests as an indented disclosure, and
+one holding the current page renders open. Both copies carry the item's `filters`.
+
 **A mega menu is `Navbar` growth, not a new export.** At bar level it renders a `Popover` whose panel is a grid of its groups, capped at four
-columns, beside a `md:hidden` list twin of the same groups for the collapsed panel; both copies carry its `filters`. There is no `role="menu"` — a
-block of links is navigation, Tab walks it, and light-dismiss and Escape are the platform's. A rail renders only the list; inside a menu it degrades
-to a submenu of groups. Its `align` is `Popover`'s physical alignment — pass `"end"` on the last bar item so a wide panel stays inside the viewport.
+columns. There is no `role="menu"` — a block of links is navigation, Tab walks it, and light-dismiss and Escape are the platform's. Inside a menu
+it degrades to a submenu of groups. Its `align` is `Popover`'s physical alignment — pass `"end"` on the last bar item so a wide panel stays inside
+the viewport.
 
 **`filters` shows an item only when one of its tokens is in the active set.** `activeFilters` seeds the set server-side for a flash-free paint, and
 at runtime the app dispatches the navbar filters event with the new tokens as `detail`. Dispatched on `document`, it re-syncs every bar. Dispatched

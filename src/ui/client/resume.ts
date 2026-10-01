@@ -44,6 +44,11 @@ function delegate(doc: Document): Delegation {
   const commandHandler: EventListener = (event) => dispatchCommand(event);
   doc.addEventListener("command", commandHandler, { capture: true });
   handlers.push(["command", commandHandler, true]);
+  // `aria-disabled` is advisory: the platform still submits, navigates and fires `command` on click,
+  // and Enter or Space reach the same click, so it is cancelled before any of them sees it.
+  const inertGuard: EventListener = (event) => cancelInertClick(event);
+  doc.addEventListener("click", inertGuard, { capture: true });
+  handlers.push(["click", inertGuard, true]);
 
   const installed: Delegation = {
     holders: 1,
@@ -215,6 +220,12 @@ function runAction(action: string, el: HTMLElement, event: Event): void {
     }
     scopeEl = closestAcross<HTMLElement>(scopeEl.parentNode, "[data-scope]");
   }
+}
+
+function cancelInertClick(event: Event): void {
+  if (!closestAcross(eventTarget(event) as Node | null, '[aria-disabled="true"]')) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
 }
 
 function dispatch(type: string, event: Event): void {

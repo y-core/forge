@@ -78,13 +78,13 @@ export type NavItem = NavLink | NavMenu | NavSlot | NavMegaMenu;
 /** A heading over a list of visible child items; legal at section level and as a megamenu column. @public */
 export interface NavGroup {
   heading: string;
-  /** The group's items. Renders as visible bar links; nests no further. */
-  group: NavItem[];
+  /** Renders as visible bar links. */
+  group: (NavLink | NavSlot)[];
   /** Presentational visibility tokens, not access control: the group is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
 }
 
-/** What a section may hold: any nav item, plus a group — which nests no further. @public */
+/** What a section may hold: any nav item, plus a group. @public */
 export type NavSectionItem = NavItem | NavGroup;
 
 /** A group of items; sibling sections spread across the bar via `justify-between`. @public */
@@ -112,6 +112,8 @@ export interface NavRenderCtx {
   /** Namespace prefix for generated menu ids — the bar's `id` when given, else its placement. */
   idBase: string;
   seq: { n: number };
+  /** The disclosure twin's own counter, so a twin never shifts an id the desktop copy mints. */
+  disclosureSeq: { n: number };
   collapsible: NavCollapsible;
 }
 
